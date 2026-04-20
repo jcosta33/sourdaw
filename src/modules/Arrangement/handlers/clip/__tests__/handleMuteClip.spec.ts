@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleMuteClip } from '../handleMuteClip';
 
 const mocks = vi.hoisted(() => ({
@@ -15,7 +16,7 @@ describe('handleMuteClip', () => {
     it('delegates to muteClip use case', () => {
         handleMuteClip.execute({
             type: 'muteClip',
-            payload: { clipId: 'c1', muted: true }
+            payload: { clipId: 'c1', muted: true },
         });
         expect(mocks.muteClip).toHaveBeenCalledWith('c1', true);
     });

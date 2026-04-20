@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleRestoreTrack } from '../handleRestoreTrack';
 
 const mocks = vi.hoisted(() => ({
@@ -22,23 +23,29 @@ vi.mock('../../../useCases/setTrackState', () => ({
 
 vi.mock('#/modules/Automation/stores', () => ({
     automationStore: {
-        get value() { return mocks.automationStoreValue.value; },
+        get value() {
+            return mocks.automationStoreValue.value;
+        },
         set: mocks.automationStoreSet,
-    }
+    },
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
     midiStore: {
-        get value() { return mocks.midiStoreValue.value; },
+        get value() {
+            return mocks.midiStoreValue.value;
+        },
         set: mocks.midiStoreSet,
-    }
+    },
 }));
 
 vi.mock('../../../stores/takeLaneStore', () => ({
     takeLaneStore: {
-        get value() { return mocks.takeLaneStoreValue.value; },
+        get value() {
+            return mocks.takeLaneStoreValue.value;
+        },
         set: mocks.takeLaneStoreSet,
-    }
+    },
 }));
 
 describe('handleRestoreTrack', () => {

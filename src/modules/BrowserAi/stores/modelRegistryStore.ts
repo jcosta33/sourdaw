@@ -3,7 +3,14 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
-import { type BrowserModel, type DdspInstrument, type DiffSingerVoicebank, type KokoroModel, type VocoderModel } from '../models/BrowserModel';
+
+import {
+    type BrowserModel,
+    type DdspInstrument,
+    type DiffSingerVoicebank,
+    type KokoroModel,
+    type VocoderModel,
+} from '../models/BrowserModel';
 
 export type ModelRegistryState = {
     ddspInstruments: DdspInstrument[];
@@ -24,20 +31,22 @@ export const modelRegistryStore = createStore<ModelRegistryState>({
     },
 });
 
-export function updateModelStatus(modelId: string, patch: Partial<Pick<BrowserModel, 'status' | 'downloadProgress'>>): void {
+export function updateModelStatus(
+    modelId: string,
+    patch: Partial<Pick<BrowserModel, 'status' | 'downloadProgress'>>
+): void {
     modelRegistryStore.update((state) => {
         if (!state) {
             return state;
         }
 
-        const updatedInstruments = state.ddspInstruments.map((m) =>
-            m.id === modelId ? { ...m, ...patch } : m
-        );
+        const updatedInstruments = state.ddspInstruments.map((m) => (m.id === modelId ? { ...m, ...patch } : m));
 
         const updatedVoicebanks = state.diffSingerVoicebanks.map((vb) => ({
             ...vb,
             models: {
-                linguistic: vb.models.linguistic.id === modelId ? { ...vb.models.linguistic, ...patch } : vb.models.linguistic,
+                linguistic:
+                    vb.models.linguistic.id === modelId ? { ...vb.models.linguistic, ...patch } : vb.models.linguistic,
                 dur: vb.models.dur.id === modelId ? { ...vb.models.dur, ...patch } : vb.models.dur,
                 acoustic: vb.models.acoustic.id === modelId ? { ...vb.models.acoustic, ...patch } : vb.models.acoustic,
                 pitch: vb.models.pitch.id === modelId ? { ...vb.models.pitch, ...patch } : vb.models.pitch,
@@ -45,13 +54,9 @@ export function updateModelStatus(modelId: string, patch: Partial<Pick<BrowserMo
             },
         }));
 
-        const kokoroModel = state.kokoroModel?.id === modelId
-            ? { ...state.kokoroModel, ...patch }
-            : state.kokoroModel;
+        const kokoroModel = state.kokoroModel?.id === modelId ? { ...state.kokoroModel, ...patch } : state.kokoroModel;
 
-        const vocoder = state.vocoder?.id === modelId
-            ? { ...state.vocoder, ...patch }
-            : state.vocoder;
+        const vocoder = state.vocoder?.id === modelId ? { ...state.vocoder, ...patch } : state.vocoder;
 
         return {
             ...state,
@@ -64,5 +69,5 @@ export function updateModelStatus(modelId: string, patch: Partial<Pick<BrowserMo
 }
 
 export function setStorageUsed(bytes: number): void {
-    modelRegistryStore.update((state) => state ? { ...state, storageUsedBytes: bytes } : state);
+    modelRegistryStore.update((state) => (state ? { ...state, storageUsedBytes: bytes } : state));
 }

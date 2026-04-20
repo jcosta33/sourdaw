@@ -1,12 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+
+import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { getBufferForClip } from '#/modules/Arrangement/useCases';
+import { analyze_pitch_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
 import { kneadStore } from '#/modules/Knead/stores';
 import { isTauri } from '#/utils/tauriBridge';
-import { getBufferForClip } from '#/modules/Arrangement/useCases';
-import { logger } from '#/infra/logger/appLogger';
 // @ts-ignore
-import { analyze_pitch_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
 
 export type PitchPoint = {
     time_ms: number;
@@ -44,10 +45,12 @@ export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchF
                     break;
                 }
             }
-            if (targetClip) break;
+            if (targetClip) {
+                break;
+            }
         }
     }
-    
+
     if (!targetClip || !targetClip.fileId) {
         logger.info(`[analyzePitchForClip] no buffer resolved for clipId=${clipId}`);
         return { status: 'no-buffer', reason: 'missing-clip-or-buffer' };
@@ -67,7 +70,7 @@ export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchF
 
     try {
         let contour: PitchContour;
-        
+
         if (isTauri()) {
             unlisten = await listen<AnalysisProgress>('pitch-analysis-progress', (event) => {
                 const currentState = kneadStore.value;
@@ -79,20 +82,20 @@ export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchF
                 }
             });
 
-            contour = await invoke('analyze_pitch', {
+            contour = (await invoke('analyze_pitch', {
                 audioPath: targetClip.fileId,
-            }) as PitchContour;
+            })) as PitchContour;
         } else {
             // WASM fallback
             const result = getBufferForClip(clipId);
             if (!result || !result.buffer) {
                 throw new Error('Could not get audio buffer for clip');
             }
-            
+
             // Artificial progress steps to keep UI somewhat responsive
             const progressSteps = [0.2, 0.5, 0.8];
             for (const step of progressSteps) {
-                await new Promise(r => setTimeout(r, 0));
+                await new Promise((r) => setTimeout(r, 0));
                 const s = kneadStore.value;
                 if (s) {
                     kneadStore.set({ ...s, analysisProgress: step });
@@ -111,20 +114,20 @@ export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchF
                 ...finalState,
                 contours: {
                     ...finalState.contours,
-                    [clipId]: contour
-                }
+                    [clipId]: contour,
+                },
             });
         }
 
         return { status: 'analyzed', contour };
-    } catch (err) {
-        console.error('Pitch analysis failed:', err);
-        throw err;
+    } catch (error) {
+        console.error('Pitch analysis failed:', error);
+        throw error;
     } finally {
         if (unlisten) {
             unlisten();
         }
-        
+
         const endState = kneadStore.value;
         if (endState) {
             kneadStore.set({

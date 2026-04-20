@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleRenameClip } from '../handleRenameClip';
 
 const mocks = vi.hoisted(() => ({
@@ -15,7 +16,7 @@ describe('handleRenameClip', () => {
     it('delegates to renameClip use case', () => {
         handleRenameClip.execute({
             type: 'renameClip',
-            payload: { clipId: 'c1', name: 'New Name' }
+            payload: { clipId: 'c1', name: 'New Name' },
         });
         expect(mocks.renameClip).toHaveBeenCalledWith('c1', 'New Name');
     });

@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+
 import { setWorkspaceMode } from '../../useCases/setWorkspaceMode';
 
 export const handleSetWorkspaceMode = createHandler<'setWorkspaceMode'>({

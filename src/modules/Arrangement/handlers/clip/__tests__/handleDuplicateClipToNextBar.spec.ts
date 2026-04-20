@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleDuplicateClipToNextBar } from '../handleDuplicateClipToNextBar';
 
 const mocks = vi.hoisted(() => ({

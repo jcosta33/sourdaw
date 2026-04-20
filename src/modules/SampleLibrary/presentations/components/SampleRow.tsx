@@ -2,8 +2,11 @@
  * SampleRow — single sample file entry with preview, favorite, drag-to-timeline.
  */
 import { type ReactElement } from 'react';
+
 import { File, Star, SearchCode } from 'lucide-react';
+
 import { cn } from '#/utils/Styles/cn';
+
 import { type SampleRecord } from '../../models/LibraryTypes';
 
 type SampleRowProps = {
@@ -83,7 +86,7 @@ export const SampleRow = ({
 
         <File className="size-3 text-muted-foreground/40 shrink-0" />
         <span className="flex-1 text-[10px] text-foreground truncate">{sample.displayName}</span>
-        
+
         {/* BPM & Key metadata (G1) */}
         {sample.analysis?.bpm ? (
             <span className="text-[8px] text-accent-cyan/60 font-mono shrink-0 px-1">

@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+
 import { duplicateClipToNextBar } from '../../useCases/clip/duplicateClipToNextBar';
 
 export const handleDuplicateClipToNextBar = createHandler<'duplicateClipToNextBar'>({

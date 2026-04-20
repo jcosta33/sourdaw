@@ -37,7 +37,9 @@ export function foldMidiNote(
     let minDiff = 12;
     for (let i = 0; i < srcPattern.length; i++) {
         const patternNote = srcPattern[i];
-        if (patternNote === undefined) continue;
+        if (patternNote === undefined) {
+            continue;
+        }
         const diff = Math.abs(srcPc - patternNote);
         if (diff < minDiff) {
             minDiff = diff;
@@ -46,7 +48,9 @@ export function foldMidiNote(
     }
 
     const patternNoteAtDegree = srcPattern[srcDegree];
-    if (patternNoteAtDegree === undefined) return note;
+    if (patternNoteAtDegree === undefined) {
+        return note;
+    }
     const chromaticOffset = srcPc - patternNoteAtDegree;
 
     // Map degree to destination pattern
@@ -54,7 +58,9 @@ export function foldMidiNote(
     const dstDegree = srcDegree % dstPattern.length;
     const dstPc = dstPattern[dstDegree];
 
-    if (dstPc === undefined) return note;
+    if (dstPc === undefined) {
+        return note;
+    }
 
     // Proportional remapping for chromatic offset if gaps differ
     // (Simplification: just preserve the offset for now, but in microtuning we'd scale it)
@@ -67,14 +73,14 @@ export function foldMidiNote(
 export function quantizeCentsToScale(cents: number, root: number, scaleName: string): number {
     const pattern = SCALE_PATTERNS[scaleName] ?? SCALE_PATTERNS.chromatic!;
     const pc = (((Math.round(cents / 100) - root) % 12) + 12) % 12;
-    
+
     if (pattern.includes(pc)) {
         return cents;
     }
 
     let bestDist = 12;
     let bestPc = pc;
-    
+
     for (const scalePc of pattern) {
         const dist = Math.min(Math.abs(pc - scalePc), 12 - Math.abs(pc - scalePc));
         if (dist < bestDist) {
@@ -82,24 +88,24 @@ export function quantizeCentsToScale(cents: number, root: number, scaleName: str
             bestPc = scalePc;
         }
     }
-    
+
     const diff = (bestPc - pc) * 100;
     const actualDiff = Math.abs(diff) <= 600 ? diff : diff > 0 ? diff - 1200 : diff + 1200;
-    
+
     return cents + actualDiff;
 }
 
 export function quantizeMidiNoteToScale(note: number, root: number, scaleName: string): number {
     const pattern = SCALE_PATTERNS[scaleName] ?? SCALE_PATTERNS.chromatic!;
     const pc = (((note - root) % 12) + 12) % 12;
-    
+
     if (pattern.includes(pc)) {
         return note;
     }
 
     let bestDist = 12;
     let bestPc = pc;
-    
+
     for (const scalePc of pattern) {
         const dist = Math.min(Math.abs(pc - scalePc), 12 - Math.abs(pc - scalePc));
         if (dist < bestDist) {
@@ -107,9 +113,9 @@ export function quantizeMidiNoteToScale(note: number, root: number, scaleName: s
             bestPc = scalePc;
         }
     }
-    
+
     const diff = bestPc - pc;
     const actualDiff = Math.abs(diff) <= 6 ? diff : diff > 0 ? diff - 12 : diff + 12;
-    
+
     return Math.max(0, Math.min(127, note + actualDiff));
 }

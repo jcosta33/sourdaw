@@ -1,37 +1,27 @@
 import { type ReactElement, useRef, useEffect, useMemo } from 'react';
+
 import { useStore } from '#/infra/store/useStore';
-
-import { type GestureEvent } from '#/utils/DOM/GestureEvent';
-import { initTimelineRenderer } from '../../useCases/initTimelineRenderer';
-import { createWebGpuAutomationRenderer, type AutomationRenderer } from '../renderers/createWebGpuAutomationRenderer';
-import { type TimelineRenderer } from '../../models/RendererBackend';
-import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
-import { previewDirtyFlag } from '../../stores/clipDragPreviewRef';
-import { zoomTimeline, setAutoScroll, timelineViewStore } from '../../stores/timelineViewStore';
-
-import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
-import { ClipContextMenu } from './ClipContextMenu';
-import { TimelineEmptyMenu } from './TimelineEmptyMenu';
-import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
-import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
-import {
-    TRACK_HEIGHT_VALUES,
-    onZoomToFit,
-    onZoomToSelection,
-    onScrollToPlayhead,
-} from '#/modules/Workspace/useCases';
-import { PresenceOverlay } from '#/modules/Collaboration/presentations/views';
-
 import { automationStore } from '#/modules/Automation/stores';
+import { PresenceOverlay } from '#/modules/Collaboration/presentations/views';
+import { transportStore, playheadPositionRef, tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
+import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
+import { TRACK_HEIGHT_VALUES, onZoomToFit, onZoomToSelection, onScrollToPlayhead } from '#/modules/Workspace/useCases';
+import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
+import { type GestureEvent } from '#/utils/DOM/GestureEvent';
+
+import { type TimelineRenderer } from '../../models/RendererBackend';
+import { previewDirtyFlag } from '../../stores/clipDragPreviewRef';
 import { markerStore } from '../../stores/markerStore';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import { zoomTimeline, setAutoScroll, timelineViewStore } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
-import {
-    transportStore,
-    playheadPositionRef,
-    tempoMapStore,
-    timeSignatureMapStore,
-} from '#/modules/Transport/stores';
+import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
+import { initTimelineRenderer } from '../../useCases/initTimelineRenderer';
+import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
+import { createWebGpuAutomationRenderer, type AutomationRenderer } from '../renderers/createWebGpuAutomationRenderer';
+
+import { ClipContextMenu } from './ClipContextMenu';
+import { TimelineEmptyMenu } from './TimelineEmptyMenu';
 
 export const TimelineSurface = (): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -42,7 +32,12 @@ export const TimelineSurface = (): ReactElement => {
 
     const workspaceState = useStore(workspaceStore, defaultWorkspaceState);
     const marqueeSelection = workspaceState.marqueeSelection;
-    const currentViewStore = useStore(timelineViewStore, { scrollX: 0, scrollY: 0, pixelsPerBeat: 20, autoScrollEnabled: true });
+    const currentViewStore = useStore(timelineViewStore, {
+        scrollX: 0,
+        scrollY: 0,
+        pixelsPerBeat: 20,
+        autoScrollEnabled: true,
+    });
     const currentTrackStore = useStore(trackStore, { tracks: [], selectedTrackId: null });
 
     const {
@@ -68,48 +63,58 @@ export const TimelineSurface = (): ReactElement => {
     const closeContextMenu = () => setContextMenu(null);
 
     const marqueeStyle = useMemo(() => {
-        if (!marqueeSelection || !currentViewStore || !currentTrackStore) return null;
-        
+        if (!marqueeSelection || !currentViewStore || !currentTrackStore) {
+            return null;
+        }
+
         const pixelsPerBeat = currentViewStore.pixelsPerBeat;
         const scrollX = currentViewStore.scrollX;
         const scrollY = currentViewStore.scrollY ?? 0;
-        
+
         const left = Math.max(0, marqueeSelection.startBeat * pixelsPerBeat - scrollX);
         const width = (marqueeSelection.endBeat - marqueeSelection.startBeat) * pixelsPerBeat;
-        
+
         let topTrackIdx = -1;
         let bottomTrackIdx = -1;
-        
-        currentTrackStore.tracks.forEach((track, idx) => {
+
+        for (const [idx, track] of currentTrackStore.tracks.entries()) {
             if (marqueeSelection.trackIds.includes(track.id)) {
-                if (topTrackIdx === -1 || idx < topTrackIdx) topTrackIdx = idx;
-                if (idx > bottomTrackIdx) bottomTrackIdx = idx;
+                if (topTrackIdx === -1 || idx < topTrackIdx) {
+                    topTrackIdx = idx;
+                }
+                if (idx > bottomTrackIdx) {
+                    bottomTrackIdx = idx;
+                }
             }
-        });
-        
-        if (topTrackIdx === -1) return null;
-        
+        }
+
+        if (topTrackIdx === -1) {
+            return null;
+        }
+
         let trackYOffset = 0;
         let top = 0;
         let bottom = 0;
-        
+
         for (let i = 0; i <= bottomTrackIdx; i++) {
             const track = currentTrackStore.tracks[i];
-            if (!track) continue;
-            
+            if (!track) {
+                continue;
+            }
+
             if (i === topTrackIdx) {
                 top = trackYOffset;
             }
             if (i === bottomTrackIdx) {
-                bottom = trackYOffset + TRACK_HEIGHT_VALUES['normal']; // Note: Assumes normal height for now, but model.tracks has actual height
+                bottom = trackYOffset + TRACK_HEIGHT_VALUES.normal; // Note: Assumes normal height for now, but model.tracks has actual height
             }
-            
-            // To get accurate track heights, we ideally use the render model, but since we're in React land, 
+
+            // To get accurate track heights, we ideally use the render model, but since we're in React land,
             // assuming normal height is a fallback. A better way is using TRACK_HEIGHT_VALUES[workspaceState.channelStripWidth or similar]
             // But for now let's just use the default height as a simple approximation if we can't get it.
-            trackYOffset += TRACK_HEIGHT_VALUES['normal'];
+            trackYOffset += TRACK_HEIGHT_VALUES.normal;
         }
-        
+
         return {
             left,
             top: top - scrollY,
@@ -202,7 +207,11 @@ export const TimelineSurface = (): ReactElement => {
             onZoomToSelection(handleZoomToSelection),
             onScrollToPlayhead(handleScrollToPlayhead),
         ];
-        return () => unsubs.forEach((unsub) => unsub());
+        return () => {
+            for (const unsub of unsubs) {
+                unsub();
+            }
+        };
     }, []);
 
     useEffect(() => {
@@ -281,7 +290,9 @@ export const TimelineSurface = (): ReactElement => {
 
         const initRenderer = async () => {
             const renderer = await initTimelineRenderer(canvas);
-            const autoRenderer = autoCanvasRef.current ? await createWebGpuAutomationRenderer(autoCanvasRef.current) : null;
+            const autoRenderer = autoCanvasRef.current
+                ? await createWebGpuAutomationRenderer(autoCanvasRef.current)
+                : null;
 
             if (disposed) {
                 renderer.dispose();
@@ -344,7 +355,9 @@ export const TimelineSurface = (): ReactElement => {
                                 .map((l) => {
                                     let y = -view.scrollY;
                                     for (const t of model.tracks) {
-                                        if (t.id === l.trackId) break;
+                                        if (t.id === l.trackId) {
+                                            break;
+                                        }
                                         y += t.height;
                                     }
                                     return {
@@ -460,31 +473,33 @@ export const TimelineSurface = (): ReactElement => {
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerCancel}
             />
-            <canvas
-                ref={autoCanvasRef}
-                className="absolute inset-0 pointer-events-none"
-                aria-hidden="true"
-            />
+            <canvas ref={autoCanvasRef} className="absolute inset-0 pointer-events-none" aria-hidden="true" />
 
             <PresenceOverlay
                 beatToX={(beat) => {
                     const view = timelineViewStore.value;
-                    if (!view) {return 0;}
+                    if (!view) {
+                        return 0;
+                    }
                     return (beat - view.scrollX / view.pixelsPerBeat) * view.pixelsPerBeat;
                 }}
                 trackIdToY={(trackId) => {
                     const model = buildTimelineRenderModel();
                     const view = timelineViewStore.value;
-                    if (!model || !view) {return null;}
+                    if (!model || !view) {
+                        return null;
+                    }
                     const scrollY = view.scrollY ?? 0;
                     let y = 0;
                     for (const track of model.tracks) {
-                        if (track.id === trackId) {return y - scrollY;}
+                        if (track.id === trackId) {
+                            return y - scrollY;
+                        }
                         y += track.height;
                     }
                     return null;
                 }}
-                trackHeight={TRACK_HEIGHT_VALUES['normal']}
+                trackHeight={TRACK_HEIGHT_VALUES.normal}
             />
 
             {rubberBand ? (

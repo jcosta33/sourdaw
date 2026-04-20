@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { type SetlistState } from '../../../stores/setlistStore';
+
 import { SETLIST_ITEM_COLORS } from '../../../repositories/setlistItemIdCounter';
+import { type SetlistState } from '../../../stores/setlistStore';
 import { addSetlistItem } from '../addSetlistItem';
 
 const mockSetlistStore = vi.hoisted(() => ({
@@ -35,7 +36,7 @@ describe('addSetlistItem', () => {
             totalDuration: 0,
         };
         mockSetlistStore.value = state;
-        
+
         addSetlistItem('Song', 60);
         expect(mockSetlistStore.set).toHaveBeenCalledWith(
             expect.objectContaining({

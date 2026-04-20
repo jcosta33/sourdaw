@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { initializeAudioEngine } from '../initializeAudioEngine';
 
 const { mocks } = vi.hoisted(() => {
@@ -8,7 +9,7 @@ const { mocks } = vi.hoisted(() => {
             registerPlugins: vi.fn(),
             registerFaustDsp: vi.fn(),
             requestMic: vi.fn(),
-        }
+        },
     };
 });
 
@@ -16,11 +17,11 @@ vi.mock('../../repositories/createWebAudioEngine', () => ({
     audioEngine: {
         initialize: mocks.initialize,
         context: null as AudioContext | null,
-    }
+    },
 }));
 
 vi.mock('../audioRecorder/requestMicPermission', () => ({
-    requestMicPermission: mocks.requestMic
+    requestMicPermission: mocks.requestMic,
 }));
 
 vi.mock('#/modules/Plugin/useCases', async (importOriginal) => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { CHORD_TYPES } from '../helpers';
 import { CHORD_TYPE_KEYS } from '../CHORD_TYPE_KEYS';
+import { CHORD_TYPES } from '../helpers';
 
 describe('CHORD_TYPE_KEYS', () => {
     it('contains every chord type key from CHORD_TYPES', () => {

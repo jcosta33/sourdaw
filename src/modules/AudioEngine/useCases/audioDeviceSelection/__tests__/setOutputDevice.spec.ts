@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { setOutputDevice } from '../setOutputDevice';
 
 const mocks = vi.hoisted(() => ({
@@ -16,15 +17,17 @@ vi.mock('#/modules/AudioEngine/repositories/createWebAudioEngine', () => ({
     audioEngine: {
         context: {
             setSinkId: mocks.setSinkId,
-        }
-    }
+        },
+    },
 }));
 
 vi.mock('../helpers', () => ({
     audioDeviceStore: {
-        get value() { return mocks.audioDeviceStoreValue.value; },
+        get value() {
+            return mocks.audioDeviceStoreValue.value;
+        },
         set: mocks.audioDeviceStoreSet,
-    }
+    },
 }));
 
 describe('setOutputDevice', () => {

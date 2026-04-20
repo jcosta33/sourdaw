@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleCompareToReference } from '../handleCompareToReference';
 
 const mocks = vi.hoisted(() => ({

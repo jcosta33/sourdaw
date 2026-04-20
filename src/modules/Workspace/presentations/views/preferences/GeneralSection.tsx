@@ -1,11 +1,15 @@
 import { type ReactElement } from 'react';
+
+import { Settings } from 'lucide-react';
+
 import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { Settings } from 'lucide-react';
-import type { Preferences, SoloModePreference } from '../../../models/Preferences';
+
 import { SectionTitle, FieldGroup, ToggleRow, VoiceKeyEditor, GridSubdivisionSection } from '../preferencesShared';
+
+import type { Preferences, SoloModePreference } from '../../../models/Preferences';
 
 type SectionProps = {
     prefs: Preferences;
@@ -41,7 +45,11 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
 
             <div className="space-y-3">
                 <ToggleRow label="Snap to Grid" value={prefs.snapToGrid} onChange={(v) => update({ snapToGrid: v })} />
-                <ToggleRow label="Snap to Zero Crossing" value={prefs.snapToZeroCrossing} onChange={(v) => update({ snapToZeroCrossing: v })} />
+                <ToggleRow
+                    label="Snap to Zero Crossing"
+                    value={prefs.snapToZeroCrossing}
+                    onChange={(v) => update({ snapToZeroCrossing: v })}
+                />
                 <ToggleRow label="Auto Save" value={prefs.autoSave} onChange={(v) => update({ autoSave: v })} />
                 <ToggleRow
                     label="Show Minimap"

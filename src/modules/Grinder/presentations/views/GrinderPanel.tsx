@@ -1,28 +1,15 @@
 import { type ReactElement, useState } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
 import { Cpu, Radio, Search, Sparkles, Waves } from 'lucide-react';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
-import {
-    grinderStore,
-    getGrinderState,
-    replaceGrinderPatchLocally,
-    type GrinderState,
-} from '../../stores/grinderStore';
-import {
-    grinderTelemetryStore,
-    getGrinderTelemetry,
-    type GrinderTelemetry,
-} from '../../stores/grinderTelemetryStore';
-import { loadGrinderPatchWithAudio } from '../../useCases/grinderParamBridge/loadGrinderPatchWithAudio';
-import { setGrinderMicParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderMicParamWithAudio';
-import { setGrinderParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderParamWithAudio';
-import { setGrinderPedalParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderPedalParamWithAudio';
-import { GRINDER_PRESETS } from '../../useCases/grinderPresets';
+import { useStore } from '#/infra/store/useStore';
+
 import {
     type GrinderAmpModel,
     type GrinderEngineMode,
@@ -33,6 +20,18 @@ import {
     type GrinderRectifierType,
     type GrinderUiSection,
 } from '../../models/GrinderPatch';
+import {
+    grinderStore,
+    getGrinderState,
+    replaceGrinderPatchLocally,
+    type GrinderState,
+} from '../../stores/grinderStore';
+import { grinderTelemetryStore, getGrinderTelemetry, type GrinderTelemetry } from '../../stores/grinderTelemetryStore';
+import { loadGrinderPatchWithAudio } from '../../useCases/grinderParamBridge/loadGrinderPatchWithAudio';
+import { setGrinderMicParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderMicParamWithAudio';
+import { setGrinderParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderParamWithAudio';
+import { setGrinderPedalParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderPedalParamWithAudio';
+import { GRINDER_PRESETS } from '../../useCases/grinderPresets';
 
 const SECTION_TABS: ReadonlyArray<{ id: GrinderUiSection; label: string; icon: typeof Sparkles }> = [
     { id: 'browse', label: 'Browse', icon: Search },
@@ -292,13 +291,7 @@ function GrinderTelemetryMeter({
     return <StatusMeter label={label} value={transform(value)} accent={accent} />;
 }
 
-function ToneResponseStage({
-    deviceId,
-    patch,
-}: {
-    deviceId: string;
-    patch: GrinderPatch;
-}): ReactElement {
+function ToneResponseStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }): ReactElement {
     const points = [
         [0, 78 - patch.bass * 4],
         [24, 64 - patch.bass * 2],
@@ -453,13 +446,7 @@ function DriveStage({ patch }: { patch: GrinderPatch }): ReactElement {
         </div>
     );
 }
-function CabStage({
-    deviceId,
-    patch,
-}: {
-    deviceId: string;
-    patch: GrinderPatch;
-}): ReactElement {
+function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }): ReactElement {
     const handleDrag = (micIndex: 1 | 2, e: React.MouseEvent) => {
         const rect = e.currentTarget.getBoundingClientRect();
         const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
@@ -549,7 +536,9 @@ function CabStage({
                     </div>
                     {patch.mic2.enabled && (
                         <div className="flex flex-col gap-1">
-                            <span className="text-[9px] uppercase text-white/30 tracking-wider font-semibold">Mic 2</span>
+                            <span className="text-[9px] uppercase text-white/30 tracking-wider font-semibold">
+                                Mic 2
+                            </span>
                             <div className="flex gap-2">
                                 <RotaryKnob
                                     value={patch.mic2.positionX}
@@ -601,13 +590,7 @@ function CabStage({
     );
 }
 
-function NeuralStage({
-    deviceId,
-    patch,
-}: {
-    deviceId: string;
-    patch: GrinderPatch;
-}): ReactElement {
+function NeuralStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }): ReactElement {
     const modelName = patch.neuralModelName || 'Factory Voice A';
     const statusLabel = patch.engineMode === 'circuit' ? 'Idle' : 'Active';
 
@@ -708,13 +691,7 @@ function QuickTelemetryReadout({ deviceId }: { deviceId: string }): ReactElement
     );
 }
 
-function LabStage({
-    deviceId,
-    patch,
-}: {
-    deviceId: string;
-    patch: GrinderPatch;
-}): ReactElement {
+function LabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }): ReactElement {
     return (
         <div className="grid h-full grid-cols-[0.92fr_1.08fr] gap-3">
             <div className="grinder-window flex flex-col gap-3 p-3">
@@ -907,13 +884,7 @@ function SectionTabs({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
     );
 }
 
-function DriveDeck({
-    deviceId,
-    patch,
-}: {
-    deviceId: string;
-    patch: GrinderPatch;
-}): ReactElement {
+function DriveDeck({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }): ReactElement {
     return (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {DRIVE_CONTROLS.map((control) => {
@@ -1473,13 +1444,7 @@ function ControlDeck({
     );
 }
 
-function HeroStage({
-    deviceId,
-    patch,
-}: {
-    deviceId: string;
-    patch: GrinderPatch;
-}): ReactElement {
+function HeroStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }): ReactElement {
     if (patch.uiSection === 'amp') {
         return <ToneResponseStage deviceId={deviceId} patch={patch} />;
     }

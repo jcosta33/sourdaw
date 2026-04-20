@@ -1,6 +1,7 @@
-import { updateClip } from '../../repositories/track/updateClip';
 import { shiftClipAutomation } from '#/modules/Automation/useCases';
 import { shiftClipMidiNotes } from '#/modules/MIDI/useCases';
+
+import { updateClip } from '../../repositories/track/updateClip';
 
 export function nudgeClip(clipId: string, beats: number): void {
     let appliedDelta = 0;

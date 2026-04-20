@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleGenerateAudioAiMidi } from '../handleGenerateAudioAiMidi';
 
 const mocks = vi.hoisted(() => ({
@@ -49,10 +50,7 @@ describe('handleGenerateAudioAiMidi', () => {
             })
         ).rejects.toThrow(/Sourdaw desktop/);
 
-        expect(mocks.notifyUser).toHaveBeenCalledWith(
-            'Audio generation requires the Sourdaw desktop app',
-            'warning'
-        );
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Audio generation requires the Sourdaw desktop app', 'warning');
         expect(mocks.generateAudio).not.toHaveBeenCalled();
     });
 

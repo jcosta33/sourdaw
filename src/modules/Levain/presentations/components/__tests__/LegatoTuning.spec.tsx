@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
-import { LegatoTuning } from '../LegatoTuning';
+import { describe, it, expect, vi } from 'vitest';
+
 import { createDefaultPatch } from '../../../models/LevainPatch';
+import { LegatoTuning } from '../LegatoTuning';
 
 describe('LegatoTuning', () => {
     it('should render', () => {

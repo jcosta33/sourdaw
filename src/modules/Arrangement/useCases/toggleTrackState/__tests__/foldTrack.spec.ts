@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { foldTrack } from '../foldTrack';
 
 const mocks = vi.hoisted(() => ({

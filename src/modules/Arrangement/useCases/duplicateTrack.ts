@@ -1,9 +1,11 @@
+import { duplicateClipAutomation } from '#/modules/Automation/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
+
+import { type Clip } from '../models/Track';
 import { getTrackById } from '../repositories/track/getTrackById';
 import { updateTrack } from '../repositories/track/updateTrack';
-import { midiStore } from '#/modules/MIDI/stores';
-import { duplicateClipAutomation } from '#/modules/Automation/useCases';
+
 import { addTrack } from './addTrack';
-import { type Clip } from '../models/Track';
 
 export function duplicateTrack(trackId: string): void {
     const source = getTrackById(trackId);
@@ -12,13 +14,13 @@ export function duplicateTrack(trackId: string): void {
     }
 
     const newTrackId = `track-dup-${crypto.randomUUID().slice(0, 8)}`;
-    
+
     // 1. Deep copy alternatives and their clips
     const newAlternatives = source.alternatives.map((alt) => {
         const newAltId = `alt-dup-${crypto.randomUUID().slice(0, 8)}`;
         const newClips: Clip[] = alt.clips.map((clip) => {
             const newClipId = `clip-dup-${crypto.randomUUID().slice(0, 8)}`;
-            
+
             // Handle MIDI data duplication (notes, CC, pitch bend)
             if (clip.type === 'midi') {
                 const midiState = midiStore.value;
@@ -83,12 +85,12 @@ export function duplicateTrack(trackId: string): void {
     const newActiveAlternativeId = newAlternatives[sourceActiveIndex]?.id ?? newAlternatives[0]?.id ?? '';
 
     // 3. Add the track
-    const newTrack = addTrack({ 
+    const newTrack = addTrack({
         id: newTrackId,
-        name: `${source.name} (copy)`, 
-        kind: source.kind 
+        name: `${source.name} (copy)`,
+        kind: source.kind,
     });
-    
+
     if (!newTrack) {
         return;
     }

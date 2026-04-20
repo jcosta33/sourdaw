@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { LayerStack } from '../LayerStack';
+import { describe, it, expect, vi } from 'vitest';
+
 import { DEFAULT_PATCH } from '../../../models/FermenterPatch';
+import { LayerStack } from '../LayerStack';
 
 describe('LayerStack', () => {
     it('should render', () => {

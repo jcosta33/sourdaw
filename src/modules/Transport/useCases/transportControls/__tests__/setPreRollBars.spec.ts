@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { setPreRollBars } from '../setPreRollBars';
+
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
+import { setPreRollBars } from '../setPreRollBars';
 
 vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),

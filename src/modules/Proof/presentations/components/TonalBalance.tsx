@@ -73,14 +73,26 @@ type Props = {
     height: number;
 };
 
-export const TonalBalance = ({ fftData, fftVersion, sampleRate, fftSize, genre, width, height }: Props): ReactElement => {
+export const TonalBalance = ({
+    fftData,
+    fftVersion,
+    sampleRate,
+    fftSize,
+    genre,
+    width,
+    height,
+}: Props): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) {return;}
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) {return;}
+        if (!ctx) {
+            return;
+        }
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
@@ -127,7 +139,7 @@ export const TonalBalance = ({ fftData, fftVersion, sampleRate, fftSize, genre, 
         }
 
         // Draw Harman target curve (with genre adjustment)
-        const adjustments = genre && GENRE_ADJUSTMENTS[genre] ? GENRE_ADJUSTMENTS[genre]! : [];
+        const adjustments = genre && GENRE_ADJUSTMENTS[genre] ? GENRE_ADJUSTMENTS[genre] : [];
         ctx.beginPath();
         for (let i = 0; i < HARMAN_CURVE.length; i++) {
             const pt = HARMAN_CURVE[i]!;
@@ -244,7 +256,6 @@ export const TonalBalance = ({ fftData, fftVersion, sampleRate, fftSize, genre, 
         ctx.font = '7px system-ui';
         ctx.textAlign = 'left';
         ctx.fillText('Harman Target', 4, 10);
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- fftVersion is the reactive signal; fftData is the (stable-identity) backing buffer
     }, [fftData, fftVersion, sampleRate, fftSize, genre, width, height]);
 
     return (

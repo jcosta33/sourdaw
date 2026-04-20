@@ -46,10 +46,6 @@ const SIZE_CLASS_NAMES: Record<SpacerAxis | 'both', Record<SpacerSize, string>> 
 export const Spacer = ({ size, axis, className, ...props }: SpacerProps): ReactElement => {
     const direction = axis ?? 'both';
     return (
-        <div
-            className={cn('shrink-0', SIZE_CLASS_NAMES[direction][size], className)}
-            aria-hidden="true"
-            {...props}
-        />
+        <div className={cn('shrink-0', SIZE_CLASS_NAMES[direction][size], className)} aria-hidden="true" {...props} />
     );
 };

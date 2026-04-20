@@ -1,4 +1,5 @@
 import { versionControlStore } from '../../stores/versionControlStore';
+
 import { restoreSnapshot } from './snapshotHelpers/restoreSnapshot';
 
 export function restoreVersion(versionId: string): void {

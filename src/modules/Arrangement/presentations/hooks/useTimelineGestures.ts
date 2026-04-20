@@ -1,4 +1,8 @@
 import { type RefObject, useEffect } from 'react';
+
+import { transportStore } from '#/modules/Transport/stores';
+import { type GestureEvent } from '#/utils/DOM/GestureEvent';
+
 import {
     zoomTimeline,
     scrollTimeline,
@@ -7,8 +11,6 @@ import {
     timelineViewStore,
 } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
-import { transportStore } from '#/modules/Transport/stores';
-import { type GestureEvent } from '#/utils/DOM/GestureEvent';
 
 export const useTimelineGestures = (canvasRef: RefObject<HTMLCanvasElement | null>): void => {
     useEffect(() => {

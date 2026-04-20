@@ -1,6 +1,8 @@
 import { type ReactElement } from 'react';
-import { SourdawLogo } from './SourdawLogo';
+
 import { Dialog, DialogContent } from '#/components/ui/dialog';
+
+import { SourdawLogo } from './SourdawLogo';
 
 export type AlphaNoticeDialogProps = {
     open: boolean;

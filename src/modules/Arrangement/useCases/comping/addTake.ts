@@ -1,13 +1,7 @@
-import { takeLaneStore } from '../../stores/takeLaneStore';
 import { createTake } from '../../models/TakeLane';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 
-export function addTake(
-    trackId: string,
-    clipId: string,
-    name: string,
-    startBeat: number,
-    endBeat: number
-): void {
+export function addTake(trackId: string, clipId: string, name: string, startBeat: number, endBeat: number): void {
     const state = takeLaneStore.value;
     if (!state) {
         return;

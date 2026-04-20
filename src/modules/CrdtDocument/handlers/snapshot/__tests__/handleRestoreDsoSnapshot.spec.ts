@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleRestoreDsoSnapshot } from '../handleRestoreDsoSnapshot';
+
 import { restoreSnapshot } from '../../../useCases/restoreSnapshot';
+import { handleRestoreDsoSnapshot } from '../handleRestoreDsoSnapshot';
 
 vi.mock('../../../useCases/restoreSnapshot', () => ({ restoreSnapshot: vi.fn() }));
 

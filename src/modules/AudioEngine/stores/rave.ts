@@ -8,8 +8,8 @@
  * - `randomizeLatent` uses Math.random() — non-deterministic
  */
 
-import { createStore } from '#/infra/store/createStore';
 import { logger as raveLogger } from '#/infra/logger/appLogger';
+import { createStore } from '#/infra/store/createStore';
 
 export type RaveModel = {
     id: string;

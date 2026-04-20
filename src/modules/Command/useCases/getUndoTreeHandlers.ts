@@ -1,6 +1,7 @@
-import { type ActionHandler, type AppAction } from './commandQueries';
 import { handleLabelUndoBranch } from '../handlers/undoTree/handleLabelUndoBranch';
 import { handleToggleUndoTree } from '../handlers/undoTree/handleToggleUndoTree';
+
+import { type ActionHandler, type AppAction } from './commandQueries';
 
 type UndoTreeAppAction =
     | Extract<AppAction, { type: 'toggleUndoTree' }>

@@ -1,6 +1,7 @@
 import { type ReactElement, type MouseEvent, type WheelEvent, type KeyboardEvent, useState, useRef } from 'react';
-import { cn } from '#/utils/Styles/cn';
-import { type AutomationLane, type AutomationCurveType } from '../../../models/AutomationViewTypes';
+
+import { useStore } from '#/infra/store/useStore';
+import { interpolateAutomationValue, getAutomationRegions } from '#/modules/Arrangement/useCases';
 import {
     addAutomationPoint,
     removeAutomationPoint,
@@ -13,16 +14,13 @@ import {
     toggleVirginTerritory,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
-import { LANE_HEIGHT, buildCurvePath } from '../../helpers/automationViewHelpers';
-import { formatParameterValue, curveLabel } from '../../helpers/automationLaneConstants';
 import { transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
-import { interpolateAutomationValue, getAutomationRegions } from '#/modules/Arrangement/useCases';
-import { workspaceStore } from '../../../stores/workspaceStore';
+import { cn } from '#/utils/Styles/cn';
+
+import { type AutomationLane, type AutomationCurveType } from '../../../models/AutomationViewTypes';
 import { defaultWorkspaceState, type WorkspaceState } from '../../../models/WorkspaceState';
-import { AutomationLaneHeader } from './AutomationLaneHeader';
-import { AutomationLaneControls } from './AutomationLaneControls';
-import { AutomationContextMenu } from './AutomationContextMenu';
+import { workspaceStore } from '../../../stores/workspaceStore';
 import {
     onDrawMouseDown,
     onRubberBandStart,
@@ -30,7 +28,12 @@ import {
     onPointMouseDown,
     applyCurveSelect,
 } from '../../helpers/automationDrag';
-import { useStore } from '#/infra/store/useStore';
+import { formatParameterValue, curveLabel } from '../../helpers/automationLaneConstants';
+import { LANE_HEIGHT, buildCurvePath } from '../../helpers/automationViewHelpers';
+
+import { AutomationContextMenu } from './AutomationContextMenu';
+import { AutomationLaneControls } from './AutomationLaneControls';
+import { AutomationLaneHeader } from './AutomationLaneHeader';
 
 type AutomationLaneRowProps = {
     lane: AutomationLane;

@@ -6,6 +6,7 @@
  * aggressive S-curve. Uses 45 degree unity line as reference.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type DistortionCurveProps = {
@@ -20,7 +21,9 @@ type DistortionCurveProps = {
 /** Attempt to match the waveshaper curve used in deviceNodeFactory */
 const waveshape = (x: number, drive: number): number => {
     const k = drive * 4; // amplify the effect
-    if (k === 0) return x;
+    if (k === 0) {
+        return x;
+    }
     return Math.tanh(x * k) / Math.tanh(k);
 };
 
@@ -39,9 +42,13 @@ export const DistortionCurve = ({
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {
+            return;
+        }
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
@@ -120,8 +127,11 @@ export const DistortionCurve = ({
         ctx.beginPath();
         for (let i = 0; i < points.length; i++) {
             const [x, y] = points[i]!;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         }
         ctx.strokeStyle = `${accPeach}28`;
         ctx.lineWidth = 5;
@@ -131,8 +141,11 @@ export const DistortionCurve = ({
         ctx.beginPath();
         for (let i = 0; i < points.length; i++) {
             const [x, y] = points[i]!;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         }
         ctx.strokeStyle = accPeach;
         ctx.lineWidth = 1.5;
@@ -156,9 +169,13 @@ export const DistortionCurve = ({
     }, [drive, mix, width, height, _tone, isInteractive]);
 
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange) return;
+        if (!onParamChange) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         isDragging.current = true;
         lastY.current = e.clientY;
         canvas.setPointerCapture(e.pointerId);
@@ -166,7 +183,9 @@ export const DistortionCurve = ({
     };
 
     const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange || !isDragging.current) return;
+        if (!onParamChange || !isDragging.current) {
+            return;
+        }
         const deltaY = lastY.current - e.clientY; // up = positive
         lastY.current = e.clientY;
         // Map vertical drag to drive change: ~0.5 drive units per pixel
@@ -176,9 +195,13 @@ export const DistortionCurve = ({
     };
 
     const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange) return;
+        if (!onParamChange) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         isDragging.current = false;
         canvas.releasePointerCapture(e.pointerId);
         canvas.style.cursor = 'grab';

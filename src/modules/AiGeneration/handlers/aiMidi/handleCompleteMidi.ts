@@ -1,7 +1,8 @@
-import { createHandler } from '#/utils/createHandler';
 import { logger } from '#/infra/logger/appLogger';
 import { generateToolCalls } from '#/modules/AiRuntime/useCases';
 import { addMidiNote, getNotesForClip } from '#/modules/MIDI/useCases';
+import { createHandler } from '#/utils/createHandler';
+
 import { llmGenerateNotes } from './llmNoteHelpers';
 
 export const handleCompleteMidi = createHandler<'completeMidi'>({
@@ -13,7 +14,9 @@ export const handleCompleteMidi = createHandler<'completeMidi'>({
         let maxBeat = 0;
         for (const n of existing) {
             const v = n.startBeat + n.duration;
-            if (v > maxBeat) { maxBeat = v; }
+            if (v > maxBeat) {
+                maxBeat = v;
+            }
         }
 
         const instruction =

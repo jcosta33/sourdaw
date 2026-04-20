@@ -1,4 +1,5 @@
 import { midiStore } from '../../stores/midiStore';
+
 import type { GrooveTemplate } from './helpers';
 
 /**
@@ -25,9 +26,13 @@ export function extractGrooveFromClip(clipId: string, gridDivision = 0.25): Groo
     let minBeat = Infinity;
     let maxBeat = -Infinity;
     for (const n of notes) {
-        if (n.startBeat < minBeat) { minBeat = n.startBeat; }
+        if (n.startBeat < minBeat) {
+            minBeat = n.startBeat;
+        }
         const end = n.startBeat + n.duration;
-        if (end > maxBeat) { maxBeat = end; }
+        if (end > maxBeat) {
+            maxBeat = end;
+        }
     }
     const clipLength = maxBeat - minBeat;
 

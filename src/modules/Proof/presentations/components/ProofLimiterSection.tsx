@@ -2,10 +2,12 @@
  * ProofLimiterSection — Look-ahead limiter controls with GR meter + target presets.
  */
 import { type ReactElement } from 'react';
+
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import { type ProofPatch } from '../../models/ProofPatch';
 
 const DITHER_MODES = ['Off', 'TPDF', 'Noise Shaped'] as const;

@@ -4,6 +4,7 @@
  */
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
+
 import { type Track } from '../../models/TrackViewTypes';
 
 type TrackListViewState = {

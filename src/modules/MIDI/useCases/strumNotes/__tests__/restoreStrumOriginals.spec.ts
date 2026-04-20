@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { restoreStrumOriginals } from '../restoreStrumOriginals';
 
 const mocks = vi.hoisted(() => ({
@@ -26,9 +27,7 @@ describe('restoreStrumOriginals', () => {
         vi.clearAllMocks();
         mocks.midiStoreValue.value = {
             notesByClipId: {
-                c1: [
-                    { id: 'n1', pitch: 60, startBeat: 4, duration: 1, velocity: 100 },
-                ],
+                c1: [{ id: 'n1', pitch: 60, startBeat: 4, duration: 1, velocity: 100 }],
             },
             ccByClipId: {},
             pitchBendByClipId: {},

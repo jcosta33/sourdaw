@@ -1,12 +1,8 @@
-import { audioEngine } from '../repositories/createWebAudioEngine';
-import {
-    scheduleNote,
-    startFaustNote,
-    getDrumKitDefByIndex,
-    scheduleDrumKitNote,
-} from '#/modules/Synth/useCases';
-import { getTrackById, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { getTrackById, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
+import { scheduleNote, startFaustNote, getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases';
+
+import { audioEngine } from '../repositories/createWebAudioEngine';
 
 export const playAuditionNoteDependencies = {
     audioEngine,
@@ -25,10 +21,7 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
 
     const track = getTrackById(trackId);
     const drumDevice = track?.devices.find(
-        (d) =>
-            d.type === 'builtin-drum-kit' ||
-            d.type === 'drum-kit' ||
-            d.type.startsWith('builtin-drum-machine')
+        (d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit' || d.type.startsWith('builtin-drum-machine')
     );
 
     if (drumDevice) {
@@ -76,7 +69,7 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
 
             if (isToasterChild && toasterParentTrack) {
                 const children =
-                    trackStore.value?.tracks.filter((t: any) => t.parentId === toasterParentTrack!.id) || [];
+                    trackStore.value?.tracks.filter((t: any) => t.parentId === toasterParentTrack.id) || [];
                 const childPad = children.findIndex((t: any) => t.id === trackId);
                 if (childPad !== -1) {
                     pad = childPad;

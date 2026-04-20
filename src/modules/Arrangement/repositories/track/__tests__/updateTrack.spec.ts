@@ -17,8 +17,8 @@ vi.mock('../../../stores/trackStore', () => {
     };
 });
 
-import { trackStore } from '../../../stores/trackStore';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { trackStore } from '../../../stores/trackStore';
 import { updateTrack } from '../updateTrack';
 
 describe('updateTrack', () => {

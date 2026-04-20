@@ -2,9 +2,11 @@
  * Voice stacking use case — unison with per-voice detuning and stereo spread.
  */
 
-import type { VoiceStackParams } from '../models/CrumbsTypes';
 import { setVoiceStack } from '../stores/crumbsStore';
+
 import { setCrumbsParamThrottled } from './crumbsParamBridge/setCrumbsParamThrottled';
+
+import type { VoiceStackParams } from '../models/CrumbsTypes';
 
 export function updateVoiceStack(instanceId: string, updates: Partial<VoiceStackParams>): void {
     setVoiceStack(instanceId, updates);

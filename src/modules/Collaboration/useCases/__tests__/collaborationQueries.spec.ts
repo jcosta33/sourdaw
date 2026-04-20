@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import { Container } from '#/infra/di/Container';
-import { getCollaborationStoreValue } from '../collaborationQueries';
+
 import { collaborationStore } from '../../stores/collaborationStore';
+import { getCollaborationStoreValue } from '../collaborationQueries';
 
 vi.mock('../../stores/collaborationStore', () => ({
     collaborationStore: { value: null },

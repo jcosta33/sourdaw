@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { ArrangeView } from '../ArrangeView';
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -69,24 +70,24 @@ vi.mock('../../hooks/useWorkspaceState', () => ({
     })),
 }));
 
-vi.mock(
-    '#/modules/Workspace/useCases/togglePanel/panelToggles/closeScratchPad',
-    () => ({
-        closeScratchPad: vi.fn(),
-    }),
-);
+vi.mock('#/modules/Workspace/useCases/togglePanel/panelToggles/closeScratchPad', () => ({
+    closeScratchPad: vi.fn(),
+}));
 
-vi.mock(
-    '#/modules/Workspace/useCases/togglePanel/panelToggles/setTrackListWidth',
-    () => ({
-        setTrackListWidth: vi.fn(),
-    }),
-);
+vi.mock('#/modules/Workspace/useCases/togglePanel/panelToggles/setTrackListWidth', () => ({
+    setTrackListWidth: vi.fn(),
+}));
 
 vi.mock('#/modules/Workspace/presentations/components/ResizeHandle', () => ({
-    ResizeHandle: ({ direction, onResize, onResizeEnd }: { direction: string; onResize: (delta: number) => void; onResizeEnd: () => void }) => (
-        <div data-testid="resize-handle" data-direction={direction} />
-    ),
+    ResizeHandle: ({
+        direction,
+        onResize,
+        onResizeEnd,
+    }: {
+        direction: string;
+        onResize: (delta: number) => void;
+        onResizeEnd: () => void;
+    }) => <div data-testid="resize-handle" data-direction={direction} />,
 }));
 
 vi.mock('../Timeline/ChordTrackLane', () => ({
@@ -95,13 +96,17 @@ vi.mock('../Timeline/ChordTrackLane', () => ({
 
 vi.mock('../Timeline/ScratchPadView', () => ({
     ScratchPadView: ({ height }: { height: number }) => (
-        <div data-testid="scratch-pad-view" style={{ height }}>Scratch Pad</div>
+        <div data-testid="scratch-pad-view" style={{ height }}>
+            Scratch Pad
+        </div>
     ),
 }));
 
 vi.mock('../ArrangeEmptyStateShell', () => ({
     ArrangeEmptyStateShell: ({ active, children }: { active?: boolean; children: React.ReactNode }) => (
-        <div data-testid="empty-state-shell" data-active={active}>{children}</div>
+        <div data-testid="empty-state-shell" data-active={active}>
+            {children}
+        </div>
     ),
 }));
 

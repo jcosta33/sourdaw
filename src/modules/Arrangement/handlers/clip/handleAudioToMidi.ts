@@ -1,5 +1,5 @@
-import { createHandler } from '#/utils/createHandler';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleAudioToMidi = createHandler<'audioToMidi'>({
     execute: (a) => {

@@ -1,4 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
+
 import { trackStore } from './trackStore';
 
 export type TimelineViewState = {

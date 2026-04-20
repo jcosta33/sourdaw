@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 describe('schedulerWorker', () => {
     let workerCode: string;
@@ -10,7 +11,7 @@ describe('schedulerWorker', () => {
         workerCode = rawCode
             .replace(/let timerId:.* = null;/, 'let timerId = null;')
             .replace(/\(e: MessageEvent\)/, '(e)')
-            .replace(/export /g, '');
+            .replaceAll('export ', '');
         vi.useFakeTimers();
     });
 
@@ -20,12 +21,12 @@ describe('schedulerWorker', () => {
     });
 
     it('should start interval and post ticks', () => {
-        let postedMessages: any[] = [];
+        const postedMessages: any[] = [];
         const selfMock = {
             onmessage: null as any,
-            postMessage: (msg: any) => postedMessages.push(msg)
+            postMessage: (msg: any) => postedMessages.push(msg),
         };
-        
+
         const executeWorker = new Function('self', 'setInterval', 'clearInterval', workerCode);
         executeWorker(selfMock, setInterval, clearInterval);
 
@@ -33,7 +34,7 @@ describe('schedulerWorker', () => {
         selfMock.onmessage({ data: { type: 'start', interval: 10 } });
 
         expect(postedMessages).toHaveLength(0);
-        
+
         vi.advanceTimersByTime(10);
         expect(postedMessages).toHaveLength(1);
         expect(postedMessages[0]).toEqual({ type: 'tick' });
@@ -43,17 +44,17 @@ describe('schedulerWorker', () => {
     });
 
     it('should stop interval on stop message', () => {
-        let postedMessages: any[] = [];
+        const postedMessages: any[] = [];
         const selfMock = {
             onmessage: null as any,
-            postMessage: (msg: any) => postedMessages.push(msg)
+            postMessage: (msg: any) => postedMessages.push(msg),
         };
-        
+
         const executeWorker = new Function('self', 'setInterval', 'clearInterval', workerCode);
         executeWorker(selfMock, setInterval, clearInterval);
 
         selfMock.onmessage({ data: { type: 'start', interval: 10 } });
-        
+
         vi.advanceTimersByTime(10);
         expect(postedMessages).toHaveLength(1);
 
@@ -61,35 +62,35 @@ describe('schedulerWorker', () => {
         vi.advanceTimersByTime(50);
         expect(postedMessages).toHaveLength(1); // Should not increase
     });
-    
+
     it('should restart interval if started twice', () => {
-        let postedMessages: any[] = [];
+        const postedMessages: any[] = [];
         const selfMock = {
             onmessage: null as any,
-            postMessage: (msg: any) => postedMessages.push(msg)
+            postMessage: (msg: any) => postedMessages.push(msg),
         };
-        
+
         const executeWorker = new Function('self', 'setInterval', 'clearInterval', workerCode);
         executeWorker(selfMock, setInterval, clearInterval);
 
         selfMock.onmessage({ data: { type: 'start', interval: 10 } });
         vi.advanceTimersByTime(5);
-        
+
         selfMock.onmessage({ data: { type: 'start', interval: 20 } });
         vi.advanceTimersByTime(10);
         expect(postedMessages).toHaveLength(0); // the old 10ms is cleared, new is 20ms
-        
+
         vi.advanceTimersByTime(10);
         expect(postedMessages).toHaveLength(1);
     });
 
     it('should handle missing interval parameter', () => {
-        let postedMessages: any[] = [];
+        const postedMessages: any[] = [];
         const selfMock = {
             onmessage: null as any,
-            postMessage: (msg: any) => postedMessages.push(msg)
+            postMessage: (msg: any) => postedMessages.push(msg),
         };
-        
+
         const executeWorker = new Function('self', 'setInterval', 'clearInterval', workerCode);
         executeWorker(selfMock, setInterval, clearInterval);
 
@@ -99,12 +100,12 @@ describe('schedulerWorker', () => {
     });
 
     it('should not crash if stop is called without start', () => {
-        let postedMessages: any[] = [];
+        const postedMessages: any[] = [];
         const selfMock = {
             onmessage: null as any,
-            postMessage: (msg: any) => postedMessages.push(msg)
+            postMessage: (msg: any) => postedMessages.push(msg),
         };
-        
+
         const executeWorker = new Function('self', 'setInterval', 'clearInterval', workerCode);
         executeWorker(selfMock, setInterval, clearInterval);
 

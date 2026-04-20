@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { updateTrack } from '../updateTrack';
+
 import { updateTrack as repoUpdateTrack } from '../../repositories/track/updateTrack';
+import { updateTrack } from '../updateTrack';
 
 vi.mock('../../repositories/track/updateTrack', () => ({
     updateTrack: vi.fn(),

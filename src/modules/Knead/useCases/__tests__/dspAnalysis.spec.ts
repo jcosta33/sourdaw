@@ -4,8 +4,8 @@ vi.mock('../../stores/kneadStore', () => ({
     updateClipKneadState: vi.fn(),
 }));
 
-import { ingestDspAnalysis } from '../dspAnalysis';
 import { updateClipKneadState } from '../../stores/kneadStore';
+import { ingestDspAnalysis } from '../dspAnalysis';
 
 describe('ingestDspAnalysis', () => {
     beforeEach(() => {

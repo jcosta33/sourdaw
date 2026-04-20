@@ -1,6 +1,7 @@
+import { setNotesForClip } from '#/modules/MIDI/useCases';
+
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { setNotesForClip } from '#/modules/MIDI/useCases';
 import { type Clip } from '../../stores/trackStore';
 
 export type VariationNote = { pitch: number; startBeat: number; duration: number; velocity: number };
@@ -9,10 +10,7 @@ function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
 }
 
-export function createAlternativeClips(
-    originalClipId: string,
-    variationsData: VariationNote[][]
-): void {
+export function createAlternativeClips(originalClipId: string, variationsData: VariationNote[][]): void {
     const state = getTrackState();
     if (!state) {
         throw new Error('Track state unavailable — cannot create alternative clips.');

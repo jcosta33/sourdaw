@@ -1,4 +1,5 @@
 import * as Automerge from '@automerge/automerge';
+
 import { logger } from '#/infra/logger/appLogger';
 
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
@@ -86,7 +87,7 @@ class AutomergeRepository {
     // default shape it uses is a 16-byte (32-char) hex. `crypto.randomUUID()`
     // without hyphens gives us 32 hex chars for free and avoids allocating
     // (then discarding) a full Automerge document just to read its actor ID.
-    private actorId: string = crypto.randomUUID().replace(/-/g, '');
+    private actorId: string = crypto.randomUUID().replaceAll('-', '');
 
     /** Get the root document ID. */
     getRootId(): DocId {
@@ -253,9 +254,9 @@ class AutomergeRepository {
             }
             compacted = response.compacted;
             rootId = response.rootId;
-        } catch (err) {
+        } catch (error) {
             // Worker unavailable — fall back to synchronous parsing on main thread.
-            logger.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous load:', err);
+            logger.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous load:', error);
             return this._loadAllSync(bundle);
         }
 
@@ -297,14 +298,14 @@ class AutomergeRepository {
             const docId = key.substring(0, key.indexOf(':incremental:'));
             const doc = this.docs.get(docId);
             if (doc) {
-                this.docs.set(docId, Automerge.loadIncremental(doc, bytes) as Automerge.Doc<AnyDoc>);
+                this.docs.set(docId, Automerge.loadIncremental(doc, bytes));
             } else {
                 logger.warn(`[AutomergeRepository] Found incremental chunk for missing doc: ${docId}`);
             }
         }
 
         for (const [id, doc] of this.docs) {
-            this.docs.set(id, Automerge.load(Automerge.save(doc)) as Automerge.Doc<AnyDoc>);
+            this.docs.set(id, Automerge.load(Automerge.save(doc)));
         }
 
         this.notifyListeners();
@@ -337,8 +338,8 @@ class AutomergeRepository {
             compacted = response.compacted;
             mergedDocIds = response.mergedDocIds;
             newDocIds = response.newDocIds;
-        } catch (err) {
-            logger.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous merge:', err);
+        } catch (error) {
+            logger.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous merge:', error);
             return this._mergeBundleSync(bundle);
         }
 

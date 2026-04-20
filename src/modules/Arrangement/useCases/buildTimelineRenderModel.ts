@@ -1,19 +1,15 @@
-import { trackStore } from '../stores/trackStore';
-import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
-import { timelineViewStore } from '../stores/timelineViewStore';
+import { logger } from '#/app/registerDependencies';
 import { midiStore } from '#/modules/MIDI/stores';
+import { transportStore, playheadPositionRef, timeSignatureMapStore } from '#/modules/Transport/stores';
+import { getTimeSignatureAtBeat } from '#/modules/Transport/useCases';
 import { workspaceStore, preferencesStore } from '#/modules/Workspace/stores';
 import { TRACK_HEIGHT_VALUES } from '#/modules/Workspace/useCases';
-import {
-    type TimelineRenderModel,
-    type TrackRenderModel,
-    type ClipRenderModel,
-} from '../models/TimelineRenderModel';
-import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
+
+import { type TimelineRenderModel, type TrackRenderModel, type ClipRenderModel } from '../models/TimelineRenderModel';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
-import { timeSignatureMapStore } from '#/modules/Transport/stores';
-import { getTimeSignatureAtBeat } from '#/modules/Transport/useCases';
-import { logger } from '#/app/registerDependencies';
+import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
+import { timelineViewStore } from '../stores/timelineViewStore';
+import { trackStore } from '../stores/trackStore';
 
 function defaultViewportWidth(): number {
     return typeof window !== 'undefined' ? window.innerWidth : 1920;
@@ -47,10 +43,7 @@ const recordingOverlayCache: {
 // animation frame. Reset below when the ref drains.
 let recordingInvariantReported = false;
 
-function applyRecordingOverlay(
-    cachedModel: TimelineRenderModel,
-    recClips: readonly string[]
-): TimelineRenderModel {
+function applyRecordingOverlay(cachedModel: TimelineRenderModel, recClips: readonly string[]): TimelineRenderModel {
     const liveEnd = playheadPositionRef.current;
 
     if (
@@ -96,7 +89,7 @@ function applyRecordingOverlay(
         }
     }
 
-    return { ...cachedModel, tracks: recordingOverlayCache.tracks!, dataDirty: true };
+    return { ...cachedModel, tracks: recordingOverlayCache.tracks, dataDirty: true };
 }
 
 // §74.1 — Coalesce stores into memoization holder.
@@ -156,8 +149,12 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
             (trackState?.tracks ?? []).filter((t) => t.kind === 'folder' && t.collapsed).map((t) => t.id)
         );
         const visibleTracks = (trackState?.tracks ?? []).filter((t) => {
-            if (t.kind === 'master') return false;
-            if (!t.parentId) return true;
+            if (t.kind === 'master') {
+                return false;
+            }
+            if (!t.parentId) {
+                return true;
+            }
             return !collapsedFolders.has(t.parentId);
         });
 

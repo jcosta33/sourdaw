@@ -1,9 +1,10 @@
+import { splitMidiNotesAtBeat } from '#/modules/MIDI/useCases';
+
+import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
-import { type Clip } from '../../stores/trackStore';
-import { getNextClipId } from '../../repositories/clipIdCounter';
 import { snapSplitBeatToZeroCrossing } from '../../services/snapSplitBeatToZeroCrossing';
-import { splitMidiNotesAtBeat } from '#/modules/MIDI/useCases';
+import { type Clip } from '../../stores/trackStore';
 
 export function splitClip(clipId: string, splitBeat: number): string | null {
     const state = getTrackState();

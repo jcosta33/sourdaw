@@ -1,16 +1,20 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { TimelineSurface } from '../TimelineSurface';
+
 import { useTimelineInteractions } from '../../hooks/useTimelineInteractions';
+import { TimelineSurface } from '../TimelineSurface';
 
 // Mock external dependencies
 vi.mock('../../../useCases/initTimelineRenderer', () => ({
-    initTimelineRenderer: vi.fn(() => Promise.resolve({
-        resize: vi.fn(),
-        render: vi.fn(),
-        dispose: vi.fn(),
-    })),
+    initTimelineRenderer: vi.fn(() =>
+        Promise.resolve({
+            resize: vi.fn(),
+            render: vi.fn(),
+            dispose: vi.fn(),
+        })
+    ),
 }));
 
 vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
@@ -18,7 +22,7 @@ vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
 }));
 
 vi.mock('../../../stores/timelineViewStore', () => ({
-    timelineViewStore: { 
+    timelineViewStore: {
         value: { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true },
         subscribe: vi.fn(() => vi.fn()),
         set: vi.fn(),
@@ -34,8 +38,16 @@ vi.mock('#/utils/DOM/AnimationScheduler', () => ({
 }));
 
 vi.mock('../TimelineContextMenus', () => ({
-    ClipContextMenu: ({ onClose }: any) => <div data-testid="clip-menu"><button onClick={onClose}>Close</button></div>,
-    TimelineEmptyMenu: ({ onClose }: any) => <div data-testid="empty-menu"><button onClick={onClose}>Close</button></div>,
+    ClipContextMenu: ({ onClose }: any) => (
+        <div data-testid="clip-menu">
+            <button onClick={onClose}>Close</button>
+        </div>
+    ),
+    TimelineEmptyMenu: ({ onClose }: any) => (
+        <div data-testid="empty-menu">
+            <button onClick={onClose}>Close</button>
+        </div>
+    ),
 }));
 
 vi.mock('../../hooks/useTimelineInteractions', () => ({
@@ -61,7 +73,7 @@ vi.mock('../../hooks/useTimelineInteractions', () => ({
 }));
 
 vi.mock('#/modules/Workspace/stores/workspaceStore', () => ({
-    workspaceStore: { 
+    workspaceStore: {
         value: {},
         subscribe: vi.fn(() => vi.fn()),
         set: vi.fn(),
@@ -97,7 +109,7 @@ vi.mock('../../../stores/takeLaneStore', () => ({
 }));
 
 vi.mock('#/modules/Transport/stores/transportStore', () => ({
-    transportStore: { 
+    transportStore: {
         value: { isPlaying: false },
         subscribe: vi.fn(() => vi.fn()),
         set: vi.fn(),
@@ -132,26 +144,17 @@ vi.mock('../../../stores/markerStore', () => ({
     },
 }));
 
-vi.mock(
-    '#/modules/Workspace/useCases/togglePanel/zoomOperations/onScrollToPlayhead',
-    () => ({
-        onScrollToPlayhead: vi.fn(() => vi.fn()),
-    }),
-);
+vi.mock('#/modules/Workspace/useCases/togglePanel/zoomOperations/onScrollToPlayhead', () => ({
+    onScrollToPlayhead: vi.fn(() => vi.fn()),
+}));
 
-vi.mock(
-    '#/modules/Workspace/useCases/togglePanel/zoomOperations/onZoomToSelection',
-    () => ({
-        onZoomToSelection: vi.fn(() => vi.fn()),
-    }),
-);
+vi.mock('#/modules/Workspace/useCases/togglePanel/zoomOperations/onZoomToSelection', () => ({
+    onZoomToSelection: vi.fn(() => vi.fn()),
+}));
 
-vi.mock(
-    '#/modules/Workspace/useCases/togglePanel/zoomOperations/onZoomToFit',
-    () => ({
-        onZoomToFit: vi.fn(() => vi.fn()),
-    }),
-);
+vi.mock('#/modules/Workspace/useCases/togglePanel/zoomOperations/onZoomToFit', () => ({
+    onZoomToFit: vi.fn(() => vi.fn()),
+}));
 
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);
@@ -205,7 +208,7 @@ describe('TimelineSurface', () => {
             contextMenu: null,
             setContextMenu: vi.fn(),
         });
-        
+
         renderWithTooltip(<TimelineSurface />);
         expect(screen.getByText('Drop audio or MIDI files here')).toBeInTheDocument();
     });
@@ -231,7 +234,7 @@ describe('TimelineSurface', () => {
             contextMenu: null,
             setContextMenu: vi.fn(),
         });
-        
+
         renderWithTooltip(<TimelineSurface />);
         expect(screen.getByText('Importing audio…')).toBeInTheDocument();
     });

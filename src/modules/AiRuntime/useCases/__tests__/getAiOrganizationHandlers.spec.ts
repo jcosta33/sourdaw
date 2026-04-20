@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { getAiOrganizationHandlers } from '../getAiOrganizationHandlers';
+
 import { handleAutoOrganizeProject } from '../../handlers/aiOrganization/handleAutoOrganizeProject';
+import { getAiOrganizationHandlers } from '../getAiOrganizationHandlers';
 
 describe('getAiOrganizationHandlers', () => {
     it('returns a map containing autoOrganizeProject handler', () => {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleCreateTrackAlternative } from '../handleCreateTrackAlternative';
 
 const mocks = vi.hoisted(() => ({
@@ -25,8 +26,8 @@ describe('handleCreateTrackAlternative', () => {
                     activeAlternativeId: 'alt1',
                     clips: [{ id: 'clip1' }],
                     alternatives: [{ id: 'alt1', name: 'Alt 1', clips: [] }],
-                }
-            ]
+                },
+            ],
         });
     });
 
@@ -39,12 +40,12 @@ describe('handleCreateTrackAlternative', () => {
         expect(mocks.setTrackStoreState).toHaveBeenCalledTimes(1);
         const newState = mocks.setTrackStoreState.mock.calls[0][0];
         const track = newState.tracks[0];
-        
+
         expect(track.alternatives).toHaveLength(2);
         expect(track.alternatives[1].name).toBe('New Alt');
         expect(track.alternatives[1].clips).toHaveLength(0);
         expect(track.activeAlternativeId).toBe(track.alternatives[1].id);
-        
+
         // Verify current clips were saved to previous alternative
         expect(track.alternatives[0].clips).toEqual([{ id: 'clip1' }]);
     });
@@ -57,7 +58,7 @@ describe('handleCreateTrackAlternative', () => {
 
         const newState = mocks.setTrackStoreState.mock.calls[0][0];
         const track = newState.tracks[0];
-        
+
         expect(track.alternatives).toHaveLength(2);
         expect(track.alternatives[1].clips).toHaveLength(1);
         expect(track.alternatives[1].clips[0].id).toMatch(/^clip-/);

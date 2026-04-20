@@ -1,17 +1,17 @@
 import { type ReactElement, useState, useRef, useEffect } from 'react';
-import { logger } from '#/infra/logger/appLogger';
-import { useStore } from '#/infra/store/useStore';
 
-import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { X, Copy, Users, Wifi, WifiOff, Loader2, QrCode } from 'lucide-react';
+
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawUtilityNotice } from '#/components/daw/DawUtilityNotice';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
+import { logger } from '#/infra/logger/appLogger';
+import { useStore } from '#/infra/store/useStore';
 import { workspaceStore } from '#/modules/Workspace/stores';
 import { closeCollaborationPanel } from '#/modules/Workspace/useCases';
-import { X, Copy, Users, Wifi, WifiOff, Loader2, QrCode } from 'lucide-react';
 
-import { useCollaborationState } from '../hooks/useCollaborationState';
 import {
     createSession,
     joinSession,
@@ -19,10 +19,12 @@ import {
     generateInvite,
     acceptAnswer,
 } from '../../useCases/collaboration/sessionManagement';
-import { InviteCodeRow } from '../components/InviteCodeRow';
-import { PeerPresenceRow } from '../components/PeerPresenceRow';
 import { CollaborationBlock } from '../components/CollaborationBlock';
 import { CollaborationStatusRow } from '../components/CollaborationStatusRow';
+import { InviteCodeRow } from '../components/InviteCodeRow';
+import { PeerPresenceRow } from '../components/PeerPresenceRow';
+import { useCollaborationState } from '../hooks/useCollaborationState';
+
 import { QrInvite } from './QrInvite';
 
 type CollaborationWorkspaceState = {
@@ -54,8 +56,12 @@ export const CollaborationPanel = (): ReactElement | null => {
 
     useEffect(() => {
         return () => {
-            if (copiedInviteTimerRef.current !== null) {clearTimeout(copiedInviteTimerRef.current);}
-            if (copiedAnswerTimerRef.current !== null) {clearTimeout(copiedAnswerTimerRef.current);}
+            if (copiedInviteTimerRef.current !== null) {
+                clearTimeout(copiedInviteTimerRef.current);
+            }
+            if (copiedAnswerTimerRef.current !== null) {
+                clearTimeout(copiedAnswerTimerRef.current);
+            }
         };
     }, []);
 
@@ -112,7 +118,9 @@ export const CollaborationPanel = (): ReactElement | null => {
     const handleCopyInvite = () => {
         navigator.clipboard.writeText(inviteString);
         setCopiedInvite(true);
-        if (copiedInviteTimerRef.current !== null) {clearTimeout(copiedInviteTimerRef.current);}
+        if (copiedInviteTimerRef.current !== null) {
+            clearTimeout(copiedInviteTimerRef.current);
+        }
         copiedInviteTimerRef.current = setTimeout(() => {
             setCopiedInvite(false);
             copiedInviteTimerRef.current = null;
@@ -122,7 +130,9 @@ export const CollaborationPanel = (): ReactElement | null => {
     const handleCopyAnswer = () => {
         navigator.clipboard.writeText(joinAnswer);
         setCopiedAnswer(true);
-        if (copiedAnswerTimerRef.current !== null) {clearTimeout(copiedAnswerTimerRef.current);}
+        if (copiedAnswerTimerRef.current !== null) {
+            clearTimeout(copiedAnswerTimerRef.current);
+        }
         copiedAnswerTimerRef.current = setTimeout(() => {
             setCopiedAnswer(false);
             copiedAnswerTimerRef.current = null;
@@ -144,7 +154,7 @@ export const CollaborationPanel = (): ReactElement | null => {
 
     const statusLabel = (() => {
         if (state.connectionStatus === 'connected') {
-            return `Collaborating \u00b7 ${state.peers.filter((p) => p.isConnected).length + 1} people`;
+            return `Collaborating \u00B7 ${state.peers.filter((p) => p.isConnected).length + 1} people`;
         }
         if (state.connectionStatus === 'connecting') {
             return 'Connecting...';

@@ -4,8 +4,8 @@ vi.mock('../../repositories/libraryPersistence/requestPermission', () => ({
     requestPermission: vi.fn().mockResolvedValue(true),
 }));
 
-import { requestPermission } from '../requestPermission';
 import { requestPermission as repoRequestPermission } from '../../repositories/libraryPersistence/requestPermission';
+import { requestPermission } from '../requestPermission';
 
 describe('requestPermission', () => {
     beforeEach(() => {

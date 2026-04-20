@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { loadPlugin } from '../loadPlugin';
-import { unloadPlugin } from '../unloadPlugin';
 import { openPluginGui } from '../openPluginGui';
+import { unloadPlugin } from '../unloadPlugin';
 
 const mocks = vi.hoisted(() => ({
     loadPluginRepo: vi.fn(),

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { reorderDevices } from '../reorderDevices';
 
 const mocks = vi.hoisted(() => ({
@@ -19,7 +20,7 @@ describe('reorderDevices', () => {
         const updater = mocks.updateTrack.mock.calls[0][1];
 
         const mockTrack = {
-            devices: [{ id: 'd1' }, { id: 'd2' }, { id: 'd3' }]
+            devices: [{ id: 'd1' }, { id: 'd2' }, { id: 'd3' }],
         };
 
         const result = updater(mockTrack);

@@ -29,7 +29,7 @@ type TraceRing = {
 };
 
 function createTraceRing(): TraceRing {
-    const buffer: (TraceEntry | undefined)[] = new Array<TraceEntry | undefined>(RING_CAPACITY);
+    const buffer: (TraceEntry | undefined)[] = Array.from({ length: RING_CAPACITY });
     let writeIndex = 0;
     let count = 0;
 

@@ -4,6 +4,7 @@
  * Canvas2D rendering with smoothed correlation value.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { getMasterAnalyser, PhaseCorrelationMeter as PhaseMeter } from '#/modules/AudioEngine/useCases';
 import { resolveToken } from '#/utils/UI/resolveToken';

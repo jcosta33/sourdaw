@@ -1,5 +1,7 @@
 import { type ReactElement } from 'react';
+
 import { createRootRouteWithContext, Outlet } from '@tanstack/react-router';
+
 import { type AppRouterContext } from '#/app/router';
 import { AppShell } from '#/modules/Workspace/presentations/views/AppShell';
 

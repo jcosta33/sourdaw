@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type LoopStationState } from '../../../stores/loopStationStore';
-import { undoLastLayer } from '../undoLastLayer';
 import { loopStationStore } from '../../../stores/loopStationStore';
+import { undoLastLayer } from '../undoLastLayer';
 
 vi.mock('../../../stores/loopStationStore', () => ({
     loopStationStore: { value: null, set: vi.fn() },
@@ -50,9 +51,9 @@ describe('undoLastLayer', () => {
                 },
             ],
         } as any;
-        
+
         undoLastLayer('s1');
-        
+
         const next = vi.mocked(loopStationStore.set).mock.calls[0]![0] as LoopStationState;
         expect(next.slots[0]!.layers).toHaveLength(0);
         expect(next.slots[0]!.state).toBe('empty');

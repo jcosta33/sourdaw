@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { seekPlayhead } from '#/modules/Transport/useCases/transportControls/seekPlayhead';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { disableLooping } from '#/modules/Transport/useCases/setLooping';
+import { seekPlayhead } from '#/modules/Transport/useCases/transportControls/seekPlayhead';
+
 import { BeatRulerBar } from '../BeatRulerBar';
 
 // Mock external dependencies

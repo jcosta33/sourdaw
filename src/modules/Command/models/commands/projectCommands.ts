@@ -1,6 +1,7 @@
-import { type CommandEntry } from '../CommandEntry';
 import { eventBus } from '#/app/registerDependencies';
 import { newProject, saveProject } from '#/modules/Project/useCases';
+
+import { type CommandEntry } from '../CommandEntry';
 
 /** Project commands — new, save, export audio, import/export files, version control. */
 export const projectCommands: CommandEntry[] = [

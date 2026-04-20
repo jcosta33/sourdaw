@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { PromptBar } from '../PromptBar';
 
 vi.mock('#/infra/store/useStore', () => ({ useStore: vi.fn(() => ({ tracks: [] })) }));
@@ -22,11 +23,11 @@ vi.mock('../../hooks/usePromptExecution', () => ({
         showMenu: false,
         setShowMenu: vi.fn(),
         dismissTag: vi.fn(),
-    })
+    }),
 }));
 
 vi.mock('../Prompt/LlmStatusBadge', () => ({
-    LlmStatusBadge: () => <div data-testid="llm-status-badge" />
+    LlmStatusBadge: () => <div data-testid="llm-status-badge" />,
 }));
 
 describe('PromptBar', () => {

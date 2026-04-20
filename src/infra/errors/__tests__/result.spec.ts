@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { ok, err, isOk, isErr, map, mapError, flatMap, match, unwrapOr, fromNullable, tryCatch } from '../result';
 
 describe('Result', () => {
@@ -40,12 +41,12 @@ describe('Result', () => {
 
     describe('mapError', () => {
         it('transforms the error if Err', () => {
-            const result = mapError(err('Error'), (e) => e + '!');
+            const result = mapError(err('Error'), (e) => `${e}!`);
             expect(result).toEqual(err('Error!'));
         });
 
         it('leaves Ok unchanged', () => {
-            const result = mapError(ok(42), (e: string) => e + '!');
+            const result = mapError(ok(42), (e: string) => `${e}!`);
             expect(result).toEqual(ok(42));
         });
     });

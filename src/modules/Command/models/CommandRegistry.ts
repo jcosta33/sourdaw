@@ -10,25 +10,26 @@
  * consumers (e.g. CommandPalette.tsx) keep working.
  */
 
-import { type CommandEntry } from './CommandEntry';
 import { searchCommands as searchCommandsImpl } from '../services/commandSearch';
+
+import { type CommandEntry } from './CommandEntry';
+
+// ── Category sub-modules ───────────────────────────────────────────────────
+import { aiCommands } from './commands/aiCommands';
+import { automationCommands } from './commands/automationCommands';
+import { clipCommands } from './commands/clipCommands';
+import { editCommands } from './commands/editCommands';
+import { midiCommands } from './commands/midiCommands';
+import { miscCommands } from './commands/miscCommands';
+import { projectCommands } from './commands/projectCommands';
+import { trackCommands } from './commands/trackCommands';
+import { transportCommands } from './commands/transportCommands';
+import { viewCommands } from './commands/viewCommands';
 
 // ── Re-exports for in-module consumers ────────────────────────────────────
 
 export type { CommandEntry } from './CommandEntry';
 export { fuzzyMatch } from '../services/commandSearch';
-
-// ── Category sub-modules ───────────────────────────────────────────────────
-import { transportCommands } from './commands/transportCommands';
-import { editCommands } from './commands/editCommands';
-import { trackCommands } from './commands/trackCommands';
-import { clipCommands } from './commands/clipCommands';
-import { midiCommands } from './commands/midiCommands';
-import { aiCommands } from './commands/aiCommands';
-import { automationCommands } from './commands/automationCommands';
-import { projectCommands } from './commands/projectCommands';
-import { viewCommands } from './commands/viewCommands';
-import { miscCommands } from './commands/miscCommands';
 
 // ── Aggregated registry ────────────────────────────────────────────────────
 

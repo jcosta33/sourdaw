@@ -1,11 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import { Container } from '#/infra/di/Container';
-import { defaultTransportState } from '#/modules/Transport/models/TransportState';
 import { clearUndoHistory } from '#/modules/Command/useCases/clearUndoHistory';
+import { defaultTransportState } from '#/modules/Transport/models/TransportState';
+
+import { type ProjectData } from '../../../models/ProjectData';
 import { hydrateModuleStoresFromProjectData } from '../helpers/hydrateModuleStoresFromProjectData';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferences';
-import { type ProjectData } from '../../../models/ProjectData';
 
 const mocks = vi.hoisted(() => ({
     undoStoreSet: vi.fn(),
@@ -137,7 +139,7 @@ describe('verifyAudioBufferReferences', () => {
 
     it('warns when a referenced buffer is missing', async () => {
         const { trackStore } = await import('#/modules/Arrangement/stores');
-        
+
         trackStore.value = {
             tracks: [
                 {

@@ -16,7 +16,9 @@ import type { WorkerRequest, WorkerResponse, TensorData } from '../models/Infere
 // ── Types ──────────────────────────────────────────────────────────────────
 
 type OrtInferenceSession = {
-    run: (feeds: Record<string, OrtTensor>) => Promise<Record<string, { data: Float32Array | BigInt64Array; dims: number[] }>>;
+    run: (
+        feeds: Record<string, OrtTensor>
+    ) => Promise<Record<string, { data: Float32Array | BigInt64Array; dims: number[] }>>;
     release: () => Promise<void>;
 };
 
@@ -29,7 +31,11 @@ type OrtModule = {
     InferenceSession: {
         create: (data: ArrayBuffer, options?: { executionProviders?: string[] }) => Promise<OrtInferenceSession>;
     };
-    Tensor: new (type: string, data: ArrayBuffer | Float32Array | BigInt64Array | Int32Array | Uint8Array, dims: number[]) => OrtTensor;
+    Tensor: new (
+        type: string,
+        data: ArrayBuffer | Float32Array | BigInt64Array | Int32Array | Uint8Array,
+        dims: number[]
+    ) => OrtTensor;
     env: { wasm: { numThreads: number }; logLevel: string };
 };
 
@@ -53,13 +59,12 @@ async function getOrt(): Promise<OrtModule> {
         return ortModule;
     }
     // Dynamic import keeps onnxruntime-web out of the main bundle
-    const ort = await import('onnxruntime-web') as unknown as OrtModule;
+    const ort = (await import('onnxruntime-web')) as unknown as OrtModule;
     // Multi-threaded WASM requires SharedArrayBuffer which is only available
     // when crossOriginIsolated is true. IIFE workers (forced by Rolldown)
     // are not cross-origin isolated, so fall back to single-threaded.
-    ort.env.wasm.numThreads = (typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated)
-        ? (navigator.hardwareConcurrency ?? 4)
-        : 1;
+    ort.env.wasm.numThreads =
+        typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated ? (navigator.hardwareConcurrency ?? 4) : 1;
     // Suppress "Some nodes were not assigned to the preferred execution providers"
     // warnings — these are informational (ORT moves shape ops to CPU intentionally).
     ort.env.logLevel = 'error';
@@ -121,7 +126,8 @@ async function getOrCreateSession(modelId: string, modelData: ArrayBuffer): Prom
 // ── Tensor helpers ─────────────────────────────────────────────────────────
 
 function tensorDataToOrt(ort: OrtModule, td: TensorData): OrtTensor {
-    const type = td.type === 'int64' ? 'int64' : td.type === 'int32' ? 'int32' : td.type === 'bool' ? 'bool' : 'float32';
+    const type =
+        td.type === 'int64' ? 'int64' : td.type === 'int32' ? 'int32' : td.type === 'bool' ? 'bool' : 'float32';
     return new ort.Tensor(type, td.data, td.dims);
 }
 
@@ -173,12 +179,12 @@ async function runDiffSingerPipeline(
     const wordDur = new ort.Tensor('int64', BigInt64Array.from(params.wordDur.map(BigInt)), [1, nWords]);
 
     const linguisticOut = await sessions.linguistic.run({ tokens, word_div: wordDiv, word_dur: wordDur });
-    const encoderOut = linguisticOut['encoder_out'];
-    const xMasks = linguisticOut['x_masks'];
+    const encoderOut = linguisticOut.encoder_out;
+    const xMasks = linguisticOut.x_masks;
     post('Encoding phonemes', 0.15);
 
     // ── 2. Duration predictor ──────────────────────────────────────────────
-    post('Predicting durations', 0.20);
+    post('Predicting durations', 0.2);
     const noteMidi = new ort.Tensor('float32', params.noteMidi, [1, params.noteMidi.length]);
     const noteDur = new ort.Tensor('int64', params.noteDur, [1, params.noteDur.length]);
 
@@ -189,19 +195,22 @@ async function runDiffSingerPipeline(
         note_dur: noteDur,
     };
     if (params.speakerEmbed) {
-        durFeeds['spk_embed'] = broadcastSpkEmbed(ort, params.speakerEmbed, nTokens);
+        durFeeds.spk_embed = broadcastSpkEmbed(ort, params.speakerEmbed, nTokens);
     }
 
     const durOut = await sessions.dur.run(durFeeds);
-    const phDur = durOut['ph_dur'];
+    const phDur = durOut.ph_dur;
     if (!phDur) {
         throw new Error('Duration predictor produced no ph_dur output');
     }
-    post('Predicting durations', 0.30);
+    post('Predicting durations', 0.3);
 
     // ── 3. Pitch predictor ─────────────────────────────────────────────────
     post('Predicting pitch', 0.35);
-    const pitchPlaceholder = new ort.Tensor('float32', new Float32Array(params.durationFrames), [1, params.durationFrames]);
+    const pitchPlaceholder = new ort.Tensor('float32', new Float32Array(params.durationFrames), [
+        1,
+        params.durationFrames,
+    ]);
     // retake = all true → predict all tokens fresh (not retaining any previous pitch)
     const retakePitch = new ort.Tensor('bool', new Uint8Array(nTokens).fill(1), [1, nTokens]);
     const steps = new ort.Tensor('int64', BigInt64Array.from([BigInt(params.steps)]), [1]);
@@ -216,12 +225,12 @@ async function runDiffSingerPipeline(
         steps,
     };
     if (params.speakerEmbed) {
-        pitchFeeds['spk_embed'] = broadcastSpkEmbed(ort, params.speakerEmbed, params.durationFrames);
+        pitchFeeds.spk_embed = broadcastSpkEmbed(ort, params.speakerEmbed, params.durationFrames);
     }
 
     const pitchOut = await sessions.pitch.run(pitchFeeds);
-    const pitchPred = pitchOut['pitch_pred'];
-    post('Predicting pitch', 0.50);
+    const pitchPred = pitchOut.pitch_pred;
+    post('Predicting pitch', 0.5);
 
     // ── 4. Variance predictor ──────────────────────────────────────────────
     post('Predicting expression', 0.55);
@@ -235,12 +244,12 @@ async function runDiffSingerPipeline(
         steps,
     };
     if (params.speakerEmbed) {
-        varianceFeeds['spk_embed'] = broadcastSpkEmbed(ort, params.speakerEmbed, params.durationFrames);
+        varianceFeeds.spk_embed = broadcastSpkEmbed(ort, params.speakerEmbed, params.durationFrames);
     }
 
     const varianceOut = await sessions.variance.run(varianceFeeds);
-    const energyPred = varianceOut['energy_pred'];
-    const breathinessPred = varianceOut['breathiness_pred'];
+    const energyPred = varianceOut.energy_pred;
+    const breathinessPred = varianceOut.breathiness_pred;
     post('Predicting expression', 0.65);
 
     // ── 5. Acoustic model (shallow diffusion) ─────────────────────────────
@@ -255,19 +264,19 @@ async function runDiffSingerPipeline(
         steps,
     };
     if (energyPred) {
-        acousticFeeds['energy'] = energyPred as unknown as OrtTensor;
+        acousticFeeds.energy = energyPred as unknown as OrtTensor;
     }
     if (breathinessPred) {
-        acousticFeeds['breathiness'] = breathinessPred as unknown as OrtTensor;
+        acousticFeeds.breathiness = breathinessPred as unknown as OrtTensor;
     }
     if (params.speakerEmbed) {
-        acousticFeeds['spk_embed'] = broadcastSpkEmbed(ort, params.speakerEmbed, params.durationFrames);
+        acousticFeeds.spk_embed = broadcastSpkEmbed(ort, params.speakerEmbed, params.durationFrames);
     }
 
     // The acoustic model runs all diffusion steps internally via the `steps` tensor.
     const acousticOut = await sessions.acoustic.run(acousticFeeds);
     // Key may vary by ONNX export ('mel' is conventional, but some exports use other names)
-    const mel = acousticOut['mel'] ?? Object.values(acousticOut)[0];
+    const mel = acousticOut.mel ?? Object.values(acousticOut)[0];
     if (!mel) {
         throw new Error('Acoustic model produced no mel-spectrogram output');
     }
@@ -279,7 +288,7 @@ async function runDiffSingerPipeline(
         mel: mel as unknown as OrtTensor,
         f0: pitchPred as unknown as OrtTensor,
     });
-    const waveform = vocoderOut['waveform'];
+    const waveform = vocoderOut.waveform;
     post('Running vocoder', 0.98);
 
     if (!waveform) {
@@ -337,7 +346,7 @@ async function runKokoroOnnx(
     post('Synthesizing speech', 0.95);
 
     // The model outputs a waveform tensor — key may vary by export
-    const waveform = outputs['waveform'] ?? outputs['audio'] ?? Object.values(outputs)[0];
+    const waveform = outputs.waveform ?? outputs.audio ?? Object.values(outputs)[0];
     if (!waveform) {
         throw new Error('Kokoro ONNX produced no output');
     }
@@ -353,7 +362,11 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
     if (req.type === 'create-session') {
         try {
             await getOrCreateSession(req.modelId, req.modelData);
-            const response: WorkerResponse = { type: 'session-created', requestId: req.requestId, modelId: req.modelId };
+            const response: WorkerResponse = {
+                type: 'session-created',
+                requestId: req.requestId,
+                modelId: req.modelId,
+            };
             self.postMessage(response);
         } catch (error) {
             const response: WorkerResponse = { type: 'error', requestId: req.requestId, error: String(error) };
@@ -365,7 +378,11 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
     if (req.type === 'run-inference') {
         const entry = sessionCache.get(req.modelId);
         if (!entry) {
-            const response: WorkerResponse = { type: 'error', requestId: req.requestId, error: `Session not found: ${req.modelId}` };
+            const response: WorkerResponse = {
+                type: 'error',
+                requestId: req.requestId,
+                error: `Session not found: ${req.modelId}`,
+            };
             self.postMessage(response);
             return;
         }
@@ -389,7 +406,11 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
                 }
                 resultOutputs[key] = { data: val.data as Float32Array, dims: val.dims, type: dataType };
             }
-            const response: WorkerResponse = { type: 'inference-result', requestId: req.requestId, outputs: resultOutputs };
+            const response: WorkerResponse = {
+                type: 'inference-result',
+                requestId: req.requestId,
+                outputs: resultOutputs,
+            };
             self.postMessage(response);
         } catch (error) {
             const response: WorkerResponse = { type: 'error', requestId: req.requestId, error: String(error) };
@@ -446,7 +467,12 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
 
     if (req.type === 'run-diffsinger-phrase') {
         try {
-            const progressMsg: WorkerResponse = { type: 'inference-progress', requestId: req.requestId, stage: 'Preparing sessions', progress: 0.02 };
+            const progressMsg: WorkerResponse = {
+                type: 'inference-progress',
+                requestId: req.requestId,
+                stage: 'Preparing sessions',
+                progress: 0.02,
+            };
             self.postMessage(progressMsg);
 
             // All sessions must have been pre-loaded via 'create-session' messages
@@ -466,8 +492,18 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
                 vocoder: sessionCache.get(vocoderKey)?.session,
             };
 
-            if (!sessions.linguistic || !sessions.dur || !sessions.pitch || !sessions.variance || !sessions.acoustic || !sessions.vocoder) {
-                const missing = Object.entries(sessions).filter(([, s]) => !s).map(([k]) => k).join(', ');
+            if (
+                !sessions.linguistic ||
+                !sessions.dur ||
+                !sessions.pitch ||
+                !sessions.variance ||
+                !sessions.acoustic ||
+                !sessions.vocoder
+            ) {
+                const missing = Object.entries(sessions)
+                    .filter(([, s]) => !s)
+                    .map(([k]) => k)
+                    .join(', ');
                 throw new Error(`DiffSinger sessions not loaded: ${missing}`);
             }
 

@@ -8,9 +8,11 @@
  */
 
 import { type DragEvent, type ReactElement, useRef, useState } from 'react';
+
 import { GripVertical, Play, Square } from 'lucide-react';
-import { getAudioContext, createBufferSource } from '#/modules/AudioEngine/useCases';
+
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getAudioContext, createBufferSource } from '#/modules/AudioEngine/useCases';
 
 type AiRenderClipPreviewProps = {
     audio: Float32Array;
@@ -56,7 +58,9 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
 
         ensureBufferId();
         const buffer = audioBufferCache.get(bufferIdRef.current!);
-        if (!buffer) return;
+        if (!buffer) {
+            return;
+        }
 
         const source = createBufferSource();
         source.buffer = buffer;

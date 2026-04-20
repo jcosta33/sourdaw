@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { euclidean } from '../euclidean';
 
 describe('euclidean', () => {

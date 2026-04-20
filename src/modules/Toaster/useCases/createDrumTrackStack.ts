@@ -10,11 +10,12 @@
  * - No extra "instrument" track — the folder IS the instrument
  */
 
+import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 import { createTrack, getTrackStoreState, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { addDeviceToStrip } from '#/modules/AudioEngine/useCases';
+
 import { DEFAULT_PAD_NAMES, PAD_COLORS } from '../models/ToasterKit';
-import { eventBus } from '#/app/registerDependencies';
 
 export const createDrumTrackStack = inject({ eventBus })(
     ({ eventBus }) =>

@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+
 import { SpectralBinEditor } from '../SpectralBinEditor';
 
 describe('SpectralBinEditor', () => {

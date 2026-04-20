@@ -1,6 +1,4 @@
-import { type GrandBouleState } from '../../stores/grandBouleStore';
 import { type Store } from '#/infra/store/types';
-import { type GrandBouleEngineHandle } from '../../repositories/grandBouleEngineHandle';
 
 import {
     type GrandBoulePerNoteValues,
@@ -8,7 +6,8 @@ import {
     createDefaultPerNoteValues,
     PER_NOTE_PARAM_DESCRIPTORS,
 } from '../../models/GrandBoulePerNoteParams';
-
+import { type GrandBouleEngineHandle } from '../../repositories/grandBouleEngineHandle';
+import { type GrandBouleState } from '../../stores/grandBouleStore';
 
 type SetGrandBoulePerNoteParamInput = {
     engine: GrandBouleEngineHandle;

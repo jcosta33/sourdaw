@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { triggerGrandBouleNote } from '../triggerGrandBouleNote';
-import { releaseGrandBouleNote } from '../releaseGrandBouleNote';
+
 import { panicGrandBoule } from '../panicGrandBoule';
+import { releaseGrandBouleNote } from '../releaseGrandBouleNote';
+import { triggerGrandBouleNote } from '../triggerGrandBouleNote';
 
 const mocks = vi.hoisted(() => {
     const storeValue = { value: { parameters: { velocityCurve: 1.0 } } };
@@ -13,7 +14,11 @@ const mocks = vi.hoisted(() => {
             allNotesOff: vi.fn(),
         },
         grandBouleStoreValue: storeValue,
-        grandBouleStore: { get value() { return storeValue.value; } },
+        grandBouleStore: {
+            get value() {
+                return storeValue.value;
+            },
+        },
     };
 });
 
@@ -29,7 +34,9 @@ describe('GrandBoule Use Cases', () => {
 
     describe('triggerGrandBouleNote', () => {
         it('applies midi calibration curve and calls engine', () => {
-            mocks.grandBouleStoreValue.value = { midiCalibration: { velocityFloor: 0, velocityCeiling: 1, velocityCurveExponent: 2.0 } } as any;
+            mocks.grandBouleStoreValue.value = {
+                midiCalibration: { velocityFloor: 0, velocityCeiling: 1, velocityCurveExponent: 2.0 },
+            } as any;
 
             triggerGrandBouleNote({
                 engine: mocks.engine as any,
@@ -42,7 +49,12 @@ describe('GrandBoule Use Cases', () => {
 
         it('bails if engine not ready', () => {
             mocks.engine.isReady.mockReturnValue(false);
-            triggerGrandBouleNote({ engine: mocks.engine as any, store: mocks.grandBouleStoreValue as any, midiNote: 60, velocity: 1 });
+            triggerGrandBouleNote({
+                engine: mocks.engine as any,
+                store: mocks.grandBouleStoreValue as any,
+                midiNote: 60,
+                velocity: 1,
+            });
             expect(mocks.engine.noteOn).not.toHaveBeenCalled();
         });
     });

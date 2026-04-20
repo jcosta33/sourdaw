@@ -1,5 +1,7 @@
 import { type Track } from '#/modules/Arrangement/models/Track';
+
 import { buildDeviceChain } from '../buildDeviceChain';
+
 import { type OfflineTrackStrip } from './types';
 
 export async function createOfflineTrackStrip(

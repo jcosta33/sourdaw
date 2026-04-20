@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
+
 import { Wavetable3D } from '../Wavetable3D';
 
 describe('Wavetable3D', () => {

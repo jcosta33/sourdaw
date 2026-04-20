@@ -1,7 +1,9 @@
 import { type ReactElement } from 'react';
+
 import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+
 import { type SoloMode } from '../../../models/WorkspaceState';
 import { setSoloMode } from '../../../useCases/togglePanel/panelToggles/setSoloMode';
 

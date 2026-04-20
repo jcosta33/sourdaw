@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { AutomationView } from '../AutomationView';
+
 import { useTracks } from '../../hooks/useTracks';
+import { AutomationView } from '../AutomationView';
 
 // Mock hooks
 vi.mock('../../hooks/useTracks', () => ({
@@ -19,12 +21,16 @@ vi.mock('#/modules/Arrangement/presentations/views/ArrangementBar', () => ({
 }));
 
 vi.mock('../AutomationView/TrackAutomationSection', () => ({
-    TrackAutomationSection: ({ trackId, trackName }: any) => <div data-testid={`track-section-${trackId}`}>{trackName}</div>,
+    TrackAutomationSection: ({ trackId, trackName }: any) => (
+        <div data-testid={`track-section-${trackId}`}>{trackName}</div>
+    ),
 }));
 
 vi.mock('#/components/ui/button', () => ({
     Button: ({ children, onClick, 'aria-label': ariaLabel }: any) => (
-        <button onClick={onClick} aria-label={ariaLabel}>{children}</button>
+        <button onClick={onClick} aria-label={ariaLabel}>
+            {children}
+        </button>
     ),
 }));
 

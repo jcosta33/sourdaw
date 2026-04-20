@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { InspectorPanel } from '../InspectorPanel';
 
 // Mock external dependencies
@@ -42,13 +43,7 @@ vi.mock('#/components/daw/DawBlockedState', () => ({
 }));
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
-    DawHeaderBand: ({
-        title,
-        actions,
-    }: {
-        title?: string;
-        actions?: React.ReactNode;
-    }) => (
+    DawHeaderBand: ({ title, actions }: { title?: string; actions?: React.ReactNode }) => (
         <div data-testid="header-band">
             <span>{title}</span>
             {actions ? <div data-testid="header-actions">{actions}</div> : null}
@@ -57,13 +52,7 @@ vi.mock('#/components/daw/DawHeaderBand', () => ({
 }));
 
 vi.mock('#/components/daw/DawPanelSurface', () => ({
-    DawPanelSurface: ({
-        children,
-        'aria-label': ariaLabel,
-    }: {
-        children: React.ReactNode;
-        'aria-label'?: string;
-    }) => (
+    DawPanelSurface: ({ children, 'aria-label': ariaLabel }: { children: React.ReactNode; 'aria-label'?: string }) => (
         <div data-testid="panel-surface" aria-label={ariaLabel}>
             {children}
         </div>
@@ -71,9 +60,7 @@ vi.mock('#/components/daw/DawPanelSurface', () => ({
 }));
 
 vi.mock('#/components/ui/scroll-area', () => ({
-    ScrollArea: ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="scroll-area">{children}</div>
-    ),
+    ScrollArea: ({ children }: { children: React.ReactNode }) => <div data-testid="scroll-area">{children}</div>,
 }));
 
 vi.mock('#/components/ui/button', () => ({
@@ -99,9 +86,7 @@ vi.mock('../Inspector/TrackInspector', () => ({
 }));
 
 vi.mock('../Inspector/ClipInspector', () => ({
-    ClipInspector: ({ clip }: { clip: { name: string } }) => (
-        <div data-testid="clip-inspector">Clip: {clip.name}</div>
-    ),
+    ClipInspector: ({ clip }: { clip: { name: string } }) => <div data-testid="clip-inspector">Clip: {clip.name}</div>,
 }));
 
 vi.mock('../Inspector/DeviceInspector', () => ({
@@ -145,9 +130,7 @@ describe('InspectorPanel', () => {
 
     it('should render track inspector when track is selected', () => {
         mockUseTracks.mockReturnValue({
-            tracks: [
-                { id: 'track-1', name: 'Test Track', kind: 'audio', clips: [], devices: [] },
-            ],
+            tracks: [{ id: 'track-1', name: 'Test Track', kind: 'audio', clips: [], devices: [] }],
             selectedTrackId: 'track-1',
         });
         render(<InspectorPanel />);
@@ -156,9 +139,7 @@ describe('InspectorPanel', () => {
 
     it('should render master track inspector when no track selected but master exists', () => {
         mockUseTracks.mockReturnValue({
-            tracks: [
-                { id: 'master', name: 'Master', kind: 'master', clips: [], devices: [] },
-            ],
+            tracks: [{ id: 'master', name: 'Master', kind: 'master', clips: [], devices: [] }],
             selectedTrackId: null,
         });
         render(<InspectorPanel />);

@@ -1,7 +1,6 @@
-import { type CommandEntry } from '../CommandEntry';
-import { getSelectedClipId } from '../../useCases/selectionHelpers/getSelectedClipId';
 import { zoomTimeline } from '#/modules/Arrangement/stores';
 import { addMarker } from '#/modules/Arrangement/useCases';
+import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import {
     zoomToFit,
     zoomToSelection,
@@ -10,8 +9,10 @@ import {
     toggleMixer,
     toggleAutomationPanel,
 } from '#/modules/Workspace/useCases';
-import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
+
 import { executeAppAction } from '../../useCases/executeAppAction';
+import { getSelectedClipId } from '../../useCases/selectionHelpers/getSelectedClipId';
+import { type CommandEntry } from '../CommandEntry';
 
 /** View commands — zoom, panels, workspace modes, tools, markers. */
 export const viewCommands: CommandEntry[] = [

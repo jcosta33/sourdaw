@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { audioToMidi } from '../audioToMidi';
 
 const mocks = vi.hoisted(() => ({
@@ -17,7 +18,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: { get: mocks.audioBufferCacheGet }
+    audioBufferCache: { get: mocks.audioBufferCacheGet },
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
@@ -43,12 +44,12 @@ describe('audioToMidi', () => {
     it('processes buffer onsets and creates MIDI notes', () => {
         const mockClip = { id: 'c1', audioBufferId: 'buf1', startBeat: 0, endBeat: 4, name: 'Drum' };
         mocks.getAllTracks.mockReturnValue([{ id: 't1', kind: 'audio', clips: [mockClip] }]);
-        
+
         // Simple mock buffer: 1 second long, 44100 sample rate
         const mockBuffer = {
             sampleRate: 44100,
             length: 44100,
-            getChannelData: () => new Float32Array(44100).map((_, i) => (i % 5000 < 100 ? 1.0 : 0)) // Some sharp onsets
+            getChannelData: () => new Float32Array(44100).map((_, i) => (i % 5000 < 100 ? 1.0 : 0)), // Some sharp onsets
         };
         mocks.audioBufferCacheGet.mockReturnValue(mockBuffer);
 

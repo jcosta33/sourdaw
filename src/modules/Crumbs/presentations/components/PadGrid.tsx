@@ -5,6 +5,7 @@
  */
 
 import { type ReactElement, useEffect, useRef, useState } from 'react';
+
 import type { PadConfig } from '../../models/CrumbsTypes';
 
 type PadGridProps = {
@@ -145,7 +146,9 @@ export const PadGrid = ({
 /** Tiny inline waveform rendered as CSS background for each pad. */
 const MiniWaveform = ({ peaks, color }: { peaks: number[]; color: string }): ReactElement => {
     const numBins = Math.floor(peaks.length / 2);
-    if (numBins === 0) {return <div className="mb-1 size-2 rounded-full" />;}
+    if (numBins === 0) {
+        return <div className="mb-1 size-2 rounded-full" />;
+    }
 
     // Build a tiny SVG path for the waveform
     const w = 36;

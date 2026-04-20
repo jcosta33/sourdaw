@@ -1,5 +1,6 @@
 import { addClip } from '#/modules/Arrangement/useCases';
 import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
+
 import { type GenerateMelodyOptions } from './algorithm';
 import { generateMelody } from './algorithm';
 
@@ -42,7 +43,7 @@ export function applyMelodyToTrack(
             startBeat: startBeat + note.startBeat,
             duration: Math.max(MIN_NOTE_DURATION, note.duration),
             velocity: note.velocity,
-        })),
+        }))
     );
 
     return { clipId: clip.id, noteCount: notes.length };

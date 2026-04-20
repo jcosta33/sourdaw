@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleScanPlugins } from '../handleScanPlugins';
 
 vi.mock('../../../useCases/pluginScan/scanning/startPluginScan', () => ({

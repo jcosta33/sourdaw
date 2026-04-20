@@ -1,4 +1,5 @@
 import { type ReactElement, useState } from 'react';
+
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';

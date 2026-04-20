@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { setCountInBars } from '../setCountInBars';
+
+import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
-import { defaultTransportState } from '../../../models/TransportState';
+import { setCountInBars } from '../setCountInBars';
 
 vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),

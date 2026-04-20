@@ -1,20 +1,29 @@
-import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import { isAppError } from '#/infra/errors/isAppError';
-import { getLlmEngine } from '../repositories/webLlm/engineLifecycle';
-import { streamNativeCompletion } from '../repositories/nativeEngine/streaming';
-import { isNativeEngineReady } from '../repositories/nativeEngine/lifecycle';
-import { isCloudAvailable } from '../repositories/cloudLlm/keyManagement';
-import { streamCloudChatCompletion } from '../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
-import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
-import { chatStore, appendChatMessage, updateChatMessage, setChatGenerating } from '../stores/chatStore';
-import { getProjectContext } from './getProjectContext';
-import { type ChatMessage } from '../models/Chat';
-import { type RuntimeAction } from '../models/RuntimeAction';
-import { parsePromptToActions } from './parsePromptToActions';
 import { describeAction, executeAppAction, generateGroupId } from '#/modules/Command/useCases';
+
+import { createAiRuntimeError } from '../errors/AiRuntimeError';
+import { type ChatMessage } from '../models/Chat';
+import { CHAT_SYSTEM_PROMPT } from '../models/chatSystemPrompt';
+import { type RuntimeAction } from '../models/RuntimeAction';
+import { streamCloudChatCompletion } from '../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
+import { isCloudAvailable } from '../repositories/cloudLlm/keyManagement';
+import { isNativeEngineReady } from '../repositories/nativeEngine/lifecycle';
+import { streamNativeCompletion } from '../repositories/nativeEngine/streaming';
+import { getLlmEngine } from '../repositories/webLlm/engineLifecycle';
 import { pushAiActionGroup, type AiActionGroup } from '../stores/aiActionHistoryStore';
+import {
+    chatStore,
+    appendChatMessage,
+    updateChatMessage,
+    setChatGenerating,
+    setActiveAborter,
+} from '../stores/chatStore';
+
+import { getProjectContext } from './getProjectContext';
+import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 import { notifyAiChange } from './notifyAiChange';
-import { setActiveAborter } from '../stores/chatStore';
+import { parsePromptToActions } from './parsePromptToActions';
+
 /** Strip or extract a `<think>…</think>` block from LLM output, including incomplete streaming blocks. */
 function extractThinkBlock(raw: string): { reasoning: string | undefined; content: string } {
     // 1. Fully formed block
@@ -38,8 +47,6 @@ function extractThinkBlock(raw: string): { reasoning: string | undefined; conten
     // 3. No think block at all
     return { reasoning: undefined, content: raw };
 }
-
-import { CHAT_SYSTEM_PROMPT } from '../models/chatSystemPrompt';
 
 export async function sendChatMessage(userText: string): Promise<void> {
     const backend = resolveBackend();
@@ -122,7 +129,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
 
                 updateChatMessage(assistantMsgId, {
                     isStreaming: false,
-                    content: `Executed:\n\n${executedLabels.map((l) => `- **${l.action.type.replace(/_/g, ' ')}**: ${l.label}`).join('\n')}`,
+                    content: `Executed:\n\n${executedLabels.map((l) => `- **${l.action.type.replaceAll('_', ' ')}**: ${l.label}`).join('\n')}`,
                 });
             } else if (result._jsonEditApplied) {
                 // executeDsoEdit already injected the user message and the assistant streaming message.

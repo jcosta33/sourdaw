@@ -1,6 +1,6 @@
-import { triggerToasterPad } from './triggerPad';
-import { setToasterPadParam } from './toasterParamBridge/setToasterPadParam';
 import { getFirstToasterDeviceId } from './toasterParamBridge/getFirstToasterDeviceId';
+import { setToasterPadParam } from './toasterParamBridge/setToasterPadParam';
+import { triggerToasterPad } from './triggerPad';
 
 export type SixteenLevelsTarget = 'velocity' | 'tune' | 'decay' | 'filter';
 
@@ -67,7 +67,7 @@ export function trigger16Level(gridIndex: number): void {
         case 'filter': {
             const minHz = 20;
             const maxHz = 20000;
-            const freq = minHz * Math.pow(maxHz / minHz, normalized);
+            const freq = minHz * (maxHz / minHz) ** normalized;
             if (deviceId) {
                 setToasterPadParam(deviceId, targetPad, 'filterCutoff', freq);
             }

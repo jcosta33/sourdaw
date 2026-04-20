@@ -1,10 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+
 import { clipboardStore, setClipClipboard, setNoteClipboard } from '../clipboardStore';
-import {
-    getEnvelope,
-    setEnvelope,
-    __resetGainEnvelopesForTest,
-} from '../gainEnvelopeStore';
+import { getEnvelope, setEnvelope, __resetGainEnvelopesForTest } from '../gainEnvelopeStore';
 import { markerStore } from '../markerStore';
 import { takeLaneStore } from '../takeLaneStore';
 import { getVcaGroupsState, setVcaGroupsState } from '../vcaGroupStore';
@@ -26,7 +23,7 @@ describe('Arrangement Misc Stores', () => {
             const entry = { notes: [{ id: 'n1' } as any] };
             setNoteClipboard(entry);
             expect(clipboardStore.value?.noteClipboard).toEqual(entry);
-            
+
             setNoteClipboard(null);
             expect(clipboardStore.value?.noteClipboard).toBeNull();
         });

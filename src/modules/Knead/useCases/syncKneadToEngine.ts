@@ -1,6 +1,7 @@
-import { kneadStore } from '../stores/kneadStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
+
+import { kneadStore } from '../stores/kneadStore';
 
 /**
  * Orchestrates the synchronization of Knead pitch data from the store
@@ -9,12 +10,14 @@ import { audioEngine } from '#/modules/AudioEngine/useCases';
 export function syncKneadToEngine(): () => void {
     // Listen to changes in the kneadStore
     const unsubscribeKnead = kneadStore.subscribe((state) => {
-        if (!state) return;
+        if (!state) {
+            return;
+        }
         const tracks = trackStore.value?.tracks ?? [];
-        
+
         // For each track, check if it has a Knead device and sync its clips' states
         for (const track of tracks) {
-            const hasKnead = track.devices.some(d => d.type.toLowerCase() === 'knead');
+            const hasKnead = track.devices.some((d) => d.type.toLowerCase() === 'knead');
             if (hasKnead) {
                 // Collect all clips belonging to this track that have knead state
                 const trackClipsState: Record<string, any> = {};
@@ -27,7 +30,7 @@ export function syncKneadToEngine(): () => void {
                         };
                     }
                 }
-                
+
                 audioEngine.syncKneadState(track.id, trackClipsState);
             }
         }

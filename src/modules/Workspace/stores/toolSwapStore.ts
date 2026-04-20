@@ -1,4 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
+
 import { type EditingTool } from '../models/EditingTool';
 
 export type ToolSwapState = {

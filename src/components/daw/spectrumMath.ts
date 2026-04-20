@@ -23,11 +23,7 @@ const LOG_RANGE = MAX_LOG - MIN_LOG;
  * AudioAnalyser should pass \`maxFreq = sampleRate/2\` so the axis
  * respects Nyquist at the current sample rate.
  */
-export const freqToLogX = (
-    freq: number,
-    width: number,
-    maxFreq: number = MAX_FREQ_HZ
-): number => {
+export const freqToLogX = (freq: number, width: number, maxFreq: number = MAX_FREQ_HZ): number => {
     const clamped = Math.max(MIN_FREQ_HZ, freq);
     const maxLog = maxFreq === MAX_FREQ_HZ ? MAX_LOG : Math.log10(maxFreq);
     const range = maxFreq === MAX_FREQ_HZ ? LOG_RANGE : maxLog - MIN_LOG;

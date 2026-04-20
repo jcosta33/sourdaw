@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { AUTOMATION_SUB_LANE_HEIGHT } from '../automationConstants';
 
 describe('automationConstants', () => {

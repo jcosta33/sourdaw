@@ -3,6 +3,7 @@
  * Supports synced and free-running rates, multiple waveforms, note retrigger.
  */
 
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import {
     type MidiEvent,
     type TransportInfo,
@@ -10,7 +11,6 @@ import {
     rateToBeats,
     samplesPerBeat,
 } from '../../models/MidiEvent';
-import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 
 type LfoShape = 'sine' | 'triangle' | 'square' | 'sawUp' | 'sawDown' | 'sampleHold';
 
@@ -69,7 +69,9 @@ export class CCGenerator extends BaseMidiProcessor {
             }
         }
 
-        if (!transport.isPlaying) {return;}
+        if (!transport.isPlaying) {
+            return;
+        }
 
         // Compute how much phase advances per sample
         const phasePerSample = this.syncMode

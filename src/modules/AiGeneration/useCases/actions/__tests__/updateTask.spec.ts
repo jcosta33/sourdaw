@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { updateTask } from '../updateTask';
+
 import { aiStore } from '../../../stores/aiStore';
+import { updateTask } from '../updateTask';
 
 describe('updateTask', () => {
     beforeEach(() => {
@@ -15,7 +16,7 @@ describe('updateTask', () => {
 
     it('updates properties of an existing task', () => {
         updateTask('t1', { status: 'success', data: { some: 'data' } });
-        
+
         expect(aiStore.value!.tasks[0]).toEqual({
             id: 't1',
             type: 'audio-generation',
@@ -29,7 +30,7 @@ describe('updateTask', () => {
 
     it('does nothing if the task is not found', () => {
         updateTask('missing', { status: 'error' });
-        
+
         expect(aiStore.value!.tasks[0]!.status).toBe('processing');
         expect(aiStore.value!.tasks[1]!.status).toBe('processing');
     });

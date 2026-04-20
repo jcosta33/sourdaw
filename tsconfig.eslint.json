@@ -1,0 +1,5 @@
+{
+    "extends": "./tsconfig.json",
+    "include": ["src", "vite-env.d.ts"],
+    "exclude": ["dist", "build", "coverage", "storybook-static"]
+}

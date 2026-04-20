@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import * as subject from '../reorderYeastProcessor';
 
 describe('reorderYeastProcessor', () => {

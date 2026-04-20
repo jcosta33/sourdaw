@@ -1,5 +1,6 @@
-import { setAutomationMode } from '../../useCases/toggleTrackState/setAutomationMode';
 import { createHandler } from '#/utils/createHandler';
+
+import { setAutomationMode } from '../../useCases/toggleTrackState/setAutomationMode';
 
 export const handleSetAutomationMode = createHandler<'setAutomationMode'>({
     execute: (action) => {

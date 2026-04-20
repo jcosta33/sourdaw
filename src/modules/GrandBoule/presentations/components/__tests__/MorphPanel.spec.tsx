@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { MorphPanel } from '../MorphPanel';
+import { describe, it, expect, vi } from 'vitest';
+
 import { createDefaultMorphState } from '../../../models/GrandBouleMorphState';
+import { MorphPanel } from '../MorphPanel';
 
 describe('MorphPanel', () => {
     it('should render', () => {

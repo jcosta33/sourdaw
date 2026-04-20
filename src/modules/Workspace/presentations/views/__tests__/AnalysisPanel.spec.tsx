@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { AnalysisPanel } from '../AnalysisPanel';
 
 // Mock UI components
@@ -10,16 +11,16 @@ vi.mock('#/components/daw/DawPanelSurface', () => ({
 }));
 
 vi.mock('#/components/daw/DawAnalysisCard', () => ({
-    DawAnalysisCard: ({ 
-        title, 
-        children, 
-        className 
-    }: { 
-        title: string; 
+    DawAnalysisCard: ({
+        title,
+        children,
+        className,
+    }: {
+        title: string;
         children: React.ReactNode;
         className?: string;
     }) => (
-        <div data-testid={`analysis-card-${title.toLowerCase().replace(/\s+/g, '-')}`} className={className}>
+        <div data-testid={`analysis-card-${title.toLowerCase().replaceAll(/\s+/g, '-')}`} className={className}>
             <h3>{title}</h3>
             {children}
         </div>
@@ -27,57 +28,71 @@ vi.mock('#/components/daw/DawAnalysisCard', () => ({
 }));
 
 vi.mock('#/components/ui/scroll-area', () => ({
-    ScrollArea: ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="scroll-area">{children}</div>
-    ),
+    ScrollArea: ({ children }: { children: React.ReactNode }) => <div data-testid="scroll-area">{children}</div>,
 }));
 
 // Mock metering components
 vi.mock('../Metering/LUFSMeter', () => ({
     LUFSMeter: ({ width, height }: { width: number; height: number }) => (
-        <div data-testid="lufs-meter" style={{ width, height }}>LUFS Meter</div>
+        <div data-testid="lufs-meter" style={{ width, height }}>
+            LUFS Meter
+        </div>
     ),
 }));
 
 vi.mock('../Metering/PhaseCorrelationDisplay', () => ({
     PhaseCorrelationDisplay: ({ width, height }: { width: number; height: number }) => (
-        <div data-testid="phase-correlation" style={{ width, height }}>Phase Correlation</div>
+        <div data-testid="phase-correlation" style={{ width, height }}>
+            Phase Correlation
+        </div>
     ),
 }));
 
 vi.mock('../Metering/Oscilloscope', () => ({
     Oscilloscope: ({ width, height }: { width: number; height: number }) => (
-        <div data-testid="oscilloscope" style={{ width, height }}>Oscilloscope</div>
+        <div data-testid="oscilloscope" style={{ width, height }}>
+            Oscilloscope
+        </div>
     ),
 }));
 
 vi.mock('../Metering/SpectrumAnalyzer', () => ({
     SpectrumAnalyzer: ({ width, height }: { width: number; height: number }) => (
-        <div data-testid="spectrum-analyzer" style={{ width, height }}>Spectrum Analyzer</div>
+        <div data-testid="spectrum-analyzer" style={{ width, height }}>
+            Spectrum Analyzer
+        </div>
     ),
 }));
 
 vi.mock('../Metering/Spectrogram', () => ({
     Spectrogram: ({ width, height }: { width: number; height: number }) => (
-        <div data-testid="spectrogram" style={{ width, height }}>Spectrogram</div>
+        <div data-testid="spectrogram" style={{ width, height }}>
+            Spectrogram
+        </div>
     ),
 }));
 
 vi.mock('../Metering/Goniometer', () => ({
     Goniometer: ({ size }: { size: number }) => (
-        <div data-testid="goniometer" style={{ width: size, height: size }}>Goniometer</div>
+        <div data-testid="goniometer" style={{ width: size, height: size }}>
+            Goniometer
+        </div>
     ),
 }));
 
 vi.mock('../../components/SpatialPanner', () => ({
     SpatialPanner: ({ size }: { size: number }) => (
-        <div data-testid="spatial-panner" style={{ width: size, height: size }}>Spatial Panner</div>
+        <div data-testid="spatial-panner" style={{ width: size, height: size }}>
+            Spatial Panner
+        </div>
     ),
 }));
 
 vi.mock('../../components/Wavetable3D', () => ({
     Wavetable3D: ({ width, height }: { width: number; height: number }) => (
-        <div data-testid="wavetable-3d" style={{ width, height }}>Wavetable 3D</div>
+        <div data-testid="wavetable-3d" style={{ width, height }}>
+            Wavetable 3D
+        </div>
     ),
 }));
 

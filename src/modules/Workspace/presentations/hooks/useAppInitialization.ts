@@ -1,24 +1,16 @@
 import { useEffect, useRef } from 'react';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import {
-    initializeAudioEngine,
-    getAudioContext,
-    initWebMidi,
-    setMasterGainValue,
-} from '#/modules/AudioEngine';
-import {
-    verifyAudioBufferReferences,
-    loadProject,
-    projectStore,
-    saveProject,
-} from '#/modules/Project';
-import { registerProModulationEffects } from '#/modules/Plugin';
-import { registerProSynthInstruments } from '#/modules/Synth';
-import { hasCrdtProject } from '#/modules/CrdtDocument';
-import { ensureTrackStrips, getTransportState } from '#/modules/Transport';
-import { restoreLibrary } from '#/modules/SampleLibrary';
-import { preferencesStore } from '../../stores/preferencesStore';
+
 import { trackStore } from '#/modules/Arrangement/stores';
+import { initializeAudioEngine, getAudioContext, initWebMidi, setMasterGainValue } from '#/modules/AudioEngine';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { hasCrdtProject } from '#/modules/CrdtDocument';
+import { registerProModulationEffects } from '#/modules/Plugin';
+import { verifyAudioBufferReferences, loadProject, projectStore, saveProject } from '#/modules/Project';
+import { restoreLibrary } from '#/modules/SampleLibrary';
+import { registerProSynthInstruments } from '#/modules/Synth';
+import { ensureTrackStrips, getTransportState } from '#/modules/Transport';
+
+import { preferencesStore } from '../../stores/preferencesStore';
 
 /**
  * Handles one-time app startup: audio engine + plugins on first user interaction,

@@ -5,7 +5,9 @@
  * Updates dynamically when the algorithm or routing changes.
  */
 import { type ReactElement } from 'react';
+
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
+
 import { type ProofChamberAlgorithm } from '../../models/ProofChamberState';
 
 type SignalFlowDiagramProps = {

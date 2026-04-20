@@ -8,28 +8,31 @@
  * To add a new preset, add it to the appropriate category file under ./presets/.
  */
 
+import { FERMENTER_PRESETS } from '#/modules/Fermenter/useCases';
+
 import { type SoundPreset } from '../../models/SoundPreset';
 
 // ── Category sub-modules ───────────────────────────────────────────────────
+import { type DevicePreset } from '../../models/SoundPreset';
+
 import { bassPresets } from './bassPresets';
-import { leadPresets } from './leadPresets';
-import { padPresets } from './padPresets';
-import { keysPresets } from './keysPresets';
-import { stringsPresets } from './stringsPresets';
 
 // ── Standalone data files (unchanged — each already < 300 lines) ──────────
 import { EXPANDED_FX_PRESETS, EXPANDED_SYNTH_PRESETS } from './expandedPresets';
-import { FAUST_INSTRUMENT_PRESETS } from './faustInstrumentPresets';
 import { FAUST_EFFECT_PRESETS } from './faustEffectPresets';
-import { FERMENTER_PRESETS } from '#/modules/Fermenter/useCases';
+import { FAUST_INSTRUMENT_PRESETS } from './faustInstrumentPresets';
+import { keysPresets } from './keysPresets';
+import { leadPresets } from './leadPresets';
+import { padPresets } from './padPresets';
 
 // ── Drum Kit presets ────────────────────────────────────────────────────────
 // Small enough to stay inline here (< 60 lines).
-import { type DevicePreset } from '../../models/SoundPreset';
+
 import { comp } from './presetHelpers/comp';
 import { eq } from './presetHelpers/eq';
-import { reverb } from './presetHelpers/reverb';
 import { AUTHOR } from './presetHelpers/helpers';
+import { reverb } from './presetHelpers/reverb';
+import { stringsPresets } from './stringsPresets';
 
 const DRUM_KIT_PRESETS: SoundPreset[] = [
     {

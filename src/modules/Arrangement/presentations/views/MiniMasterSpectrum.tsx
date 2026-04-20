@@ -1,8 +1,10 @@
 import { type ReactElement, useEffect, useRef } from 'react';
+
 import { getMasterAnalyser } from '#/modules/AudioEngine/useCases';
-import { useTracks } from '../hooks/useTracks';
-import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { cn } from '#/utils/Styles/cn';
+
+import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
+import { useTracks } from '../hooks/useTracks';
 
 export const MiniMasterSpectrum = ({ className }: { className?: string }): ReactElement | null => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -13,10 +15,14 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) {return;}
+        if (!canvas) {
+            return;
+        }
 
         const ctx = canvas.getContext('2d');
-        if (!ctx) {return;}
+        if (!ctx) {
+            return;
+        }
 
         // Try getting the master analyser. Might be null if engine isn't ready.
         let analyser: AnalyserNode | undefined;
@@ -26,7 +32,9 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
             return;
         }
 
-        if (!analyser) {return;}
+        if (!analyser) {
+            return;
+        }
 
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
@@ -51,7 +59,7 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
         const draw = (): void => {
             animationRef.current = requestAnimationFrame(draw);
 
-            analyser!.getByteFrequencyData(dataArray);
+            analyser.getByteFrequencyData(dataArray);
 
             ctx.clearRect(0, 0, canvasWidth, canvasHeight);
             ctx.fillStyle = barFill;
@@ -74,7 +82,9 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
         };
     }, [isSelected]);
 
-    if (!masterTrack) {return null;}
+    if (!masterTrack) {
+        return null;
+    }
 
     return (
         <div
@@ -82,7 +92,9 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
             tabIndex={0}
             onClick={() => selectTrack(masterTrack.id)}
             onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {selectTrack(masterTrack.id);}
+                if (e.key === 'Enter' || e.key === ' ') {
+                    selectTrack(masterTrack.id);
+                }
             }}
             className={cn(
                 'absolute inset-0 overflow-hidden cursor-pointer transition-colors',

@@ -3,8 +3,9 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
-import { type Clip } from '../models/Track';
+
 import { type MidiNote } from '../models/MidiNoteViewTypes';
+import { type Clip } from '../models/Track';
 
 export type ClipboardEntry = {
     clip: Clip;

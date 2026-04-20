@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { AutomationLaneRow } from '../AutomationLaneRow';
 
 vi.mock('#/utils/Styles/cn', () => ({
@@ -10,7 +11,9 @@ vi.mock('#/utils/Styles/cn', () => ({
                 classes.push(input);
             } else if (typeof input === 'object' && input !== null && !Array.isArray(input)) {
                 for (const [key, value] of Object.entries(input)) {
-                    if (value) {classes.push(key);}
+                    if (value) {
+                        classes.push(key);
+                    }
                 }
             }
         }
@@ -62,19 +65,13 @@ vi.mock('#/modules/Workspace/stores/workspaceStore', () => ({
     workspaceStore: { value: { activeTool: 'pointer' } },
 }));
 
-vi.mock(
-    '#/modules/Arrangement/useCases/automationQueries/getAutomationRegions',
-    () => ({
-        getAutomationRegions: vi.fn(() => []),
-    }),
-);
+vi.mock('#/modules/Arrangement/useCases/automationQueries/getAutomationRegions', () => ({
+    getAutomationRegions: vi.fn(() => []),
+}));
 
-vi.mock(
-    '#/modules/Arrangement/useCases/automationQueries/interpolateAutomationValue',
-    () => ({
-        interpolateAutomationValue: vi.fn(() => 0.5),
-    }),
-);
+vi.mock('#/modules/Arrangement/useCases/automationQueries/interpolateAutomationValue', () => ({
+    interpolateAutomationValue: vi.fn(() => 0.5),
+}));
 
 describe('AutomationLaneRow', () => {
     const defaultProps = {

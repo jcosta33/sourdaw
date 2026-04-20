@@ -14,9 +14,7 @@ describe('findMappingForTarget', () => {
 
     it('should return undefined when the store value is null', () => {
         midiLearnStore.set(null);
-        expect(
-            findMappingForTarget({ targetType: 'trackGain', trackId: 't1' })
-        ).toBeUndefined();
+        expect(findMappingForTarget({ targetType: 'trackGain', trackId: 't1' })).toBeUndefined();
     });
 
     it('should return undefined when no mapping matches', () => {
@@ -36,9 +34,7 @@ describe('findMappingForTarget', () => {
             learningTarget: null,
         });
 
-        expect(
-            findMappingForTarget({ targetType: 'trackGain', trackId: 't1' })
-        ).toBeUndefined();
+        expect(findMappingForTarget({ targetType: 'trackGain', trackId: 't1' })).toBeUndefined();
     });
 
     it('should return the mapping when target fields match', () => {

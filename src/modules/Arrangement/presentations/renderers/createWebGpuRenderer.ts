@@ -1,7 +1,8 @@
-import { type TimelineRenderer } from '../../models/RendererBackend';
-import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
+
+import { type TimelineRenderer } from '../../models/RendererBackend';
+import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
 
 // ─── WGSL shaders ────────────────────────────────────────────────────────────
 // Each vertex carries: xy (NDC) + rgba (f32 × 4) = 6 floats = 24 bytes
@@ -59,7 +60,7 @@ function colorToRgba(color: string, alpha = 1): [number, number, number, number]
         const lb = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3;
         // Linear → sRGB gamma, clamped to [0,1]
         const gamma = (x: number): number => {
-            const v = x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+            const v = x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055;
             return Math.max(0, Math.min(1, v));
         };
         return [gamma(lr), gamma(lg), gamma(lb), alpha];
@@ -331,14 +332,18 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
 
                         while (loopOffset < clipDuration) {
                             for (const note of clip.midiNotes) {
-                                if (drawnNotes >= MAX_NOTES_PER_CLIP) {break;}
+                                if (drawnNotes >= MAX_NOTES_PER_CLIP) {
+                                    break;
+                                }
 
                                 // note.startBeat is absolute (timeline position).
                                 // Convert to clip-relative, then add loop offset.
-                                const noteRelative = (note.startBeat - midiOffset) - clip.startBeat;
+                                const noteRelative = note.startBeat - midiOffset - clip.startBeat;
                                 const relBeat = noteRelative + loopOffset;
                                 const noteEndRelative = relBeat + Math.max(note.duration, 0.125);
-                                if (noteEndRelative <= 0 || relBeat >= clipDuration) {continue;}
+                                if (noteEndRelative <= 0 || relBeat >= clipDuration) {
+                                    continue;
+                                }
 
                                 const nx1 = beatToX(clip.startBeat + relBeat);
                                 const nx2 = beatToX(clip.startBeat + noteEndRelative);
@@ -349,20 +354,17 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                                 const finalX1 = Math.max(nx1, cx1 + 2);
                                 const finalX2 = Math.min(nx2, cx2 - 2);
                                 if (finalX1 < finalX2) {
-                                    addRect(
-                                        finalX1,
-                                        noteY - dpr,
-                                        finalX2,
-                                        noteY + 2 * dpr,
-                                        '#ffffff',
-                                        alpha * 0.35
-                                    );
+                                    addRect(finalX1, noteY - dpr, finalX2, noteY + 2 * dpr, '#ffffff', alpha * 0.35);
                                 }
                                 drawnNotes++;
                             }
-                            if (drawnNotes >= MAX_NOTES_PER_CLIP) {break;}
+                            if (drawnNotes >= MAX_NOTES_PER_CLIP) {
+                                break;
+                            }
                             loopOffset += loopLen;
-                            if (!clip.loopEnabled || loopLen <= 0) {break;}
+                            if (!clip.loopEnabled || loopLen <= 0) {
+                                break;
+                            }
                         }
                     }
 
@@ -372,7 +374,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                         if (w >= 4) {
                             // At least 1 rect per pixel, up to max ~2000 bins to balance perf
                             const numBins = Math.min(Math.floor(w * dpr), 2000);
-                            
+
                             const buffer = audioBufferCache.get(clip.audioBufferId);
                             if (buffer) {
                                 const offsetBeats = clip.audioOffsetBeats ?? 0;
@@ -392,7 +394,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                                 const midY = clipTop + (clipBottom - clipTop) / 2;
                                 const padding = 2 * dpr;
                                 const amplitude = (clipBottom - clipTop - padding * 2) * 0.35;
-                                
+
                                 // White with transparency — matches MIDI note style
                                 const wfColor = '#ffffff';
 
@@ -405,7 +407,14 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                                         if (peakHeight > 0.5) {
                                             const bx1 = cx1 + i * drawBinWidth;
                                             const bx2 = bx1 + drawBinWidth;
-                                            addRect(bx1, midY - peakHeight, bx2, midY + peakHeight, wfColor, alpha * 0.18);
+                                            addRect(
+                                                bx1,
+                                                midY - peakHeight,
+                                                bx2,
+                                                midY + peakHeight,
+                                                wfColor,
+                                                alpha * 0.18
+                                            );
                                         }
                                     }
                                 }

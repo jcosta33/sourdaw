@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { setMixAnalysisStoreValue } from '../setMixAnalysisStoreValue';
+
 import { mixAnalysisStore } from '../../../stores/mixAnalysisStore';
+import { setMixAnalysisStoreValue } from '../setMixAnalysisStoreValue';
 
 describe('setMixAnalysisStoreValue', () => {
     beforeEach(() => {
@@ -15,7 +16,7 @@ describe('setMixAnalysisStoreValue', () => {
             isAnalyzing: true,
             panelOpen: true,
         });
-        
+
         expect(mixAnalysisStore.value?.isAnalyzing).toBe(true);
         expect(mixAnalysisStore.value?.panelOpen).toBe(true);
     });

@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { GranularSection } from '../GranularSection';
+import { describe, it, expect, vi } from 'vitest';
+
 import { DEFAULT_PATCH } from '../../../models/FermenterPatch';
+import { GranularSection } from '../GranularSection';
 
 describe('GranularSection', () => {
     it('should render', () => {

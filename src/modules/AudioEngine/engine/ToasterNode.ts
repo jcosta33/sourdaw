@@ -6,6 +6,7 @@
  */
 
 import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
+
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';

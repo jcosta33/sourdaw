@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import { createTakeLane } from '../../../models/TakeLane';
-import { setCompRegion } from '../setCompRegion';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
+import { setCompRegion } from '../setCompRegion';
 
 vi.mock('../../../stores/takeLaneStore', () => ({
     takeLaneStore: {
@@ -26,7 +27,7 @@ describe('setCompRegion', () => {
         takeLaneStore.value = { lanes: [lane] } as never;
         setCompRegion('t1', { startBeat: 0, endBeat: 4, takeId: 'take-a' });
         expect(takeLaneStore.set).toHaveBeenCalledTimes(1);
-        const next = vi.mocked(takeLaneStore.set).mock.calls[0]![0] as { lanes: typeof lane[] };
+        const next = vi.mocked(takeLaneStore.set).mock.calls[0]![0] as { lanes: (typeof lane)[] };
         expect(next.lanes[0]!.activeCompRegions).toHaveLength(1);
         expect(next.lanes[0]!.activeCompRegions[0]).toEqual({ startBeat: 0, endBeat: 4, takeId: 'take-a' });
     });

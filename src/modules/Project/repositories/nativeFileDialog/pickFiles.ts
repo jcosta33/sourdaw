@@ -1,6 +1,8 @@
 import { isTauri } from '#/utils/tauriBridge';
-import type { OpenFileOptions } from './helpers';
+
 import { openViaTauri } from './helpers';
+
+import type { OpenFileOptions } from './helpers';
 
 function pickFilesViaBrowser(options: OpenFileOptions): Promise<File[] | null> {
     return new Promise((resolve) => {

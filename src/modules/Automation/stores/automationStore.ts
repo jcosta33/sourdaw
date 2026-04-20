@@ -1,5 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+
 import { type AutomationLane } from '../models/Automation';
 
 export type { AutomationLane };

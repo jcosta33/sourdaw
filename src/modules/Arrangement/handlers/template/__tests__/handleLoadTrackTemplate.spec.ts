@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleLoadTrackTemplate } from '../handleLoadTrackTemplate';
 
 const mocks = vi.hoisted(() => ({

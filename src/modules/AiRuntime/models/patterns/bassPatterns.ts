@@ -1,5 +1,5 @@
-import { type PatternTemplate, type PatternNote, KEY_SEMITONES } from '../MidiPatternType';
 import { getScalePitches } from '../../services/scaleTheory';
+import { type PatternTemplate, type PatternNote, KEY_SEMITONES } from '../MidiPatternType';
 
 /** Bass pattern templates — walking bass, slap, sub, 808, latin, metal, and more. */
 export const bassPatterns: PatternTemplate[] = [

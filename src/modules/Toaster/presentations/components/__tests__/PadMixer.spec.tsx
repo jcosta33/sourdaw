@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { PadMixer } from '../PadMixer';
+import { describe, it, expect, vi } from 'vitest';
+
 import { type PadState } from '../../../models/ToasterKit';
+import { PadMixer } from '../PadMixer';
 
 function makePad(index: number): PadState {
     return {

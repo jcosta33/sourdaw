@@ -9,25 +9,34 @@
  * - PianoRollToolbar.tsx        (toolbar controls — pure component)
  * - PianoRollContextMenu.tsx    (right-click menu — view component)
  */
-import { type ReactElement, type Dispatch, type SetStateAction, useRef, useLayoutEffect, useState, useEffect } from 'react';
+import {
+    type ReactElement,
+    type Dispatch,
+    type SetStateAction,
+    useRef,
+    useLayoutEffect,
+    useState,
+    useEffect,
+} from 'react';
 
-import { cn } from '#/utils/Styles/cn';
-import { projectStore } from '#/modules/Project/stores';
-import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
-import { type MidiNote } from '../../../models/MidiNoteViewTypes';
-import { trackStore } from '#/modules/Arrangement/stores';
-import { useStore } from '#/infra/store/useStore';
-import { midiStore, stepRecordStore } from '#/modules/MIDI/stores';
-
-import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
-import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
-import { PianoRollToolbar } from './PianoRollToolbar';
-import { PianoRollContextMenu } from './PianoRollContextMenu';
-import { GRID_BEATS, ROW_HEIGHT, RULER_HEIGHT, getVisiblePitches } from '../../helpers/pianoRollConstants';
 import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawSideRail } from '#/components/daw/DawSideRail';
-import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
+import { useStore } from '#/infra/store/useStore';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { midiStore, stepRecordStore } from '#/modules/MIDI/stores';
 import { setNoteVelocity, setNotePressure, setNoteSlide, setNotePitchBend } from '#/modules/MIDI/useCases';
+import { projectStore } from '#/modules/Project/stores';
+import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
+import { cn } from '#/utils/Styles/cn';
+
+import { type MidiNote } from '../../../models/MidiNoteViewTypes';
+import { GRID_BEATS, ROW_HEIGHT, RULER_HEIGHT, getVisiblePitches } from '../../helpers/pianoRollConstants';
+import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
+import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
+import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
+
+import { PianoRollContextMenu } from './PianoRollContextMenu';
+import { PianoRollToolbar } from './PianoRollToolbar';
 
 type PianoRollProps = {
     clipId: string;
@@ -88,25 +97,28 @@ export const PianoRoll = ({
     const [constrainToScale, setConstrainToScale] = useState(false);
     const [notePreviewEnabled, setNotePreviewEnabled] = useState(true);
     const [showExpressionView, setShowExpressionView] = useState(false);
-    const [activeExpressionLane, setActiveExpressionLane] = useState<'velocity' | 'pressure' | 'slide' | 'pitchBend'>('velocity');
+    const [activeExpressionLane, setActiveExpressionLane] = useState<'velocity' | 'pressure' | 'slide' | 'pitchBend'>(
+        'velocity'
+    );
 
     const beatWidth = Math.max(1, 40 * zoom);
     /** A9: focused clip receives newly drawn notes; defaults to primary clipId */
     const [focusedClipId, setFocusedClipId] = useState<string>(clipId);
-    useEffect(() => { setFocusedClipId(clipId); }, [clipId]);
+    useEffect(() => {
+        setFocusedClipId(clipId);
+    }, [clipId]);
 
     // ── Store subscriptions ──────────────────────────────────────────
     const midiState = useStore(midiStore, { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     const trackState = useStore(trackStore, { tracks: [], selectedTrackId: null });
     const notes = midiState?.notesByClipId[clipId] ?? [];
     // A9: build notes map for all simultaneously-open clips (excludes primary clipId)
-    const openedClipNotes: Record<string, MidiNote[]> | undefined = openedClipIds && openedClipIds.length > 0
-        ? Object.fromEntries(
-            openedClipIds
-                .filter((id) => id !== clipId)
-                .map((id) => [id, midiState?.notesByClipId[id] ?? []])
-          )
-        : undefined;
+    const openedClipNotes: Record<string, MidiNote[]> | undefined =
+        openedClipIds && openedClipIds.length > 0
+            ? Object.fromEntries(
+                  openedClipIds.filter((id) => id !== clipId).map((id) => [id, midiState?.notesByClipId[id] ?? []])
+              )
+            : undefined;
 
     // ── Report layout to parent ──────────────────────────────────────
     useLayoutEffect(() => {
@@ -193,11 +205,13 @@ export const PianoRoll = ({
         stepBeat: stepRecord?.currentBeat ?? 0,
         setStepBeat: (beat) => {
             const state = stepRecordStore.value;
-            if (!state) return;
+            if (!state) {
+                return;
+            }
             if (typeof beat === 'function') {
-                stepRecordStore.set({ 
-                    ...state, 
-                    currentBeat: beat(state.currentBeat) 
+                stepRecordStore.set({
+                    ...state,
+                    currentBeat: beat(state.currentBeat),
                 });
             } else {
                 stepRecordStore.set({ ...state, currentBeat: beat });
@@ -238,12 +252,14 @@ export const PianoRoll = ({
                 stepInput={stepRecord?.active ?? false}
                 onToggleStepInput={() => {
                     const state = stepRecordStore.value;
-                    if (!state) return;
-                    stepRecordStore.set({ 
-                        ...state, 
+                    if (!state) {
+                        return;
+                    }
+                    stepRecordStore.set({
+                        ...state,
                         active: !state.active,
                         clipId: !state.active ? clipId : null,
-                        currentBeat: 0 
+                        currentBeat: 0,
                     });
                 }}
                 showGhostNotes={showGhostNotes}
@@ -284,13 +300,15 @@ export const PianoRoll = ({
                         {visiblePitches.map((pitch, row) => {
                             const noteIndex = pitch % 12;
                             const isBlack = [1, 3, 6, 8, 10].includes(noteIndex);
-                            const isInScale = SCALE_PATTERNS[scaleName]?.includes(((noteIndex - keyRoot) + 12) % 12);
+                            const isInScale = SCALE_PATTERNS[scaleName]?.includes((noteIndex - keyRoot + 12) % 12);
                             return (
                                 <div
                                     key={row}
                                     className={cn(
                                         'flex items-center justify-end pr-1 text-[10px]',
-                                        isBlack ? 'bg-surface-base text-muted-foreground/40' : 'text-muted-foreground/60',
+                                        isBlack
+                                            ? 'bg-surface-base text-muted-foreground/40'
+                                            : 'text-muted-foreground/60',
                                         isInScale && 'text-accent-primary/80 font-bold'
                                     )}
                                     style={{ height: ROW_HEIGHT }}
@@ -336,17 +354,33 @@ export const PianoRoll = ({
                                 beatWidth={beatWidth}
                                 contentWidth={GRID_BEATS * beatWidth}
                                 getValue={(n) => {
-                                    if (activeExpressionLane === 'velocity') return n.velocity ?? 100;
-                                    if (activeExpressionLane === 'pressure') return n.pressure ?? 0;
-                                    if (activeExpressionLane === 'slide') return n.slide ?? 0;
-                                    if (activeExpressionLane === 'pitchBend') return ((n.pitchBend ?? 0) + 8192) / 16383 * 127; // Scale to 0-127
+                                    if (activeExpressionLane === 'velocity') {
+                                        return n.velocity ?? 100;
+                                    }
+                                    if (activeExpressionLane === 'pressure') {
+                                        return n.pressure ?? 0;
+                                    }
+                                    if (activeExpressionLane === 'slide') {
+                                        return n.slide ?? 0;
+                                    }
+                                    if (activeExpressionLane === 'pitchBend') {
+                                        return (((n.pitchBend ?? 0) + 8192) / 16383) * 127;
+                                    } // Scale to 0-127
                                     return 0;
                                 }}
                                 setValue={(cid, nid, val) => {
-                                    if (activeExpressionLane === 'velocity') setNoteVelocity(cid, nid, val);
-                                    if (activeExpressionLane === 'pressure') setNotePressure(cid, nid, val);
-                                    if (activeExpressionLane === 'slide') setNoteSlide(cid, nid, val);
-                                    if (activeExpressionLane === 'pitchBend') setNotePitchBend(cid, nid, Math.round(val / 127 * 16383) - 8192);
+                                    if (activeExpressionLane === 'velocity') {
+                                        setNoteVelocity(cid, nid, val);
+                                    }
+                                    if (activeExpressionLane === 'pressure') {
+                                        setNotePressure(cid, nid, val);
+                                    }
+                                    if (activeExpressionLane === 'slide') {
+                                        setNoteSlide(cid, nid, val);
+                                    }
+                                    if (activeExpressionLane === 'pitchBend') {
+                                        setNotePitchBend(cid, nid, Math.round((val / 127) * 16383) - 8192);
+                                    }
                                 }}
                                 label={activeExpressionLane}
                                 undoLabel={`Change ${activeExpressionLane}`}

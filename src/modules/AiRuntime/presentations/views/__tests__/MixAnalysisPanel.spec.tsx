@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { MixAnalysisPanel } from '../MixAnalysisPanel';
 
 // Mock external dependencies
@@ -25,7 +26,9 @@ vi.mock('../../components/mixAnalysis/MixAnalysisSections', () => ({
     FrequencyBalance: ({ bands }: any) => <div data-testid="freq-balance">Bands: {bands?.length || 0}</div>,
     TrackLevelsList: ({ trackLevels }: any) => <div data-testid="track-levels">Tracks: {trackLevels?.length || 0}</div>,
     IssuesList: ({ issues }: any) => <div data-testid="issues-list">Issues: {issues?.length || 0}</div>,
-    SuggestionsList: ({ suggestions }: any) => <div data-testid="suggestions-list">Suggestions: {suggestions?.length || 0}</div>,
+    SuggestionsList: ({ suggestions }: any) => (
+        <div data-testid="suggestions-list">Suggestions: {suggestions?.length || 0}</div>
+    ),
 }));
 
 const { useStore } = await import('#/infra/store/useStore');

@@ -6,10 +6,12 @@
  * Matches the visual density of Fermenter's Filter section.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
-import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
+import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import { type ExpressionConfig, type LegatoConfig } from '../../models/LevainPatch';
 
 type ExpressionPanelProps = {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleRemoveTrack } from '../handleRemoveTrack';
 
 const mocks = vi.hoisted(() => ({
@@ -18,15 +19,27 @@ vi.mock('../../../useCases/removeTrack', () => ({
 }));
 
 vi.mock('#/modules/Automation/stores', () => ({
-    automationStore: { get value() { return mocks.automationStoreValue.value; } },
+    automationStore: {
+        get value() {
+            return mocks.automationStoreValue.value;
+        },
+    },
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
-    midiStore: { get value() { return mocks.midiStoreValue.value; } },
+    midiStore: {
+        get value() {
+            return mocks.midiStoreValue.value;
+        },
+    },
 }));
 
 vi.mock('../../../stores/takeLaneStore', () => ({
-    takeLaneStore: { get value() { return mocks.takeLaneStoreValue.value; } },
+    takeLaneStore: {
+        get value() {
+            return mocks.takeLaneStoreValue.value;
+        },
+    },
 }));
 
 describe('handleRemoveTrack', () => {
@@ -50,23 +63,26 @@ describe('handleRemoveTrack', () => {
     describe('describe', () => {
         it('returns simple label if track is not found', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
-            
+
             const desc = handleRemoveTrack.describe({
                 type: 'removeTrack',
                 payload: { trackId: 't1' },
             });
-            
+
             expect(desc.label).toBe('Remove track');
             expect((desc as any).inverseAction).toBeUndefined();
         });
 
         it('returns inverse action with full snapshot state', () => {
             mocks.getTrackStoreState.mockReturnValue({
-                tracks: [{ id: 't1', name: 'Vocals', clips: [{ id: 'c1' }] }]
+                tracks: [{ id: 't1', name: 'Vocals', clips: [{ id: 'c1' }] }],
             });
 
             mocks.automationStoreValue.value = {
-                lanes: [{ trackId: 't1', id: 'l1' }, { trackId: 't2', id: 'l2' }]
+                lanes: [
+                    { trackId: 't1', id: 'l1' },
+                    { trackId: 't2', id: 'l2' },
+                ],
             };
 
             mocks.midiStoreValue.value = {
@@ -77,7 +93,10 @@ describe('handleRemoveTrack', () => {
             };
 
             mocks.takeLaneStoreValue.value = {
-                lanes: [{ trackId: 't1', id: 'take1' }, { trackId: 't2', id: 'take2' }]
+                lanes: [
+                    { trackId: 't1', id: 'take1' },
+                    { trackId: 't2', id: 'take2' },
+                ],
             };
 
             const desc = handleRemoveTrack.describe({
@@ -88,13 +107,13 @@ describe('handleRemoveTrack', () => {
             expect(desc.label).toBe('Remove track');
             expect(desc.inverseAction).toBeDefined();
             expect(desc.inverseAction?.type).toBe('restoreTrack');
-            
+
             const payload = desc.inverseAction?.payload;
             expect(payload?.trackId).toBe('t1');
             expect(payload?.trackSnapshot).toEqual({ id: 't1', name: 'Vocals', clips: [{ id: 'c1' }] });
             expect(payload?.automationLaneSnapshots).toEqual([{ trackId: 't1', id: 'l1' }]);
             expect(payload?.takeLaneSnapshots).toEqual([{ trackId: 't1', id: 'take1' }]);
-            
+
             expect(payload?.midiNotesByClipId).toEqual({ c1: [{ pitch: 60 }] });
             expect(payload?.midiCcByClipId).toEqual({ c1: [{ value: 10 }] });
             expect(payload?.midiPitchBendByClipId).toEqual({ c1: [{ value: 0 }] });

@@ -41,7 +41,7 @@ export function getGrinderTelemetry(deviceId: string): GrinderTelemetry {
 export function updateGrinderTelemetry(deviceId: string, meters: Partial<GrinderTelemetry>): void {
     const instances = grinderTelemetryStore.value ?? {};
     const current = instances[deviceId] ?? { ...DEFAULT_GRINDER_TELEMETRY };
-    
+
     grinderTelemetryStore.set({
         ...instances,
         [deviceId]: {

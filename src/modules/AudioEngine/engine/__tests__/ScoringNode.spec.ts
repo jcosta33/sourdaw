@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { isScoringDevice } from '../ScoringNode';
 
 describe('isScoringDevice', () => {

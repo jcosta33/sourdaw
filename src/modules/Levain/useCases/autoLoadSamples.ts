@@ -1,8 +1,10 @@
-import { logger } from '#/infra/logger/appLogger';
-import { loadInstrumentFromManifest } from '../repositories/sampleLoader/loadInstrumentFromManifest';
-import { WEB_LOD } from '../repositories/sampleLoader/helpers';
-import { setSampleLoadProgress } from '../stores/levainStore';
 import { resolveResource } from '@tauri-apps/api/path';
+
+import { logger } from '#/infra/logger/appLogger';
+
+import { WEB_LOD } from '../repositories/sampleLoader/helpers';
+import { loadInstrumentFromManifest } from '../repositories/sampleLoader/loadInstrumentFromManifest';
+import { setSampleLoadProgress } from '../stores/levainStore';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -29,8 +31,8 @@ export async function autoLoadLevainSamples(nodePort: MessagePort, instrumentId:
                 convertFileSrc: (p: string) => string;
             };
             manifestBase = convertFileSrc(localPath);
-        } catch (e) {
-            logger.warn('[Levain] Failed to resolve Tauri resource path:', e);
+        } catch (error) {
+            logger.warn('[Levain] Failed to resolve Tauri resource path:', error);
         }
     }
 
@@ -42,8 +44,8 @@ export async function autoLoadLevainSamples(nodePort: MessagePort, instrumentId:
         await loadInstrumentFromManifest(manifestUrl, manifestBase, nodePort, WEB_LOD, (progress) => {
             setSampleLoadProgress(progress);
         });
-    } catch (err) {
-        logger.warn(`[Levain] Failed to load samples for ${instrumentId}:`, err);
+    } catch (error) {
+        logger.warn(`[Levain] Failed to load samples for ${instrumentId}:`, error);
         // Fallback sine tone will continue to work
     } finally {
         setSampleLoadProgress(1.0);

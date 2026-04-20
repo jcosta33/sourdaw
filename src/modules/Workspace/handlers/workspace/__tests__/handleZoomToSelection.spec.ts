@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleZoomToSelection } from '../handleZoomToSelection';
 
 const mocks = vi.hoisted(() => ({
@@ -15,7 +16,7 @@ describe('handleZoomToSelection', () => {
     it('delegates to zoomToSelection use case', () => {
         handleZoomToSelection.execute({
             type: 'zoomToSelection',
-            payload: {}
+            payload: {},
         });
         expect(mocks.zoomToSelection).toHaveBeenCalledTimes(1);
     });

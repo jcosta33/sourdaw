@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { setWorkspaceMode } from '../setWorkspaceMode';
-import { getWorkspaceState, updateWorkspaceState } from '../../repositories/workspace';
+
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
+import { getWorkspaceState, updateWorkspaceState } from '../../repositories/workspace';
+import { setWorkspaceMode } from '../setWorkspaceMode';
 
 vi.mock('../../repositories/workspace', () => ({
     getWorkspaceState: vi.fn(),

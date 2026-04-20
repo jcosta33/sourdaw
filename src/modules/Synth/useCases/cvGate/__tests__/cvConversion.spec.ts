@@ -4,10 +4,10 @@ vi.mock('../../../stores/cvGate', () => ({
     cvGateStore: { value: { voltageStandard: '1v-per-octave' as const } },
 }));
 
+import { cvGateStore } from '../../../stores/cvGate';
+import { getClockValue } from '../cvConversion/getClockValue';
 import { midiNoteToCv } from '../cvConversion/midiNoteToCv';
 import { velocityToCv } from '../cvConversion/velocityToCv';
-import { getClockValue } from '../cvConversion/getClockValue';
-import { cvGateStore } from '../../../stores/cvGate';
 
 describe('cvConversion', () => {
     it('midiNoteToCv uses 1V/oct when voltage standard is 1v-per-octave (C0=0V)', () => {

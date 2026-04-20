@@ -13,32 +13,106 @@
  * Spec §12. All exports are API-stable.
  */
 
-import { phonemize } from './phonemizer';
 import { DEFAULT_EN_PHONEME_MAP } from '../models/phonemeMap';
+
+import { phonemize } from './phonemizer';
 
 /** Kokoro IPA token vocabulary (character → ID). */
 export const KOKORO_VOCAB: Record<string, number> = {
-    $: 0,  // pad / boundary
-    ';': 1, ':': 2, ',': 3, '.': 4, '!': 5, '?': 6,
+    $: 0, // pad / boundary
+    ';': 1,
+    ':': 2,
+    ',': 3,
+    '.': 4,
+    '!': 5,
+    '?': 6,
     ' ': 16, // word boundary / space
-    a: 43, b: 44, c: 45, d: 46, e: 47, f: 48, h: 50,
-    i: 51, j: 52, k: 53, l: 54, m: 55, n: 56, o: 57,
-    p: 58, q: 59, r: 60, s: 61, t: 62, u: 63, v: 64,
-    w: 65, x: 66, y: 67, z: 68,
+    a: 43,
+    b: 44,
+    c: 45,
+    d: 46,
+    e: 47,
+    f: 48,
+    h: 50,
+    i: 51,
+    j: 52,
+    k: 53,
+    l: 54,
+    m: 55,
+    n: 56,
+    o: 57,
+    p: 58,
+    q: 59,
+    r: 60,
+    s: 61,
+    t: 62,
+    u: 63,
+    v: 64,
+    w: 65,
+    x: 66,
+    y: 67,
+    z: 68,
     // IPA vowels
-    ɑ: 69, ɐ: 70, ɒ: 71, æ: 72, ɔ: 76, ə: 83, ɚ: 85,
-    ɛ: 86, ɜ: 87, ɪ: 102, ɨ: 101, ɯ: 110, ø: 116,
-    ʊ: 135, ʌ: 138, œ: 120,
+    ɑ: 69,
+    ɐ: 70,
+    ɒ: 71,
+    æ: 72,
+    ɔ: 76,
+    ə: 83,
+    ɚ: 85,
+    ɛ: 86,
+    ɜ: 87,
+    ɪ: 102,
+    ɨ: 101,
+    ɯ: 110,
+    ø: 116,
+    ʊ: 135,
+    ʌ: 138,
+    œ: 120,
     // IPA consonants
-    β: 75, ɕ: 77, ç: 78, ɖ: 80, ð: 81, ʤ: 82, ɟ: 90,
-    ɡ: 92, ɥ: 99, ʝ: 103, ŋ: 112, ɳ: 113, ɲ: 114, ɴ: 115,
-    ɸ: 118, θ: 119, ɹ: 123, ɾ: 125, ɻ: 126, ʁ: 128, ɽ: 129,
-    ʂ: 130, ʃ: 131, ʈ: 132, ʧ: 133, ʋ: 136, ɣ: 139, ɤ: 140,
-    χ: 142, ʎ: 143, ʒ: 147, ʔ: 148,
+    β: 75,
+    ɕ: 77,
+    ç: 78,
+    ɖ: 80,
+    ð: 81,
+    ʤ: 82,
+    ɟ: 90,
+    ɡ: 92,
+    ɥ: 99,
+    ʝ: 103,
+    ŋ: 112,
+    ɳ: 113,
+    ɲ: 114,
+    ɴ: 115,
+    ɸ: 118,
+    θ: 119,
+    ɹ: 123,
+    ɾ: 125,
+    ɻ: 126,
+    ʁ: 128,
+    ɽ: 129,
+    ʂ: 130,
+    ʃ: 131,
+    ʈ: 132,
+    ʧ: 133,
+    ʋ: 136,
+    ɣ: 139,
+    ɤ: 140,
+    χ: 142,
+    ʎ: 143,
+    ʒ: 147,
+    ʔ: 148,
     // Suprasegmentals
-    ˈ: 156, ˌ: 157, ː: 158, ʰ: 162, ʲ: 164,
+    ˈ: 156,
+    ˌ: 157,
+    ː: 158,
+    ʰ: 162,
+    ʲ: 164,
     // Affricates
-    ʣ: 18, ʥ: 19, ʦ: 20, ʨ: 21,
+    ʣ: 18,
+    ʥ: 19,
+    ʦ: 20,
+    ʨ: 21,
 };
 
 /**
@@ -48,47 +122,47 @@ export const KOKORO_VOCAB: Record<string, number> = {
  * SP (DiffSinger silence) maps to a single space token (16).
  */
 const ARPABET_TO_KOKORO_IDS: Record<string, number[]> = {
-    SP:  [16],       // silence / word boundary → space
-    AP:  [16],       // breath pause → space
-    AA:  [69],       // ɑ  (father)
-    AE:  [72],       // æ  (cat)
-    AH:  [138],      // ʌ  (but) — use ʌ for both stressed & unstressed for simplicity
-    AO:  [76],       // ɔ  (thought)
-    AW:  [43, 135],  // aʊ (bout)
-    AY:  [43, 102],  // aɪ (bite)
-    B:   [44],       // b
-    CH:  [133],      // ʧ  (cheese)
-    D:   [46],       // d
-    DH:  [81],       // ð  (the)
-    EH:  [86],       // ɛ  (bed)
-    ER:  [85],       // ɚ  (bird — rhotic schwa)
-    EY:  [47, 102],  // eɪ (fate)
-    F:   [48],       // f
-    G:   [92],       // ɡ
-    HH:  [50],       // h
-    IH:  [102],      // ɪ  (bit)
-    IY:  [51],       // i  (beet)
-    JH:  [82],       // ʤ  (jog)
-    K:   [53],       // k
-    L:   [54],       // l
-    M:   [55],       // m
-    N:   [56],       // n
-    NG:  [112],      // ŋ  (sing)
-    OW:  [57, 135],  // oʊ (go)
-    OY:  [76, 102],  // ɔɪ (boy)
-    P:   [58],       // p
-    R:   [123],      // ɹ  (red)
-    S:   [61],       // s
-    SH:  [131],      // ʃ  (shoe)
-    T:   [62],       // t
-    TH:  [119],      // θ  (thin)
-    UH:  [135],      // ʊ  (book)
-    UW:  [63],       // u  (boot)
-    V:   [64],       // v
-    W:   [65],       // w
-    Y:   [52],       // j  (yes)
-    Z:   [68],       // z
-    ZH:  [147],      // ʒ  (measure)
+    SP: [16], // silence / word boundary → space
+    AP: [16], // breath pause → space
+    AA: [69], // ɑ  (father)
+    AE: [72], // æ  (cat)
+    AH: [138], // ʌ  (but) — use ʌ for both stressed & unstressed for simplicity
+    AO: [76], // ɔ  (thought)
+    AW: [43, 135], // aʊ (bout)
+    AY: [43, 102], // aɪ (bite)
+    B: [44], // b
+    CH: [133], // ʧ  (cheese)
+    D: [46], // d
+    DH: [81], // ð  (the)
+    EH: [86], // ɛ  (bed)
+    ER: [85], // ɚ  (bird — rhotic schwa)
+    EY: [47, 102], // eɪ (fate)
+    F: [48], // f
+    G: [92], // ɡ
+    HH: [50], // h
+    IH: [102], // ɪ  (bit)
+    IY: [51], // i  (beet)
+    JH: [82], // ʤ  (jog)
+    K: [53], // k
+    L: [54], // l
+    M: [55], // m
+    N: [56], // n
+    NG: [112], // ŋ  (sing)
+    OW: [57, 135], // oʊ (go)
+    OY: [76, 102], // ɔɪ (boy)
+    P: [58], // p
+    R: [123], // ɹ  (red)
+    S: [61], // s
+    SH: [131], // ʃ  (shoe)
+    T: [62], // t
+    TH: [119], // θ  (thin)
+    UH: [135], // ʊ  (book)
+    UW: [63], // u  (boot)
+    V: [64], // v
+    W: [65], // w
+    Y: [52], // j  (yes)
+    Z: [68], // z
+    ZH: [147], // ʒ  (measure)
 };
 
 type KokoroInputIds = {
@@ -114,9 +188,7 @@ export function textToKokoroInputIds(text: string): KokoroInputIds {
 
     for (let i = 0; i < phonemes.length; i++) {
         const ph = phonemes[i]!;
-        const isLeadingOrTrailing =
-            (i === 0 && ph === 'SP') ||
-            (i === phonemes.length - 1 && ph === 'SP');
+        const isLeadingOrTrailing = (i === 0 && ph === 'SP') || (i === phonemes.length - 1 && ph === 'SP');
 
         if (isLeadingOrTrailing) {
             // Skip boundary silences — Kokoro doesn't need explicit outer padding silences

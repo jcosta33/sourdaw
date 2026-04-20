@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { getAudioDevices } from '../getAudioDevices';
 
 const mocks = vi.hoisted(() => ({

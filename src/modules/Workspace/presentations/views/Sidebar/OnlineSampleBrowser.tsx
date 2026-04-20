@@ -3,8 +3,11 @@
  * All CC0 or CC-BY licensed and safe for commercial use.
  */
 import { type ReactElement } from 'react';
-import { DawPickerRow } from '#/components/daw/DawPickerRow';
+
 import { ExternalLink, Package, Music, Drum, Guitar, Piano, Mic2, Waves } from 'lucide-react';
+
+import { DawPickerRow } from '#/components/daw/DawPickerRow';
+
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 
 type SampleSource = {

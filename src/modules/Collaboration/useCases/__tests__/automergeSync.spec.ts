@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AutomergeSync } from '../automergeSync';
+
 import { subscribeToCrdtChanges } from '#/modules/CrdtDocument/useCases';
+
+import { AutomergeSync } from '../automergeSync';
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     subscribeToCrdtChanges: vi.fn(),

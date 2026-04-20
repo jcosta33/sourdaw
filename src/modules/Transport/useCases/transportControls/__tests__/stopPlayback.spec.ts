@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { stopPlayback } from '../stopPlayback';
-import { getTransportState } from '../../../repositories/transport/getTransportState';
-import { updateTransportState } from '../../../repositories/transport/updateTransportState';
-import { defaultTransportState } from '../../../models/TransportState';
-import { stopPlayheadScheduler } from '../../playheadScheduler';
+
 import { stopAllScheduled } from '#/modules/AudioEngine/useCases/scheduling/stopAllScheduled';
 import { resetMidiState } from '#/modules/AudioEngine/useCases/webMidiInput/resetMidiState';
+
+import { defaultTransportState } from '../../../models/TransportState';
+import { getTransportState } from '../../../repositories/transport/getTransportState';
+import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
+import { stopPlayheadScheduler } from '../../playheadScheduler';
+import { stopPlayback } from '../stopPlayback';
 import { toggleRecording } from '../toggleRecording';
 
 vi.mock('../../playheadScheduler', () => ({

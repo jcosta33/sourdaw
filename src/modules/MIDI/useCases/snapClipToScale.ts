@@ -1,11 +1,14 @@
-import { getNotesForClip } from './midiNoteCrud/getNotesForClip';
-import { setNotesForClip } from './midiNoteCrud/setNotesForClip';
 import { projectStore } from '#/modules/Project/stores';
 import { quantizeMidiNoteToScale } from '#/utils/Music/MusicalScale';
 
+import { getNotesForClip } from './midiNoteCrud/getNotesForClip';
+import { setNotesForClip } from './midiNoteCrud/setNotesForClip';
+
 export function snapClipToScale(clipId: string): void {
     const project = projectStore.value;
-    if (!project) return;
+    if (!project) {
+        return;
+    }
 
     const notes = getNotesForClip(clipId);
     const updatedNotes = notes.map((note) => ({

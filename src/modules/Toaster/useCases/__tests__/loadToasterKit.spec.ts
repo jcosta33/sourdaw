@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type ToasterKit, type PadState } from '../../models/ToasterKit';
 import { getToasterControls, loadToasterKitPreset, TOASTER_ENGINE_MAP } from '../loadToasterKit';
 
@@ -16,6 +17,7 @@ vi.mock('../../stores/toasterStore', () => ({
 
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
+
 import { loadKit } from '../../stores/toasterStore';
 
 function minimalPad(overrides: Partial<PadState> = {}): PadState {

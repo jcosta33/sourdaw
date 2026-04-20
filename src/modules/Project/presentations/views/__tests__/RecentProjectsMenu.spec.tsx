@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { RecentProjectsMenu } from '../RecentProjectsMenu';
 
 vi.mock('../../../useCases/recentProjects/loadRecentProject', () => ({
@@ -25,12 +26,9 @@ vi.mock('../../../useCases/projectPersistence/saveProject/saveProject', () => ({
     saveProject: vi.fn(),
 }));
 
-vi.mock(
-    '../../../useCases/projectPersistence/fileIO/pickAndImportProjectFile',
-    () => ({
-        pickAndImportProjectFile: vi.fn(),
-    }),
-);
+vi.mock('../../../useCases/projectPersistence/fileIO/pickAndImportProjectFile', () => ({
+    pickAndImportProjectFile: vi.fn(),
+}));
 
 vi.mock('../../../useCases/projectPersistence/fileIO/exportProjectFile', () => ({
     exportProjectFile: vi.fn(),
@@ -42,14 +40,14 @@ vi.mock('#/modules/Workspace/useCases/dialogs/openExportDialog', () => ({
 
 // Mock UI components
 vi.mock('#/components/daw/DawKeycap', () => ({
-    DawKeycap: ({ children }: { children: React.ReactNode }) => (
-        <kbd data-testid="keycap">{children}</kbd>
-    ),
+    DawKeycap: ({ children }: { children: React.ReactNode }) => <kbd data-testid="keycap">{children}</kbd>,
 }));
 
 vi.mock('#/components/ui/button', () => ({
     Button: ({ children, onClick, 'aria-label': ariaLabel }: any) => (
-        <button onClick={onClick} aria-label={ariaLabel}>{children}</button>
+        <button onClick={onClick} aria-label={ariaLabel}>
+            {children}
+        </button>
     ),
 }));
 
@@ -60,9 +58,8 @@ vi.mock('#/components/ui/tooltip', () => ({
 }));
 
 vi.mock('../TemplateChooser', () => ({
-    TemplateChooser: ({ open }: { open: boolean }) => (
-        open ? <div data-testid="template-chooser">Template Chooser</div> : null
-    ),
+    TemplateChooser: ({ open }: { open: boolean }) =>
+        open ? <div data-testid="template-chooser">Template Chooser</div> : null,
 }));
 
 describe('RecentProjectsMenu', () => {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { buildFolderTree } from '../buildFolderTree';
 
 const mocks = vi.hoisted(() => ({
@@ -8,7 +9,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../stores/libraryStore', () => ({
     libraryStore: {
-        get value() { return mocks.libraryStoreValue.value; }
+        get value() {
+            return mocks.libraryStoreValue.value;
+        },
     },
     setFolderTree: mocks.setFolderTree,
 }));
@@ -32,16 +35,16 @@ describe('buildFolderTree', () => {
 
         expect(mocks.setFolderTree).toHaveBeenCalledTimes(1);
         const [rootId, tree] = mocks.setFolderTree.mock.calls[0];
-        
+
         expect(rootId).toBe('r1');
         expect(tree.name).toBe('My Samples');
         expect(tree.fileCount).toBe(3);
-        
+
         // Children: Drums, Vocals
         expect(tree.children).toHaveLength(2);
         expect(tree.children[0].name).toBe('Drums');
         expect(tree.children[1].name).toBe('Vocals');
-        
+
         // Sub-children of Drums: Kicks, Snares
         expect(tree.children[0].children).toHaveLength(2);
         expect(tree.children[0].children[0].name).toBe('Kicks');

@@ -1,4 +1,5 @@
 import { createExportError } from '../errors/ExportError';
+
 import { type DeviceNodeEntry } from './buildDeviceChain';
 import {
     MAX_OFFLINE_FRAMES,
@@ -8,17 +9,18 @@ import {
 } from './offlineRender/constants';
 import { createOfflineBusStrip } from './offlineRender/createOfflineBusStrip';
 import { createOfflineTrackStrip } from './offlineRender/createOfflineTrackStrip';
-import {
-    acquireRenderLock,
-    checkCancel,
-    resetCancelFlag,
-} from './offlineRender/exportCancellation';
+import { acquireRenderLock, checkCancel, resetCancelFlag } from './offlineRender/exportCancellation';
 import { renderWithTimeout } from './offlineRender/renderWithTimeout';
 import { resolveRenderContext } from './offlineRender/resolveRenderContext';
 import { schedulePendingSuspends } from './offlineRender/schedulePendingSuspends';
 import { scheduleTrackClips } from './offlineRender/scheduleTrackClips';
 import { shouldCreateOfflineStrip } from './offlineRender/shouldCreateOfflineStrip';
-import { type OfflineBusStrip, type OfflineRenderOptions, type OfflineTrackStrip, type PendingWorkletEvent } from './offlineRender/types';
+import {
+    type OfflineBusStrip,
+    type OfflineRenderOptions,
+    type OfflineTrackStrip,
+    type PendingWorkletEvent,
+} from './offlineRender/types';
 import { yieldToMain } from './offlineRender/yieldToMain';
 
 type RenderOfflineFn = {
@@ -48,8 +50,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             );
         }
 
-        const { tracks, midi, transport, defaultTempo, changes, durationSeconds } =
-            resolveRenderContext(durationBeats);
+        const { tracks, midi, transport, defaultTempo, changes, durationSeconds } = resolveRenderContext(durationBeats);
 
         // Clamp frame count to browser-safe maximum to avoid context creation error.
         const frameCount = Math.min(Math.ceil(durationSeconds * sampleRate), MAX_OFFLINE_FRAMES);

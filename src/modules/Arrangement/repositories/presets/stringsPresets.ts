@@ -1,10 +1,11 @@
 import { type SoundPreset } from '../../models/SoundPreset';
-import { synth } from './presetHelpers/synth';
-import { reverb } from './presetHelpers/reverb';
-import { eq } from './presetHelpers/eq';
-import { tremolo } from './presetHelpers/tremolo';
+
 import { chorus } from './presetHelpers/chorus';
+import { eq } from './presetHelpers/eq';
 import { AUTHOR } from './presetHelpers/helpers';
+import { reverb } from './presetHelpers/reverb';
+import { synth } from './presetHelpers/synth';
+import { tremolo } from './presetHelpers/tremolo';
 
 export const stringsPresets: SoundPreset[] = [
     // ─── Strings ─────────────────────────────────────────────────────────

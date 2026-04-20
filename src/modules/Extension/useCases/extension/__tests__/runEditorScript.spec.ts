@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type ExtensionMarketplaceState } from '../../../stores/extension';
 import { runEditorScript } from '../runEditorScript';
 
@@ -36,9 +37,9 @@ describe('runEditorScript', () => {
 
     it('runs editor content and logs completion', () => {
         mocks.extensionStore.value = baseState({ editorContent: '' });
-        
+
         runEditorScript();
-        
+
         expect(mocks.appendLog).toHaveBeenCalledWith('info', '▶ Running script...');
         expect(mocks.appendLog).toHaveBeenCalledWith('info', '✓ Script completed');
         expect(mocks.createDawApi).toHaveBeenCalled();

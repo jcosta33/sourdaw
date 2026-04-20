@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 
 // Mock TrackNode and BusNode to avoid deep dependencies
@@ -53,7 +54,7 @@ describe('AudioEngine', () => {
         };
         (global as any).SharedArrayBuffer = class extends ArrayBuffer {};
 
-        engine = createAudioEngine(mockCtx as any);
+        engine = createAudioEngine(mockCtx);
     });
 
     it('should initialize with master nodes', () => {
@@ -72,7 +73,7 @@ describe('AudioEngine', () => {
     it('should manage master gain', () => {
         engine.setMasterGain(0.5);
         expect(engine.masterGainNode.gain.setTargetAtTime).toHaveBeenCalledWith(0.5, expect.any(Number), 0.01);
-        
+
         engine.masterGainNode.gain.value = 0.5;
         expect(engine.getMasterGain()).toBe(0.5);
     });
@@ -80,10 +81,10 @@ describe('AudioEngine', () => {
     it('should ensure and remove track strips', () => {
         const strip = engine.ensureTrackStrip('t1');
         expect(strip.trackId).toBe('t1');
-        
+
         const retrieved = engine.getTrackStrip('t1');
         expect(retrieved).toBe(strip);
-        
+
         engine.removeTrackStrip('t1');
         expect(engine.getTrackStrip('t1')).toBeUndefined();
     });

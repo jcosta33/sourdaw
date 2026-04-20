@@ -1,7 +1,8 @@
 import { wireSidechainRoute } from '#/modules/AudioEngine/useCases';
+
+import { SidechainCycleError } from '../../errors/RoutingErrors';
 import { createSidechainRoute, type SidechainRoute } from '../../models/SidechainRoute';
 import { sidechainStore } from '../../stores/sidechainStore';
-import { SidechainCycleError } from '../../errors/RoutingErrors';
 
 function wouldCreateCycle(sourceTrackId: string, targetTrackId: string, routes: SidechainRoute[]): boolean {
     if (sourceTrackId === targetTrackId) {
@@ -38,9 +39,7 @@ export function addSidechainRoute(
         return;
     }
 
-    const exists = state.routes.some(
-        (r) => r.sourceTrackId === sourceTrackId && r.targetDeviceId === targetDeviceId
-    );
+    const exists = state.routes.some((r) => r.sourceTrackId === sourceTrackId && r.targetDeviceId === targetDeviceId);
     if (exists) {
         return;
     }

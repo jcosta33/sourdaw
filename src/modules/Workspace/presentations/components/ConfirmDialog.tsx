@@ -1,8 +1,9 @@
 import { type ReactElement, useEffect, useState } from 'react';
+
 import { eventBus } from '#/app/registerDependencies';
 import { Button } from '#/components/ui/button';
-import { cn } from '#/utils/Styles/cn';
 import { type ConfirmPayload } from '#/modules/Workspace/events';
+import { cn } from '#/utils/Styles/cn';
 
 /**
  * Async confirmation dialog. Subscribes to the \`ui.confirm\` event bus

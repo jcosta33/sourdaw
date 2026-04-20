@@ -1,4 +1,5 @@
 import { libraryStore } from '../../stores/libraryStore';
+
 import { HANDLES_STORE, ROOTS_STORE, openDb } from './helpers';
 
 /**

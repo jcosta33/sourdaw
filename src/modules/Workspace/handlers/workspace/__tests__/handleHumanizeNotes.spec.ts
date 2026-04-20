@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleHumanizeNotes } from '../handleHumanizeNotes';
 
 const mocks = vi.hoisted(() => ({
@@ -16,7 +17,7 @@ describe('handleHumanizeNotes', () => {
     it('delegates to humanizeNotes MIDI use case', () => {
         handleHumanizeNotes.execute({
             type: 'humanizeNotes',
-            payload: { clipId: 'c1', amount: 0.1 }
+            payload: { clipId: 'c1', amount: 0.1 },
         });
         expect(mocks.humanizeNotes).toHaveBeenCalledWith('c1', 0.1);
     });

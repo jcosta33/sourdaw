@@ -1,6 +1,7 @@
-import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { type Track } from '#/modules/Arrangement/models/Track';
+import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { ensureTrackStrip } from '#/modules/AudioEngine/useCases';
+
 import {
     createDisconnectedGrandBouleEngineHandle,
     type GrandBouleEngineHandle,

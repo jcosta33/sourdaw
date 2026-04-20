@@ -13,11 +13,15 @@ export function updateAutomationObjectPoint(
     newBeat?: number
 ): void {
     const state = automationStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     const sourceLane = state.lanes.find((l) => l.id === laneId);
     const sourceObj = sourceLane?.objects.find((o) => o.id === objectId);
-    if (!sourceObj) return;
+    if (!sourceObj) {
+        return;
+    }
 
     const poolId = sourceObj.poolId;
 
@@ -28,9 +32,11 @@ export function updateAutomationObjectPoint(
             objects: lane.objects.map((obj) => {
                 // R-H1: Propagate if object matches ID OR matches poolId and has no override
                 const isTarget = obj.id === objectId;
-                const isLinked = poolId && obj.poolId === poolId && !obj.overrides?.['points'];
+                const isLinked = poolId && obj.poolId === poolId && !obj.overrides?.points;
 
-                if (!isTarget && !isLinked) return obj;
+                if (!isTarget && !isLinked) {
+                    return obj;
+                }
 
                 return {
                     ...obj,

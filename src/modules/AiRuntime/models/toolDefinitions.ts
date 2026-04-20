@@ -10,11 +10,11 @@
  * Domain-specific arrays live in ./tools/*.ts.
  */
 
+import { clipTools, deviceTools } from './tools/clipAndDevice';
+import { generationTools, markerTools, timeTools, workspaceTools } from './tools/generationAndView';
+import { midiTools, automationTools, routingTools } from './tools/midiAutomationRouting';
 import { trackTools } from './tools/track';
 import { transportTools } from './tools/transport';
-import { clipTools, deviceTools } from './tools/clipAndDevice';
-import { midiTools, automationTools, routingTools } from './tools/midiAutomationRouting';
-import { generationTools, markerTools, timeTools, workspaceTools } from './tools/generationAndView';
 
 export type { ToolSchema } from './tools/types';
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { splitClip } from '../splitClip';
 
 const mocks = vi.hoisted(() => ({
@@ -32,9 +33,7 @@ describe('splitClip', () => {
     it('splits a clip into two at the specified beat', () => {
         const mockClip = { id: 'c1', name: 'Vocal', startBeat: 0, endBeat: 10, fadeOutBeats: 1 };
         mocks.getTrackState.mockReturnValue({
-            tracks: [
-                { id: 't1', clips: [mockClip] }
-            ]
+            tracks: [{ id: 't1', clips: [mockClip] }],
         });
 
         const rightId = splitClip('c1', 4);
@@ -43,9 +42,9 @@ describe('splitClip', () => {
         expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
         const newState = mocks.setTrackState.mock.calls[0][0];
         const track = newState.tracks[0];
-        
+
         expect(track.clips).toHaveLength(2);
-        
+
         // Left clip
         expect(track.clips[0]).toMatchObject({
             id: 'c1',

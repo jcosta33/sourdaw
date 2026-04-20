@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { createFindDeviceRef, type GetAllTracksFn } from '../createFindDeviceRef';
 
 describe('createFindDeviceRef', () => {

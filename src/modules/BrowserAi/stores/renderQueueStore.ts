@@ -5,6 +5,7 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
+
 import { type PhraseRenderStatus } from '../models/RenderProgress';
 
 export type RenderQueueEntry = {
@@ -49,9 +50,7 @@ export function updateRenderStatus(phraseId: string, status: PhraseRenderStatus)
         if (!state) {
             return state;
         }
-        const entries = state.entries.map((e) =>
-            e.phraseId === phraseId ? { ...e, status } : e
-        );
+        const entries = state.entries.map((e) => (e.phraseId === phraseId ? { ...e, status } : e));
         return {
             ...state,
             entries,
@@ -67,9 +66,7 @@ export function markRenderComplete(phraseId: string, cacheKey: string): void {
         }
         // Update status to 'preview' in-place — entry is preserved so renderAllStale
         // can recover the pipeline type if the phrase becomes stale later.
-        const entries = state.entries.map((e) =>
-            e.phraseId === phraseId ? { ...e, status: 'preview' as const } : e
-        );
+        const entries = state.entries.map((e) => (e.phraseId === phraseId ? { ...e, status: 'preview' as const } : e));
         const cachedPhraseIds = state.cachedPhraseIds.includes(cacheKey)
             ? state.cachedPhraseIds
             : [...state.cachedPhraseIds, cacheKey];

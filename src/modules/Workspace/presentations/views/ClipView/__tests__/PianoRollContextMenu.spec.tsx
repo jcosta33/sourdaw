@@ -1,17 +1,44 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
+
 import { PianoRollContextMenu } from '../PianoRollContextMenu';
 
 vi.mock('#/components/daw/DawContextMenuSurface', () => ({
-    DawContextMenuSurface: ({ children, ref }: { children: React.ReactNode; ref?: React.RefObject<HTMLDivElement> }) => (
-        <div ref={ref}>{children}</div>
-    ),
+    DawContextMenuSurface: ({
+        children,
+        ref,
+    }: {
+        children: React.ReactNode;
+        ref?: React.RefObject<HTMLDivElement>;
+    }) => <div ref={ref}>{children}</div>,
 }));
 
 vi.mock('#/components/daw/DawMenuParts', () => ({
-    DawMenuButton: ({ children, onClick, disabled, shortcut, role, className }: { children: React.ReactNode; onClick?: () => void; disabled?: boolean; shortcut?: string; role?: string; className?: string }) => (
-        <button type="button" onClick={onClick} disabled={disabled} className={className} data-shortcut={shortcut} role={role}>
+    DawMenuButton: ({
+        children,
+        onClick,
+        disabled,
+        shortcut,
+        role,
+        className,
+    }: {
+        children: React.ReactNode;
+        onClick?: () => void;
+        disabled?: boolean;
+        shortcut?: string;
+        role?: string;
+        className?: string;
+    }) => (
+        <button
+            type="button"
+            onClick={onClick}
+            disabled={disabled}
+            className={className}
+            data-shortcut={shortcut}
+            role={role}
+        >
             {children}
         </button>
     ),
@@ -77,12 +104,9 @@ vi.mock('#/modules/MIDI/useCases/strumNotes/strumNotes', () => ({
     strumNotes: vi.fn(),
 }));
 
-vi.mock(
-    '#/modules/MIDI/useCases/grooveExtraction/restoreGrooveOriginals',
-    () => ({
-        restoreGrooveOriginals: vi.fn(),
-    }),
-);
+vi.mock('#/modules/MIDI/useCases/grooveExtraction/restoreGrooveOriginals', () => ({
+    restoreGrooveOriginals: vi.fn(),
+}));
 
 vi.mock('#/modules/MIDI/useCases/grooveExtraction/applyGrooveToClip', () => ({
     applyGrooveToClip: vi.fn(),

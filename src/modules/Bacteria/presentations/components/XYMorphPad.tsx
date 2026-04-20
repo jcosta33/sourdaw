@@ -5,6 +5,7 @@
  * the current morph position.
  */
 import { type ReactElement, useRef } from 'react';
+
 import { type BacteriaSnapshot } from '../../models/BacteriaPatch';
 
 type XYMorphPadProps = {

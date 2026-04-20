@@ -1,14 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { startMidiLearn } from '../midiLearn/startMidiLearn';
-import { stopMidiLearn } from '../midiLearn/stopMidiLearn';
+
+import { midiLearnStore } from '../../stores/midiLearnStore';
+import { type MidiLearnState } from '../../stores/midiLearnStore';
 import { completeMidiLearn } from '../midiLearn/completeMidiLearn';
 import { findMappingForTarget } from '../midiLearn/findMappingForTarget';
 import { scaleMidiValue } from '../midiLearn/handleMidiMessage';
-import { midiLearnStore } from '../../stores/midiLearnStore';
+import { startMidiLearn } from '../midiLearn/startMidiLearn';
+import { stopMidiLearn } from '../midiLearn/stopMidiLearn';
+
 import { type Logger } from '#/utils/Logger/Logger';
-import { type MidiLearnState } from '../../stores/midiLearnStore';
 
 vi.mock('../../stores/midiLearnStore', () => {
     const midiLearnStore: {

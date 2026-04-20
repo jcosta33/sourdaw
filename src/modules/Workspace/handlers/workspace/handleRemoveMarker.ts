@@ -1,5 +1,5 @@
-import { createHandler } from '#/utils/createHandler';
 import { removeMarker } from '#/modules/Arrangement/useCases';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleRemoveMarker = createHandler<'removeMarker'>({
     execute: (a) => {

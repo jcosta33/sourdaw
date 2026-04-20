@@ -5,6 +5,7 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
+
 import type {
     EnvelopeParams,
     FilterType,
@@ -76,29 +77,37 @@ export const crumbsStore = createStore<Record<string, CrumbsState>>({
 
 export function ensureInstance(instanceId: string): void {
     crumbsStore.update((s) => {
-        if (!s) {return {};}
-        if (s[instanceId]) {return s;}
+        if (!s) {
+            return {};
+        }
+        if (s[instanceId]) {
+            return s;
+        }
         return { ...s, [instanceId]: { ...defaultCrumbsState } };
     });
 }
 
 export function setMode(instanceId: string, mode: CrumbsMode): void {
     crumbsStore.update((s) => {
-        if (!s || !s[instanceId]) {return s;}
+        if (!s || !s[instanceId]) {
+            return s;
+        }
         return {
             ...s,
-            [instanceId]: { ...s[instanceId]!, mode },
+            [instanceId]: { ...s[instanceId], mode },
         };
     });
 }
 
 export function setActiveSample(instanceId: string, sample: SampleMeta): void {
     crumbsStore.update((s) => {
-        if (!s || !s[instanceId]) {return s;}
+        if (!s || !s[instanceId]) {
+            return s;
+        }
         return {
             ...s,
             [instanceId]: {
-                ...s[instanceId]!,
+                ...s[instanceId],
                 activeSample: sample,
                 rootNote: sample.detectedRoot ?? 60,
                 isLoading: false,
@@ -109,47 +118,52 @@ export function setActiveSample(instanceId: string, sample: SampleMeta): void {
 
 export function setWaveformPeaks(instanceId: string, peaks: number[]): void {
     crumbsStore.update((s) => {
-        if (!s || !s[instanceId]) {return s;}
+        if (!s || !s[instanceId]) {
+            return s;
+        }
         return {
             ...s,
-            [instanceId]: { ...s[instanceId]!, waveformPeaks: peaks },
+            [instanceId]: { ...s[instanceId], waveformPeaks: peaks },
         };
     });
 }
 
 export function setSliceMarkers(instanceId: string, markers: SliceMarker[]): void {
     crumbsStore.update((s) => {
-        if (!s || !s[instanceId]) {return s;}
+        if (!s || !s[instanceId]) {
+            return s;
+        }
         return {
             ...s,
-            [instanceId]: { ...s[instanceId]!, sliceMarkers: markers },
+            [instanceId]: { ...s[instanceId], sliceMarkers: markers },
         };
     });
 }
 
 export function updateEnvelope(instanceId: string, updates: Partial<EnvelopeParams>): void {
     crumbsStore.update((s) => {
-        if (!s || !s[instanceId]) {return s;}
+        if (!s || !s[instanceId]) {
+            return s;
+        }
         return {
             ...s,
             [instanceId]: {
-                ...s[instanceId]!,
-                envelope: { ...s[instanceId]!.envelope, ...updates },
+                ...s[instanceId],
+                envelope: { ...s[instanceId].envelope, ...updates },
             },
         };
     });
 }
 
-export function setFilterParams(
-    instanceId: string,
-    cutoff?: number,
-    resonance?: number,
-    type?: FilterType
-): void {
+export function setFilterParams(instanceId: string, cutoff?: number, resonance?: number, type?: FilterType): void {
     crumbsStore.update((s) => {
-        if (!s) {return s;}
+        if (!s) {
+            return s;
+        }
         const inst = s[instanceId];
-        if (!inst) {return s;}
+        if (!inst) {
+            return s;
+        }
         return {
             ...s,
             [instanceId]: {
@@ -162,16 +176,15 @@ export function setFilterParams(
     });
 }
 
-export function setLoopParams(
-    instanceId: string,
-    mode?: LoopMode,
-    start?: number,
-    end?: number
-): void {
+export function setLoopParams(instanceId: string, mode?: LoopMode, start?: number, end?: number): void {
     crumbsStore.update((s) => {
-        if (!s) {return s;}
+        if (!s) {
+            return s;
+        }
         const inst = s[instanceId];
-        if (!inst) {return s;}
+        if (!inst) {
+            return s;
+        }
         return {
             ...s,
             [instanceId]: {
@@ -186,77 +199,86 @@ export function setLoopParams(
 
 export function setMasterGain(instanceId: string, gain: number): void {
     crumbsStore.update((s) => {
-        if (!s || !s[instanceId]) {return s;}
+        if (!s || !s[instanceId]) {
+            return s;
+        }
         return {
             ...s,
-            [instanceId]: { ...s[instanceId]!, masterGain: gain },
+            [instanceId]: { ...s[instanceId], masterGain: gain },
         };
     });
 }
 
 export function setRootNote(instanceId: string, note: number): void {
     crumbsStore.update((s) => {
-        if (!s || !s[instanceId]) {return s;}
+        if (!s || !s[instanceId]) {
+            return s;
+        }
         return {
             ...s,
-            [instanceId]: { ...s[instanceId]!, rootNote: note },
+            [instanceId]: { ...s[instanceId], rootNote: note },
         };
     });
 }
 
 export function setTune(instanceId: string, tune: number): void {
     crumbsStore.update((s) => {
-        if (!s || !s[instanceId]) {return s;}
+        if (!s || !s[instanceId]) {
+            return s;
+        }
         return {
             ...s,
-            [instanceId]: { ...s[instanceId]!, tune },
+            [instanceId]: { ...s[instanceId], tune },
         };
     });
 }
 
 export function setPan(instanceId: string, pan: number): void {
     crumbsStore.update((s) => {
-        if (!s || !s[instanceId]) {return s;}
+        if (!s || !s[instanceId]) {
+            return s;
+        }
         return {
             ...s,
-            [instanceId]: { ...s[instanceId]!, pan },
+            [instanceId]: { ...s[instanceId], pan },
         };
     });
 }
 
 export function setLoading(instanceId: string, isLoading: boolean): void {
     crumbsStore.update((s) => {
-        if (!s || !s[instanceId]) {return s;}
+        if (!s || !s[instanceId]) {
+            return s;
+        }
         return {
             ...s,
-            [instanceId]: { ...s[instanceId]!, isLoading },
+            [instanceId]: { ...s[instanceId], isLoading },
         };
     });
 }
 
-export function setMetering(
-    instanceId: string,
-    peakLeft: number,
-    peakRight: number,
-    activeVoices: number
-): void {
+export function setMetering(instanceId: string, peakLeft: number, peakRight: number, activeVoices: number): void {
     crumbsStore.update((s) => {
-        if (!s || !s[instanceId]) {return s;}
+        if (!s || !s[instanceId]) {
+            return s;
+        }
         return {
             ...s,
-            [instanceId]: { ...s[instanceId]!, peakLeft, peakRight, activeVoices },
+            [instanceId]: { ...s[instanceId], peakLeft, peakRight, activeVoices },
         };
     });
 }
 
 export function setVoiceStack(instanceId: string, updates: Partial<VoiceStackParams>): void {
     crumbsStore.update((s) => {
-        if (!s || !s[instanceId]) {return s;}
+        if (!s || !s[instanceId]) {
+            return s;
+        }
         return {
             ...s,
             [instanceId]: {
-                ...s[instanceId]!,
-                voiceStack: { ...s[instanceId]!.voiceStack, ...updates },
+                ...s[instanceId],
+                voiceStack: { ...s[instanceId].voiceStack, ...updates },
             },
         };
     });
@@ -264,7 +286,9 @@ export function setVoiceStack(instanceId: string, updates: Partial<VoiceStackPar
 
 export function removeInstance(instanceId: string): void {
     crumbsStore.update((s) => {
-        if (!s) {return {};}
+        if (!s) {
+            return {};
+        }
         const next = { ...s };
         delete next[instanceId];
         return next;

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { toggleReference } from '../toggleReference';
 
 const mocks = vi.hoisted(() => ({
@@ -34,8 +35,6 @@ describe('toggleReference', () => {
     it('should flip the referenceActive flag', () => {
         toggleReference();
 
-        expect(mocks.set).toHaveBeenCalledWith(
-            expect.objectContaining({ referenceActive: true })
-        );
+        expect(mocks.set).toHaveBeenCalledWith(expect.objectContaining({ referenceActive: true }));
     });
 });

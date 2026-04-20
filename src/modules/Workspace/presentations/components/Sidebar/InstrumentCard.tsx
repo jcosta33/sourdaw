@@ -1,5 +1,7 @@
 import { type ReactElement } from 'react';
+
 import { type LucideIcon } from 'lucide-react';
+
 import { DawChooserCard } from '#/components/daw/DawChooserCard';
 
 type InstrumentCardProps = {
@@ -22,7 +24,8 @@ type InstrumentCardTheme = {
 
 export const FERMENTER_THEME: InstrumentCardTheme = {
     button: 'border-[var(--color-accent-sage)]/30 bg-gradient-to-br from-[var(--color-accent-sage)]/10 via-surface-raised to-[var(--color-accent-sage)]/5 hover:border-[var(--color-accent-sage)]/50 hover:from-[var(--color-accent-sage)]/15',
-    iconBox: 'bg-[var(--color-accent-sage)]/20 border-[var(--color-accent-sage)]/20 shadow-[0_0_12px_rgba(138,168,138,0.15)]',
+    iconBox:
+        'bg-[var(--color-accent-sage)]/20 border-[var(--color-accent-sage)]/20 shadow-[0_0_12px_rgba(138,168,138,0.15)]',
     iconColor: 'text-[var(--color-accent-sage)]',
     badgeColor: 'bg-[var(--color-accent-sage)]/20 text-[var(--color-accent-sage)]',
     glow: 'bg-[var(--color-accent-sage)]/8',
@@ -39,7 +42,8 @@ export const TOASTER_THEME: InstrumentCardTheme = {
 
 export const LEVAIN_THEME: InstrumentCardTheme = {
     button: 'border-[var(--color-accent-coral)]/30 bg-gradient-to-br from-[var(--color-accent-coral)]/10 via-surface-raised to-[var(--color-accent-coral)]/5 hover:border-[var(--color-accent-coral)]/50 hover:from-[var(--color-accent-coral)]/15',
-    iconBox: 'bg-[var(--color-accent-coral)]/20 border-[var(--color-accent-coral)]/20 shadow-[0_0_12px_rgba(224,122,110,0.15)]',
+    iconBox:
+        'bg-[var(--color-accent-coral)]/20 border-[var(--color-accent-coral)]/20 shadow-[0_0_12px_rgba(224,122,110,0.15)]',
     iconColor: 'text-[var(--color-accent-coral)]',
     badgeColor: 'bg-[var(--color-accent-coral)]/20 text-[var(--color-accent-coral)]',
     glow: 'bg-[var(--color-accent-coral)]/8',
@@ -65,7 +69,8 @@ export const KNEAD_THEME: InstrumentCardTheme = {
 
 export const SCORING_THEME: InstrumentCardTheme = {
     button: 'border-[var(--color-accent-indigo)]/30 bg-gradient-to-br from-[var(--color-accent-indigo)]/10 via-surface-raised to-[var(--color-accent-indigo)]/5 hover:border-[var(--color-accent-indigo)]/50 hover:from-[var(--color-accent-indigo)]/15',
-    iconBox: 'bg-[var(--color-accent-indigo)]/20 border-[var(--color-accent-indigo)]/20 shadow-[0_0_12px_rgba(74,96,160,0.15)]',
+    iconBox:
+        'bg-[var(--color-accent-indigo)]/20 border-[var(--color-accent-indigo)]/20 shadow-[0_0_12px_rgba(74,96,160,0.15)]',
     iconColor: 'text-[var(--color-accent-indigo)]',
     badgeColor: 'bg-[var(--color-accent-indigo)]/20 text-[var(--color-accent-indigo)]',
     glow: 'bg-[var(--color-accent-indigo)]/8',
@@ -73,7 +78,8 @@ export const SCORING_THEME: InstrumentCardTheme = {
 
 export const DUTCH_OVEN_THEME: InstrumentCardTheme = {
     button: 'border-[var(--color-accent-amber)]/30 bg-gradient-to-br from-[var(--color-accent-amber)]/10 via-surface-raised to-[var(--color-accent-amber)]/5 hover:border-[var(--color-accent-amber)]/50 hover:from-[var(--color-accent-amber)]/15',
-    iconBox: 'bg-[var(--color-accent-amber)]/20 border-[var(--color-accent-amber)]/20 shadow-[0_0_12px_rgba(196,170,95,0.15)]',
+    iconBox:
+        'bg-[var(--color-accent-amber)]/20 border-[var(--color-accent-amber)]/20 shadow-[0_0_12px_rgba(196,170,95,0.15)]',
     iconColor: 'text-[var(--color-accent-amber)]',
     badgeColor: 'bg-[var(--color-accent-amber)]/20 text-[var(--color-accent-amber)]',
     glow: 'bg-[var(--color-accent-amber)]/8',
@@ -90,7 +96,8 @@ export const GLUTEN_THEME: InstrumentCardTheme = {
 
 export const BACTERIA_THEME: InstrumentCardTheme = {
     button: 'border-[var(--color-accent-mint-bright)]/30 bg-gradient-to-br from-[var(--color-accent-mint-bright)]/10 via-surface-raised to-[var(--color-accent-mint-bright)]/5 hover:border-[var(--color-accent-mint-bright)]/50 hover:from-[var(--color-accent-mint-bright)]/15',
-    iconBox: 'bg-[var(--color-accent-mint-bright)]/20 border-[var(--color-accent-mint-bright)]/20 shadow-[0_0_12px_rgba(102,210,165,0.15)]',
+    iconBox:
+        'bg-[var(--color-accent-mint-bright)]/20 border-[var(--color-accent-mint-bright)]/20 shadow-[0_0_12px_rgba(102,210,165,0.15)]',
     iconColor: 'text-[var(--color-accent-mint-bright)]',
     badgeColor: 'bg-[var(--color-accent-mint-bright)]/20 text-[var(--color-accent-mint-bright)]',
     glow: 'bg-[var(--color-accent-mint-bright)]/8',
@@ -107,7 +114,8 @@ export const GRINDER_THEME: InstrumentCardTheme = {
 
 export const YEAST_THEME: InstrumentCardTheme = {
     button: 'border-[var(--color-accent-rose)]/30 bg-gradient-to-br from-[var(--color-accent-rose)]/10 via-surface-raised to-[var(--color-accent-rose)]/5 hover:border-[var(--color-accent-rose)]/50 hover:from-[var(--color-accent-rose)]/15',
-    iconBox: 'bg-[var(--color-accent-rose)]/20 border-[var(--color-accent-rose)]/20 shadow-[0_0_12px_rgba(192,96,112,0.15)]',
+    iconBox:
+        'bg-[var(--color-accent-rose)]/20 border-[var(--color-accent-rose)]/20 shadow-[0_0_12px_rgba(192,96,112,0.15)]',
     iconColor: 'text-[var(--color-accent-rose)]',
     badgeColor: 'bg-[var(--color-accent-rose)]/20 text-[var(--color-accent-rose)]',
     glow: 'bg-[var(--color-accent-rose)]/8',
@@ -132,7 +140,8 @@ export const GRAND_BOULE_THEME: InstrumentCardTheme = {
 
 export const CRUST_THEME: InstrumentCardTheme = {
     button: 'border-[var(--color-accent-copper)]/30 bg-gradient-to-br from-[var(--color-accent-copper)]/10 via-surface-raised to-[var(--color-accent-copper)]/5 hover:border-[var(--color-accent-copper)]/50 hover:from-[var(--color-accent-copper)]/15',
-    iconBox: 'bg-[var(--color-accent-copper)]/20 border-[var(--color-accent-copper)]/20 shadow-[0_0_12px_rgba(184,136,104,0.15)]',
+    iconBox:
+        'bg-[var(--color-accent-copper)]/20 border-[var(--color-accent-copper)]/20 shadow-[0_0_12px_rgba(184,136,104,0.15)]',
     iconColor: 'text-[var(--color-accent-copper)]',
     badgeColor: 'bg-[var(--color-accent-copper)]/20 text-[var(--color-accent-copper)]',
     glow: 'bg-[var(--color-accent-copper)]/8',

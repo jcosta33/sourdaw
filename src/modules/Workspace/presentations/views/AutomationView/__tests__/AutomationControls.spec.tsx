@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { AutomationModeControl, AutomationAddLaneControl } from '../AutomationControls';
 
 vi.mock('#/components/daw/DawEyebrowLabel', () => ({
@@ -16,7 +17,9 @@ vi.mock('#/utils/Styles/cn', () => ({
                 classes.push(input);
             } else if (typeof input === 'object' && input !== null && !Array.isArray(input)) {
                 for (const [key, value] of Object.entries(input)) {
-                    if (value) {classes.push(key);}
+                    if (value) {
+                        classes.push(key);
+                    }
                 }
             }
         }

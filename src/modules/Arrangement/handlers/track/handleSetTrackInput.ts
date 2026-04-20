@@ -1,5 +1,6 @@
-import { setTrackInput } from '../../useCases/setTrackInput';
 import { createHandler } from '#/utils/createHandler';
+
+import { setTrackInput } from '../../useCases/setTrackInput';
 
 export const handleSetTrackInput = createHandler<'setTrackInput'>({
     execute: (action) => {

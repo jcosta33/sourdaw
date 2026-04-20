@@ -1,11 +1,13 @@
 import { type ReactElement, useState } from 'react';
+
+import { Sparkles, Volume2, VolumeX, Loader2, Music, BarChart3 } from 'lucide-react';
+
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { Sparkles, Volume2, VolumeX, Loader2, Music, BarChart3 } from 'lucide-react';
-import { type Clip } from '../../../models/TrackViewTypes';
 import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases';
+import { notifyAiChange } from '#/modules/AiRuntime/useCases';
 import {
     polyphonicAudioToMidi,
     insertPolyphonicMidiNotes,
@@ -15,7 +17,8 @@ import {
 } from '#/modules/AudioAnalysis/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { notifyAiChange } from '#/modules/AiRuntime/useCases';
+
+import { type Clip } from '../../../models/TrackViewTypes';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';
 
 type ClipAudioAiSectionProps = {
@@ -84,8 +87,8 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
             } else {
                 notifyUser('No notes detected in audio', 'warning');
             }
-        } catch (err) {
-            notifyUser(err instanceof Error ? err.message : 'Polyphonic conversion failed', 'error');
+        } catch (error) {
+            notifyUser(error instanceof Error ? error.message : 'Polyphonic conversion failed', 'error');
         } finally {
             setIsConvertingPoly(false);
         }

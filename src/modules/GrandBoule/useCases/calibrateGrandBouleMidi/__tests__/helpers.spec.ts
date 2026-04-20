@@ -1,11 +1,12 @@
-import { type GrandBouleState } from '../../stores/grandBouleStore';
-import { type Store } from '#/infra/store/types';
 import { describe, it, expect, beforeEach } from 'vitest';
+
+import { type Store } from '#/infra/store/types';
 
 import { createDefaultGrandBouleConfig } from '../../../models/GrandBouleConfig';
 import { createDefaultMidiCalibration } from '../../../models/GrandBouleMidiCalibration';
 import { createDefaultMorphState } from '../../../models/GrandBouleMorphState';
 import { createNeutralPresetParameters } from '../../../models/GrandBoulePreset';
+import { type GrandBouleState } from '../../stores/grandBouleStore';
 import { clamp, updateCalibration } from '../helpers';
 
 // Mock store to satisfy the interface

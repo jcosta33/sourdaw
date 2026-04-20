@@ -8,9 +8,10 @@
  */
 
 import glutenProcessorUrl from '../services/glutenProcessor.ts?worker&url';
+
+import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, GLUTEN_IDX, type TelemetrySlot } from './telemetryAllocator';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
-import { requireSharedArrayBuffer } from './pluginHostingErrors';
 
 const DEFAULT_WASM_URL = '/wasm/gluten/gluten_bg.wasm';
 
@@ -90,7 +91,9 @@ export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string):
                 cancelAnimationFrame(meterRafId);
                 meterRafId = null;
             }
-            if (!slot) {return;}
+            if (!slot) {
+                return;
+            }
             const view = slot.view;
             const poll = () => {
                 cb({

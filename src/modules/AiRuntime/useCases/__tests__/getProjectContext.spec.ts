@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { getProjectContext } from '../getProjectContext';
 
 const mocks = vi.hoisted(() => ({
@@ -9,19 +10,35 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: { get value() { return mocks.trackStoreValue.value; } }
+    trackStore: {
+        get value() {
+            return mocks.trackStoreValue.value;
+        },
+    },
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
-    midiStore: { get value() { return mocks.midiStoreValue.value; } }
+    midiStore: {
+        get value() {
+            return mocks.midiStoreValue.value;
+        },
+    },
 }));
 
 vi.mock('#/modules/Transport/stores', () => ({
-    transportStore: { get value() { return mocks.transportStoreValue.value; } }
+    transportStore: {
+        get value() {
+            return mocks.transportStoreValue.value;
+        },
+    },
 }));
 
 vi.mock('#/modules/Workspace/stores', () => ({
-    workspaceStore: { get value() { return mocks.workspaceStoreValue.value; } }
+    workspaceStore: {
+        get value() {
+            return mocks.workspaceStoreValue.value;
+        },
+    },
 }));
 
 describe('getProjectContext', () => {
@@ -59,12 +76,8 @@ describe('getProjectContext', () => {
                     armed: false,
                     gain: 0.8,
                     pan: -10,
-                    clips: [
-                        { id: 'c1', name: 'Vox 1', type: 'audio', startBeat: 0, endBeat: 4 }
-                    ],
-                    devices: [
-                        { id: 'd1', type: 'EQ', bypassed: false }
-                    ]
+                    clips: [{ id: 'c1', name: 'Vox 1', type: 'audio', startBeat: 0, endBeat: 4 }],
+                    devices: [{ id: 'd1', type: 'EQ', bypassed: false }],
                 },
                 {
                     id: 't2',
@@ -75,18 +88,16 @@ describe('getProjectContext', () => {
                     armed: true,
                     gain: 1.0,
                     pan: 0,
-                    clips: [
-                        { id: 'c2', name: 'Chords', type: 'midi', startBeat: 4, endBeat: 8 }
-                    ],
-                    devices: []
-                }
-            ]
+                    clips: [{ id: 'c2', name: 'Chords', type: 'midi', startBeat: 4, endBeat: 8 }],
+                    devices: [],
+                },
+            ],
         };
 
         mocks.midiStoreValue.value = {
             notesByClipId: {
-                'c2': [{}, {}, {}] // 3 notes
-            }
+                c2: [{}, {}, {}], // 3 notes
+            },
         };
 
         mocks.transportStoreValue.value = {

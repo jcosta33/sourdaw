@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+
 import { setClipFade } from '../../useCases/clipEditing/setClipFade';
 
 export const handleSetClipFade = createHandler<'setClipFade'>({

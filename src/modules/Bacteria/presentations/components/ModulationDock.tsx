@@ -6,7 +6,9 @@
  * parameter knob to create modulation assignments.
  */
 import { type ReactElement, useState } from 'react';
+
 import { type BacteriaPatch, type BacteriaModAssignment } from '../../models/BacteriaPatch';
+
 type ModulationDockProps = {
     patch: BacteriaPatch;
     modValues: number[]; // Real-time mod source values for display

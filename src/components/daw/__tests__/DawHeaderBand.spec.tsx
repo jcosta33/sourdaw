@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
+
 import { DawHeaderBand } from '../DawHeaderBand';
 
 describe('DawHeaderBand', () => {
@@ -14,7 +15,11 @@ describe('DawHeaderBand', () => {
 
     it('should render title actions and startSlot in row layout', () => {
         render(
-            <DawHeaderBand title="Mixer" startSlot={<span data-testid="st">icon</span>} actions={<button type="button">+</button>} />
+            <DawHeaderBand
+                title="Mixer"
+                startSlot={<span data-testid="st">icon</span>}
+                actions={<button type="button">+</button>}
+            />
         );
         expect(screen.getByText('Mixer')).toBeInTheDocument();
         expect(screen.getByTestId('st')).toBeInTheDocument();

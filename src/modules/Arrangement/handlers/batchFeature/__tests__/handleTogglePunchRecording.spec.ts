@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleTogglePunchRecording } from '../handleTogglePunchRecording';
 
 const mocks = vi.hoisted(() => ({
@@ -21,7 +22,7 @@ describe('handleTogglePunchRecording', () => {
 
     it('executes togglePunchRecording and notifies user', () => {
         handleTogglePunchRecording.execute({ type: 'togglePunchRecording', payload: {} });
-        
+
         expect(mocks.togglePunchRecording).toHaveBeenCalledTimes(1);
         expect(mocks.notifyUser).toHaveBeenCalledWith('Punch recording toggled');
     });

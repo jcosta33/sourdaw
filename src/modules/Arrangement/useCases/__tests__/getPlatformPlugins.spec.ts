@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { type PluginDescriptor } from '../../models/DeviceParameter';
-import { getPlatformPlugins } from '../getPlatformPlugins';
 import { getPlatformPlugins as repoGetPlatformPlugins } from '../../repositories/getPlatformPlugins';
+import { getPlatformPlugins } from '../getPlatformPlugins';
 
 vi.mock('../../repositories/getPlatformPlugins', () => ({
     getPlatformPlugins: vi.fn(),

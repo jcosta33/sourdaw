@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { releaseTouchAutomation } from '../releaseTouchAutomation';
 
 const { touchActive, flushPendingPoints } = vi.hoisted(() => {

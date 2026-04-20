@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleSetTrackColor } from '../handleSetTrackColor';
 
 const mocks = vi.hoisted(() => ({
@@ -32,7 +33,7 @@ describe('handleSetTrackColor', () => {
     describe('describe', () => {
         it('returns inverse action with previous color', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', color: '#00ff00' }] });
-            
+
             const desc = handleSetTrackColor.describe({
                 type: 'setTrackColor',
                 payload: { trackId: 't1', color: '#ff0000' },
@@ -41,13 +42,13 @@ describe('handleSetTrackColor', () => {
             expect(desc.label).toBe('Set track color');
             expect(desc.inverseAction).toEqual({
                 type: 'setTrackColor',
-                payload: { trackId: 't1', color: '#00ff00' }
+                payload: { trackId: 't1', color: '#00ff00' },
             });
         });
 
         it('returns null inverse action if track not found', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
-            
+
             const desc = handleSetTrackColor.describe({
                 type: 'setTrackColor',
                 payload: { trackId: 't1', color: '#ff0000' },

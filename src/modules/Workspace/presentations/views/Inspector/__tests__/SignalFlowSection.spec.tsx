@@ -1,16 +1,11 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+
 import { SignalFlowSection } from '../SignalFlowSection';
 
 // Mock external dependencies
 vi.mock('#/components/daw/DawHeaderBand', () => ({
-    DawHeaderBand: ({
-        children,
-        compact,
-    }: {
-        children: React.ReactNode;
-        compact?: boolean;
-    }) => (
+    DawHeaderBand: ({ children, compact }: { children: React.ReactNode; compact?: boolean }) => (
         <div data-testid="header-band" data-compact={compact}>
             {children}
         </div>
@@ -18,9 +13,7 @@ vi.mock('#/components/daw/DawHeaderBand', () => ({
 }));
 
 vi.mock('../../../components/Inspector/SurfaceCard', () => ({
-    SurfaceCard: ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="surface-card">{children}</div>
-    ),
+    SurfaceCard: ({ children }: { children: React.ReactNode }) => <div data-testid="surface-card">{children}</div>,
 }));
 
 vi.mock('../../RoutingGraph', () => ({

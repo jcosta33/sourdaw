@@ -1,9 +1,10 @@
-import { tempoMapStore } from '../../stores/tempoMapStore';
-import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
-import { type TransportState } from '../../models/TransportState';
+import { getCurrentTime, scheduleClick } from '#/modules/AudioEngine/useCases';
+
 import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
-import { getCurrentTime, scheduleClick } from '#/modules/AudioEngine/useCases';
+import { type TransportState } from '../../models/TransportState';
+import { tempoMapStore } from '../../stores/tempoMapStore';
+import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 
 let _lastMetronomeBeat = -1;
 

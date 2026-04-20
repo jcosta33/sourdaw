@@ -1,5 +1,6 @@
-import { type DocId } from './crdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
+
+import { type DocId } from './crdtDocumentTypes';
 
 /**
  * Create an empty child CRDT document under the given ID.

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { updateTrack } from '../../../repositories/track/updateTrack';
 import { trackStore } from '../../../stores/trackStore';
 import { unfreezeTrack } from '../unfreezeTrack';
-import { updateTrack } from '../../../repositories/track/updateTrack';
 
 vi.mock('../../../repositories/track/updateTrack', () => ({
     updateTrack: vi.fn(),
@@ -50,7 +51,7 @@ describe('unfreezeTrack', () => {
         unfreezeTrack('t1');
 
         expect(updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
-        
+
         const updater = vi.mocked(updateTrack).mock.calls[0][1] as any;
         const track = trackStore.value!.tracks[0];
         const updatedTrack = updater(track);

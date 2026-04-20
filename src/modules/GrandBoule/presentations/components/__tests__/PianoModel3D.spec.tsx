@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
+
 import { PianoModel3D } from '../PianoModel3D';
 
 describe('PianoModel3D', () => {

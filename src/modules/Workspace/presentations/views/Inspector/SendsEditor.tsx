@@ -1,16 +1,19 @@
 import { type ReactElement } from 'react';
+
+import { Plus } from 'lucide-react';
+
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
-import { Slider } from '#/components/ui/slider';
 import { Button } from '#/components/ui/button';
-import { Plus } from 'lucide-react';
+import { Slider } from '#/components/ui/slider';
+import { setSend, toggleSendPreFader, addTrack } from '#/modules/Arrangement/useCases';
 import { cn } from '#/utils/Styles/cn';
-import { useTracks } from '../../hooks/useTracks';
+
+import { type Track } from '../../../models/TrackViewTypes';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
-import { setSend, toggleSendPreFader, addTrack } from '#/modules/Arrangement/useCases';
-import { type Track } from '../../../models/TrackViewTypes';
+import { useTracks } from '../../hooks/useTracks';
 
 type SendsEditorProps = {
     track: Track;

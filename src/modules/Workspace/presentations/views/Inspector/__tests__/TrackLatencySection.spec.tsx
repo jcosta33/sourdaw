@@ -1,24 +1,19 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TrackLatencySection } from '../TrackLatencySection';
 
 // Mock external dependencies
 const mockGetTrackLatency = vi.fn(() => ({ totalLatencyMs: 0, deviceLatencyMs: 0 }));
 const mockGetCompensationDelay = vi.fn(() => 0);
 
-vi.mock(
-    '#/modules/AudioEngine/useCases/latencyCompensation/compensation/getCompensationDelay',
-    () => ({
-        getCompensationDelay: () => mockGetCompensationDelay(),
-    }),
-);
+vi.mock('#/modules/AudioEngine/useCases/latencyCompensation/compensation/getCompensationDelay', () => ({
+    getCompensationDelay: () => mockGetCompensationDelay(),
+}));
 
-vi.mock(
-    '#/modules/AudioEngine/useCases/latencyCompensation/compensation/helpers',
-    () => ({
-        getTrackLatency: () => mockGetTrackLatency(),
-    }),
-);
+vi.mock('#/modules/AudioEngine/useCases/latencyCompensation/compensation/helpers', () => ({
+    getTrackLatency: () => mockGetTrackLatency(),
+}));
 
 vi.mock('#/components/daw/DawEmptyState', () => ({
     DawEmptyState: ({ title }: { title: string }) => <div data-testid="empty-state">{title}</div>,

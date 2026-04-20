@@ -1,8 +1,10 @@
-import { getTrackById } from '../repositories/track/getTrackById';
-import { addClip } from './clip/addClip';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { getTrackById } from '../repositories/track/getTrackById';
+
+import { addClip } from './clip/addClip';
 
 export async function importAudioClipToTrack(trackId: string, file: File): Promise<void> {
     let bufferId: string;

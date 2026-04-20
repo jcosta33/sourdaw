@@ -1,5 +1,6 @@
-import { versionControlStore } from '../../stores/versionControlStore';
 import { createVersion } from '../../models/ProjectVersion';
+import { versionControlStore } from '../../stores/versionControlStore';
+
 import { captureSnapshot } from './snapshotHelpers/captureSnapshot';
 
 export function createProjectVersion(label: string, description: string = '', tags: string[] = []): void {

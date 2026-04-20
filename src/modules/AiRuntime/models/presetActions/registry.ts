@@ -6,15 +6,15 @@
  * PresetAction / PresetCategory types from ./presets/types.
  */
 
-import { transportPresets } from './presets/transport';
-import { trackPresets } from './presets/track';
-import { devicePresets } from './presets/device';
 import { clipPresets } from './presets/clip';
-import { midiPresets } from './presets/midi';
-import { generatePresets } from './presets/generate';
-import { workspacePresets } from './presets/workspace';
-import { mixPresets, automationPresets } from './presets/mixAndAutomation';
+import { devicePresets } from './presets/device';
 import { filePresets, collaborationPresets } from './presets/fileAndCollaboration';
+import { generatePresets } from './presets/generate';
+import { midiPresets } from './presets/midi';
+import { mixPresets, automationPresets } from './presets/mixAndAutomation';
+import { trackPresets } from './presets/track';
+import { transportPresets } from './presets/transport';
+import { workspacePresets } from './presets/workspace';
 
 export type { PresetContext, PresetAction, PresetCategory } from './presets/types';
 

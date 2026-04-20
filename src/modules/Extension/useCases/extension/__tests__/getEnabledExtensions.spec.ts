@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { type ExtensionManifest, type ExtensionMarketplaceState, type InstalledExtension } from '../../../stores/extension';
+
+import {
+    type ExtensionManifest,
+    type ExtensionMarketplaceState,
+    type InstalledExtension,
+} from '../../../stores/extension';
 import { getEnabledExtensions } from '../getEnabledExtensions';
 
 const mocks = vi.hoisted(() => ({
@@ -46,7 +51,7 @@ describe('getEnabledExtensions', () => {
             { manifest: manifest('off'), enabled: false, installedAt: '', lastUpdatedAt: '', state: {} },
         ];
         mocks.extensionStore.value = baseState({ installed });
-        
+
         expect(getEnabledExtensions()).toHaveLength(1);
         expect(getEnabledExtensions()[0]!.manifest.id).toBe('on');
     });

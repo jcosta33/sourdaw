@@ -1,12 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
-import { trackStore } from '../../stores/trackStore';
-import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
-import { timelineViewStore } from '../../stores/timelineViewStore';
+
 import { midiStore } from '#/modules/MIDI/stores';
+import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
 import { workspaceStore, preferencesStore } from '#/modules/Workspace/stores';
-import { clipDragPreviewRef } from '../../stores/clipDragPreviewRef';
+
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
+import { clipDragPreviewRef } from '../../stores/clipDragPreviewRef';
+import { timelineViewStore } from '../../stores/timelineViewStore';
+import { trackStore } from '../../stores/trackStore';
+import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
 
 vi.mock('../../stores/trackStore', async (importOriginal) => {
     const actual = await importOriginal<any>();
@@ -26,7 +28,11 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
 });
 vi.mock('#/modules/Workspace/stores', async (importOriginal) => {
     const actual = await importOriginal<any>();
-    return { ...actual, workspaceStore: { value: null, set: vi.fn() }, preferencesStore: { value: null, set: vi.fn() } };
+    return {
+        ...actual,
+        workspaceStore: { value: null, set: vi.fn() },
+        preferencesStore: { value: null, set: vi.fn() },
+    };
 });
 vi.mock('../../stores/clipDragPreviewRef', async (importOriginal) => {
     const actual = await importOriginal<any>();

@@ -14,25 +14,27 @@
  * 10. Execute with full undo support
  */
 import { inject } from '#/infra/di/inject';
-import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { logger } from '#/infra/logger/appLogger';
+import { commitUndoEntry, createUndoEntry, generateGroupId } from '#/modules/Command/useCases';
+import { saveSnapshot } from '#/modules/CrdtDocument/useCases';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
-import { type Dso, type EditPlan, EDIT_PLAN_JSON_SCHEMA, classifyEditPlan } from '../../models/DsoTypes';
-import { serializeLogicalState, buildProjectSummary, logEdit } from './serializeLogicalState';
-import { buildDsoPrompt } from './dsoPrompt';
-import { resolveDsoNames, validateDsos, executeDsos } from './compileDso';
 
-type ExecuteDsosFn = (dsos: Dso[]) => Promise<string[]>;
-import { resolveBackend } from '../llmOrchestration/backendResolution/helpers';
-import { isDsoBackendAvailable } from '../llmOrchestration/backendResolution/isDsoBackendAvailable';
+import { createAiRuntimeError } from '../../errors/AiRuntimeError';
+import { type Dso, type EditPlan, EDIT_PLAN_JSON_SCHEMA, classifyEditPlan } from '../../models/DsoTypes';
 import { isNativeEngineReady } from '../../repositories/nativeEngine/lifecycle';
 import { streamNativeCompletion } from '../../repositories/nativeEngine/streaming';
 import { getActiveModelId, getLlmEngine } from '../../repositories/webLlm/engineLifecycle';
-import { llmStatusStore } from '../../stores/llmStatusStore';
-import { appendChatMessage, updateChatMessage, setChatGenerating } from '../../stores/chatStore';
 import { pushAiActionGroup } from '../../stores/aiActionHistoryStore';
-import { commitUndoEntry, createUndoEntry, generateGroupId } from '#/modules/Command/useCases';
-import { saveSnapshot } from '#/modules/CrdtDocument/useCases';
+import { appendChatMessage, updateChatMessage, setChatGenerating } from '../../stores/chatStore';
+import { llmStatusStore } from '../../stores/llmStatusStore';
+import { resolveBackend } from '../llmOrchestration/backendResolution/helpers';
+import { isDsoBackendAvailable } from '../llmOrchestration/backendResolution/isDsoBackendAvailable';
+
+import { resolveDsoNames, validateDsos, executeDsos } from './compileDso';
+import { buildDsoPrompt } from './dsoPrompt';
+import { serializeLogicalState, buildProjectSummary, logEdit } from './serializeLogicalState';
+
+type ExecuteDsosFn = (dsos: Dso[]) => Promise<string[]>;
 
 export type DsoEditResult = {
     success: boolean;
@@ -44,141 +46,144 @@ export type DsoEditResult = {
 /**
  * Execute a DSO edit request — the single orchestration entrypoint.
  */
-export const executeDsoEdit = inject({ logger })(({ logger }) =>
-    (async function executeDsoEdit(userRequest: string): Promise<DsoEditResult> {
-    const backend = resolveBackend();
+export const executeDsoEdit = inject({ logger })(
+    ({ logger }) =>
+        async function executeDsoEdit(userRequest: string): Promise<DsoEditResult> {
+            const backend = resolveBackend();
 
-    if (!isDsoBackendAvailable()) {
-        return {
-            success: false,
-            plan: null,
-            summaries: [],
-            error: 'No DSO-capable backend available (Qwen3-8B required)',
-        };
-    }
+            if (!isDsoBackendAvailable()) {
+                return {
+                    success: false,
+                    plan: null,
+                    summaries: [],
+                    error: 'No DSO-capable backend available (Qwen3-8B required)',
+                };
+            }
 
-    // 1. Serialize logical state
-    const logicalState = serializeLogicalState({ includeNoteCount: true });
-    const summary = buildProjectSummary();
+            // 1. Serialize logical state
+            const logicalState = serializeLogicalState({ includeNoteCount: true });
+            const summary = buildProjectSummary();
 
-    // 2. Build prompt
-    const { system, user } = buildDsoPrompt(logicalState, userRequest, summary);
+            // 2. Build prompt
+            const { system, user } = buildDsoPrompt(logicalState, userRequest, summary);
 
-    // 3. Chat UI messages
-    appendChatMessage({
-        id: `msg-${crypto.randomUUID()}`,
-        role: 'user',
-        content: userRequest,
-        timestamp: Date.now(),
-    });
-
-    const assistantMsgId = `msg-${crypto.randomUUID()}`;
-    appendChatMessage({
-        id: assistantMsgId,
-        role: 'assistant',
-        content: 'Planning edit...',
-        timestamp: Date.now(),
-        isStreaming: true,
-    });
-
-    setChatGenerating(true);
-    llmStatusStore.set({ state: 'generating' });
-
-    try {
-        // 4. Invoke LLM — schema-constrained for native, regular for others
-        const rawResponse = await invokeLlm(backend, system, user, assistantMsgId);
-
-        // 5. Extract reasoning tokens (Qwen3 uses <think>...</think>) and parse EditPlan
-        const { reasoning, cleanResponse } = extractReasoning(rawResponse);
-        const plan = parseEditPlan(cleanResponse);
-
-        // 6. Handle moderation
-        if (plan.moderation === 'block') {
-            updateChatMessage(assistantMsgId, {
-                content: `Cannot do that: ${plan.intent}`,
-                isStreaming: false,
-                reasoning,
-                isDsoAction: true,
+            // 3. Chat UI messages
+            appendChatMessage({
+                id: `msg-${crypto.randomUUID()}`,
+                role: 'user',
+                content: userRequest,
+                timestamp: Date.now(),
             });
-            finish();
-            return { success: true, plan, summaries: [] };
-        }
 
-        if (plan.dsos.length === 0) {
-            updateChatMessage(assistantMsgId, {
-                content: plan.intent || 'No changes needed.',
-                isStreaming: false,
-                reasoning,
-                isDsoAction: true,
+            const assistantMsgId = `msg-${crypto.randomUUID()}`;
+            appendChatMessage({
+                id: assistantMsgId,
+                role: 'assistant',
+                content: 'Planning edit...',
+                timestamp: Date.now(),
+                isStreaming: true,
             });
-            finish();
-            return { success: true, plan, summaries: [] };
+
+            setChatGenerating(true);
+            llmStatusStore.set({ state: 'generating' });
+
+            try {
+                // 4. Invoke LLM — schema-constrained for native, regular for others
+                const rawResponse = await invokeLlm(backend, system, user, assistantMsgId);
+
+                // 5. Extract reasoning tokens (Qwen3 uses <think>...</think>) and parse EditPlan
+                const { reasoning, cleanResponse } = extractReasoning(rawResponse);
+                const plan = parseEditPlan(cleanResponse);
+
+                // 6. Handle moderation
+                if (plan.moderation === 'block') {
+                    updateChatMessage(assistantMsgId, {
+                        content: `Cannot do that: ${plan.intent}`,
+                        isStreaming: false,
+                        reasoning,
+                        isDsoAction: true,
+                    });
+                    finish();
+                    return { success: true, plan, summaries: [] };
+                }
+
+                if (plan.dsos.length === 0) {
+                    updateChatMessage(assistantMsgId, {
+                        content: plan.intent || 'No changes needed.',
+                        isStreaming: false,
+                        reasoning,
+                        isDsoAction: true,
+                    });
+                    finish();
+                    return { success: true, plan, summaries: [] };
+                }
+
+                // 7. Resolve names to IDs (LLM outputs human names, we look up the real IDs)
+                const resolutionErrors = resolveDsoNames(plan.dsos);
+                if (resolutionErrors.length > 0) {
+                    const errorText = resolutionErrors.map((e) => e.reason).join('; ');
+                    updateChatMessage(assistantMsgId, {
+                        content: `Could not resolve references: ${errorText}`,
+                        isStreaming: false,
+                        error: errorText,
+                        reasoning,
+                        isDsoAction: true,
+                    });
+                    finish();
+                    return { success: false, plan, summaries: [], error: errorText };
+                }
+
+                // 8. Validate DSOs (now with resolved IDs)
+                const validationErrors = validateDsos(plan.dsos);
+                if (validationErrors.length > 0) {
+                    const errorText = validationErrors.map((e) => e.reason).join('; ');
+                    updateChatMessage(assistantMsgId, {
+                        content: `Edit rejected — ${errorText}`,
+                        isStreaming: false,
+                        error: errorText,
+                    });
+                    finish();
+                    return { success: false, plan, summaries: [], error: errorText };
+                }
+
+                // 9. Classify and execute
+                const classification = classifyEditPlan(plan);
+
+                if (classification === 'confirmation_required') {
+                    const summaries = await commitDsos(plan, userRequest, assistantMsgId, reasoning, executeDsos);
+                    const descriptions = plan.dsos
+                        .filter((d) => d.op.startsWith('remove'))
+                        .map((d) => d.op.replaceAll('_', ' '));
+                    updateChatMessage(assistantMsgId, {
+                        content: `Done (destructive): ${summaries.join('. ')}.\n\nRemoved: ${descriptions.join(', ')}. Use Ctrl+Z to undo.`,
+                        isStreaming: false,
+                        reasoning,
+                        isDsoAction: true,
+                    });
+                    finish();
+                    return { success: true, plan, summaries };
+                }
+
+                // 10. Execute with undo support
+                const summaries = await commitDsos(plan, userRequest, assistantMsgId, reasoning, executeDsos);
+
+                finish();
+                return { success: true, plan, summaries };
+            } catch (error) {
+                const err = error instanceof Error ? error : new Error(String(error));
+                logger.error(err);
+
+                updateChatMessage(assistantMsgId, {
+                    content: `Edit failed: ${err.message}`,
+                    isStreaming: false,
+                    error: err.message,
+                });
+
+                setChatGenerating(false);
+                llmStatusStore.set({ state: 'error', message: err.message });
+                return { success: false, plan: null, summaries: [], error: err.message };
+            }
         }
-
-        // 7. Resolve names to IDs (LLM outputs human names, we look up the real IDs)
-        const resolutionErrors = resolveDsoNames(plan.dsos);
-        if (resolutionErrors.length > 0) {
-            const errorText = resolutionErrors.map((e) => e.reason).join('; ');
-            updateChatMessage(assistantMsgId, {
-                content: `Could not resolve references: ${errorText}`,
-                isStreaming: false,
-                error: errorText,
-                reasoning,
-                isDsoAction: true,
-            });
-            finish();
-            return { success: false, plan, summaries: [], error: errorText };
-        }
-
-        // 8. Validate DSOs (now with resolved IDs)
-        const validationErrors = validateDsos(plan.dsos);
-        if (validationErrors.length > 0) {
-            const errorText = validationErrors.map((e) => e.reason).join('; ');
-            updateChatMessage(assistantMsgId, {
-                content: `Edit rejected — ${errorText}`,
-                isStreaming: false,
-                error: errorText,
-            });
-            finish();
-            return { success: false, plan, summaries: [], error: errorText };
-        }
-
-        // 9. Classify and execute
-        const classification = classifyEditPlan(plan);
-
-        if (classification === 'confirmation_required') {
-            const summaries = await commitDsos(plan, userRequest, assistantMsgId, reasoning, executeDsos);
-            const descriptions = plan.dsos.filter((d) => d.op.startsWith('remove')).map((d) => d.op.replace(/_/g, ' '));
-            updateChatMessage(assistantMsgId, {
-                content: `Done (destructive): ${summaries.join('. ')}.\n\nRemoved: ${descriptions.join(', ')}. Use Ctrl+Z to undo.`,
-                isStreaming: false,
-                reasoning,
-                isDsoAction: true,
-            });
-            finish();
-            return { success: true, plan, summaries };
-        }
-
-        // 10. Execute with undo support
-        const summaries = await commitDsos(plan, userRequest, assistantMsgId, reasoning, executeDsos);
-
-        finish();
-        return { success: true, plan, summaries };
-    } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
-        logger.error(err);
-
-        updateChatMessage(assistantMsgId, {
-            content: `Edit failed: ${err.message}`,
-            isStreaming: false,
-            error: err.message,
-        });
-
-        setChatGenerating(false);
-        llmStatusStore.set({ state: 'error', message: err.message });
-        return { success: false, plan: null, summaries: [], error: err.message };
-    }
-})
 );
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -204,7 +209,7 @@ function extractReasoning(raw: string): { reasoning: string | undefined; cleanRe
 
 function parseEditPlan(responseText: string): EditPlan {
     // Strip any residual <think>…</think> that wasn't caught by extractReasoning
-    const clean = responseText.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    const clean = responseText.replaceAll(/<think>[\s\S]*?<\/think>/g, '').trim();
 
     // 1. Try direct parse on the clean response
     try {
@@ -225,17 +230,17 @@ function parseEditPlan(responseText: string): EditPlan {
             if (parsed.kind === 'edit_plan' && Array.isArray(parsed.dsos)) {
                 return parsed as EditPlan;
             }
-        } catch (e) {
-            const preview = clean.slice(0, 120).replace(/\n/g, ' ');
+        } catch (error) {
+            const preview = clean.slice(0, 120).replaceAll('\n', ' ');
             throw createAiRuntimeError(
-                `LLM returned malformed JSON (${e instanceof Error ? e.message : String(e)}). ` +
+                `LLM returned malformed JSON (${error instanceof Error ? error.message : String(error)}). ` +
                     `Response preview: "${preview}…" — ` +
                     `The model may have run out of tokens mid-response. Try a simpler request or increase max_tokens.`
             );
         }
     }
 
-    const preview = clean.slice(0, 120).replace(/\n/g, ' ');
+    const preview = clean.slice(0, 120).replaceAll('\n', ' ');
     throw createAiRuntimeError(`LLM response is not a valid EditPlan. Preview: "${preview}…"`);
 }
 
@@ -393,8 +398,7 @@ async function invokeLlm(backend: string, system: string, user: string, chatMsgI
                 const activeModel = getActiveModelId();
                 const constraintMsg =
                     constraintError instanceof Error ? constraintError.message : String(constraintError);
-                const fallbackMsg =
-                    fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+                const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
                 throw createAiRuntimeError(
                     `This edit is too complex for the current model. ` +
                         `Try loading a larger model (Pro) from the AI menu, or simplify your request.\n\n` +

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleSwitchMonitor } from '../handleSwitchMonitor';
 
 const mocks = vi.hoisted(() => ({

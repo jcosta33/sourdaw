@@ -1,25 +1,22 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { setSemanticContext, clearSemanticContext, getDsoSnapshotHandlers } from '#/modules/CrdtDocument/useCases';
-import { pushActionHistoryEntry } from '#/modules/CrdtDocument/stores';
-import { type AppAction, type ActionHandler, createUndoEntry } from './commandQueries';
-import { commitUndoEntry } from './commitUndoEntry';
+import { getGenerationHandlers, getAiMidiHandlers } from '#/modules/AiGeneration';
+import { getAiOrganizationHandlers } from '#/modules/AiRuntime';
 import { getArrangementHandlers } from '#/modules/Arrangement';
+import { getAnalysisHandlers } from '#/modules/AudioAnalysis';
+import { getFinalFeatureHandlers } from '#/modules/AudioEngine';
+import { getAutomationHandlers } from '#/modules/Automation';
+import { getCollaborationHandlers } from '#/modules/Collaboration';
+import { pushActionHistoryEntry } from '#/modules/CrdtDocument/stores';
+import { setSemanticContext, clearSemanticContext, getDsoSnapshotHandlers } from '#/modules/CrdtDocument/useCases';
+import { getChordTrackHandlers, getMidiRoutingHandlers, getPatternInstanceHandlers } from '#/modules/MIDI';
+import { getPluginHostHandlers } from '#/modules/Plugin';
+import { getSongStructureHandlers, getVersionControlHandlers } from '#/modules/Project';
 import { getTransportHandlers } from '#/modules/Transport';
 import { getWorkspaceHandlers, getScratchPadHandlers } from '#/modules/Workspace';
-import { getAutomationHandlers } from '#/modules/Automation';
-import { getGenerationHandlers, getAiMidiHandlers } from '#/modules/AiGeneration';
-import { getAnalysisHandlers } from '#/modules/AudioAnalysis';
-import { getCollaborationHandlers } from '#/modules/Collaboration';
-import { getPluginHostHandlers } from '#/modules/Plugin';
-import { getAiOrganizationHandlers } from '#/modules/AiRuntime';
-import {
-    getChordTrackHandlers,
-    getMidiRoutingHandlers,
-    getPatternInstanceHandlers,
-} from '#/modules/MIDI';
-import { getSongStructureHandlers, getVersionControlHandlers } from '#/modules/Project';
-import { getFinalFeatureHandlers } from '#/modules/AudioEngine';
+
+import { type AppAction, type ActionHandler, createUndoEntry } from './commandQueries';
+import { commitUndoEntry } from './commitUndoEntry';
 import { getMacroHandlers } from './getMacroHandlers';
 import { getUndoTreeHandlers } from './getUndoTreeHandlers';
 import { recordAction } from './macro/recording/recordAction';
@@ -80,7 +77,7 @@ function getHandlerRegistry(): Record<string, ActionHandler<any>> {
             getSongStructureHandlers(),
             getVersionControlHandlers(),
             getFinalFeatureHandlers(),
-            getDsoSnapshotHandlers(),
+            getDsoSnapshotHandlers()
         );
     }
     return handlerRegistryState.cache;
@@ -97,7 +94,7 @@ export type ExecuteOptions = {
 
 export const executeAppAction = inject({ logger })(
     ({ logger }) =>
-        (async function executeAppAction(action: AppAction, options?: ExecuteOptions): Promise<void> {
+        async function executeAppAction(action: AppAction, options?: ExecuteOptions): Promise<void> {
             traceAppAction(action.type, options?.source ?? 'manual');
 
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -163,5 +160,5 @@ export const executeAppAction = inject({ logger })(
                     commitUndoEntry(entry);
                 }
             }
-        })
+        }
 );

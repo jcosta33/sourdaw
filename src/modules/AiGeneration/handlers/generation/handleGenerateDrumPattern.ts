@@ -1,7 +1,8 @@
-import { applyDrumPatternToTrack } from '../../useCases/generateDrumPattern/applyToTrack';
 import { type DrumPatternStyle } from '../../useCases/generateDrumPattern/algorithm';
-import { VALID_DRUM_STYLES } from './generationHandlerHelpers';
+import { applyDrumPatternToTrack } from '../../useCases/generateDrumPattern/applyToTrack';
+
 import { createGenerationHandler } from './createGenerationHandler';
+import { VALID_DRUM_STYLES } from './generationHandlerHelpers';
 
 export const handleGenerateDrumPattern = createGenerationHandler<'generateDrumPattern'>({
     validStyles: VALID_DRUM_STYLES,

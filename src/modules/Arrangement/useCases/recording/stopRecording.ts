@@ -1,8 +1,9 @@
+import { getTransportState } from '#/modules/Transport/useCases';
+
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
-import { getTransportState } from '#/modules/Transport/useCases';
-import { takeLaneStore } from '../../stores/takeLaneStore';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 
 /**
  * Finalise in-flight recording clips.
@@ -54,9 +55,7 @@ export function stopRecording(): void {
             lanes: tlState.lanes.map((lane) => ({
                 ...lane,
                 takes: lane.takes.map((take) =>
-                    clipIdSet.has(take.clipId)
-                        ? { ...take, endBeat: Math.max(take.startBeat + 1, endBeat) }
-                        : take
+                    clipIdSet.has(take.clipId) ? { ...take, endBeat: Math.max(take.startBeat + 1, endBeat) } : take
                 ),
             })),
         });

@@ -1,7 +1,9 @@
+import { transportStore, timeSignatureMapStore } from '#/modules/Transport/stores';
+
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
-import { transportStore, timeSignatureMapStore } from '#/modules/Transport/stores';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+
 import { drawClip } from './clipDrawing';
 
 export function createCanvasRenderer(canvas: HTMLCanvasElement): TimelineRenderer {
@@ -209,13 +211,13 @@ function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, w
             // H3: Render variation lanes below main clips if expanded
             if (track.variationLanes && track.variationLanes.length > 0) {
                 const varLaneHeight = 24;
-                track.variationLanes.forEach((lane, i) => {
+                for (const [i, lane] of track.variationLanes.entries()) {
                     const ly = y + h + i * varLaneHeight;
-                    
+
                     // Background for variation lane
                     ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
                     ctx.fillRect(0, ly, width, varLaneHeight);
-                    
+
                     // Lane label
                     ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
                     ctx.font = '7px system-ui';
@@ -224,14 +226,14 @@ function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, w
                     for (const clip of lane.clips) {
                         drawClip(ctx, clip, model, ly, varLaneHeight);
                     }
-                    
+
                     // Separator
                     ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
                     ctx.beginPath();
                     ctx.moveTo(0, ly + varLaneHeight);
                     ctx.lineTo(width, ly + varLaneHeight);
                     ctx.stroke();
-                });
+                }
             }
         }
     }

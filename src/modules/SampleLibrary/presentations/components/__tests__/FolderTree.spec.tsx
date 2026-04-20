@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+
 import { FolderTree } from '../FolderTree';
 
 describe('FolderTree', () => {
@@ -13,14 +14,7 @@ describe('FolderTree', () => {
                 children: [],
             },
         ];
-        render(
-            <FolderTree
-                nodes={nodes}
-                currentFolder={null}
-                onFolderSelect={vi.fn()}
-                onToggleExpand={vi.fn()}
-            />
-        );
+        render(<FolderTree nodes={nodes} currentFolder={null} onFolderSelect={vi.fn()} onToggleExpand={vi.fn()} />);
         expect(screen.getByText('Samples')).toBeInTheDocument();
     });
 });

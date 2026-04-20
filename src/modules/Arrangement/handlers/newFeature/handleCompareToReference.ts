@@ -1,6 +1,6 @@
+import { compareToReference } from '#/modules/AudioAnalysis/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { compareToReference } from '#/modules/AudioAnalysis/useCases';
 
 export const handleCompareToReference = createHandler<'compareToReference'>({
     execute: () => {

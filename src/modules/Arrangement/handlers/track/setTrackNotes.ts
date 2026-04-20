@@ -1,5 +1,6 @@
-import { setTrackNotes } from '../../useCases/setTrackGainPan/setTrackNotes';
 import { createHandler } from '#/utils/createHandler';
+
+import { setTrackNotes } from '../../useCases/setTrackGainPan/setTrackNotes';
 
 export const handleSetTrackNotes = createHandler<'setTrackNotes'>({
     execute: (action) => {

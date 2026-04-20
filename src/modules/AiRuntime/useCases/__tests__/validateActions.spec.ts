@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { validateActions } from '../validateActions';
+
 import { type RuntimeAction } from '../../models/RuntimeAction';
+import { validateActions } from '../validateActions';
 
 const { mockLogger } = vi.hoisted(() => ({
     mockLogger: {
@@ -8,7 +9,7 @@ const { mockLogger } = vi.hoisted(() => ({
         info: vi.fn(),
         error: vi.fn(),
         debug: vi.fn(),
-    }
+    },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({

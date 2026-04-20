@@ -8,6 +8,7 @@
  */
 import { useStore } from '#/infra/store/useStore';
 import { projectStore } from '#/modules/Project/stores';
+
 import type { ProjectStoreState } from '#/modules/Project/stores';
 
 const defaultState: ProjectStoreState = {
@@ -20,7 +21,7 @@ const defaultState: ProjectStoreState = {
     scaleName: 'chromatic',
     tuning: {
         name: 'Equal Temperament',
-        frequencies: Array.from({ length: 128 }, (_, i) => 440 * Math.pow(2, (i - 69) / 12)),
+        frequencies: Array.from({ length: 128 }, (_, i) => 440 * 2 ** ((i - 69) / 12)),
     },
     initialized: false,
 };

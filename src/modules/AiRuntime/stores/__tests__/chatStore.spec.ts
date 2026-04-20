@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import {
     chatStore,
     appendChatMessage,
@@ -78,10 +79,10 @@ describe('chatStore', () => {
     describe('toggleReasoning', () => {
         it('toggles the reasoning state flag', () => {
             expect(chatStore.value!.enableReasoning).toBe(true);
-            
+
             toggleReasoning();
             expect(chatStore.value!.enableReasoning).toBe(false);
-            
+
             toggleReasoning();
             expect(chatStore.value!.enableReasoning).toBe(true);
         });
@@ -101,7 +102,7 @@ describe('chatStore', () => {
         it('aborts the active controller if one is set', () => {
             const mockAbort = vi.fn();
             const aborter = { abort: mockAbort } as unknown as AbortController;
-            
+
             setActiveAborter(aborter);
             stopGenerating();
 

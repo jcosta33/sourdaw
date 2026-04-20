@@ -1,5 +1,5 @@
-import { createHandler } from '#/utils/createHandler';
 import { setMarkerColor } from '#/modules/Arrangement/useCases';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleSetMarkerColor = createHandler<'setMarkerColor'>({
     execute: (a) => {

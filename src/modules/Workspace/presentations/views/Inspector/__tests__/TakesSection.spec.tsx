@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TakesSection } from '../TakesSection';
 
 // Mock external dependencies
@@ -24,13 +25,7 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
-    DawHeaderBand: ({
-        title,
-        actions,
-    }: {
-        title?: string;
-        actions?: React.ReactNode;
-    }) => (
+    DawHeaderBand: ({ title, actions }: { title?: string; actions?: React.ReactNode }) => (
         <div data-testid="header-band">
             <span>{title}</span>
             {actions ? <div data-testid="header-actions">{actions}</div> : null}
@@ -39,13 +34,7 @@ vi.mock('#/components/daw/DawHeaderBand', () => ({
 }));
 
 vi.mock('#/components/daw/DawMicroBadge', () => ({
-    DawMicroBadge: ({
-        children,
-        tone,
-    }: {
-        children: React.ReactNode;
-        tone?: string;
-    }) => (
+    DawMicroBadge: ({ children, tone }: { children: React.ReactNode; tone?: string }) => (
         <span data-testid="micro-badge" data-tone={tone}>
             {children}
         </span>
@@ -53,15 +42,7 @@ vi.mock('#/components/daw/DawMicroBadge', () => ({
 }));
 
 vi.mock('#/components/ui/button', () => ({
-    Button: ({
-        children,
-        onClick,
-        variant,
-    }: {
-        children: React.ReactNode;
-        onClick?: () => void;
-        variant?: string;
-    }) => (
+    Button: ({ children, onClick, variant }: { children: React.ReactNode; onClick?: () => void; variant?: string }) => (
         <button data-testid="button" data-variant={variant} onClick={onClick}>
             {children}
         </button>
@@ -110,9 +91,7 @@ describe('TakesSection', () => {
             lanes: [
                 {
                     trackId: 'track-1',
-                    takes: [
-                        { id: 'take-1', name: 'Take 1', startBeat: 0, endBeat: 16, selected: true },
-                    ],
+                    takes: [{ id: 'take-1', name: 'Take 1', startBeat: 0, endBeat: 16, selected: true }],
                 },
             ],
         });
@@ -141,9 +120,7 @@ describe('TakesSection', () => {
             lanes: [
                 {
                     trackId: 'track-1',
-                    takes: [
-                        { id: 'take-1', name: 'Take 1', startBeat: 0, endBeat: 16, selected: true },
-                    ],
+                    takes: [{ id: 'take-1', name: 'Take 1', startBeat: 0, endBeat: 16, selected: true }],
                 },
             ],
         });
@@ -156,9 +133,7 @@ describe('TakesSection', () => {
             lanes: [
                 {
                     trackId: 'track-1',
-                    takes: [
-                        { id: 'take-1', name: 'Take 1', startBeat: 0, endBeat: 16, selected: true },
-                    ],
+                    takes: [{ id: 'take-1', name: 'Take 1', startBeat: 0, endBeat: 16, selected: true }],
                 },
             ],
         });
@@ -171,9 +146,7 @@ describe('TakesSection', () => {
             lanes: [
                 {
                     trackId: 'track-1',
-                    takes: [
-                        { id: 'take-1', name: 'Take 1', startBeat: 0, endBeat: 16, selected: true },
-                    ],
+                    takes: [{ id: 'take-1', name: 'Take 1', startBeat: 0, endBeat: 16, selected: true }],
                 },
             ],
         });
@@ -221,9 +194,7 @@ describe('TakesSection', () => {
             lanes: [
                 {
                     trackId: 'track-1',
-                    takes: [
-                        { id: 'take-1', name: 'Take 1', startBeat: 0, endBeat: 16, selected: true },
-                    ],
+                    takes: [{ id: 'take-1', name: 'Take 1', startBeat: 0, endBeat: 16, selected: true }],
                 },
             ],
         });

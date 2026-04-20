@@ -1,6 +1,6 @@
+import { BUILTIN_PLUGINS } from '../models/DeviceParameter';
 import { type SoundPreset } from '../models/SoundPreset';
 import { FACTORY_PRESETS, DRUM_KIT_PRESETS } from '../repositories/presets/factoryPresets';
-import { BUILTIN_PLUGINS } from '../models/DeviceParameter';
 
 export type GetFactoryPresetsOutput = SoundPreset[];
 

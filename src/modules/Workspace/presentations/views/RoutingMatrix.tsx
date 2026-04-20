@@ -4,16 +4,14 @@
  * Rows = source tracks, Columns = destination buses/tracks.
  */
 import { type ReactElement } from 'react';
+
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 import { useStore } from '#/infra/store/useStore';
 import { cn } from '#/utils/Styles/cn';
-import { useTracks } from '../hooks/useTracks';
+
 import { type Track } from '../../models/TrackViewTypes';
-import {
-    routingConnectionKey,
-    routingMatrixStore,
-    type RoutingMatrixState,
-} from '../../stores/routingMatrixStore';
+import { routingConnectionKey, routingMatrixStore, type RoutingMatrixState } from '../../stores/routingMatrixStore';
+import { useTracks } from '../hooks/useTracks';
 
 const emptyState: RoutingMatrixState = { connections: {} };
 

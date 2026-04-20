@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import { Container } from '#/infra/di/Container';
-import { defaultArrangementId } from '../../../stores/arrangementStore';
-import { applyPreset } from '../demoUtils/applyPreset';
-import { syncArrangement } from '../demoUtils/syncArrangement';
+import { markerStore } from '#/modules/Arrangement/stores';
 import { getFactoryPresets } from '#/modules/Arrangement/useCases';
-import { arrangementStore } from '../../../stores/arrangementStore';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
-import { markerStore } from '#/modules/Arrangement/stores';
+
+import { defaultArrangementId, arrangementStore } from '../../../stores/arrangementStore';
+import { applyPreset } from '../demoUtils/applyPreset';
+import { syncArrangement } from '../demoUtils/syncArrangement';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getFactoryPresets: vi.fn(),
@@ -81,4 +82,3 @@ describe('syncArrangement', () => {
         expect(payload.arrangements[0]!.tracks.selectedTrackId).toBe('tr1');
     });
 });
-

@@ -1,5 +1,6 @@
-import { type GrandBouleState, type TemperamentIndex } from '../stores/grandBouleStore';
 import { type Store } from '#/infra/store/types';
+
+import { type GrandBouleState, type TemperamentIndex } from '../stores/grandBouleStore';
 /**
  * Set the historical temperament for the Grand Boule piano (spec §4).
  *

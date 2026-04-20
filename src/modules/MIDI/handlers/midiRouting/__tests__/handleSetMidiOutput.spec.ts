@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleSetMidiOutput } from '../handleSetMidiOutput';
 
 const mocks = vi.hoisted(() => ({
@@ -15,7 +16,7 @@ describe('handleSetMidiOutput', () => {
     it('delegates to setMidiOutput use case', () => {
         handleSetMidiOutput.execute({
             type: 'setMidiOutput',
-            payload: { trackId: 't1', destinationTrackId: 't2' }
+            payload: { trackId: 't1', destinationTrackId: 't2' },
         });
         expect(mocks.setMidiOutput).toHaveBeenCalledWith('t1', 't2');
     });

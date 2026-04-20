@@ -4,6 +4,7 @@
  * Part of the Level 5 (Lab) experience.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { useFermenterBuffer } from '../hooks/useFermenterTelemetry';
 
 type SpectrumAnalyzerProps = {

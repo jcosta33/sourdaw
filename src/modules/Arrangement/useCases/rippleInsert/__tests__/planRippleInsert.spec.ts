@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { planRippleInsert } from '../planRippleInsert';
-import { getTrackStoreState } from '../../getTrackStoreState';
+
 import { getWorkspaceState } from '#/modules/Workspace/useCases';
+
+import { getTrackStoreState } from '../../getTrackStoreState';
+import { planRippleInsert } from '../planRippleInsert';
 
 vi.mock('../../getTrackStoreState', () => ({
     getTrackStoreState: vi.fn(),
@@ -38,7 +40,7 @@ describe('planRippleInsert', () => {
 
         const plan = planRippleInsert({ trackId: 't1', insertBeat: 2, insertDuration: 1 });
         expect(plan?.shiftedClips.length).toBe(2);
-        expect(plan?.shiftedClips.map(s => s.clipId)).toEqual(['c2', 'c3']);
+        expect(plan?.shiftedClips.map((s) => s.clipId)).toEqual(['c2', 'c3']);
     });
 
     it('should return empty shifted clips if insertion point is at end', () => {
@@ -47,9 +49,7 @@ describe('planRippleInsert', () => {
             tracks: [
                 {
                     id: 't1',
-                    clips: [
-                        { id: 'c1', startBeat: 0, endBeat: 2 },
-                    ],
+                    clips: [{ id: 'c1', startBeat: 0, endBeat: 2 }],
                 },
             ],
         });

@@ -1,18 +1,21 @@
 import { type ReactElement } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
+import { X, Undo2, Redo2 } from 'lucide-react';
+
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
-import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
-import { workspaceStore } from '#/modules/Workspace/stores';
-import { closeUndoHistory, type WorkspaceState } from '#/modules/Workspace/useCases';
-import { undoStore, type UndoStoreState } from '../../stores/undoStore';
-import { undoToIndex } from '../../useCases/undoRedo';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
-import { cn } from '#/utils/Styles/cn';
-import { X, Undo2, Redo2 } from 'lucide-react';
-import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { Button } from '#/components/ui/button';
+import { useStore } from '#/infra/store/useStore';
+import { workspaceStore } from '#/modules/Workspace/stores';
+import { closeUndoHistory, type WorkspaceState } from '#/modules/Workspace/useCases';
+import { cn } from '#/utils/Styles/cn';
+
+import { undoStore, type UndoStoreState } from '../../stores/undoStore';
+import { undoToIndex } from '../../useCases/undoRedo';
 
 const defaultState: UndoStoreState = { past: [], future: [] };
 

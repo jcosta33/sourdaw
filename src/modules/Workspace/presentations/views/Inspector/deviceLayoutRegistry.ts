@@ -16,6 +16,7 @@
  * .ts module and not pretend to be a React component.
  */
 import { type ComponentType } from 'react';
+
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
 import { type Device } from '../../../models/TrackViewTypes';
 

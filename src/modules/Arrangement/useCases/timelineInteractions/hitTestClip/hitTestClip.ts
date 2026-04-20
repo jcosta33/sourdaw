@@ -1,6 +1,7 @@
 import { timelineViewStore } from '../../../stores/timelineViewStore';
 import { buildTimelineRenderModel } from '../../buildTimelineRenderModel';
 import { getTrackAtY } from '../getTrackAtY';
+
 import { RULER_HEIGHT } from './helpers';
 
 export type ClipHitResult = {
@@ -59,7 +60,12 @@ export function hitTestClip(canvasX: number, canvasY: number): ClipHitResult | n
                     const pitchNorm = (note.pitch - minPitch) / (pitchRange + 1);
                     const noteY = contentTop + contentHeight - (pitchNorm + 1 / (pitchRange + 1)) * contentHeight;
 
-                    if (canvasX >= noteX && canvasX <= noteX + noteW && contentY >= noteY && contentY <= noteY + noteHeight) {
+                    if (
+                        canvasX >= noteX &&
+                        canvasX <= noteX + noteW &&
+                        contentY >= noteY &&
+                        contentY <= noteY + noteHeight
+                    ) {
                         return { clipId: clip.id, trackId: track.id, noteId: note.id, pitch: note.pitch, noteHeight };
                     }
                 }

@@ -1,5 +1,5 @@
-import { trackStore } from '../../stores/trackStore';
 import { type Track } from '../../models/Track';
+import { trackStore } from '../../stores/trackStore';
 
 /** Update all tracks with a mapper function. */
 export function mapAllTracks(mapper: (track: Track) => Track): void {

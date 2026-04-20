@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { copySelectedClip } from '../copySelectedClip';
+
 import { getWorkspaceState } from '#/modules/Workspace/useCases';
+
+import { copySelectedClip } from '../copySelectedClip';
 
 vi.mock('#/modules/Workspace/useCases', () => ({
     getWorkspaceState: vi.fn(),

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { decodeAudioFile } from '../trackViewActions/decodeAudioFile';
+
 import { decodeAudioFile as decodeAudioFileImpl } from '#/modules/AudioEngine/useCases';
+
+import { decodeAudioFile } from '../trackViewActions/decodeAudioFile';
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     decodeAudioFile: vi.fn(),
@@ -13,7 +15,7 @@ describe('trackViewActions injectables', () => {
             id: 'b1',
             buffer: {} as AudioBuffer,
         });
-        
+
         await decodeAudioFile(file);
 
         expect(decodeAudioFileImpl).toHaveBeenCalledWith(file);

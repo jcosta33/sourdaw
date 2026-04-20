@@ -1,6 +1,8 @@
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
-import { updateKit } from '../../stores/toasterStore';
+
 import { type ToasterKit } from '../../models/ToasterKit';
+import { updateKit } from '../../stores/toasterStore';
+
 import { findDeviceRef } from './helpers';
 
 const KIT_PARAM_MAP = {

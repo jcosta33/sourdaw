@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { CrustControlZone } from '../CrustControlZone';
+import { describe, it, expect, vi } from 'vitest';
+
 import { DEFAULT_CRUST_PATCH } from '../../../models/CrustPatch';
+import { CrustControlZone } from '../CrustControlZone';
 
 describe('CrustControlZone', () => {
     it('should render', () => {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleDeleteTrackAlternative } from '../handleDeleteTrackAlternative';
 
 const mocks = vi.hoisted(() => ({
@@ -29,8 +30,8 @@ describe('handleDeleteTrackAlternative', () => {
                         { id: 'alt1', clips: [] },
                         { id: 'alt2', clips: [] },
                     ],
-                }
-            ]
+                },
+            ],
         });
 
         handleDeleteTrackAlternative.execute({
@@ -55,8 +56,8 @@ describe('handleDeleteTrackAlternative', () => {
                         { id: 'alt1', clips: [{ id: 'c1' }] },
                         { id: 'alt2', clips: alt2Clips },
                     ],
-                }
-            ]
+                },
+            ],
         });
 
         handleDeleteTrackAlternative.execute({
@@ -73,7 +74,7 @@ describe('handleDeleteTrackAlternative', () => {
 
     it('refuses to delete if only one alternative remains', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', alternatives: [{ id: 'alt1' }] }]
+            tracks: [{ id: 't1', alternatives: [{ id: 'alt1' }] }],
         });
 
         handleDeleteTrackAlternative.execute({

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { createCompGroup } from '../createCompGroup';
 
 const mocks = vi.hoisted(() => ({
@@ -9,7 +10,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Arrangement/stores/groupComping', () => ({
     groupCompingStore: {
-        get value() { return mocks.groupCompingStoreValue.value; },
+        get value() {
+            return mocks.groupCompingStoreValue.value;
+        },
         set: mocks.groupCompingStoreSet,
     },
     getNextGroupId: mocks.getNextGroupId,

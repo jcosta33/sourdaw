@@ -1,8 +1,9 @@
-import { type AppAction } from '#/modules/Command/models/AppAction';
-import { createHandler } from '#/utils/createHandler';
 import { addTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { type AppAction } from '#/modules/Command/models/AppAction';
 import { selectClipWithFocus } from '#/modules/Workspace/useCases';
+import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { getPlayheadBeat, resolveOrCreateMidiTrack } from './generationHandlerHelpers';
 
 type GenerationActionType = 'generateMelody' | 'generateChordProgression' | 'generateDrumPattern';
@@ -40,9 +41,7 @@ export function createGenerationHandler<K extends GenerationActionType>(config: 
     return createHandler<K>({
         execute: (a) => {
             const payload = (a as unknown as { payload: CommonGenerationPayload }).payload;
-            const style = config.validStyles.has(payload.style)
-                ? payload.style
-                : config.defaultStyle;
+            const style = config.validStyles.has(payload.style) ? payload.style : config.defaultStyle;
 
             const trackId = resolveOrCreateMidiTrack(payload.trackId, `${config.trackNamePrefix} (${style})`, {
                 getTrackStoreState,
@@ -62,12 +61,7 @@ export function createGenerationHandler<K extends GenerationActionType>(config: 
                     ? Math.max(0, payload.startBeat)
                     : getPlayheadBeat();
 
-            const result = config.applyToTrack(
-                trackId,
-                a as Extract<AppAction, { type: K }>,
-                style,
-                placementBeat
-            );
+            const result = config.applyToTrack(trackId, a as Extract<AppAction, { type: K }>, style, placementBeat);
             // §14.3 / G3 — after a successful generation, focus the new clip
             // (so the inspector/piano-roll surfaces see it) and surface a
             // notification. An empty-note result is still "success" in the
@@ -81,14 +75,13 @@ export function createGenerationHandler<K extends GenerationActionType>(config: 
                         'warning'
                     );
                 } else {
-                    notifyUser(
-                        `Generated ${style} ${config.labelSuffix} (${result.noteCount} notes)`,
-                        'success'
-                    );
+                    notifyUser(`Generated ${style} ${config.labelSuffix} (${result.noteCount} notes)`, 'success');
                 }
             }
         },
-        describe: (a) => ({ label: `Generate ${(a as unknown as { payload: CommonGenerationPayload }).payload.style} ${config.labelSuffix}` }),
+        describe: (a) => ({
+            label: `Generate ${(a as unknown as { payload: CommonGenerationPayload }).payload.style} ${config.labelSuffix}`,
+        }),
         undoable: true,
     });
 }

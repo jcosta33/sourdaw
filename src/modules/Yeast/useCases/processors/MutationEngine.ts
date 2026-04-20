@@ -6,8 +6,8 @@
  * probability, note selection weights.
  */
 
-import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
+import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 
 type MutationTarget = {
     name: string;

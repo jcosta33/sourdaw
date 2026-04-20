@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type Track } from '../../../models/Track';
 import { renderTrackOffline } from '../renderOffline';
 
@@ -11,23 +12,23 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: new Map()
+    audioBufferCache: new Map(),
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
-    midiStore: { value: null }
+    midiStore: { value: null },
 }));
 
 vi.mock('#/modules/Transport/stores', () => ({
-    transportStore: { value: null }
+    transportStore: { value: null },
 }));
 
 vi.mock('#/modules/Routing/stores', () => ({
-    sidechainStore: { value: null }
+    sidechainStore: { value: null },
 }));
 
 vi.mock('../../stores/trackStore', () => ({
-    trackStore: { value: null }
+    trackStore: { value: null },
 }));
 
 vi.mock('../../services/getUpstreamSubgraph', () => ({

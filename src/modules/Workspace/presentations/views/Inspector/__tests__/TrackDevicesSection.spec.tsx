@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TrackDevicesSection } from '../TrackDevicesSection';
+
 import type { Track, Device } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
@@ -69,13 +71,7 @@ vi.mock('#/components/daw/DawBlockedState', () => ({
 }));
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
-    DawHeaderBand: ({
-        title,
-        actions,
-    }: {
-        title?: string;
-        actions?: React.ReactNode;
-    }) => (
+    DawHeaderBand: ({ title, actions }: { title?: string; actions?: React.ReactNode }) => (
         <div data-testid="header-band">
             <span>{title}</span>
             {actions ? <div data-testid="header-actions">{actions}</div> : null}

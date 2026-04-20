@@ -1,5 +1,5 @@
-import { loopStationStore, type LoopSlot } from '../../stores/loopStationStore';
 import { getNextSlotId } from '../../repositories/loopStationIdCounter/getNextSlotId';
+import { loopStationStore, type LoopSlot } from '../../stores/loopStationStore';
 
 export function createSlot(trackId: string, row: number, column: number): void {
     const state = loopStationStore.value;

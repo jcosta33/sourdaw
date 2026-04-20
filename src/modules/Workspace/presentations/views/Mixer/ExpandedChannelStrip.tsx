@@ -1,26 +1,29 @@
 import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
+
+import { Circle, Ear, ShieldCheck } from 'lucide-react';
+
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
-import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 import { Fader } from '#/components/daw/Fader';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { LatchButton } from '#/components/daw/LatchButton';
+import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { Circle, Ear, ShieldCheck } from 'lucide-react';
+import { getAllVCAGroups } from '#/modules/Arrangement/useCases';
 import { cn } from '#/utils/Styles/cn';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
+import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
+
+import { type Track } from '../../../models/TrackViewTypes';
+import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
+import { useChannelStripActions } from '../../hooks/useChannelStripActions';
 
 import { DeviceChainSection } from './DeviceChainSection';
-import { MidiFxSection } from './MidiFxSection';
-import { SendsSection } from './SendsSection';
 import { IOSection } from './IOSection';
-import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
-import { type Track } from '../../../models/TrackViewTypes';
-import { getAllVCAGroups } from '#/modules/Arrangement/useCases';
-import { useChannelStripActions } from '../../hooks/useChannelStripActions';
+import { MidiFxSection } from './MidiFxSection';
 import { MixerLevelReadout } from './MixerLevelReadout';
 import { MixerPopupLabel, MixerPopupMenu, MixerPopupOption, MixerPopupSeparator } from './MixerPopupMenu';
+import { SendsSection } from './SendsSection';
 
 type MixerMenu = { x: number; y: number } | null;
 

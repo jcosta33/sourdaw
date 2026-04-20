@@ -1,4 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
+
 import { type UndoEntry, isActionEntry } from '../useCases/commandQueries';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
@@ -50,8 +51,7 @@ undoStore.subscribe((value) => {
             return;
         }
         try {
-            const serializableOnly = (entries: UndoEntry[]) =>
-                entries.filter(isActionEntry).slice(-MAX_UNDO_PERSIST);
+            const serializableOnly = (entries: UndoEntry[]) => entries.filter(isActionEntry).slice(-MAX_UNDO_PERSIST);
             const trimmed: UndoStoreState = {
                 past: serializableOnly(current.past),
                 future: serializableOnly(current.future),

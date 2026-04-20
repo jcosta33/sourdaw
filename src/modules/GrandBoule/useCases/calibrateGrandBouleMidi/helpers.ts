@@ -1,11 +1,8 @@
-import { type GrandBouleState } from '../../stores/grandBouleStore';
 import { type Store } from '#/infra/store/types';
 import { clamp } from '#/utils/Math/clamp';
 
-import {
-    type GrandBouleMidiCalibration,
-    MIDI_CALIBRATION_RANGES,
-} from '../../models/GrandBouleMidiCalibration';
+import { type GrandBouleMidiCalibration, MIDI_CALIBRATION_RANGES } from '../../models/GrandBouleMidiCalibration';
+import { type GrandBouleState } from '../../stores/grandBouleStore';
 
 export { clamp };
 
@@ -27,7 +24,7 @@ export const updateCalibration = (store: Store<GrandBouleState>, patch: Partial<
 export const setMidiCalibrationParam = (
     store: Store<GrandBouleState>,
     key: keyof GrandBouleMidiCalibration,
-    value: number,
+    value: number
 ): void => {
     const r = MIDI_CALIBRATION_RANGES[key];
     updateCalibration(store, { [key]: clamp(value, r.min, r.max) });

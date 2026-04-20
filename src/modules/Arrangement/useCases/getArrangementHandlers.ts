@@ -1,16 +1,12 @@
+import { handleCreateAdjustmentLayer } from '../handlers/batchFeature/handleCreateAdjustmentLayer';
+import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateCompGroup';
+import { handleNextSetlistItem } from '../handlers/batchFeature/handleNextSetlistItem';
+import { handlePreviousSetlistItem } from '../handlers/batchFeature/handlePreviousSetlistItem';
+import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSamples';
+import { handleToggleLoopRecord } from '../handlers/batchFeature/handleToggleLoopRecord';
+import { handleTogglePunchRecording } from '../handlers/batchFeature/handleTogglePunchRecording';
+import { handleTriggerScene } from '../handlers/batchFeature/handleTriggerScene';
 import { clipHandlers } from '../handlers/clip/clipHandlers';
-import { handleAddTrack } from '../handlers/track/handleAddTrack';
-import { handleArmTrack } from '../handlers/track/armTrack';
-import { handleBounceInPlace } from '../handlers/track/bounceInPlace';
-import { handleBounceToNewTrack } from '../handlers/track/bounceToNewTrack';
-import { handleClearSolos } from '../handlers/track/clearSolos';
-import { handleConsolidateAllTracks } from '../handlers/track/handleConsolidateAllTracks';
-import { handleCreateBus } from '../handlers/track/handleCreateBus';
-import { handleCreateFolder } from '../handlers/track/createFolder';
-import { handleDisableTrack } from '../handlers/track/disableTrack';
-import { handleDuplicateTrack } from '../handlers/track/duplicateTrack';
-import { handleFoldTrack } from '../handlers/track/foldTrack';
-import { handleFreezeTrack } from '../handlers/track/freezeTrack';
 import { handleUnfreezeTrack } from '../handlers/track/unfreezeTrack';
 import { handleFlattenTrack } from '../handlers/track/flattenTrack';
 import { handleGroupTracks } from '../handlers/track/groupTracks';
@@ -70,14 +66,18 @@ import { handleGetMentorTips } from '../handlers/newFeature/handleGetMentorTips'
 import { handleSwitchMonitor } from '../handlers/newFeature/handleSwitchMonitor';
 import { handleToggleControlRoomDim } from '../handlers/newFeature/handleToggleControlRoomDim';
 import { handleToggleControlRoomMono } from '../handlers/newFeature/handleToggleControlRoomMono';
-import { handleCreateAdjustmentLayer } from '../handlers/batchFeature/handleCreateAdjustmentLayer';
-import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateCompGroup';
-import { handleNextSetlistItem } from '../handlers/batchFeature/handleNextSetlistItem';
-import { handlePreviousSetlistItem } from '../handlers/batchFeature/handlePreviousSetlistItem';
-import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSamples';
-import { handleToggleLoopRecord } from '../handlers/batchFeature/handleToggleLoopRecord';
-import { handleTogglePunchRecording } from '../handlers/batchFeature/handleTogglePunchRecording';
-import { handleTriggerScene } from '../handlers/batchFeature/handleTriggerScene';
+import { handleArmTrack } from '../handlers/track/armTrack';
+import { handleBounceInPlace } from '../handlers/track/bounceInPlace';
+import { handleBounceToNewTrack } from '../handlers/track/bounceToNewTrack';
+import { handleClearSolos } from '../handlers/track/clearSolos';
+import { handleCreateFolder } from '../handlers/track/createFolder';
+import { handleDisableTrack } from '../handlers/track/disableTrack';
+import { handleDuplicateTrack } from '../handlers/track/duplicateTrack';
+import { handleFoldTrack } from '../handlers/track/foldTrack';
+import { handleFreezeTrack } from '../handlers/track/freezeTrack';
+import { handleAddTrack } from '../handlers/track/handleAddTrack';
+import { handleConsolidateAllTracks } from '../handlers/track/handleConsolidateAllTracks';
+import { handleCreateBus } from '../handlers/track/handleCreateBus';
 
 /**
  * Merges Arrangement handler maps for Command. Does **not** call `createHandler` here.

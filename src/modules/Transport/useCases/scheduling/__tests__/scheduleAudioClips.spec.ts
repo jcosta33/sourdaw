@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { scheduleAudioClips } from '../scheduleAudioClips';
-import { defaultTransportState } from '../../../models/TransportState';
+
 import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { defaultTransportState } from '../../../models/TransportState';
+import { scheduleAudioClips } from '../scheduleAudioClips';
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: { tracks: [] } },

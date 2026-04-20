@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { moveWarpMarker } from '../moveWarpMarker';
 
 const mocks = vi.hoisted(() => ({
@@ -8,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/AudioEngine/stores/audioWarp', () => ({
     audioWarpStore: {
-        get value() { return mocks.audioWarpStoreValue.value; },
+        get value() {
+            return mocks.audioWarpStoreValue.value;
+        },
         set: mocks.audioWarpStoreSet,
-    }
+    },
 }));
 
 describe('moveWarpMarker', () => {
@@ -21,7 +24,7 @@ describe('moveWarpMarker', () => {
 
     it('updates targetBeat of the specified marker', () => {
         mocks.audioWarpStoreValue.value.clipSettings.set('c1', {
-            markers: [{ id: 'm1', targetBeat: 0, locked: false }]
+            markers: [{ id: 'm1', targetBeat: 0, locked: false }],
         });
 
         moveWarpMarker('c1', 'm1', 4);
@@ -32,7 +35,7 @@ describe('moveWarpMarker', () => {
 
     it('refuses to move a locked marker', () => {
         mocks.audioWarpStoreValue.value.clipSettings.set('c1', {
-            markers: [{ id: 'm1', targetBeat: 0, locked: true }]
+            markers: [{ id: 'm1', targetBeat: 0, locked: true }],
         });
 
         moveWarpMarker('c1', 'm1', 4);

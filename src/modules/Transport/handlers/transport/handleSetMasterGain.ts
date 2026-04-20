@@ -1,5 +1,5 @@
-import { createHandler } from '#/utils/createHandler';
 import { setMasterGain } from '#/modules/AudioEngine/useCases';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleSetMasterGain = createHandler<'setMasterGain'>({
     execute: (a) => {

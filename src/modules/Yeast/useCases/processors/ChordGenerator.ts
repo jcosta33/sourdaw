@@ -3,8 +3,8 @@
  * Supports voicing modes (close, drop 2, spread) and optional strum timing.
  */
 
-import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
+import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 
 const CHORD_FORMULAS: Record<string, number[]> = {
     major: [0, 4, 7],
@@ -61,7 +61,9 @@ export class ChordGenerator extends BaseMidiProcessor {
 
                 for (let i = 0; i < intervals.length; i++) {
                     const note = event.kind.note + intervals[i]!;
-                    if (note < 0 || note > 127) {continue;}
+                    if (note < 0 || note > 127) {
+                        continue;
+                    }
                     notes.push(note);
 
                     const offset =

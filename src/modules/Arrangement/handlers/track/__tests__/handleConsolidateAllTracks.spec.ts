@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleConsolidateAllTracks } from '../handleConsolidateAllTracks';
 
 const mocks = vi.hoisted(() => ({
@@ -21,7 +22,7 @@ describe('handleConsolidateAllTracks', () => {
 
     it('bails if track store state is unavailable', async () => {
         mocks.getTrackStoreState.mockReturnValue(null);
-        
+
         await handleConsolidateAllTracks.execute({ type: 'consolidateAllTracks', payload: {} });
 
         expect(mocks.bounceInPlace).not.toHaveBeenCalled();
@@ -34,7 +35,7 @@ describe('handleConsolidateAllTracks', () => {
                 { id: 't2', kind: 'midi', clips: [{ id: 'c2' }] },
                 { id: 't3', kind: 'audio', clips: [] }, // No clips, should be skipped
                 { id: 't4', kind: 'bus', clips: [{ id: 'c3' }] }, // Bus, should be skipped
-            ]
+            ],
         });
 
         await handleConsolidateAllTracks.execute({ type: 'consolidateAllTracks', payload: {} });

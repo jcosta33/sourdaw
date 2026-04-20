@@ -1,8 +1,10 @@
-import { getTrackState } from '../../repositories/track/getTrackState';
 import { duplicateClipAutomation } from '#/modules/Automation/useCases';
 import { batchAddMidiNotes, getNotesForClip } from '#/modules/MIDI/useCases';
-import { addClip } from './addClip';
+
 import { type Clip } from '../../models/Track';
+import { getTrackState } from '../../repositories/track/getTrackState';
+
+import { addClip } from './addClip';
 
 export function duplicateClipCore(clipId: string, computeStartBeat: (clip: Clip) => number): void {
     const state = getTrackState();

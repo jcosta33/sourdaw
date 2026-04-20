@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { getNextSetlistItemId, SETLIST_ITEM_COLORS } from '../setlistItemIdCounter';
 
 describe('setlistItemIdCounter', () => {

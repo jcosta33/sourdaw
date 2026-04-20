@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { makeBitcrusherCurve, makeDistortionCurve } from '../helpers';
 
 describe('makeDistortionCurve', () => {

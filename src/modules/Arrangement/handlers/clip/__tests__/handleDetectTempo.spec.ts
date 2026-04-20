@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleDetectTempo } from '../handleDetectTempo';
 
 const mocks = vi.hoisted(() => ({
@@ -31,9 +32,7 @@ describe('handleDetectTempo', () => {
 
     it('detects tempo from specific clip buffer if available', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [
-                { clips: [{ id: 'c1', audioBufferId: 'buf1' }] }
-            ]
+            tracks: [{ clips: [{ id: 'c1', audioBufferId: 'buf1' }] }],
         });
         mocks.detectTempoFromBuffer.mockReturnValue(125);
 
@@ -45,7 +44,7 @@ describe('handleDetectTempo', () => {
 
     it('notifies failure if buffer tempo detection returns null', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ clips: [{ id: 'c1', audioBufferId: 'buf1' }] }]
+            tracks: [{ clips: [{ id: 'c1', audioBufferId: 'buf1' }] }],
         });
         mocks.detectTempoFromBuffer.mockReturnValue(null);
 
@@ -61,10 +60,7 @@ describe('handleDetectTempo', () => {
         handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
 
         expect(mocks.detectProjectTempo).toHaveBeenCalledTimes(1);
-        expect(mocks.notifyUser).toHaveBeenCalledWith(
-            'Detected tempo: 120 BPM (110–130 range)',
-            'success'
-        );
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Detected tempo: 120 BPM (110–130 range)', 'success');
     });
 
     it('warns if project tempo detection confidence is too low', () => {

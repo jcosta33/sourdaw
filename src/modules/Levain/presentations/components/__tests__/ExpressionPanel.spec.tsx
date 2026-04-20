@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
-import { ExpressionPanel } from '../ExpressionPanel';
+import { describe, it, expect, vi } from 'vitest';
+
 import { createDefaultPatch } from '../../../models/LevainPatch';
+import { ExpressionPanel } from '../ExpressionPanel';
 
 describe('ExpressionPanel', () => {
     it('should render', () => {

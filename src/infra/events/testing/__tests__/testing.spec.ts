@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { recordEvents } from '../recordEvents';
+
 import { createEventBus } from '../../createEventBus';
+import { recordEvents } from '../recordEvents';
 
 type MyEvents = {
     'test:event': { id: number };

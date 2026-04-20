@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { loadAllFromIdb } from '../loadAllFromIdb';
-import { saveAllToIdb } from '../saveAllToIdb';
+
 import { clearCrdtIdb } from '../clearCrdtIdb';
 import { openDatabase } from '../helpers';
+import { loadAllFromIdb } from '../loadAllFromIdb';
+import { saveAllToIdb } from '../saveAllToIdb';
 
 vi.mock('../helpers', () => ({
     STORE_NAME: 'documents',
@@ -112,7 +113,7 @@ describe('crdtPersistence repository', () => {
     describe('clearCrdtIdb', () => {
         it('should clear the store', async () => {
             vi.mocked(openDatabase).mockResolvedValue(mockDb);
-            
+
             const promise = clearCrdtIdb();
             await Promise.resolve();
             mockRequest.onsuccess(); // Trigger clear success

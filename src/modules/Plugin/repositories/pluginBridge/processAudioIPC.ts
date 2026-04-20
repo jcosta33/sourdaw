@@ -1,5 +1,5 @@
-import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
 import { logger } from '#/infra/logger/appLogger';
+import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
 
 /**
  * Handles the raw Float32Array crossing from the AudioWorklet to Rust and back.

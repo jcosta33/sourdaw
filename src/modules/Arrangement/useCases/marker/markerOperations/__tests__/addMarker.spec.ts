@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { addMarker } from '../addMarker';
 
 const mocks = vi.hoisted(() => ({
@@ -8,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../../stores/markerStore', () => ({
     markerStore: {
-        get value() { return mocks.markerStoreValue.value; },
+        get value() {
+            return mocks.markerStoreValue.value;
+        },
         set: mocks.markerStoreSet,
-    }
+    },
 }));
 
 describe('addMarker', () => {

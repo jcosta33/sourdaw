@@ -78,10 +78,10 @@ export async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
     wasmBinaryCache.set(url, promise);
     try {
         return await promise;
-    } catch (err) {
+    } catch (error) {
         // Drop failed fetches so a later retry can succeed.
         wasmBinaryCache.delete(url);
-        throw err;
+        throw error;
     }
 }
 

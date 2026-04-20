@@ -1,8 +1,9 @@
-import { updateTrackState } from '../../repositories/track/updateTrackState';
-import { getTrackById } from '../../repositories/track/getTrackById';
-import { setMidiInputTrack } from '#/modules/AudioEngine/useCases';
-import { trackStore } from '../../stores/trackStore';
 import { eventBus } from '#/app/registerDependencies';
+import { setMidiInputTrack } from '#/modules/AudioEngine/useCases';
+
+import { getTrackById } from '../../repositories/track/getTrackById';
+import { updateTrackState } from '../../repositories/track/updateTrackState';
+import { trackStore } from '../../stores/trackStore';
 
 export function selectTrack(trackId: string | null): void {
     // Subscribers receive `previousTrackId` so they can distinguish a real

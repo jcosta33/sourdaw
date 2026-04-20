@@ -1,12 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { TrackHeader } from '../TrackHeader';
 
 // Import mocked functions
-import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { toggleFolderCollapse } from '../../../useCases/folder/toggleFolderCollapse';
 import { setInputMonitoring } from '../../../useCases/setTrackGainPan/setInputMonitoring';
+import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
+import { TrackHeader } from '../TrackHeader';
 
 // Mock external dependencies
 vi.mock('../../../useCases/toggleTrackState/muteTrack', () => ({

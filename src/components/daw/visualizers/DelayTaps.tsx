@@ -7,6 +7,7 @@
  * Uses cyan accent (routing/secondary) for consistency.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type DelayTapsProps = {
@@ -39,9 +40,13 @@ export const DelayTaps = ({
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {
+            return;
+        }
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
@@ -93,13 +98,15 @@ export const DelayTaps = ({
         // Store first tap position for hit testing
         const firstTapTime = time * 1;
         firstTapXRef.current = pad + (firstTapTime / totalDuration) * plotW;
-        const firstTapAmplitude = mix * Math.pow(feedback, 1);
+        const firstTapAmplitude = mix * feedback ** 1;
         envelopeYRef.current = pad + plotH - firstTapAmplitude * plotH;
 
         // Delay taps
         for (let tap = 1; tap <= maxTaps; tap++) {
-            const amplitude = mix * Math.pow(feedback, tap);
-            if (amplitude < 0.01) break;
+            const amplitude = mix * feedback ** tap;
+            if (amplitude < 0.01) {
+                break;
+            }
 
             const tapTime = time * tap;
             const x = pad + (tapTime / totalDuration) * plotW;
@@ -128,8 +135,10 @@ export const DelayTaps = ({
         ctx.beginPath();
         ctx.moveTo(pad + barWidth, pad + plotH - mix * plotH);
         for (let tap = 1; tap <= maxTaps; tap++) {
-            const amplitude = mix * Math.pow(feedback, tap);
-            if (amplitude < 0.01) break;
+            const amplitude = mix * feedback ** tap;
+            if (amplitude < 0.01) {
+                break;
+            }
             const tapTime = time * tap;
             const x = pad + (tapTime / totalDuration) * plotW;
             const y = pad + plotH - amplitude * plotH;
@@ -143,8 +152,10 @@ export const DelayTaps = ({
         ctx.beginPath();
         ctx.moveTo(pad + barWidth, pad + plotH - mix * plotH);
         for (let tap = 1; tap <= maxTaps; tap++) {
-            const amplitude = mix * Math.pow(feedback, tap);
-            if (amplitude < 0.01) break;
+            const amplitude = mix * feedback ** tap;
+            if (amplitude < 0.01) {
+                break;
+            }
             const tapTime = time * tap;
             const x = pad + (tapTime / totalDuration) * plotW;
             const y = pad + plotH - amplitude * plotH;
@@ -172,9 +183,13 @@ export const DelayTaps = ({
     }, [time, feedback, mix, width, height, isInteractive]);
 
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange) return;
+        if (!onParamChange) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         const rect = canvas.getBoundingClientRect();
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;
@@ -199,9 +214,13 @@ export const DelayTaps = ({
     };
 
     const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange || !isDragging.current || !dragTarget.current) return;
+        if (!onParamChange || !isDragging.current || !dragTarget.current) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         const rect = canvas.getBoundingClientRect();
         const pad = 6;
         const plotW = width - pad * 2;
@@ -225,9 +244,13 @@ export const DelayTaps = ({
     };
 
     const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange) return;
+        if (!onParamChange) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         isDragging.current = false;
         dragTarget.current = null;
         canvas.releasePointerCapture(e.pointerId);

@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleToggleSidebar } from '../handleToggleSidebar';
-import { handleToggleInspector } from '../handleToggleInspector';
-import { handleToggleChatPanel } from '../handleToggleChatPanel';
-import { handleOpenMixer } from '../handleOpenMixer';
+
 import { handleCloseMixer } from '../handleCloseMixer';
+import { handleOpenMixer } from '../handleOpenMixer';
+import { handleToggleChatPanel } from '../handleToggleChatPanel';
+import { handleToggleInspector } from '../handleToggleInspector';
+import { handleToggleSidebar } from '../handleToggleSidebar';
 import { handleZoomToFit } from '../handleZoomToFit';
 
 const mocks = vi.hoisted(() => ({
@@ -15,8 +16,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../useCases/togglePanel/panelToggles/toggleSidebar', () => ({ toggleSidebar: mocks.toggleSidebar }));
-vi.mock('../../../useCases/togglePanel/panelToggles/toggleInspector', () => ({ toggleInspector: mocks.toggleInspector }));
-vi.mock('../../../useCases/togglePanel/panelToggles/toggleChatPanel', () => ({ toggleChatPanel: mocks.toggleChatPanel }));
+vi.mock('../../../useCases/togglePanel/panelToggles/toggleInspector', () => ({
+    toggleInspector: mocks.toggleInspector,
+}));
+vi.mock('../../../useCases/togglePanel/panelToggles/toggleChatPanel', () => ({
+    toggleChatPanel: mocks.toggleChatPanel,
+}));
 vi.mock('../../../useCases/togglePanel/panelToggles/toggleMixer', () => ({ toggleMixer: mocks.toggleMixer }));
 vi.mock('../../../useCases/togglePanel/zoomOperations/zoomToFit', () => ({ zoomToFit: mocks.zoomToFit }));
 

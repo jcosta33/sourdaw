@@ -1,5 +1,5 @@
-import { getEffectiveGain } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { getEffectiveGain } from '#/modules/Arrangement/useCases';
 import { setTrackGain as engineSetTrackGain } from '#/modules/AudioEngine/useCases';
 
 export function applyVcaGains(): void {

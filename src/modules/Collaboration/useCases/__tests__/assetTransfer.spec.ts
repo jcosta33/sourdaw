@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AssetTransfer } from '../assetTransfer';
+
 import { DOC_ID_ASSET } from '../../models/syncChannelConstants';
 import { type PeerConnectionManager } from '../../repositories/peerConnection';
+import { AssetTransfer } from '../assetTransfer';
 
 function makePeerManager(): PeerConnectionManager {
     return {

@@ -76,7 +76,9 @@ export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProp
     useEffect(() => {
         const container = containerRef.current;
         const canvas = canvasRef.current;
-        if (container === null || canvas === null) {return;}
+        if (container === null || canvas === null) {
+            return;
+        }
 
         // Resize canvas to match CSS layout.
         const observer = new ResizeObserver((entries) => {
@@ -93,13 +95,17 @@ export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProp
         observer.observe(container);
 
         const ctx = canvas.getContext('2d');
-        if (ctx === null) {return;}
+        if (ctx === null) {
+            return;
+        }
 
         const offscreenCanvas = document.createElement('canvas');
         offscreenCanvas.width = DISPLAY_COLS;
         offscreenCanvas.height = HISTORY_FRAMES;
         const offscreenCtx = offscreenCanvas.getContext('2d');
-        if (offscreenCtx === null) {return;}
+        if (offscreenCtx === null) {
+            return;
+        }
         const imgData = offscreenCtx.createImageData(DISPLAY_COLS, HISTORY_FRAMES);
 
         let raf = 0;
@@ -124,7 +130,7 @@ export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProp
             if (currentAnalyser && dbBuffer && normBuffer) {
                 currentAnalyser.getFloatFrequencyData(dbBuffer as any);
                 const binCount = dbBuffer.length;
-                
+
                 for (let i = 0; i < binCount; i += 1) {
                     normBuffer[i] = Math.max(0, Math.min(1, (dbBuffer[i]! + 100) / 100));
                 }

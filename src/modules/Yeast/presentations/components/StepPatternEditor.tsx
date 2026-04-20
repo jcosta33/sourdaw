@@ -10,6 +10,7 @@
  * - ratchet (subdivisions shown inside cell)
  */
 import { type ReactElement } from 'react';
+
 import { type ArpStep } from '../../models/ArpPattern';
 
 type Props = {

@@ -5,10 +5,10 @@
  * into the audio engine strip.
  */
 
+import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 import { createTrack, getTrackStoreState, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { addDeviceToStrip } from '#/modules/AudioEngine/useCases';
-import { eventBus } from '#/app/registerDependencies';
 
 export const createGrandBouleTrack = inject({ eventBus })(
     ({ eventBus }) =>

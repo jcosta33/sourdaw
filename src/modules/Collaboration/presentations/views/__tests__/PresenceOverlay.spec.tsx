@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { usePresence } from '../../hooks/usePresence';
 import { PresenceOverlay } from '../PresenceOverlay';
 
@@ -45,7 +46,7 @@ describe('PresenceOverlay', () => {
             },
         ]);
         render(<PresenceOverlay {...defaultProps} />);
-        
+
         // Cursors are rendered by PresenceMarker which usually shows the name
         expect(screen.getAllByText('Alice').length).toBeGreaterThan(0);
         expect(screen.getAllByText('Bob').length).toBeGreaterThan(0);

@@ -1,5 +1,5 @@
-import { createHandler } from '#/utils/createHandler';
 import { toggleNodeView } from '#/modules/Plugin/useCases';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleToggleNodeView = createHandler<'toggleNodeView'>({
     execute: () => {

@@ -1,5 +1,6 @@
-import { type Track } from '../models/Track';
 import { type SidechainRoute } from '#/modules/Routing/models/SidechainRoute';
+
+import { type Track } from '../models/Track';
 
 /**
  * Finds all tracks that are upstream of the given trackId.
@@ -19,7 +20,9 @@ export function getUpstreamSubgraph(
 
     while (toProcess.length > 0) {
         const currentId = toProcess.pop()!;
-        if (visited.has(currentId)) continue;
+        if (visited.has(currentId)) {
+            continue;
+        }
         visited.add(currentId);
 
         // 1. Check output routing: which tracks output to currentId?

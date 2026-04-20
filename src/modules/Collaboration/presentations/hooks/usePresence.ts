@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { type PresenceData } from '../../useCases/collaborationQueries';
 import { onPresence } from '../../useCases/collaboration/sessionManagement';
+import { type PresenceData } from '../../useCases/collaborationQueries';
 
 const PRESENCE_EXPIRY_MS = 5000;
 

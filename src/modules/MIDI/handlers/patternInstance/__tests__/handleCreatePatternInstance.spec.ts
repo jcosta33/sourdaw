@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleCreatePatternInstance } from '../handleCreatePatternInstance';
 
 const mocks = vi.hoisted(() => ({
@@ -15,7 +16,7 @@ describe('handleCreatePatternInstance', () => {
     it('delegates to createPatternInstance use case', async () => {
         await handleCreatePatternInstance.execute({
             type: 'createPatternInstance',
-            payload: { sourceClipId: 'c1', targetTrackId: 't1', startBeat: 16 }
+            payload: { sourceClipId: 'c1', targetTrackId: 't1', startBeat: 16 },
         });
         expect(mocks.createPatternInstance).toHaveBeenCalledWith('c1', 't1', 16);
     });

@@ -1,9 +1,10 @@
-import { trackStore } from '../../stores/trackStore';
-import { timelineViewStore } from '../../stores/timelineViewStore';
-import { workspaceStore } from '#/modules/Workspace/stores';
 import { automationStore } from '#/modules/Automation/stores';
-import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
+import { workspaceStore } from '#/modules/Workspace/stores';
+
 import { AUTOMATION_SUB_LANE_HEIGHT } from '../../automationConstants';
+import { timelineViewStore } from '../../stores/timelineViewStore';
+import { trackStore } from '../../stores/trackStore';
+import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
 
 export type AutomationSubLaneHit = {
     laneId: string;

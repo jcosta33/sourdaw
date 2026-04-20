@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { midiStore } from '../../../stores/midiStore';
-
 import { removePitchBend } from '../removePitchBend';
 
 describe('removePitchBend', () => {

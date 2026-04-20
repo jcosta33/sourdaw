@@ -1,6 +1,8 @@
 import { type Doc } from '@automerge/automerge';
-import { type DocId } from './crdtDocumentTypes';
+
 import { automergeRepository } from '../repositories/automergeRepository';
+
+import { type DocId } from './crdtDocumentTypes';
 
 /**
  * Read a CRDT document by ID.

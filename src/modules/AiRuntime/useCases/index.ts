@@ -5,7 +5,22 @@ export { getAiOrganizationHandlers } from './getAiOrganizationHandlers';
 
 export { getMixAnalysisStoreValue } from './aiRuntimeQueries/getMixAnalysisStoreValue';
 export { setMixAnalysisStoreValue } from './aiRuntimeQueries/setMixAnalysisStoreValue';
-export { NATIVE_MODEL_INFO, WEBLLM_MODEL_INFO, CLOUD_MODEL_INFO, WEBLLM_MODELS, getActiveModelId, streamCloudChatCompletion, readLevels, readFrequencyBalance, detectIssues, generateSuggestions, generateWebLlmCompletion, generateNativeCompletion, isNativeEngineReady, isComplexPrompt } from './aiRuntimeQueries/helpers';
+export {
+    NATIVE_MODEL_INFO,
+    WEBLLM_MODEL_INFO,
+    CLOUD_MODEL_INFO,
+    WEBLLM_MODELS,
+    getActiveModelId,
+    streamCloudChatCompletion,
+    readLevels,
+    readFrequencyBalance,
+    detectIssues,
+    generateSuggestions,
+    generateWebLlmCompletion,
+    generateNativeCompletion,
+    isNativeEngineReady,
+    isComplexPrompt,
+} from './aiRuntimeQueries/helpers';
 export { searchPresets } from './aiRuntimeQueries/searchPresets';
 export { getAvailablePresets } from './aiRuntimeQueries/getAvailablePresets';
 export { resolvePresetActions } from './aiRuntimeQueries/resolvePresetActions';
@@ -20,7 +35,12 @@ export { removeCloudApi } from './cloudApiManagement/removeCloudApi';
 export { isCloudAvailable } from './cloudApiManagement/isCloudAvailable';
 
 export { getProjectContext } from './getProjectContext';
-export type { ProjectContext, ProjectContextClip, ProjectContextDevice, ProjectContextTrack } from './getProjectContext';
+export type {
+    ProjectContext,
+    ProjectContextClip,
+    ProjectContextDevice,
+    ProjectContextTrack,
+} from './getProjectContext';
 
 export { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 export { isDsoBackendAvailable } from './llmOrchestration/backendResolution/isDsoBackendAvailable';
@@ -34,10 +54,7 @@ export { unloadEngine } from './llmOrchestration/lifecycle/unloadEngine';
 
 export { generateMentorLessons } from './musicMentor/generateLessons';
 
-export {
-    notifyAiChange,
-    subscribeAiChangeNotification,
-} from './notifyAiChange';
+export { notifyAiChange, subscribeAiChangeNotification } from './notifyAiChange';
 export type { AiChangeNotification } from './notifyAiChange';
 
 export { parsePromptToActions } from './parsePromptToActions';

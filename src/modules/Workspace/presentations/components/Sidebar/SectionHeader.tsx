@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react';
+
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 
 type SectionHeaderProps = {

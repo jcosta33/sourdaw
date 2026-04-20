@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { streamCloudChatCompletion } from '../streamCloudChatCompletion';
 
 const mocks = vi.hoisted(() => ({
@@ -13,18 +14,18 @@ vi.mock('../../keyManagement', () => ({
 describe('streamCloudChatCompletion', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        
+
         const mockAsyncIterator = {
             async *[Symbol.asyncIterator]() {
                 yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hello' } };
                 yield { type: 'content_block_delta', delta: { type: 'text_delta', text: ' World' } };
                 yield { type: 'other_event' };
-            }
+            },
         };
 
         mocks.stream.mockReturnValue(mockAsyncIterator);
         mocks.getCloudClient.mockReturnValue({
-            messages: { stream: mocks.stream }
+            messages: { stream: mocks.stream },
         });
     });
 
@@ -37,7 +38,7 @@ describe('streamCloudChatCompletion', () => {
         const messages = [
             { role: 'system', content: 'You are a bot.' },
             { role: 'user', content: 'Hi there' },
-            { role: 'assistant', content: 'Hello' }
+            { role: 'assistant', content: 'Hello' },
         ];
 
         await streamCloudChatCompletion(messages, vi.fn(), { maxTokens: 1000 });

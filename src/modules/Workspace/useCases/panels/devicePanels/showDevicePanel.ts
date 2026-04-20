@@ -1,5 +1,5 @@
-import { inject } from '#/infra/di/inject';
 import { eventBus } from '#/app/registerDependencies';
+import { inject } from '#/infra/di/inject';
 
 /**
  * Generic emitter — opens a device panel for any device type.
@@ -7,7 +7,7 @@ import { eventBus } from '#/app/registerDependencies';
  */
 export const showDevicePanel = inject({ eventBus })(
     ({ eventBus }) =>
-        (function showDevicePanel(deviceType: string, deviceId: string | null): void {
+        function showDevicePanel(deviceType: string, deviceId: string | null): void {
             eventBus.emit('panel.showDevice', { deviceType, deviceId });
-        })
+        }
 );

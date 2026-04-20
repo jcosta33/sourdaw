@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { PROOF_PRESETS } from '../proofPresets';
 
 describe('PROOF_PRESETS', () => {

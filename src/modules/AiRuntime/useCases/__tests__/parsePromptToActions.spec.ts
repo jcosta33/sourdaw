@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { parsePromptToActions } from '../parsePromptToActions';
+
 import { type ProjectContext } from '../../models/ProjectContext';
 import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
 import { isDsoBackendAvailable } from '../llmOrchestration/backendResolution/isDsoBackendAvailable';
+import { parsePromptToActions } from '../parsePromptToActions';
 
 const { mockLogger } = vi.hoisted(() => ({
     mockLogger: {
@@ -10,7 +11,7 @@ const { mockLogger } = vi.hoisted(() => ({
         info: vi.fn(),
         error: vi.fn(),
         debug: vi.fn(),
-    }
+    },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({

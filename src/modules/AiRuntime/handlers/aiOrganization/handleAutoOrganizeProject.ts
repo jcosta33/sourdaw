@@ -1,10 +1,5 @@
+import { getTrackStoreState, groupTracks, renameTrack, setTrackColor } from '#/modules/Arrangement/useCases';
 import { createHandler } from '#/utils/createHandler';
-import {
-    getTrackStoreState,
-    groupTracks,
-    renameTrack,
-    setTrackColor,
-} from '#/modules/Arrangement/useCases';
 
 export const handleAutoOrganizeProject = createHandler<'autoOrganizeProject'>({
     execute: async (a) => {

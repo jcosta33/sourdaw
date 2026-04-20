@@ -1,9 +1,4 @@
-import {
-    audioWarpStore,
-    DEFAULT_WARP_SETTINGS,
-    getNextWarpMarkerId,
-    type WarpMarker,
-} from '../../stores/audioWarp';
+import { audioWarpStore, DEFAULT_WARP_SETTINGS, getNextWarpMarkerId, type WarpMarker } from '../../stores/audioWarp';
 
 export function addWarpMarker(clipId: string, sourceSec: number, targetBeat: number): void {
     const state = audioWarpStore.value;

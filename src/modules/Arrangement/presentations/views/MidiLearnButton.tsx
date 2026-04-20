@@ -1,10 +1,16 @@
 import { type ReactElement, type MouseEvent } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
-import { cn } from '#/utils/Styles/cn';
-import { midiLearnStore, type LearningTarget, type MidiMappingTargetType, type MidiLearnState } from '#/modules/MIDI/stores';
+import { useStore } from '#/infra/store/useStore';
+import {
+    midiLearnStore,
+    type LearningTarget,
+    type MidiMappingTargetType,
+    type MidiLearnState,
+} from '#/modules/MIDI/stores';
 import { startMidiLearn, stopMidiLearn, findMappingForTarget } from '#/modules/MIDI/useCases';
+import { cn } from '#/utils/Styles/cn';
 
 type MidiLearnButtonProps = {
     targetType: MidiMappingTargetType;

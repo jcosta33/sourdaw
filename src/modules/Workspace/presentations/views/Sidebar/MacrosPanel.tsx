@@ -6,14 +6,22 @@
  */
 
 import { type ReactElement, useState, useRef, useEffect } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
 import { Play, Trash2, Pencil, Circle, Square } from 'lucide-react';
+
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
+import { useStore } from '#/infra/store/useStore';
 import { macroStore } from '#/modules/Command/stores';
-import { startMacroRecording, stopMacroRecording, playMacro, deleteMacro, renameMacro } from '#/modules/Command/useCases';
+import {
+    startMacroRecording,
+    stopMacroRecording,
+    playMacro,
+    deleteMacro,
+    renameMacro,
+} from '#/modules/Command/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 type MacroView = {

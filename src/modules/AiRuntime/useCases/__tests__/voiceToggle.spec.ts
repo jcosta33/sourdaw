@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { toggleVoiceInput } from '../voiceToggle/toggleVoiceInput';
+
 import { onVoiceToggle } from '../voiceToggle/onVoiceToggle';
+import { toggleVoiceInput } from '../voiceToggle/toggleVoiceInput';
 
 const { mockEventBus } = vi.hoisted(() => ({
     mockEventBus: {
         emit: vi.fn(),
         on: vi.fn(),
-    }
+    },
 }));
 
 vi.mock('#/app/registerDependencies', () => ({

@@ -3,6 +3,7 @@
  * Horizontal in wide contexts, grid in narrow (sidebar).
  */
 import { type ReactElement } from 'react';
+
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 
 type LevainMacroStripProps = {

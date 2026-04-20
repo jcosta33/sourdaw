@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { slipClipContent } from '#/modules/Arrangement/useCases/clipEditing/slipClipContent';
 import { updateClip } from '#/modules/Arrangement/useCases/updateClip';
 
@@ -14,7 +15,7 @@ describe('slipClipContent', () => {
     it('should update audioOffsetBeats for audio clips', () => {
         slipClipContent('c1', 'audio', 2.5);
         expect(vi.mocked(updateClip)).toHaveBeenCalledWith('c1', expect.any(Function));
-        
+
         const updater = vi.mocked(updateClip).mock.calls[0]![1];
         const result = updater({ id: 'c1', audioOffsetBeats: 0 });
         expect(result.audioOffsetBeats).toBe(2.5);

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type ExtensionManifest, type ExtensionMarketplaceState } from '../../../stores/extension';
 import { installExtension } from '../installExtension';
 
@@ -42,9 +43,9 @@ describe('installExtension', () => {
 
     it('adds to installed', () => {
         mocks.extensionStore.value = baseState();
-        
+
         installExtension(minimalManifest('ext-a'));
-        
+
         expect(mocks.extensionStore.set).toHaveBeenCalledTimes(1);
         const next = mocks.extensionStore.set.mock.calls[0]![0] as ExtensionMarketplaceState;
         expect(next.installed).toHaveLength(1);

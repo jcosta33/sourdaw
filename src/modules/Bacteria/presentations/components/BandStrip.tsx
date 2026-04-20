@@ -2,7 +2,9 @@
  * BandStrip — per-band channel strip showing enabled effects, solo/mute/gain.
  */
 import { type ReactElement } from 'react';
+
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import { type BacteriaBand } from '../../models/BacteriaPatch';
 
 type BandStripProps = {

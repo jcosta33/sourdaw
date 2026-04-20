@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleDetectSongStructure } from '../handleDetectSongStructure';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -26,10 +27,7 @@ describe('handleDetectSongStructure', () => {
             payload: { trackId: 't1' },
         });
 
-        expect(notifyUser).toHaveBeenCalledWith(
-            'No clips found to analyze — add some clips first',
-            'warning'
-        );
+        expect(notifyUser).toHaveBeenCalledWith('No clips found to analyze — add some clips first', 'warning');
     });
 
     it('notifies success with section names when detection finds sections', async () => {
@@ -45,9 +43,6 @@ describe('handleDetectSongStructure', () => {
             payload: { trackId: 't1' },
         });
 
-        expect(notifyUser).toHaveBeenCalledWith(
-            'Detected 2 sections: Intro, Verse',
-            'success'
-        );
+        expect(notifyUser).toHaveBeenCalledWith('Detected 2 sections: Intro, Verse', 'success');
     });
 });

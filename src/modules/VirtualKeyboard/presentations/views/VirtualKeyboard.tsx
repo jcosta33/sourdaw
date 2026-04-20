@@ -12,16 +12,17 @@
  */
 
 import { type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
 import { ChevronLeft, ChevronRight, Minus, Plus, X } from 'lucide-react';
+
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { DawDisplaySurface } from '#/components/daw/DawDisplaySurface';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Button } from '#/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { cn } from '#/utils/Styles/cn';
 import { Slider } from '#/components/ui/slider';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+import { useStore } from '#/infra/store/useStore';
 import { triggerLiveNoteOn, triggerLiveNoteOff } from '#/modules/AudioEngine/useCases';
 import { workspaceStore } from '#/modules/Workspace/stores';
 import {
@@ -29,6 +30,7 @@ import {
     setVirtualKeyboardOctave,
     setVirtualKeyboardVelocity,
 } from '#/modules/Workspace/useCases';
+import { cn } from '#/utils/Styles/cn';
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
 

@@ -1,4 +1,5 @@
 import { type DocId } from '../../models/CrdtDocumentTypes';
+
 import { STORE_NAME, openDatabase } from './helpers';
 
 /** Remove all incremental chunks for a document (after compaction). */

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { getAvailablePresets } from '../getAvailablePresets';
 
 // We mock the fuzzySearch to control the output
@@ -17,7 +18,7 @@ vi.mock('#/modules/AiRuntime/services/fuzzySearch', () => ({
             category: 'Track',
             isDestructive: true,
             buildAction: vi.fn(),
-        }
+        },
     ]),
 }));
 

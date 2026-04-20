@@ -1,13 +1,15 @@
-import { getTrackState } from '../repositories/track/getTrackState';
-import { setTrackState } from '../repositories/track/setTrackState';
-import { createTrack } from '../models/Track';
-import { addClip } from './clip/addClip';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
+import { getAssetTransfer } from '#/modules/Collaboration/useCases';
+import { commitUndoEntry, createCallbackUndoEntry } from '#/modules/Command/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { createTrack } from '../models/Track';
+import { getTrackState } from '../repositories/track/getTrackState';
+import { setTrackState } from '../repositories/track/setTrackState';
 import { trackStore } from '../stores/trackStore';
-import { commitUndoEntry, createCallbackUndoEntry } from '#/modules/Command/useCases';
-import { getAssetTransfer } from '#/modules/Collaboration/useCases';
+
+import { addClip } from './clip/addClip';
 
 export async function importAudioFile(file: File): Promise<void> {
     let bufferId: string;

@@ -1,5 +1,5 @@
-import { midiStore } from '../../stores/midiStore';
 import { createMidiNote, type MidiNote } from '../../models/MidiNote';
+import { midiStore } from '../../stores/midiStore';
 
 export type SplitMidiNotesAtBeatInput = {
     sourceClipId: string;

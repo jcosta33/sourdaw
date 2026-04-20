@@ -6,9 +6,11 @@
  */
 
 import { type ReactElement } from 'react';
+
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import {
     type GrandBouleMorphState,
     type GrandBoulePianoModel,

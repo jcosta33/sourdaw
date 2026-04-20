@@ -31,10 +31,18 @@ export function getSelectionBounds(
     let minValue = Infinity;
     let maxValue = -Infinity;
     for (const p of selected) {
-        if (p.beat < minBeat) minBeat = p.beat;
-        if (p.beat > maxBeat) maxBeat = p.beat;
-        if (p.value < minValue) minValue = p.value;
-        if (p.value > maxValue) maxValue = p.value;
+        if (p.beat < minBeat) {
+            minBeat = p.beat;
+        }
+        if (p.beat > maxBeat) {
+            maxBeat = p.beat;
+        }
+        if (p.value < minValue) {
+            minValue = p.value;
+        }
+        if (p.value > maxValue) {
+            maxValue = p.value;
+        }
     }
 
     return { minBeat, maxBeat, minValue, maxValue };

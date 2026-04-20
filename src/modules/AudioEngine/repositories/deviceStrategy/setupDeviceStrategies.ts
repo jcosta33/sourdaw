@@ -1,19 +1,19 @@
+import { isBacteriaDevice } from '../../engine/BacteriaNode';
+import { isFermenterDevice } from '../../engine/FermenterNode';
+import { isGlutenDevice } from '../../engine/GlutenNode';
+import { isGrinderDevice } from '../../engine/GrinderNode';
+import { isKneadDevice } from '../../engine/KneadNode';
+import { isLevainDevice } from '../../engine/LevainNode';
+import { isProofChamberDevice } from '../../engine/ProofChamberNode';
+import { isProofDevice } from '../../engine/ProofNode';
+import { isScoringDevice } from '../../engine/ScoringNode';
+import { isToasterDevice } from '../../engine/ToasterNode';
+import { isFaustModule } from '../faustDeviceFactory';
+
 import { deviceRegistry } from './AudioDeviceStrategy';
-import { createWebAudioDevice } from './WebAudioDeviceStrategy';
 import { createFaustStrategy } from './FaustDeviceStrategy';
 import { createNativeDspStrategy } from './NativeDspDeviceStrategy';
-
-import { isFaustModule } from '../faustDeviceFactory';
-import { isKneadDevice } from '../../engine/KneadNode';
-import { isFermenterDevice } from '../../engine/FermenterNode';
-import { isToasterDevice } from '../../engine/ToasterNode';
-import { isLevainDevice } from '../../engine/LevainNode';
-import { isGlutenDevice } from '../../engine/GlutenNode';
-import { isBacteriaDevice } from '../../engine/BacteriaNode';
-import { isGrinderDevice } from '../../engine/GrinderNode';
-import { isProofDevice } from '../../engine/ProofNode';
-import { isProofChamberDevice } from '../../engine/ProofChamberNode';
-import { isScoringDevice } from '../../engine/ScoringNode';
+import { createWebAudioDevice } from './WebAudioDeviceStrategy';
 
 deviceRegistry.register('builtin-', async (ctx, device) => createWebAudioDevice(ctx, device));
 

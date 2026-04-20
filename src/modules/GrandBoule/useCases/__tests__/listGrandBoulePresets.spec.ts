@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { createNeutralPresetParameters } from '../../models/GrandBoulePreset';
-import { listGrandBoulePresets } from '../listGrandBoulePresets';
 import { listBuiltinGrandBoulePresets } from '../../repositories/grandBoulePresetCatalog';
+import { listGrandBoulePresets } from '../listGrandBoulePresets';
 
 vi.mock('../../repositories/grandBoulePresetCatalog', () => ({
     listBuiltinGrandBoulePresets: vi.fn(),
@@ -18,8 +19,6 @@ describe('listGrandBoulePresets', () => {
             },
         ]);
 
-        expect(listGrandBoulePresets()).toEqual([
-            { id: 'preset-1', name: 'Bright', description: 'Test' },
-        ]);
+        expect(listGrandBoulePresets()).toEqual([{ id: 'preset-1', name: 'Bright', description: 'Test' }]);
     });
 });

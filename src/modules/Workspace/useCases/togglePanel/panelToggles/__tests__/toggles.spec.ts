@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { toggleInspector } from '../toggleInspector';
-import { toggleSidebar } from '../toggleSidebar';
-import { toggleMixer } from '../toggleMixer';
+
 import { setSnapValue } from '../setSnapValue';
+import { toggleInspector } from '../toggleInspector';
+import { toggleMixer } from '../toggleMixer';
+import { toggleSidebar } from '../toggleSidebar';
 
 const mocks = vi.hoisted(() => ({
     getWorkspaceState: vi.fn(),

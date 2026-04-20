@@ -1,10 +1,10 @@
+import { resumeEngine } from '#/modules/AudioEngine/useCases';
 
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
-import { resumeEngine } from '#/modules/AudioEngine/useCases';
-import { startPlayheadScheduler } from '../playheadScheduler';
 import { ensureTrackStrips } from '../ensureTrackStrips';
+import { startPlayheadScheduler } from '../playheadScheduler';
 
 export function startPlayback(): void {
     const state = getTransportState();

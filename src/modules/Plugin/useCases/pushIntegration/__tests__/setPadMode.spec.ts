@@ -17,9 +17,9 @@ describe('setPadMode', () => {
         const state = pushStore.value!;
         expect(state.padMode).toBe('scale');
         const expected = PAD_MODE_COLORS.scale;
-        expect(state.pads.every((p) => p.color.r === expected.r && p.color.g === expected.g && p.color.b === expected.b)).toBe(
-            true
-        );
+        expect(
+            state.pads.every((p) => p.color.r === expected.r && p.color.g === expected.g && p.color.b === expected.b)
+        ).toBe(true);
     });
 
     it('should not mutate when push store is null', () => {

@@ -1,6 +1,6 @@
-import { type CommandEntry } from '../CommandEntry';
-import { getSelectedClipId } from '../../useCases/selectionHelpers/getSelectedClipId';
 import { executeAppAction } from '../../useCases/executeAppAction';
+import { getSelectedClipId } from '../../useCases/selectionHelpers/getSelectedClipId';
+import { type CommandEntry } from '../CommandEntry';
 
 /** AI / generation commands — generate patterns, detect tempo/key, audio-to-MIDI, apply groove, structure detection, RAVE models. */
 export const aiCommands: CommandEntry[] = [

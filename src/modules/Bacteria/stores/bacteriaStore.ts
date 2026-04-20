@@ -3,6 +3,7 @@
  * Keyed by deviceId to support multiple simultaneous instances.
  */
 import { createStore } from '#/infra/store/createStore';
+
 import { type BacteriaPatch, DEFAULT_PATCH } from '../models/BacteriaPatch';
 
 export type BacteriaUiLevel = 1 | 2 | 3 | 4 | 5;
@@ -60,7 +61,9 @@ export function setBacteriaBandParam<K extends keyof BacteriaPatch['bands'][0]>(
     const instances = bacteriaStore.value ?? {};
     const state = instances[deviceId] ?? { ...DEFAULT_BACTERIA_STATE, patch: { ...DEFAULT_PATCH } };
     const bands = [...state.patch.bands];
-    if (bandIndex < 0 || bandIndex >= bands.length) {return;}
+    if (bandIndex < 0 || bandIndex >= bands.length) {
+        return;
+    }
     bands[bandIndex] = { ...bands[bandIndex]!, [key]: value };
     bacteriaStore.set({ ...instances, [deviceId]: { ...state, patch: { ...state.patch, bands } } });
 }

@@ -1,5 +1,6 @@
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+
 import { type GrooveTemplate } from '../../../models/GrooveTemplate';
 
 export function applyGroove(clipId: string, template: GrooveTemplate, amount = 1.0): void {
@@ -31,8 +32,7 @@ export function applyGroove(clipId: string, template: GrooveTemplate, amount = 1
 
     const updated = existing.map((note) => {
         const nearestStep = Math.round(note.startBeat / stepSize);
-        const stepIndex =
-            ((nearestStep % template.subdivisions) + template.subdivisions) % template.subdivisions;
+        const stepIndex = ((nearestStep % template.subdivisions) + template.subdivisions) % template.subdivisions;
 
         const offset = (template.offsets[stepIndex] ?? 0) * clampedAmount;
         const velScale = 1 + ((template.velocities[stepIndex] ?? 1) - 1) * clampedAmount;

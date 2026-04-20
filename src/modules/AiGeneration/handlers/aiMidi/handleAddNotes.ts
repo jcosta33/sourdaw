@@ -1,6 +1,6 @@
-import { createHandler } from '#/utils/createHandler';
 import { logger } from '#/infra/logger/appLogger';
 import { addMidiNote } from '#/modules/MIDI/useCases';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleAddNotes = createHandler<'addNotes'>({
     execute: (a) => {

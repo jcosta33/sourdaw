@@ -1,12 +1,16 @@
 import { type ReactElement, useRef, useState } from 'react';
+
 import { ChevronDown } from 'lucide-react';
+
 import { Button } from '#/components/ui/button';
-import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
-import { useTracks } from '../../hooks/useTracks';
 import { setTrackOutput } from '#/modules/Arrangement/useCases';
+import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
+
 import { type Track } from '../../../models/TrackViewTypes';
 import { MixerMicroReadout } from '../../components/Mixer/MixerMicroReadout';
 import { MixerSection } from '../../components/Mixer/MixerSection';
+import { useTracks } from '../../hooks/useTracks';
+
 import { MixerPopupMenu, MixerPopupOption } from './MixerPopupMenu';
 
 type IOSectionProps = {

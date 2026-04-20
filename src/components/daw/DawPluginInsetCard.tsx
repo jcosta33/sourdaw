@@ -1,5 +1,7 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
+
 import { cn } from '#/utils/Styles/cn';
+
 import { DawPluginSectionHeader } from './DawPluginSectionHeader';
 
 type DawPluginInsetCardProps = HTMLAttributes<HTMLDivElement> & {

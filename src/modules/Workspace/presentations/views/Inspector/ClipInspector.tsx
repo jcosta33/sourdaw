@@ -1,10 +1,11 @@
 import { type ReactElement, useState } from 'react';
+
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
-import { Slider } from '#/components/ui/slider';
 import { Separator } from '#/components/ui/separator';
+import { Slider } from '#/components/ui/slider';
 import {
     trimClipStart,
     trimClipEnd,
@@ -14,13 +15,15 @@ import {
     renameClip,
     setClipFollowAction,
 } from '#/modules/Arrangement/useCases';
-import { type Clip } from '../../../models/TrackViewTypes';
 import { CLIP_COLOR_PRESETS } from '#/utils/UI/colorPresets';
+
+import { type Clip } from '../../../models/TrackViewTypes';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
 import { InspectorDetailHeader } from '../../components/Inspector/InspectorDetailHeader';
-import { ClipGainEnvelopeSection } from './ClipGainEnvelopeSection';
+
 import { ClipAudioAiSection } from './ClipAudioAiSection';
+import { ClipGainEnvelopeSection } from './ClipGainEnvelopeSection';
 import { ClipMidiAiSection } from './ClipMidiAiSection';
 
 type ClipInspectorProps = {

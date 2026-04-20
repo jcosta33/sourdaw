@@ -3,8 +3,8 @@
  * Useful for keyboard splits, velocity layers, and scale-based filtering.
  */
 
-import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
+import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 
 export class NoteFilter extends BaseMidiProcessor {
     readonly name = 'Note Filter';
@@ -27,7 +27,9 @@ export class NoteFilter extends BaseMidiProcessor {
             if (event.kind.type === 'noteOn') {
                 const key = `${event.kind.channel}:${event.kind.note}`;
                 let passes = this.passesFilter(event.kind.note, event.kind.velocity);
-                if (this.invert) {passes = !passes;}
+                if (this.invert) {
+                    passes = !passes;
+                }
 
                 if (passes) {
                     output.push(event);
@@ -49,9 +51,15 @@ export class NoteFilter extends BaseMidiProcessor {
     }
 
     private passesFilter(note: number, velocity: number): boolean {
-        if (note < this.noteMin || note > this.noteMax) {return false;}
-        if (velocity < this.velMin || velocity > this.velMax) {return false;}
-        if (!this.allowedPitchClasses.has(note % 12)) {return false;}
+        if (note < this.noteMin || note > this.noteMax) {
+            return false;
+        }
+        if (velocity < this.velMin || velocity > this.velMax) {
+            return false;
+        }
+        if (!this.allowedPitchClasses.has(note % 12)) {
+            return false;
+        }
         return true;
     }
 

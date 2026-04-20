@@ -11,6 +11,7 @@ import {
     Guitar,
     Music2,
 } from 'lucide-react';
+
 import { type SoundPresetCategory } from '../../../models/SoundPresetViewTypes';
 
 export type SampleItem = {

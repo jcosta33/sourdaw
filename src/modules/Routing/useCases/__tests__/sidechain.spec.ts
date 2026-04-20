@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { SidechainCycleError } from '../../errors/RoutingErrors';
 import { addSidechainRoute } from '../sidechain/addSidechainRoute';
-import { removeSidechainRoute } from '../sidechain/removeSidechainRoute';
-import { setSidechainRoutes } from '../sidechain/setSidechainRoutes';
+import { getAllSidechainRoutes } from '../sidechain/getAllSidechainRoutes';
 import { getSidechainRoutesForTrack } from '../sidechain/getSidechainRoutesForTrack';
 import { getSidechainSource } from '../sidechain/getSidechainSource';
-import { getAllSidechainRoutes } from '../sidechain/getAllSidechainRoutes';
-import { SidechainCycleError } from '../../errors/RoutingErrors';
+import { removeSidechainRoute } from '../sidechain/removeSidechainRoute';
+import { setSidechainRoutes } from '../sidechain/setSidechainRoutes';
 
 const mocks = vi.hoisted(() => ({
     wireSidechainRoute: vi.fn(),
@@ -41,7 +42,7 @@ vi.mock('../../stores/sidechainStore', () => ({
             return mockStoreValue.value;
         },
         set: mocks.storeSet,
-    }
+    },
 }));
 
 describe('sidechain use cases', () => {

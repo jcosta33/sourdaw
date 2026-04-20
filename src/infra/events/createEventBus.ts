@@ -1,6 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
-import type { EventBus, EventMap } from './types';
+
 import { createSubscriptionRegistry } from './internal/createSubscriptionRegistry';
+
+import type { EventBus, EventMap } from './types';
 
 export const createEventBus = <TEvents extends EventMap>(): EventBus<TEvents> => {
     const registry = createSubscriptionRegistry<TEvents>();

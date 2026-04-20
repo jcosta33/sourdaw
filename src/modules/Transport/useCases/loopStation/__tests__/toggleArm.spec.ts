@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type LoopStationState } from '../../../stores/loopStationStore';
-import { toggleArm } from '../toggleArm';
 import { loopStationStore } from '../../../stores/loopStationStore';
+import { toggleArm } from '../toggleArm';
 
 vi.mock('../../../stores/loopStationStore', () => ({
     loopStationStore: { value: null, set: vi.fn() },
@@ -25,9 +26,9 @@ describe('toggleArm', () => {
 
     it('flips armed via injected store', () => {
         loopStationStore.value = { ...emptyLoopState(), armed: false } as any;
-        
+
         toggleArm();
-        
+
         expect(loopStationStore.set).toHaveBeenCalledWith(expect.objectContaining({ armed: true }));
     });
 });

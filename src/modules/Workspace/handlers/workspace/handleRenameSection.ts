@@ -1,5 +1,5 @@
-import { createHandler } from '#/utils/createHandler';
 import { renameSection } from '#/modules/Arrangement/useCases';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleRenameSection = createHandler<'renameSection'>({
     execute: (a) => {

@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { logger } from '#/infra/logger/appLogger';
+
+import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { getAudioDevices } from '../audioDeviceSelection/getAudioDevices';
 import { setOutputDevice } from '../audioDeviceSelection/setOutputDevice';
-import { audioEngine } from '../../repositories/createWebAudioEngine';
-import { logger } from '#/infra/logger/appLogger';
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: {
@@ -22,9 +24,9 @@ vi.mock('../../repositories/createWebAudioEngine', () => ({
 
 describe('audioDeviceSelection injectables', () => {
     beforeEach(() => {
-        const enumerateDevices = vi.fn().mockResolvedValue([
-            { deviceId: 'd1', kind: 'audioinput', label: 'Mic' },
-        ] as MediaDeviceInfo[]);
+        const enumerateDevices = vi
+            .fn()
+            .mockResolvedValue([{ deviceId: 'd1', kind: 'audioinput', label: 'Mic' }] as MediaDeviceInfo[]);
         Object.defineProperty(globalThis.navigator, 'mediaDevices', {
             value: { enumerateDevices },
             configurable: true,

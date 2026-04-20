@@ -1,6 +1,7 @@
-import { type GrandBouleState } from '../../stores/grandBouleStore';
 import { type Store } from '#/infra/store/types';
+
 import { createDefaultMidiCalibration } from '../../models/GrandBouleMidiCalibration';
+import { type GrandBouleState } from '../../stores/grandBouleStore';
 
 // --- Bulk operations --------------------------------------------------------
 

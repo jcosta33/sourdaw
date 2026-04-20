@@ -45,11 +45,15 @@ async function initWorker(sab: SharedArrayBuffer, sampleRate: number): Promise<v
 }
 
 async function drain(): Promise<void> {
-    if (!ring || !writeHead || !opfsWritable) {return;}
+    if (!ring || !writeHead || !opfsWritable) {
+        return;
+    }
 
     const currentWrite = Atomics.load(writeHead, 0);
     const available = currentWrite - localReadHead;
-    if (available <= 0) {return;}
+    if (available <= 0) {
+        return;
+    }
 
     // Copy the available samples out of the ring (handles wrap-around).
     const chunk = new Float32Array(available);
@@ -65,7 +69,9 @@ async function drain(): Promise<void> {
 function startPolling(): void {
     active = true;
     const tick = async (): Promise<void> => {
-        if (!active) {return;}
+        if (!active) {
+            return;
+        }
         await drain();
         pollTimer = setTimeout(() => {
             tick();
@@ -96,7 +102,7 @@ async function stopWorker(): Promise<void> {
     const patchStream = await opfsFileHandle.createWritable({ keepExistingData: true });
     const header = new ArrayBuffer(44);
     const view = new DataView(header);
-    
+
     const totalSamples = localReadHead;
     view.setUint32(0, 0x52494646, false); // "RIFF"
     view.setUint32(4, 36 + totalSamples * 4, true);

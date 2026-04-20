@@ -4,6 +4,7 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
+
 import {
     type PadChannelStrip,
     type PadConfig,
@@ -30,7 +31,9 @@ export const padStore = createStore<Record<string, PadState>>({
 
 export function ensurePadInstance(instanceId: string): void {
     padStore.update((s) => {
-        if (!s) {return {};}
+        if (!s) {
+            return {};
+        }
         if (s[instanceId]) {
             return s;
         }
@@ -40,7 +43,9 @@ export function ensurePadInstance(instanceId: string): void {
 
 export function selectPad(instanceId: string, index: number): void {
     padStore.update((s) => {
-        if (!s) {return {};}
+        if (!s) {
+            return {};
+        }
         const inst = s[instanceId];
         if (!inst || index < 0 || index >= inst.pads.length) {
             return s;
@@ -54,7 +59,9 @@ export function selectPad(instanceId: string, index: number): void {
 
 export function updatePad(instanceId: string, index: number, updates: Partial<PadConfig>): void {
     padStore.update((s) => {
-        if (!s) {return {};}
+        if (!s) {
+            return {};
+        }
         const inst = s[instanceId];
         if (!inst || !inst.pads[index]) {
             return s;
@@ -68,18 +75,15 @@ export function updatePad(instanceId: string, index: number, updates: Partial<Pa
     });
 }
 
-export function assignSampleToPad(
-    instanceId: string,
-    index: number,
-    sampleId: number,
-    name: string
-): void {
+export function assignSampleToPad(instanceId: string, index: number, sampleId: number, name: string): void {
     updatePad(instanceId, index, { sampleId, name });
 }
 
 export function resetPad(instanceId: string, index: number): void {
     padStore.update((s) => {
-        if (!s) {return {};}
+        if (!s) {
+            return {};
+        }
         const inst = s[instanceId];
         if (!inst) {
             return s;
@@ -95,13 +99,11 @@ export function resetPad(instanceId: string, index: number): void {
     });
 }
 
-export function updateChannelStrip(
-    instanceId: string,
-    index: number,
-    updates: Partial<PadChannelStrip>
-): void {
+export function updateChannelStrip(instanceId: string, index: number, updates: Partial<PadChannelStrip>): void {
     padStore.update((s) => {
-        if (!s) {return {};}
+        if (!s) {
+            return {};
+        }
         const inst = s[instanceId];
         if (!inst || !inst.channelStrips[index]) {
             return s;
@@ -117,7 +119,9 @@ export function updateChannelStrip(
 
 export function reorderPad(instanceId: string, fromIndex: number, toIndex: number): void {
     padStore.update((s) => {
-        if (!s) {return {};}
+        if (!s) {
+            return {};
+        }
         const inst = s[instanceId];
         if (!inst) {
             return s;
@@ -148,7 +152,9 @@ export function reorderPad(instanceId: string, fromIndex: number, toIndex: numbe
 
 export function removePadInstance(instanceId: string): void {
     padStore.update((s) => {
-        if (!s) {return {};}
+        if (!s) {
+            return {};
+        }
         const next = { ...s };
         delete next[instanceId];
         return next;

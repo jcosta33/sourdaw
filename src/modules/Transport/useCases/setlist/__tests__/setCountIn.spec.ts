@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type SetlistState } from '../../../stores/setlistStore';
 import { setCountIn } from '../setCountIn';
 
@@ -26,7 +27,7 @@ describe('setCountIn', () => {
             totalDuration: 0,
         };
         mockSetlistStore.value = state;
-        
+
         setCountIn(4);
         expect(mockSetlistStore.set).toHaveBeenCalledWith(expect.objectContaining({ countInBars: 4 }));
     });

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+
 import { midiLearnStore } from '../../stores/midiLearnStore';
 import { getMidiLearnState } from '../getMidiLearnState';
 

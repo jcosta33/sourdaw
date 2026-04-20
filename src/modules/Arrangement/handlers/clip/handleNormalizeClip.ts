@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+
 import { normalizeClip } from '../../useCases/clipEditing/normalizeClip';
 
 export const handleNormalizeClip = createHandler<'normalizeClip'>({

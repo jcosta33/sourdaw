@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
+
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
 import { DOC_ID_ASSET } from '../models/syncChannelConstants';
 import { type PeerConnectionManager } from '../repositories/peerConnection';
@@ -233,7 +234,7 @@ async function hashBlob(blob: Blob): Promise<string> {
     const buffer = await blob.arrayBuffer();
     const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return 'sha256:' + hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+    return `sha256:${hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {

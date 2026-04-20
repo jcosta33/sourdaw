@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
+
 import { DawStatusDot, getDawStatusDotClassName } from '../DawStatusDot';
 
 describe('DawStatusDot', () => {

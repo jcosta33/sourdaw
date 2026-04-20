@@ -1,5 +1,7 @@
 import { stringify, parse } from 'superjson';
+
 import { type LocalStorageKey } from '#/infra/store/storage/LocalStorageKeys';
+
 import { type StorageAdapter } from './types';
 
 export const createLocalStorage = <TData>(key: LocalStorageKey): StorageAdapter<TData> => {

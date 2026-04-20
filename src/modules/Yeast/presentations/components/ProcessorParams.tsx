@@ -3,7 +3,9 @@
  * Each processor type gets its own set of knobs/selectors based on its parameters.
  */
 import { type ReactElement } from 'react';
+
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import { type ProcessorType } from '../../useCases/processorFactory';
 
 type OnSetParam = (id: string, name: string, value: number) => void;

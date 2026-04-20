@@ -1,4 +1,3 @@
-import { type GrandBouleState } from '../stores/grandBouleStore';
 import { type Store } from '#/infra/store/types';
 /**
  * Update the Grand Boule stretched-tuning amount.
@@ -13,6 +12,7 @@ import { type Store } from '#/infra/store/types';
  */
 
 import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
+import { type GrandBouleState } from '../stores/grandBouleStore';
 
 type SetGrandBouleStretchAmountInput = {
     engine: GrandBouleEngineHandle;

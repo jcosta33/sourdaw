@@ -1,4 +1,4 @@
-import { generateToolCalls } from '#/modules/AiRuntime/useCases';
+import { type generateToolCalls } from '#/modules/AiRuntime/useCases';
 
 export function notePitchToName(pitch: number): string {
     const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { automationStore } from '../../../stores/automationStore';
+
 import { createAutomationLane } from '../../../models/Automation';
+import { automationStore } from '../../../stores/automationStore';
 import {
     makeKey,
     findLaneId,

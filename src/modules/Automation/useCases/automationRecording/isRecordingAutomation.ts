@@ -1,4 +1,5 @@
 import { getTrackById } from '#/modules/Arrangement/useCases';
+
 import { activeRecording, touchActive, makeKey } from './recordingSessionState';
 
 export function isRecordingAutomation(trackId: string, parameterId: string): boolean {

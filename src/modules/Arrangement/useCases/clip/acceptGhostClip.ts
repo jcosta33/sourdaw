@@ -6,24 +6,26 @@ import { updateTrack } from '../updateTrack';
  */
 export function acceptGhostClip(clipId: string): void {
     const state = trackStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     const ghost = (state.ghostClips ?? []).find((c) => c.id === clipId);
     if (!ghost) {
         // Fallback for pre-existing ghost-flag implementation
-        state.tracks.forEach(t => {
-            if (t.clips.some(c => c.id === clipId)) {
-                updateTrack(t.id, track => ({
+        for (const t of state.tracks) {
+            if (t.clips.some((c) => c.id === clipId)) {
+                updateTrack(t.id, (track) => ({
                     ...track,
-                    clips: track.clips.map(c => c.id === clipId ? { ...c, isGhost: false } : c)
+                    clips: track.clips.map((c) => (c.id === clipId ? { ...c, isGhost: false } : c)),
                 }));
             }
-        });
+        }
         return;
     }
 
     const { trackId, ...clipData } = ghost;
-    
+
     // 1. Add to track
     updateTrack(trackId, (t) => ({
         ...t,

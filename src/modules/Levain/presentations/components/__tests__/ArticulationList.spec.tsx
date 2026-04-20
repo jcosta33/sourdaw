@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { ArticulationList } from '../ArticulationList';
+import { describe, it, expect, vi } from 'vitest';
+
 import { createDefaultPatch } from '../../../models/LevainPatch';
+import { ArticulationList } from '../ArticulationList';
 
 describe('ArticulationList', () => {
     it('should render', () => {

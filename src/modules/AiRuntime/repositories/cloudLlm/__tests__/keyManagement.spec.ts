@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import { setCloudApiKey, clearCloudApiKey, isCloudAvailable } from '../keyManagement';
 
 const { mockLogger } = vi.hoisted(() => ({
@@ -7,7 +8,7 @@ const { mockLogger } = vi.hoisted(() => ({
         warn: vi.fn(),
         error: vi.fn(),
         debug: vi.fn(),
-    }
+    },
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 

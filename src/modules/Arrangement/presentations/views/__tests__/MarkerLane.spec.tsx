@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { MarkerLane } from '../MarkerLane';
+
 import { addMarker } from '../../../useCases/marker/markerOperations/addMarker';
+import { MarkerLane } from '../MarkerLane';
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
@@ -46,7 +48,9 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
 
 vi.mock('../TimelineChromeSurface', () => ({
     TimelineChromeSurface: vi.fn(({ children, onContextMenu, ...props }: any) => (
-        <div {...props} onContextMenu={onContextMenu} data-testid="lane-surface">{children}</div>
+        <div {...props} onContextMenu={onContextMenu} data-testid="lane-surface">
+            {children}
+        </div>
     )),
 }));
 
@@ -87,11 +91,17 @@ describe('MarkerLane', () => {
     it('should handle context menu on lane', () => {
         renderWithTooltip(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
         const lane = screen.getByTestId('lane-surface');
-        
+
         // Mock rect
-        lane.getBoundingClientRect = vi.fn(() => ({
-            left: 0, top: 0, width: 1000, height: 20,
-        } as any));
+        lane.getBoundingClientRect = vi.fn(
+            () =>
+                ({
+                    left: 0,
+                    top: 0,
+                    width: 1000,
+                    height: 20,
+                }) as any
+        );
 
         fireEvent.contextMenu(lane, { clientX: 100, clientY: 10 });
         expect(screen.getByText(/Add Marker at Beat/)).toBeInTheDocument();
@@ -100,10 +110,16 @@ describe('MarkerLane', () => {
     it('should call addMarker when Add Marker is clicked', () => {
         renderWithTooltip(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
         const lane = screen.getByTestId('lane-surface');
-        
-        lane.getBoundingClientRect = vi.fn(() => ({
-            left: 0, top: 0, width: 1000, height: 20,
-        } as any));
+
+        lane.getBoundingClientRect = vi.fn(
+            () =>
+                ({
+                    left: 0,
+                    top: 0,
+                    width: 1000,
+                    height: 20,
+                }) as any
+        );
 
         fireEvent.contextMenu(lane, { clientX: 100, clientY: 10 });
         const addButton = screen.getByText(/Add Marker at Beat/);
@@ -118,19 +134,25 @@ describe('MarkerLane', () => {
         };
         renderWithTooltip(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
         const lane = screen.getByTestId('lane-surface');
-        
-        // Marker is at beat 10. pixelsPerBeat is 12. 
-        // Marker X should be 120.
-        lane.getBoundingClientRect = vi.fn(() => ({
-            left: 0, top: 0, width: 1000, height: 20,
-        } as any));
 
-        fireEvent.contextMenu(lane, { 
-            clientX: 120, 
+        // Marker is at beat 10. pixelsPerBeat is 12.
+        // Marker X should be 120.
+        lane.getBoundingClientRect = vi.fn(
+            () =>
+                ({
+                    left: 0,
+                    top: 0,
+                    width: 1000,
+                    height: 20,
+                }) as any
+        );
+
+        fireEvent.contextMenu(lane, {
+            clientX: 120,
             clientY: 10,
-            button: 2 
+            button: 2,
         });
-        
+
         // Wait for the context menu to appear
         await waitFor(() => {
             expect(screen.getByText('Rename Marker')).toBeInTheDocument();

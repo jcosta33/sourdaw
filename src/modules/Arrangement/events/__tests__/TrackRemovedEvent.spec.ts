@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import type { TrackRemovedPayload } from '../TrackRemovedEvent';
 
 describe('TrackRemovedEvent', () => {

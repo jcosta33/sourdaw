@@ -1,6 +1,5 @@
 import { createEventBus } from '#/infra/events/createEventBus';
 import { logger } from '#/infra/logger/appLogger';
-
 import {
     type TrackAddedPayload,
     type TrackRemovedPayload,

@@ -24,7 +24,7 @@ describe('startMouseDrag', () => {
         window.dispatchEvent(new MouseEvent('mousemove'));
         expect(onMove).toHaveBeenCalledTimes(1);
 
-        upHandler!(new MouseEvent('mouseup'));
+        upHandler(new MouseEvent('mouseup'));
         expect(onUp).toHaveBeenCalledTimes(1);
         expect(removeSpy).toHaveBeenCalledWith('mousemove', onMove);
     });

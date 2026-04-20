@@ -1,8 +1,5 @@
-import { getAssetTransfer } from '#/modules/Collaboration/useCases';
-import { collaborationStore } from '#/modules/Collaboration/stores';
-import { tempoMapStore } from '../../stores/tempoMapStore';
-import { getTempoAtBeat } from '../../models/TempoMap';
-import { type TransportState } from '../../models/TransportState';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { getGainAtBeat, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     createBufferSource,
@@ -11,11 +8,16 @@ import {
     getCompensationDelay,
     getCurrentTime,
 } from '#/modules/AudioEngine/useCases';
-import { getGainAtBeat, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { collaborationStore } from '#/modules/Collaboration/stores';
+import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { scheduleFrozenTrack } from './scheduleMidiNotes';
+
+import { getTempoAtBeat } from '../../models/TempoMap';
+import { type TransportState } from '../../models/TransportState';
+import { tempoMapStore } from '../../stores/tempoMapStore';
 import { type SourceWithFade } from '../playheadScheduler';
+
+import { scheduleFrozenTrack } from './scheduleMidiNotes';
 
 const MICRO_FADE_SECONDS = 0.003;
 
@@ -29,7 +31,7 @@ export const sessionState: { requestedAssets: Set<string> } = {
 };
 
 /**
- * Global pool for GainNodes to prevent main-thread GC allocations 
+ * Global pool for GainNodes to prevent main-thread GC allocations
  * during high-frequency audio scheduling ticks.
  */
 const gainNodePool: GainNode[] = [];
@@ -79,12 +81,7 @@ export function scheduleAudioClips(
 
         if (track.freezeState?.status === 'frozen' && track.freezeState?.frozenBufferId) {
             if (!scheduledFrozenTracks.has(track.id)) {
-                const scheduled = scheduleFrozenTrack(
-                    track,
-                    accumulatedPosition,
-                    activeAudioSources,
-                    currentTempo
-                );
+                const scheduled = scheduleFrozenTrack(track, accumulatedPosition, activeAudioSources, currentTempo);
                 if (scheduled) {
                     scheduledFrozenTracks.add(track.id);
                 }
@@ -121,10 +118,7 @@ export function scheduleAudioClips(
                             getAssetTransfer()?.requestAsset(clip.assetHash);
                         }
                     } else {
-                        notifyUser(
-                            `Missing audio for clip "${clip.name}" — re-import the audio file`,
-                            'warning'
-                        );
+                        notifyUser(`Missing audio for clip "${clip.name}" — re-import the audio file`, 'warning');
                         scheduledAudioClipsSet.add(clipKey);
                     }
                 }
@@ -162,7 +156,7 @@ export function scheduleAudioClips(
                 const isLastIter = iter === maxIterations - 1 || iterStartBeat + loopLen >= clip.endBeat;
                 const needsMicroFadeIn = isFirstIter && clip.fadeInBeats === 0;
                 const needsMicroFadeOut = isLastIter && clip.fadeOutBeats === 0;
-                
+
                 const fadeGain = acquireGainNode(ctx);
                 (source as SourceWithFade).fadeGainNode = fadeGain;
 
@@ -170,7 +164,7 @@ export function scheduleAudioClips(
                 const hasEnvGain = envGainDb !== 0;
                 const envGainNode = hasEnvGain ? acquireGainNode(ctx) : null;
                 if (envGainNode) {
-                    envGainNode.gain.value = Math.pow(10, envGainDb / 20);
+                    envGainNode.gain.value = 10 ** (envGainDb / 20);
                 }
 
                 let outputNode: AudioNode = strip.gainNode;
@@ -185,8 +179,7 @@ export function scheduleAudioClips(
                 source.connect(outputNode);
 
                 const beatOffset = iterStartBeat - accumulatedPosition;
-                const iterStartTime =
-                    getCurrentTime() + beatOffset / (currentTempo / 60) + compensation;
+                const iterStartTime = getCurrentTime() + beatOffset / (currentTempo / 60) + compensation;
                 const now = getCurrentTime();
                 const clipAudioOffsetBeats = clip.audioOffsetBeats ?? 0;
                 const clipAudioOffsetSeconds = clipAudioOffsetBeats / clipBeatsPerSecond;
@@ -212,7 +205,9 @@ export function scheduleAudioClips(
                     } else {
                         // Source isn't started, release resources immediately
                         releaseGainNode(fadeGain, ctx);
-                        if (envGainNode) releaseGainNode(envGainNode, ctx);
+                        if (envGainNode) {
+                            releaseGainNode(envGainNode, ctx);
+                        }
                         continue;
                     }
                 }
@@ -224,8 +219,7 @@ export function scheduleAudioClips(
                         const fadeInEnd = iterStartTime + clip.fadeInBeats / clipBeatsPerSecond;
                         if (effectiveStart < fadeInEnd) {
                             const progressRatio =
-                                Math.max(0, effectiveStart - iterStartTime) /
-                                (clip.fadeInBeats / clipBeatsPerSecond);
+                                Math.max(0, effectiveStart - iterStartTime) / (clip.fadeInBeats / clipBeatsPerSecond);
                             fadeGain.gain.setValueAtTime(progressRatio, effectiveStart);
                             fadeGain.gain.linearRampToValueAtTime(1, fadeInEnd);
                         } else {
@@ -248,10 +242,7 @@ export function scheduleAudioClips(
                         fadeGain.gain.linearRampToValueAtTime(0, clipEndTime);
                     } else if (needsMicroFadeOut) {
                         const iterEndTime = effectiveStart + playDuration;
-                        fadeGain.gain.setValueAtTime(
-                            1,
-                            Math.max(effectiveStart, iterEndTime - MICRO_FADE_SECONDS)
-                        );
+                        fadeGain.gain.setValueAtTime(1, Math.max(effectiveStart, iterEndTime - MICRO_FADE_SECONDS));
                         fadeGain.gain.linearRampToValueAtTime(0, iterEndTime);
                     }
                 }

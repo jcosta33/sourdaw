@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { setScratchPadSectionColor } from '../scratchPadCrud/setScratchPadSectionColor';
 
 const mocks = vi.hoisted(() => ({
@@ -8,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../stores/scratchPadStore', () => ({
     scratchPadStore: {
-        get value() { return mocks.scratchPadStoreValue.value; },
+        get value() {
+            return mocks.scratchPadStoreValue.value;
+        },
         set: mocks.scratchPadStoreSet,
-    }
+    },
 }));
 
 describe('setScratchPadSectionColor', () => {
@@ -18,13 +21,13 @@ describe('setScratchPadSectionColor', () => {
 
     it('updates color of correct section', () => {
         mocks.scratchPadStoreValue.value = {
-            sections: [{ id: 's1', color: '#000' }]
+            sections: [{ id: 's1', color: '#000' }],
         } as any;
 
         setScratchPadSectionColor('s1', '#fff');
 
         expect(mocks.scratchPadStoreSet).toHaveBeenCalledWith({
-            sections: [{ id: 's1', color: '#fff' }]
+            sections: [{ id: 's1', color: '#fff' }],
         });
     });
 });

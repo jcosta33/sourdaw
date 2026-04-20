@@ -1,7 +1,8 @@
 import { createHandler } from '#/utils/createHandler';
-import { saveCurrentAsPreset } from '../../useCases/preset/presetStorage/saveCurrentAsPreset';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+
 import { type SoundPresetCategory } from '../../models/SoundPreset';
+import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { saveCurrentAsPreset } from '../../useCases/preset/presetStorage/saveCurrentAsPreset';
 
 export const handleSavePreset = createHandler<'savePreset'>({
     execute: (a) => {

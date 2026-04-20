@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { PadGrid } from '../PadGrid';
+import { describe, it, expect, vi } from 'vitest';
+
 import { type PadState } from '../../../models/ToasterKit';
+import { PadGrid } from '../PadGrid';
 
 function makePad(index: number): PadState {
     return {
@@ -30,9 +31,7 @@ function makePad(index: number): PadState {
 describe('PadGrid (Toaster)', () => {
     it('should render', () => {
         const pads = Array.from({ length: 8 }, (_, i) => makePad(i));
-        render(
-            <PadGrid pads={pads} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={vi.fn()} />
-        );
+        render(<PadGrid pads={pads} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={vi.fn()} />);
         expect(screen.getByText('P0')).toBeInTheDocument();
     });
 });

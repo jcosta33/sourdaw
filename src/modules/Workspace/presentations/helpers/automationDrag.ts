@@ -4,7 +4,7 @@
  * to manage global listener teardown.
  */
 import { type MouseEvent as ReactMouseEvent } from 'react';
-import { type AutomationLane, type AutomationPoint, type AutomationCurveType } from '../../models/AutomationViewTypes';
+
 import { automationStore } from '#/modules/Automation/stores';
 import {
     addAutomationPoint,
@@ -17,6 +17,9 @@ import {
     selectPointsInRange,
 } from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
+
+import { type AutomationLane, type AutomationPoint, type AutomationCurveType } from '../../models/AutomationViewTypes';
+
 import { startMouseDrag } from './mouseDrag';
 
 type SetStateFn<T> = (updater: T | ((prev: T) => T)) => void;
@@ -219,8 +222,8 @@ export const onPointMouseDown = (
             const hasMoved =
                 finalPoint !== undefined && (finalPoint.beat !== origBeat || finalPoint.value !== origValue);
             if (hasMoved) {
-                const finalBeat = finalPoint!.beat;
-                const finalValue = finalPoint!.value;
+                const finalBeat = finalPoint.beat;
+                const finalValue = finalPoint.value;
                 pushUndoEntry(
                     'Move automation point',
                     () => {

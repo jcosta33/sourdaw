@@ -1,6 +1,8 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { decodeAudioFile } from '../decodeAudioFile';
+
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+
+import { decodeAudioFile } from '../decodeAudioFile';
 
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(),

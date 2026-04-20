@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
+
 import { trackStore } from '../../../stores/trackStore';
 import { cleanupUnusedFreezeFiles } from '../cleanupUnusedFreezeFiles';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
     audioBufferCache: {
@@ -36,8 +38,6 @@ describe('cleanupUnusedFreezeFiles', () => {
 
         await cleanupUnusedFreezeFiles();
 
-        expect(audioBufferCache.garbageCollectFreezeFiles).toHaveBeenCalledWith(
-            new Set(['buf-1', 'buf-2'])
-        );
+        expect(audioBufferCache.garbageCollectFreezeFiles).toHaveBeenCalledWith(new Set(['buf-1', 'buf-2']));
     });
 });

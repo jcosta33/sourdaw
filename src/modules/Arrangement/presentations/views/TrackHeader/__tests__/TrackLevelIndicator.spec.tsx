@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { useStore } from '#/infra/store/useStore';
 import { getTrackAnalyser } from '#/modules/AudioEngine/useCases/engineAccess/getTrackAnalyser';
+
 import { TrackLevelIndicator } from '../TrackLevelIndicator';
 
 // Mock external dependencies
@@ -44,7 +46,7 @@ describe('TrackLevelIndicator', () => {
         } as any);
 
         const { container } = render(<TrackLevelIndicator track={mockTrack as any} />);
-        
+
         act(() => {
             vi.advanceTimersByTime(100);
         });
@@ -58,7 +60,7 @@ describe('TrackLevelIndicator', () => {
     it('should handle missing analyser gracefully', () => {
         vi.mocked(useStore).mockReturnValue({ isPlaying: true });
         vi.mocked(getTrackAnalyser).mockReturnValue(null);
-        
+
         const { container } = render(<TrackLevelIndicator track={mockTrack as any} />);
         expect(container.firstChild).toBeTruthy();
     });

@@ -1,5 +1,5 @@
-import { scratchPadStore } from '../../../stores/scratchPadStore';
 import { markerStore } from '../../../stores/markerStore';
+import { scratchPadStore } from '../../../stores/scratchPadStore';
 
 export function commitScratchPadToArrangement(): void {
     const padState = scratchPadStore.value;

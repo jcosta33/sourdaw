@@ -1,7 +1,8 @@
-import { createHandler } from '#/utils/createHandler';
 import { midiStore } from '#/modules/MIDI/stores';
-import { updateTrack } from '../../useCases/updateTrack';
+import { createHandler } from '#/utils/createHandler';
+
 import { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
+import { updateTrack } from '../../useCases/updateTrack';
 
 /**
  * Inverse-action handler for `removeClip`. Replays snapshot data carried in the
@@ -11,15 +12,8 @@ import { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
  */
 export const handleRestoreClip = createHandler<'restoreClip'>({
     execute: (a) => {
-        const {
-            clipId,
-            trackId,
-            clipSnapshot,
-            ripplePlan,
-            midiNotesSnapshot,
-            midiCcSnapshot,
-            midiPitchBendSnapshot,
-        } = a.payload;
+        const { clipId, trackId, clipSnapshot, ripplePlan, midiNotesSnapshot, midiCcSnapshot, midiPitchBendSnapshot } =
+            a.payload;
 
         if (ripplePlan) {
             undoRippleDelete({

@@ -1,8 +1,9 @@
 import { inject } from '#/infra/di/inject';
+
 import { type GrinderPatch } from '../../models/GrinderPatch';
 import { setGrinderParam } from '../../stores/grinderStore';
-import { grinderParamBridgeDependencies } from './grinderParamBridgeDependencies';
 
+import { grinderParamBridgeDependencies } from './grinderParamBridgeDependencies';
 import {
     AMP_MODELS,
     ENGINE_MODES,
@@ -64,32 +65,32 @@ function toPatchValue<K extends keyof GrinderPatch>(key: K, value: number): Grin
     }
 }
 
-export const setGrinderParamWithAudio = inject(grinderParamBridgeDependencies)(
-    ({
-        getAllTracks: getAllTracksFn,
-        updateDeviceParam: updateDeviceParamFn,
-        persistDeviceParam: persistDeviceParamFn,
-    }) => {
-        const findDeviceRef = createFindDeviceRef(getAllTracksFn);
-        const flushParam = createFlushParam(updateDeviceParamFn, persistDeviceParamFn);
-        return function setGrinderParamWithAudio<K extends keyof GrinderPatch>(
-            deviceId: string,
-            key: K,
-            value: number
-        ): void {
-            const patchValue = toPatchValue(key, value);
-            setGrinderParam(deviceId, key, patchValue);
-            if (key === 'engineMode') {
-                setGrinderParam(deviceId, 'neuralEnabled', (patchValue !== 'circuit') as GrinderPatch['neuralEnabled']);
-            } else if (key === 'neuralEnabled') {
-                setGrinderParam(deviceId, 'engineMode', (patchValue ? 'hybrid' : 'circuit') as GrinderPatch['engineMode']);
-            }
+export const setGrinderParamWithAudio = inject(grinderParamBridgeDependencies)(({
+    getAllTracks: getAllTracksFn,
+    updateDeviceParam: updateDeviceParamFn,
+    persistDeviceParam: persistDeviceParamFn,
+}) => {
+    const findDeviceRef = createFindDeviceRef(getAllTracksFn);
+    const flushParam = createFlushParam(updateDeviceParamFn, persistDeviceParamFn);
+    return function setGrinderParamWithAudio<K extends keyof GrinderPatch>(
+        deviceId: string,
+        key: K,
+        value: number
+    ): void {
+        const patchValue = toPatchValue(key, value);
+        setGrinderParam(deviceId, key, patchValue);
+        if (key === 'engineMode') {
+            setGrinderParam(deviceId, 'neuralEnabled', patchValue !== 'circuit');
+        } else if (key === 'neuralEnabled') {
+            setGrinderParam(deviceId, 'engineMode', (patchValue ? 'hybrid' : 'circuit') as GrinderPatch['engineMode']);
+        }
 
-            const ref = findDeviceRef(deviceId);
-            if (!ref) {return;}
+        const ref = findDeviceRef(deviceId);
+        if (!ref) {
+            return;
+        }
 
-            const compositeKey = `${deviceId}:${key}`;
-            paramBatcher.schedule(compositeKey, { ref, key, value }, flushParam);
-        };
-    }
-);
+        const compositeKey = `${deviceId}:${key}`;
+        paramBatcher.schedule(compositeKey, { ref, key, value }, flushParam);
+    };
+});

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleAddMarker } from '../handleAddMarker';
-import { handleRemoveMarker } from '../handleRemoveMarker';
 import { handleAddSection } from '../handleAddSection';
+import { handleRemoveMarker } from '../handleRemoveMarker';
 import { handleRemoveSection } from '../handleRemoveSection';
 import { handleRenameSection } from '../handleRenameSection';
 

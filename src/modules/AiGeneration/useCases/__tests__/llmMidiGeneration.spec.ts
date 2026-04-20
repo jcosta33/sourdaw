@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PATTERN_TEMPLATES } from '#/modules/AiRuntime/useCases/aiRuntimeQueries/PATTERN_TEMPLATES';
+
 import { filterTemplates } from '#/modules/AiRuntime/useCases/aiRuntimeQueries/filterTemplates';
+import { PATTERN_TEMPLATES } from '#/modules/AiRuntime/useCases/aiRuntimeQueries/PATTERN_TEMPLATES';
+
 import { generateMidiViaLlm } from '../llmMidiGeneration';
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({

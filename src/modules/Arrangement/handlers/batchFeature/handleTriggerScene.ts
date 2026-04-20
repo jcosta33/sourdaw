@@ -1,5 +1,5 @@
-import { createHandler } from '#/utils/createHandler';
 import { triggerScene } from '#/modules/Transport/useCases';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleTriggerScene = createHandler<'triggerScene'>({
     execute: (a) => {

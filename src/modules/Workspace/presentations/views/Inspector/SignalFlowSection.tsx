@@ -1,6 +1,9 @@
 import { type ReactElement, useState } from 'react';
-import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+
 import { ChevronRight, ChevronDown } from 'lucide-react';
+
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 import { RoutingGraph } from '../RoutingGraph';
 

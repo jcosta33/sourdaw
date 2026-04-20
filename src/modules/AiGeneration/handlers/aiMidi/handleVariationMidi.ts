@@ -1,7 +1,8 @@
-import { createHandler } from '#/utils/createHandler';
 import { logger } from '#/infra/logger/appLogger';
 import { generateToolCalls } from '#/modules/AiRuntime/useCases';
 import { createMidiNote, getNotesForClip, setNotesForClip } from '#/modules/MIDI/useCases';
+import { createHandler } from '#/utils/createHandler';
+
 import { llmGenerateNotes } from './llmNoteHelpers';
 
 export const handleVariationMidi = createHandler<'variationMidi'>({

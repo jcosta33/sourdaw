@@ -1,10 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { 
-    createCrdtProject, 
-    loadCrdtProject, 
-    persistCrdtProject, 
-    compactProject 
-} from '../crdtProjectLifecycle';
+
+import { createCrdtProject, loadCrdtProject, persistCrdtProject, compactProject } from '../crdtProjectLifecycle';
 
 const mocks = vi.hoisted(() => ({
     createProject: vi.fn(),
@@ -24,13 +20,17 @@ vi.mock('../../repositories/automergeRepository', () => ({
         loadAll: mocks.loadAll,
         saveAll: mocks.saveAll,
         saveDocIncremental: mocks.saveDocIncremental,
-    }
+    },
 }));
 
 vi.mock('../../repositories/crdtPersistence/loadAllFromIdb', () => ({ loadAllFromIdb: mocks.loadAllFromIdb }));
 vi.mock('../../repositories/crdtPersistence/saveAllToIdb', () => ({ saveAllToIdb: mocks.saveAllToIdb }));
-vi.mock('../../repositories/crdtPersistence/saveIncrementalToIdb', () => ({ saveIncrementalToIdb: mocks.saveIncrementalToIdb }));
-vi.mock('../../repositories/crdtPersistence/clearIncrementalsFromIdb', () => ({ clearIncrementalsFromIdb: mocks.clearIncrementalsFromIdb }));
+vi.mock('../../repositories/crdtPersistence/saveIncrementalToIdb', () => ({
+    saveIncrementalToIdb: mocks.saveIncrementalToIdb,
+}));
+vi.mock('../../repositories/crdtPersistence/clearIncrementalsFromIdb', () => ({
+    clearIncrementalsFromIdb: mocks.clearIncrementalsFromIdb,
+}));
 vi.mock('../../repositories/crdtPersistence/hasCrdtDocsInIdb', () => ({ hasCrdtDocsInIdb: mocks.hasCrdtDocsInIdb }));
 
 describe('crdtProjectLifecycle', () => {

@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { HumanizePanel } from '../HumanizePanel';
+import { describe, it, expect, vi } from 'vitest';
+
 import { createDefaultPatch } from '../../../models/LevainPatch';
+import { HumanizePanel } from '../HumanizePanel';
 
 describe('HumanizePanel', () => {
     it('should render', () => {

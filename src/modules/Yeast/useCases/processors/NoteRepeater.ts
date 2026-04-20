@@ -3,6 +3,7 @@
  * Supports pitch offset per repeat and synced/free rate.
  */
 
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import {
     type MidiEvent,
     type TransportInfo,
@@ -10,7 +11,6 @@ import {
     rateToBeats,
     samplesPerBeat,
 } from '../../models/MidiEvent';
-import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import { ScheduledEventQueue } from '../../models/MidiProcessor';
 
 export class NoteRepeater extends BaseMidiProcessor {
@@ -39,7 +39,7 @@ export class NoteRepeater extends BaseMidiProcessor {
                 // Generate repeats
                 for (let r = 1; r <= this.repeatCount; r++) {
                     const t = event.timeSamples + r * intervalSamples;
-                    const vel = Math.max(1, Math.round(event.kind.velocity * Math.pow(this.decay, r)));
+                    const vel = Math.max(1, Math.round(event.kind.velocity * this.decay ** r));
                     const note = Math.max(0, Math.min(127, event.kind.note + r * this.pitchStep));
 
                     // Schedule Note On

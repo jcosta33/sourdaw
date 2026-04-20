@@ -1,13 +1,14 @@
+import { getTransportState } from '#/modules/Transport/useCases';
+
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
-import { getTransportState } from '#/modules/Transport/useCases';
-import { type Clip } from '../../stores/trackStore';
-import { addTakeLane } from '../comping/addTakeLane';
-import { addTake } from '../comping/addTake';
-import { getTakeLaneForTrack } from '../comping/getTakeLaneForTrack';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
+import { type Clip } from '../../stores/trackStore';
+import { addTake } from '../comping/addTake';
+import { addTakeLane } from '../comping/addTakeLane';
+import { getTakeLaneForTrack } from '../comping/getTakeLaneForTrack';
 
-let recordClipId = 1;
+const recordClipId = 1;
 let takeCounter = 1;
 
 export function startRecording(): Clip[] {
@@ -23,12 +24,9 @@ export function startRecording(): Clip[] {
     for (const track of armedTracks) {
         if (track.kind === 'midi' && transportState.overdubEnabled) {
             const ph = transportState.playheadPosition;
-            const intersecting = track.clips.find(
-                (c) => c.type === 'midi' && ph >= c.startBeat && ph < c.endBeat
-            );
+            const intersecting = track.clips.find((c) => c.type === 'midi' && ph >= c.startBeat && ph < c.endBeat);
 
-            const inLoop =
-                transportState.isLooping && ph >= transportState.loopStart && ph <= transportState.loopEnd;
+            const inLoop = transportState.isLooping && ph >= transportState.loopStart && ph <= transportState.loopEnd;
             const loopClip = inLoop
                 ? track.clips.find(
                       (c) =>

@@ -77,9 +77,7 @@ class MidiReader {
     }
 }
 
-function parseMidiFile(
-    buffer: ArrayBuffer
-): { tracks: ParsedTrack[]; ticksPerBeat: number; tempo: number } {
+function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBeat: number; tempo: number } {
     const reader = new MidiReader(buffer);
 
     const headerChunk = reader.readString(4);
@@ -129,8 +127,7 @@ function parseMidiFile(
                 if (metaType === 0x03) {
                     trackName = reader.readString(metaLen);
                 } else if (metaType === 0x51 && metaLen === 3) {
-                    const microsPerBeat =
-                        (reader.readUint8() << 16) | (reader.readUint8() << 8) | reader.readUint8();
+                    const microsPerBeat = (reader.readUint8() << 16) | (reader.readUint8() << 8) | reader.readUint8();
                     globalTempo = Math.round(60_000_000 / microsPerBeat);
                 }
 
@@ -198,7 +195,7 @@ self.onmessage = (event: MessageEvent) => {
     try {
         const result = parseMidiFile(msg.buffer);
         self.postMessage({ type: 'parsed', ...result });
-    } catch (err) {
-        self.postMessage({ type: 'error', message: err instanceof Error ? err.message : String(err) });
+    } catch (error) {
+        self.postMessage({ type: 'error', message: error instanceof Error ? error.message : String(error) });
     }
 };

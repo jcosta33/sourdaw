@@ -9,10 +9,14 @@
  * - Sample preview, favorites, drag-to-timeline
  */
 import { type ReactElement, useState } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
+import { Folder, FolderPlus, ChevronRight, Search, Star, X } from 'lucide-react';
+
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
-import { Folder, FolderPlus, ChevronRight, Search, Star, X } from 'lucide-react';
+import { useStore } from '#/infra/store/useStore';
+import { type PreviewHandle } from '#/modules/Workspace/presentations/hooks/usePreviewAudio';
+
 import {
     libraryStore,
     type LibraryState,
@@ -23,16 +27,16 @@ import {
     toggleSampleFavorite,
     removeLibraryRoot,
 } from '../../stores/libraryStore';
+import { analyzeSample } from '../../useCases/analyzeSample';
 import { connectFolder } from '../../useCases/connectFolder/connectFolder';
 import { rescanRoot } from '../../useCases/connectFolder/rescanRoot';
-import { requestPermission } from '../../useCases/requestPermission';
-import { analyzeSample } from '../../useCases/analyzeSample';
-import { projectSpatialMap } from '../../useCases/projectSpatialMap';
 import { findSimilarSamples } from '../../useCases/findSimilarSamples';
-import { SampleRow } from '../components/SampleRow';
+import { projectSpatialMap } from '../../useCases/projectSpatialMap';
+import { requestPermission } from '../../useCases/requestPermission';
 import { LibraryRootCard } from '../components/LibraryRootCard';
+import { SampleRow } from '../components/SampleRow';
+
 import { SpatialMapRenderer } from './SpatialMapRenderer';
-import { type PreviewHandle } from '#/modules/Workspace/presentations/hooks/usePreviewAudio';
 
 type LibraryBrowserProps = {
     preview: PreviewHandle;
@@ -105,7 +109,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                         subfolderSet.add(topSegment);
                     }
                 }
-            } else if (sample.folder.startsWith(folderPrefix + '/')) {
+            } else if (sample.folder.startsWith(`${folderPrefix}/`)) {
                 // Inside a subfolder: next segment after the current prefix
                 const rest = sample.folder.slice(folderPrefix.length + 1);
                 const nextSegment = rest.split('/')[0];
@@ -128,7 +132,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
 
     // Recursive file count under a folder path — used for subfolder labels
     const countFilesIn = (path: string): number =>
-        rootSamples.filter((s) => s.folder === path || s.folder.startsWith(path + '/')).length;
+        rootSamples.filter((s) => s.folder === path || s.folder.startsWith(`${path}/`)).length;
 
     const handleConnectFolder = (): void => {
         connectFolder();
@@ -136,7 +140,9 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
 
     const playSample = async (sample: (typeof rootSamples)[number]): Promise<void> => {
         const root = roots.find((r) => r.id === sample.libraryRootId);
-        if (!root?.handle) {return;}
+        if (!root?.handle) {
+            return;
+        }
         try {
             const pathParts = sample.relativePath.split('/');
             const fileName = pathParts.pop()!;
@@ -197,7 +203,9 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                 <button
                     type="button"
                     className={`size-5 rounded flex items-center justify-center transition-colors ${
-                        showMap ? 'bg-accent-cyan/20 text-accent-cyan' : 'text-muted-foreground/50 hover:text-foreground'
+                        showMap
+                            ? 'bg-accent-cyan/20 text-accent-cyan'
+                            : 'text-muted-foreground/50 hover:text-foreground'
                     }`}
                     onClick={() => setShowMap(!showMap)}
                     title="Timbral Spatial Map (G3)"
@@ -315,20 +323,24 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                     {showMap ? (
                         <div className="p-2 shrink-0 border-b border-border/10">
                             <div className="flex items-center justify-between mb-1">
-                                <span className="text-[9px] font-medium text-muted-foreground">Timbral Proximity Map</span>
-                                <button 
+                                <span className="text-[9px] font-medium text-muted-foreground">
+                                    Timbral Proximity Map
+                                </span>
+                                <button
                                     className="text-[8px] text-accent-cyan hover:underline"
                                     onClick={handleProjectMap}
                                 >
                                     Re-project UMAP
                                 </button>
                             </div>
-                            <SpatialMapRenderer 
-                                width={240} 
-                                height={180} 
+                            <SpatialMapRenderer
+                                width={240}
+                                height={180}
                                 onSampleClick={(id) => {
-                                    const s = rootSamples.find(x => x.id === id);
-                                    if (s) playSample(s);
+                                    const s = rootSamples.find((x) => x.id === id);
+                                    if (s) {
+                                        playSample(s);
+                                    }
                                 }}
                             />
                         </div>

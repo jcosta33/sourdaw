@@ -4,18 +4,21 @@
  * Each track has a column of clip slots; each row is a scene.
  */
 import { type ReactElement } from 'react';
+
+import { Play, Square, Plus } from 'lucide-react';
+
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { DawSideRail } from '#/components/daw/DawSideRail';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { cn } from '#/utils/Styles/cn';
-import { Button } from '#/components/ui/button';
-import { Play, Square, Plus } from 'lucide-react';
-import { useTracks } from '../hooks/useTracks';
+
 import { type Track } from '../../models/TrackViewTypes';
 import { sessionLaunchStore, type SessionLaunchState } from '../../stores/sessionLaunchStore';
+import { useTracks } from '../hooks/useTracks';
 
 const SCENE_COUNT = 8;
 const emptyState: SessionLaunchState = { activeSlots: {} };
@@ -106,77 +109,77 @@ export const SessionView = (): ReactElement => {
                         </DawSideRail>
 
                         {tracks.map((track: Track) => {
-                            const trackClipIds: Array<string | null> = Array.from(
-                                { length: SCENE_COUNT },
-                                (_, i) => {
-                                    const clips = track.clips ? (Object.values(track.clips) as Array<{ id: string }>) : [];
-                                    return clips[i]?.id ?? null;
-                                }
-                            );
+                            const trackClipIds: Array<string | null> = Array.from({ length: SCENE_COUNT }, (_, i) => {
+                                const clips = track.clips ? (Object.values(track.clips) as Array<{ id: string }>) : [];
+                                return clips[i]?.id ?? null;
+                            });
 
                             return (
-                            <div key={track.id} className="flex w-24 shrink-0 flex-col border-r border-border-hairline">
-                                <DawGridHeaderCell
-                                    className="h-6 truncate px-1"
-                                    accentColor={track.color ?? undefined}
-                                    title={track.name}
+                                <div
+                                    key={track.id}
+                                    className="flex w-24 shrink-0 flex-col border-r border-border-hairline"
                                 >
-                                    {track.name}
-                                </DawGridHeaderCell>
+                                    <DawGridHeaderCell
+                                        className="h-6 truncate px-1"
+                                        accentColor={track.color ?? undefined}
+                                        title={track.name}
+                                    >
+                                        {track.name}
+                                    </DawGridHeaderCell>
 
-                                {Array.from({ length: SCENE_COUNT }, (_, sceneIndex) => {
-                                    const clipId = trackClipIds[sceneIndex] ?? null;
-                                    const isActive = activeSlots[track.id] === sceneIndex;
+                                    {Array.from({ length: SCENE_COUNT }, (_, sceneIndex) => {
+                                        const clipId = trackClipIds[sceneIndex] ?? null;
+                                        const isActive = activeSlots[track.id] === sceneIndex;
 
-                                    return (
-                                        <div
-                                            key={sceneIndex}
-                                            className={cn(
-                                                'flex h-10 cursor-pointer items-center justify-center border-b border-border-hairline transition-colors',
-                                                clipId
-                                                    ? isActive
-                                                        ? 'bg-[var(--color-state-play)]/20 shadow-[inset_0_0_8px_color-mix(in_oklch,var(--color-state-play)_10%,transparent)]'
-                                                        : 'bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)] hover:bg-surface-raised'
-                                                    : 'hover:bg-white/[0.03]'
-                                            )}
-                                            onClick={() => {
-                                                if (clipId) {
-                                                    handleLaunchSlot(track.id, sceneIndex);
-                                                }
-                                            }}
-                                            role="gridcell"
-                                            aria-label={`${track.name} scene ${sceneIndex + 1}${clipId ? ' - clip loaded' : ' - empty'}`}
-                                        >
-                                            {clipId ? (
-                                                <div className="flex items-center gap-1">
-                                                    {isActive ? (
-                                                        <Play className="size-2.5 fill-[var(--color-state-play)] text-[var(--color-state-play)]" />
-                                                    ) : null}
-                                                    <span
-                                                        className={cn(
-                                                            'rounded px-1 py-0.5 text-[10px]',
-                                                            isActive
-                                                                ? 'bg-[var(--color-state-play)]/30 text-[var(--color-state-play)]'
-                                                                : 'bg-muted/30 text-muted-foreground'
-                                                        )}
-                                                        style={{
-                                                            backgroundColor: isActive
-                                                                ? undefined
-                                                                : track.color
-                                                                  ? `${track.color}20`
-                                                                  : undefined,
-                                                        }}
-                                                    >
-                                                        Clip
-                                                    </span>
-                                                </div>
-                                            ) : (
-                                                <Plus className="size-2.5 text-muted-foreground/30" />
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
+                                        return (
+                                            <div
+                                                key={sceneIndex}
+                                                className={cn(
+                                                    'flex h-10 cursor-pointer items-center justify-center border-b border-border-hairline transition-colors',
+                                                    clipId
+                                                        ? isActive
+                                                            ? 'bg-[var(--color-state-play)]/20 shadow-[inset_0_0_8px_color-mix(in_oklch,var(--color-state-play)_10%,transparent)]'
+                                                            : 'bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)] hover:bg-surface-raised'
+                                                        : 'hover:bg-white/[0.03]'
+                                                )}
+                                                onClick={() => {
+                                                    if (clipId) {
+                                                        handleLaunchSlot(track.id, sceneIndex);
+                                                    }
+                                                }}
+                                                role="gridcell"
+                                                aria-label={`${track.name} scene ${sceneIndex + 1}${clipId ? ' - clip loaded' : ' - empty'}`}
+                                            >
+                                                {clipId ? (
+                                                    <div className="flex items-center gap-1">
+                                                        {isActive ? (
+                                                            <Play className="size-2.5 fill-[var(--color-state-play)] text-[var(--color-state-play)]" />
+                                                        ) : null}
+                                                        <span
+                                                            className={cn(
+                                                                'rounded px-1 py-0.5 text-[10px]',
+                                                                isActive
+                                                                    ? 'bg-[var(--color-state-play)]/30 text-[var(--color-state-play)]'
+                                                                    : 'bg-muted/30 text-muted-foreground'
+                                                            )}
+                                                            style={{
+                                                                backgroundColor: isActive
+                                                                    ? undefined
+                                                                    : track.color
+                                                                      ? `${track.color}20`
+                                                                      : undefined,
+                                                            }}
+                                                        >
+                                                            Clip
+                                                        </span>
+                                                    </div>
+                                                ) : (
+                                                    <Plus className="size-2.5 text-muted-foreground/30" />
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             );
                         })}
                     </div>

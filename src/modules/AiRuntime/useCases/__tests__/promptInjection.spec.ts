@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { onPromptInjection, injectPromptCommand } from '../promptInjection';
 
 describe('promptInjection', () => {

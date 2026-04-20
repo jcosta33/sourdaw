@@ -25,7 +25,7 @@ if (typeof globalThis.ImageData === 'undefined') {
 // Mock matchMedia for JSDOM
 Object.defineProperty(window, 'matchMedia', {
     writable: true,
-    value: vi.fn().mockImplementation(query => ({
+    value: vi.fn().mockImplementation((query) => ({
         matches: false,
         media: query,
         onchange: null,
@@ -240,11 +240,19 @@ vi.mock('#/infra/store/useStore', () => ({
             },
             {
                 get(target: any, prop: string | symbol) {
-                    if (prop in target) return target[prop];
+                    if (prop in target) {
+                        return target[prop];
+                    }
                     if (typeof prop === 'string') {
-                        if (prop === 'topology') return 'glue';
-                        if (prop === 'algorithm') return 'delay';
-                        if (prop === 'filter') return { type: 'lowpass', cutoff: 1000, resonance: 0 };
+                        if (prop === 'topology') {
+                            return 'glue';
+                        }
+                        if (prop === 'algorithm') {
+                            return 'delay';
+                        }
+                        if (prop === 'filter') {
+                            return { type: 'lowpass', cutoff: 1000, resonance: 0 };
+                        }
                         if (
                             prop === 'pads' ||
                             prop === 'nodes' ||
@@ -259,10 +267,12 @@ vi.mock('#/infra/store/useStore', () => ({
                             prop === 'devices' ||
                             prop === 'sends' ||
                             prop === 'clips'
-                        )
+                        ) {
                             return [];
-                        if (prop.includes('Id') || prop === 'name' || prop === 'label' || prop === 'category')
+                        }
+                        if (prop.includes('Id') || prop === 'name' || prop === 'label' || prop === 'category') {
                             return 'mock';
+                        }
                     }
                     return 0;
                 },

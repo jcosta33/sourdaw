@@ -1,6 +1,7 @@
-import { notifyUser } from '#/utils/Notification/notifyUser';
-import { createHandler } from '#/utils/createHandler';
 import { detectKey } from '#/modules/AudioAnalysis/useCases';
+import { createHandler } from '#/utils/createHandler';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 export const handleDetectKey = createHandler<'detectKey'>({

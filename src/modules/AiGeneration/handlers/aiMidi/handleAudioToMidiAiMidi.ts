@@ -1,7 +1,7 @@
-import { createHandler } from '#/utils/createHandler';
 import { logger } from '#/infra/logger/appLogger';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 import { audioToMidi as runAudioToMidiConversion } from '#/modules/Arrangement/useCases';
+import { createHandler } from '#/utils/createHandler';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 export const handleAudioToMidiAiMidi = createHandler<'audioToMidi'>({
     execute: async (a) => {

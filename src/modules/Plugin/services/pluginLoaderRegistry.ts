@@ -13,10 +13,7 @@
  * registry/instances state.
  */
 
-export type PluginAudioNodeLoader = (
-    pluginId: string,
-    context: AudioContext
-) => Promise<AudioNode | null>;
+export type PluginAudioNodeLoader = (pluginId: string, context: AudioContext) => Promise<AudioNode | null>;
 
 const loaders = new Map<string, PluginAudioNodeLoader>();
 

@@ -1,5 +1,5 @@
-import { getTrackStoreState } from '../useCases/getTrackStoreState';
 import { type Clip } from '../models/Track';
+import { getTrackStoreState } from '../useCases/getTrackStoreState';
 
 /**
  * Finds a clip by ID across all tracks.

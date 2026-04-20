@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleRenameTrackAlternative } from '../handleRenameTrackAlternative';
 
 const mocks = vi.hoisted(() => ({
@@ -28,8 +29,8 @@ describe('handleRenameTrackAlternative', () => {
                         { id: 'alt1', name: 'Old' },
                         { id: 'alt2', name: 'Other' },
                     ],
-                }
-            ]
+                },
+            ],
         });
 
         handleRenameTrackAlternative.execute({

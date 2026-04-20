@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { goToItem } from '../goToItem';
+
 import { setlistStore } from '../../../stores/setlistStore';
 import { type SetlistItem, type SetlistState } from '../../../stores/setlistStore';
+import { goToItem } from '../goToItem';
 
 type EventBusShape = {
     emit: ReturnType<typeof vi.fn>;

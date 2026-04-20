@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { scheduleMetronome } from '../scheduleMetronome';
-import { defaultTransportState } from '../../../models/TransportState';
+
 import { scheduleClick } from '#/modules/AudioEngine/useCases';
+
+import { defaultTransportState } from '../../../models/TransportState';
+import { scheduleMetronome } from '../scheduleMetronome';
 
 vi.mock('../../stores/tempoMapStore', () => ({
     tempoMapStore: { value: { changes: [] } },

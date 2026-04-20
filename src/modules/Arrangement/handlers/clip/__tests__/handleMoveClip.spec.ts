@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { handleMoveClip } from '../handleMoveClip';
+
 import { moveClip } from '../../../useCases/clip/moveClip';
+import { handleMoveClip } from '../handleMoveClip';
 
 vi.mock('../../../useCases/clip/moveClip', () => ({
     moveClip: vi.fn(),

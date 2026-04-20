@@ -1,11 +1,14 @@
 import { type ReactElement } from 'react';
+
+import { Map, Plus, Trash2 } from 'lucide-react';
+
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
-import { Button } from '#/components/ui/button';
 import { ValueField } from '#/components/daw/ValueField';
+import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/utils/Styles/cn';
-import { Map, Plus, Trash2 } from 'lucide-react';
+
 import { useTempoEditorState } from '../hooks/useTempoEditorState';
 
 export const TempoEditor = (): ReactElement => {

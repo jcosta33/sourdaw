@@ -1,4 +1,5 @@
 import { type OfflineDeviceNode } from '../types';
+
 import { IR_GENERATORS } from './helpers';
 
 export const IR_NAMES = Object.keys(IR_GENERATORS);

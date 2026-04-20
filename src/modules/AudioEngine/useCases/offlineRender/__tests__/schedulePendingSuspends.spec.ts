@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { schedulePendingSuspends } from '../schedulePendingSuspends';
 import { type PendingWorkletEvent } from '../types';
 
@@ -87,7 +88,7 @@ describe('schedulePendingSuspends', () => {
 
         expect(noteOff).toHaveBeenCalledWith(60, 48_000);
         expect(noteOn).toHaveBeenCalledWith(60, 0.5, undefined, 48_000);
-        
+
         // Check order
         const offCall = noteOff.mock.invocationCallOrder[0]!;
         const onCall = noteOn.mock.invocationCallOrder[0]!;

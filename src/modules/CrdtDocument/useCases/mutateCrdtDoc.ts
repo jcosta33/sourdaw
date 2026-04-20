@@ -1,6 +1,8 @@
 import { type ChangeFn } from '@automerge/automerge';
-import { type DocId } from './crdtDocumentTypes';
+
 import { automergeRepository } from '../repositories/automergeRepository';
+
+import { type DocId } from './crdtDocumentTypes';
 
 export type MutateCrdtDocInput<DocShape> = {
     id: DocId;

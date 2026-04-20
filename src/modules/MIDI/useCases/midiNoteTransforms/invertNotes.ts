@@ -9,8 +9,12 @@ export function invertNotes(clipId: string): void {
         let minPitch = Infinity;
         let maxPitch = -Infinity;
         for (const n of notes) {
-            if (n.pitch < minPitch) { minPitch = n.pitch; }
-            if (n.pitch > maxPitch) { maxPitch = n.pitch; }
+            if (n.pitch < minPitch) {
+                minPitch = n.pitch;
+            }
+            if (n.pitch > maxPitch) {
+                maxPitch = n.pitch;
+            }
         }
         const axis = minPitch + maxPitch;
 

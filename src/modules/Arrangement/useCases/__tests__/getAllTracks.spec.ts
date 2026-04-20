@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { getAllTracks } from '../getAllTracks';
+
 import { getAllTracks as repoGetAllTracks } from '../../repositories/track/getAllTracks';
+import { getAllTracks } from '../getAllTracks';
 
 vi.mock('../../repositories/track/getAllTracks', () => ({
     getAllTracks: vi.fn(),

@@ -1,12 +1,13 @@
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { type ProjectData } from '../../models/ProjectData';
-import { projectStore } from '../../stores/projectStore';
-import { readNamedProjectJson, writeProjectJson } from '../../repositories/project/storageOperations';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getAudioContext, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
+
+import { type ProjectData } from '../../models/ProjectData';
+import { readNamedProjectJson, writeProjectJson } from '../../repositories/project/storageOperations';
+import { projectStore } from '../../stores/projectStore';
 import { hydrateModuleStoresFromProjectData } from '../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
 import { verifyAudioBufferReferences } from '../projectPersistence/helpers/verifyAudioBufferReferences';
 
@@ -30,7 +31,7 @@ export const loadRecentProject = async function loadRecentProject(key: string): 
         resetAudioGraph();
 
         hydrateModuleStoresFromProjectData(data);
-        
+
         projectStore.set({
             name: data.meta.name,
             createdAt: data.meta.createdAt,

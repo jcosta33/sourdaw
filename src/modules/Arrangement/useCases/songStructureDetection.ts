@@ -8,9 +8,9 @@
  * and pattern repetition detection for MIDI clips.
  */
 
-import { trackStore } from '../stores/trackStore';
-import { markerStore } from '../stores/markerStore';
 import { createSection, type ArrangementSection } from '../models/Marker';
+import { markerStore } from '../stores/markerStore';
+import { trackStore } from '../stores/trackStore';
 
 /** Standard song section names with associated colors */
 const SECTION_PALETTE = [
@@ -72,8 +72,12 @@ export function detectSongStructure(trackId?: string): DetectedSection[] {
     let minBeat = Infinity;
     let maxBeat = -Infinity;
     for (const c of allClips) {
-        if (c.startBeat < minBeat) { minBeat = c.startBeat; }
-        if (c.endBeat > maxBeat) { maxBeat = c.endBeat; }
+        if (c.startBeat < minBeat) {
+            minBeat = c.startBeat;
+        }
+        if (c.endBeat > maxBeat) {
+            maxBeat = c.endBeat;
+        }
     }
     const totalBeats = maxBeat - minBeat;
 
@@ -141,7 +145,7 @@ export function detectSongStructure(trackId?: string): DetectedSection[] {
         const isHigh = segEnergy > avgEnergy * 1.2;
         const isLow = segEnergy < avgEnergy * 0.5;
 
-        let sectionInfo: { name: string; color: string } = SECTION_PALETTE[1]!; // default: Verse
+        let sectionInfo: { name: string; color: string } = SECTION_PALETTE[1]; // default: Verse
         let confidence = 0.6;
 
         if (progress < 0.1 && i === 0) {

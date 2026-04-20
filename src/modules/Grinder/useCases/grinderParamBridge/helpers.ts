@@ -1,6 +1,7 @@
-import { persistDeviceParam } from '#/modules/Arrangement/useCases';
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { type persistDeviceParam } from '#/modules/Arrangement/useCases';
+import { type updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
+
 import type { DeviceRef } from '#/utils/createFindDeviceRef';
 
 export type { DeviceRef, GetAllTracksFn } from '#/utils/createFindDeviceRef';
@@ -11,21 +12,14 @@ export type PersistDeviceParamFn = typeof persistDeviceParam;
 export type GrinderBatchEntry = { ref: DeviceRef; key: string; value: number };
 export const paramBatcher = createRafBatcher<GrinderBatchEntry>();
 
-export function createFlushParam(
-    updateDeviceParamFn: UpdateDeviceParamFn,
-    persistDeviceParamFn: PersistDeviceParamFn
-) {
+export function createFlushParam(updateDeviceParamFn: UpdateDeviceParamFn, persistDeviceParamFn: PersistDeviceParamFn) {
     return function flushParam(_compositeKey: string, entry: GrinderBatchEntry): void {
         updateDeviceParamFn(entry.ref.trackId, entry.ref.deviceId, entry.key, entry.value);
         persistDeviceParamFn(entry.ref.deviceId, entry.key, entry.value);
     };
 }
 
-export function getAudioParamKeyForPedal(
-    isPost: boolean,
-    pedalType: string,
-    paramKey: string
-): string | null {
+export function getAudioParamKeyForPedal(isPost: boolean, pedalType: string, paramKey: string): string | null {
     const prefix = isPost ? 'post' : 'pre';
     let pedalName = '';
 

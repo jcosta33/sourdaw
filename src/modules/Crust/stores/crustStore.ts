@@ -2,6 +2,7 @@
  * Crust store — reactive state for the limiter plugin.
  */
 import { createStore } from '#/infra/store/createStore';
+
 import { type CrustPatch, DEFAULT_CRUST_PATCH } from '../models/CrustPatch';
 
 export type CrustMeterState = {

@@ -1,6 +1,8 @@
 import { type ReactElement } from 'react';
-import { KOKORO_VOICE_CATALOG } from '../../models/ddspInstrumentCatalog';
+
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+
+import { KOKORO_VOICE_CATALOG } from '../../models/ddspInstrumentCatalog';
 
 type KokoroVoiceSelectorProps = {
     value: string;
@@ -23,7 +25,12 @@ const GENDER_LABELS: Record<string, string> = {
 type GroupKey = `${string}|${string}`;
 
 /** Dropdown selector exposing all 21 Kokoro TTS voices, grouped by accent and gender. */
-export function KokoroVoiceSelector({ value, onChange, disabled = false, className }: KokoroVoiceSelectorProps): ReactElement {
+export function KokoroVoiceSelector({
+    value,
+    onChange,
+    disabled = false,
+    className,
+}: KokoroVoiceSelectorProps): ReactElement {
     // Group voices by accent then gender for <optgroup> nesting
     const groups = new Map<GroupKey, typeof KOKORO_VOICE_CATALOG>();
     for (const voice of KOKORO_VOICE_CATALOG) {

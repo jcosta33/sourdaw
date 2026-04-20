@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleNextSetlistItem } from '../handleNextSetlistItem';
 
 const mocks = vi.hoisted(() => ({

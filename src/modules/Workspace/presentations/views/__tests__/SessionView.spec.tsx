@@ -1,9 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
 import { useSyncExternalStore } from 'react';
-import { SessionView } from '../SessionView';
+
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { useStore } from '#/infra/store/useStore';
+
 import { sessionLaunchStore } from '../../../stores/sessionLaunchStore';
+import { SessionView } from '../SessionView';
 
 // Mock hooks
 vi.mock('../../hooks/useTracks', () => ({
@@ -28,7 +31,6 @@ describe('SessionView', () => {
         // simulate state updates.
         vi.mocked(useStore).mockImplementation((store: any, defaultValue: any) => {
             if (store === sessionLaunchStore) {
-                // eslint-disable-next-line react-hooks/rules-of-hooks
                 return useSyncExternalStore(store.subscribeReact, () => store.getSnapshot() ?? defaultValue);
             }
             return defaultValue;
@@ -67,7 +69,7 @@ describe('SessionView', () => {
     it('should show empty state when no tracks exist', async () => {
         const { useTracks } = await import('../../hooks/useTracks');
         vi.mocked(useTracks).mockReturnValue({ tracks: [] });
-        
+
         render(<SessionView />);
         expect(screen.getByText('No session tracks yet')).toBeInTheDocument();
     });

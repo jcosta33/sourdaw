@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleFreezeTrack } from '../freezeTrack';
 
 const mocks = vi.hoisted(() => ({

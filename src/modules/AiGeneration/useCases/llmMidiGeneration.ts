@@ -41,7 +41,11 @@ type LlmMidiResponse = {
     }>;
 };
 
-export async function generateMidiViaLlm(prompt: string, numNotes: number = 32, creativity: number = 0.65): Promise<MidiGenerationNote[]> {
+export async function generateMidiViaLlm(
+    prompt: string,
+    numNotes: number = 32,
+    creativity: number = 0.65
+): Promise<MidiGenerationNote[]> {
     const userMessage = buildUserMessage(prompt, numNotes, creativity);
 
     const backend = resolveBackend();
@@ -92,9 +96,7 @@ function fallbackToPatternMatch(promptText: string): MidiGenerationNote[] {
 
     const matched =
         filterTemplates({ query: q })[0] ??
-        PATTERN_TEMPLATES.find(
-            (t) => t.tags.some((tag) => q.includes(tag)) || t.name.toLowerCase().includes(q)
-        );
+        PATTERN_TEMPLATES.find((t) => t.tags.some((tag) => q.includes(tag)) || t.name.toLowerCase().includes(q));
 
     if (matched) {
         const notes = matched.generate({ key: 'C', scale: 'minor', density: 5, complexity: 5 });

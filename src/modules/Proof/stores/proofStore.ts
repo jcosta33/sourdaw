@@ -4,6 +4,7 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
+
 import { type ProofPatch, DEFAULT_PATCH } from '../models/ProofPatch';
 
 /**

@@ -1,5 +1,5 @@
-import { setlistStore, type SetlistItem } from '../../stores/setlistStore';
 import { getNextSetlistItemId, SETLIST_ITEM_COLORS } from '../../repositories/setlistItemIdCounter';
+import { setlistStore, type SetlistItem } from '../../stores/setlistStore';
 
 export function addSetlistItem(name: string, estimatedDuration: number = 180): void {
     const state = setlistStore.value;

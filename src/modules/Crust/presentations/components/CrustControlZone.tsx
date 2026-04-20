@@ -8,7 +8,7 @@
  * Level 5: L4 + Loudness statistics panel
  */
 import { type ReactElement } from 'react';
-import { cn } from '#/utils/Styles/cn';
+
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
@@ -16,7 +16,10 @@ import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Slider } from '#/components/ui/slider';
+import { cn } from '#/utils/Styles/cn';
+
 import { type CrustPatch } from '../../models/CrustPatch';
+
 import { CrustSatCurve } from './CrustSatCurve';
 
 type Setter = (key: keyof CrustPatch, value: number | boolean | string) => void;
@@ -74,7 +77,16 @@ const Knob = ({
     def: number;
 }): ReactElement => (
     <div className="flex flex-col items-center gap-0.5">
-        <RotaryKnob value={value} onChange={onChange} min={min} max={max} step={step} defaultValue={def} size="sm" tone="copper" />
+        <RotaryKnob
+            value={value}
+            onChange={onChange}
+            min={min}
+            max={max}
+            step={step}
+            defaultValue={def}
+            size="sm"
+            tone="copper"
+        />
         <span className="text-[7px] text-muted-foreground/60 leading-none">{label}</span>
         {unit !== undefined ? (
             <span className="text-[6px] font-mono text-muted-foreground/40">{fmtKnob(value, unit)}</span>

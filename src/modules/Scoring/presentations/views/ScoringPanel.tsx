@@ -1,14 +1,17 @@
 import { type ReactElement, useEffect, useRef } from 'react';
-import { useStore } from '#/infra/store/useStore';
-import { createCompactFloatBuffer } from '#/utils/createCompactFloatBuffer';
+
 import { Activity, Waves } from 'lucide-react';
+
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { useStore } from '#/infra/store/useStore';
+import { createCompactFloatBuffer } from '#/utils/createCompactFloatBuffer';
+
 import { scoringStore, getScoringState, type DisplayMode } from '../../stores/scoringStore';
-import { setDisplayMode } from '../../useCases/setDisplayMode';
 import { setA4Reference } from '../../useCases/setA4Reference';
+import { setDisplayMode } from '../../useCases/setDisplayMode';
 
 const MODES: ReadonlyArray<{ id: DisplayMode; label: string; detail: string }> = [
     { id: 'needle', label: 'Needle', detail: 'Classic center read' },
@@ -435,12 +438,12 @@ const StrobeDisplay = ({ cents, active }: { cents: number; active: boolean }): R
             const physicalHeight = canvas.height;
 
             for (let x = 0; x < physicalWidth; x += 1) {
-                const u = (x / physicalWidth) + phaseRef.current;
+                const u = x / physicalWidth + phaseRef.current;
                 const t = u * stripeCount;
                 const fraction = t - Math.floor(t);
                 const intensity = 1 - Math.abs(2 * fraction - 1);
-                const powered = Math.pow(intensity, 2.5);
-                
+                const powered = intensity ** 2.5;
+
                 const r = nearZero ? Math.floor(powered * 30) : Math.floor(powered * 210);
                 const g = nearZero ? Math.floor(powered * 220) : Math.floor(powered * 210);
                 const b = nearZero ? Math.floor(powered * 140) : Math.floor(powered * 220);

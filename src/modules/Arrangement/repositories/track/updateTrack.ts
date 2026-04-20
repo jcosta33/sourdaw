@@ -1,5 +1,5 @@
-import { trackStore } from '../../stores/trackStore';
 import { type Track } from '../../models/Track';
+import { trackStore } from '../../stores/trackStore';
 
 /** Update a single track (immutable update, replaces by id). */
 export function updateTrack(trackId: string, updater: (track: Track) => Track): void {

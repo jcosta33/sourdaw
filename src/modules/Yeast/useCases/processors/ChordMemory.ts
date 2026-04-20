@@ -5,8 +5,8 @@
  * Optionally transpose stored chords relative to the original root.
  */
 
-import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
+import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 
 type StoredChord = {
     root: number;
@@ -33,7 +33,9 @@ export class ChordMemory extends BaseMidiProcessor {
             if (event.kind.type === 'noteOn') {
                 if (this.learning) {
                     // Accumulate notes into learn buffer
-                    if (this.learnRoot === -1) {this.learnRoot = event.kind.note;}
+                    if (this.learnRoot === -1) {
+                        this.learnRoot = event.kind.note;
+                    }
                     this.learnBuffer.push(event.kind.note);
                     // Don't output during learning
                     continue;
@@ -111,7 +113,9 @@ export class ChordMemory extends BaseMidiProcessor {
                 this.transposeMode = value > 0.5;
                 break;
             case 'clear':
-                if (value > 0.5) {this.memory.clear();}
+                if (value > 0.5) {
+                    this.memory.clear();
+                }
                 break;
         }
     }

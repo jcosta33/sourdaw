@@ -20,8 +20,8 @@ vi.mock('../buildFolderTree', () => ({
     buildFolderTree: vi.fn(),
 }));
 
-import { connectFolder } from '../connectFolder/connectFolder';
 import { cancelScan } from '../connectFolder/cancelScan';
+import { connectFolder } from '../connectFolder/connectFolder';
 import { rescanRoot } from '../connectFolder/rescanRoot';
 
 describe('connectFolder', () => {

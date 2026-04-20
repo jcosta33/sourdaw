@@ -1,19 +1,28 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import { beginClipDrag } from '../beginClipDrag';
 
 const mockHitTestClip = vi.fn();
 vi.mock('../hitTestClip/hitTestClip', () => ({
-    hitTestClip: (...args: any[]) => mockHitTestClip(...args)
+    hitTestClip: (...args: any[]) => mockHitTestClip(...args),
 }));
 
 let mockTimelineViewValue: any = null;
 vi.mock('../../../stores/timelineViewStore', () => ({
-    timelineViewStore: { get value() { return mockTimelineViewValue; } }
+    timelineViewStore: {
+        get value() {
+            return mockTimelineViewValue;
+        },
+    },
 }));
 
 let mockTrackValue: any = null;
 vi.mock('../../../stores/trackStore', () => ({
-    trackStore: { get value() { return mockTrackValue; } }
+    trackStore: {
+        get value() {
+            return mockTrackValue;
+        },
+    },
 }));
 
 describe('beginClipDrag', () => {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { soloTrackExclusive } from '../soloTrackExclusive';
 
 const mocks = vi.hoisted(() => ({

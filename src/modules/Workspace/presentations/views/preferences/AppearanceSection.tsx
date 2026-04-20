@@ -1,10 +1,14 @@
 import { type ReactElement } from 'react';
+
+import { Sun, Moon, Palette } from 'lucide-react';
+
 import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
-import { Sun, Moon, Palette } from 'lucide-react';
-import type { Preferences } from '../../../models/Preferences';
+
 import { SectionTitle, FieldGroup, ToggleRow } from '../preferencesShared';
+
+import type { Preferences } from '../../../models/Preferences';
 
 type SectionProps = {
     prefs: Preferences;

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { createDecodeError } from '../DecodeError';
 
 describe('createDecodeError', () => {

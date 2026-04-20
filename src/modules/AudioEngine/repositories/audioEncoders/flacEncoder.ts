@@ -41,7 +41,9 @@ function md5(data: Uint8Array): Uint8Array {
     const view = new DataView(padded.buffer);
     for (let off = 0; off < padded.length; off += 64) {
         const M = new Uint32Array(16);
-        for (let j = 0; j < 16; j++) {M[j] = view.getUint32(off + j * 4, true);}
+        for (let j = 0; j < 16; j++) {
+            M[j] = view.getUint32(off + j * 4, true);
+        }
 
         let A = a0,
             B = b0,
@@ -208,7 +210,9 @@ class BitWriter {
     }
 
     writeBits(v: number, n: number): void {
-        for (let i = n - 1; i >= 0; i--) {this.writeBit(((v >> i) & 1) as 0 | 1);}
+        for (let i = n - 1; i >= 0; i--) {
+            this.writeBit(((v >> i) & 1) as 0 | 1);
+        }
     }
 
     writeByte(v: number): void {
@@ -227,7 +231,9 @@ class BitWriter {
 
     /** Write `n` one-bits then a zero-bit (unary coding). */
     writeUnary(n: number): void {
-        for (let i = 0; i < n; i++) {this.writeBit(1);}
+        for (let i = 0; i < n; i++) {
+            this.writeBit(1);
+        }
         this.writeBit(0);
     }
 
@@ -404,7 +410,9 @@ async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => vo
     const totalSamples = buffer.length;
 
     const floatChannels: Float32Array[] = [];
-    for (let ch = 0; ch < numChannels; ch++) {floatChannels.push(buffer.getChannelData(ch));}
+    for (let ch = 0; ch < numChannels; ch++) {
+        floatChannels.push(buffer.getChannelData(ch));
+    }
 
     // Pre-convert all channels to int16 for predictor residual computation
     const int16Channels = floatChannels.map((ch) => toInt16Channel(ch, totalSamples));
@@ -451,7 +459,9 @@ async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => vo
     out[pos++] = (totalSamples >>> 16) & 0xff;
     out[pos++] = (totalSamples >>> 8) & 0xff;
     out[pos++] = totalSamples & 0xff;
-    for (let i = 0; i < 16; i++) {wb(pcmMd5[i]!);}
+    for (let i = 0; i < 16; i++) {
+        wb(pcmMd5[i]!);
+    }
 
     // ── Frames ────────────────────────────────────────────────────────────────
     let sampleOffset = 0;
@@ -476,7 +486,9 @@ async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => vo
         }
         wb((blockSizeCode << 4) | 0x00); // block size code | sample rate code (0=from STREAMINFO)
         wb(((numChannels - 1) << 4) | (0x4 << 1) | 0); // channel assignment | sample size (0=from STREAMINFO) | reserved
-        for (const b of encodeUtf8Number(frameNumber)) {wb(b);} // frame number (UTF-8 encoded)
+        for (const b of encodeUtf8Number(frameNumber)) {
+            wb(b);
+        } // frame number (UTF-8 encoded)
         if (blockSizeExtra === 8) {
             wb(blockSize - 1);
         } else if (blockSizeExtra === 16) {

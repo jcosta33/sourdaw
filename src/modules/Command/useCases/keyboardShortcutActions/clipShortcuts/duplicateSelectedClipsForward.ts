@@ -1,6 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { addClip, removeClip } from '#/modules/Arrangement/useCases';
 import { duplicateClipAutomation } from '#/modules/Automation/useCases';
+
 import { pushUndoEntry } from '../../pushUndoEntry';
 
 /**

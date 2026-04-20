@@ -1,5 +1,6 @@
-import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
+
+import { type AutomationPoint } from '../../models/AutomationViewTypes';
 
 export const LANE_HEIGHT = 100;
 

@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { planRippleMove } from '../planRippleMove';
-import { getTrackStoreState } from '../../getTrackStoreState';
+
 import { getWorkspaceState } from '#/modules/Workspace/useCases';
+
+import { getTrackStoreState } from '../../getTrackStoreState';
+import { planRippleMove } from '../planRippleMove';
 
 vi.mock('../../getTrackStoreState', () => ({
     getTrackStoreState: vi.fn(),
@@ -18,7 +20,9 @@ describe('planRippleMove', () => {
 
     it('should return null if ripple editing is disabled', () => {
         (getWorkspaceState as any).mockReturnValue({ rippleEditing: false });
-        expect(planRippleMove({ trackId: 't1', clipId: 'c1', oldStartBeat: 0, newStartBeat: 2, clipDuration: 2 })).toBeNull();
+        expect(
+            planRippleMove({ trackId: 't1', clipId: 'c1', oldStartBeat: 0, newStartBeat: 2, clipDuration: 2 })
+        ).toBeNull();
     });
 
     it('should identify gap-closed and destination-opened clips', () => {
@@ -50,7 +54,7 @@ describe('planRippleMove', () => {
 
         // c2 closes the gap (starts at oldEndBeat=2); c3 and c4 are destination-opened only
         // (not double-counted in gapClosed since they're already in destinationOpened)
-        expect(plan?.gapClosedClips.map(s => s.clipId)).toEqual(['c2']);
-        expect(plan?.destinationOpenedClips.map(s => s.clipId)).toEqual(['c3', 'c4']);
+        expect(plan?.gapClosedClips.map((s) => s.clipId)).toEqual(['c2']);
+        expect(plan?.destinationOpenedClips.map((s) => s.clipId)).toEqual(['c3', 'c4']);
     });
 });

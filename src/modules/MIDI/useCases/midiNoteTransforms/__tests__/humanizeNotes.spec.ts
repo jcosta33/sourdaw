@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { midiStore } from '../../../stores/midiStore';
-
 import { humanizeNotes } from '../humanizeNotes';
 
 const note = (id: string) => ({

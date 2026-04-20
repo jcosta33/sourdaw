@@ -1,29 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { stopAutomationRecording } from '../stopAutomationRecording';
 
-const {
-    activeRecording,
-    pendingPoints,
-    touchActive,
-    findLaneId,
-    clearPointsInRange,
-    flushPendingPoints,
-} = vi.hoisted(() => {
-    const activeRecording = new Map<
-        string,
-        import('../recordingSessionState').RecordingSession
-    >();
-    const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
-    const touchActive = new Set<string>();
-    return {
-        activeRecording,
-        pendingPoints,
-        touchActive,
-        findLaneId: vi.fn(() => null as string | null),
-        clearPointsInRange: vi.fn(),
-        flushPendingPoints: vi.fn(),
-    };
-});
+const { activeRecording, pendingPoints, touchActive, findLaneId, clearPointsInRange, flushPendingPoints } = vi.hoisted(
+    () => {
+        const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
+        const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
+        const touchActive = new Set<string>();
+        return {
+            activeRecording,
+            pendingPoints,
+            touchActive,
+            findLaneId: vi.fn(() => null as string | null),
+            clearPointsInRange: vi.fn(),
+            flushPendingPoints: vi.fn(),
+        };
+    }
+);
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
@@ -81,9 +74,7 @@ describe('stopAutomationRecording', () => {
 
     it('invokes clearPointsInRange for latch mode when a lane exists and pending points extend the session', () => {
         findLaneId.mockReturnValue('lane-a');
-        vi.mocked(getAllTracks).mockReturnValue([
-            { id: 't1', kind: 'audio', automationMode: 'latch' },
-        ] as any);
+        vi.mocked(getAllTracks).mockReturnValue([{ id: 't1', kind: 'audio', automationMode: 'latch' }] as any);
 
         activeRecording.set('t1::gain', {
             parameterId: 'gain',

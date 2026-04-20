@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { registry } from '../hostOperations/helpers';
 import { registerBuiltinPlugins } from '../builtinDescriptors';
+import { registry } from '../hostOperations/helpers';
 
 describe('registerBuiltinPlugins', () => {
     beforeEach(() => {

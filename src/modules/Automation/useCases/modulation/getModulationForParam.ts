@@ -13,7 +13,9 @@ export function getModulationForParam(trackId: string, deviceId: string, paramId
     const rtState = modulationRuntimeStore.value;
     let total = 0;
     for (const mod of state.modulators) {
-        if (!mod.enabled) {continue;}
+        if (!mod.enabled) {
+            continue;
+        }
 
         const val = rtState?.runtimeValues[mod.id] ?? 0;
         for (const mapping of mod.mappings) {
@@ -26,7 +28,7 @@ export function getModulationForParam(trackId: string, deviceId: string, paramId
             }
         }
     }
-    
+
     // Clamp to -1..1 range for halo rendering
     return Math.max(-1, Math.min(1, total));
 }

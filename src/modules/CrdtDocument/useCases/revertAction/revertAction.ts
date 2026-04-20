@@ -1,4 +1,5 @@
 import { executeAppAction } from '#/modules/Command/useCases';
+
 import { actionHistoryStore, markEntryReverted } from '../../stores/actionHistoryStore';
 
 /**

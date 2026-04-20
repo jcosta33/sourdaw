@@ -1,5 +1,6 @@
-import { type DocumentBundle } from '../../models/CrdtDocumentTypes';
 import { createSdawFormatError } from '../../errors/SdawFormatError';
+import { type DocumentBundle } from '../../models/CrdtDocumentTypes';
+
 import { FORMAT_VERSION, SDAW_MAGIC } from './helpers';
 
 /**

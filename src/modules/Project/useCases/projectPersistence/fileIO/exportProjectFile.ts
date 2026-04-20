@@ -1,14 +1,15 @@
-import { automationStore } from '#/modules/Automation/stores';
 import { markerStore, takeLaneStore, trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { arrangementStore } from '../../../stores/arrangementStore';
+
 import { type ProjectData } from '../../../models/ProjectData';
-import { projectStore } from '../../../stores/projectStore';
 import { downloadProjectFile } from '../../../repositories/project/downloadProjectFile';
+import { arrangementStore } from '../../../stores/arrangementStore';
+import { projectStore } from '../../../stores/projectStore';
 import { syncCurrentArrangementToStore } from '../../arrangement/helpers';
 
 /** Collect every audioBufferId (clips + frozen buffers + track alternatives)
@@ -16,13 +17,19 @@ import { syncCurrentArrangementToStore } from '../../arrangement/helpers';
 function collectBufferIds(trackState: TrackStoreState | null | undefined): Set<string> {
     const ids = new Set<string>();
     for (const track of trackState?.tracks ?? []) {
-        if (track.freezeState?.frozenBufferId) {ids.add(track.freezeState.frozenBufferId);}
+        if (track.freezeState?.frozenBufferId) {
+            ids.add(track.freezeState.frozenBufferId);
+        }
         for (const clip of track.clips) {
-            if (clip.audioBufferId) {ids.add(clip.audioBufferId);}
+            if (clip.audioBufferId) {
+                ids.add(clip.audioBufferId);
+            }
         }
         for (const alt of track.alternatives) {
             for (const clip of alt.clips) {
-                if (clip.audioBufferId) {ids.add(clip.audioBufferId);}
+                if (clip.audioBufferId) {
+                    ids.add(clip.audioBufferId);
+                }
             }
         }
     }
@@ -46,9 +53,13 @@ export async function exportProjectFile(): Promise<void> {
     // Collect all audioBufferIds referenced by the project (current track state
     // and every arrangement, including non-active ones).
     const allBufferIds = new Set<string>();
-    for (const id of collectBufferIds(tracks)) {allBufferIds.add(id);}
+    for (const id of collectBufferIds(tracks)) {
+        allBufferIds.add(id);
+    }
     for (const arr of arrState.arrangements) {
-        for (const id of collectBufferIds(arr.tracks)) {allBufferIds.add(id);}
+        for (const id of collectBufferIds(arr.tracks)) {
+            allBufferIds.add(id);
+        }
     }
     const audioBuffers = await audioBufferCache.exportBuffers([...allBufferIds]);
 
@@ -95,27 +106,27 @@ export async function exportProjectFile(): Promise<void> {
         automation,
         mixer: {
             master: { gain: 0.8, pan: 0 },
-            buses: []
+            buses: [],
         },
         midi: {
             notesByClipId: {},
             ccByClipId: {},
-            pitchBendByClipId: {}
+            pitchBendByClipId: {},
         },
         tempoMap: tempoMapStore.value ?? undefined,
         timeSignatureMap: timeSignatureMapStore.value ?? undefined,
-        markers: (markerStore.value?.markers || []).map(m => ({
+        markers: (markerStore.value?.markers || []).map((m) => ({
             id: m.id,
             beat: m.beat,
             name: (m as any).name || (m as any).label || 'Untitled',
-            color: m.color
+            color: m.color,
         })),
         takeLanes: takeLaneStore.value ?? undefined,
         sidechainRoutes: getAllSidechainRoutes(),
         arrangements: arrState.arrangements,
         activeArrangementId: arrState.activeArrangementId,
         audioBuffers: Object.keys(audioBuffers).length > 0 ? audioBuffers : undefined,
-        history: { checkpoints: [] }
+        history: { checkpoints: [] },
     };
 
     await downloadProjectFile(data);

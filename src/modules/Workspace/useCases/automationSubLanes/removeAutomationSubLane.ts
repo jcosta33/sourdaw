@@ -1,4 +1,5 @@
 import { getWorkspaceState } from '../../repositories/workspace';
+
 import { setAutomationSubLanes } from './helpers';
 
 export function removeAutomationSubLane(trackId: string, index: number): void {

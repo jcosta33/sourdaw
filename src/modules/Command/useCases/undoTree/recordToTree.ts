@@ -1,6 +1,6 @@
-import { type UndoEntry } from '../commandQueries';
 import { pushToTree } from '../../models/UndoTree';
 import { undoTreeStore } from '../../stores/undoTree';
+import { type UndoEntry } from '../commandQueries';
 
 /**
  * Called from undoStore subscriber to mirror entries into the tree.

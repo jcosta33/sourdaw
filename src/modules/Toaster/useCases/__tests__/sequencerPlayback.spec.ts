@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { Container } from '#/infra/di/Container';
-import { startSequencer, stopSequencer } from '../sequencerPlayback';
 import { getAudioTime } from '#/modules/AudioEngine/useCases';
+
+import { startSequencer, stopSequencer } from '../sequencerPlayback';
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),

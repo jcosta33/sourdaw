@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createNeutralPresetParameters } from '../../models/GrandBoulePreset';
+
 import { createDefaultGrandBouleConfig } from '../../models/GrandBouleConfig';
 import { createDefaultMidiCalibration } from '../../models/GrandBouleMidiCalibration';
 import { createDefaultMorphState } from '../../models/GrandBouleMorphState';
+import { createNeutralPresetParameters } from '../../models/GrandBoulePreset';
+import { findBuiltinGrandBoulePreset } from '../../repositories/findBuiltinGrandBoulePreset';
 import { type GrandBouleState } from '../../stores/grandBouleStore';
 import { loadGrandBoulePreset } from '../loadGrandBoulePreset';
-import { findBuiltinGrandBoulePreset } from '../../repositories/findBuiltinGrandBoulePreset';
 
 const gbStoreCell = vi.hoisted(() => ({
     value: null as GrandBouleState | null,

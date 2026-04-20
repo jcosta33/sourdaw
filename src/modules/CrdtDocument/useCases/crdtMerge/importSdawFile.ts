@@ -1,11 +1,14 @@
 import * as Automerge from '@automerge/automerge';
+
 import { logger } from '#/infra/logger/appLogger';
+
 import { type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
-import { projectCrdtToStores } from '../projection/projectProjection';
-import { persistCrdtProject } from '../crdtProjectLifecycle';
 import { forkProjectBranch } from '../crdtBranching/forkProjectBranch';
+import { persistCrdtProject } from '../crdtProjectLifecycle';
+import { projectCrdtToStores } from '../projection/projectProjection';
 import { decodeSdawFile } from '../sdawFileFormat/decodeSdawFile';
+
 import { mergeDocumentBundleFromRepo } from './helpers';
 
 export type ImportDecision = 'merge' | 'branch' | 'separate';

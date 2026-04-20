@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type TimelineRenderer } from '../../models/RendererBackend';
-import { initTimelineRenderer } from '../initTimelineRenderer';
 import { getPreferredRendererBackend } from '../../models/RendererBackend';
-import { createWebGpuRenderer } from '../../presentations/renderers/createWebGpuRenderer';
 import { createCanvasRenderer } from '../../presentations/renderers/createCanvasRenderer';
+import { createWebGpuRenderer } from '../../presentations/renderers/createWebGpuRenderer';
+import { initTimelineRenderer } from '../initTimelineRenderer';
 
 vi.mock('../../models/RendererBackend', () => ({
     getPreferredRendererBackend: vi.fn(),

@@ -1,5 +1,5 @@
-import { createHandler } from '#/utils/createHandler';
 import { clearScratchPad } from '#/modules/Arrangement/useCases';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleClearScratchPad = createHandler<'clearScratchPad'>({
     execute: () => {

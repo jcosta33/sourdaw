@@ -1,9 +1,10 @@
 import { type SoundPreset } from '../../models/SoundPreset';
-import { synth } from './presetHelpers/synth';
-import { reverb } from './presetHelpers/reverb';
+
 import { chorus } from './presetHelpers/chorus';
 import { eq } from './presetHelpers/eq';
 import { AUTHOR } from './presetHelpers/helpers';
+import { reverb } from './presetHelpers/reverb';
+import { synth } from './presetHelpers/synth';
 
 export const keysPresets: SoundPreset[] = [
     // ─── Keys ────────────────────────────────────────────────────────────

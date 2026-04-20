@@ -1,9 +1,12 @@
-import { updateClip } from '../updateClip';
 import { projectStore } from '#/modules/Project/stores';
+
+import { updateClip } from '../updateClip';
 
 export function bakeClipScaleFolding(clipId: string): void {
     const project = projectStore.value;
-    if (!project) return;
+    if (!project) {
+        return;
+    }
 
     updateClip(clipId, (clip) => ({
         ...clip,
@@ -13,6 +16,6 @@ export function bakeClipScaleFolding(clipId: string): void {
         sourceScaleName: project.scaleName,
     }));
 
-    // NOTE: This assumes the calling code also updates the actual MIDI notes 
+    // NOTE: This assumes the calling code also updates the actual MIDI notes
     // in the arrangement store to the folded values.
 }

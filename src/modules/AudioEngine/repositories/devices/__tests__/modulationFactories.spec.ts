@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createChorus } from '../modulation/createChorus';
-import { createPhaser } from '../modulation/createPhaser';
-import { createFlanger } from '../modulation/createFlanger';
-import { createTremolo } from '../modulation/createTremolo';
-import { createAutoPan } from '../modulation/createAutoPan';
+
 import { createMockAudioContext } from '../../../../../helpers/__tests__/audioContext.mock';
+import { createAutoPan } from '../modulation/createAutoPan';
+import { createChorus } from '../modulation/createChorus';
+import { createFlanger } from '../modulation/createFlanger';
+import { createPhaser } from '../modulation/createPhaser';
+import { createTremolo } from '../modulation/createTremolo';
 
 describe('modulationFactories', () => {
     let ctx: ReturnType<typeof createMockAudioContext>;

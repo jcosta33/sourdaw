@@ -16,7 +16,11 @@ describe('undoStore / pushUndo', () => {
     });
 
     it('should append an entry to past and clear future', () => {
-        const a = createUndoEntry('one', { type: 'setTempo', payload: { bpm: 120 } }, { type: 'setTempo', payload: { bpm: 100 } });
+        const a = createUndoEntry(
+            'one',
+            { type: 'setTempo', payload: { bpm: 120 } },
+            { type: 'setTempo', payload: { bpm: 100 } }
+        );
         const b = createUndoEntry('two', { type: 'stopPlayback' }, { type: 'togglePlayback' });
         undoStore.set({ past: [a], future: [b] });
 
@@ -35,10 +39,14 @@ describe('undoStore / pushUndo', () => {
     });
 
     it('should persist action stacks to sessionStorage when state updates', async () => {
-        const entry = createUndoEntry('persist', { type: 'setMasterGain', payload: { gain: 0.5 } }, {
-            type: 'setMasterGain',
-            payload: { gain: 1 },
-        });
+        const entry = createUndoEntry(
+            'persist',
+            { type: 'setMasterGain', payload: { gain: 0.5 } },
+            {
+                type: 'setMasterGain',
+                payload: { gain: 1 },
+            }
+        );
         pushUndo(entry);
 
         // Persistence writes are coalesced onto a microtask flush.

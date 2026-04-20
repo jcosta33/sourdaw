@@ -1,4 +1,5 @@
 import { type ReactElement, type ReactNode, useState, useEffect } from 'react';
+
 import { SourdawLogo } from './SourdawLogo';
 
 // SVG Discord icon (same as AlphaNoticeDialog)

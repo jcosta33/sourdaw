@@ -1,29 +1,31 @@
 import { type ReactElement } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
-import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginMetricStrip } from '#/components/daw/DawPluginMetricStrip';
+import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginRail } from '#/components/daw/DawPluginRail';
 import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { proofStore, setProofUiLevel, getProofState, updateProofPatch, type ProofState } from '../../stores/proofStore';
-import { setProofParamWithPatch } from '../../useCases/proofParamBridge/setProofParamWithPatch';
-import { setProofParam } from '../../useCases/proofParamBridge/setProofParam';
-import { PROOF_PRESETS } from '../../useCases/proofPresets';
+import { useStore } from '#/infra/store/useStore';
+
 import { TARGET_LUFS, type ProofTarget } from '../../models/ProofPatch';
+import { proofStore, setProofUiLevel, getProofState, updateProofPatch, type ProofState } from '../../stores/proofStore';
 import { loadProofPatchWithAudio } from '../../useCases/proofParamBridge/loadProofPatchWithAudio';
 import { reorderChain } from '../../useCases/proofParamBridge/reorderChain';
 import { resetIntegratedMeters } from '../../useCases/proofParamBridge/resetIntegratedMeters';
-import { ProofEqSection } from '../components/ProofEqSection';
-import { ProofDynSection } from '../components/ProofDynSection';
-import { ProofImagerSection } from '../components/ProofImagerSection';
-import { ProofExciterSection } from '../components/ProofExciterSection';
-import { ProofLimiterSection } from '../components/ProofLimiterSection';
+import { setProofParam } from '../../useCases/proofParamBridge/setProofParam';
+import { setProofParamWithPatch } from '../../useCases/proofParamBridge/setProofParamWithPatch';
+import { PROOF_PRESETS } from '../../useCases/proofPresets';
 import { LoudnessHistory } from '../components/LoudnessHistory';
+import { ProofDynSection } from '../components/ProofDynSection';
+import { ProofEqSection } from '../components/ProofEqSection';
+import { ProofExciterSection } from '../components/ProofExciterSection';
+import { ProofImagerSection } from '../components/ProofImagerSection';
+import { ProofLimiterSection } from '../components/ProofLimiterSection';
 import { TonalBalance } from '../components/TonalBalance';
 import { useProofAnalyser } from '../hooks/useProofAnalyser';
 
@@ -55,12 +57,16 @@ const LEVEL_OPTIONS = [
 ];
 
 function formatLufs(v: number): string {
-    if (v <= -100) {return '-∞';}
+    if (v <= -100) {
+        return '-∞';
+    }
     return `${v.toFixed(1)}`;
 }
 
 function formatDb(v: number): string {
-    if (v <= -100) {return '-∞';}
+    if (v <= -100) {
+        return '-∞';
+    }
     return `${v > 0 ? '+' : ''}${v.toFixed(1)}`;
 }
 
@@ -532,7 +538,7 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     min={-12}
                     max={12}
                     unit="dB"
-                    color={MODULE_COLORS[0]!}
+                    color={MODULE_COLORS[0]}
                 />
                 <KnobColumn
                     label="Dynamics"
@@ -546,7 +552,7 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     min={-60}
                     max={0}
                     unit="dB"
-                    color={MODULE_COLORS[1]!}
+                    color={MODULE_COLORS[1]}
                 />
                 <KnobColumn
                     label="Imager"
@@ -562,7 +568,7 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     min={0}
                     max={2}
                     unit=""
-                    color={MODULE_COLORS[2]!}
+                    color={MODULE_COLORS[2]}
                 />
                 <KnobColumn
                     label="Exciter"
@@ -580,7 +586,7 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     min={0}
                     max={1}
                     unit=""
-                    color={MODULE_COLORS[3]!}
+                    color={MODULE_COLORS[3]}
                 />
                 <KnobColumn
                     label="Limiter"
@@ -591,7 +597,7 @@ const Level2Shape = ({ state, deviceId }: { state: ProofState; deviceId: string 
                     min={-12}
                     max={0}
                     unit="dBTP"
-                    color={MODULE_COLORS[4]!}
+                    color={MODULE_COLORS[4]}
                 />
             </div>
         </div>
@@ -693,7 +699,9 @@ const Level4Route = ({ state, deviceId }: { state: ProofState; deviceId: string 
 
     const moveModule = (fromIdx: number, direction: -1 | 1) => {
         const toIdx = fromIdx + direction;
-        if (toIdx < 0 || toIdx >= 5) {return;}
+        if (toIdx < 0 || toIdx >= 5) {
+            return;
+        }
         const newOrder: [number, number, number, number, number] = [...patch.chainOrder];
         const temp = newOrder[fromIdx]!;
         newOrder[fromIdx] = newOrder[toIdx]!;
@@ -989,7 +997,16 @@ const KnobColumn = ({
         <span className="text-[8px] font-bold uppercase tracking-wider" style={{ color }}>
             {label}
         </span>
-        <RotaryKnob value={value} onChange={onChange} min={min} max={max} step={0.1} defaultValue={value} size="md" tone="cyan" />
+        <RotaryKnob
+            value={value}
+            onChange={onChange}
+            min={min}
+            max={max}
+            step={0.1}
+            defaultValue={value}
+            size="md"
+            tone="cyan"
+        />
         <span className="text-[7px] text-muted-foreground">{sublabel}</span>
         <span className="text-[7px] text-muted-foreground/50 font-mono">
             {value.toFixed(1)}

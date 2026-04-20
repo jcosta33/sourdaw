@@ -3,9 +3,12 @@
  * All recording lifecycle logic is in the useVoiceRecording hook.
  */
 import { type ReactElement } from 'react';
-import { DawInlineHint } from '#/components/daw/DawInlineHint';
+
 import { Mic, MicOff } from 'lucide-react';
+
+import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { cn } from '#/utils/Styles/cn';
+
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
 
 // Re-export for consumers that check availability

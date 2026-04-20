@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { inject } from '../inject';
+
 import { Container } from '../Container';
+import { inject } from '../inject';
 import { resetContainerState } from '../internal/containerState';
 
 describe('inject', () => {

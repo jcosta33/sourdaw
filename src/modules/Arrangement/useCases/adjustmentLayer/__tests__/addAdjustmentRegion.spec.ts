@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { addAdjustmentRegion } from '../addAdjustmentRegion';
 
 const mocks = vi.hoisted(() => ({
@@ -9,7 +10,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Arrangement/stores/adjustmentLayer', () => ({
     adjustmentLayerStore: {
-        get value() { return mocks.adjustmentLayerStoreValue.value; },
+        get value() {
+            return mocks.adjustmentLayerStoreValue.value;
+        },
         set: mocks.adjustmentLayerStoreSet,
     },
     getNextRegionId: mocks.getNextRegionId,
@@ -20,9 +23,7 @@ describe('addAdjustmentRegion', () => {
 
     it('adds a region to the correct layer and sorts by startBeat', () => {
         mocks.adjustmentLayerStoreValue.value = {
-            layers: [
-                { id: 'l1', regions: [{ id: 'r0', startBeat: 16, endBeat: 32 }] }
-            ]
+            layers: [{ id: 'l1', regions: [{ id: 'r0', startBeat: 16, endBeat: 32 }] }],
         } as any;
 
         // Add region at beat 0 (should come first after sort)

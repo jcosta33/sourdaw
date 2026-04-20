@@ -1,10 +1,12 @@
 import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import type { AudioEngine, AudioEngineState, TrackChannelStrip, BusStrip, SendNode } from '../models/AudioEngineState';
-import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url';
-import meteringProcessorUrl from '../services/meteringProcessor.ts?worker&url';
-import { TrackNode } from '../engine/TrackNode';
+
 import { BusNode } from '../engine/BusNode';
+import { TrackNode } from '../engine/TrackNode';
+import meteringProcessorUrl from '../services/meteringProcessor.ts?worker&url';
+import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url';
+
+import type { AudioEngine, AudioEngineState, TrackChannelStrip, BusStrip, SendNode } from '../models/AudioEngineState';
 
 class AudioEngineImpl implements AudioEngine {
     public context!: AudioContext;
@@ -314,7 +316,14 @@ class AudioEngineImpl implements AudioEngine {
         }
     }
 
-    public setTransportInfo(beat: number, tempo: number, isPlaying: boolean, loopStart = 0, loopEnd = 0, isLooping = false): void {
+    public setTransportInfo(
+        beat: number,
+        tempo: number,
+        isPlaying: boolean,
+        loopStart = 0,
+        loopEnd = 0,
+        isLooping = false
+    ): void {
         const v = this.transportView;
         v[0] = beat;
         v[1] = tempo;

@@ -14,7 +14,16 @@ export const ROW_HEIGHT = 16;
 export const GRID_BEATS = 32;
 export const RULER_HEIGHT = 22;
 
-export type DragMode = 'none' | 'move' | 'duplicate' | 'resize-left' | 'resize-right' | 'draw' | 'rubber-band' | 'paint' | 'lasso';
+export type DragMode =
+    | 'none'
+    | 'move'
+    | 'duplicate'
+    | 'resize-left'
+    | 'resize-right'
+    | 'draw'
+    | 'rubber-band'
+    | 'paint'
+    | 'lasso';
 
 export type DragState = {
     mode: DragMode;

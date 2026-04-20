@@ -2,6 +2,7 @@
  * Granular synthesis controls — density, size, position, spray, pitch variation.
  */
 import { type ReactElement } from 'react';
+
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 
 type GranularSectionProps = {

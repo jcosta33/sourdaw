@@ -1,19 +1,14 @@
 import { type MouseEvent, type DragEvent, useRef, useState } from 'react';
-import { broadcastPresence } from '#/modules/Collaboration/useCases';
+
+import { removeAutomationPoint, batchAddAutomationPoints } from '#/modules/Automation/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
-import { timelineViewStore, zoomTimeline } from '../../stores/timelineViewStore';
-import { useTimelineGestures } from './useTimelineGestures';
-import { useTimelineFileDrop } from './useTimelineFileDrop';
-import { setPlayheadFromClick } from '../../useCases/timelineInteractions/setPlayheadFromClick';
-import { beginClipDrag, type DragState } from '../../useCases/timelineInteractions/beginClipDrag';
-import { clipDragPreviewRef, previewDirtyFlag, type ClipPreviewPosition } from '../../stores/clipDragPreviewRef';
-import { hitTestClip } from '../../useCases/timelineInteractions/hitTestClip/hitTestClip';
-import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
-import { hitTestClipEdge } from '../../useCases/timelineInteractions/hitTestClipEdge';
-import { snapToGrid } from '../../useCases/timelineInteractions/snapToGrid';
-import { snapToGridOrClips } from '../../useCases/timelineInteractions/snapToGridOrClips';
-import { snapToZeroCrossing } from '../../useCases/timelineInteractions/snapToZeroCrossing';
-import { type AutomationPoint } from '../../models/AutomationViewTypes';
+import { broadcastPresence } from '#/modules/Collaboration/useCases';
+import { pushUndoEntry } from '#/modules/Command/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
+
+import { moveClip } from '../../useCases/clip/moveClip';
+import { moveMidiNote } from '#/modules/MIDI/useCases';
+import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport/useCases';
 import { workspaceStore, preferencesStore } from '#/modules/Workspace/stores';
 import {
     toggleClipInSelection,
@@ -22,33 +17,39 @@ import {
     setClipSelection,
     selectClip,
     setWorkspaceMode,
-    setMarqueeSelection,
+    setMarqueeSelection, getWorkspaceState 
 } from '#/modules/Workspace/useCases';
-import { trackStore } from '../../stores/trackStore';
-import { midiStore } from '#/modules/MIDI/stores';
-import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport/useCases';
-import { removeAutomationPoint, batchAddAutomationPoints } from '#/modules/Automation/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
-import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
-import { addClip } from '../../useCases/clip/addClip';
-import { removeClip } from '../../useCases/clip/removeClip';
-import { moveClip } from '../../useCases/clip/moveClip';
-import { moveMidiNote } from '#/modules/MIDI/useCases';
 import { duplicateClipCore } from '../../useCases/clip/duplicateClipCore';
-import { getWorkspaceState } from '#/modules/Workspace/useCases';
-import { planRippleInsert } from '../../useCases/rippleInsert/planRippleInsert';
-import { rippleInsertClip, undoRippleInsertClip } from '../../useCases/rippleInsert/rippleInsertClip';
-import { planRippleMove } from '../../useCases/rippleMove/planRippleMove';
-import { rippleMoveClip } from '../../useCases/rippleMove/rippleMoveClip';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
-import { setTrackState } from '../../useCases/setTrackState';
-import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
+
+
+import { type AutomationPoint } from '../../models/AutomationViewTypes';
+import { clipDragPreviewRef, previewDirtyFlag, type ClipPreviewPosition } from '../../stores/clipDragPreviewRef';
+import { timelineViewStore, zoomTimeline } from '../../stores/timelineViewStore';
+import { trackStore } from '../../stores/trackStore';
 import { trimClipEnd } from '../../useCases/clipEditing/trimClipEnd';
 import { slipClipContent } from '../../useCases/clipEditing/slipClipContent';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
 import { acceptGhostClip } from '../../useCases/clip/acceptGhostClip';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
+import { addClip } from '../../useCases/clip/addClip';
+import { removeClip } from '../../useCases/clip/removeClip';
+import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
+import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { planRippleInsert } from '../../useCases/rippleInsert/planRippleInsert';
+import { rippleInsertClip, undoRippleInsertClip } from '../../useCases/rippleInsert/rippleInsertClip';
+import { planRippleMove } from '../../useCases/rippleMove/planRippleMove';
+import { rippleMoveClip } from '../../useCases/rippleMove/rippleMoveClip';
+import { setTrackState } from '../../useCases/setTrackState';
+import { beginClipDrag, type DragState } from '../../useCases/timelineInteractions/beginClipDrag';
 import { getTrackAtY as getTrackAtYHelper } from '../../useCases/timelineInteractions/getTrackAtY';
+import { hitTestClip } from '../../useCases/timelineInteractions/hitTestClip/hitTestClip';
+import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
+import { hitTestClipEdge } from '../../useCases/timelineInteractions/hitTestClipEdge';
+import { setPlayheadFromClick } from '../../useCases/timelineInteractions/setPlayheadFromClick';
+import { snapToGrid } from '../../useCases/timelineInteractions/snapToGrid';
+import { snapToGridOrClips } from '../../useCases/timelineInteractions/snapToGridOrClips';
+import { snapToZeroCrossing } from '../../useCases/timelineInteractions/snapToZeroCrossing';
+import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { canvasXToBeat, getContentY } from '../helpers/timelineMouse';
 import {
     handleCutTool,
@@ -57,6 +58,9 @@ import {
     tryPaintSubLane,
     paintAutoDragPoint,
 } from '../helpers/timelineTools';
+
+import { useTimelineFileDrop } from './useTimelineFileDrop';
+import { useTimelineGestures } from './useTimelineGestures';
 
 type ClipMenuState = { kind: 'clip'; x: number; y: number; clipId: string; trackId: string; splitBeat: number };
 type EmptyMenuState = { kind: 'empty'; x: number; y: number; trackId: string | null; beat: number };
@@ -259,10 +263,10 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             const drag = noteDragRef.current;
             const deltaBeat = getBeatFromX(x) - drag.dragStartBeat;
             const deltaPitch = Math.round((drag.dragStartY - y) / drag.noteHeight);
-            
+
             const newStartBeat = snapToGrid(drag.originalStartBeat + deltaBeat);
             const newPitch = Math.max(0, Math.min(127, drag.originalPitch + deltaPitch));
-            
+
             moveMidiNote(drag.clipId, drag.noteId, newPitch, newStartBeat);
             return;
         }
@@ -336,12 +340,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             if (view) {
                 const deltaBeats = (x - startX) / view.pixelsPerBeat;
                 const newOffset = originalOffset + deltaBeats;
-                
+
                 // Update ephemeral preview
                 if (!clipDragPreviewRef.current) {
                     const state = trackStore.value;
-                    const track = state?.tracks.find(t => t.clips.some(c => c.id === clipId));
-                    const clip = track?.clips.find(c => c.id === clipId);
+                    const track = state?.tracks.find((t) => t.clips.some((c) => c.id === clipId));
+                    const clip = track?.clips.find((c) => c.id === clipId);
                     if (track && clip) {
                         const pos = {
                             trackId: track.id,
@@ -356,7 +360,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         };
                     }
                 }
-                
+
                 const preview = clipDragPreviewRef.current;
                 if (preview) {
                     const current = preview.positions.get(clipId);
@@ -411,7 +415,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
             if (preferencesStore.value?.snapToZeroCrossing) {
                 const state = trackStore.value;
-                const clip = state?.tracks.flatMap(t => t.clips).find(c => c.id === dragState.clipId);
+                const clip = state?.tracks.flatMap((t) => t.clips).find((c) => c.id === dragState.clipId);
                 if (clip && clip.type === 'audio') {
                     newEnd = snapToZeroCrossing(clip, newEnd);
                 }
@@ -571,7 +575,14 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         pushUndoEntry(
                             'Draw clip',
                             () => removeClip(clipId),
-                            () => addClip({ trackId: drawTrackId, startBeat: s, endBeat: s + length, name: `Clip ${s}`, type: drawClipType })
+                            () =>
+                                addClip({
+                                    trackId: drawTrackId,
+                                    startBeat: s,
+                                    endBeat: s + length,
+                                    name: `Clip ${s}`,
+                                    type: drawClipType,
+                                })
                         );
                     }
                 }
@@ -630,7 +641,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     }
                     trackYOffset += h;
                 }
-                
+
                 if (getActiveTool() === 'marquee') {
                     setMarqueeSelection({ startBeat: leftBeat, endBeat: rightBeat, trackIds: hitTrackIds });
                 } else {
@@ -761,13 +772,21 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                                             ];
                                             const shiftMap = new Map(allShifted.map((s) => [s.clipId, s]));
                                             const updatedTracks = state2.tracks.map((t) => {
-                                                if (t.id !== origTrackId) return t;
+                                                if (t.id !== origTrackId) {
+                                                    return t;
+                                                }
                                                 return {
                                                     ...t,
                                                     clips: t.clips.map((c) => {
                                                         const orig2 = shiftMap.get(c.id);
-                                                        if (!orig2) return c;
-                                                        return { ...c, startBeat: orig2.origStartBeat, endBeat: orig2.origEndBeat };
+                                                        if (!orig2) {
+                                                            return c;
+                                                        }
+                                                        return {
+                                                            ...c,
+                                                            startBeat: orig2.origStartBeat,
+                                                            endBeat: orig2.origEndBeat,
+                                                        };
                                                     }),
                                                 };
                                             });
@@ -788,7 +807,13 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                                                 clipDuration: dur,
                                             });
                                             if (redoPlan) {
-                                                rippleMoveClip({ trackId: newTrackId, clipId: dragClipId, newStartBeat: newStart, clipDuration: dur, plan: redoPlan });
+                                                rippleMoveClip({
+                                                    trackId: newTrackId,
+                                                    clipId: dragClipId,
+                                                    newStartBeat: newStart,
+                                                    clipDuration: dur,
+                                                    plan: redoPlan,
+                                                });
                                             } else {
                                                 moveClip(dragClipId, newTrackId, newStart);
                                             }

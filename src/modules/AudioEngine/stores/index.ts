@@ -11,9 +11,4 @@ export type { AudioRecordingState } from './audioRecordingStore';
 export { audioRecordingStore } from './audioRecordingStore';
 
 export type { LinkStatus } from './linkStatusStore';
-export {
-    linkStatusStore,
-    defaultLinkStatus,
-    subscribeToLinkStatus,
-    getLinkStatusSnapshot,
-} from './linkStatusStore';
+export { linkStatusStore, defaultLinkStatus, subscribeToLinkStatus, getLinkStatusSnapshot } from './linkStatusStore';

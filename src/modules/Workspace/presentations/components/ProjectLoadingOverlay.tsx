@@ -1,4 +1,5 @@
 import { type ReactElement, useState, useEffect, useRef } from 'react';
+
 import { SourdawLogo } from './SourdawLogo';
 
 const LOADING_QUIPS = [

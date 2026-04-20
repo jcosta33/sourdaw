@@ -1,5 +1,5 @@
-import { versionControlStore } from '../../../stores/versionControlStore';
 import { createBranch } from '../../../models/ProjectVersion';
+import { versionControlStore } from '../../../stores/versionControlStore';
 
 export function createVersionBranch(name: string): void {
     const state = versionControlStore.value;

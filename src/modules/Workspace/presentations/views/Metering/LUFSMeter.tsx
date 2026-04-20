@@ -3,6 +3,7 @@
  * Displays momentary, short-term, and integrated loudness on a Canvas2D bar.
  */
 import { type ReactElement, useRef, useEffect, useState } from 'react';
+
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import {

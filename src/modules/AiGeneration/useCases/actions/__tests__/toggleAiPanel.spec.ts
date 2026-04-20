@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { toggleAiPanel } from '../toggleAiPanel';
+
 import { aiStore } from '../../../stores/aiStore';
+import { toggleAiPanel } from '../toggleAiPanel';
 
 describe('toggleAiPanel', () => {
     beforeEach(() => {
@@ -9,10 +10,10 @@ describe('toggleAiPanel', () => {
 
     it('toggles the panel open state', () => {
         expect(aiStore.value!.isPanelOpen).toBe(false);
-        
+
         toggleAiPanel();
         expect(aiStore.value!.isPanelOpen).toBe(true);
-        
+
         toggleAiPanel();
         expect(aiStore.value!.isPanelOpen).toBe(false);
     });

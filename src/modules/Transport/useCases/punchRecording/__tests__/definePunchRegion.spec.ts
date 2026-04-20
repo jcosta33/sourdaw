@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type PunchRecordingState } from '../../../stores/punchRecordingStore';
 import { definePunchRegion } from '../definePunchRegion';
 
@@ -44,7 +45,7 @@ describe('definePunchRegion', () => {
                 },
             ],
         });
-        
+
         definePunchRegion('cap1', 2, 6);
         const next = mockPunchRecordingStore.set.mock.calls[0]![0] as PunchRecordingState;
         expect(next.captures[0]!.punchRegions).toHaveLength(1);

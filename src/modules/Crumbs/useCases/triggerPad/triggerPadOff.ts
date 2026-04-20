@@ -1,4 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
+
 import { crumbsNoteOff } from '../../repositories/crumbsBridge';
 import { padStore } from '../../stores/padStore';
 
@@ -15,7 +16,7 @@ export async function triggerPadOff(instanceId: string, padIndex: number): Promi
 
     try {
         await crumbsNoteOff(instanceId, pad.midiNote);
-    } catch (err) {
-        logger.warn('Note release failed:', err);
+    } catch (error) {
+        logger.warn('Note release failed:', error);
     }
 }

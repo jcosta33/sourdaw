@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { getStretchRateBetweenMarkers } from '../getStretchRateBetweenMarkers';
 
 const mk = (sourceSec: number, targetBeat: number) => ({

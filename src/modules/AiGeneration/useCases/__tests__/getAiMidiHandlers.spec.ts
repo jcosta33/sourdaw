@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { getAiMidiHandlers } from '../getAiMidiHandlers';
+
 import { handleAddNotes } from '../../handlers/aiMidi/handleAddNotes';
 import { handleStemSeparate } from '../../handlers/aiMidi/handleStemSeparate';
+import { getAiMidiHandlers } from '../getAiMidiHandlers';
 
 describe('getAiMidiHandlers', () => {
     it('returns a map of AI MIDI action handlers', () => {

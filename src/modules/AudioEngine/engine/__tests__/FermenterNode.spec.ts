@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { isFermenterDevice } from '../FermenterNode';
 
 describe('isFermenterDevice', () => {

@@ -10,6 +10,23 @@
 
 import { type PluginDescriptor } from './DeviceParameterTypes';
 
+// ── Descriptor sub-modules ─────────────────────────────────────────────────
+import { BACTERIA_DESCRIPTOR } from './pluginDescriptors/bacteriaDescriptor';
+import { BUILTIN_EFFECT_DESCRIPTORS } from './pluginDescriptors/builtinEffectDescriptors';
+import { BUILTIN_INSTRUMENT_DESCRIPTORS } from './pluginDescriptors/builtinInstrumentDescriptors';
+import { CRUMBS_DESCRIPTOR } from './pluginDescriptors/crumbsDescriptor';
+import { CRUST_DESCRIPTOR } from './pluginDescriptors/crustDescriptor';
+import { FAUST_EFFECT_DESCRIPTORS } from './pluginDescriptors/faustEffectDescriptors';
+import { FERMENTER_DESCRIPTOR } from './pluginDescriptors/fermenterDescriptor';
+import { GLUTEN_DESCRIPTOR } from './pluginDescriptors/glutenDescriptor';
+import { GRAND_BOULE_DESCRIPTOR } from './pluginDescriptors/grandBouleDescriptor';
+import { GRINDER_DESCRIPTOR } from './pluginDescriptors/grinderDescriptor';
+import { LEVAIN_DESCRIPTOR } from './pluginDescriptors/levainDescriptor';
+import { NATIVE_DSP_DESCRIPTORS } from './pluginDescriptors/nativeDspDescriptors';
+import { PROOF_DESCRIPTOR } from './pluginDescriptors/proofDescriptor';
+import { TOASTER_DESCRIPTOR } from './pluginDescriptors/toasterDescriptor';
+import { YEAST_DESCRIPTOR } from './pluginDescriptors/yeastDescriptor';
+
 export type {
     DeviceParameterType,
     DeviceParameter,
@@ -18,23 +35,6 @@ export type {
     PluginPlatform,
     PluginDescriptor,
 } from './DeviceParameterTypes';
-
-// ── Descriptor sub-modules ─────────────────────────────────────────────────
-import { BUILTIN_EFFECT_DESCRIPTORS } from './pluginDescriptors/builtinEffectDescriptors';
-import { BUILTIN_INSTRUMENT_DESCRIPTORS } from './pluginDescriptors/builtinInstrumentDescriptors';
-import { NATIVE_DSP_DESCRIPTORS } from './pluginDescriptors/nativeDspDescriptors';
-import { FAUST_EFFECT_DESCRIPTORS } from './pluginDescriptors/faustEffectDescriptors';
-import { FERMENTER_DESCRIPTOR } from './pluginDescriptors/fermenterDescriptor';
-import { TOASTER_DESCRIPTOR } from './pluginDescriptors/toasterDescriptor';
-import { LEVAIN_DESCRIPTOR } from './pluginDescriptors/levainDescriptor';
-import { GLUTEN_DESCRIPTOR } from './pluginDescriptors/glutenDescriptor';
-import { PROOF_DESCRIPTOR } from './pluginDescriptors/proofDescriptor';
-import { YEAST_DESCRIPTOR } from './pluginDescriptors/yeastDescriptor';
-import { BACTERIA_DESCRIPTOR } from './pluginDescriptors/bacteriaDescriptor';
-import { GRINDER_DESCRIPTOR } from './pluginDescriptors/grinderDescriptor';
-import { CRUST_DESCRIPTOR } from './pluginDescriptors/crustDescriptor';
-import { CRUMBS_DESCRIPTOR } from './pluginDescriptors/crumbsDescriptor';
-import { GRAND_BOULE_DESCRIPTOR } from './pluginDescriptors/grandBouleDescriptor';
 
 // ── Synth variants (generated from builtin-synth base) ─────────────────────
 function createSynthVariant(id: string, name: string, overrides: Record<string, number>): PluginDescriptor {
@@ -47,7 +47,7 @@ function createSynthVariant(id: string, name: string, overrides: Record<string, 
         category: 'instrument',
         hasCustomUI: false,
         parameters: base.parameters.map((p) => {
-            const val = overrides[p.id] !== undefined ? overrides[p.id]! : (p.defaultValue as number);
+            const val = overrides[p.id] !== undefined ? overrides[p.id]! : p.defaultValue;
             return { ...p, deviceId: id, value: val, defaultValue: val };
         }),
     };
@@ -154,11 +154,16 @@ export function getPluginById(pluginId: string): PluginDescriptor | undefined {
  */
 export function isDeviceSupportedOnCurrentPlatform(deviceType: string): boolean {
     const descriptor = BUILTIN_PLUGINS.find((p) => p.id === deviceType);
-    if (!descriptor) {return true;} // unknown devices pass through (e.g. external plugins)
+    if (!descriptor) {
+        return true;
+    } // unknown devices pass through (e.g. external plugins)
     const platform = descriptor.platform ?? 'both';
-    if (platform === 'both') {return true;}
+    if (platform === 'both') {
+        return true;
+    }
     const isNativeRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-    if (isNativeRuntime) {return true;} // native can run both web and native plugins
+    if (isNativeRuntime) {
+        return true;
+    } // native can run both web and native plugins
     return platform === 'web'; // web can only run web plugins
 }
-

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type ControlSurfaceState } from '../../../stores/controlSurface';
 import { mcuBankRight } from '../mcuBankRight';
 

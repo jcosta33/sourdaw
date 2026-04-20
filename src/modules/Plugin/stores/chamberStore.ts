@@ -1,7 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
-import {
-    type ProofChamberPluginState,
-} from '../models/ProofChamberState';
+
+import { type ProofChamberPluginState } from '../models/ProofChamberState';
 
 export type ChamberStoreState = {
     activeInstanceId: string | null;

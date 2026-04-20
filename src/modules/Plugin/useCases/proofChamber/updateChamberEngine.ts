@@ -1,4 +1,5 @@
 import { chamberStore } from '../../stores/chamberStore';
+
 import type { ProofChamberEngineState } from '../../models/ProofChamberState';
 
 /**
@@ -13,7 +14,7 @@ export function updateChamberEngine(
         return;
     }
 
-    const instance = state.instances[id]!;
+    const instance = state.instances[id];
 
     chamberStore.set({
         ...state,

@@ -1,4 +1,5 @@
 import { type ComponentPropsWithRef, type ReactElement, type ReactNode } from 'react';
+
 import { cn } from '#/utils/Styles/cn';
 
 type TimelineChromeSurfaceProps = ComponentPropsWithRef<'div'> & {

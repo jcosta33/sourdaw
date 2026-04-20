@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { decodeAudioBytesWasm } from '../decodeAudioBytesWasm';
 
 const mockDecoded = {
@@ -19,7 +20,7 @@ vi.mock('/wasm/daw-wasm-decoder/daw_wasm_decoder.js', () => mockWasmModule);
 describe('decodeAudioBytesWasm', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        // Force reload of the module-level lazy promise if possible, 
+        // Force reload of the module-level lazy promise if possible,
         // but since it's a singleton we mainly test the first success/fail.
     });
 
@@ -42,7 +43,7 @@ describe('decodeAudioBytesWasm', () => {
         mockDecoded.total_frames = 0;
         const bytes = new ArrayBuffer(10);
         const result = await decodeAudioBytesWasm(bytes);
-        
+
         expect(result).toBeNull();
         expect(mockDecoded.free).toHaveBeenCalled();
     });

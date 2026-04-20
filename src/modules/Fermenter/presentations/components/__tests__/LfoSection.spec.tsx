@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
-import { LfoSection } from '../LfoSection';
+import { describe, it, expect, vi } from 'vitest';
+
 import { DEFAULT_PATCH } from '../../../models/FermenterPatch';
+import { LfoSection } from '../LfoSection';
 
 describe('LfoSection', () => {
     it('should render', () => {

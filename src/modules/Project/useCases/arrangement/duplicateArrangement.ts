@@ -1,7 +1,9 @@
 import { clearUndoHistory } from '#/modules/Command/useCases';
+
 import { arrangementStore } from '../../stores/arrangementStore';
 import { type ArrangementSnapshot } from '../../stores/arrangementStore';
 import { markDirty } from '../projectPersistence/saveProject/markDirty';
+
 import { loadSnapshot, syncCurrentArrangementToStore } from './helpers';
 
 export function duplicateArrangement(id: string, newName?: string): void {

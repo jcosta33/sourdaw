@@ -1,7 +1,8 @@
-import { getTrackState } from '../../repositories/track/getTrackState';
-import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 import { removeDeviceFromStrip } from '#/modules/AudioEngine/useCases';
 import { unloadPlugin } from '#/modules/Plugin/useCases';
+
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 
 export function removeDevice(deviceId: string): void {
     const state = getTrackState();

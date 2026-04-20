@@ -1,3 +1,11 @@
+import { type EditingTool } from '../../models/EditingTool';
+import {
+    type Preferences,
+    type GridSnapOption,
+    type BufferSizeOption,
+    type SampleRateOption,
+    type SoloModePreference,
+} from '../../models/Preferences';
 import {
     type WorkspaceState,
     type WorkspaceMode,
@@ -7,14 +15,6 @@ import {
     type AutomationVisibility,
     type MarqueeSelection,
 } from '../../models/WorkspaceState';
-import { type EditingTool } from '../../models/EditingTool';
-import {
-    type Preferences,
-    type GridSnapOption,
-    type BufferSizeOption,
-    type SampleRateOption,
-    type SoloModePreference,
-} from '../../models/Preferences';
 
 export type {
     WorkspaceState,
@@ -59,8 +59,6 @@ export const defaultPreferences: Preferences = {
     preRollEnabled: false,
     preRollBars: 2,
 };
-
-
 
 export const TRACK_HEIGHT_VALUES: Record<Preferences['trackHeight'], number> = {
     compact: 40,

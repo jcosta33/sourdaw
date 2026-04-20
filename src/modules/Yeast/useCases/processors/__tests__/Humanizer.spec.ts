@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { Humanizer } from '../Humanizer';
+
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
+import { Humanizer } from '../Humanizer';
 
 describe('Humanizer', () => {
     let human: Humanizer;
@@ -20,8 +21,10 @@ describe('Humanizer', () => {
     it('offsets note timing and velocity', () => {
         human.setParam('timing_sigma_ms', 10);
         human.setParam('vel_sigma', 10);
-        
-        const input: MidiEvent[] = [{ timeSamples: 1000, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } }];
+
+        const input: MidiEvent[] = [
+            { timeSamples: 1000, kind: { type: 'noteOn', channel: 0, note: 60, velocity: 100 } },
+        ];
         const output: MidiEvent[] = [];
 
         human.processMidi(input, output, transport);
@@ -35,10 +38,12 @@ describe('Humanizer', () => {
     });
 
     it('preserves note duration by applying same offset to noteOff', () => {
-        const onInput: MidiEvent[] = [{ timeSamples: 1000, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 100 } }];
+        const onInput: MidiEvent[] = [
+            { timeSamples: 1000, kind: { type: 'noteOn', channel: 0, note: 64, velocity: 100 } },
+        ];
         const onOutput: MidiEvent[] = [];
         human.processMidi(onInput, onOutput, transport);
-        
+
         const onOffset = onOutput[0].timeSamples - 1000;
 
         const offInput: MidiEvent[] = [{ timeSamples: 2000, kind: { type: 'noteOff', channel: 0, note: 64 } }];

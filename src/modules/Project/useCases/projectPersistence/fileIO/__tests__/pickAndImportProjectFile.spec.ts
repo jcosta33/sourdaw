@@ -19,25 +19,19 @@ describe('importProjectFile', () => {
     });
 
     it('should return false when version is not 1', async () => {
-        const ok = await importProjectFile(
-            fileWithText(JSON.stringify({ version: 2, tracks: {}, transport: {} }))
-        );
+        const ok = await importProjectFile(fileWithText(JSON.stringify({ version: 2, tracks: {}, transport: {} })));
 
         expect(ok).toBe(false);
     });
 
     it('should return false when tracks are missing', async () => {
-        const ok = await importProjectFile(
-            fileWithText(JSON.stringify({ version: 1, transport: {} }))
-        );
+        const ok = await importProjectFile(fileWithText(JSON.stringify({ version: 1, transport: {} })));
 
         expect(ok).toBe(false);
     });
 
     it('should return false when transport is missing', async () => {
-        const ok = await importProjectFile(
-            fileWithText(JSON.stringify({ version: 1, tracks: {} }))
-        );
+        const ok = await importProjectFile(fileWithText(JSON.stringify({ version: 1, tracks: {} })));
 
         expect(ok).toBe(false);
     });

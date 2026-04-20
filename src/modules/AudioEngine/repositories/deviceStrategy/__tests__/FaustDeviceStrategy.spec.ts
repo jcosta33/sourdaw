@@ -4,9 +4,9 @@ vi.mock('../../faustDeviceFactory', () => ({
     createFaustDevice: vi.fn(),
 }));
 
+import { type Device } from '../../../models/TrackViewTypes';
 import { createFaustDevice } from '../../faustDeviceFactory';
 import { FaustDeviceStrategy, createFaustStrategy } from '../FaustDeviceStrategy';
-import { type Device } from '../../../models/TrackViewTypes';
 
 describe('FaustDeviceStrategy', () => {
     it('should forward setParam to faustNode.setParamValue when present', () => {

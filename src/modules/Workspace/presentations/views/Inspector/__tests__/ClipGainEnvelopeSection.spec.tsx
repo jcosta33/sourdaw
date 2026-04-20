@@ -1,10 +1,22 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
+
 import { ClipGainEnvelopeSection } from '../ClipGainEnvelopeSection';
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
-    DawHeaderBand: ({ title, startSlot, compact, className }: { title: string; startSlot?: React.ReactNode; compact?: boolean; className?: string }) => (
+    DawHeaderBand: ({
+        title,
+        startSlot,
+        compact,
+        className,
+    }: {
+        title: string;
+        startSlot?: React.ReactNode;
+        compact?: boolean;
+        className?: string;
+    }) => (
         <div className={className} data-compact={compact}>
             {startSlot}
             <span>{title}</span>
@@ -13,14 +25,48 @@ vi.mock('#/components/daw/DawHeaderBand', () => ({
 }));
 
 vi.mock('#/components/daw/DawMicroBadge', () => ({
-    DawMicroBadge: ({ children, rounded, className }: { children: React.ReactNode; rounded?: string; className?: string }) => (
-        <span className={className} data-rounded={rounded}>{children}</span>
+    DawMicroBadge: ({
+        children,
+        rounded,
+        className,
+    }: {
+        children: React.ReactNode;
+        rounded?: string;
+        className?: string;
+    }) => (
+        <span className={className} data-rounded={rounded}>
+            {children}
+        </span>
     ),
 }));
 
 vi.mock('#/components/ui/button', () => ({
-    Button: ({ children, onClick, variant, size, className, 'aria-label': ariaLabel, title }: { children: React.ReactNode; onClick?: () => void; variant?: string; size?: string; className?: string; 'aria-label'?: string; title?: string }) => (
-        <button type="button" onClick={onClick} className={className} data-variant={variant} data-size={size} aria-label={ariaLabel} title={title}>
+    Button: ({
+        children,
+        onClick,
+        variant,
+        size,
+        className,
+        'aria-label': ariaLabel,
+        title,
+    }: {
+        children: React.ReactNode;
+        onClick?: () => void;
+        variant?: string;
+        size?: string;
+        className?: string;
+        'aria-label'?: string;
+        title?: string;
+    }) => (
+        <button
+            type="button"
+            onClick={onClick}
+            className={className}
+            data-variant={variant}
+            data-size={size}
+            aria-label={ariaLabel}
+            title={title}
+        >
             {children}
         </button>
     ),

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+
 import { preferencesStore } from '../preferencesStore';
 
 describe('preferencesStore', () => {
@@ -18,11 +19,11 @@ describe('preferencesStore', () => {
         const original = preferencesStore.value;
         preferencesStore.update((state) => ({
             ...state!,
-            theme: 'light'
+            theme: 'light',
         }));
-        
+
         expect(preferencesStore.value?.theme).toBe('light');
-        
+
         // Restore
         preferencesStore.set(original);
     });

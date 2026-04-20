@@ -1,21 +1,23 @@
 import { type ReactElement, useState, useRef } from 'react';
-import { useTracks } from '../hooks/useTracks';
-import { Button } from '#/components/ui/button';
+
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
+import { Button } from '#/components/ui/button';
+import { useStore } from '#/infra/store/useStore';
+
+import { defaultWorkspaceState } from '../../models/WorkspaceState';
+import { workspaceStore } from '../../stores/workspaceStore';
 import { setWorkspaceMode } from '../../useCases/setWorkspaceMode';
 import { selectClip } from '../../useCases/togglePanel/panelToggles/selectClip';
-import { workspaceStore } from '../../stores/workspaceStore';
-import { useStore } from '#/infra/store/useStore';
-import { defaultWorkspaceState } from '../../models/WorkspaceState';
+import { useTracks } from '../hooks/useTracks';
 
-import { PianoRoll } from './ClipView/PianoRoll';
-import { WaveformEditor } from './ClipView/WaveformEditor';
+import { ClipEditorTray } from './ClipEditorTray';
 import { AutomationLane } from './ClipView/AutomationLane';
 import { KneadEditor } from './ClipView/KneadEditor';
-import { ClipEditorTray } from './ClipEditorTray';
+import { PianoRoll } from './ClipView/PianoRoll';
+import { WaveformEditor } from './ClipView/WaveformEditor';
 
 export const ClipView = (): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
@@ -54,7 +56,9 @@ export const ClipView = (): ReactElement => {
     // A9: collect all selected MIDI clip IDs across all tracks for multi-clip editing
     const openedClipIds: string[] | undefined = (() => {
         const ids = wsState?.selectedClipIds ?? [];
-        if (ids.length <= 1) return undefined;
+        if (ids.length <= 1) {
+            return undefined;
+        }
         const midiClipIds = ids.filter((id) =>
             tracks.some((t) => t.kind === 'midi' && t.clips.some((c) => c.id === id))
         );

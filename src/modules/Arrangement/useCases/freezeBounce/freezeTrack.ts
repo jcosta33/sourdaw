@@ -1,18 +1,24 @@
-import { trackStore } from '../../stores/trackStore';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getTransportState } from '#/modules/Transport/useCases';
+
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { computeTrackHash } from '../../services/computeTrackHash';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { trackStore } from '../../stores/trackStore';
+
 import { renderTrackOffline } from './renderOffline';
-import { getTransportState } from '#/modules/Transport/useCases';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
 
 export async function freezeTrack(trackId: string): Promise<void> {
     const state = trackStore.value;
-    if (!state) {return;}
+    if (!state) {
+        return;
+    }
 
     const track = state.tracks.find((t) => t.id === trackId);
-    if (!track || track.freezeState.status === 'frozen') {return;}
+    if (!track || track.freezeState.status === 'frozen') {
+        return;
+    }
 
     if (activeFreezeTasks.has(trackId)) {
         activeFreezeTasks.get(trackId)!.abort();
@@ -31,8 +37,12 @@ export async function freezeTrack(trackId: string): Promise<void> {
         let startBeat = Infinity;
         let endBeat = -Infinity;
         for (const c of track.clips) {
-            if (c.startBeat < startBeat) {startBeat = c.startBeat;}
-            if (c.endBeat > endBeat) {endBeat = c.endBeat;}
+            if (c.startBeat < startBeat) {
+                startBeat = c.startBeat;
+            }
+            if (c.endBeat > endBeat) {
+                endBeat = c.endBeat;
+            }
         }
 
         if (startBeat === Infinity) {
@@ -41,8 +51,8 @@ export async function freezeTrack(trackId: string): Promise<void> {
         }
 
         // Heuristic: If there's a reverb or delay in the chain, give it a longer tail
-        const hasReverbOrDelay = track.devices.some((d) => 
-            d.type.toLowerCase().includes('reverb') || d.type.toLowerCase().includes('delay')
+        const hasReverbOrDelay = track.devices.some(
+            (d) => d.type.toLowerCase().includes('reverb') || d.type.toLowerCase().includes('delay')
         );
         const tailBeats = hasReverbOrDelay ? 8 : 4;
 
@@ -51,9 +61,9 @@ export async function freezeTrack(trackId: string): Promise<void> {
             onProgress: (p) => {
                 updateTrack(trackId, (t) => ({
                     ...t,
-                    freezeState: { ...t.freezeState, renderProgress: p }
+                    freezeState: { ...t.freezeState, renderProgress: p },
                 }));
-            }
+            },
         });
 
         activeFreezeTasks.delete(trackId);
@@ -78,14 +88,14 @@ export async function freezeTrack(trackId: string): Promise<void> {
                     sampleRate: renderedBuffer.sampleRate,
                     bitDepth: 32,
                     channelCount: renderedBuffer.numberOfChannels,
-                    tailLengthSeconds: tailBeats * 60 / (getTransportState()?.tempo ?? 120),
+                    tailLengthSeconds: (tailBeats * 60) / (getTransportState()?.tempo ?? 120),
                 },
                 renderedAt: Date.now(),
             },
         }));
-    } catch (err) {
+    } catch (error) {
         activeFreezeTasks.delete(trackId);
-        
+
         if (abortController.signal.aborted) {
             // User cancelled
             updateTrack(trackId, (t) => ({
@@ -99,7 +109,7 @@ export async function freezeTrack(trackId: string): Promise<void> {
             ...t,
             freezeState: {
                 status: 'error',
-                errorMessage: err instanceof Error ? err.message : String(err),
+                errorMessage: error instanceof Error ? error.message : String(error),
             },
         }));
     }

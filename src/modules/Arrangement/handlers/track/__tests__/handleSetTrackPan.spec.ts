@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleSetTrackPan } from '../handleSetTrackPan';
 
 const mocks = vi.hoisted(() => ({
@@ -32,7 +33,7 @@ describe('handleSetTrackPan', () => {
     describe('describe', () => {
         it('returns inverse action with previous pan', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', pan: 0.5 }] });
-            
+
             const desc = handleSetTrackPan.describe({
                 type: 'setTrackPan',
                 payload: { trackId: 't1', pan: -0.5 },
@@ -41,13 +42,13 @@ describe('handleSetTrackPan', () => {
             expect(desc.label).toBe('Set track pan');
             expect(desc.inverseAction).toEqual({
                 type: 'setTrackPan',
-                payload: { trackId: 't1', pan: 0.5 }
+                payload: { trackId: 't1', pan: 0.5 },
             });
         });
 
         it('returns null inverse action if track not found', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
-            
+
             const desc = handleSetTrackPan.describe({
                 type: 'setTrackPan',
                 payload: { trackId: 't1', pan: -0.5 },

@@ -1,16 +1,26 @@
 import { type ReactElement, useEffect, useState } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
 import { Cpu, Play, Send, Square } from 'lucide-react';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { getAllTracks } from '#/modules/Arrangement/useCases';
+import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { transportStore } from '#/modules/Transport/stores';
+
 import { type PadState } from '../../models/ToasterKit';
-import { defaultToasterState, selectPad, setStepVelocity, toasterStore, toggleStep, updatePad } from '../../stores/toasterStore';
+import {
+    defaultToasterState,
+    selectPad,
+    setStepVelocity,
+    toasterStore,
+    toggleStep,
+    updatePad,
+} from '../../stores/toasterStore';
 import { applyEuclideanToTrack } from '../../useCases/applyEuclidean';
 import { exportPatternToTimeline } from '../../useCases/exportPatternToTimeline';
 import { loadToasterKitPreset } from '../../useCases/loadToasterKit';
@@ -215,7 +225,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                     {selectedPad.name}
                                 </div>
                                 <div className="truncate text-[9px] uppercase tracking-[0.18em] text-muted-foreground/45">
-                                    {selectedPad.engineType.replace(/-/g, ' ')}
+                                    {selectedPad.engineType.replaceAll('-', ' ')}
                                 </div>
                             </div>
                         </div>

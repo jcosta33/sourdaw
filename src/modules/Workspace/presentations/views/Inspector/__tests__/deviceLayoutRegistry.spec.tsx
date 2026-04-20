@@ -1,23 +1,14 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import {
-    registerDeviceLayout,
-    registerPrefixLayout,
-    resolveDeviceLayout,
-    filterParams,
-} from '../deviceLayoutRegistry';
-import type { DeviceLayoutProps } from '../deviceLayoutRegistry';
+import { describe, it, expect, vi } from 'vitest';
+
+import { registerDeviceLayout, registerPrefixLayout, resolveDeviceLayout, filterParams } from '../deviceLayoutRegistry';
 import { SectionHeader } from '../SectionHeader';
+
+import type { DeviceLayoutProps } from '../deviceLayoutRegistry';
 
 // Mock external dependencies
 vi.mock('#/components/daw/DawHeaderBand', () => ({
-    DawHeaderBand: ({
-        title,
-        compact,
-    }: {
-        title?: string;
-        compact?: boolean;
-    }) => (
+    DawHeaderBand: ({ title, compact }: { title?: string; compact?: boolean }) => (
         <div data-testid="header-band" data-compact={compact}>
             {title}
         </div>
@@ -25,9 +16,7 @@ vi.mock('#/components/daw/DawHeaderBand', () => ({
 }));
 
 // Create test components
-const TestLayoutComponent = ({ device }: DeviceLayoutProps) => (
-    <div data-testid="test-layout">{device.name}</div>
-);
+const TestLayoutComponent = ({ device }: DeviceLayoutProps) => <div data-testid="test-layout">{device.name}</div>;
 
 describe('deviceLayoutRegistry', () => {
     describe('registerDeviceLayout', () => {

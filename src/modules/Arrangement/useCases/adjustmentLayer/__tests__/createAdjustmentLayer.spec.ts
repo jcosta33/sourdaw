@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { createAdjustmentLayer } from '../createAdjustmentLayer';
 
 const mocks = vi.hoisted(() => ({
@@ -9,11 +10,13 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Arrangement/stores/adjustmentLayer', () => ({
     adjustmentLayerStore: {
-        get value() { return mocks.adjustmentLayerStoreValue.value; },
+        get value() {
+            return mocks.adjustmentLayerStoreValue.value;
+        },
         set: mocks.adjustmentLayerStoreSet,
     },
     getNextLayerId: mocks.getNextLayerId,
-    EFFECT_PRESETS: { 'EQ': [{ name: 'Freq', value: 1000, min: 20, max: 20000 }] },
+    EFFECT_PRESETS: { EQ: [{ name: 'Freq', value: 1000, min: 20, max: 20000 }] },
     LAYER_COLORS: ['#f00'],
 }));
 

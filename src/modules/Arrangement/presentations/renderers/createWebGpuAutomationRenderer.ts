@@ -56,10 +56,14 @@ function hexToRgb(hex: string): [number, number, number] {
 }
 
 export async function createWebGpuAutomationRenderer(canvas: HTMLCanvasElement): Promise<AutomationRenderer | null> {
-    if (!navigator.gpu) return null;
+    if (!navigator.gpu) {
+        return null;
+    }
 
     const adapter = await navigator.gpu.requestAdapter();
-    if (!adapter) return null;
+    if (!adapter) {
+        return null;
+    }
     const device = await adapter.requestDevice();
     const context = canvas.getContext('webgpu')!;
     const format = navigator.gpu.getPreferredCanvasFormat();
@@ -71,32 +75,36 @@ export async function createWebGpuAutomationRenderer(canvas: HTMLCanvasElement):
         vertex: {
             module: shader,
             entryPoint: 'vs_main',
-            buffers: [{
-                arrayStride: 6 * 4,
-                attributes: [
-                    { shaderLocation: 0, offset: 0, format: 'float32x2' }, // xy
-                    { shaderLocation: 1, offset: 2 * 4, format: 'float32x4' } // rgba
-                ]
-            }]
+            buffers: [
+                {
+                    arrayStride: 6 * 4,
+                    attributes: [
+                        { shaderLocation: 0, offset: 0, format: 'float32x2' }, // xy
+                        { shaderLocation: 1, offset: 2 * 4, format: 'float32x4' }, // rgba
+                    ],
+                },
+            ],
         },
         fragment: {
             module: shader,
             entryPoint: 'fs_main',
-            targets: [{
-                format,
-                blend: {
-                    color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-                    alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
-                }
-            }]
+            targets: [
+                {
+                    format,
+                    blend: {
+                        color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+                        alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+                    },
+                },
+            ],
         },
-        primitive: { topology: 'triangle-list' }
+        primitive: { topology: 'triangle-list' },
     });
 
     const MAX_VERTICES = 100000;
     const vertexBuffer = device.createBuffer({
         size: MAX_VERTICES * 6 * 4,
-        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
 
     const cpuBuf = new Float32Array(MAX_VERTICES * 6);
@@ -106,19 +114,51 @@ export async function createWebGpuAutomationRenderer(canvas: HTMLCanvasElement):
         const { viewportStartBeat, pixelsPerBeat, width, height } = model;
 
         function addRect(x1: number, y1: number, x2: number, y2: number, r: number, g: number, b: number, a: number) {
-            if (vIdx + 36 >= MAX_VERTICES * 6) return;
+            if (vIdx + 36 >= MAX_VERTICES * 6) {
+                return;
+            }
             const nx1 = (x1 / width) * 2 - 1;
             const nx2 = (x2 / width) * 2 - 1;
             const ny1 = 1 - (y1 / height) * 2;
             const ny2 = 1 - (y2 / height) * 2;
 
             const verts = [
-                nx1, ny1, r, g, b, a,
-                nx2, ny1, r, g, b, a,
-                nx1, ny2, r, g, b, a,
-                nx2, ny1, r, g, b, a,
-                nx2, ny2, r, g, b, a,
-                nx1, ny2, r, g, b, a
+                nx1,
+                ny1,
+                r,
+                g,
+                b,
+                a,
+                nx2,
+                ny1,
+                r,
+                g,
+                b,
+                a,
+                nx1,
+                ny2,
+                r,
+                g,
+                b,
+                a,
+                nx2,
+                ny1,
+                r,
+                g,
+                b,
+                a,
+                nx2,
+                ny2,
+                r,
+                g,
+                b,
+                a,
+                nx1,
+                ny2,
+                r,
+                g,
+                b,
+                a,
             ];
             cpuBuf.set(verts, vIdx);
             vIdx += 36;
@@ -131,10 +171,12 @@ export async function createWebGpuAutomationRenderer(canvas: HTMLCanvasElement):
             if (lane.ghostPoints && lane.ghostPoints.length >= 2) {
                 for (let i = 0; i < lane.ghostPoints.length - 1; i++) {
                     const p1 = lane.ghostPoints[i]!;
-                    const p2 = lane.ghostPoints[i+1]!;
+                    const p2 = lane.ghostPoints[i + 1]!;
                     const x1 = (p1.beat - viewportStartBeat) * pixelsPerBeat;
                     const x2 = (p2.beat - viewportStartBeat) * pixelsPerBeat;
-                    if (x2 < 0 || x1 > width) continue;
+                    if (x2 < 0 || x1 > width) {
+                        continue;
+                    }
                     const v1 = (p1.value - lane.minValue) / (lane.maxValue - lane.minValue);
                     const v2 = (p2.value - lane.minValue) / (lane.maxValue - lane.minValue);
                     const y1 = lane.y + lane.height * (1 - v1);
@@ -143,40 +185,48 @@ export async function createWebGpuAutomationRenderer(canvas: HTMLCanvasElement):
                 }
             }
 
-            if (lane.points.length < 2) continue;
-            
+            if (lane.points.length < 2) {
+                continue;
+            }
+
             for (let i = 0; i < lane.points.length - 1; i++) {
                 const p1 = lane.points[i]!;
-                const p2 = lane.points[i+1]!;
-                
+                const p2 = lane.points[i + 1]!;
+
                 const x1 = (p1.beat - viewportStartBeat) * pixelsPerBeat;
                 const x2 = (p2.beat - viewportStartBeat) * pixelsPerBeat;
-                
-                if (x2 < 0 || x1 > width) continue;
-                
+
+                if (x2 < 0 || x1 > width) {
+                    continue;
+                }
+
                 const v1 = (p1.value - lane.minValue) / (lane.maxValue - lane.minValue);
                 const v2 = (p2.value - lane.minValue) / (lane.maxValue - lane.minValue);
-                
+
                 const y1 = lane.y + lane.height * (1 - v1);
                 const y2 = lane.y + lane.height * (1 - v2);
-                
+
                 // Simple version: draw 2px thick line
                 addRect(x1, y1 - 1, x2, y2 + 1, r, g, b, 0.8);
             }
         }
 
-        if (vIdx === 0) return;
+        if (vIdx === 0) {
+            return;
+        }
 
         device.queue.writeBuffer(vertexBuffer, 0, cpuBuf, 0, vIdx);
         const encoder = device.createCommandEncoder();
         const view = context.getCurrentTexture().createView();
         const pass = encoder.beginRenderPass({
-            colorAttachments: [{
-                view,
-                clearValue: { r: 0, g: 0, b: 0, a: 0 },
-                loadOp: 'clear',
-                storeOp: 'store'
-            }]
+            colorAttachments: [
+                {
+                    view,
+                    clearValue: { r: 0, g: 0, b: 0, a: 0 },
+                    loadOp: 'clear',
+                    storeOp: 'store',
+                },
+            ],
         });
         pass.setPipeline(pipeline);
         pass.setVertexBuffer(0, vertexBuffer);

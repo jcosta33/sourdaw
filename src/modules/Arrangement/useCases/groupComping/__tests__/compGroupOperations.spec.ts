@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import { createCompGroup } from '../compGroupOperations/createCompGroup';
 
 const mockSet = vi.fn();
@@ -6,8 +7,10 @@ let mockValue: any = null;
 
 vi.mock('../../../stores/groupComping', () => ({
     groupCompingStore: {
-        get value() { return mockValue; },
-        set: (v: any) => mockSet(v)
+        get value() {
+            return mockValue;
+        },
+        set: (v: any) => mockSet(v),
     },
     getNextGroupId: () => 'grp-test',
     getNextTakeSetId: () => 'ts-1',

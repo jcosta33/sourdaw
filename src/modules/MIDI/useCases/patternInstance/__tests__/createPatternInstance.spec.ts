@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { createPatternInstance } from '../createPatternInstance';
 
 const mocks = vi.hoisted(() => ({
@@ -25,20 +26,18 @@ describe('createPatternInstance', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('creates a linked clip instance and clones notes with offset', () => {
-        const sourceClip = { 
-            id: 'cBase', 
-            trackId: 't1', 
-            startBeat: 0, 
-            endBeat: 4, 
-            name: 'Loop', 
-            type: 'midi' 
+        const sourceClip = {
+            id: 'cBase',
+            trackId: 't1',
+            startBeat: 0,
+            endBeat: 4,
+            name: 'Loop',
+            type: 'midi',
         };
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [
-                { id: 't1', clips: [sourceClip] }
-            ]
+            tracks: [{ id: 't1', clips: [sourceClip] }],
         });
-        
+
         const mockNotes = [{ id: 'n1', startBeat: 1, pitch: 60 }];
         mocks.getNotesForClip.mockReturnValue(mockNotes);
 
@@ -46,12 +45,12 @@ describe('createPatternInstance', () => {
         const instanceId = createPatternInstance('cBase', 't1', 16);
 
         expect(instanceId).toMatch(/^clip-inst-/);
-        
+
         // Verify track state update
         expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
         const newState = mocks.setTrackState.mock.calls[0][0];
         const instance = newState.tracks[0].clips.find((c: any) => c.id === instanceId);
-        
+
         expect(instance).toMatchObject({
             parentClipId: 'cBase',
             startBeat: 16,
@@ -64,7 +63,7 @@ describe('createPatternInstance', () => {
             expect.objectContaining({
                 pitch: 60,
                 startBeat: 17, // 1 + 16
-            })
+            }),
         ]);
     });
 

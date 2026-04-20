@@ -1,13 +1,14 @@
 import { type SoundPreset } from '../../models/SoundPreset';
-import { synth } from './presetHelpers/synth';
-import { reverb } from './presetHelpers/reverb';
+
+import { autopan } from './presetHelpers/autopan';
+import { bitcrusher } from './presetHelpers/bitcrusher';
 import { delay } from './presetHelpers/delay';
 import { eq } from './presetHelpers/eq';
 import { flanger } from './presetHelpers/flanger';
-import { bitcrusher } from './presetHelpers/bitcrusher';
-import { tremolo } from './presetHelpers/tremolo';
-import { autopan } from './presetHelpers/autopan';
 import { AUTHOR } from './presetHelpers/helpers';
+import { reverb } from './presetHelpers/reverb';
+import { synth } from './presetHelpers/synth';
+import { tremolo } from './presetHelpers/tremolo';
 
 export const leadPresets: SoundPreset[] = [
     // ─── Lead ────────────────────────────────────────────────────────────

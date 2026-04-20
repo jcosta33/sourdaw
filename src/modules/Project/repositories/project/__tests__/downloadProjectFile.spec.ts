@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { downloadProjectFile } from '../downloadProjectFile';
-import { isTauri } from '#/utils/tauriBridge';
-import { saveProjectToFile } from '../../nativeProjectFiles/saveProjectToFile';
+
 import { save } from '@tauri-apps/plugin-dialog';
+
+import { isTauri } from '#/utils/tauriBridge';
+
+import { saveProjectToFile } from '../../nativeProjectFiles/saveProjectToFile';
+import { downloadProjectFile } from '../downloadProjectFile';
 
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(),
@@ -67,7 +70,7 @@ describe('downloadProjectFile', () => {
     it('should fallback to anchor download if picker fails or missing', async () => {
         vi.mocked(isTauri).mockReturnValue(false);
         // Picker missing
-        
+
         const mockAnchor = {
             click: vi.fn(),
             style: {},
@@ -82,7 +85,7 @@ describe('downloadProjectFile', () => {
 
         expect(mockAnchor.click).toHaveBeenCalled();
         expect(mockAnchor.download).toBe('Test_Project.sourdaw');
-        
+
         vi.runAllTimers();
         expect(document.body.removeChild).toHaveBeenCalled();
         expect(URL.revokeObjectURL).toHaveBeenCalled();

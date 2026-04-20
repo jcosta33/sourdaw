@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { addDevice } from '../addDevice';
 
 const mocks = vi.hoisted(() => ({
@@ -56,7 +57,7 @@ describe('addDevice', () => {
         const mockPlugin = {
             id: 'p1',
             name: 'Reverb',
-            parameters: [{ id: 'wet', value: 0.5 }]
+            parameters: [{ id: 'wet', value: 0.5 }],
         };
         mocks.getPlatformPlugins.mockReturnValue([mockPlugin]);
 
@@ -75,7 +76,7 @@ describe('addDevice', () => {
         const mockPlugin = {
             id: 'faust-synth',
             name: 'Faust Synth',
-            parameters: []
+            parameters: [],
         };
         mocks.getPlatformPlugins.mockReturnValue([mockPlugin]);
 

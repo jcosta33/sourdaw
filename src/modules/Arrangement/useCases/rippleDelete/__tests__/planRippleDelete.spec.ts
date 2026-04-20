@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { planRippleDelete } from '../planRippleDelete';
 
 const mocks = vi.hoisted(() => ({
@@ -25,7 +26,7 @@ describe('planRippleDelete', () => {
             { id: 'c3', startBeat: 8, endBeat: 12 },
         ];
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', clips: mockClips }]
+            tracks: [{ id: 't1', clips: mockClips }],
         });
         mocks.getWorkspaceState.mockReturnValue({ rippleEditing: false });
 
@@ -46,20 +47,18 @@ describe('planRippleDelete', () => {
             { id: 'c3', startBeat: 10, endBeat: 14 },
         ];
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', clips: mockClips }]
+            tracks: [{ id: 't1', clips: mockClips }],
         });
         mocks.getWorkspaceState.mockReturnValue({ rippleEditing: true });
 
         // Gap = c2 end (8) - c2 start (4) = 4.
         const plan = planRippleDelete({ trackId: 't1', clipIds: ['c2'] });
 
-        expect(plan?.shiftedClips).toEqual([
-            { clipId: 'c3', origStartBeat: 10, origEndBeat: 14 }
-        ]);
+        expect(plan?.shiftedClips).toEqual([{ clipId: 'c3', origStartBeat: 10, origEndBeat: 14 }]);
         expect(plan?.nextClips[1]).toMatchObject({
             id: 'c3',
             startBeat: 6, // 10 - 4
-            endBeat: 10,  // 14 - 4
+            endBeat: 10, // 14 - 4
         });
     });
 

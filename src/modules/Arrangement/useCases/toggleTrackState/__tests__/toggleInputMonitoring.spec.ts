@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { toggleInputMonitoring } from '../toggleInputMonitoring';
 
 const mocks = vi.hoisted(() => ({
@@ -43,10 +44,10 @@ describe('toggleInputMonitoring', () => {
 
         toggleInputMonitoring('t1');
 
-        const patch = mocks.updateTrack.mock.calls[0]![1] as (t: {
+        const patch = mocks.updateTrack.mock.calls[0]![1] as (t: { inputMonitoring: string; id: string }) => {
             inputMonitoring: string;
             id: string;
-        }) => { inputMonitoring: string; id: string };
+        };
         expect(patch({ inputMonitoring: 'off', id: 't1' })).toEqual({ inputMonitoring: 'on', id: 't1' });
 
         expect(mocks.startInputMonitoring).toHaveBeenCalledWith('t1');
@@ -61,10 +62,10 @@ describe('toggleInputMonitoring', () => {
 
         toggleInputMonitoring('t1');
 
-        const patch = mocks.updateTrack.mock.calls[0]![1] as (t: {
+        const patch = mocks.updateTrack.mock.calls[0]![1] as (t: { inputMonitoring: string; id: string }) => {
             inputMonitoring: string;
             id: string;
-        }) => { inputMonitoring: string; id: string };
+        };
         expect(patch({ inputMonitoring: 'on', id: 't1' })).toEqual({ inputMonitoring: 'off', id: 't1' });
 
         expect(mocks.stopInputMonitoring).toHaveBeenCalledTimes(1);

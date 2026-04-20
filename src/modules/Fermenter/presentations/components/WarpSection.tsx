@@ -2,8 +2,10 @@
  * Spectral warp controls + Audio-rate modulation.
  */
 import { type ReactElement } from 'react';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import { WARP_MODE_NAMES, AUDIO_MOD_TARGET_NAMES } from '../../models/FermenterPatch';
 
 type WarpSectionProps = {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { mcpToOpenAiTools } from '../mcpToOpenAiTools';
 
 vi.mock('../helpers', () => ({
@@ -9,16 +10,16 @@ vi.mock('../helpers', () => ({
             inputSchema: {
                 type: 'object',
                 properties: { name: { type: 'string' } },
-                required: ['name']
-            }
-        }
-    ])
+                required: ['name'],
+            },
+        },
+    ]),
 }));
 
 describe('mcpToOpenAiTools', () => {
     it('converts MCP tools to OpenAI tool format', () => {
         const tools = mcpToOpenAiTools();
-        
+
         expect(tools).toHaveLength(1);
         expect(tools[0]).toEqual({
             type: 'function',
@@ -28,9 +29,9 @@ describe('mcpToOpenAiTools', () => {
                 parameters: {
                     type: 'object',
                     properties: { name: { type: 'string' } },
-                    required: ['name']
-                }
-            }
+                    required: ['name'],
+                },
+            },
         });
     });
 });

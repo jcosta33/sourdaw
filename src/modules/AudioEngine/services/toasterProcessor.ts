@@ -13,7 +13,6 @@
  *   { type: 'padParam', pad, name, value }
  */
 
-import '../wasm/workletPolyfill.js';
 import { initSync, ToasterInstance } from '../wasm/daw_dsp.js';
 
 /** Map camelCase pad param names from TypeScript to snake_case for Rust. */
@@ -63,15 +62,17 @@ class ToasterProcessor extends AudioWorkletProcessor {
             const msg = e.data;
             try {
                 if (msg.type === 'init') {
-                    if (this._ready) {return;}
+                    if (this._ready) {
+                        return;
+                    }
                     this._initWasm(msg.wasmBytes);
                 } else if (this._ready && !this._faulted) {
                     this._handleMessage(msg);
                 }
-            } catch (err) {
-                console.error('ToasterProcessor error:', err);
+            } catch (error) {
+                console.error('ToasterProcessor error:', error);
                 if (!this._ready) {
-                    this.port.postMessage({ type: 'error', message: err?.message ?? String(err) });
+                    this.port.postMessage({ type: 'error', message: error?.message ?? String(error) });
                 }
             }
         };
@@ -93,8 +94,11 @@ class ToasterProcessor extends AudioWorkletProcessor {
             hi = this._queue.length;
         while (lo < hi) {
             const mid = (lo + hi) >>> 1;
-            if (this._queue[mid].sampleFrame <= msg.sampleFrame) {lo = mid + 1;}
-            else {hi = mid;}
+            if (this._queue[mid].sampleFrame <= msg.sampleFrame) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
         }
         this._queue.splice(lo, 0, msg);
     }
@@ -130,10 +134,7 @@ class ToasterProcessor extends AudioWorkletProcessor {
 
     _drainQueue(blockEndFrame) {
         // Audio-thread hot path: advance the read head, no splice per block.
-        while (
-            this._queueHead < this._queue.length &&
-            this._queue[this._queueHead].sampleFrame <= blockEndFrame
-        ) {
+        while (this._queueHead < this._queue.length && this._queue[this._queueHead].sampleFrame <= blockEndFrame) {
             this._dispatch(this._queue[this._queueHead]);
             this._queueHead++;
         }
@@ -146,10 +147,14 @@ class ToasterProcessor extends AudioWorkletProcessor {
     }
 
     process(_inputs, outputs) {
-        if (!this._ready || this._faulted) {return true;}
+        if (!this._ready || this._faulted) {
+            return true;
+        }
 
         const output = outputs[0];
-        if (!output || output.length < 2) {return true;}
+        if (!output || output.length < 2) {
+            return true;
+        }
 
         const frames = output[0].length;
 
@@ -166,9 +171,9 @@ class ToasterProcessor extends AudioWorkletProcessor {
             if (output[1]) {
                 output[1].set(new Float32Array(mem, rightPtr, frames));
             }
-        } catch (err) {
+        } catch (error) {
             this._faulted = true;
-            this.port.postMessage({ type: 'error', message: String(err) });
+            this.port.postMessage({ type: 'error', message: String(error) });
         }
 
         return true;

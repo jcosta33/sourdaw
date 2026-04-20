@@ -1,5 +1,5 @@
-import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { createTimeSignatureChange } from '../../models/TimeSignatureMap';
+import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 
 export function addTimeSignatureChange(beat: number, numerator: number, denominator: number): void {
     const state = timeSignatureMapStore.value;

@@ -1,4 +1,5 @@
 import { getTrackStoreState, setTrackState } from '#/modules/Arrangement/useCases';
+
 import { type Clip } from '../../models/TrackViewTypes';
 import { getNotesForClip } from '../midiNoteCrud/getNotesForClip';
 import { setNotesForClip } from '../midiNoteCrud/setNotesForClip';

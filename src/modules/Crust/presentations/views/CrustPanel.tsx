@@ -1,23 +1,26 @@
 import { type ReactElement, useState } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
 import { ChevronDown } from 'lucide-react';
+
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
-import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
+import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
-import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
+import { useStore } from '#/infra/store/useStore';
+
+import { type CrustPatch } from '../../models/CrustPatch';
 import { crustStore, defaultCrustState, resetCrustMeters, setCrustUiLevel } from '../../stores/crustStore';
 import { loadCrustPatchWithAudio } from '../../useCases/crustParamBridge/loadCrustPatchWithAudio';
 import { setCrustParamWithAudio } from '../../useCases/crustParamBridge/setCrustParamWithAudio';
 import { CRUST_PRESETS } from '../../useCases/crustPresets';
-import { type CrustPatch } from '../../models/CrustPatch';
-import { CrustGainStrip } from '../components/CrustGainStrip';
-import { CrustWaveformDisplay } from '../components/CrustWaveformDisplay';
-import { CrustMeteringStrip } from '../components/CrustMeteringStrip';
 import { CrustControlZone } from '../components/CrustControlZone';
+import { CrustGainStrip } from '../components/CrustGainStrip';
+import { CrustMeteringStrip } from '../components/CrustMeteringStrip';
+import { CrustWaveformDisplay } from '../components/CrustWaveformDisplay';
 
 const STREAMING_PRESETS = [
     { id: 'spotify', label: 'Spotify / Apple Music', lufsTarget: -14, tpCeiling: -1.0, group: 'Streaming' },

@@ -1,12 +1,7 @@
 import { type CrustPatch } from '../../models/CrustPatch';
 import { setCrustParam } from '../../stores/crustStore';
 
-import {
-    encodeCrustValue,
-    findDeviceRefCrust,
-    flushCrustParam,
-    paramBatcher,
-} from './helpers';
+import { encodeCrustValue, findDeviceRefCrust, flushCrustParam, paramBatcher } from './helpers';
 
 export function setCrustParamWithAudio<K extends keyof CrustPatch>(
     deviceId: string,

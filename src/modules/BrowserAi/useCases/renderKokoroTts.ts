@@ -13,13 +13,14 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+
+import { type RenderProvenance } from '../models/RenderProgress';
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
 import { readModel, readRenderCache, writeRenderCache, computeRenderCacheKey } from '../repositories/storageManager';
-import { enqueueRender, markRenderComplete, updateRenderStatus } from '../stores/renderQueueStore';
-import { startActiveRender, clearActiveRender } from '../stores/inferenceProgressStore';
 import { resampleTo44100, applyFades } from '../services/audioResampler';
 import { textToKokoroInputIds } from '../services/kokoroTokenizer';
-import { type RenderProvenance } from '../models/RenderProgress';
+import { startActiveRender, clearActiveRender } from '../stores/inferenceProgressStore';
+import { enqueueRender, markRenderComplete, updateRenderStatus } from '../stores/renderQueueStore';
 
 const FADE_SAMPLES = 441; // 10 ms at 44.1 kHz
 const KOKORO_MODEL_ID = 'kokoro-82m-q8';
@@ -30,8 +31,7 @@ const KOKORO_NATIVE_SAMPLE_RATE = 24000;
  * Each voice file is a raw float32 binary of shape (-1, 1, 256).
  * Voice files are ~500 KB each; fetched once per voice and cached in memory.
  */
-const KOKORO_VOICES_BASE =
-    'https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices';
+const KOKORO_VOICES_BASE = 'https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices';
 
 /** In-memory cache: voiceId → full float32 array (N × 256 floats, reshaped as flat) */
 const voiceEmbeddingCache = new Map<string, Float32Array>();
@@ -62,7 +62,7 @@ async function fetchVoiceStyle(voiceId: string, tokenCount: number): Promise<Flo
     if (allEmbeddings.length < 256) {
         throw new Error(
             `Kokoro voice file for "${voiceId}" is empty or corrupted (${String(allEmbeddings.length)} floats). ` +
-            'Re-download the voice from AI Settings.'
+                'Re-download the voice from AI Settings.'
         );
     }
     const maxIdx = Math.floor(allEmbeddings.length / 256) - 1;
@@ -98,7 +98,7 @@ export const renderKokoroTts = inject({ logger, readModel, readRenderCache, writ
 
             // Deterministic cache key
             const textEncoder = new TextEncoder();
-            const inputData = textEncoder.encode(`${text}:${speakerId}:${String(speed)}`).buffer as ArrayBuffer;
+            const inputData = textEncoder.encode(`${text}:${speakerId}:${String(speed)}`).buffer;
             const cacheKey = await computeRenderCacheKey({
                 modelId: KOKORO_MODEL_ID,
                 inputData,
@@ -158,7 +158,9 @@ export const renderKokoroTts = inject({ logger, readModel, readRenderCache, writ
                 });
 
                 if (result.audio.length === 0) {
-                    throw new Error('Kokoro inference produced no audio — model may have received an invalid input sequence');
+                    throw new Error(
+                        'Kokoro inference produced no audio — model may have received an invalid input sequence'
+                    );
                 }
 
                 // 5. Resample 24 kHz → 44.1 kHz

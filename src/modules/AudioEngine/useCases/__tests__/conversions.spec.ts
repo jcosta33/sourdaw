@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { audioBufferToMp3 } from '../audioBufferToMp3';
+
 import { audioBufferToFlac } from '../audioBufferToFlac';
+import { audioBufferToMp3 } from '../audioBufferToMp3';
 import { audioBufferToWav } from '../audioBufferToWav';
 
 const mocks = vi.hoisted(() => ({

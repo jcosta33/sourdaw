@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ensureWhisperReady } from '../ensureWhisperReady';
+
 import { tauriInvoke } from '#/utils/tauriBridge';
+
+import { ensureWhisperReady } from '../ensureWhisperReady';
 
 vi.mock('#/utils/tauriBridge', () => ({
     tauriInvoke: vi.fn().mockResolvedValue(undefined),

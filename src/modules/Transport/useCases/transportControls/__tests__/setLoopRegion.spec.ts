@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { setLoopRegion } from '../setLoopRegion';
+
+import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
-import { defaultTransportState } from '../../../models/TransportState';
+import { setLoopRegion } from '../setLoopRegion';
 
 vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),

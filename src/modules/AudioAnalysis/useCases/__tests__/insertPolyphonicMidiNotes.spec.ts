@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { insertPolyphonicMidiNotes } from '../insertPolyphonicMidiNotes';
 
 const getTransportStateMock = vi.fn().mockReturnValue({ tempo: 120 });

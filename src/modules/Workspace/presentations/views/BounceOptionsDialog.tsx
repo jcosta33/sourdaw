@@ -1,18 +1,13 @@
 import { type ReactElement, useState } from 'react';
-import { Stack, Row, Grid } from '#/components/layout';
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogHeader,
-    DialogTitle,
-} from '#/components/ui/dialog';
-import { Button } from '#/components/ui/button';
+
 import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
-import { DawDialogSection } from '#/components/daw/DawDialogSection';
 import { DawDialogBody } from '#/components/daw/DawDialogBody';
 import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
+import { DawDialogSection } from '#/components/daw/DawDialogSection';
+import { Stack, Row, Grid } from '#/components/layout';
+import { Button } from '#/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '#/components/ui/dialog';
 import { type Track, type BounceOptions } from '#/modules/Arrangement';
 
 type BounceOptionsDialogProps = {

@@ -1,5 +1,6 @@
 import { Container } from '../Container';
 import { testOverrides } from '../internal/containerState';
+
 import type { InjectableFunction } from '../inject';
 
 export const injectDependencies = <TInjectable extends InjectableFunction, TMocks extends Record<string, any>>(
@@ -16,7 +17,7 @@ export const injectDependencies = <TInjectable extends InjectableFunction, TMock
 
     for (const [key, mockValue] of Object.entries(mocks)) {
         const originalDep = injectable._options?.lazy
-            ? Object.getOwnPropertyDescriptor(injectable._deps, key)?.get ?? injectable._deps[key]
+            ? (Object.getOwnPropertyDescriptor(injectable._deps, key)?.get ?? injectable._deps[key])
             : injectable._deps[key];
         testOverrides.set(originalDep, mockValue);
     }

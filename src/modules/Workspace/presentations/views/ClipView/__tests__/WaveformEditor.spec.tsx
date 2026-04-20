@@ -1,17 +1,58 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { WaveformEditor } from '../WaveformEditor';
 
 vi.mock('#/components/ui/button', () => ({
-    Button: ({ children, onClick, variant, size, className, 'aria-pressed': ariaPressed, 'aria-label': ariaLabel }: { children: React.ReactNode; onClick?: () => void; variant?: string; size?: string; className?: string; 'aria-pressed'?: boolean; 'aria-label'?: string }) => (
-        <button type="button" onClick={onClick} data-variant={variant} data-size={size} className={className} aria-pressed={ariaPressed} aria-label={ariaLabel}>
+    Button: ({
+        children,
+        onClick,
+        variant,
+        size,
+        className,
+        'aria-pressed': ariaPressed,
+        'aria-label': ariaLabel,
+    }: {
+        children: React.ReactNode;
+        onClick?: () => void;
+        variant?: string;
+        size?: string;
+        className?: string;
+        'aria-pressed'?: boolean;
+        'aria-label'?: string;
+    }) => (
+        <button
+            type="button"
+            onClick={onClick}
+            data-variant={variant}
+            data-size={size}
+            className={className}
+            aria-pressed={ariaPressed}
+            aria-label={ariaLabel}
+        >
             {children}
         </button>
     ),
 }));
 
 vi.mock('#/components/ui/slider', () => ({
-    Slider: ({ value, onValueChange, min, max, step, className, 'aria-label': ariaLabel }: { value: number[]; onValueChange: (v: number[]) => void; min?: number; max?: number; step?: number; className?: string; 'aria-label'?: string }) => (
+    Slider: ({
+        value,
+        onValueChange,
+        min,
+        max,
+        step,
+        className,
+        'aria-label': ariaLabel,
+    }: {
+        value: number[];
+        onValueChange: (v: number[]) => void;
+        min?: number;
+        max?: number;
+        step?: number;
+        className?: string;
+        'aria-label'?: string;
+    }) => (
         <input
             type="range"
             value={value[0]}
@@ -26,8 +67,18 @@ vi.mock('#/components/ui/slider', () => ({
 }));
 
 vi.mock('#/components/ui/disabled-feature-wrapper', () => ({
-    DisabledFeatureWrapper: ({ children, disabled, reason }: { children: React.ReactNode; disabled: boolean; reason: string }) => (
-        <div data-disabled={disabled} data-reason={reason}>{children}</div>
+    DisabledFeatureWrapper: ({
+        children,
+        disabled,
+        reason,
+    }: {
+        children: React.ReactNode;
+        disabled: boolean;
+        reason: string;
+    }) => (
+        <div data-disabled={disabled} data-reason={reason}>
+            {children}
+        </div>
     ),
 }));
 
@@ -43,7 +94,9 @@ vi.mock('#/utils/Styles/cn', () => ({
                 classes.push(input);
             } else if (typeof input === 'object' && input !== null && !Array.isArray(input)) {
                 for (const [key, value] of Object.entries(input)) {
-                    if (value) {classes.push(key);}
+                    if (value) {
+                        classes.push(key);
+                    }
                 }
             }
         }

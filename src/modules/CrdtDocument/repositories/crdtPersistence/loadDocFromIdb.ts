@@ -1,4 +1,5 @@
 import { type DocId } from '../../models/CrdtDocumentTypes';
+
 import { STORE_NAME, openDatabase } from './helpers';
 
 /** Load a single document from IndexedDB. */

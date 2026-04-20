@@ -1,5 +1,6 @@
-import { inject } from '#/infra/di/inject';
 import { eventBus } from '#/app/registerDependencies';
+import { inject } from '#/infra/di/inject';
+
 import { type NotifyPayload } from '../events/WorkspaceEvents';
 
 export const onNotification = inject({ eventBus })(

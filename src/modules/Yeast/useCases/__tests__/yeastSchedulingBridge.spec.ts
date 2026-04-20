@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { processYeastMidi } from '../yeastSchedulingBridge/processRealtimeMidiInput';
 
 const mocks = vi.hoisted(() => ({
@@ -31,12 +32,19 @@ describe('processYeastMidi', () => {
                 kind: { type: 'noteOn' as const, channel: 0, note: 60, velocity: 100 },
             },
         ];
-        
+
         mocks.getYeastRack.mockReturnValue({
             getProcessorIds: () => [],
             processBlock: vi.fn(),
         } as any);
-        mocks.transportStore.value = { tempo: 120, isPlaying: true, timeSignatureNumerator: 4, timeSignatureDenominator: 4, loopStart: 0, loopEnd: 0 };
+        mocks.transportStore.value = {
+            tempo: 120,
+            isPlaying: true,
+            timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
+            loopStart: 0,
+            loopEnd: 0,
+        };
         mocks.getAudioContext.mockReturnValue({
             sampleRate: 48000,
         } as any);

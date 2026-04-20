@@ -14,10 +14,11 @@
 
 import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
+import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
+
+import { createYeastWorkletNode, type YeastWorkletNodeResult } from '../engine/YeastWorkletNode';
 import { MidiRack } from '../useCases/MidiRack';
 import { type ProcessorType } from '../useCases/processorFactory';
-import { createYeastWorkletNode, type YeastWorkletNodeResult } from '../engine/YeastWorkletNode';
-import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
 export type YeastProcessorInfo = {
     id: string;
@@ -79,8 +80,8 @@ export async function getYeastWorkletNodeAsync(ctx: BaseAudioContext): Promise<Y
             }
             return node;
         })
-        .catch((err) => {
-            logger.warn('[Yeast] Worklet init failed, using main-thread fallback:', err);
+        .catch((error) => {
+            logger.warn('[Yeast] Worklet init failed, using main-thread fallback:', error);
             session._workletNodePromise = null;
             return null;
         });

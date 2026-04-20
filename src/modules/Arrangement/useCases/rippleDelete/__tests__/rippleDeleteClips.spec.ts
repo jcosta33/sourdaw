@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { rippleDeleteClips } from '../rippleDeleteClips';
 
 const mocks = vi.hoisted(() => ({
@@ -30,7 +31,7 @@ describe('rippleDeleteClips', () => {
         };
         mocks.planRippleDelete.mockReturnValue(mockPlan);
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', clips: [{ id: 'c1' }, { id: 'c2' }] }]
+            tracks: [{ id: 't1', clips: [{ id: 'c1' }, { id: 'c2' }] }],
         });
 
         const result = rippleDeleteClips({ trackId: 't1', clipIds: ['c1'] });

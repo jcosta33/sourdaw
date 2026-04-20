@@ -1,15 +1,19 @@
 import { type ReactElement, useState } from 'react';
-import { cn } from '#/utils/Styles/cn';
+
+import { ChevronDown, ChevronRight } from 'lucide-react';
+
+import { useStore } from '#/infra/store/useStore';
+import { setAutomationMode } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { addAutomationLane, toggleLaneCollapsed } from '#/modules/Automation/useCases';
-import { ChevronDown, ChevronRight } from 'lucide-react';
-import { AutomationLaneRow } from './AutomationLaneRow';
-import { AutomationAddLaneControl, AutomationModeControl } from './AutomationControls';
-import { getAutomatableParams } from '../../helpers/automationViewHelpers';
-import { type AutomationMode } from '../../../models/TrackViewTypes';
+import { cn } from '#/utils/Styles/cn';
+
 import { type AutomationLane } from '../../../models/AutomationViewTypes';
-import { setAutomationMode } from '#/modules/Arrangement/useCases';
-import { useStore } from '#/infra/store/useStore';
+import { type AutomationMode } from '../../../models/TrackViewTypes';
+import { getAutomatableParams } from '../../helpers/automationViewHelpers';
+
+import { AutomationAddLaneControl, AutomationModeControl } from './AutomationControls';
+import { AutomationLaneRow } from './AutomationLaneRow';
 
 type TrackAutomationSectionProps = {
     trackId: string;

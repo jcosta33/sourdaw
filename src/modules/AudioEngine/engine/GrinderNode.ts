@@ -2,11 +2,13 @@
  * GrinderNode — AudioWorkletNode wrapper for the Grinder amp simulator.
  */
 
-import grinderProcessorUrl from '../services/grinderProcessor.ts?worker&url';
-import { telemetryAllocator, GRINDER_IDX, type TelemetrySlot } from './telemetryAllocator';
 import { logger } from '#/infra/logger/appLogger';
-import { createReadyHandshake, ensureWorkletRegistered } from './workletInitShared';
+
+import grinderProcessorUrl from '../services/grinderProcessor.ts?worker&url';
+
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
+import { telemetryAllocator, GRINDER_IDX, type TelemetrySlot } from './telemetryAllocator';
+import { createReadyHandshake, ensureWorkletRegistered } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
@@ -111,7 +113,9 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
                 cancelAnimationFrame(meterRafId);
                 meterRafId = null;
             }
-            if (!slot) {return;}
+            if (!slot) {
+                return;
+            }
             const view = slot.view;
             const poll = () => {
                 cb({

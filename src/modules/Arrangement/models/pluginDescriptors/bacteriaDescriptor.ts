@@ -122,7 +122,7 @@ export const BACTERIA_DESCRIPTOR: PluginDescriptor = {
         id: p.id,
         deviceId: 'bacteria',
         name: p.label,
-        type: (p.step === 1 ? 'int' : 'float') as 'float' | 'int',
+        type: p.step === 1 ? 'int' : 'float',
         value: p.default,
         defaultValue: p.default,
         minValue: p.min,

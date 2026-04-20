@@ -48,9 +48,13 @@ class RecordingWorkletProcessor extends AudioWorkletProcessor {
     }
 
     process(inputs) {
-        if (!this._active || !this._ring || !this._writeHead) {return true;}
+        if (!this._active || !this._ring || !this._writeHead) {
+            return true;
+        }
         const input = inputs[0]?.[0];
-        if (!input || input.length === 0) {return true;}
+        if (!input || input.length === 0) {
+            return true;
+        }
 
         const head = Atomics.load(this._writeHead, 0);
         const ringSize = this._ringSize;

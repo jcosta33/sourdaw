@@ -1,11 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import {
+    captureArrangementToScratchPad,
+    clearScratchPad,
+    commitScratchPadToArrangement,
+} from '#/modules/Arrangement/useCases';
+
+import { workspaceStore } from '../../../stores/workspaceStore';
 import { handleCaptureScratchPad } from '../handleCaptureScratchPad';
 import { handleClearScratchPad } from '../handleClearScratchPad';
 import { handleCommitScratchPad } from '../handleCommitScratchPad';
 import { handleToggleScratchPad } from '../handleToggleScratchPad';
-
-import { captureArrangementToScratchPad, clearScratchPad, commitScratchPadToArrangement } from '#/modules/Arrangement/useCases';
-import { workspaceStore } from '../../../stores/workspaceStore';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     captureArrangementToScratchPad: vi.fn(),
@@ -17,8 +22,12 @@ vi.mock('../../../stores/workspaceStore', () => {
     const internal = { value: { scratchPadOpen: false } };
     return {
         workspaceStore: {
-            get value() { return internal.value; },
-            set: vi.fn((v) => { internal.value = v; }),
+            get value() {
+                return internal.value;
+            },
+            set: vi.fn((v) => {
+                internal.value = v;
+            }),
         },
     };
 });
@@ -33,7 +42,7 @@ describe('Workspace Scratch Pad Handlers', () => {
         it('should capture arrangement and open the pad', () => {
             workspaceStore.set({ scratchPadOpen: false } as any);
             handleCaptureScratchPad.execute({ type: 'captureScratchPad', payload: {} });
-            
+
             expect(captureArrangementToScratchPad).toHaveBeenCalled();
             expect(workspaceStore.set).toHaveBeenCalledWith(expect.objectContaining({ scratchPadOpen: true }));
         });
@@ -43,7 +52,7 @@ describe('Workspace Scratch Pad Handlers', () => {
             vi.mocked(workspaceStore.set).mockClear();
 
             handleCaptureScratchPad.execute({ type: 'captureScratchPad', payload: {} });
-            
+
             expect(captureArrangementToScratchPad).toHaveBeenCalled();
             expect(workspaceStore.set).not.toHaveBeenCalled();
         });

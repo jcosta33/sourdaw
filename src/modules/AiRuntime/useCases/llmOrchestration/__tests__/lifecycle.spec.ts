@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { initEngine } from '../lifecycle/initEngine';
-import { llmStatusStore } from '../../../stores/llmStatusStore';
-import { resolveBackend } from '../backendResolution/helpers';
+
+import { isCloudAvailable } from '../../../repositories/cloudLlm/keyManagement';
 import { initNativeEngine } from '../../../repositories/nativeEngine/lifecycle';
 import { initWebLlmEngine } from '../../../repositories/webLlm/engineLifecycle';
-import { isCloudAvailable } from '../../../repositories/cloudLlm/keyManagement';
+import { llmStatusStore } from '../../../stores/llmStatusStore';
+import { resolveBackend } from '../backendResolution/helpers';
+import { initEngine } from '../lifecycle/initEngine';
 
 const { mockLogger } = vi.hoisted(() => ({
     mockLogger: {
@@ -12,7 +13,7 @@ const { mockLogger } = vi.hoisted(() => ({
         info: vi.fn(),
         error: vi.fn(),
         debug: vi.fn(),
-    }
+    },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({

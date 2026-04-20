@@ -1,17 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { defaultTransportState } from '#/modules/Transport/models/TransportState';
+
 import { setPlayheadFromClick } from '../setPlayheadFromClick';
 
 const mockGetTransportState = vi.fn();
 const mockUpdateTransportState = vi.fn();
 vi.mock('#/modules/Transport/useCases', () => ({
     getTransportState: () => mockGetTransportState(),
-    updateTransportState: (...args: any[]) => mockUpdateTransportState(...args)
+    updateTransportState: (...args: any[]) => mockUpdateTransportState(...args),
 }));
 
 let mockTimelineViewValue: any = null;
 vi.mock('../../../stores/timelineViewStore', () => ({
-    timelineViewStore: { get value() { return mockTimelineViewValue; } }
+    timelineViewStore: {
+        get value() {
+            return mockTimelineViewValue;
+        },
+    },
 }));
 
 describe('setPlayheadFromClick', () => {

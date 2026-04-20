@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleSetWorkspaceMode } from '../handleSetWorkspaceMode';
-import { handleRemoveAutomationPoint } from '../handleRemoveAutomationPoint';
-import { handleImportMidiFile } from '../handleImportMidiFile';
 
 vi.mock('../../../useCases/setWorkspaceMode', () => ({
     setWorkspaceMode: vi.fn(),
@@ -28,10 +27,13 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
 
-import { setWorkspaceMode } from '../../../useCases/setWorkspaceMode';
 import { getAutomationStoreState, removeAutomationPoint } from '#/modules/Automation/useCases';
 import { pickFiles } from '#/modules/Project/repositories/nativeFileDialog/pickFiles';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { setWorkspaceMode } from '../../../useCases/setWorkspaceMode';
+import { handleImportMidiFile } from '../handleImportMidiFile';
+import { handleRemoveAutomationPoint } from '../handleRemoveAutomationPoint';
 
 describe('workspace handlers', () => {
     beforeEach(() => {

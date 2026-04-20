@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { getAudioDevices } from '#/modules/AudioEngine/useCases';
+
 import { setTrackInput } from '../../../../useCases/setTrackInput';
 import { InputSelector } from '../InputSelector';
 

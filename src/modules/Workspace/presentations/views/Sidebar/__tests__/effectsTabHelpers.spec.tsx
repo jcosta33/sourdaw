@@ -1,7 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { Music2 } from 'lucide-react';
+import { describe, it, expect, vi } from 'vitest';
+
 import { PluginDummy } from '#/modules/Arrangement/__tests__/PluginDummy';
+
 import { NavCard, EffectItem, UnimplementedBadge, SoonBadge } from '../effectsTabHelpers';
 
 describe('effectsTabHelpers components', () => {

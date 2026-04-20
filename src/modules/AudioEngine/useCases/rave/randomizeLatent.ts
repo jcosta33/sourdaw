@@ -1,5 +1,6 @@
-import { type LatentVector } from '../../stores/rave';
 import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRandom';
+
+import { type LatentVector } from '../../stores/rave';
 
 /**
  * Randomize latent vectors with controlled temperature.

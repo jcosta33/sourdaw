@@ -1,5 +1,6 @@
-import { automationStore } from '../../stores/automationStore';
 import { interpolateAutomationValue } from '#/modules/Arrangement/useCases';
+
+import { automationStore } from '../../stores/automationStore';
 
 type AutomationLane = NonNullable<typeof automationStore.value>['lanes'][number];
 
@@ -15,7 +16,7 @@ const _laneByIdCache = new Map<string, AutomationLane>();
 export function getAutomationValueAtBeat(
     laneId: string,
     beat: number,
-    _visited: Set<string> = new Set(),
+    _visited: Set<string> = new Set()
 ): number | null {
     const state = automationStore.value;
     if (!state) {

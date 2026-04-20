@@ -1,21 +1,23 @@
 import { type ReactElement } from 'react';
+
 import { type Track } from '../../../models/TrackViewTypes';
-import { TrackHeaderSection } from './TrackHeaderSection';
-import { TrackAlternativesSection } from './TrackAlternativesSection';
-import { TrackLevelSection } from './TrackLevelSection';
-import { TrackDevicesSection } from './TrackDevicesSection';
-import { TrackMidiFxSection } from './TrackMidiFxSection';
-import { TrackAutomationSection } from './TrackAutomationSection';
-import { SendsEditor } from './SendsEditor';
-import { TrackVcaSection } from './TrackVcaSection';
-import { TrackMidiOutputSection } from './TrackMidiOutputSection';
-import { TrackRoutingSection } from './TrackRoutingSection';
-import { TrackClipsSection } from './TrackClipsSection';
-import { TakesSection } from './TakesSection';
-import { SignalFlowSection } from './SignalFlowSection';
+
 import { MasterVisualizationsSection } from './MasterVisualizationsSection';
+import { SendsEditor } from './SendsEditor';
+import { SignalFlowSection } from './SignalFlowSection';
+import { TakesSection } from './TakesSection';
+import { TrackAlternativesSection } from './TrackAlternativesSection';
+import { TrackAutomationSection } from './TrackAutomationSection';
+import { TrackClipsSection } from './TrackClipsSection';
+import { TrackDevicesSection } from './TrackDevicesSection';
+import { TrackHeaderSection } from './TrackHeaderSection';
 import { TrackLatencySection } from './TrackLatencySection';
+import { TrackLevelSection } from './TrackLevelSection';
+import { TrackMidiFxSection } from './TrackMidiFxSection';
+import { TrackMidiOutputSection } from './TrackMidiOutputSection';
 import { TrackNotesSection } from './TrackNotesSection';
+import { TrackRoutingSection } from './TrackRoutingSection';
+import { TrackVcaSection } from './TrackVcaSection';
 
 type TrackInspectorProps = {
     track: Track;

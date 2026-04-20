@@ -1,6 +1,8 @@
 import { addMidiNote } from '#/modules/MIDI/useCases';
+
 import { addTrack } from '../addTrack';
 import { addClip } from '../clip/addClip';
+
 import { getBufferForClip } from './helpers';
 
 export async function audioToMidi(clipId: string): Promise<void> {

@@ -1,11 +1,7 @@
 import { createSampleDatabaseError } from '#/modules/SoundLibrary/errors/SampleDatabaseError';
-import { sampleDatabaseStore } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
 import { type SampleEntry } from '#/modules/SoundLibrary/models/SampleEntry';
-import {
-    autoTagSample,
-    generatePathHash,
-    getNextSampleId,
-} from '#/modules/SoundLibrary/services/sampleTaggingHelpers';
+import { autoTagSample, generatePathHash, getNextSampleId } from '#/modules/SoundLibrary/services/sampleTaggingHelpers';
+import { sampleDatabaseStore } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
 
 export function addSample(
     path: string,

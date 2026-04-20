@@ -6,6 +6,7 @@
  * vertically to change resonance.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type FilterResponseProps = {
@@ -56,7 +57,7 @@ const filterMag = (f: number, fc: number, Q: number, type: number): number => {
 const freqToX = (freq: number, w: number): number =>
     (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * w;
 
-const xToFreq = (x: number, w: number): number => MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, x / w);
+const xToFreq = (x: number, w: number): number => MIN_FREQ * (MAX_FREQ / MIN_FREQ) ** (x / w);
 
 export const FilterResponse = ({
     cutoff,
@@ -131,7 +132,7 @@ export const FilterResponse = ({
         const points: [number, number][] = [];
 
         for (let i = 0; i <= width; i++) {
-            const freq = MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, i / width);
+            const freq = MIN_FREQ * (MAX_FREQ / MIN_FREQ) ** (i / width);
             const db = filterMag(freq, cutoff, resonance, type);
             const clamped = Math.max(-DB_RANGE, Math.min(DB_RANGE, db));
             const y = zeroY - (clamped / DB_RANGE) * zeroY;

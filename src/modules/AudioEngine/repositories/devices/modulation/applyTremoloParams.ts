@@ -2,8 +2,8 @@ import { type OfflineDeviceNode } from '../types';
 
 export function applyTremoloParams(dn: OfflineDeviceNode, params: Record<string, number>): void {
     const nn = dn.namedNodes;
-    const lfoT = (nn?.['lfo'] ?? dn.nodes[2]) as OscillatorNode;
-    const lfoDepthT = (nn?.['lfoDepth'] ?? dn.nodes[3]) as GainNode;
+    const lfoT = (nn?.lfo ?? dn.nodes[2]) as OscillatorNode;
+    const lfoDepthT = (nn?.lfoDepth ?? dn.nodes[3]) as GainNode;
     if (params['trem-rate'] !== undefined) {
         lfoT.frequency.value = params['trem-rate'];
     }

@@ -1,4 +1,5 @@
 import { isTauri } from '#/utils/tauriBridge';
+
 import type { DialogFilter } from './helpers';
 
 type SaveFileOptions = {

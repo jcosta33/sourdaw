@@ -1,4 +1,5 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
+
 import { cn } from '#/utils/Styles/cn';
 
 type DawAnalysisCardProps = HTMLAttributes<HTMLDivElement> & {

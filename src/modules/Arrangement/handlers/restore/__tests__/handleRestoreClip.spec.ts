@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleRestoreClip } from '../handleRestoreClip';
 
 const mocks = vi.hoisted(() => ({
@@ -18,9 +19,11 @@ vi.mock('../../../useCases/rippleDelete/undoRippleDelete', () => ({
 
 vi.mock('#/modules/MIDI/stores', () => ({
     midiStore: {
-        get value() { return mocks.midiStoreValue.value; },
+        get value() {
+            return mocks.midiStoreValue.value;
+        },
         set: mocks.midiStoreSet,
-    }
+    },
 }));
 
 describe('handleRestoreClip', () => {
@@ -95,9 +98,9 @@ describe('handleRestoreClip', () => {
 
         expect(mocks.midiStoreSet).toHaveBeenCalledTimes(1);
         const args = mocks.midiStoreSet.mock.calls[0][0];
-        expect(args.notesByClipId['c1']).toEqual([{ pitch: 60 }]);
-        expect(args.ccByClipId['c1']).toEqual([{ value: 1 }]);
-        expect(args.pitchBendByClipId['c1']).toEqual([{ value: 0.5 }]);
+        expect(args.notesByClipId.c1).toEqual([{ pitch: 60 }]);
+        expect(args.ccByClipId.c1).toEqual([{ value: 1 }]);
+        expect(args.pitchBendByClipId.c1).toEqual([{ value: 0.5 }]);
     });
 
     it('provides a description', () => {

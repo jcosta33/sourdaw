@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type PunchRecordingState } from '../../../stores/punchRecordingStore';
 import { startBackgroundCapture } from '../startBackgroundCapture';
 
@@ -33,9 +34,9 @@ describe('startBackgroundCapture', () => {
 
     it('appends capture when enabled', () => {
         mockPunchRecordingStore.value = baseState({ enabled: true });
-        
+
         startBackgroundCapture('t1', 0);
-        
+
         expect(mockPunchRecordingStore.set).toHaveBeenCalledTimes(1);
         const next = mockPunchRecordingStore.set.mock.calls[0]![0] as PunchRecordingState;
         expect(next.captures).toHaveLength(1);

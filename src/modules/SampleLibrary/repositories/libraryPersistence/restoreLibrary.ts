@@ -1,6 +1,7 @@
 import { type LibraryRoot, type SampleRecord } from '../../models/LibraryTypes';
 import { addLibraryRoot, addSamples } from '../../stores/libraryStore';
 import { buildFolderTree } from '../../useCases/buildFolderTree';
+
 import { HANDLES_STORE, ROOTS_STORE, SAMPLES_STORE, openDb } from './helpers';
 
 /**

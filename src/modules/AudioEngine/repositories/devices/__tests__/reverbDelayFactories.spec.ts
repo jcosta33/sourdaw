@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { createMockAudioContext, MockAudioBuffer } from '../../../../../helpers/__tests__/audioContext.mock';
 import { createDelay } from '../reverbDelay/createDelay';
 import { createReverb } from '../reverbDelay/createReverb';
-import { createMockAudioContext, MockAudioBuffer } from '../../../../../helpers/__tests__/audioContext.mock';
 
 vi.stubGlobal('AudioBuffer', MockAudioBuffer);
 

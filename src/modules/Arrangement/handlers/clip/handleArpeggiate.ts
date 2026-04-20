@@ -1,5 +1,5 @@
-import { createHandler } from '#/utils/createHandler';
 import { arpeggiate, type ArpPattern, type ArpRate } from '#/modules/MIDI/useCases';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleArpeggiate = createHandler<'arpeggiate'>({
     execute: (a) => {

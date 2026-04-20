@@ -8,10 +8,12 @@
  * does NOT import from useCases/ directly (DDD: components/ is private).
  */
 import { type ReactElement } from 'react';
+
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { Fader } from '#/components/daw/Fader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import { type MicPositionState } from '../../models/LevainPatch';
 
 type MicBlendSliderProps = {

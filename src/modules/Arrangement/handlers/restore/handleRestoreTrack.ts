@@ -1,6 +1,7 @@
-import { createHandler } from '#/utils/createHandler';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
+import { createHandler } from '#/utils/createHandler';
+
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackState } from '../../useCases/setTrackState';

@@ -7,15 +7,13 @@ import {
     useEffect,
     useState,
 } from 'react';
-import { Button } from '#/components/ui/button';
-import { Slider } from '#/components/ui/slider';
-import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper';
+
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
-import { cn } from '#/utils/Styles/cn';
-import { resolveToken } from '#/utils/UI/resolveToken';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { decodeAudioFile, isTauri } from '#/modules/AudioEngine/useCases';
+import { Button } from '#/components/ui/button';
+import { DisabledFeatureWrapper } from '#/components/ui/disabled-feature-wrapper';
+import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
+import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import {
     replaceClipAudioBuffer,
@@ -29,9 +27,13 @@ import {
     removeWarpMarker,
     moveWarpMarker,
 } from '#/modules/Arrangement/useCases';
-import { handleAiDenoiseClip, handleStemSeparationPreview } from '#/modules/AiGeneration/useCases';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { decodeAudioFile, isTauri } from '#/modules/AudioEngine/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+import { cn } from '#/utils/Styles/cn';
+import { resolveToken } from '#/utils/UI/resolveToken';
+
 import { PitchEditor } from './PitchEditor';
 
 // Consumer-local duplicate of Arrangement's WarpState shape (AGENTS.md §95 — model isolation).
@@ -407,7 +409,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                         <span className="text-sm font-medium text-primary">Drop audio file here</span>
                     </div>
                 ) : null}
-                
+
                 <PitchEditor clipId={clipId} />
             </div>
 

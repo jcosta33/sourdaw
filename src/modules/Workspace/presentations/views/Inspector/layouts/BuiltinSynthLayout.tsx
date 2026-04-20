@@ -5,16 +5,19 @@
  * Advanced (collapsible): Osc2, sub/noise, modulation, velocity, stereo
  */
 import { type ReactElement, useState } from 'react';
+
 import { ChevronDown } from 'lucide-react';
+
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
-import { SectionHeader } from '../SectionHeader';
-import { DeviceParameterControl } from '../DeviceParameterControl';
 import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
-import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
+import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
+
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
+import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
+import { DeviceParameterControl } from '../DeviceParameterControl';
+import { SectionHeader } from '../SectionHeader';
 
 const WAVE_NAMES = ['sine', 'triangle', 'sawtooth', 'square'] as const;
 
@@ -86,8 +89,8 @@ const Collapsible = ({
 
 const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {
     const pv = device.parameterValues;
-    const wf1Idx = Math.round(pv['waveform'] ?? 2);
-    const wf2Idx = Math.round(pv['osc2Waveform'] ?? 2);
+    const wf1Idx = Math.round(pv.waveform ?? 2);
+    const wf2Idx = Math.round(pv.osc2Waveform ?? 2);
     const waveform = WAVE_NAMES[wf1Idx] ?? 'sawtooth';
     const osc2Waveform = WAVE_NAMES[wf2Idx] ?? 'sawtooth';
 
@@ -106,8 +109,8 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
                     <OscillatorWaveform
                         waveform={waveform}
                         osc2Waveform={osc2Waveform}
-                        osc2Mix={pv['osc2Mix'] ?? 0}
-                        detune={pv['osc2Detune'] ?? 0}
+                        osc2Mix={pv.osc2Mix ?? 0}
+                        detune={pv.osc2Detune ?? 0}
                         width={200}
                         height={60}
                     />
@@ -120,9 +123,9 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
                 <SectionHeader title="Filter" />
                 <div className="flex justify-center mb-3">
                     <FilterResponse
-                        cutoff={pv['filterCutoff'] ?? 5000}
-                        resonance={pv['filterResonance'] ?? 1}
-                        filterType={pv['filterType'] ?? 0}
+                        cutoff={pv.filterCutoff ?? 5000}
+                        resonance={pv.filterResonance ?? 1}
+                        filterType={pv.filterType ?? 0}
                         width={200}
                         height={70}
                         onParamChange={change}
@@ -136,10 +139,10 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
                 <SectionHeader title="Envelope" />
                 <div className="flex justify-center mb-3">
                     <ADSREnvelope
-                        attack={pv['attack'] ?? 0.01}
-                        decay={pv['decay'] ?? 0.2}
-                        sustain={pv['sustain'] ?? 0.7}
-                        release={pv['release'] ?? 0.3}
+                        attack={pv.attack ?? 0.01}
+                        decay={pv.decay ?? 0.2}
+                        sustain={pv.sustain ?? 0.7}
+                        release={pv.release ?? 0.3}
                         width={200}
                         height={80}
                         onParamChange={change}

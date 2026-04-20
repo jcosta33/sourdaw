@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { FilterSection } from '../FilterSection';
+import { describe, it, expect, vi } from 'vitest';
+
 import { DEFAULT_PATCH } from '../../../models/FermenterPatch';
+import { FilterSection } from '../FilterSection';
 
 describe('FilterSection', () => {
     it('should render', () => {

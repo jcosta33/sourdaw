@@ -2,7 +2,9 @@
  * Shared presentational primitives used across all preferences sections.
  */
 import { type ReactElement, useState, useEffect, useRef } from 'react';
+
 import { Button } from '#/components/ui/button';
+
 import { GRID_SNAP_OPTIONS, type GridSnapOption } from '../../models/Preferences';
 import { CaptureKeyButton } from '../components/CaptureKeyButton';
 

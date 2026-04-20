@@ -33,9 +33,9 @@ vi.mock('../../stores/crustStore', () => ({
     loadCrustPatch: vi.fn(),
 }));
 
-import { setCrustParamWithAudio } from '../crustParamBridge/setCrustParamWithAudio';
-import { loadCrustPatchWithAudio } from '../crustParamBridge/loadCrustPatchWithAudio';
 import { DEFAULT_CRUST_PATCH } from '../../models/CrustPatch';
+import { loadCrustPatchWithAudio } from '../crustParamBridge/loadCrustPatchWithAudio';
+import { setCrustParamWithAudio } from '../crustParamBridge/setCrustParamWithAudio';
 
 describe('crustParamBridge', () => {
     beforeEach(() => {

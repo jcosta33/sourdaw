@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { audioDeviceStore } from '../helpers';
+
 import { getSelectedInputId } from '../getSelectedInputId';
+import { audioDeviceStore } from '../helpers';
 
 describe('getSelectedInputId', () => {
     beforeEach(() => {

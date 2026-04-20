@@ -1,5 +1,5 @@
-import { automationStore } from '../../stores/automationStore';
 import { type AutomationPoint } from '../../models/Automation';
+import { automationStore } from '../../stores/automationStore';
 
 export function addAutomationPoint(laneId: string, point: AutomationPoint): void {
     const state = automationStore.value;

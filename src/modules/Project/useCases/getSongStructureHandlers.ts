@@ -1,4 +1,5 @@
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
+
 import { handleDetectSongStructure } from '../handlers/songStructure/handleDetectSongStructure';
 
 type SongStructureAppAction = Extract<AppAction, { type: 'detectSongStructure' }>;

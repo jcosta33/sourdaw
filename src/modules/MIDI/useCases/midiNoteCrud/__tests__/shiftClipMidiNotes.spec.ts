@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { shiftClipMidiNotes } from '../shiftClipMidiNotes';
 
 const mocks = vi.hoisted(() => ({
@@ -8,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../stores/midiStore', () => ({
     midiStore: {
-        get value() { return mocks.midiStoreValue.value; },
+        get value() {
+            return mocks.midiStoreValue.value;
+        },
         set: mocks.midiStoreSet,
-    }
+    },
 }));
 
 describe('shiftClipMidiNotes', () => {
@@ -32,11 +35,13 @@ describe('shiftClipMidiNotes', () => {
 
         shiftClipMidiNotes('c1', 4);
 
-        expect(mocks.midiStoreSet).toHaveBeenCalledWith(expect.objectContaining({
-            notesByClipId: { c1: [{ startBeat: 4, pitch: 60 }] },
-            ccByClipId: { c1: [{ beat: 4, controller: 1, value: 100 }] },
-            pitchBendByClipId: { c1: [{ beat: 4, value: 0.5 }] },
-        }));
+        expect(mocks.midiStoreSet).toHaveBeenCalledWith(
+            expect.objectContaining({
+                notesByClipId: { c1: [{ startBeat: 4, pitch: 60 }] },
+                ccByClipId: { c1: [{ beat: 4, controller: 1, value: 100 }] },
+                pitchBendByClipId: { c1: [{ beat: 4, value: 0.5 }] },
+            })
+        );
     });
 
     it('should not call set when the clip has no MIDI data', () => {

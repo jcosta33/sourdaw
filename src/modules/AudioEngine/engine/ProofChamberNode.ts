@@ -4,6 +4,7 @@
  */
 
 import proofChamberProcessorUrl from '../services/proofChamberProcessor.ts?worker&url';
+
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/proof-chamber/proof_chamber_bg.wasm';

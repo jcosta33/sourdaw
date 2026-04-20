@@ -8,6 +8,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+
 import { llmStatusStore } from '../../stores/llmStatusStore';
 
 export const SIDECAR_PORT = parseInt((import.meta.env.VITE_LLM_SIDECAR_PORT as string | undefined) ?? '8847', 10);

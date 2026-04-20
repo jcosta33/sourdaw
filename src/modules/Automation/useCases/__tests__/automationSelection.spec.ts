@@ -1,10 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { deleteSelectedPoints } from '../automationSelection/deleteSelectedPoints';
 
 const { mocks } = vi.hoisted(() => ({
     mocks: {
         pushUndoEntry: vi.fn(),
-    }
+    },
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => {

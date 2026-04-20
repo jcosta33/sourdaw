@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleToggleNodeView } from '../handleToggleNodeView';
 
 vi.mock('#/modules/Plugin/useCases', () => ({

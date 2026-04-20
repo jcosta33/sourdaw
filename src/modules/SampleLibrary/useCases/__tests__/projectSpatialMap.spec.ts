@@ -1,19 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { projectSpatialMap } from '#/modules/SampleLibrary/useCases/projectSpatialMap';
-import { libraryStore } from '#/modules/SampleLibrary/stores/libraryStore';
+
 import { embeddingStore } from '#/modules/SampleLibrary/stores/embeddingStore';
+import { libraryStore } from '#/modules/SampleLibrary/stores/libraryStore';
+import { projectSpatialMap } from '#/modules/SampleLibrary/useCases/projectSpatialMap';
 
 describe('projectSpatialMap', () => {
     beforeEach(() => {
         embeddingStore.set({
-            embeddings: new Map([
-                ['s1', new Float32Array([1, 1])],
-            ]),
+            embeddings: new Map([['s1', new Float32Array([1, 1])]]),
             modelStatus: 'ready',
         });
         libraryStore.set({
             samples: [
-                { id: 's1', displayName: 'S1', sync: { status: 'indexed', exists: true }, format: {}, tags: [], favorite: false, libraryRootId: 'r1', relativePath: 'p1', folder: '', ext: 'wav' }
+                {
+                    id: 's1',
+                    displayName: 'S1',
+                    sync: { status: 'indexed', exists: true },
+                    format: {},
+                    tags: [],
+                    favorite: false,
+                    libraryRootId: 'r1',
+                    relativePath: 'p1',
+                    folder: '',
+                    ext: 'wav',
+                },
             ],
             roots: [],
             folderTrees: {},

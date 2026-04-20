@@ -1,16 +1,16 @@
 import { type ReactElement, useState, useEffect } from 'react';
+
 import { Keyboard } from 'lucide-react';
+
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
-import {
-    shortcutStore,
-    type ShortcutDefinition,
-    type ShortcutStoreState,
-} from '#/modules/Command/stores';
+import { shortcutStore, type ShortcutDefinition, type ShortcutStoreState } from '#/modules/Command/stores';
 import { cn } from '#/utils/Styles/cn';
+
 import { CaptureKeyButton } from '../components/CaptureKeyButton';
+
 import { SectionTitle } from './preferencesShared';
 
 // §10.2 item 1 — This section used to read from a second, parallel
@@ -159,24 +159,17 @@ export const ShortcutsSection = (): ReactElement => {
         bucket.sort((a, b) => a.label.localeCompare(b.label));
     }
 
-    const categories = [...grouped.keys()].sort(
-        (a, b) => (CATEGORY_ORDER[a] ?? 999) - (CATEGORY_ORDER[b] ?? 999)
-    );
+    const categories = [...grouped.keys()].sort((a, b) => (CATEGORY_ORDER[a] ?? 999) - (CATEGORY_ORDER[b] ?? 999));
 
     const editingDefinition = editingId
-        ? state.definitions.find((definition) => definition.id === editingId) ?? null
+        ? (state.definitions.find((definition) => definition.id === editingId) ?? null)
         : null;
 
     return (
         <>
             <div className="flex items-center justify-between mb-4">
                 <SectionTitle icon={<Keyboard className="size-4" />} title="Keyboard Shortcuts" />
-                <Button
-                    variant="ghost"
-                    size="xs"
-                    onClick={resetMappings}
-                    className="text-[10px] text-muted-foreground"
-                >
+                <Button variant="ghost" size="xs" onClick={resetMappings} className="text-[10px] text-muted-foreground">
                     Reset to Defaults
                 </Button>
             </div>

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { createMockAudioContext } from '../../../../../../helpers/__tests__/audioContext.mock';
 import { createLufsMeter } from '../createLufsMeter';
 

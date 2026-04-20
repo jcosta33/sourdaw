@@ -1,5 +1,7 @@
 import { type ReactElement } from 'react';
+
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';

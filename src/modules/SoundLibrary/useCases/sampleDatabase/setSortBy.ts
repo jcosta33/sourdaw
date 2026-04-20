@@ -1,5 +1,5 @@
-import { sampleDatabaseStore } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
 import { type SampleDatabaseState } from '#/modules/SoundLibrary/models/SampleEntry';
+import { sampleDatabaseStore } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
 
 export function setSortBy(sortBy: SampleDatabaseState['sortBy'], direction?: 'asc' | 'desc'): void {
     const state = sampleDatabaseStore.value;

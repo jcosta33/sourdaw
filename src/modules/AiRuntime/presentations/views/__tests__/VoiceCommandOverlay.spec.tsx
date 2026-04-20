@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { VoiceCommandOverlay } from '../VoiceCommandOverlay';
 
 // Mock external dependencies
@@ -47,7 +48,7 @@ describe('VoiceCommandOverlay', () => {
             voiceMode: 'browser',
             stopListening: vi.fn(),
         });
-        
+
         const { container } = render(<VoiceCommandOverlay />);
         expect(container.firstChild).not.toBeNull();
     });
@@ -62,7 +63,7 @@ describe('VoiceCommandOverlay', () => {
             voiceMode: 'whisper',
             stopListening: vi.fn(),
         });
-        
+
         render(<VoiceCommandOverlay />);
         expect(screen.getByText('Transcribing...')).toBeInTheDocument();
     });
@@ -77,7 +78,7 @@ describe('VoiceCommandOverlay', () => {
             voiceMode: 'browser',
             stopListening: vi.fn(),
         });
-        
+
         render(<VoiceCommandOverlay />);
         expect(screen.getByText('Microphone access denied')).toBeInTheDocument();
     });
@@ -92,7 +93,7 @@ describe('VoiceCommandOverlay', () => {
             voiceMode: 'browser',
             stopListening: vi.fn(),
         });
-        
+
         render(<VoiceCommandOverlay />);
         expect(screen.getByText('Listening...')).toBeInTheDocument();
     });
@@ -107,7 +108,7 @@ describe('VoiceCommandOverlay', () => {
             voiceMode: 'whisper',
             stopListening: vi.fn(),
         });
-        
+
         render(<VoiceCommandOverlay />);
         expect(screen.getByText('Recording...')).toBeInTheDocument();
     });
@@ -123,7 +124,7 @@ describe('VoiceCommandOverlay', () => {
             voiceMode: 'browser',
             stopListening: mockStopListening,
         });
-        
+
         render(<VoiceCommandOverlay />);
         const stopButton = screen.getByLabelText('Stop voice input');
         fireEvent.click(stopButton);
@@ -140,7 +141,7 @@ describe('VoiceCommandOverlay', () => {
             voiceMode: 'browser',
             stopListening: vi.fn(),
         });
-        
+
         render(<VoiceCommandOverlay />);
         expect(screen.getByText('Hello world test')).toBeInTheDocument();
     });
@@ -155,7 +156,7 @@ describe('VoiceCommandOverlay', () => {
             voiceMode: 'browser',
             stopListening: vi.fn(),
         });
-        
+
         render(<VoiceCommandOverlay />);
         expect(screen.getByText('tap mic to stop')).toBeInTheDocument();
     });
@@ -170,7 +171,7 @@ describe('VoiceCommandOverlay', () => {
             voiceMode: 'browser',
             stopListening: vi.fn(),
         });
-        
+
         render(<VoiceCommandOverlay />);
         const stopButton = screen.getByLabelText('Stop voice input');
         expect(stopButton).toHaveAttribute('type', 'button');

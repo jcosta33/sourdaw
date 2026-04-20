@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { adjustTempoPoint } from '../adjustTempoPoint';
 
 describe('adjustTempoPoint', () => {

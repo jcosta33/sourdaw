@@ -1,5 +1,5 @@
-import { transposeForChordTrack as transposeForChordTrackTransformer } from '../transformers/chordTransposer';
 import { type ChordEvent } from '../models/ChordEvent';
+import { transposeForChordTrack as transposeForChordTrackTransformer } from '../transformers/chordTransposer';
 
 export function transposeForChordTrack(
     pitch: number,

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { downloadMidiFile } from '../exportMidiFile';
+
 import { downloadBlob } from '../../repositories/downloadFile';
+import { downloadMidiFile } from '../exportMidiFile';
 
 vi.mock('../../repositories/downloadFile', () => ({
     downloadBlob: vi.fn(),

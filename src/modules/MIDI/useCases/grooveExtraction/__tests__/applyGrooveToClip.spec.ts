@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { applyGrooveToClip } from '../applyGrooveToClip';
 
 const mocks = vi.hoisted(() => ({
@@ -8,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../stores/midiStore', () => ({
     midiStore: {
-        get value() { return mocks.midiStoreValue.value; },
+        get value() {
+            return mocks.midiStoreValue.value;
+        },
         set: mocks.midiStoreSet,
-    }
+    },
 }));
 
 describe('applyGrooveToClip', () => {
@@ -28,14 +31,14 @@ describe('applyGrooveToClip', () => {
             offsets: [
                 { gridPosition: 0, timingOffset: 0.1, velocityScale: 1.2 },
                 { gridPosition: 2, timingOffset: -0.05, velocityScale: 0.8 },
-            ]
+            ],
         };
 
         applyGrooveToClip('c1', mockGroove as any, 1.0);
 
         expect(mocks.midiStoreSet).toHaveBeenCalledTimes(1);
         const updated = mocks.midiStoreSet.mock.calls[0][0].notesByClipId.c1;
-        
+
         // Note 1 (step 0): offset 0.1, vel scale 1.2
         expect(updated[0].startBeat).toBeCloseTo(0.1);
         expect(updated[0].velocity).toBe(120);
@@ -49,7 +52,7 @@ describe('applyGrooveToClip', () => {
         mocks.midiStoreValue.value = { notesByClipId: { c1: [{ id: 'n1', startBeat: 0, velocity: 100 }] } } as any;
         const mockGroove = {
             gridDivision: 0.25,
-            offsets: [{ gridPosition: 0, timingOffset: 0.2, velocityScale: 1.5 }]
+            offsets: [{ gridPosition: 0, timingOffset: 0.2, velocityScale: 1.5 }],
         };
 
         // Apply at 50%

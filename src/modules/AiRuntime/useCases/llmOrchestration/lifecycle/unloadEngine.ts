@@ -1,6 +1,6 @@
-import { llmStatusStore } from '../../../stores/llmStatusStore';
 import { isNativeEngineReady, stopNativeEngine } from '../../../repositories/nativeEngine/lifecycle';
 import { unloadWebLlmEngine } from '../../../repositories/webLlm/engineLifecycle';
+import { llmStatusStore } from '../../../stores/llmStatusStore';
 
 /**
  * Unload the current engine and free memory.

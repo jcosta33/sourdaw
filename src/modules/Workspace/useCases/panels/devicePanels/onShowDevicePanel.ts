@@ -1,5 +1,6 @@
-import { inject } from '#/infra/di/inject';
 import { eventBus } from '#/app/registerDependencies';
+import { inject } from '#/infra/di/inject';
+
 import { type ShowDevicePanelGenericPayload } from '../../../events/WorkspaceEvents';
 
 /**
@@ -8,9 +9,7 @@ import { type ShowDevicePanelGenericPayload } from '../../../events/WorkspaceEve
  */
 export const onShowDevicePanel = inject({ eventBus })(
     ({ eventBus }) =>
-        (function onShowDevicePanel(
-            handler: (payload: ShowDevicePanelGenericPayload) => void,
-        ): () => void {
+        function onShowDevicePanel(handler: (payload: ShowDevicePanelGenericPayload) => void): () => void {
             return eventBus.on('panel.showDevice', handler);
-        })
+        }
 );

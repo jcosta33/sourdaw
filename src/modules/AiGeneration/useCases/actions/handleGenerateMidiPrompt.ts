@@ -1,12 +1,14 @@
-import { generateMidiAI, type MidiGenerationNote, isTauri } from '#/modules/AudioEngine/useCases';
-import { addClip, addTrack } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { addClip, addTrack } from '#/modules/Arrangement/useCases';
+import { generateMidiAI, type MidiGenerationNote, isTauri } from '#/modules/AudioEngine/useCases';
+import { commitUndoEntry, createCallbackUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
-import { commitUndoEntry, createCallbackUndoEntry } from '#/modules/Command/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { workspaceStore } from '#/modules/Workspace/stores';
+
 import { generateMidiViaLlm } from '../llmMidiGeneration';
+
 import { addTask } from './addTask';
 import { updateTask } from './updateTask';
 
@@ -55,7 +57,9 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                 let maxNoteBeat = 0;
                 for (const n of finalNotes) {
                     const v = n.start_beat + n.duration_beats;
-                    if (v > maxNoteBeat) { maxNoteBeat = v; }
+                    if (v > maxNoteBeat) {
+                        maxNoteBeat = v;
+                    }
                 }
                 const endBeat = startBeat + maxNoteBeat;
 

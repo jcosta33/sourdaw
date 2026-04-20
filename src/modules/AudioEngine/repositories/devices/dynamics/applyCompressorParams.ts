@@ -1,10 +1,6 @@
 import { type OfflineDeviceNode } from '../types';
 
-export function applyCompressorParams(
-    dn: OfflineDeviceNode,
-    params: Record<string, number>,
-    keyPrefix = 'comp',
-): void {
+export function applyCompressorParams(dn: OfflineDeviceNode, params: Record<string, number>, keyPrefix = 'comp'): void {
     const [comp, makeup] = dn.nodes as [DynamicsCompressorNode, GainNode];
     const threshold = params[`${keyPrefix}-threshold`];
     const ratio = params[`${keyPrefix}-ratio`];

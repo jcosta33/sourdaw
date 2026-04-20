@@ -2,6 +2,7 @@ import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/st
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
+
 import { arrangementStore } from '../../stores/arrangementStore';
 import { type ArrangementSnapshot } from '../../stores/arrangementStore';
 

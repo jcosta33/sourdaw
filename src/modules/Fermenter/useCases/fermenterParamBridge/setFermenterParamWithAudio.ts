@@ -1,9 +1,12 @@
+import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
+
 import { type FermenterPatch } from '../../models/FermenterPatch';
 import { setFermenterParam } from '../../stores/fermenterStore';
 import { getFermenterDependencies } from '../fermenterDependencies';
-import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
-import type { DeviceRef } from './helpers';
+
 import { createFindDeviceRef } from './helpers';
+
+import type { DeviceRef } from './helpers';
 
 // §33.2 — Shared rAF-batch primitive.
 type FermenterBatchEntry = { ref: DeviceRef; key: string; value: number };

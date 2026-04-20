@@ -1,22 +1,25 @@
 import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
+import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
-import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
-import { addSection } from '../../useCases/marker/sectionOperations/addSection';
-import { removeSection } from '../../useCases/marker/sectionOperations/removeSection';
-import { renameSection } from '../../useCases/marker/sectionOperations/renameSection';
-import { setSectionColor } from '../../useCases/marker/sectionOperations/setSectionColor';
-import { moveSection } from '../../useCases/marker/sectionOperations/moveSection';
-import { resizeSection } from '../../useCases/marker/sectionOperations/resizeSection';
-import { reorderSection } from '../../useCases/marker/sectionOperations/reorderSection';
-import { type ArrangementSection } from '../../models/Marker';
-import { DawInlineHint } from '#/components/daw/DawInlineHint';
+import { useStore } from '#/infra/store/useStore';
 import { cn } from '#/utils/Styles/cn';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
-import { TimelineChromeSurface } from './TimelineChromeSurface';
+
 import { SECTION_COLORS } from '../../models/colorPalette';
+import { type ArrangementSection } from '../../models/Marker';
+import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
+import { addSection } from '../../useCases/marker/sectionOperations/addSection';
+import { moveSection } from '../../useCases/marker/sectionOperations/moveSection';
+import { removeSection } from '../../useCases/marker/sectionOperations/removeSection';
+import { renameSection } from '../../useCases/marker/sectionOperations/renameSection';
+import { reorderSection } from '../../useCases/marker/sectionOperations/reorderSection';
+import { resizeSection } from '../../useCases/marker/sectionOperations/resizeSection';
+import { setSectionColor } from '../../useCases/marker/sectionOperations/setSectionColor';
+
+import { TimelineChromeSurface } from './TimelineChromeSurface';
 
 type ArrangementBarProps = {
     pixelsPerBeat: number;

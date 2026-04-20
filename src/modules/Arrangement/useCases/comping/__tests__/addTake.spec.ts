@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import { createTakeLane } from '../../../models/TakeLane';
-import { addTake } from '../addTake';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
+import { addTake } from '../addTake';
 
 vi.mock('../../../stores/takeLaneStore', () => ({
     takeLaneStore: {
@@ -26,7 +27,7 @@ describe('addTake', () => {
         takeLaneStore.value = { lanes: [lane] } as never;
         addTake('t1', 'clip-1', 'Take 1', 0, 4);
         expect(takeLaneStore.set).toHaveBeenCalledTimes(1);
-        const next = vi.mocked(takeLaneStore.set).mock.calls[0]![0] as { lanes: typeof lane[] };
+        const next = vi.mocked(takeLaneStore.set).mock.calls[0]![0] as { lanes: (typeof lane)[] };
         expect(next.lanes[0]!.takes).toHaveLength(1);
         expect(next.lanes[0]!.takes[0]!.clipId).toBe('clip-1');
         expect(next.lanes[0]!.takes[0]!.name).toBe('Take 1');

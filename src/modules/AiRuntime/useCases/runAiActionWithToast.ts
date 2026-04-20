@@ -1,4 +1,5 @@
 import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { notifyAiChange } from './notifyAiChange';
 
 export type AiActionToastMessages = {
@@ -8,7 +9,10 @@ export type AiActionToastMessages = {
     failMsg: string;
 };
 
-export async function runAiActionWithToast(action: () => Promise<void>, messages: AiActionToastMessages): Promise<void> {
+export async function runAiActionWithToast(
+    action: () => Promise<void>,
+    messages: AiActionToastMessages
+): Promise<void> {
     notifyUser(messages.startMsg);
     try {
         await action();

@@ -1,39 +1,40 @@
 import { describe, it, expect, vi } from 'vitest';
-import { setSoloMode } from '../panelToggles/setSoloMode';
-import { toggleSidebar } from '../panelToggles/toggleSidebar';
-import { toggleInspector } from '../panelToggles/toggleInspector';
+
+import { defaultWorkspaceState } from '../../../models/WorkspaceState';
+import { getWorkspaceState, updateWorkspaceState } from '../../../repositories/workspace';
+import { clearClipSelection } from '../panelToggles/clearClipSelection';
+import { closeBranchManager } from '../panelToggles/closeBranchManager';
+import { closeCollaborationPanel } from '../panelToggles/closeCollaborationPanel';
 import { toggleChatPanel } from '../panelToggles/toggleChatPanel';
 import { toggleMixer } from '../panelToggles/toggleMixer';
 import { toggleVirtualKeyboard } from '../panelToggles/toggleVirtualKeyboard';
-import { openVirtualKeyboard } from '../panelToggles/openVirtualKeyboard';
 import { setVirtualKeyboardOctave } from '../panelToggles/setVirtualKeyboardOctave';
 import { setVirtualKeyboardVelocity } from '../panelToggles/setVirtualKeyboardVelocity';
 import { toggleAutomationPanel } from '../panelToggles/toggleAutomationPanel';
 import { toggleTrackList } from '../panelToggles/toggleTrackList';
 import { setSnapValue } from '../panelToggles/setSnapValue';
-import { closeCollaborationPanel } from '../panelToggles/closeCollaborationPanel';
 import { closeUndoHistory } from '../panelToggles/closeUndoHistory';
 import { closeCommandPalette } from '../panelToggles/closeCommandPalette';
 import { selectClip } from '../panelToggles/selectClip';
 import { selectClipWithFocus } from '../panelToggles/selectClipWithFocus';
-import { clearClipSelection } from '../panelToggles/clearClipSelection';
 import { openMixer } from '../panelToggles/openMixer';
 import { openInspector } from '../panelToggles/openInspector';
 import { setTrackListWidth } from '../panelToggles/setTrackListWidth';
 import { closeScratchPad } from '../panelToggles/closeScratchPad';
 import { cycleChannelStripWidth } from '../panelToggles/cycleChannelStripWidth';
+import { openVirtualKeyboard } from '../panelToggles/openVirtualKeyboard';
 import { toggleCollaborationPanel } from '../panelToggles/toggleCollaborationPanel';
-import { toggleBranchManager } from '../panelToggles/toggleBranchManager';
-import { closeBranchManager } from '../panelToggles/closeBranchManager';
 import { toggleUndoHistory } from '../panelToggles/toggleUndoHistory';
 import { toggleTimeDisplayMode } from '../panelToggles/toggleTimeDisplayMode';
 import { toggleClipInSelection } from '../panelToggles/toggleClipInSelection';
 import { setClipSelection } from '../panelToggles/setClipSelection';
 import { selectAllClips } from '../panelToggles/selectAllClips';
+import { setSoloMode } from '../panelToggles/setSoloMode';
+import { toggleBranchManager } from '../panelToggles/toggleBranchManager';
 import { toggleCommandPalette } from '../panelToggles/toggleCommandPalette';
+import { toggleInspector } from '../panelToggles/toggleInspector';
+import { toggleSidebar } from '../panelToggles/toggleSidebar';
 import { toggleWorkspaceMode } from '../panelToggles/toggleWorkspaceMode';
-import { defaultWorkspaceState } from '../../../models/WorkspaceState';
-import { getWorkspaceState, updateWorkspaceState } from '../../../repositories/workspace';
 
 vi.mock('#/modules/Workspace/repositories/workspace', () => ({
     getWorkspaceState: vi.fn(),
@@ -44,7 +45,12 @@ describe('panelToggles', () => {
     describe('functions that only call updateWorkspaceState', () => {
         it.each([
             ['openVirtualKeyboard', openVirtualKeyboard, () => openVirtualKeyboard(), { virtualKeyboardOpen: true }],
-            ['setVirtualKeyboardOctave', setVirtualKeyboardOctave, () => setVirtualKeyboardOctave(5), { virtualKeyboardOctave: 5 }],
+            [
+                'setVirtualKeyboardOctave',
+                setVirtualKeyboardOctave,
+                () => setVirtualKeyboardOctave(5),
+                { virtualKeyboardOctave: 5 },
+            ],
             [
                 'setVirtualKeyboardVelocity',
                 setVirtualKeyboardVelocity,
@@ -105,7 +111,12 @@ describe('panelToggles', () => {
             ['toggleInspector', toggleInspector, () => toggleInspector(), { inspectorOpen: false }],
             ['toggleChatPanel', toggleChatPanel, () => toggleChatPanel(), { chatPanelOpen: true }],
             ['toggleMixer', toggleMixer, () => toggleMixer(), { mixerOpen: true }],
-            ['toggleVirtualKeyboard', toggleVirtualKeyboard, () => toggleVirtualKeyboard(), { virtualKeyboardOpen: true }],
+            [
+                'toggleVirtualKeyboard',
+                toggleVirtualKeyboard,
+                () => toggleVirtualKeyboard(),
+                { virtualKeyboardOpen: true },
+            ],
             [
                 'toggleAutomationPanel',
                 toggleAutomationPanel,
@@ -134,18 +145,8 @@ describe('panelToggles', () => {
                 () => toggleTimeDisplayMode(),
                 { timeDisplayMode: 'time' },
             ],
-            [
-                'toggleCommandPalette',
-                toggleCommandPalette,
-                () => toggleCommandPalette(),
-                { commandPaletteOpen: true },
-            ],
-            [
-                'toggleWorkspaceMode',
-                toggleWorkspaceMode,
-                () => toggleWorkspaceMode(),
-                { mode: 'clip' },
-            ],
+            ['toggleCommandPalette', toggleCommandPalette, () => toggleCommandPalette(), { commandPaletteOpen: true }],
+            ['toggleWorkspaceMode', toggleWorkspaceMode, () => toggleWorkspaceMode(), { mode: 'clip' }],
         ])('should patch state for %s', (_label, subject, invoke, expected) => {
             vi.mocked(getWorkspaceState).mockReturnValue(base() as any);
             vi.mocked(updateWorkspaceState).mockClear();

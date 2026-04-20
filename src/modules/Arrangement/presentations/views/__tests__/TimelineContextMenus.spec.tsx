@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { ClipContextMenu } from '../ClipContextMenu';
 import { TimelineEmptyMenu } from '../TimelineEmptyMenu';
 

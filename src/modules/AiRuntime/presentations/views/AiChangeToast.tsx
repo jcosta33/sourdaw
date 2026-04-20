@@ -1,7 +1,10 @@
 import { type ReactElement, useState, useEffect } from 'react';
+
+import { Check, Undo2, X } from 'lucide-react';
+
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
-import { Check, Undo2, X } from 'lucide-react';
+
 import { undoLastAction } from '../../useCases/aiPanelActions/undoLastAction';
 import { type AiChangeNotification, subscribeAiChangeNotification } from '../../useCases/notifyAiChange';
 

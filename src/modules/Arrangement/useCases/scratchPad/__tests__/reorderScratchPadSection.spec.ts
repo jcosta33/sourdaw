@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { reorderScratchPadSection } from '../scratchPadCrud/reorderScratchPadSection';
 
 const mocks = vi.hoisted(() => ({
@@ -8,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../stores/scratchPadStore', () => ({
     scratchPadStore: {
-        get value() { return mocks.scratchPadStoreValue.value; },
+        get value() {
+            return mocks.scratchPadStoreValue.value;
+        },
         set: mocks.scratchPadStoreSet,
-    }
+    },
 }));
 
 describe('reorderScratchPadSection', () => {
@@ -21,14 +24,14 @@ describe('reorderScratchPadSection', () => {
             sections: [
                 { id: 's1', order: 0, startBeat: 0, endBeat: 8 }, // Duration 8
                 { id: 's2', order: 1, startBeat: 8, endBeat: 24 }, // Duration 16
-            ]
+            ],
         } as any;
 
         reorderScratchPadSection('s1', 'right');
 
         expect(mocks.scratchPadStoreSet).toHaveBeenCalledTimes(1);
         const sections = mocks.scratchPadStoreSet.mock.calls[0][0].sections;
-        
+
         // s2 should now be at 0, duration 16. End at 16.
         expect(sections[0].id).toBe('s2');
         expect(sections[0].startBeat).toBe(0);

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleJoinCollabSession } from '../handleJoinCollabSession';
 
 const mocks = vi.hoisted(() => ({
@@ -15,7 +16,7 @@ describe('handleJoinCollabSession', () => {
     it('delegates to joinSession use case', async () => {
         await handleJoinCollabSession.execute({
             type: 'joinCollabSession',
-            payload: { inviteString: 'abc-123', peerName: 'Alice' }
+            payload: { inviteString: 'abc-123', peerName: 'Alice' },
         });
         expect(mocks.joinSession).toHaveBeenCalledWith('abc-123', 'Alice');
     });
@@ -23,7 +24,7 @@ describe('handleJoinCollabSession', () => {
     it('uses default peer name if not provided', async () => {
         await handleJoinCollabSession.execute({
             type: 'joinCollabSession',
-            payload: { inviteString: 'xyz' }
+            payload: { inviteString: 'xyz' },
         });
         expect(mocks.joinSession).toHaveBeenCalledWith('xyz', 'Peer');
     });

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { bypassDevice } from '../bypassDevice';
 
 const mocks = vi.hoisted(() => ({
@@ -25,16 +26,18 @@ describe('bypassDevice', () => {
 
     it('updates bypass state in store and engine', async () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', devices: [{ id: 'd1' }] }]
+            tracks: [{ id: 't1', devices: [{ id: 'd1' }] }],
         });
 
         bypassDevice('d1', true);
 
         expect(mocks.mapAllTracks).toHaveBeenCalled();
         const updater = mocks.mapAllTracks.mock.calls[0][0];
-        expect(updater({ devices: [{ id: 'd1', bypassed: false }] })).toEqual({ devices: [{ id: 'd1', bypassed: true }] });
+        expect(updater({ devices: [{ id: 'd1', bypassed: false }] })).toEqual({
+            devices: [{ id: 'd1', bypassed: true }],
+        });
 
-        // Note: The dynamic import might be tricky to test perfectly here, 
+        // Note: The dynamic import might be tricky to test perfectly here,
         // but let's assume it calls updateDeviceBypass.
         await vi.waitFor(() => {
             expect(mocks.updateDeviceBypass).toHaveBeenCalledWith('t1', 'd1', true);

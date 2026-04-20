@@ -1,4 +1,5 @@
 import { useSyncExternalStore, useRef, useCallback } from 'react';
+
 import { type Store } from './types';
 
 export function useStoreSelector<TData, TSelected>(
@@ -24,13 +25,13 @@ export function useStoreSelector<TData, TSelected>(
     const getSnapshot = useCallback(() => {
         const nextSnapshot = store.getSnapshot();
         const currentRef = stateRef.current;
-        
+
         if (nextSnapshot === currentRef.lastSnapshot && currentRef.lastSelection !== undefined) {
             return currentRef.lastSelection;
         }
 
         const nextSelection = currentRef.selector(nextSnapshot);
-        
+
         if (currentRef.lastSelection !== undefined && currentRef.equalityFn(currentRef.lastSelection, nextSelection)) {
             currentRef.lastSnapshot = nextSnapshot;
             return currentRef.lastSelection;

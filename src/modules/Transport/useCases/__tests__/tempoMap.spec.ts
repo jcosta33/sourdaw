@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { setMock, mockStore } = vi.hoisted(() => {
     const ref = {
-        value: { changes: [] as { id: string; beat: number; tempo: number; curve: 'instant' | 'linear' }[] } as { changes: { id: string; beat: number; tempo: number; curve: 'instant' | 'linear' }[] } | null,
+        value: { changes: [] as { id: string; beat: number; tempo: number; curve: 'instant' | 'linear' }[] } as {
+            changes: { id: string; beat: number; tempo: number; curve: 'instant' | 'linear' }[];
+        } | null,
     };
     const setMock = vi.fn((next: typeof ref.value) => {
         ref.value = next;

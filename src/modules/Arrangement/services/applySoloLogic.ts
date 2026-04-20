@@ -5,10 +5,11 @@
  * Shared by muteTrack, soloTrack, clearSolos, soloTrackExclusive, toggleSoloSafe.
  */
 
-import { getTrackStoreState } from '../useCases/getTrackStoreState';
 import { setTrackMute as engineSetTrackMute, setTrackGain as engineSetTrackGain } from '#/modules/AudioEngine/useCases';
 import { getWorkspaceState } from '#/modules/Workspace/useCases';
+
 import { type Track } from '../models/Track';
+import { getTrackStoreState } from '../useCases/getTrackStoreState';
 
 const savedGains = new Map<string, number>();
 

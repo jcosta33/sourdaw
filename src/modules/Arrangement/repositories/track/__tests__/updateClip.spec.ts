@@ -17,9 +17,9 @@ vi.mock('../../../stores/trackStore', () => {
     };
 });
 
-import { trackStore } from '../../../stores/trackStore';
-import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { trackStore } from '../../../stores/trackStore';
 import { updateClip } from '../updateClip';
 
 describe('updateClip', () => {

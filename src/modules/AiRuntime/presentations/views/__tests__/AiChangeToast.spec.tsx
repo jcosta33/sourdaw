@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
 import { AiChangeToast } from '../AiChangeToast';
 
 // Mock external dependencies
@@ -40,9 +41,9 @@ describe('AiChangeToast', () => {
             capturedHandler = handler;
             return vi.fn();
         });
-        
+
         render(<AiChangeToast />);
-        
+
         act(() => {
             capturedHandler({
                 summary: 'Test change summary',
@@ -60,16 +61,16 @@ describe('AiChangeToast', () => {
             capturedHandler = handler;
             return vi.fn();
         });
-        
+
         render(<AiChangeToast />);
-        
+
         act(() => {
             capturedHandler({
                 summary: 'Test change',
                 details: [],
             });
         });
-        
+
         const undoButton = screen.getByText(/Undo/i);
         fireEvent.click(undoButton);
         expect(mockUndoLastAction).toHaveBeenCalled();
@@ -81,21 +82,21 @@ describe('AiChangeToast', () => {
             capturedHandler = handler;
             return vi.fn();
         });
-        
+
         render(<AiChangeToast />);
-        
+
         act(() => {
             capturedHandler({
                 summary: 'Test change',
                 details: [],
             });
         });
-        
+
         expect(screen.getByRole('status')).toBeInTheDocument();
-        
+
         const dismissButton = screen.getByText(/Dismiss/i);
         fireEvent.click(dismissButton);
-        
+
         expect(screen.queryByRole('status')).toBeNull();
     });
 
@@ -105,9 +106,9 @@ describe('AiChangeToast', () => {
             capturedHandler = handler;
             return vi.fn();
         });
-        
+
         render(<AiChangeToast />);
-        
+
         act(() => {
             capturedHandler({
                 summary: 'Test change',
@@ -125,22 +126,22 @@ describe('AiChangeToast', () => {
             capturedHandler = handler;
             return vi.fn();
         });
-        
+
         render(<AiChangeToast />);
-        
+
         act(() => {
             capturedHandler({
                 summary: 'Auto dismiss test',
                 details: [],
             });
         });
-        
+
         expect(screen.getByText('Auto dismiss test')).toBeInTheDocument();
-        
+
         act(() => {
             vi.advanceTimersByTime(5000);
         });
-        
+
         expect(screen.queryByText('Auto dismiss test')).toBeNull();
     });
 });

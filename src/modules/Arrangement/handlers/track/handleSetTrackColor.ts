@@ -1,5 +1,6 @@
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { createHandler } from '#/utils/createHandler';
+
+import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { setTrackColor } from '../../useCases/setTrackGainPan/setTrackColor';
 
 export const handleSetTrackColor = createHandler<'setTrackColor'>({

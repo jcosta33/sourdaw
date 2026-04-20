@@ -1,9 +1,11 @@
 import { type ReactElement, useState, useEffect } from 'react';
+
+import { X } from 'lucide-react';
+
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawKeycap } from '#/components/daw/DawKeycap';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
-import { X } from 'lucide-react';
 
 type ShortcutGroup = {
     title: string;

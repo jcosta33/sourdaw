@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { removeScratchPadSection } from '../scratchPadCrud/removeScratchPadSection';
 
 const mocks = vi.hoisted(() => ({
@@ -8,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../stores/scratchPadStore', () => ({
     scratchPadStore: {
-        get value() { return mocks.scratchPadStoreValue.value; },
+        get value() {
+            return mocks.scratchPadStoreValue.value;
+        },
         set: mocks.scratchPadStoreSet,
-    }
+    },
 }));
 
 describe('removeScratchPadSection', () => {
@@ -22,7 +25,7 @@ describe('removeScratchPadSection', () => {
                 { id: 's1', order: 0 },
                 { id: 's2', order: 1 },
                 { id: 's3', order: 2 },
-            ]
+            ],
         } as any;
 
         removeScratchPadSection('s2');
@@ -31,7 +34,7 @@ describe('removeScratchPadSection', () => {
             sections: [
                 { id: 's1', order: 0 },
                 { id: 's3', order: 1 },
-            ]
+            ],
         });
     });
 });

@@ -1,19 +1,22 @@
 import { type ReactElement, useState } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
 import { Cpu, Search } from 'lucide-react';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { useStore } from '#/infra/store/useStore';
+
 import { type InstrumentId, createDefaultPatch } from '../../models/LevainPatch';
 import { type LevainState } from '../../stores/levainStore';
 import { levainStore, setCurrentArticulation, updateMicPosition } from '../../stores/levainStore';
-import { loadInstrument } from '../../useCases/loadPreset';
 import { sendMicParamToEngine } from '../../useCases/levainParamBridge/sendMicParamToEngine';
 import { setLevainParamWithAudio } from '../../useCases/levainParamBridge/setLevainParamWithAudio';
 import { setMacroWithAudio } from '../../useCases/levainParamBridge/setMacroWithAudio';
+import { loadInstrument } from '../../useCases/loadPreset';
 import { ArticulationList } from '../components/ArticulationList';
 import { ExpressionPanel } from '../components/ExpressionPanel';
 import { HumanizePanel } from '../components/HumanizePanel';
@@ -157,7 +160,7 @@ export const LevainPanel = (): ReactElement => {
                                             </span>
                                         </div>
                                         <span className="text-[9px] leading-4 text-muted-foreground">
-                                            {instrument.id.replace(/-/g, ' ')}
+                                            {instrument.id.replaceAll('-', ' ')}
                                         </span>
                                     </button>
                                 );

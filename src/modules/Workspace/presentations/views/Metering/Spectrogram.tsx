@@ -5,6 +5,7 @@
  * color intensity from dark blue → cyan → yellow → white.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { getMasterAnalyser, getTrackAnalyser } from '#/modules/AudioEngine/useCases';
 

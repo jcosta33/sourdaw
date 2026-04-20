@@ -53,10 +53,14 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
     }
 
     process(_inputs, outputs) {
-        if (!this._ready) {return true;}
+        if (!this._ready) {
+            return true;
+        }
 
         const output = outputs[0];
-        if (!output || output.length < 1) {return true;}
+        if (!output || output.length === 0) {
+            return true;
+        }
 
         const frames = output[0].length;
         const writeHead = Atomics.load(this._controlInts, WRITE_HEAD_IDX);

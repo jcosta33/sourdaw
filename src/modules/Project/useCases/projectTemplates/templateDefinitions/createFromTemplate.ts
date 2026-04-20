@@ -1,5 +1,6 @@
-import { stopPlayback } from '#/modules/Transport/useCases';
 import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import { stopPlayback } from '#/modules/Transport/useCases';
+
 import { templates } from './helpers';
 
 export async function createFromTemplate(templateId: string): Promise<void> {

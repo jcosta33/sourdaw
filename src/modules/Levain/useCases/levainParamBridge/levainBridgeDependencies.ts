@@ -1,5 +1,6 @@
-import { autoLoadLevainSamples } from '../autoLoadSamples';
 import { persistDeviceParam, getAllTracks } from '#/modules/Arrangement/useCases';
+
+import { autoLoadLevainSamples } from '../autoLoadSamples';
 
 export const levainBridgeDependencies = {
     getAllTracks,

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { projectCrdtToStores } from '../projectProjection';
 
 const mocks = vi.hoisted(() => ({
@@ -72,7 +73,7 @@ describe('projectCrdtToStores', () => {
         expect(mocks.takeLaneStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.arrangementStore.hydrate).toHaveBeenCalledTimes(1);
         expect(mocks.projectStore.hydrate).toHaveBeenCalledTimes(1);
-        
+
         expect(mocks.hydrateSidechainRoutes).toHaveBeenCalledTimes(1);
     });
 });

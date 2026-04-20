@@ -1,5 +1,5 @@
-import { extensionStore } from '../../stores/extension';
 import { appendLog } from '../../services/scripting';
+import { extensionStore } from '../../stores/extension';
 
 export function executeCommand(commandId: string): void {
     const state = extensionStore.value;
@@ -16,9 +16,9 @@ export function executeCommand(commandId: string): void {
     try {
         const result = cmd.handler();
         if (result instanceof Promise) {
-            result.catch((err) => appendLog('error', `Command error: ${err}`));
+            result.catch((error) => appendLog('error', `Command error: ${error}`));
         }
-    } catch (err) {
-        appendLog('error', `Command error: ${err}`);
+    } catch (error) {
+        appendLog('error', `Command error: ${error}`);
     }
 }

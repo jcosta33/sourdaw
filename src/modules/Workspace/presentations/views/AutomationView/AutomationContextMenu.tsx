@@ -2,9 +2,12 @@
  * Context menu for automation lane — curve type selection and shape insertion.
  */
 import { type ReactElement } from 'react';
+
 import { createPortal } from 'react-dom';
+
 import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { cn } from '#/utils/Styles/cn';
+
 import { type AutomationPoint, type AutomationCurveType } from '../../../models/AutomationViewTypes';
 import { CURVE_OPTIONS, SHAPE_OPTIONS } from '../../helpers/automationLaneConstants';
 

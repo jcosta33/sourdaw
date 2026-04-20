@@ -1,10 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { MidiLearnButton } from '../MidiLearnButton';
+import { findMappingForTarget } from '#/modules/MIDI/useCases/midiLearn/findMappingForTarget';
 import { startMidiLearn } from '#/modules/MIDI/useCases/midiLearn/startMidiLearn';
 import { stopMidiLearn } from '#/modules/MIDI/useCases/midiLearn/stopMidiLearn';
-import { findMappingForTarget } from '#/modules/MIDI/useCases/midiLearn/findMappingForTarget';
+
+import { MidiLearnButton } from '../MidiLearnButton';
 
 // Track mock state
 let mockMidiState = {

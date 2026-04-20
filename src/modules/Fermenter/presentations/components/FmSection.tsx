@@ -2,7 +2,9 @@
  * FM synthesis controls — algorithm selector, operator ratios + levels, feedback.
  */
 import { type ReactElement } from 'react';
+
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import { FM_ALGORITHM_NAMES } from '../../models/FermenterPatch';
 
 type FmSectionProps = {

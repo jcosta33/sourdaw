@@ -1,10 +1,11 @@
 import { type ReactElement, useState, useEffect, useRef } from 'react';
+
+import { Copy, Check, AlertTriangle } from 'lucide-react';
 import QRCode from 'qrcode';
 
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Button } from '#/components/ui/button';
-import { Copy, Check, AlertTriangle } from 'lucide-react';
 
 import { CollaborationBlock } from '../components/CollaborationBlock';
 
@@ -32,7 +33,9 @@ export const QrInvite = ({ inviteString }: QrInviteProps): ReactElement => {
     }, []);
 
     useEffect(() => {
-        if (!canvasRef.current || !inviteString) {return;}
+        if (!canvasRef.current || !inviteString) {
+            return;
+        }
         setTooLong(false);
         QRCode.toCanvas(canvasRef.current, inviteString, {
             width: 200,

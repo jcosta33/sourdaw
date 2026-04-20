@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+
 import { scaleAutomationValues } from '../../useCases/automation/scaleAutomationValues';
 
 export const handleScaleAutomation = createHandler<'scaleAutomation'>({

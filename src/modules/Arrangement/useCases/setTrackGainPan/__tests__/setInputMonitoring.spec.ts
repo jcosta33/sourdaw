@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { setInputMonitoring } from '../setInputMonitoring';
 
 const mocks = vi.hoisted(() => ({
@@ -22,7 +23,7 @@ describe('setInputMonitoring', () => {
 
     it('sets monitoring to ON and starts it in engine', () => {
         setInputMonitoring('t1', 'on');
-        
+
         expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
         const updater = mocks.updateTrack.mock.calls[0][1];
         expect(updater({ inputMonitoring: 'off' })).toEqual({ inputMonitoring: 'on' });

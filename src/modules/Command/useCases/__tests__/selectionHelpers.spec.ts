@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { getSelectedTrackId } from '../selectionHelpers/getSelectedTrackId';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({

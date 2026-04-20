@@ -1,12 +1,11 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+
 import { DawPickerRow } from '../DawPickerRow';
 
 describe('DawPickerRow', () => {
     it('should render as anchor when href is set', () => {
-        render(
-            <DawPickerRow heading="Doc" href="https://example.com" target="_blank" rel="noreferrer" />
-        );
+        render(<DawPickerRow heading="Doc" href="https://example.com" target="_blank" rel="noreferrer" />);
         const link = screen.getByRole('link', { name: 'Doc' });
         expect(link).toHaveAttribute('href', 'https://example.com');
     });

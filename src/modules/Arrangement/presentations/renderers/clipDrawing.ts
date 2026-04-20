@@ -4,8 +4,9 @@
  * resize handles, fade curves, and loop markers.
  */
 
-import { type TimelineRenderModel, type ClipRenderModel } from '../../models/TimelineRenderModel';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+
+import { type TimelineRenderModel, type ClipRenderModel } from '../../models/TimelineRenderModel';
 
 export const drawClip = (
     ctx: CanvasRenderingContext2D,
@@ -325,8 +326,8 @@ const drawMidiNotePreview = (
     let maxPitch = 0;
     if (isInline) {
         // When inline, use a fixed range or a reasonable default if notes are sparse
-        minPitch = Math.min(...notes.map(n => n.pitch)) - 2;
-        maxPitch = Math.max(...notes.map(n => n.pitch)) + 2;
+        minPitch = Math.min(...notes.map((n) => n.pitch)) - 2;
+        maxPitch = Math.max(...notes.map((n) => n.pitch)) + 2;
         // Ensure at least an octave range for visibility
         if (maxPitch - minPitch < 12) {
             const center = Math.round((maxPitch + minPitch) / 2);
@@ -335,8 +336,12 @@ const drawMidiNotePreview = (
         }
     } else {
         for (const n of notes) {
-            if (n.pitch < minPitch) minPitch = n.pitch;
-            if (n.pitch > maxPitch) maxPitch = n.pitch;
+            if (n.pitch < minPitch) {
+                minPitch = n.pitch;
+            }
+            if (n.pitch > maxPitch) {
+                maxPitch = n.pitch;
+            }
         }
     }
     const pitchRange = Math.max(maxPitch - minPitch, 1);
@@ -383,8 +388,10 @@ const drawMidiNotePreview = (
 
     while (loopOffset < clipDuration && iterations < 100) {
         for (const note of notes) {
-            const relStart = (note.startBeat - midiOffset) - clip.startBeat + loopOffset;
-            if (relStart >= clipDuration) continue;
+            const relStart = note.startBeat - midiOffset - clip.startBeat + loopOffset;
+            if (relStart >= clipDuration) {
+                continue;
+            }
 
             const nx = clipX + (relStart / clipDuration) * clipW;
             const nw = Math.max(isInline ? 2 : 1, (note.duration / clipDuration) * clipW);
@@ -396,7 +403,7 @@ const drawMidiNotePreview = (
             if (relStart + note.duration > 0 && nx < clipX + clipW) {
                 const finalX = Math.max(nx, clipX);
                 const finalW = Math.min(nw - (finalX - nx), clipX + clipW - finalX);
-                
+
                 if (finalW > 0) {
                     if (isInline) {
                         ctx.beginPath();
@@ -414,7 +421,9 @@ const drawMidiNotePreview = (
         }
         loopOffset += loopLen;
         iterations++;
-        if (!clip.loopEnabled || loopLen <= 0) break;
+        if (!clip.loopEnabled || loopLen <= 0) {
+            break;
+        }
     }
 
     if (isInline) {

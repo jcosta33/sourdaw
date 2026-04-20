@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { analyzeSample } from '#/modules/SampleLibrary/useCases/analyzeSample';
-import { libraryStore } from '#/modules/SampleLibrary/stores/libraryStore';
-import { performMusicalAnalysis } from '#/modules/SampleLibrary/services/analysisService';
+
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { performMusicalAnalysis } from '#/modules/SampleLibrary/services/analysisService';
+import { libraryStore } from '#/modules/SampleLibrary/stores/libraryStore';
+import { analyzeSample } from '#/modules/SampleLibrary/useCases/analyzeSample';
 
 vi.mock('../../services/analysisService', () => ({
     performMusicalAnalysis: vi.fn(),
@@ -17,7 +18,18 @@ describe('analyzeSample', () => {
         vi.clearAllMocks();
         libraryStore.set({
             samples: [
-                { id: 's1', displayName: 'S1', sync: { status: 'indexed', exists: true }, format: {}, tags: [], favorite: false, libraryRootId: 'r1', relativePath: 'p1', folder: '', ext: 'wav' }
+                {
+                    id: 's1',
+                    displayName: 'S1',
+                    sync: { status: 'indexed', exists: true },
+                    format: {},
+                    tags: [],
+                    favorite: false,
+                    libraryRootId: 'r1',
+                    relativePath: 'p1',
+                    folder: '',
+                    ext: 'wav',
+                },
             ],
             roots: [],
             folderTrees: {},

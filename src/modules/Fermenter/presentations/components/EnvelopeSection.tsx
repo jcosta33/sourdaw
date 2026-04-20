@@ -3,11 +3,12 @@
  * Large interactive ADSR as hero (drag breakpoints). Knobs below for precision.
  */
 import { type ReactElement, useState } from 'react';
-import { Stack, Row } from '#/components/layout';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
+import { Stack, Row } from '#/components/layout';
 
 type EnvelopeSectionProps = {
     ampA: number;
@@ -50,9 +51,14 @@ export const EnvelopeSection = ({
             release: `${prefix}Release`,
         };
         const key = map[paramId];
-        if (!key) {return;}
-        if (isAmp) {onAmpChange(key as 'ampAttack' | 'ampDecay' | 'ampSustain' | 'ampRelease', value);}
-        else {onFilterChange(key as 'filterAttack' | 'filterDecay' | 'filterSustain' | 'filterRelease', value);}
+        if (!key) {
+            return;
+        }
+        if (isAmp) {
+            onAmpChange(key as 'ampAttack' | 'ampDecay' | 'ampSustain' | 'ampRelease', value);
+        } else {
+            onFilterChange(key as 'filterAttack' | 'filterDecay' | 'filterSustain' | 'filterRelease', value);
+        }
     };
 
     return (

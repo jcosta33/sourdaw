@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { toggleVoiceInput } from '../toggleVoiceInput';
+
 import { eventBus } from '#/app/registerDependencies';
+
+import { toggleVoiceInput } from '../toggleVoiceInput';
 
 vi.mock('#/app/registerDependencies', () => ({
     eventBus: {
         emit: vi.fn(),
-    }
+    },
 }));
 
 describe('toggleVoiceInput', () => {

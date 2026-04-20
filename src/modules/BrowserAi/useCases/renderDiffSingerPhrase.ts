@@ -11,16 +11,17 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { isTauri } from '#/utils/tauriBridge';
+
+import { DEFAULT_EN_PHONEME_MAP } from '../models/phonemeMap';
+import { type RenderProvenance, type RenderQuality, RENDER_QUALITY_STEPS } from '../models/RenderProgress';
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
 import { readModel, readRenderCache, writeRenderCache, computeRenderCacheKey } from '../repositories/storageManager';
-import { isTauri } from '#/utils/tauriBridge';
-import { enqueueRender, markRenderComplete, updateRenderStatus } from '../stores/renderQueueStore';
-import { startActiveRender, clearActiveRender } from '../stores/inferenceProgressStore';
-import { phonemize } from '../services/phonemizer';
 import { applyFades, normalizePeak } from '../services/audioResampler';
-import { type RenderProvenance, type RenderQuality, RENDER_QUALITY_STEPS } from '../models/RenderProgress';
 import { type MidiNote } from '../services/midiToDdspInput';
-import { DEFAULT_EN_PHONEME_MAP } from '../models/phonemeMap';
+import { phonemize } from '../services/phonemizer';
+import { startActiveRender, clearActiveRender } from '../stores/inferenceProgressStore';
+import { enqueueRender, markRenderComplete, updateRenderStatus } from '../stores/renderQueueStore';
 
 const FADE_SAMPLES = 441;
 const HOP_SIZE = 512;
@@ -90,7 +91,9 @@ export const renderDiffSingerPhrase = inject({
             const noteFrames = notes.map((n) => Math.max(1, Math.round(n.durationSec * FRAMES_PER_SECOND)));
             let noteIdx = 0;
             const wordDur = wordDiv.map((_, i) => {
-                if (wordIsSp[i]) return 1;
+                if (wordIsSp[i]) {
+                    return 1;
+                }
                 const frames = noteFrames[noteIdx] ?? noteFrames[noteFrames.length - 1] ?? 1;
                 noteIdx++;
                 return frames;
@@ -99,12 +102,14 @@ export const renderDiffSingerPhrase = inject({
             // Compute cache key — must include pitch, timing, and depth so that
             // different note sequences with the same pitches don't collide.
             const inputData = new TextEncoder().encode(
-                `${lyrics}:${voicebankId}:${JSON.stringify(notes.map((n) => ({
-                    p: n.pitch,
-                    s: Math.round(n.startSec * 1000),
-                    d: Math.round(n.durationSec * 1000),
-                })))}:${String(depth)}`
-            ).buffer as ArrayBuffer;
+                `${lyrics}:${voicebankId}:${JSON.stringify(
+                    notes.map((n) => ({
+                        p: n.pitch,
+                        s: Math.round(n.startSec * 1000),
+                        d: Math.round(n.durationSec * 1000),
+                    }))
+                )}:${String(depth)}`
+            ).buffer;
             const cacheKey = await computeRenderCacheKey({
                 modelId: voicebankId,
                 inputData,
@@ -145,7 +150,9 @@ export const renderDiffSingerPhrase = inject({
 
                 // Check Tauri non-Chrome platform — should have been caught at UI level
                 if (isTauri() && typeof navigator !== 'undefined' && !('gpu' in navigator)) {
-                    throw new Error('DiffSinger browser rendering not available on this platform. Use native rendering.');
+                    throw new Error(
+                        'DiffSinger browser rendering not available on this platform. Use native rendering.'
+                    );
                 }
 
                 // Load all ONNX sessions for this voicebank.
@@ -164,7 +171,7 @@ export const renderDiffSingerPhrase = inject({
                     if (!modelData) {
                         throw new Error(
                             `DiffSinger model "${key}" not found in OPFS for voicebank "${voicebankId}". ` +
-                            'Re-download the voicebank in AI Settings.'
+                                'Re-download the voicebank in AI Settings.'
                         );
                     }
                     await inferenceWorkerBridge.loadOnnxSession({ modelId: sessionKey, modelData });
@@ -213,7 +220,9 @@ export const renderDiffSingerPhrase = inject({
                     tier: 'browser-preview',
                 };
 
-                logger.info(`[BrowserAi] DiffSinger render complete: ${phraseId} (${String(audio.length / SAMPLE_RATE)}s)`);
+                logger.info(
+                    `[BrowserAi] DiffSinger render complete: ${phraseId} (${String(audio.length / SAMPLE_RATE)}s)`
+                );
                 return { audio, sampleRate: SAMPLE_RATE, provenance };
             } catch (error) {
                 updateRenderStatus(phraseId, 'error');

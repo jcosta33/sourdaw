@@ -1,4 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
+
 import { type MixAnalysis } from '../models/MixAnalysis';
 
 export type MixAnalysisStoreState = {

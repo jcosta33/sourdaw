@@ -1,15 +1,18 @@
 import { type ReactElement, useState, useEffect } from 'react';
+
+import { KeyboardMusic, RefreshCw } from 'lucide-react';
+
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
-import { KeyboardMusic, RefreshCw } from 'lucide-react';
 import { useStore } from '#/infra/store/useStore';
+
+import { webMidiStore } from '../../useCases/webMidiInput/helpers';
 import { initWebMidi } from '../../useCases/webMidiInput/initWebMidi';
 import { selectMidiInput } from '../../useCases/webMidiInput/selectMidiInput';
-import { webMidiStore } from '../../useCases/webMidiInput/helpers';
 
 const defaultWebMidiState = {
     isSupported: false,

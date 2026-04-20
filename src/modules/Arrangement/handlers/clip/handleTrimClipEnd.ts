@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+
 import { trimClipEnd } from '../../useCases/clipEditing/trimClipEnd';
 
 export const handleTrimClipEnd = createHandler<'trimClipEnd'>({

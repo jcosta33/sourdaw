@@ -1,12 +1,8 @@
 import { getAllTracks } from '#/modules/Arrangement/useCases';
+
 import { automationStore } from '../../stores/automationStore';
-import {
-    RECORDING_MODES,
-    activeRecording,
-    pendingPoints,
-    touchActive,
-    makeKey,
-} from './recordingSessionState';
+
+import { RECORDING_MODES, activeRecording, pendingPoints, touchActive, makeKey } from './recordingSessionState';
 
 export function startAutomationRecording(): void {
     activeRecording.clear();

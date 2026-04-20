@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { generateDrumPattern } from '../algorithm';
 
 describe('generateDrumPattern (algorithm)', () => {
@@ -35,17 +36,17 @@ describe('generateDrumPattern (algorithm)', () => {
     it('applies swing correctly', () => {
         // Without swing, notes fall exactly on grid subdivisions
         const straight = generateDrumPattern({ style: 'four-on-floor', bars: 1, swing: 0, seed: 1 });
-        
+
         // With swing, off-beats are delayed
         const swung = generateDrumPattern({ style: 'four-on-floor', bars: 1, swing: 0.5, seed: 1 });
-        
-        const straightStarts = straight.notes.map(n => n.startBeat);
-        const swungStarts = swung.notes.map(n => n.startBeat);
-        
+
+        const straightStarts = straight.notes.map((n) => n.startBeat);
+        const swungStarts = swung.notes.map((n) => n.startBeat);
+
         // At least one swung note should fall on a non-clean grid division
-        const hasSwungNote = swungStarts.some(beat => beat % 0.25 !== 0);
-        const allStraightNotes = straightStarts.every(beat => beat % 0.25 === 0);
-        
+        const hasSwungNote = swungStarts.some((beat) => beat % 0.25 !== 0);
+        const allStraightNotes = straightStarts.every((beat) => beat % 0.25 === 0);
+
         expect(allStraightNotes).toBe(true);
         expect(hasSwungNote).toBe(true);
     });

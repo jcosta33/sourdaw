@@ -1,6 +1,6 @@
-import { midiStore } from '../../stores/midiStore';
-import { createMidiPitchBend, type MidiPitchBend } from '../../models/MidiNote';
 import { createMidiError } from '../../errors/MidiError';
+import { createMidiPitchBend, type MidiPitchBend } from '../../models/MidiNote';
+import { midiStore } from '../../stores/midiStore';
 
 export function addPitchBend(clipId: string, value: number, beat: number, channel = 0): MidiPitchBend {
     const state = midiStore.value;

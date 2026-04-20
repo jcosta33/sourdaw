@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { type MidiInputInfo } from '../../../../models/WebMidiTypes';
 
 const getStateMock = vi.hoisted(() =>
@@ -6,7 +7,7 @@ const getStateMock = vi.hoisted(() =>
         isSupported: true,
         inputs: [] as MidiInputInfo[],
         selectedInputId: null as string | null,
-    })),
+    }))
 );
 
 vi.mock('../../state', () => ({

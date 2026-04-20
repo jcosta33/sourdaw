@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { BACTERIA_PRESETS } from '../bacteriaPresets';
 
 describe('BACTERIA_PRESETS', () => {

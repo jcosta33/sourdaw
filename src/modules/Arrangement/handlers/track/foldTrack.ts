@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+
 import { foldTrack } from '../../useCases/toggleTrackState/foldTrack';
 
 export const handleFoldTrack = createHandler<'foldTrack'>({

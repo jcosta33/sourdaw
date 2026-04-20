@@ -2,12 +2,14 @@
  * Compressor Layout — Interactive transfer curve, all controls visible.
  */
 import { type ReactElement } from 'react';
-import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
-import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
-import { SectionHeader } from '../SectionHeader';
-import { DeviceParameterControl } from '../DeviceParameterControl';
+
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
+
+import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
+import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
+import { DeviceParameterControl } from '../DeviceParameterControl';
+import { SectionHeader } from '../SectionHeader';
 
 type P = DeviceLayoutProps['parameters'][number];
 const Param = ({

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { type CommandEntry } from '../../models/CommandEntry';
 import { fuzzyMatch, searchCommands } from '../commandSearch';
 

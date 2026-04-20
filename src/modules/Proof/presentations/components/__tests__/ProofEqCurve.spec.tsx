@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
-import { ProofEqCurve } from '../ProofEqCurve';
+import { describe, it, expect, vi } from 'vitest';
+
 import { DEFAULT_PATCH } from '../../../models/ProofPatch';
+import { ProofEqCurve } from '../ProofEqCurve';
 
 describe('ProofEqCurve', () => {
     it('should render', () => {

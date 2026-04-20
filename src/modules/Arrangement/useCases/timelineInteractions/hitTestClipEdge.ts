@@ -1,5 +1,6 @@
 import { timelineViewStore } from '../../stores/timelineViewStore';
 import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
+
 import { getTrackAtY } from './getTrackAtY';
 
 export type ClipEdge = 'left' | 'right' | 'body';
@@ -13,7 +14,10 @@ export const hitTestClipEdgeDependencies = {
     getTrackAtY,
 } as const;
 
-export function hitTestClipEdge(canvasX: number, canvasY: number): { clipId: string; trackId: string; edge: ClipEdge } | null {
+export function hitTestClipEdge(
+    canvasX: number,
+    canvasY: number
+): { clipId: string; trackId: string; edge: ClipEdge } | null {
     const viewState = timelineViewStore.value;
     const model = buildTimelineRenderModel();
     if (!viewState || !model) {

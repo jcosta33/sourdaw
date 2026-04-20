@@ -1,6 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+
 import { TrackInspector } from '../TrackInspector';
+
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock all child components
@@ -23,9 +25,13 @@ vi.mock('../TrackLevelSection', () => ({
 }));
 
 vi.mock('../TrackDevicesSection', () => ({
-    TrackDevicesSection: ({ track, onSelectDevice }: { track: { name: string }; onSelectDevice: (id: string) => void }) => (
-        <div data-testid="track-devices-section">Devices: {track.name}</div>
-    ),
+    TrackDevicesSection: ({
+        track,
+        onSelectDevice,
+    }: {
+        track: { name: string };
+        onSelectDevice: (id: string) => void;
+    }) => <div data-testid="track-devices-section">Devices: {track.name}</div>,
 }));
 
 vi.mock('../TrackAutomationSection', () => ({
@@ -35,9 +41,7 @@ vi.mock('../TrackAutomationSection', () => ({
 }));
 
 vi.mock('../SendsEditor', () => ({
-    SendsEditor: ({ track }: { track: { name: string } }) => (
-        <div data-testid="sends-editor">Sends: {track.name}</div>
-    ),
+    SendsEditor: ({ track }: { track: { name: string } }) => <div data-testid="sends-editor">Sends: {track.name}</div>,
 }));
 
 vi.mock('../TrackVcaSection', () => ({
@@ -71,9 +75,7 @@ vi.mock('../TrackClipsSection', () => ({
 }));
 
 vi.mock('../TakesSection', () => ({
-    TakesSection: ({ trackId }: { trackId: string }) => (
-        <div data-testid="takes-section">Takes: {trackId}</div>
-    ),
+    TakesSection: ({ trackId }: { trackId: string }) => <div data-testid="takes-section">Takes: {trackId}</div>,
 }));
 
 vi.mock('../MasterVisualizationsSection', () => ({

@@ -1,5 +1,6 @@
-import { getTrackState } from '../../../repositories/track/getTrackState';
 import { type MixerSnapshot } from '../../../models/MixerSnapshotTypes';
+import { getTrackState } from '../../../repositories/track/getTrackState';
+
 import { mixerSnapshotStore } from './helpers';
 
 export function saveMixerSnapshot(name: string): MixerSnapshot | null {

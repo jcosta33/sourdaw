@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { wasmDecodedToAudioBuffer } from '../wasmDecodedToAudioBuffer';
+
 import { createMockAudioContext } from '../../../../../../helpers/__tests__/audioContext.mock';
+import { wasmDecodedToAudioBuffer } from '../wasmDecodedToAudioBuffer';
 
 describe('wasmDecodedToAudioBuffer', () => {
     it('should convert interleaved mono WASM audio to AudioBuffer', () => {

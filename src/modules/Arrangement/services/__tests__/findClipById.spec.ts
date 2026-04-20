@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { findClipById } from '../findClipById';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+
 import { TrackDummy } from '../../__tests__/TrackDummy';
+import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { findClipById } from '../findClipById';
 
 vi.mock('../../useCases/getTrackStoreState', () => ({
     getTrackStoreState: vi.fn(),

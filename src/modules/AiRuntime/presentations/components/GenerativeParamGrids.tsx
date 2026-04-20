@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react';
+
 import {
     Coffee,
     Headphones,
@@ -16,6 +17,7 @@ import {
     Music2,
     Music4,
 } from 'lucide-react';
+
 import { cn } from '#/utils/Styles/cn';
 
 type GridProps = {

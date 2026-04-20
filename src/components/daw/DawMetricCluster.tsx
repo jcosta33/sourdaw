@@ -1,6 +1,7 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode, type Ref } from 'react';
 
 import { Row } from '#/components/layout';
+
 import { DawEyebrowLabel } from './DawEyebrowLabel';
 
 type DawMetricClusterProps = HTMLAttributes<HTMLDivElement> & {

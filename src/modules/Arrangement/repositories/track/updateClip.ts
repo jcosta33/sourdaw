@@ -1,5 +1,5 @@
-import { trackStore } from '../../stores/trackStore';
 import { type Clip, type Track } from '../../models/Track';
+import { trackStore } from '../../stores/trackStore';
 
 /**
  * Update a single clip by id across all tracks.

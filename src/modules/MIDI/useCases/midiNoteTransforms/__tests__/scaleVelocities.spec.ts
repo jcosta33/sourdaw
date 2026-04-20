@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { Container } from '#/infra/di/Container';
-import { scaleVelocities } from '../scaleVelocities';
 import { applyVelocityCurve } from '#/modules/Arrangement/useCases';
+
+import { scaleVelocities } from '../scaleVelocities';
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),

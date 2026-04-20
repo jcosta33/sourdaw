@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type SetlistItem, type SetlistState } from '../../../stores/setlistStore';
 import { removeSetlistItem } from '../removeSetlistItem';
 
@@ -41,7 +42,7 @@ describe('removeSetlistItem', () => {
             totalDuration: 30,
         };
         mockSetlistStore.value = state;
-        
+
         removeSetlistItem('x');
         expect(mockSetlistStore.set).toHaveBeenCalledWith(expect.objectContaining({ items: [], totalDuration: 0 }));
     });

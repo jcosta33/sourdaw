@@ -1,9 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { TrackVcaSection } from '../TrackVcaSection';
-import type { Track } from '../../../../models/TrackViewTypes';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { useStore } from '#/infra/store/useStore';
 import { vcaGroupStore } from '#/modules/Arrangement/stores';
+
+import { TrackVcaSection } from '../TrackVcaSection';
+
+import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
 const mockAssignToVca = vi.fn();
@@ -43,13 +46,7 @@ vi.mock('#/components/daw/DawCompactSelect', () => ({
 }));
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
-    DawHeaderBand: ({
-        title,
-        actions,
-    }: {
-        title?: string;
-        actions?: React.ReactNode;
-    }) => (
+    DawHeaderBand: ({ title, actions }: { title?: string; actions?: React.ReactNode }) => (
         <div data-testid="header-band">
             <span>{title}</span>
             {actions ? <div data-testid="header-actions">{actions}</div> : null}
@@ -74,9 +71,7 @@ vi.mock('#/components/ui/button', () => ({
 }));
 
 vi.mock('../../../components/Inspector/SurfaceCard', () => ({
-    SurfaceCard: ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="surface-card">{children}</div>
-    ),
+    SurfaceCard: ({ children }: { children: React.ReactNode }) => <div data-testid="surface-card">{children}</div>,
 }));
 
 describe('TrackVcaSection', () => {

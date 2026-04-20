@@ -1,7 +1,8 @@
-import { persistDeviceParam } from '#/modules/Arrangement/useCases';
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { type persistDeviceParam } from '#/modules/Arrangement/useCases';
+import { type updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { createFindDeviceRef, type DeviceRef, type GetAllTracksFn } from '#/utils/createFindDeviceRef';
 import { createRafBatcher, type RafBatcher } from '#/utils/DOM/createRafBatcher';
+
 export { createFindDeviceRef };
 export type { DeviceRef, GetAllTracksFn };
 export type UpdateDeviceParamFn = typeof updateDeviceParam;
@@ -49,10 +50,7 @@ export const ROUTING_MODE_INDEX = {
     'mid-side': 2,
 } as const;
 
-export function createFlushParam(
-    updateDeviceParamFn: UpdateDeviceParamFn,
-    persistDeviceParamFn: PersistDeviceParamFn
-) {
+export function createFlushParam(updateDeviceParamFn: UpdateDeviceParamFn, persistDeviceParamFn: PersistDeviceParamFn) {
     return function flushParam(_compositeKey: string, entry: BacteriaBatchEntry): void {
         updateDeviceParamFn(entry.ref.trackId, entry.ref.deviceId, entry.key, entry.value);
         persistDeviceParamFn(entry.ref.deviceId, entry.key, entry.value);

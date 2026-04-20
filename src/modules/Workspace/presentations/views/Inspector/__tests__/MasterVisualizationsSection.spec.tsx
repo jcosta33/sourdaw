@@ -1,17 +1,13 @@
-import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
+
 import { MasterVisualizationsSection } from '../MasterVisualizationsSection';
 
 // Mock external dependencies
 vi.mock('#/components/daw/DawDisplaySurface', () => ({
-    DawDisplaySurface: ({
-        children,
-        accentTop,
-    }: {
-        children: React.ReactNode;
-        accentTop?: boolean;
-    }) => (
+    DawDisplaySurface: ({ children, accentTop }: { children: React.ReactNode; accentTop?: boolean }) => (
         <div data-testid="display-surface" data-accent-top={accentTop}>
             {children}
         </div>
@@ -19,13 +15,11 @@ vi.mock('#/components/daw/DawDisplaySurface', () => ({
 }));
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
-    DawHeaderBand: ({
-        title,
-        compact,
-    }: {
-        title?: string;
-        compact?: boolean;
-    }) => <div data-testid="header-band" data-compact={compact}>{title}</div>,
+    DawHeaderBand: ({ title, compact }: { title?: string; compact?: boolean }) => (
+        <div data-testid="header-band" data-compact={compact}>
+            {title}
+        </div>
+    ),
 }));
 
 vi.mock('../../Metering/LUFSMeter', () => ({

@@ -6,10 +6,11 @@
  */
 
 import { registerFaustDSP, type FaustParamDescriptor } from '#/modules/Plugin/useCases';
-import morphingSynthDsp from './dsp/morphing-synth.dsp?raw';
-import supersawUnisonDsp from './dsp/supersaw-unison.dsp?raw';
-import physicalModelStringDsp from './dsp/physical-model-string.dsp?raw';
+
 import additiveSynthDsp from './dsp/additive-synth.dsp?raw';
+import morphingSynthDsp from './dsp/morphing-synth.dsp?raw';
+import physicalModelStringDsp from './dsp/physical-model-string.dsp?raw';
+import supersawUnisonDsp from './dsp/supersaw-unison.dsp?raw';
 
 /**
  * Register all pro synth instruments.

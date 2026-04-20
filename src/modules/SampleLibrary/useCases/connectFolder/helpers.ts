@@ -3,6 +3,7 @@ import { persistLibraryRoots } from '../../repositories/libraryPersistence/persi
 import { persistSamples } from '../../repositories/libraryPersistence/persistSamples';
 import { addSamples, updateLibraryRootStatus, setScanProgress } from '../../stores/libraryStore';
 import { buildFolderTree } from '../buildFolderTree';
+
 let scanAbortController: AbortController | null = null;
 
 export function getScanAbortController(): AbortController | null {
@@ -20,9 +21,9 @@ export async function* traverseBrowserDirectory(
     for await (const entry of dir.values()) {
         const childPath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
         if (entry.kind === 'file' && isAudioFile(entry.name)) {
-            yield { path: childPath, name: entry.name, handle: entry as FileSystemFileHandle };
+            yield { path: childPath, name: entry.name, handle: entry };
         } else if (entry.kind === 'directory') {
-            yield* traverseBrowserDirectory(entry as FileSystemDirectoryHandle, childPath);
+            yield* traverseBrowserDirectory(entry, childPath);
         }
     }
 }
@@ -82,8 +83,8 @@ async function scanBrowserDirectory(root: LibraryRoot): Promise<void> {
                 addSamples([...batch]);
                 batch.length = 0;
                 // Asymptotic approach to 1.0; the finally block snaps to an actual 1.0.
-// The previous 0.95 cap made the bar plateau visibly for mid-size scans.
-setScanProgress(true, totalFound / (totalFound + 20));
+                // The previous 0.95 cap made the bar plateau visibly for mid-size scans.
+                setScanProgress(true, totalFound / (totalFound + 20));
             }
         }
 
@@ -137,8 +138,8 @@ async function scanTauriDirectory(root: LibraryRoot): Promise<void> {
                             addSamples([...batch]);
                             batch.length = 0;
                             // Asymptotic approach to 1.0; the finally block snaps to an actual 1.0.
-// The previous 0.95 cap made the bar plateau visibly for mid-size scans.
-setScanProgress(true, totalFound / (totalFound + 20));
+                            // The previous 0.95 cap made the bar plateau visibly for mid-size scans.
+                            setScanProgress(true, totalFound / (totalFound + 20));
                         }
                     }
                 }

@@ -9,13 +9,12 @@ import { onPanelShowDutchOven } from '../../useCases/panels/devicePanels/onPanel
 import { onPanelShowFermenter } from '../../useCases/panels/devicePanels/onPanelShowFermenter';
 import { onPanelShowGluten } from '../../useCases/panels/devicePanels/onPanelShowGluten';
 import { onPanelShowGrandBoule } from '../../useCases/panels/devicePanels/onPanelShowGrandBoule';
-import { onShowDevicePanel } from '../../useCases/panels/devicePanels/onShowDevicePanel';
 import { onPanelShowLevain } from '../../useCases/panels/devicePanels/onPanelShowLevain';
-
 import { onPanelShowProof } from '../../useCases/panels/devicePanels/onPanelShowProof';
 import { onPanelShowScoring } from '../../useCases/panels/devicePanels/onPanelShowScoring';
 import { onPanelShowToaster } from '../../useCases/panels/devicePanels/onPanelShowToaster';
 import { onPanelShowYeast } from '../../useCases/panels/devicePanels/onPanelShowYeast';
+import { onShowDevicePanel } from '../../useCases/panels/devicePanels/onShowDevicePanel';
 
 /**
  * Unified active-device-panel state.

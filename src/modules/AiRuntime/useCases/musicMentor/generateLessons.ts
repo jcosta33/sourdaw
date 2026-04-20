@@ -5,8 +5,9 @@
  * explaining WHY certain mixing techniques work.
  */
 
-import { analyzeMixFromTrackLayout } from '#/modules/AudioAnalysis/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { analyzeMixFromTrackLayout } from '#/modules/AudioAnalysis/useCases';
+
 import { type MentorCategory, type MentorLesson } from '../../models/MusicMentorTypes';
 
 let lessonCounter = 0;

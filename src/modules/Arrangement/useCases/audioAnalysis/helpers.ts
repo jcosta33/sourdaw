@@ -1,5 +1,6 @@
-import { trackStore } from '../../stores/trackStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+
+import { trackStore } from '../../stores/trackStore';
 
 export function getBufferForClip(clipId: string): { buffer: AudioBuffer; audioBufferId: string } | null {
     const track = trackStore.value?.tracks.find((t) => t.clips.some((c) => c.id === clipId));

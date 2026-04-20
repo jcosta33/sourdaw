@@ -7,6 +7,7 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+
 import { detectCapabilities as detectCapabilitiesRepo } from '../repositories/capabilityDetector';
 import { setCapabilityDetecting, setCapabilityReport, setCapabilityError } from '../stores/capabilityStore';
 

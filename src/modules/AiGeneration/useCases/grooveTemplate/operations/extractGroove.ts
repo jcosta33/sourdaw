@@ -1,5 +1,6 @@
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+
 import { type GrooveTemplate } from '../../../models/GrooveTemplate';
 
 /** Local type matching Track module's MidiNote shape, avoids cross-module model import. */
@@ -43,12 +44,8 @@ export function extractGroove(clipId: string, subdivisions = 16): GrooveTemplate
         velocityAccum[stepIndex]!.push(note.velocity / 100);
     }
 
-    const offsets = offsetAccum.map((arr) =>
-        arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0
-    );
-    const velocities = velocityAccum.map((arr) =>
-        arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 1
-    );
+    const offsets = offsetAccum.map((arr) => (arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
+    const velocities = velocityAccum.map((arr) => (arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 1));
 
     return {
         id: `extracted-${clipId}`,

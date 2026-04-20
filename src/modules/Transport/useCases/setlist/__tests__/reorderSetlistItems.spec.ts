@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type SetlistItem, type SetlistState } from '../../../stores/setlistStore';
 import { reorderSetlistItems } from '../reorderSetlistItems';
 
@@ -41,7 +42,7 @@ describe('reorderSetlistItems', () => {
             totalDuration: 2,
         };
         mockSetlistStore.value = state;
-        
+
         reorderSetlistItems(0, 1);
         const next = mockSetlistStore.set.mock.calls[0]![0] as SetlistState;
         expect(next.items.map((i) => i.id)).toEqual(['b', 'a']);

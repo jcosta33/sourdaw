@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { executeAppAction } from '../executeAppAction';
 
 const mocks = vi.hoisted(() => ({
@@ -18,7 +19,7 @@ const mocks = vi.hoisted(() => ({
         execute: vi.fn(),
         describe: vi.fn(() => ({ label: 'Mock Label' })),
         undoable: true,
-    }
+    },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
@@ -26,19 +27,19 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
 // Mock the exact file paths to ensure interception
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    setSemanticContext: mocks.setSemanticContext, 
+    setSemanticContext: mocks.setSemanticContext,
     clearSemanticContext: mocks.clearSemanticContext,
     getDsoSnapshotHandlers: () => ({}),
 }));
 
 vi.mock('#/modules/CrdtDocument/stores', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    pushActionHistoryEntry: mocks.pushActionHistoryEntry
+    pushActionHistoryEntry: mocks.pushActionHistoryEntry,
 }));
 
-vi.mock('../../stores/undoStore', () => ({ 
+vi.mock('../../stores/undoStore', () => ({
     pushUndo: mocks.pushUndo,
-    undoStore: { value: {} }
+    undoStore: { value: {} },
 }));
 
 vi.mock('../macro/recording/recordAction', () => ({ recordAction: mocks.recordAction }));
@@ -46,67 +47,67 @@ vi.mock('../macro/recording/recordAction', () => ({ recordAction: mocks.recordAc
 // Mock all the individual re-exports that executeAppAction might call via its lazy registry
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    getArrangementHandlers: () => ({ testAction: mocks.mockHandler })
+    getArrangementHandlers: () => ({ testAction: mocks.mockHandler }),
 }));
 
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    getTransportHandlers: () => ({})
+    getTransportHandlers: () => ({}),
 }));
 
 vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getWorkspaceHandlers: () => ({}),
-    getScratchPadHandlers: () => ({})
+    getScratchPadHandlers: () => ({}),
 }));
 
 vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    getAutomationHandlers: () => ({})
+    getAutomationHandlers: () => ({}),
 }));
 
 vi.mock('#/modules/AiGeneration/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getGenerationHandlers: () => ({}),
-    getAiMidiHandlers: () => ({})
+    getAiMidiHandlers: () => ({}),
 }));
 
 vi.mock('#/modules/AudioAnalysis/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    getAnalysisHandlers: () => ({})
+    getAnalysisHandlers: () => ({}),
 }));
 
 vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    getCollaborationHandlers: () => ({})
+    getCollaborationHandlers: () => ({}),
 }));
 
 vi.mock('#/modules/Plugin/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    getPluginHostHandlers: () => ({})
+    getPluginHostHandlers: () => ({}),
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    getAiOrganizationHandlers: () => ({})
+    getAiOrganizationHandlers: () => ({}),
 }));
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getChordTrackHandlers: () => ({}),
     getMidiRoutingHandlers: () => ({}),
-    getPatternInstanceHandlers: () => ({})
+    getPatternInstanceHandlers: () => ({}),
 }));
 
 vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getSongStructureHandlers: () => ({}),
-    getVersionControlHandlers: () => ({})
+    getVersionControlHandlers: () => ({}),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    getFinalFeatureHandlers: () => ({})
+    getFinalFeatureHandlers: () => ({}),
 }));
 
 describe('executeAppAction', () => {

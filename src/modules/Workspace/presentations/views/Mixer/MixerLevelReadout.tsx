@@ -1,9 +1,11 @@
 import { type ReactElement, type ReactNode, useEffect, useRef } from 'react';
-import { cn } from '#/utils/Styles/cn';
-import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
-import { LevelMeter } from '../Metering/LevelMeter';
+
 import { getTrackPeakLevel, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
+import { cn } from '#/utils/Styles/cn';
+
+import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
+import { LevelMeter } from '../Metering/LevelMeter';
 
 type MixerLevelReadoutProps = {
     trackId: string | null;

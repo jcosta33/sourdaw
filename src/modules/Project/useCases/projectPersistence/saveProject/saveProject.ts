@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { persistCrdtProject } from '#/modules/CrdtDocument/useCases';
+
 import { projectStore } from '../../../stores/projectStore';
 import { addToRecentProjects } from '../../recentProjects/addToRecentProjects';
 

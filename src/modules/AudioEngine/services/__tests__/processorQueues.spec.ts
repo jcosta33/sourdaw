@@ -1,11 +1,12 @@
-import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+
+import { describe, it, expect, beforeEach } from 'vitest';
 
 // Helper to evaluate an AudioWorklet script and extract its class
 function loadProcessorClass(filePath: string, className: string) {
     const code = fs.readFileSync(path.resolve(__dirname, filePath), 'utf-8');
-    
+
     // Mock global AudioWorklet environment
     const globals = {
         AudioWorkletProcessor: class {
@@ -17,13 +18,11 @@ function loadProcessorClass(filePath: string, className: string) {
         registerProcessor: () => {},
         currentFrame: 0,
         sampleRate: 48000,
-        console: console,
+        console,
     };
 
     // We replace the import statements so it doesn't crash on evaluation
-    const safeCode = code
-        .replace(/import\s+.*?;/g, '')
-        .replace(/export\s+/g, '');
+    const safeCode = code.replaceAll(/import\s+.*?;/g, '').replaceAll(/export\s+/g, '');
 
     const execute = new Function(
         ...Object.keys(globals),
@@ -37,21 +36,21 @@ function loadProcessorClass(filePath: string, className: string) {
 }
 
 describe('AudioWorklet Processor Queues (_queueHead Read Index)', () => {
-    
-    ['LevainProcessor', 'FermenterProcessor', 'ToasterProcessor'].forEach((processorName) => {
-        
+    for (const processorName of ['LevainProcessor', 'FermenterProcessor', 'ToasterProcessor']) {
         describe(processorName, () => {
             let ProcessorClass: any;
             let processor: any;
 
             beforeEach(() => {
-                const fileName = processorName.charAt(0).toLowerCase() + processorName.slice(1) + '.ts';
+                const fileName = `${processorName.charAt(0).toLowerCase() + processorName.slice(1)}.ts`;
                 ProcessorClass = loadProcessorClass(`../${fileName}`, processorName);
                 processor = new ProcessorClass();
-                
+
                 // Mock out the dispatch method to just record the messages
-                processor._dispatch = function(msg: any) {
-                    if (!this.dispatched) this.dispatched = [];
+                processor._dispatch = function (msg: any) {
+                    if (!this.dispatched) {
+                        this.dispatched = [];
+                    }
                     this.dispatched.push(msg);
                 };
             });
@@ -101,5 +100,5 @@ describe('AudioWorklet Processor Queues (_queueHead Read Index)', () => {
                 expect(processor._queue.length).toBe(0);
             });
         });
-    });
+    }
 });

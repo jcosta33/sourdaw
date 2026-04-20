@@ -1,13 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getWorkspaceState, updateWorkspaceState } from '../workspace';
+
 import { workspaceStore } from '../../stores/workspaceStore';
+import { getWorkspaceState, updateWorkspaceState } from '../workspace';
 
 vi.mock('../../stores/workspaceStore', () => {
     const internal = { value: { workspaceMode: 'arrangement' } };
     return {
         workspaceStore: {
-            get value() { return internal.value; },
-            set: vi.fn((v) => { internal.value = v; }),
+            get value() {
+                return internal.value;
+            },
+            set: vi.fn((v) => {
+                internal.value = v;
+            }),
         },
     };
 });

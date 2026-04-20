@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { buildDsoPrompt } from '../dsoPrompt';
 import { type LogicalState, type ProjectSummary } from '../serializeLogicalState';
 
@@ -63,13 +64,13 @@ describe('buildDsoPrompt', () => {
         expect(user).toContain('Project: 2 tracks, 120 BPM');
         expect(user).toContain('Currently selected track: "Track 1"');
         expect(user).toContain('Recent edits: Added Track 2');
-        
+
         expect(user).toContain('- "Track 1" (audio, gain:0.8, pan:0) [soloed]');
         expect(user).toContain('clip: "Audio Clip" (audio, beat 0–4)');
         expect(user).toContain('device: EQ');
-        
+
         expect(user).toContain('- "Track 2" (midi, gain:0.5, pan:-10) [muted, armed]');
-        
+
         expect(user).toContain('User request: make it louder');
     });
 

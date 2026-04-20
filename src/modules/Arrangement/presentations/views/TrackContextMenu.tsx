@@ -1,30 +1,32 @@
 import { type ReactElement, type MouseEvent, type ReactNode, useState, useRef } from 'react';
-import { confirmUser } from '#/utils/Notification/confirmUser';
+
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuInlineEditor } from '#/components/daw/DawMenuInlineEditor';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
+import { type BounceOptions } from '#/modules/Arrangement';
+import { BounceOptionsDialog } from '#/modules/Workspace/presentations/views';
+import { confirmUser } from '#/utils/Notification/confirmUser';
 import { cn } from '#/utils/Styles/cn';
-import { removeTrack } from '../../useCases/removeTrack';
-import { toggleSoloSafe } from '../../useCases/toggleTrackState/toggleSoloSafe';
-import { addClip } from '../../useCases/clip/addClip';
-import { renameTrack } from '../../useCases/renameTrack';
-import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack';
-import { unfreezeTrack } from '../../useCases/freezeBounce/unfreezeTrack';
-import { flattenTrack } from '../../useCases/freezeBounce/flattenTrack';
-import { bounceTrack } from '../../useCases/freezeBounce/bounceOperations';
-import { armTrack } from '../../useCases/recording/armTrack';
-import { duplicateTrack } from '../../useCases/duplicateTrack';
-import { importAudioClipToTrack } from '../../useCases/importAudioClipToTrack';
-import { importMidiFile } from '../../useCases/importMidiFile';
-import { saveTrackAsTemplate } from '../../useCases/trackTemplate';
-import { setTrackColor } from '../../useCases/setTrackGainPan/setTrackColor';
-import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
-import { type Track, type InputMonitoring } from '../../models/Track';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
-import { BounceOptionsDialog } from '#/modules/Workspace/presentations/views';
-import { type BounceOptions } from '#/modules/Arrangement';
+
+import { type Track, type InputMonitoring } from '../../models/Track';
+import { addClip } from '../../useCases/clip/addClip';
+import { duplicateTrack } from '../../useCases/duplicateTrack';
+import { bounceTrack } from '../../useCases/freezeBounce/bounceOperations';
+import { flattenTrack } from '../../useCases/freezeBounce/flattenTrack';
+import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack';
+import { unfreezeTrack } from '../../useCases/freezeBounce/unfreezeTrack';
+import { importAudioClipToTrack } from '../../useCases/importAudioClipToTrack';
+import { importMidiFile } from '../../useCases/importMidiFile';
+import { armTrack } from '../../useCases/recording/armTrack';
+import { removeTrack } from '../../useCases/removeTrack';
+import { renameTrack } from '../../useCases/renameTrack';
+import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
+import { setTrackColor } from '../../useCases/setTrackGainPan/setTrackColor';
+import { toggleSoloSafe } from '../../useCases/toggleTrackState/toggleSoloSafe';
+import { saveTrackAsTemplate } from '../../useCases/trackTemplate';
 
 const INPUT_MON_OPTIONS: { value: InputMonitoring; label: string }[] = [
     { value: 'auto', label: 'Auto' },

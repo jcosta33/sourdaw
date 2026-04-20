@@ -448,7 +448,7 @@ export default defineConfig(
                 ...globals.browser,
             },
             parserOptions: {
-                project: './tsconfig.json',
+                project: './tsconfig.eslint.json',
                 tsconfigRootDir: import.meta.dirname,
                 ecmaFeatures: { jsx: true },
             },
@@ -848,6 +848,9 @@ export default defineConfig(
             '@typescript-eslint/unbound-method': 'off',
             'sourdaw/no-manual-memoization': 'off',
             'sourdaw/no-useeffect-derived-state': 'off',
+            // Vitest `vi.mock()` calls sit between imports by design (Vitest hoists them),
+            // which triggers false positives for `import-x/first`.
+            'import-x/first': 'off',
         },
     },
 

@@ -1,6 +1,6 @@
-import { midiStore } from '../../stores/midiStore';
-import { createMidiCC, type MidiCC } from '../../models/MidiNote';
 import { createMidiError } from '../../errors/MidiError';
+import { createMidiCC, type MidiCC } from '../../models/MidiNote';
+import { midiStore } from '../../stores/midiStore';
 
 export function addMidiCC(clipId: string, controller: number, value: number, beat: number, channel = 0): MidiCC {
     const state = midiStore.value;

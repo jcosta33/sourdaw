@@ -1,4 +1,5 @@
 import { libraryStore, updateLibraryRootStatus } from '../../stores/libraryStore';
+
 import { scanBrowserDirectory, scanTauriDirectory } from './helpers';
 
 /**

@@ -13,7 +13,7 @@ self.onmessage = (e) => {
             // but is not a full secure sandbox. Production usage should use a more
             // robust isolation mechanism if running untrusted third-party scripts.
             console.log('Running controller script...');
-            
+
             // API provided to the script
             const DAW = {
                 setParam: (trackId: string, deviceId: string, paramId: string, value: number) => {
@@ -21,15 +21,14 @@ self.onmessage = (e) => {
                 },
                 sendMidi: (bytes: number[]) => {
                     self.postMessage({ type: 'sendMidi', payload: { bytes } });
-                }
+                },
             };
-            
+
             // Execute
             const scriptFunc = new Function('DAW', code);
             scriptFunc(DAW);
-            
-        } catch (err) {
-            self.postMessage({ type: 'error', payload: { message: String(err) } });
+        } catch (error) {
+            self.postMessage({ type: 'error', payload: { message: String(error) } });
         }
     }
 };

@@ -1,40 +1,42 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { type ShowDevicePanelPayload, type ShowDevicePanelGenericPayload } from '../../../events/WorkspaceEvents';
+import { onPanelShowAutomation } from '../devicePanels/onPanelShowAutomation';
+import { onPanelShowBacteria } from '../devicePanels/onPanelShowBacteria';
+import { onPanelShowCrust } from '../devicePanels/onPanelShowCrust';
+import { onPanelShowDutchOven } from '../devicePanels/onPanelShowDutchOven';
+import { onPanelShowFermenter } from '../devicePanels/onPanelShowFermenter';
+import { onShowDevicePanel } from '../devicePanels/onShowDevicePanel';
+import { showAutomationPanel } from '../devicePanels/showAutomationPanel';
+import { showBacteriaPanel } from '../devicePanels/showBacteriaPanel';
+import { showDutchOvenPanel } from '../devicePanels/showDutchOvenPanel';
 import { showFermenterPanel } from '../devicePanels/showFermenterPanel';
 import { showToasterPanel } from '../devicePanels/showToasterPanel';
 import { showLevainPanel } from '../devicePanels/showLevainPanel';
-import { showDutchOvenPanel } from '../devicePanels/showDutchOvenPanel';
 import { showGlutenPanel } from '../devicePanels/showGlutenPanel';
-import { showBacteriaPanel } from '../devicePanels/showBacteriaPanel';
 import { showProofPanel } from '../devicePanels/showProofPanel';
-
 import { showYeastPanel } from '../devicePanels/showYeastPanel';
 import { showScoringPanel } from '../devicePanels/showScoringPanel';
 import { showCrustPanel } from '../devicePanels/showCrustPanel';
 import { showCrumbsPanel } from '../devicePanels/showCrumbsPanel';
 import { showGrandBoulePanel } from '../devicePanels/showGrandBoulePanel';
-import { showAutomationPanel } from '../devicePanels/showAutomationPanel';
 import { showDevicePanelForType } from '../devicePanels/showDevicePanelForType';
 import { showDevicePanel } from '../devicePanels/showDevicePanel';
-import { onShowDevicePanel } from '../devicePanels/onShowDevicePanel';
-import { onPanelShowFermenter } from '../devicePanels/onPanelShowFermenter';
 import { onPanelShowToaster } from '../devicePanels/onPanelShowToaster';
 import { onPanelShowLevain } from '../devicePanels/onPanelShowLevain';
-import { onPanelShowDutchOven } from '../devicePanels/onPanelShowDutchOven';
 import { onPanelShowGluten } from '../devicePanels/onPanelShowGluten';
-import { onPanelShowBacteria } from '../devicePanels/onPanelShowBacteria';
 import { onPanelShowProof } from '../devicePanels/onPanelShowProof';
 import { onPanelShowYeast } from '../devicePanels/onPanelShowYeast';
 import { onPanelShowScoring } from '../devicePanels/onPanelShowScoring';
-import { onPanelShowCrust } from '../devicePanels/onPanelShowCrust';
 import { onPanelShowCrumbs } from '../devicePanels/onPanelShowCrumbs';
 import { onPanelShowGrandBoule } from '../devicePanels/onPanelShowGrandBoule';
-import { onPanelShowAutomation } from '../devicePanels/onPanelShowAutomation';
-import { type ShowDevicePanelPayload, type ShowDevicePanelGenericPayload } from '../../../events/WorkspaceEvents';
 
-const mocks = vi.hoisted(() => ({ mockEventBus: {
+const mocks = vi.hoisted(() => ({
+    mockEventBus: {
         emit: vi.fn().mockResolvedValue(undefined),
         on: vi.fn(),
-    } }));
+    },
+}));
 
 vi.mock('#/app/registerDependencies', () => ({
     eventBus: mocks.mockEventBus,
@@ -94,7 +96,10 @@ describe('devicePanels', () => {
     it('should emit mapped panel event for known device types', () => {
         showDevicePanelForType('fermenter', 'd1');
 
-        expect(mocks.mockEventBus.emit).toHaveBeenCalledWith('panel.showDevice', { deviceType: 'fermenter', deviceId: 'd1' });
+        expect(mocks.mockEventBus.emit).toHaveBeenCalledWith('panel.showDevice', {
+            deviceType: 'fermenter',
+            deviceId: 'd1',
+        });
         expect(mocks.mockEventBus.emit).toHaveBeenCalledWith('panel.showFermenter', { deviceId: 'd1' });
     });
 

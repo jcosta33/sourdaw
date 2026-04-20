@@ -5,6 +5,7 @@ import {
     type MixSuggestion,
     FREQUENCY_RANGES,
 } from '#/modules/AudioAnalysis/models/MixComparisonTypes';
+
 import { analyzeMix } from './analyzeMix/analyzeMix';
 import { createReferenceAnalysis } from './analyzeMix/createReferenceAnalysis';
 
@@ -38,7 +39,7 @@ export function compareMixes(reference: MixAnalysis, current: MixAnalysis): MixC
     let freqScore = 100;
     const bands = Object.keys(reference.frequencyProfile) as FrequencyBand[];
     for (const band of bands) {
-        const diff = current.frequencyProfile[band]! - reference.frequencyProfile[band]!;
+        const diff = current.frequencyProfile[band] - reference.frequencyProfile[band];
         freqScore -= Math.abs(diff) * 30;
         if (Math.abs(diff) > 0.15) {
             const range = FREQUENCY_RANGES[band];

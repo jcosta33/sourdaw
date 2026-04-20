@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleToggleUndoTree } from '../handleToggleUndoTree';
-import { handleLabelUndoBranch } from '../handleLabelUndoBranch';
 
-import { toggleUndoTree } from '../../../useCases/undoTree/toggleUndoTree/toggleUndoTree';
 import { setNodeLabel } from '../../../useCases/undoTree/branchOperations/setNodeLabel';
+import { toggleUndoTree } from '../../../useCases/undoTree/toggleUndoTree/toggleUndoTree';
+import { handleLabelUndoBranch } from '../handleLabelUndoBranch';
+import { handleToggleUndoTree } from '../handleToggleUndoTree';
 
 vi.mock('../../../useCases/undoTree/toggleUndoTree/toggleUndoTree', () => ({ toggleUndoTree: vi.fn() }));
 vi.mock('../../../useCases/undoTree/branchOperations/setNodeLabel', () => ({ setNodeLabel: vi.fn() }));

@@ -1,5 +1,5 @@
-import { extensionStore } from '../../stores/extension';
 import { appendLog, createDawApi } from '../../services/scripting';
+import { extensionStore } from '../../stores/extension';
 
 // SECURITY: this evaluator uses `new Function(code)` which runs the script in
 // the global scope. It is NOT sandboxed — the script can access `window`,
@@ -26,7 +26,7 @@ export function runEditorScript(): void {
         const fn = new Function('console', 'daw', code);
         fn(sandboxedConsole, createDawApi());
         appendLog('info', '✓ Script completed');
-    } catch (err) {
-        appendLog('error', `Script error: ${err}`);
+    } catch (error) {
+        appendLog('error', `Script error: ${error}`);
     }
 }

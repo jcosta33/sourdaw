@@ -6,6 +6,7 @@
 
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri } from '#/utils/tauriBridge';
+
 import { getCrumbsPosition } from '../repositories/crumbsBridge';
 
 type PositionListener = (frame: number) => void;
@@ -61,8 +62,8 @@ function startPolling(instanceId: string): void {
             session.prevPolledFrame = session.lastPolledFrame;
             session.lastPolledFrame = await getCrumbsPosition(instanceId);
             session.pollTimestamp = performance.now();
-        } catch (err) {
-            logger.warn(`Crumbs position poll failed for ${instanceId}:`, err);
+        } catch (error) {
+            logger.warn(`Crumbs position poll failed for ${instanceId}:`, error);
         }
     }, POLL_INTERVAL_MS);
 
@@ -73,8 +74,7 @@ function startPolling(instanceId: string): void {
         const t = Math.min(elapsed / POLL_INTERVAL_MS, 1);
 
         // Linear interpolation between last two polled positions.
-        session.interpolatedFrame =
-            session.prevPolledFrame + (session.lastPolledFrame - session.prevPolledFrame) * t;
+        session.interpolatedFrame = session.prevPolledFrame + (session.lastPolledFrame - session.prevPolledFrame) * t;
 
         for (const listener of session.listeners) {
             listener(session.interpolatedFrame);

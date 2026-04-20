@@ -1,6 +1,6 @@
 import { detectIssues, generateSuggestions, readFrequencyBalance, readLevels } from '#/modules/AiRuntime/useCases';
-import { getMasterAnalyser, getTrackStrip } from '#/modules/AudioEngine/useCases';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { getMasterAnalyser, getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 // AudioAnalysis-local shape (AGENTS.md §95 — model isolation). Structurally
 // compatible with AiRuntime's MixAnalysis; no cross-module model import.

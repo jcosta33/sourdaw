@@ -10,11 +10,9 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { detectCapabilities as detectCapabilitiesRepo } from '../repositories/capabilityDetector';
-import { checkModelCached } from '../repositories/storageManager';
-import { setCapabilityReport, setCapabilityError } from '../stores/capabilityStore';
-import { modelRegistryStore } from '../stores/modelRegistryStore';
-import { renderQueueStore, markPhraseStale } from '../stores/renderQueueStore';
+import { midiStore } from '#/modules/MIDI/stores';
+
+import { type DdspInstrument, type KokoroModel, type VocoderModel } from '../models/BrowserModel';
 import {
     DDSP_INSTRUMENT_CATALOG,
     KOKORO_VOICE_CATALOG,
@@ -23,8 +21,11 @@ import {
     KOKORO_MODEL_URL,
     KOKORO_MODEL_SIZE_BYTES,
 } from '../models/ddspInstrumentCatalog';
-import { type DdspInstrument, type KokoroModel, type VocoderModel } from '../models/BrowserModel';
-import { midiStore } from '#/modules/MIDI/stores';
+import { detectCapabilities as detectCapabilitiesRepo } from '../repositories/capabilityDetector';
+import { checkModelCached } from '../repositories/storageManager';
+import { setCapabilityReport, setCapabilityError } from '../stores/capabilityStore';
+import { modelRegistryStore } from '../stores/modelRegistryStore';
+import { renderQueueStore, markPhraseStale } from '../stores/renderQueueStore';
 
 /** Stored so it can be cancelled on re-initialization (e.g. HMR) or in tests. */
 let midiStaleSubscription: (() => void) | undefined;
@@ -92,7 +93,9 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
             }));
 
             // ── 3. Check Kokoro model cache status ─────────────────────────
-            const kokoroCached = await checkModelCached({ family: 'kokoro', modelId: KOKORO_MODEL_ENTRY.id }).catch(() => false);
+            const kokoroCached = await checkModelCached({ family: 'kokoro', modelId: KOKORO_MODEL_ENTRY.id }).catch(
+                () => false
+            );
             const kokoroModel: KokoroModel = {
                 ...KOKORO_MODEL_ENTRY,
                 status: kokoroCached ? 'ready' : 'not-downloaded',
@@ -100,7 +103,10 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
             };
 
             // ── 4. Check vocoder cache status ──────────────────────────────
-            const vocoderCached = await checkModelCached({ family: 'diffsinger/vocoder', modelId: NSF_HIFIGAN_VOCODER.id }).catch(() => false);
+            const vocoderCached = await checkModelCached({
+                family: 'diffsinger/vocoder',
+                modelId: NSF_HIFIGAN_VOCODER.id,
+            }).catch(() => false);
             const vocoder: VocoderModel = {
                 ...NSF_HIFIGAN_VOCODER,
                 status: vocoderCached ? 'ready' : 'not-downloaded',
@@ -116,7 +122,9 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
                 storageUsedBytes: 0,
             });
 
-            logger.info(`[BrowserAi] Registry initialized: ${String(ddspInstruments.length)} DDSP instruments, Kokoro: ${kokoroModel.status}`);
+            logger.info(
+                `[BrowserAi] Registry initialized: ${String(ddspInstruments.length)} DDSP instruments, Kokoro: ${kokoroModel.status}`
+            );
 
             // ── 6. Subscribe to midiStore — mark rendered phrases stale on edit ──
             // The unsubscribe function is stored at module scope so it is not garbage-collected

@@ -2,8 +2,8 @@
  * Transposer — simple pitch offset with optional random variation and clamping.
  */
 
-import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
+import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 
 export class Transposer extends BaseMidiProcessor {
     readonly name = 'Transposer';

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleSetClipStretchMode } from '../handleSetClipStretchMode';
 
 const mocks = vi.hoisted(() => ({

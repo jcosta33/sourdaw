@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { rippleMoveClip } from '#/modules/Arrangement/useCases/rippleMove/rippleMoveClip';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { setTrackState } from '#/modules/Arrangement/useCases/setTrackState';
+
 import { moveClip } from '#/modules/Arrangement/useCases/clip/moveClip';
+import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { rippleMoveClip } from '#/modules/Arrangement/useCases/rippleMove/rippleMoveClip';
+import { setTrackState } from '#/modules/Arrangement/useCases/setTrackState';
 
 vi.mock('#/modules/Arrangement/useCases/getTrackStoreState', () => ({
     getTrackStoreState: vi.fn(),
@@ -54,17 +55,19 @@ describe('rippleMoveClip', () => {
         expect(moveClip).toHaveBeenCalledWith('c1', 't1', 30);
 
         // 2. Ripple shift
-        expect(vi.mocked(setTrackState)).toHaveBeenCalledWith(expect.objectContaining({
-            tracks: [
-                expect.objectContaining({
-                    id: 't1',
-                    clips: [
-                        expect.objectContaining({ id: 'c1', startBeat: 30 }),
-                        expect.objectContaining({ id: 'c2', startBeat: 6 }), // Gap closed: 10 - 4
-                        expect.objectContaining({ id: 'c3', startBeat: 24 }), // Destination opened: 20 + 4
-                    ],
-                }),
-            ],
-        }));
+        expect(vi.mocked(setTrackState)).toHaveBeenCalledWith(
+            expect.objectContaining({
+                tracks: [
+                    expect.objectContaining({
+                        id: 't1',
+                        clips: [
+                            expect.objectContaining({ id: 'c1', startBeat: 30 }),
+                            expect.objectContaining({ id: 'c2', startBeat: 6 }), // Gap closed: 10 - 4
+                            expect.objectContaining({ id: 'c3', startBeat: 24 }), // Destination opened: 20 + 4
+                        ],
+                    }),
+                ],
+            })
+        );
     });
 });

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import { undoStore } from '../../stores/undoStore';
-import { createUndoEntry } from '../commandQueries';
 import { clearUndoHistory } from '../clearUndoHistory';
+import { createUndoEntry } from '../commandQueries';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 

@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { startPlayheadScheduler, stopPlayheadScheduler } from '../playheadScheduler';
+
 import { startAutomationRecording, stopAutomationRecording } from '#/modules/Automation/useCases';
+
 import { transportStore } from '../../stores/transportStore';
+import { startPlayheadScheduler, stopPlayheadScheduler } from '../playheadScheduler';
 
 vi.mock('../../stores/transportStore', () => ({
     transportStore: { value: null, set: vi.fn() },
@@ -49,7 +51,12 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
         getAudioContext: vi.fn(() => ({
             currentTime: 0,
             createGain: vi.fn(() => ({
-                gain: { value: 1, cancelScheduledValues: vi.fn(), setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() },
+                gain: {
+                    value: 1,
+                    cancelScheduledValues: vi.fn(),
+                    setValueAtTime: vi.fn(),
+                    linearRampToValueAtTime: vi.fn(),
+                },
                 connect: vi.fn(),
                 disconnect: vi.fn(),
             })),

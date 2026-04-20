@@ -11,7 +11,9 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
+
 import { automergeRepository } from '../repositories/automergeRepository';
+
 import { persistCrdtProject } from './crdtProjectLifecycle';
 
 const DEBOUNCE_MS = 2_000;
@@ -40,7 +42,7 @@ export function startCrdtAutoSave(): () => void {
                         logger.error(
                             new Error(
                                 `[CrdtAutoSave] Auto-save has failed ${autoSaveHealth.consecutiveFailures} times consecutively. ` +
-                                `Recent edits may not survive a browser restart. Check storage quota. Last error: ${error}`
+                                    `Recent edits may not survive a browser restart. Check storage quota. Last error: ${error}`
                             )
                         );
                     }

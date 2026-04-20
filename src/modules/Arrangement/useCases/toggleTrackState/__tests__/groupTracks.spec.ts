@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { groupTracks } from '../groupTracks';
 
 const mocks = vi.hoisted(() => ({

@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TrackAutomationSection } from '../TrackAutomationSection';
+
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
@@ -38,13 +40,7 @@ vi.mock('#/components/daw/DawEmptyState', () => ({
 }));
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
-    DawHeaderBand: ({
-        title,
-        actions,
-    }: {
-        title?: string;
-        actions?: React.ReactNode;
-    }) => (
+    DawHeaderBand: ({ title, actions }: { title?: string; actions?: React.ReactNode }) => (
         <div data-testid="header-band">
             <span>{title}</span>
             {actions ? <div data-testid="header-actions">{actions}</div> : null}
@@ -76,9 +72,7 @@ vi.mock('#/components/ui/button', () => ({
 }));
 
 vi.mock('../../../components/Inspector/SurfaceCard', () => ({
-    SurfaceCard: ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="surface-card">{children}</div>
-    ),
+    SurfaceCard: ({ children }: { children: React.ReactNode }) => <div data-testid="surface-card">{children}</div>,
 }));
 
 describe('TrackAutomationSection', () => {
@@ -137,9 +131,7 @@ describe('TrackAutomationSection', () => {
 
     it('should render automation lanes when they exist', () => {
         mockUseStore.mockReturnValue({
-            lanes: [
-                { id: 'lane-1', trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', visible: true },
-            ],
+            lanes: [{ id: 'lane-1', trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', visible: true }],
         });
         render(<TrackAutomationSection track={mockTrack} />);
         expect(screen.getByText('Gain')).toBeInTheDocument();
@@ -147,9 +139,7 @@ describe('TrackAutomationSection', () => {
 
     it('should render show/hide button for each lane', () => {
         mockUseStore.mockReturnValue({
-            lanes: [
-                { id: 'lane-1', trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', visible: true },
-            ],
+            lanes: [{ id: 'lane-1', trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', visible: true }],
         });
         render(<TrackAutomationSection track={mockTrack} />);
         expect(screen.getByLabelText('Hide')).toBeInTheDocument();
@@ -157,9 +147,7 @@ describe('TrackAutomationSection', () => {
 
     it('should render remove button for each lane', () => {
         mockUseStore.mockReturnValue({
-            lanes: [
-                { id: 'lane-1', trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', visible: true },
-            ],
+            lanes: [{ id: 'lane-1', trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', visible: true }],
         });
         render(<TrackAutomationSection track={mockTrack} />);
         expect(screen.getByLabelText('Remove lane')).toBeInTheDocument();
@@ -167,9 +155,7 @@ describe('TrackAutomationSection', () => {
 
     it('should call toggleAutomationVisibility when show/hide is clicked', () => {
         mockUseStore.mockReturnValue({
-            lanes: [
-                { id: 'lane-1', trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', visible: true },
-            ],
+            lanes: [{ id: 'lane-1', trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', visible: true }],
         });
         render(<TrackAutomationSection track={mockTrack} />);
         fireEvent.click(screen.getByLabelText('Hide'));
@@ -178,9 +164,7 @@ describe('TrackAutomationSection', () => {
 
     it('should call removeAutomationLane when remove is clicked', () => {
         mockUseStore.mockReturnValue({
-            lanes: [
-                { id: 'lane-1', trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', visible: true },
-            ],
+            lanes: [{ id: 'lane-1', trackId: 'track-1', parameterId: 'gain', parameterName: 'Gain', visible: true }],
         });
         render(<TrackAutomationSection track={mockTrack} />);
         fireEvent.click(screen.getByLabelText('Remove lane'));

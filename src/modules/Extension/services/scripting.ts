@@ -11,8 +11,9 @@
  * See `.agents/audits/webdaw-codebase-audit.md` → **Findings → Extension scripting (frozen)**.
  */
 
-import { extensionStore } from '../stores/extension';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { extensionStore } from '../stores/extension';
 
 /**
  * Append a log entry to the extension console (keeps last 100 entries).

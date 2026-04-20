@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleDisableMpe } from '../handleDisableMpe';
 
 const mocks = vi.hoisted(() => ({

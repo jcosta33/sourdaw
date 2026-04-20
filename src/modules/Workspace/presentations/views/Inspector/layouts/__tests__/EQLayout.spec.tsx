@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import type { DeviceLayoutProps } from '../../deviceLayoutRegistry';
 
 // Mock external dependencies
@@ -25,9 +26,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 
 vi.mock('../../../../components/Inspector/SurfaceCard', () => ({
-    SurfaceCard: ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="surface-card">{children}</div>
-    ),
+    SurfaceCard: ({ children }: { children: React.ReactNode }) => <div data-testid="surface-card">{children}</div>,
 }));
 
 vi.mock('../../DeviceParameterControl', () => ({
@@ -56,10 +55,58 @@ describe('EQLayout', () => {
     };
 
     const mockParameters = [
-        { id: 'eq-low-gain', name: 'Low Gain', type: 'float', value: 0, defaultValue: 0, minValue: -12, maxValue: 12, unit: 'dB', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-        { id: 'eq-low-freq', name: 'Low Freq', type: 'float', value: 100, defaultValue: 100, minValue: 20, maxValue: 500, unit: 'Hz', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-        { id: 'eq-mid-gain', name: 'Mid Gain', type: 'float', value: 0, defaultValue: 0, minValue: -12, maxValue: 12, unit: 'dB', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-        { id: 'eq-high-gain', name: 'High Gain', type: 'float', value: 0, defaultValue: 0, minValue: -12, maxValue: 12, unit: 'dB', automatable: true, hasAutomation: false, deviceId: 'device-1' },
+        {
+            id: 'eq-low-gain',
+            name: 'Low Gain',
+            type: 'float',
+            value: 0,
+            defaultValue: 0,
+            minValue: -12,
+            maxValue: 12,
+            unit: 'dB',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
+        {
+            id: 'eq-low-freq',
+            name: 'Low Freq',
+            type: 'float',
+            value: 100,
+            defaultValue: 100,
+            minValue: 20,
+            maxValue: 500,
+            unit: 'Hz',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
+        {
+            id: 'eq-mid-gain',
+            name: 'Mid Gain',
+            type: 'float',
+            value: 0,
+            defaultValue: 0,
+            minValue: -12,
+            maxValue: 12,
+            unit: 'dB',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
+        {
+            id: 'eq-high-gain',
+            name: 'High Gain',
+            type: 'float',
+            value: 0,
+            defaultValue: 0,
+            minValue: -12,
+            maxValue: 12,
+            unit: 'dB',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
     ];
 
     const mockProps: DeviceLayoutProps = {

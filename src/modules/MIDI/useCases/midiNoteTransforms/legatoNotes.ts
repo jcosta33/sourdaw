@@ -25,7 +25,11 @@ export function legatoNotes(clipId: string, selectedIds: string[]): void {
             let targetEnd: number | null = null;
             let bestBeat = Infinity;
             for (const candidate of notes) {
-                if (candidate.id !== note.id && candidate.pitch === note.pitch && candidate.startBeat > note.startBeat) {
+                if (
+                    candidate.id !== note.id &&
+                    candidate.pitch === note.pitch &&
+                    candidate.startBeat > note.startBeat
+                ) {
                     if (candidate.startBeat < bestBeat) {
                         bestBeat = candidate.startBeat;
                         targetEnd = candidate.startBeat;

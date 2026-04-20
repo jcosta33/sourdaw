@@ -10,12 +10,13 @@
  * to update their import paths.
  */
 
-import { chordPatterns } from './patterns/chordPatterns';
+import { filterTemplates as filterTemplatesImpl } from '../services/scaleTheory';
+
+import { type PatternTemplate, type PatternFilters } from './MidiPatternType';
 import { bassPatterns } from './patterns/bassPatterns';
+import { chordPatterns } from './patterns/chordPatterns';
 import { drumPatterns } from './patterns/drumPatterns';
 import { melodyPatterns } from './patterns/melodyPatterns';
-import { type PatternTemplate, type PatternFilters } from './MidiPatternType';
-import { filterTemplates as filterTemplatesImpl } from '../services/scaleTheory';
 
 // ── Re-exports for in-module consumers (presentations, useCases, services) ──
 

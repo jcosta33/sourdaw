@@ -1,12 +1,13 @@
-import { updateTrack } from '../updateTrack';
 import { updateMidiFxBypass } from '#/modules/AudioEngine/useCases';
+
+import { updateTrack } from '../updateTrack';
 
 export function bypassMidiFx(trackId: string, fxId: string, bypassed: boolean): void {
     updateTrack(trackId, (track) => {
-        if (track.kind !== 'midi') return track;
-        const nextMidiFx = track.midiFx?.map((fx) => 
-            fx.id === fxId ? { ...fx, bypassed } : fx
-        ) ?? [];
+        if (track.kind !== 'midi') {
+            return track;
+        }
+        const nextMidiFx = track.midiFx?.map((fx) => (fx.id === fxId ? { ...fx, bypassed } : fx)) ?? [];
         return { ...track, midiFx: nextMidiFx };
     });
 

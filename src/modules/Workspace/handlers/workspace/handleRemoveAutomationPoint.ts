@@ -1,5 +1,5 @@
-import { createHandler } from '#/utils/createHandler';
 import { getAutomationStoreState, removeAutomationPoint } from '#/modules/Automation/useCases';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleRemoveAutomationPoint = createHandler<'removeAutomationPoint'>({
     execute: (a) => {

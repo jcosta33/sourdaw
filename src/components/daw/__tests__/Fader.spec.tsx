@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
 import { Fader } from '../Fader';
 
 describe('Fader', () => {
@@ -86,9 +87,7 @@ describe('Fader', () => {
 
     it('should use tone classes on cap groove when dragging', () => {
         const onChange = vi.fn();
-        const { container } = render(
-            <Fader value={0} onChange={onChange} min={-70} max={6} tone="amber" />
-        );
+        const { container } = render(<Fader value={0} onChange={onChange} min={-70} max={6} tone="amber" />);
         const root = container.firstChild as HTMLElement;
         const cap = root.querySelector('[data-role="fader-cap"]') as HTMLElement;
         fireEvent.pointerDown(cap, { button: 0, pointerId: 4, clientY: 40 });

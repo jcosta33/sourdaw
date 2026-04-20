@@ -1,5 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+
 import { type Modulator } from '../models/Modulator';
 
 const DOC_PREFIX_ROOT = 'root';

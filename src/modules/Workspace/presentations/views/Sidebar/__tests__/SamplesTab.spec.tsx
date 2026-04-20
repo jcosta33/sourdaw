@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
+
 import { SamplesTab } from '../SamplesTab';
 
 const renderWithTooltip = (ui: React.ReactElement) => {
@@ -25,7 +27,7 @@ describe('SamplesTab', () => {
 
     it('should render without crashing', () => {
         renderWithTooltip(
-            <SamplesTab 
+            <SamplesTab
                 samples={mockSamples}
                 favorites={new Set()}
                 onToggleFavorite={vi.fn()}
@@ -38,7 +40,7 @@ describe('SamplesTab', () => {
 
     it('should render with useCase bindings', () => {
         renderWithTooltip(
-            <SamplesTab 
+            <SamplesTab
                 samples={mockSamples}
                 favorites={new Set()}
                 onToggleFavorite={vi.fn()}
@@ -51,7 +53,7 @@ describe('SamplesTab', () => {
 
     it('should have interactive elements', () => {
         renderWithTooltip(
-            <SamplesTab 
+            <SamplesTab
                 samples={mockSamples}
                 favorites={new Set()}
                 onToggleFavorite={vi.fn()}

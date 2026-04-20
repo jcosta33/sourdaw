@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { renameScratchPadSection } from '../scratchPadCrud/renameScratchPadSection';
 
 const mocks = vi.hoisted(() => ({
@@ -8,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../stores/scratchPadStore', () => ({
     scratchPadStore: {
-        get value() { return mocks.scratchPadStoreValue.value; },
+        get value() {
+            return mocks.scratchPadStoreValue.value;
+        },
         set: mocks.scratchPadStoreSet,
-    }
+    },
 }));
 
 describe('renameScratchPadSection', () => {
@@ -18,13 +21,13 @@ describe('renameScratchPadSection', () => {
 
     it('renames correct section', () => {
         mocks.scratchPadStoreValue.value = {
-            sections: [{ id: 's1', name: 'Old' }]
+            sections: [{ id: 's1', name: 'Old' }],
         } as any;
 
         renameScratchPadSection('s1', 'New');
 
         expect(mocks.scratchPadStoreSet).toHaveBeenCalledWith({
-            sections: [{ id: 's1', name: 'New' }]
+            sections: [{ id: 's1', name: 'New' }],
         });
     });
 });

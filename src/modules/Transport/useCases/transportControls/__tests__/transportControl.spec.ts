@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { togglePlayback } from '../togglePlayback';
-import { stopPlayback } from '../stopPlayback';
+
 import { seekPlayhead } from '../seekPlayhead';
+import { stopPlayback } from '../stopPlayback';
+import { togglePlayback } from '../togglePlayback';
 
 const mocks = vi.hoisted(() => ({
     getTransportState: vi.fn(),
@@ -68,37 +69,41 @@ describe('Transport Controls', () => {
 
     describe('stopPlayback', () => {
         it('stops scheduler and resets playhead to 0 if no loop', () => {
-            mocks.getTransportState.mockReturnValue({ 
-                isPlaying: true, 
-                loopStart: 0, 
+            mocks.getTransportState.mockReturnValue({
+                isPlaying: true,
+                loopStart: 0,
                 loopEnd: 0,
-                playheadPosition: 10 
+                playheadPosition: 10,
             });
 
             stopPlayback();
 
             expect(mocks.stopPlayheadScheduler).toHaveBeenCalled();
             expect(mocks.stopAllScheduled).toHaveBeenCalled();
-            expect(mocks.updateTransportState).toHaveBeenCalledWith(expect.objectContaining({
-                isPlaying: false,
-                playheadPosition: 0,
-            }));
+            expect(mocks.updateTransportState).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    isPlaying: false,
+                    playheadPosition: 0,
+                })
+            );
             expect(mocks.playheadPositionRef.current).toBe(0);
         });
 
         it('resets playhead to loopStart if loop is active', () => {
-            mocks.getTransportState.mockReturnValue({ 
-                isPlaying: true, 
-                loopStart: 4, 
+            mocks.getTransportState.mockReturnValue({
+                isPlaying: true,
+                loopStart: 4,
                 loopEnd: 8,
-                playheadPosition: 6 
+                playheadPosition: 6,
             });
 
             stopPlayback();
 
-            expect(mocks.updateTransportState).toHaveBeenCalledWith(expect.objectContaining({
-                playheadPosition: 4,
-            }));
+            expect(mocks.updateTransportState).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    playheadPosition: 4,
+                })
+            );
         });
     });
 

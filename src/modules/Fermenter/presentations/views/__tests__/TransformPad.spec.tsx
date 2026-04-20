@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TransformPad } from '../TransformPad';
 
 vi.mock('../../../useCases/presetMorph/applyMorphedPatch', () => ({
@@ -45,7 +46,7 @@ describe('TransformPad', () => {
         render(<TransformPad deviceId={mockDeviceId} />);
         const canvas = document.querySelector('canvas');
         expect(canvas).toBeInTheDocument();
-        
+
         if (canvas) {
             fireEvent.pointerDown(canvas, { clientX: 80, clientY: 80, pointerId: 1 });
             expect(canvas).toHaveStyle({ cursor: 'grabbing' });

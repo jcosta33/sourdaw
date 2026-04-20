@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type ExtensionMarketplaceState } from '../../../stores/extension';
 import { toggleScriptEditor } from '../toggleScriptEditor';
 
@@ -29,9 +30,9 @@ describe('toggleScriptEditor', () => {
 
     it('flips editorOpen', () => {
         mocks.extensionStore.value = baseState({ editorOpen: false });
-        
+
         toggleScriptEditor();
-        
+
         expect(mocks.extensionStore.set).toHaveBeenCalledWith(expect.objectContaining({ editorOpen: true }));
     });
 });

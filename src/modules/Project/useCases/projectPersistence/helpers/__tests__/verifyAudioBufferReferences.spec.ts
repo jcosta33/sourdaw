@@ -22,6 +22,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 
 import { type TrackStoreState } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+
 import { verifyAudioBufferReferences } from '../verifyAudioBufferReferences';
 
 describe('verifyAudioBufferReferences', () => {
@@ -64,10 +65,7 @@ describe('verifyAudioBufferReferences', () => {
         verifyAudioBufferReferences();
 
         expect(notifyUser).toHaveBeenCalledTimes(1);
-        expect(notifyUser).toHaveBeenCalledWith(
-            expect.stringMatching(/missing-clip/),
-            'warning'
-        );
+        expect(notifyUser).toHaveBeenCalledWith(expect.stringMatching(/missing-clip/), 'warning');
     });
 
     it('should summarize when more than three clips are missing buffers', () => {

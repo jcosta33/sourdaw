@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { startPlayback } from '../startPlayback';
+
+import { resumeEngine } from '#/modules/AudioEngine/useCases';
+
 import { defaultTransportState } from '../../../models/TransportState';
-import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
-import { resumeEngine } from '#/modules/AudioEngine/useCases';
-import { startPlayheadScheduler } from '../../playheadScheduler';
+import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { ensureTrackStrips } from '../../ensureTrackStrips';
+import { startPlayheadScheduler } from '../../playheadScheduler';
+import { startPlayback } from '../startPlayback';
 
 vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),

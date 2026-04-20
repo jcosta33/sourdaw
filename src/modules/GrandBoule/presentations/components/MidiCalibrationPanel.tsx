@@ -8,11 +8,14 @@
  */
 
 import { type ReactElement, useEffect, useRef, useState } from 'react';
+
 import { RotateCcw } from 'lucide-react';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import { type GrandBouleMidiCalibration, MIDI_CALIBRATION_RANGES } from '../../models/GrandBouleMidiCalibration';
 
 // ---------------------------------------------------------------------------

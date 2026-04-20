@@ -2,7 +2,9 @@
  * Web MIDI store - wraps the internal state for React integration.
  */
 import { createStore } from '#/infra/store/createStore';
+
 import { type WebMidiState } from '../../models/WebMidiTypes';
+
 import { getState, subscribe } from './state';
 
 const defaultWebMidiState: WebMidiState = {

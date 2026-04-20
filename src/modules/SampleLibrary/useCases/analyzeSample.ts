@@ -1,6 +1,7 @@
-import { libraryStore } from '../stores/libraryStore';
-import { performMusicalAnalysis } from '../services/analysisService';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+
+import { performMusicalAnalysis } from '../services/analysisService';
+import { libraryStore } from '../stores/libraryStore';
 
 /**
  * Trigger asynchronous musical analysis for a sample record.
@@ -8,12 +9,18 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
  */
 export async function analyzeSample(sampleId: string): Promise<void> {
     const state = libraryStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
     const sample = state.samples.find((s) => s.id === sampleId);
-    if (!sample) return;
+    if (!sample) {
+        return;
+    }
 
     // Skip if already analyzed
-    if (sample.sync.status === 'analyzed') return;
+    if (sample.sync.status === 'analyzed') {
+        return;
+    }
 
     try {
         // Only analyze if the audio buffer is actually available in cache.
@@ -28,7 +35,9 @@ export async function analyzeSample(sampleId: string): Promise<void> {
 
         // 3. Update store
         const currentState = libraryStore.value;
-        if (!currentState) return;
+        if (!currentState) {
+            return;
+        }
 
         libraryStore.set({
             ...currentState,
@@ -46,7 +55,7 @@ export async function analyzeSample(sampleId: string): Promise<void> {
                     : s
             ),
         });
-    } catch (e) {
-        console.error(`Failed to analyze sample ${sampleId}:`, e);
+    } catch (error) {
+        console.error(`Failed to analyze sample ${sampleId}:`, error);
     }
 }

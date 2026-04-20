@@ -1,27 +1,43 @@
 import { type ReactElement } from 'react';
-import { Button } from '#/components/ui/button';
+
+import {
+    Circle,
+    ChevronRight,
+    ChevronDown,
+    Folder,
+    Music,
+    AudioLines,
+    Radio,
+    Monitor,
+    Drum,
+    Layers,
+    Snowflake,
+    AlertCircle,
+} from 'lucide-react';
+
 import { DawHierarchyRow } from '#/components/daw/DawHierarchyRow';
+import { DawMeterBar } from '#/components/daw/DawMeterBar';
 import { LatchButton } from '#/components/daw/LatchButton';
-import { Circle, ChevronRight, ChevronDown, Folder, Music, AudioLines, Radio, Monitor, Drum, Layers, Snowflake, AlertCircle } from 'lucide-react';
+import { Button } from '#/components/ui/button';
+import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
 import { cn } from '#/utils/Styles/cn';
+
 import { type Track, type InputMonitoring } from '../../models/Track';
+import { toggleFolderCollapse } from '../../useCases/folder/toggleFolderCollapse';
+import { armTrack } from '../../useCases/recording/armTrack';
+import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
 import { muteTrack } from '../../useCases/toggleTrackState/muteTrack';
+import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { soloTrack } from '../../useCases/toggleTrackState/soloTrack';
 import { soloTrackExclusive } from '../../useCases/toggleTrackState/soloTrackExclusive';
-import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
-import { armTrack } from '../../useCases/recording/armTrack';
-import { toggleFolderCollapse } from '../../useCases/folder/toggleFolderCollapse';
 import { toggleVariationLanes } from '../../useCases/toggleTrackState/toggleVariationLanes';
-import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
 
 import { TrackContextMenu } from './TrackContextMenu';
-import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
 import { InlineTrackName } from './TrackHeader/InlineTrackName';
-import { ResizeHandle } from './TrackHeader/ResizeHandle';
 import { InputSelector } from './TrackHeader/InputSelector';
-import { TrackLevelIndicator } from './TrackHeader/TrackLevelIndicator';
 import { LevainLoadingSpinner } from './TrackHeader/LevainLoadingSpinner';
-import { DawMeterBar } from '#/components/daw/DawMeterBar';
+import { ResizeHandle } from './TrackHeader/ResizeHandle';
+import { TrackLevelIndicator } from './TrackHeader/TrackLevelIndicator';
 
 const TRACK_KIND_ICON: Record<string, typeof Music> = {
     audio: AudioLines,
@@ -161,12 +177,18 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     {isFreezing ? (
                         <div className="flex flex-col gap-1 w-16 ml-2">
                             <span className="text-[8px] font-bold text-primary animate-pulse">FREEZING</span>
-                            <DawMeterBar value={(track.freezeState?.renderProgress ?? 0) * 100} size="sm" fillClassName="bg-primary" />
+                            <DawMeterBar
+                                value={(track.freezeState?.renderProgress ?? 0) * 100}
+                                size="sm"
+                                fillClassName="bg-primary"
+                            />
                         </div>
                     ) : track.frozen ? (
                         <div className="flex items-center gap-1 ml-2">
                             <Snowflake className="size-2.5 text-[var(--color-accent-cyan)]" />
-                            <span className="text-[9px] text-[var(--color-accent-cyan)] font-bold tracking-tight">FROZEN</span>
+                            <span className="text-[9px] text-[var(--color-accent-cyan)] font-bold tracking-tight">
+                                FROZEN
+                            </span>
                             {isStale && (
                                 <Tooltip>
                                     <TooltipTrigger asChild>
@@ -175,7 +197,9 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                             <span className="text-[8px] text-state-warning font-bold">STALE</span>
                                         </div>
                                     </TooltipTrigger>
-                                    <TooltipContent>Track content has changed since freezing. Update required.</TooltipContent>
+                                    <TooltipContent>
+                                        Track content has changed since freezing. Update required.
+                                    </TooltipContent>
                                 </Tooltip>
                             )}
                         </div>

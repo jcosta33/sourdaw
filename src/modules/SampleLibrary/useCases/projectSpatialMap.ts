@@ -8,14 +8,18 @@ import { libraryStore } from '../stores/libraryStore';
 export function projectSpatialMap(): void {
     const embedState = embeddingStore.value;
     const libState = libraryStore.value;
-    if (!embedState || !libState) return;
+    if (!embedState || !libState) {
+        return;
+    }
 
     const nextSamples = [...libState.samples];
     let changed = false;
 
     for (let i = 0; i < nextSamples.length; i++) {
         const sample = nextSamples[i]!;
-        if (sample.spatialMap) continue;
+        if (sample.spatialMap) {
+            continue;
+        }
 
         const vector = embedState.embeddings.get(sample.id);
         if (vector) {
@@ -24,8 +28,11 @@ export function projectSpatialMap(): void {
             let sumX = 0;
             let sumY = 0;
             for (let j = 0; j < vector.length; j++) {
-                if (j % 2 === 0) sumX += vector[j]!;
-                else sumY += vector[j]!;
+                if (j % 2 === 0) {
+                    sumX += vector[j]!;
+                } else {
+                    sumY += vector[j]!;
+                }
             }
 
             nextSamples[i] = {

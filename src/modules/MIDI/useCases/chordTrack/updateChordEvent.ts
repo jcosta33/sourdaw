@@ -1,5 +1,5 @@
-import { chordTrackStore } from '../../stores/chordTrackStore';
 import { type ChordEvent } from '../../models/ChordEvent';
+import { chordTrackStore } from '../../stores/chordTrackStore';
 
 export function updateChordEvent(
     eventId: string,

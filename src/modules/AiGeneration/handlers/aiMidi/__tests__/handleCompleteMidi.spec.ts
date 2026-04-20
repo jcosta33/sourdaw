@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleCompleteMidi } from '../handleCompleteMidi';
 
 const mocks = vi.hoisted(() => ({
@@ -33,9 +34,7 @@ describe('handleCompleteMidi', () => {
 
     it('generates forward completion notes', async () => {
         mocks.getNotesForClip.mockReturnValue([{ pitch: 60, startBeat: 0, duration: 4 }]);
-        mocks.llmGenerateNotes.mockResolvedValue([
-            { pitch: 62, startBeat: 4, duration: 1, velocity: 90 }
-        ]);
+        mocks.llmGenerateNotes.mockResolvedValue([{ pitch: 62, startBeat: 4, duration: 1, velocity: 90 }]);
 
         await handleCompleteMidi.execute({
             type: 'completeMidi',
@@ -55,9 +54,7 @@ describe('handleCompleteMidi', () => {
 
     it('generates backward lead-in notes', async () => {
         mocks.getNotesForClip.mockReturnValue([{ pitch: 60, startBeat: 0, duration: 4 }]);
-        mocks.llmGenerateNotes.mockResolvedValue([
-            { pitch: 58, startBeat: -4, duration: 1, velocity: 80 }
-        ]);
+        mocks.llmGenerateNotes.mockResolvedValue([{ pitch: 58, startBeat: -4, duration: 1, velocity: 80 }]);
 
         await handleCompleteMidi.execute({
             type: 'completeMidi',

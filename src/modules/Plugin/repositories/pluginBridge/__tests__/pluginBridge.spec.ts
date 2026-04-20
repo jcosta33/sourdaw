@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+
 import { loadPlugin } from '../loadPlugin';
-import { unloadPlugin } from '../unloadPlugin';
 import { scanPlugins } from '../scanPlugins';
 import { setPluginParameter } from '../setPluginParameter';
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+import { unloadPlugin } from '../unloadPlugin';
 
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(),
@@ -27,7 +29,7 @@ describe('pluginBridge repository', () => {
             vi.mocked(isTauri).mockReturnValue(true);
             const mockInstance = { instance_id: 'i1', name: 'FabFilter Pro-Q 3' };
             vi.mocked(tauriInvoke).mockResolvedValue(mockInstance);
-            
+
             const result = await loadPlugin('p1', 'i1');
             expect(tauriInvoke).toHaveBeenCalledWith('load_plugin', { pluginId: 'p1', instanceId: 'i1' });
             expect(result).toEqual(mockInstance);
@@ -61,7 +63,11 @@ describe('pluginBridge repository', () => {
         it('should invoke tauri in desktop', async () => {
             vi.mocked(isTauri).mockReturnValue(true);
             await setPluginParameter('i1', 0, 0.5);
-            expect(tauriInvoke).toHaveBeenCalledWith('set_plugin_parameter', { instanceId: 'i1', paramId: 0, value: 0.5 });
+            expect(tauriInvoke).toHaveBeenCalledWith('set_plugin_parameter', {
+                instanceId: 'i1',
+                paramId: 0,
+                value: 0.5,
+            });
         });
     });
 });

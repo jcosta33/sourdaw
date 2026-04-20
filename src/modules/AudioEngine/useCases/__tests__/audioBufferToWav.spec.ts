@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { audioBufferToWav as encode } from '../../repositories/audioEncoders/wavEncoder';
 import { audioBufferToWav } from '../audioBufferToWav';
 

@@ -1,9 +1,20 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { KneadEditor } from '../KneadEditor';
 
 vi.mock('#/components/ui/button', () => ({
-    Button: ({ children, onClick, variant, size }: { children: React.ReactNode; onClick?: () => void; variant?: string; size?: string }) => (
+    Button: ({
+        children,
+        onClick,
+        variant,
+        size,
+    }: {
+        children: React.ReactNode;
+        onClick?: () => void;
+        variant?: string;
+        size?: string;
+    }) => (
         <button type="button" onClick={onClick} data-variant={variant} data-size={size}>
             {children}
         </button>
@@ -11,7 +22,21 @@ vi.mock('#/components/ui/button', () => ({
 }));
 
 vi.mock('#/components/ui/slider', () => ({
-    Slider: ({ value, onValueChange, min, max, step, className }: { value: number[]; onValueChange: (v: number[]) => void; min?: number; max?: number; step?: number; className?: string }) => (
+    Slider: ({
+        value,
+        onValueChange,
+        min,
+        max,
+        step,
+        className,
+    }: {
+        value: number[];
+        onValueChange: (v: number[]) => void;
+        min?: number;
+        max?: number;
+        step?: number;
+        className?: string;
+    }) => (
         <input
             type="range"
             value={value[0]}
@@ -25,7 +50,17 @@ vi.mock('#/components/ui/slider', () => ({
 }));
 
 vi.mock('#/components/daw/DawCompactCheckbox', () => ({
-    DawCompactCheckbox: ({ checked, onChange, id, className }: { checked: boolean; onChange: (e: { target: { checked: boolean } }) => void; id?: string; className?: string }) => (
+    DawCompactCheckbox: ({
+        checked,
+        onChange,
+        id,
+        className,
+    }: {
+        checked: boolean;
+        onChange: (e: { target: { checked: boolean } }) => void;
+        id?: string;
+        className?: string;
+    }) => (
         <input
             type="checkbox"
             checked={checked}

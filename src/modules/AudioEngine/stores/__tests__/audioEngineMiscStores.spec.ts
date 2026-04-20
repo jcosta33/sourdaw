@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+
 import { controlRoomStore, getNextMonitorId, getNextCueId } from '../controlRoom';
 import { controlSurfaceStore, getNextOscEndpointId } from '../controlSurface';
 import { linkStatusStore, defaultLinkStatus, getLinkStatusSnapshot } from '../linkStatusStore';
@@ -7,7 +8,7 @@ import { raveStore, FACTORY_MODELS } from '../rave';
 describe('AudioEngine Misc Stores', () => {
     describe('controlRoomStore', () => {
         beforeEach(() => {
-            // Can't easily reset initialData because it calls ID generators, 
+            // Can't easily reset initialData because it calls ID generators,
             // but we can test the structure.
         });
 
@@ -69,7 +70,7 @@ describe('AudioEngine Misc Stores', () => {
 
         it('should provide getLinkStatusSnapshot', () => {
             expect(getLinkStatusSnapshot()).toBe(false);
-            linkStatusStore.update(s => ({ ...s!, enabled: true }));
+            linkStatusStore.update((s) => ({ ...s!, enabled: true }));
             expect(getLinkStatusSnapshot()).toBe(true);
         });
     });

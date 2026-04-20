@@ -5,12 +5,15 @@
  */
 
 import { type ReactElement, useEffect, useState, useCallback } from 'react';
-import { logger } from '#/infra/logger/appLogger';
-import { useStoreSelector } from '#/infra/store/useStoreSelector';
+
 import { Circle, Cpu, Volume2 } from 'lucide-react';
+
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
+import { logger } from '#/infra/logger/appLogger';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
+
 import { midiNoteToName } from '../../models/CrumbsTypes';
 import {
     defaultCrumbsState,
@@ -24,21 +27,21 @@ import {
 } from '../../stores/crumbsStore';
 import { defaultPadState, padStore, ensurePadInstance, reorderPad, selectPad } from '../../stores/padStore';
 import { defaultSliceState, sliceStore, ensureSliceInstance, setActiveSlice } from '../../stores/sliceStore';
-import { setCrumbsParamThrottled } from '../../useCases/crumbsParamBridge/setCrumbsParamThrottled';
-import { switchCrumbsMode } from '../../useCases/setCrumbsMode';
-import { triggerPadOn } from '../../useCases/triggerPad/triggerPadOn';
-import { handleCrumbsFileDrop } from '../../useCases/handleFileDrop';
-import { subscribeToPosition } from '../../useCases/positionTracking';
-import { debouncedUpdateMarkerPosition } from '../../useCases/updateSliceMarker/debouncedUpdateMarkerPosition';
-import { detectAndSetSlices } from '../../useCases/updateSliceMarker/detectAndSetSlices';
-import { armCrumbsRecording } from '../../useCases/recording/armCrumbsRecording';
-import { stopCrumbsRecording } from '../../useCases/recording/stopCrumbsRecording';
 import { initCrumbsEngine } from '../../useCases/crumbsLifecycle/initCrumbsEngine';
 import { teardownCrumbsEngine } from '../../useCases/crumbsLifecycle/teardownCrumbsEngine';
+import { setCrumbsParamThrottled } from '../../useCases/crumbsParamBridge/setCrumbsParamThrottled';
+import { handleCrumbsFileDrop } from '../../useCases/handleFileDrop';
+import { subscribeToPosition } from '../../useCases/positionTracking';
+import { armCrumbsRecording } from '../../useCases/recording/armCrumbsRecording';
+import { stopCrumbsRecording } from '../../useCases/recording/stopCrumbsRecording';
+import { switchCrumbsMode } from '../../useCases/setCrumbsMode';
 import { detectAndApplyLoopPoints } from '../../useCases/smartLoopPoints';
+import { triggerPadOn } from '../../useCases/triggerPad/triggerPadOn';
+import { debouncedUpdateMarkerPosition } from '../../useCases/updateSliceMarker/debouncedUpdateMarkerPosition';
+import { detectAndSetSlices } from '../../useCases/updateSliceMarker/detectAndSetSlices';
 import { updateVoiceStack } from '../../useCases/voiceStacking';
-import { PadGrid } from '../components/PadGrid';
 import { CrumbsControls } from '../components/CrumbsControls';
+import { PadGrid } from '../components/PadGrid';
 import { SliceOverlay } from '../components/SliceOverlay';
 import { WaveformDisplay } from '../components/WaveformDisplay';
 
@@ -63,9 +66,18 @@ const SectionCard = ({
 
 export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     // §209.1 — Typed defaults instead of non-null assertion on live values.
-    const state = useStoreSelector(crumbsStore, useCallback((s) => s?.[deviceId] ?? defaultCrumbsState, [deviceId]));
-    const pads = useStoreSelector(padStore, useCallback((s) => s?.[deviceId] ?? defaultPadState, [deviceId]));
-    const slices = useStoreSelector(sliceStore, useCallback((s) => s?.[deviceId] ?? defaultSliceState, [deviceId]));
+    const state = useStoreSelector(
+        crumbsStore,
+        useCallback((s) => s?.[deviceId] ?? defaultCrumbsState, [deviceId])
+    );
+    const pads = useStoreSelector(
+        padStore,
+        useCallback((s) => s?.[deviceId] ?? defaultPadState, [deviceId])
+    );
+    const slices = useStoreSelector(
+        sliceStore,
+        useCallback((s) => s?.[deviceId] ?? defaultSliceState, [deviceId])
+    );
 
     // Create / destroy crumbs engine instance on mount/unmount.
     useEffect(() => {
@@ -73,12 +85,12 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         ensurePadInstance(deviceId);
         ensureSliceInstance(deviceId);
 
-        initCrumbsEngine(deviceId, 44100).catch((err) => {
-            logger.warn('Failed to create crumbs instance:', err);
+        initCrumbsEngine(deviceId, 44100).catch((error) => {
+            logger.warn('Failed to create crumbs instance:', error);
         });
         return () => {
-            teardownCrumbsEngine(deviceId).catch((err) => {
-                logger.warn('Failed to destroy crumbs instance:', err);
+            teardownCrumbsEngine(deviceId).catch((error) => {
+                logger.warn('Failed to destroy crumbs instance:', error);
             });
         };
     }, [deviceId]);
@@ -317,8 +329,12 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             }}
                             onFilterChange={(cutoff, resonance) => {
                                 setFilterParams(deviceId, cutoff, resonance);
-                                if (cutoff !== undefined) {handleParamChange('filterCutoff', cutoff);}
-                                if (resonance !== undefined) {handleParamChange('filterResonance', resonance);}
+                                if (cutoff !== undefined) {
+                                    handleParamChange('filterCutoff', cutoff);
+                                }
+                                if (resonance !== undefined) {
+                                    handleParamChange('filterResonance', resonance);
+                                }
                             }}
                             onGainChange={(gain) => {
                                 setMasterGain(deviceId, gain);

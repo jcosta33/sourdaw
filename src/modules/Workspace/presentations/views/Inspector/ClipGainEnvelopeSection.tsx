@@ -1,9 +1,12 @@
 import { type ReactElement } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
+import { Activity, Plus, RotateCcw } from 'lucide-react';
+
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
-import { Activity, Plus, RotateCcw } from 'lucide-react';
+import { useStore } from '#/infra/store/useStore';
+import { defaultGainEnvelopeStoreState, gainEnvelopeStore } from '#/modules/Arrangement/stores';
 import {
     getClipGainEnvelope,
     toggleClipGainEnvelope,
@@ -11,7 +14,7 @@ import {
     removeGainEnvelopePoint,
     resetClipGainEnvelope,
 } from '#/modules/Arrangement/useCases';
-import { defaultGainEnvelopeStoreState, gainEnvelopeStore } from '#/modules/Arrangement/stores';
+
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
 import { MetaText } from '../../components/Inspector/MetaText';
 

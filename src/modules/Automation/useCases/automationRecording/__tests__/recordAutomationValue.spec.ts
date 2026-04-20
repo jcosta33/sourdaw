@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { recordAutomationValue } from '../recordAutomationValue';
 
 const { activeRecording, pendingPoints, touchActive, findLaneId, clearPointsInRange } = vi.hoisted(() => {

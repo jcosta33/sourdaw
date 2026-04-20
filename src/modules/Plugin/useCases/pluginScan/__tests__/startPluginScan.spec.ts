@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { startPluginScan } from '../scanning/startPluginScan';
 
 const mocks = vi.hoisted(() => ({
@@ -10,9 +11,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../stores/pluginScanStore', () => ({
     pluginScanStore: {
-        get value() { return mocks.pluginScanStoreValue.value; },
+        get value() {
+            return mocks.pluginScanStoreValue.value;
+        },
         set: mocks.pluginScanStoreSet,
-    }
+    },
 }));
 
 vi.mock('../../../repositories/pluginBridge/scanPlugins', () => ({
@@ -38,13 +41,15 @@ describe('startPluginScan', () => {
 
         // Check start state
         expect(mocks.pluginScanStoreSet).toHaveBeenCalledWith(expect.objectContaining({ isScanning: true }));
-        
+
         // Check end state
-        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(expect.objectContaining({
-            isScanning: false,
-            scannedPlugins: mockPlugins,
-            errors: [],
-        }));
+        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                isScanning: false,
+                scannedPlugins: mockPlugins,
+                errors: [],
+            })
+        );
     });
 
     it('merges existing paths with default paths', async () => {
@@ -54,21 +59,20 @@ describe('startPluginScan', () => {
 
         await startPluginScan();
 
-        expect(mocks.scanPlugins).toHaveBeenCalledWith(expect.arrayContaining([
-            '/custom/path',
-            '/default/path'
-        ]));
+        expect(mocks.scanPlugins).toHaveBeenCalledWith(expect.arrayContaining(['/custom/path', '/default/path']));
     });
 
     it('sets error if no paths are configured or found', async () => {
         mocks.getDefaultPluginPaths.mockResolvedValue([]);
-        
+
         await startPluginScan();
 
-        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(expect.objectContaining({
-            isScanning: false,
-            errors: ['No plugin paths configured'],
-        }));
+        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                isScanning: false,
+                errors: ['No plugin paths configured'],
+            })
+        );
     });
 
     it('handles repository errors gracefully', async () => {
@@ -76,9 +80,11 @@ describe('startPluginScan', () => {
 
         await startPluginScan();
 
-        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(expect.objectContaining({
-            isScanning: false,
-            errors: ['IPC Failure'],
-        }));
+        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                isScanning: false,
+                errors: ['IPC Failure'],
+            })
+        );
     });
 });

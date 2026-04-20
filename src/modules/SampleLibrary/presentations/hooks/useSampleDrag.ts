@@ -7,17 +7,20 @@ import { type SampleRecord } from '../../models/LibraryTypes';
 export const useSampleDrag = (sample: SampleRecord) => {
     const handleDragStart = (e: React.DragEvent) => {
         // Set sample ID and basic metadata for the drop target
-        e.dataTransfer.setData('application/x-sourdaw-sample', JSON.stringify({
-            id: sample.id,
-            name: sample.displayName,
-            duration: sample.format.durationSec,
-            bpm: sample.analysis?.bpm,
-            key: sample.analysis?.key
-        }));
+        e.dataTransfer.setData(
+            'application/x-sourdaw-sample',
+            JSON.stringify({
+                id: sample.id,
+                name: sample.displayName,
+                duration: sample.format.durationSec,
+                bpm: sample.analysis?.bpm,
+                key: sample.analysis?.key,
+            })
+        );
 
         // Fallback for generic file drops
         e.dataTransfer.setData('text/plain', sample.relativePath);
-        
+
         // Indicate copy action
         e.dataTransfer.dropEffect = 'copy';
     };
@@ -37,5 +40,5 @@ export const sampleAuditionEngine = {
     },
     stop(): void {
         console.log('Stopping audition');
-    }
+    },
 };

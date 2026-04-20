@@ -1,20 +1,18 @@
+import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { type Clip } from '../../stores/trackStore';
-import { getNextClipId } from '../../repositories/clipIdCounter';
 
-export function addClip(
-    input: {
-        trackId: string;
-        startBeat: number;
-        endBeat: number;
-        name: string;
-        type?: 'audio' | 'midi';
-        audioBufferId?: string;
-        assetHash?: string;
-        isGhost?: boolean;
-    }
-): Clip | null {
+export function addClip(input: {
+    trackId: string;
+    startBeat: number;
+    endBeat: number;
+    name: string;
+    type?: 'audio' | 'midi';
+    audioBufferId?: string;
+    assetHash?: string;
+    isGhost?: boolean;
+}): Clip | null {
     const state = getTrackState();
     if (!state) {
         return null;

@@ -13,12 +13,7 @@ export type {
     ActionHandler,
     HandlerDescribeResult,
 } from './commandQueries';
-export {
-    generateGroupId,
-    createUndoEntry,
-    createCallbackUndoEntry,
-    isActionEntry,
-} from './commandQueries';
+export { generateGroupId, createUndoEntry, createCallbackUndoEntry, isActionEntry } from './commandQueries';
 
 export { executeAppAction } from './executeAppAction';
 export type { ExecuteOptions } from './executeAppAction';

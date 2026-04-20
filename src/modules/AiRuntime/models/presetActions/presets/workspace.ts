@@ -1,5 +1,6 @@
-import { type PresetAction } from './types';
 import { eventBus } from '#/app/registerDependencies';
+
+import { type PresetAction } from './types';
 
 export const workspacePresets: readonly PresetAction[] = [
     {

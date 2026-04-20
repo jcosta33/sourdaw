@@ -1,5 +1,6 @@
-import type { VCAGroup } from './helpers';
 import { vcaGroups } from './helpers';
+
+import type { VCAGroup } from './helpers';
 
 /**
  * Create a new VCA group.

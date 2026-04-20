@@ -1,7 +1,5 @@
 import { type ReactElement } from 'react';
-import { Input } from '#/components/ui/input';
-import { Button } from '#/components/ui/button';
-import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+
 import {
     Sparkles,
     Check,
@@ -24,9 +22,15 @@ import {
     Users,
     AlertTriangle,
 } from 'lucide-react';
+
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { Button } from '#/components/ui/button';
+import { Input } from '#/components/ui/input';
 import { toggleAiHistoryPanel } from '#/modules/AiRuntime/stores';
 import { describeAction } from '#/modules/Command/useCases';
+
 import { usePromptExecution, type PromptFuzzyResult, type SelectionTag } from '../hooks/usePromptExecution';
+
 import { LlmStatusBadge } from './Prompt/LlmStatusBadge';
 
 // ── Category icons ──────────────────────────────────────────────────────

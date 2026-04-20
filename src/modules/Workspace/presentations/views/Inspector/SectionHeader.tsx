@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react';
+
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 
 /** Section header with subtle border. Used by device-layout components. */

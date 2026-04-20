@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleDuplicateClip } from '../handleDuplicateClip';
 
 const mocks = vi.hoisted(() => ({

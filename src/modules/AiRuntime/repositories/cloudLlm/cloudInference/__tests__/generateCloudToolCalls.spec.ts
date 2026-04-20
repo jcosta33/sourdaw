@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { generateCloudToolCalls } from '../generateCloudToolCalls';
 
 const mocks = vi.hoisted(() => ({
@@ -24,16 +25,16 @@ describe('generateCloudToolCalls', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.mcpToOpenAiTools.mockReturnValue([
-            { function: { name: 'addTrack', description: 'Add a track', parameters: { type: 'object' } } }
+            { function: { name: 'addTrack', description: 'Add a track', parameters: { type: 'object' } } },
         ]);
         mocks.create.mockResolvedValue({
             content: [
                 { type: 'text', text: 'Sure, here are the edits.' },
-                { type: 'tool_use', name: 'addTrack', input: { name: 'Vocals', kind: 'audio' } }
-            ]
+                { type: 'tool_use', name: 'addTrack', input: { name: 'Vocals', kind: 'audio' } },
+            ],
         });
         mocks.getCloudClient.mockReturnValue({
-            messages: { create: mocks.create }
+            messages: { create: mocks.create },
         });
     });
 
@@ -47,12 +48,12 @@ describe('generateCloudToolCalls', () => {
 
         expect(mocks.create).toHaveBeenCalledTimes(1);
         const args = mocks.create.mock.calls[0][0];
-        
+
         expect(args.model).toBeDefined();
         expect(args.system).toContain('professional music production AI');
         expect(args.tools).toHaveLength(1);
         expect(args.tools[0].name).toBe('addTrack');
-        
+
         expect(args.messages).toHaveLength(1);
         expect(args.messages[0].content).toContain('mock-state');
         expect(args.messages[0].content).toContain('User request: add a track');
@@ -64,15 +65,13 @@ describe('generateCloudToolCalls', () => {
         expect(results).toHaveLength(1);
         expect(results[0]).toEqual({
             name: 'addTrack',
-            arguments: { name: 'Vocals', kind: 'audio' }
+            arguments: { name: 'Vocals', kind: 'audio' },
         });
     });
 
     it('handles empty tool blocks safely', async () => {
         mocks.create.mockResolvedValue({
-            content: [
-                { type: 'text', text: 'I cannot do that.' }
-            ]
+            content: [{ type: 'text', text: 'I cannot do that.' }],
         });
 
         const results = await generateCloudToolCalls('state', 'msg');

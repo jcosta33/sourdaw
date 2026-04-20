@@ -5,7 +5,9 @@
  * Sends the decoded IR data to the Dutch Oven engine.
  */
 import { type ReactElement, useState, useRef, useEffect, type DragEvent } from 'react';
+
 import { Upload } from 'lucide-react';
+
 import { logger } from '#/infra/logger/appLogger';
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
 
@@ -73,8 +75,8 @@ export const IrBrowser = ({ onIrLoaded }: IrBrowserProps): ReactElement => {
                 preview.push(peak);
             }
             setWaveform(preview);
-        } catch (err) {
-            logger.warn('[ProofChamber] Failed to decode IR:', err);
+        } catch (error) {
+            logger.warn('[ProofChamber] Failed to decode IR:', error);
         }
     };
 

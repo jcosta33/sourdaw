@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getGrooveOffsetAtBeat } from '#/modules/Arrangement/useCases/groove/applyGrooveTemplate';
+
 import { grooveStore } from '#/modules/Arrangement/stores/grooveStore';
+import { getGrooveOffsetAtBeat } from '#/modules/Arrangement/useCases/groove/applyGrooveTemplate';
 
 describe('getGrooveOffsetAtBeat', () => {
     beforeEach(() => {
@@ -11,7 +12,7 @@ describe('getGrooveOffsetAtBeat', () => {
                     name: 'Swing',
                     offsets: [0, 0.1], // alternate on-beat, off-beat
                     resolution: 0.5,
-                }
+                },
             ],
             projectGrooveId: 'swing',
             projectGrooveIntensity: 1.0,
@@ -29,7 +30,7 @@ describe('getGrooveOffsetAtBeat', () => {
         expect(getGrooveOffsetAtBeat(0.5)).toBe(0.1);
         expect(getGrooveOffsetAtBeat(1.0)).toBe(0);
         expect(getGrooveOffsetAtBeat(1.5)).toBe(0.1);
-        
+
         // Intensity 0.5
         grooveStore.set({ ...grooveStore.value!, projectGrooveIntensity: 0.5 });
         expect(getGrooveOffsetAtBeat(0.5)).toBe(0.05);

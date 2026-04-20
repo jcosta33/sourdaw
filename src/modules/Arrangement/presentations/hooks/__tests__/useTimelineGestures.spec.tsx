@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, act } from '@testing-library/react';
-import { useTimelineGestures } from '../useTimelineGestures';
 import { useRef } from 'react';
+
+import { render, fireEvent, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { useTimelineGestures } from '../useTimelineGestures';
 
 const mocks = vi.hoisted(() => ({
     zoomTimeline: vi.fn(),
@@ -18,15 +20,27 @@ vi.mock('../../../stores/timelineViewStore', () => ({
     scrollTimeline: mocks.scrollTimeline,
     setAutoScroll: mocks.setAutoScroll,
     setScrollY: mocks.setScrollY,
-    timelineViewStore: { get value() { return mocks.timelineViewStoreValue.value; } },
+    timelineViewStore: {
+        get value() {
+            return mocks.timelineViewStoreValue.value;
+        },
+    },
 }));
 
 vi.mock('../../../stores/trackStore', () => ({
-    trackStore: { get value() { return mocks.trackStoreValue.value; } },
+    trackStore: {
+        get value() {
+            return mocks.trackStoreValue.value;
+        },
+    },
 }));
 
 vi.mock('#/modules/Transport/stores', () => ({
-    transportStore: { get value() { return mocks.transportStoreValue.value; } },
+    transportStore: {
+        get value() {
+            return mocks.transportStoreValue.value;
+        },
+    },
 }));
 
 const TestComponent = () => {
@@ -91,7 +105,7 @@ describe('useTimelineGestures', () => {
     it('handles vertical scroll via wheel', () => {
         mocks.timelineViewStoreValue.value = { scrollY: 100 } as any;
         mocks.trackStoreValue.value = { tracks: [{ height: 1000 }] } as any;
-        
+
         const { getByTestId } = render(<TestComponent />);
         const canvas = getByTestId('canvas');
         // Manually set clientHeight since JSDOM might not calculate it from style

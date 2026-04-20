@@ -6,6 +6,7 @@
  * as knob values change.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type ADSREnvelopeProps = {
@@ -42,9 +43,13 @@ export const ADSREnvelope = ({
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {
+            return;
+        }
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
@@ -179,9 +184,13 @@ export const ADSREnvelope = ({
     }, [attack, decay, sustain, release, color, width, height, isInteractive]);
 
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange) return;
+        if (!onParamChange) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         const rect = canvas.getBoundingClientRect();
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;
@@ -200,7 +209,9 @@ export const ADSREnvelope = ({
             }
         }
 
-        if (!closest) return;
+        if (!closest) {
+            return;
+        }
 
         isDragging.current = true;
         activeBreakpoint.current = closest;
@@ -209,9 +220,13 @@ export const ADSREnvelope = ({
     };
 
     const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange || !isDragging.current || !activeBreakpoint.current) return;
+        if (!onParamChange || !isDragging.current || !activeBreakpoint.current) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         const rect = canvas.getBoundingClientRect();
         const pad = 6;
         const plotW = width - pad * 2;
@@ -249,9 +264,13 @@ export const ADSREnvelope = ({
     };
 
     const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange) return;
+        if (!onParamChange) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         isDragging.current = false;
         activeBreakpoint.current = null;
         canvas.releasePointerCapture(e.pointerId);

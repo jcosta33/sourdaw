@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleStemSeparate } from '../handleStemSeparate';
 
 const mocks = vi.hoisted(() => ({
@@ -20,7 +21,11 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: { get value() { return mocks.trackStoreValue.value; } },
+    trackStore: {
+        get value() {
+            return mocks.trackStoreValue.value;
+        },
+    },
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
@@ -75,17 +80,10 @@ describe('handleStemSeparate', () => {
             ],
         };
 
-        await expect(
-            handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c1' } })
-        ).rejects.toThrow();
-        expect(mocks.notifyUser).toHaveBeenCalledWith(
-            'Stem separation failed: clip has no audio buffer',
-            'error'
-        );
+        await expect(handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c1' } })).rejects.toThrow();
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Stem separation failed: clip has no audio buffer', 'error');
 
-        await expect(
-            handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c2' } })
-        ).rejects.toThrow();
+        await expect(handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c2' } })).rejects.toThrow();
     });
 
     it('bails if buffer cannot be loaded from cache', async () => {
@@ -94,9 +92,7 @@ describe('handleStemSeparate', () => {
         };
         mocks.cacheGet.mockReturnValue(null);
 
-        await expect(
-            handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c1' } })
-        ).rejects.toThrow();
+        await expect(handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c1' } })).rejects.toThrow();
 
         expect(mocks.notifyUser).toHaveBeenCalledWith(
             'Stem separation failed: audio buffer not found in cache',
@@ -168,9 +164,9 @@ describe('handleStemSeparate', () => {
         mocks.cacheGet.mockReturnValue({} as AudioBuffer);
         mocks.separateStems.mockRejectedValue(new Error('Oops'));
 
-        await expect(
-            handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c1' } })
-        ).rejects.toThrow('Oops');
+        await expect(handleStemSeparate.execute({ type: 'stemSeparate', payload: { clipId: 'c1' } })).rejects.toThrow(
+            'Oops'
+        );
 
         expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('Oops'));
     });

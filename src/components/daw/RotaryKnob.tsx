@@ -1,8 +1,9 @@
 import { type MouseEvent, type ReactElement, type PointerEvent, useRef } from 'react';
-import { cn } from '#/utils/Styles/cn';
+
 import { useStore } from '#/infra/store/useStore';
 import { midiLearnStore, type MidiLearnState } from '#/modules/MIDI/stores';
 import { startMidiLearn } from '#/modules/MIDI/useCases';
+import { cn } from '#/utils/Styles/cn';
 
 const defaultMidiLearnState: MidiLearnState = {
     mappings: [],
@@ -10,7 +11,19 @@ const defaultMidiLearnState: MidiLearnState = {
     learningTarget: null,
 };
 
-type Tone = 'neutral' | 'amber' | 'cyan' | 'peach' | 'lavender' | 'mint' | 'steel' | 'danger' | 'rose' | 'indigo' | 'sage' | 'copper';
+type Tone =
+    | 'neutral'
+    | 'amber'
+    | 'cyan'
+    | 'peach'
+    | 'lavender'
+    | 'mint'
+    | 'steel'
+    | 'danger'
+    | 'rose'
+    | 'indigo'
+    | 'sage'
+    | 'copper';
 
 const TONE_COLORS: Record<Tone, string> = {
     neutral: 'rgba(255, 255, 255, 0.5)',
@@ -133,9 +146,10 @@ export const RotaryKnob = ({
         rootRef.current?.setAttribute('data-dragging', '');
     };
 
-    const normalized = scale === 'log' && min > 0
-        ? Math.max(0, Math.min(1, (Math.log(value) - Math.log(min)) / (Math.log(max) - Math.log(min))))
-        : Math.max(0, Math.min(1, (value - min) / (max - min)));
+    const normalized =
+        scale === 'log' && min > 0
+            ? Math.max(0, Math.min(1, (Math.log(value) - Math.log(min)) / (Math.log(max) - Math.log(min))))
+            : Math.max(0, Math.min(1, (value - min) / (max - min)));
 
     const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
         if (!draggingRef.current) {
@@ -143,17 +157,21 @@ export const RotaryKnob = ({
         }
         const deltaY = startY.current - event.clientY;
         const sweepPx = 150;
-        
+
         let raw = 0;
         if (scale === 'log' && min > 0) {
             const startNorm = (Math.log(startValue.current) - Math.log(min)) / (Math.log(max) - Math.log(min));
             let sensitivityNorm = 1 / sweepPx;
-            if (event.shiftKey) sensitivityNorm *= 0.1;
+            if (event.shiftKey) {
+                sensitivityNorm *= 0.1;
+            }
             const newNorm = Math.max(0, Math.min(1, startNorm + deltaY * sensitivityNorm));
             raw = min * Math.exp(newNorm * (Math.log(max) - Math.log(min)));
         } else {
             let sensitivity = (max - min) / sweepPx;
-            if (event.shiftKey) sensitivity *= 0.1;
+            if (event.shiftKey) {
+                sensitivity *= 0.1;
+            }
             raw = startValue.current + deltaY * sensitivity;
         }
 

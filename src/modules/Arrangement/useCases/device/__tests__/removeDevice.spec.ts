@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { removeDevice } from '../removeDevice';
 
 const mocks = vi.hoisted(() => ({
@@ -31,9 +32,7 @@ describe('removeDevice', () => {
 
     it('removes device from store and engine', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [
-                { id: 't1', devices: [{ id: 'd1', type: 'reverb' }] }
-            ]
+            tracks: [{ id: 't1', devices: [{ id: 'd1', type: 'reverb' }] }],
         });
 
         removeDevice('d1');
@@ -46,9 +45,7 @@ describe('removeDevice', () => {
 
     it('unloads plugin if it is an external plugin', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [
-                { id: 't1', devices: [{ id: 'd1', type: 'external-plugin', externalInstanceId: 'inst1' }] }
-            ]
+            tracks: [{ id: 't1', devices: [{ id: 'd1', type: 'external-plugin', externalInstanceId: 'inst1' }] }],
         });
 
         removeDevice('d1');

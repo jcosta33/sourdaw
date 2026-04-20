@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { getPluginById } from '../getPluginById';
 
 const mocks = vi.hoisted(() => ({

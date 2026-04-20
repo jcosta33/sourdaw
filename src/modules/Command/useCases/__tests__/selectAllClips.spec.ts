@@ -10,9 +10,7 @@ vi.mock('#/modules/Workspace/useCases/workspaceState', () => ({
 }));
 
 vi.mock('#/modules/Workspace/useCases', async () => {
-    const actual = await vi.importActual<typeof import('#/modules/Workspace/useCases')>(
-        '#/modules/Workspace/useCases'
-    );
+    const actual = await vi.importActual<typeof import('#/modules/Workspace/useCases')>('#/modules/Workspace/useCases');
     return { ...actual, updateWorkspaceState: mocks.updateWorkspaceState };
 });
 
@@ -34,10 +32,7 @@ describe('selectAllClips', () => {
 
     it('collects all clip IDs and updates workspace state', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [
-                { clips: [{ id: 'c1' }, { id: 'c2' }] },
-                { clips: [{ id: 'c3' }] },
-            ],
+            tracks: [{ clips: [{ id: 'c1' }, { id: 'c2' }] }, { clips: [{ id: 'c3' }] }],
         });
 
         selectAllClips();

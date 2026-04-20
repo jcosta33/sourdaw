@@ -1,4 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
+
 import { type WorkspaceState } from '../models/WorkspaceState';
 
 export const defaultWorkspaceState: WorkspaceState = {

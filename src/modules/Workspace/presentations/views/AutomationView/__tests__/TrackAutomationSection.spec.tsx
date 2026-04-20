@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TrackAutomationSection } from '../TrackAutomationSection';
 
 vi.mock('#/utils/Styles/cn', () => ({
@@ -10,7 +11,9 @@ vi.mock('#/utils/Styles/cn', () => ({
                 classes.push(input);
             } else if (typeof input === 'object' && input !== null && !Array.isArray(input)) {
                 for (const [key, value] of Object.entries(input)) {
-                    if (value) {classes.push(key);}
+                    if (value) {
+                        classes.push(key);
+                    }
                 }
             }
         }
@@ -25,14 +28,28 @@ vi.mock('../AutomationLaneRow', () => ({
 }));
 
 vi.mock('../AutomationControls', () => ({
-    AutomationModeControl: ({ automationMode, laneCount, onModeChange }: { automationMode: string; laneCount: number; onModeChange: (mode: string) => void }) => (
+    AutomationModeControl: ({
+        automationMode,
+        laneCount,
+        onModeChange,
+    }: {
+        automationMode: string;
+        laneCount: number;
+        onModeChange: (mode: string) => void;
+    }) => (
         <div data-testid="mode-control" data-mode={automationMode} data-count={laneCount}>
             <button type="button" onClick={() => onModeChange('touch')}>
                 Change Mode
             </button>
         </div>
     ),
-    AutomationAddLaneControl: ({ params, onAdd }: { params: { id: string; name: string }[]; onAdd: (id: string, name: string) => void }) => (
+    AutomationAddLaneControl: ({
+        params,
+        onAdd,
+    }: {
+        params: { id: string; name: string }[];
+        onAdd: (id: string, name: string) => void;
+    }) => (
         <div data-testid="add-lane-control">
             {params.map((p) => (
                 <button key={p.id} type="button" onClick={() => onAdd(p.id, p.name)}>
@@ -98,7 +115,8 @@ describe('TrackAutomationSection', () => {
 
     it('should render track color indicator', () => {
         const { container } = render(<TrackAutomationSection {...defaultProps} trackColor="#00ff00" />);
-        const colorIndicator = container.querySelector('[style*="background-color: rgb(0, 255, 0)"]') ||
+        const colorIndicator =
+            container.querySelector('[style*="background-color: rgb(0, 255, 0)"]') ||
             container.querySelector('[style*="#00ff00"]');
         expect(colorIndicator).toBeTruthy();
     });

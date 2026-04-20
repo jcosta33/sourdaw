@@ -1,5 +1,5 @@
-import { trackStore } from '../../stores/trackStore';
 import { type Clip } from '../../models/Track';
+import { trackStore } from '../../stores/trackStore';
 
 /** Update clips on all tracks with a mapper function. */
 export function updateClipsOnAllTracks(mapper: (clip: Clip) => Clip): void {

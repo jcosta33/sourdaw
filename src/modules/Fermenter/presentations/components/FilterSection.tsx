@@ -4,10 +4,12 @@
  * Knobs below for precision. No isolated sub-tabs.
  */
 import { type ReactElement } from 'react';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
+
 import { FILTER_MODE_NAMES, FILTER_MODEL_NAMES } from '../../models/FermenterPatch';
 
 type FilterSectionProps = {
@@ -109,8 +111,12 @@ export const FilterSection = ({
                     width={500}
                     height={120}
                     onParamChange={(id, val) => {
-                        if (id === 'filterCutoff') {onCutoffChange(val);}
-                        if (id === 'filterResonance') {onResonanceChange(val);}
+                        if (id === 'filterCutoff') {
+                            onCutoffChange(val);
+                        }
+                        if (id === 'filterResonance') {
+                            onResonanceChange(val);
+                        }
                     }}
                 />
             </div>

@@ -14,6 +14,7 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
+
 import { type WorkerRequest, type WorkerResponse } from '../models/InferenceRequest';
 import { updateActiveRenderProgress } from '../stores/inferenceProgressStore';
 
@@ -76,10 +77,7 @@ async function getOnnxWorker(): Promise<Worker> {
         return workerState.onnx.worker;
     }
 
-    const worker = new Worker(
-        new URL('../workers/onnxInferenceWorker.ts', import.meta.url),
-        { type: 'module' }
-    );
+    const worker = new Worker(new URL('../workers/onnxInferenceWorker.ts', import.meta.url), { type: 'module' });
     worker.onmessage = createMessageHandler(workerState.onnx);
     workerState.onnx.worker = worker;
     workerState.onnx.initialized = true;
@@ -97,10 +95,7 @@ async function getTfjsWorker(): Promise<Worker> {
         return workerState.tfjs.worker;
     }
 
-    const worker = new Worker(
-        new URL('../workers/tfjsInferenceWorker.ts', import.meta.url),
-        { type: 'module' }
-    );
+    const worker = new Worker(new URL('../workers/tfjsInferenceWorker.ts', import.meta.url), { type: 'module' });
     worker.onmessage = createMessageHandler(workerState.tfjs);
     workerState.tfjs.worker = worker;
     workerState.tfjs.initialized = true;
@@ -192,7 +187,9 @@ export const inferenceWorkerBridge = {
         return response as Extract<WorkerResponse, { type: 'tts-result' }>;
     },
 
-    async runDiffSingerPhrase(input: RunDiffSingerInput): Promise<Extract<WorkerResponse, { type: 'diffsinger-result' }>> {
+    async runDiffSingerPhrase(
+        input: RunDiffSingerInput
+    ): Promise<Extract<WorkerResponse, { type: 'diffsinger-result' }>> {
         const worker = await getOnnxWorker();
         const response = await sendRequest(worker, workerState.onnx, input);
         return response as Extract<WorkerResponse, { type: 'diffsinger-result' }>;

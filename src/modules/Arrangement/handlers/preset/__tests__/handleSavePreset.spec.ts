@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleSavePreset } from '../handleSavePreset';
 
 const mocks = vi.hoisted(() => ({
@@ -36,11 +37,9 @@ describe('handleSavePreset', () => {
                 {
                     id: 't1',
                     kind: 'midi',
-                    devices: [
-                        { type: 'EQ', name: 'EQ 1', parameterValues: { gain: 1 } },
-                    ]
-                }
-            ]
+                    devices: [{ type: 'EQ', name: 'EQ 1', parameterValues: { gain: 1 } }],
+                },
+            ],
         });
 
         handleSavePreset.execute({
@@ -52,9 +51,7 @@ describe('handleSavePreset', () => {
             name: 'My Preset',
             category: 'Synth',
             trackKind: 'midi',
-            devices: [
-                { type: 'EQ', name: 'EQ 1', parameterValues: { gain: 1 } },
-            ],
+            devices: [{ type: 'EQ', name: 'EQ 1', parameterValues: { gain: 1 } }],
         });
     });
 

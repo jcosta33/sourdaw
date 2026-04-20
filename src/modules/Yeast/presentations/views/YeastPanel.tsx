@@ -9,8 +9,6 @@
  */
 import { type ComponentProps, type ReactElement, useState } from 'react';
 
-import { Row, Stack, Grid } from '#/components/layout';
-import { useStore } from '#/infra/store/useStore';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
@@ -18,17 +16,20 @@ import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack, Grid } from '#/components/layout';
+import { useStore } from '#/infra/store/useStore';
+
+import { createDefaultPattern, type ArpStep } from '../../models/ArpPattern';
 import { yeastStore, type YeastState } from '../../stores/yeastStore';
 import { addYeastProcessor } from '../../useCases/addYeastProcessor';
+import { PROCESSOR_TYPES } from '../../useCases/processorFactory';
 import { removeYeastProcessor } from '../../useCases/removeYeastProcessor';
 import { setYeastProcessorBypass } from '../../useCases/setYeastProcessorBypass';
 import { setYeastProcessorParam } from '../../useCases/setYeastProcessorParam';
 import { setYeastUiLevel } from '../../useCases/setYeastUiLevel';
-import { PROCESSOR_TYPES } from '../../useCases/processorFactory';
+import { KeyboardSplit } from '../components/KeyboardSplit';
 import { ProcessorParams } from '../components/ProcessorParams';
 import { StepPatternEditor } from '../components/StepPatternEditor';
-import { KeyboardSplit } from '../components/KeyboardSplit';
-import { createDefaultPattern, type ArpStep } from '../../models/ArpPattern';
 
 const LEVEL_OPTIONS = [
     { level: 1 as const, label: 'Play', detail: 'Sprout' },
@@ -197,7 +198,10 @@ export const YeastPanel = (): ReactElement => {
             <Grid gap={3} className="h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)_16rem]">
                 <aside className="min-h-0 overflow-y-auto pr-1">
                     <Stack gap={3}>
-                        <SideCard title="Rack frame" detail="Levels stay docked here so the instrument keeps one identity.">
+                        <SideCard
+                            title="Rack frame"
+                            detail="Levels stay docked here so the instrument keeps one identity."
+                        >
                             <Stack gap={1}>
                                 {LEVEL_OPTIONS.map((entry) => {
                                     const active = uiLevel === entry.level;
@@ -214,7 +218,9 @@ export const YeastPanel = (): ReactElement => {
                                             }`}
                                             onClick={() => setYeastUiLevel(entry.level)}
                                         >
-                                            <span className="text-[11px] font-medium text-foreground">{entry.label}</span>
+                                            <span className="text-[11px] font-medium text-foreground">
+                                                {entry.label}
+                                            </span>
                                             <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/45">
                                                 {entry.detail}
                                             </span>
@@ -260,7 +266,9 @@ export const YeastPanel = (): ReactElement => {
                                 />
                                 <MetricTile
                                     label="Chord"
-                                    value={state.processors.some((processor) => processor.type === 'chord') ? 'On' : 'Off'}
+                                    value={
+                                        state.processors.some((processor) => processor.type === 'chord') ? 'On' : 'Off'
+                                    }
                                     detail="Harmony memory"
                                 />
                             </Row>
@@ -328,7 +336,9 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                 onClick={() => {
                     if (hasArp) {
                         const arp = state.processors.find((p) => p.type === 'arpeggiator');
-                        if (arp) {removeYeastProcessor(arp.id);}
+                        if (arp) {
+                            removeYeastProcessor(arp.id);
+                        }
                     } else {
                         addYeastProcessor('arpeggiator');
                     }
@@ -346,7 +356,9 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     className="min-w-[4.5rem]"
                     onChange={(e) => {
                         const arp = state.processors.find((p) => p.type === 'arpeggiator');
-                        if (arp) {setYeastProcessorParam(arp.id, 'mode', parseInt(e.target.value));}
+                        if (arp) {
+                            setYeastProcessorParam(arp.id, 'mode', parseInt(e.target.value));
+                        }
                     }}
                     defaultValue={0}
                 >
@@ -367,7 +379,9 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     value={8}
                     onChange={(v) => {
                         const arp = state.processors.find((p) => p.type === 'arpeggiator');
-                        if (arp) {setYeastProcessorParam(arp.id, 'rate_denom', Math.round(v));}
+                        if (arp) {
+                            setYeastProcessorParam(arp.id, 'rate_denom', Math.round(v));
+                        }
                     }}
                     min={1}
                     max={32}
@@ -383,7 +397,9 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                 size="sm"
                 onClick={() => {
                     const arp = state.processors.find((p) => p.type === 'arpeggiator');
-                    if (arp) {setYeastProcessorParam(arp.id, 'latch', 1);}
+                    if (arp) {
+                        setYeastProcessorParam(arp.id, 'latch', 1);
+                    }
                 }}
             >
                 Latch
@@ -554,9 +570,7 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
         <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto">
             {/* Keyboard visualization */}
             <Stack gap={1}>
-                <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest block">
-                    Keyboard
-                </span>
+                <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest block">Keyboard</span>
                 <KeyboardSplit width={500} height={32} />
             </Stack>
 

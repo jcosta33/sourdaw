@@ -1,6 +1,6 @@
 import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
-import { collaborationStore } from '../stores/collaborationStore';
 import { type PeerConnectionManager } from '../repositories/peerConnection';
+import { collaborationStore } from '../stores/collaborationStore';
 
 export type PeerRole = 'host' | 'editor' | 'transport-controller' | 'viewer';
 

@@ -1,9 +1,13 @@
 import { type ReactElement, useState, useEffect, useRef } from 'react';
+
+import { Plus, Power, Trash2, Monitor, LayoutGrid } from 'lucide-react';
+
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMenuDisabledRow, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Button } from '#/components/ui/button';
-import { Plus, Power, Trash2, Monitor, LayoutGrid } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+import { useStore } from '#/infra/store/useStore';
 import {
     getPlatformPlugins,
     getPluginById,
@@ -13,15 +17,14 @@ import {
     addExternalDevice,
     reorderDevices,
 } from '#/modules/Arrangement/useCases';
-import { useStore } from '#/infra/store/useStore';
 import { pluginScanStore, defaultPluginScanState } from '#/modules/Plugin/stores';
 import { openPluginGui } from '#/modules/Plugin/useCases';
-import { type Track } from '../../../models/TrackViewTypes';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
-import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { cn } from '#/utils/Styles/cn';
-import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
+
+import { type Track } from '../../../models/TrackViewTypes';
 import { showDevicePanelForType } from '../../../useCases/panels/devicePanels/showDevicePanelForType';
+import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
 
 type TrackDevicesSectionProps = {
     track: Track;

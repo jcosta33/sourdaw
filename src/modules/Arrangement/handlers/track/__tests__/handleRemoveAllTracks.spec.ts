@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleRemoveAllTracks } from '../handleRemoveAllTracks';
 
 const mocks = vi.hoisted(() => ({
@@ -29,10 +30,7 @@ describe('handleRemoveAllTracks', () => {
 
     it('removes all tracks in the store', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [
-                { id: 't1' },
-                { id: 't2' },
-            ]
+            tracks: [{ id: 't1' }, { id: 't2' }],
         });
 
         handleRemoveAllTracks.execute({ type: 'removeAllTracks', payload: {} });

@@ -1,4 +1,5 @@
 import { type ReactElement, useEffect, useRef } from 'react';
+
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type GlutenCurveProps = {

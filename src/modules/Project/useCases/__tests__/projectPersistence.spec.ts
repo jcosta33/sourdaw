@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { loadProject } from '../projectPersistence/loadProject';
-import { saveProject } from '../projectPersistence/saveProject/saveProject';
 import { renameProject } from '../projectPersistence/saveProject/renameProject';
+import { saveProject } from '../projectPersistence/saveProject/saveProject';
 
 const mocks = vi.hoisted(() => ({
     projectStoreValue: { value: { loading: false, dirty: false, name: 'Initial' } },
@@ -18,9 +19,11 @@ const mocks = vi.hoisted(() => ({
 // Mock the dependencies of the use cases we are testing
 vi.mock('../../stores/projectStore', () => ({
     projectStore: {
-        get value() { return mocks.projectStoreValue.value; },
+        get value() {
+            return mocks.projectStoreValue.value;
+        },
         set: mocks.projectStoreSet,
-    }
+    },
 }));
 
 // For saveProject.ts (nested two levels down from projectPersistence/)
@@ -83,10 +86,12 @@ describe('Project Persistence Use Cases', () => {
     describe('renameProject', () => {
         it('updates name and marks dirty', () => {
             renameProject('New Name');
-            expect(mocks.projectStoreSet).toHaveBeenCalledWith(expect.objectContaining({
-                name: 'New Name',
-                dirty: true,
-            }));
+            expect(mocks.projectStoreSet).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    name: 'New Name',
+                    dirty: true,
+                })
+            );
         });
     });
 });

@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TrackLevelSection } from '../TrackLevelSection';
+
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
@@ -81,9 +83,7 @@ vi.mock('../../../components/Inspector/ControlHeader', () => ({
 }));
 
 vi.mock('../../../components/Inspector/SurfaceCard', () => ({
-    SurfaceCard: ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="surface-card">{children}</div>
-    ),
+    SurfaceCard: ({ children }: { children: React.ReactNode }) => <div data-testid="surface-card">{children}</div>,
 }));
 
 describe('TrackLevelSection', () => {

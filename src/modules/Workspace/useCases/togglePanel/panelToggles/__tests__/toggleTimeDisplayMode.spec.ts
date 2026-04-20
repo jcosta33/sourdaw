@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { toggleTimeDisplayMode } from '../toggleTimeDisplayMode';
 
 const mocks = vi.hoisted(() => ({

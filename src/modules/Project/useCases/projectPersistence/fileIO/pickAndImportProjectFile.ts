@@ -1,8 +1,12 @@
 import { readTextFile } from '@tauri-apps/plugin-fs';
-import { type ProjectData } from '../../../models/ProjectData';
-import { pickFiles } from '../../fileDialog';
-import { applyImportedProjectData } from './applyImportedProjectData';
+
 import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { type ProjectData } from '../../../models/ProjectData';
+import { loadProjectFromFile } from '../../../repositories/nativeProjectFiles/loadProjectFromFile';
+import { pickFiles } from '../../fileDialog';
+
+import { applyImportedProjectData } from './applyImportedProjectData';
 
 export async function importProjectFile(file: File): Promise<boolean> {
     try {
@@ -21,8 +25,6 @@ export async function importProjectFile(file: File): Promise<boolean> {
         return false;
     }
 }
-
-import { loadProjectFromFile } from '../../../repositories/nativeProjectFiles/loadProjectFromFile';
 
 export async function importProjectFromNativePath(path: string): Promise<boolean> {
     try {
@@ -45,7 +47,9 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
         filters: [{ name: 'Sourdaw Project', extensions: ['sourdaw'] }],
     });
 
-    if (!paths || paths.length === 0) return false;
+    if (!paths || paths.length === 0) {
+        return false;
+    }
 
     try {
         const path = typeof paths[0] === 'string' ? paths[0] : (paths[0] as any).path;

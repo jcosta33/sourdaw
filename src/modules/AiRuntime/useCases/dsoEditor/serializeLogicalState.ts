@@ -134,7 +134,7 @@ export function serializeLogicalState(options?: {
         for (const clip of track.clips) {
             const logicalClip: LogicalClip = {
                 name: clip.name,
-                type: (clip.type as 'audio' | 'midi') ?? 'audio',
+                type: clip.type ?? 'audio',
                 track_id: track.id,
                 start_beat: clip.startBeat,
                 end_beat: clip.endBeat,

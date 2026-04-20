@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { isTauri as repoIsTauri } from '../../../repositories/nativeAIBridge/isTauri';
 import { isTauri } from '../isTauri';
 

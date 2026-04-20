@@ -8,6 +8,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 
 import { projectStore } from '../../stores/projectStore';
+
 import { setAutoSaveHandle, stopActiveAutoSave } from './helpers/autoSaveHandle';
 
 export async function loadProject(): Promise<boolean> {

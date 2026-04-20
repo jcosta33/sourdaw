@@ -7,6 +7,7 @@
  * Uses requestAnimationFrame with no React state updates for zero re-render cost.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { getTrackAnalyser } from '#/modules/AudioEngine/useCases';
 
 type TrackLevelIndicatorProps = {
@@ -26,7 +27,9 @@ const lerp = (a: number, b: number, t: number): string => {
 };
 
 const dbToColor = (db: number): string => {
-    if (db <= DB_FLOOR) {return 'transparent';}
+    if (db <= DB_FLOOR) {
+        return 'transparent';
+    }
     const norm = Math.max(0, Math.min(1, (db - DB_FLOOR) / (DB_CEILING - DB_FLOOR)));
 
     if (norm < 0.3) {
@@ -54,9 +57,13 @@ export const TrackLevelIndicator = ({ trackId, height }: TrackLevelIndicatorProp
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) {return;}
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) {return;}
+        if (!ctx) {
+            return;
+        }
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = BAR_WIDTH * dpr;

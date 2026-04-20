@@ -9,8 +9,9 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
-import { type OfflineDeviceNode } from './deviceNodeFactory';
 import { compileFaustDSP, createFaustNode, isFaustModule } from '#/modules/Plugin/useCases';
+
+import { type OfflineDeviceNode } from './deviceNodeFactory';
 
 export { isFaustModule };
 
@@ -59,14 +60,14 @@ export async function createFaustDevice(
                         }
                         try {
                             (node as any).setParamValue(resolvedName, value);
-                        } catch (e) {
-                            logger.warn(`[FaustDevice] Failed to set param ${resolvedName} to ${value}:`, e);
+                        } catch (error) {
+                            logger.warn(`[FaustDevice] Failed to set param ${resolvedName} to ${value}:`, error);
                         }
                     } else {
                         try {
                             (node as any).setParamValue(name, value);
-                        } catch (e) {
-                            logger.warn(`[FaustDevice] Failed to set param ${name} to ${value}:`, e);
+                        } catch (error) {
+                            logger.warn(`[FaustDevice] Failed to set param ${name} to ${value}:`, error);
                         }
                     }
                 }
@@ -94,8 +95,8 @@ export async function createFaustDevice(
                 if ('destroy' in audioNode && typeof (audioNode as any).destroy === 'function') {
                     try {
                         (audioNode as any).destroy();
-                    } catch (e) {
-                        logger.warn(`[FaustDevice] Failed to destroy node:`, e);
+                    } catch (error) {
+                        logger.warn(`[FaustDevice] Failed to destroy node:`, error);
                     }
                 }
             },

@@ -14,7 +14,6 @@
  *   { type: 'bypass', bypassed }
  */
 
-import '../wasm/workletPolyfill.js';
 import { initSync, ScoringInstance } from '../wasm/scoring.js';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -35,7 +34,9 @@ class ScoringProcessor extends AudioWorkletProcessor {
             const msg = e.data;
             try {
                 if (msg.type === 'init') {
-                    if (this._ready) {return;}
+                    if (this._ready) {
+                        return;
+                    }
                     this._initWasm(msg.wasmBytes);
                 } else if (msg.type === 'init-sab') {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
@@ -44,10 +45,10 @@ class ScoringProcessor extends AudioWorkletProcessor {
                 } else if (msg.type === 'param' && this._ready && !this._faulted) {
                     this._instance.set_param(msg.name, msg.value);
                 }
-            } catch (err) {
-                console.error('ScoringProcessor error:', err);
+            } catch (error) {
+                console.error('ScoringProcessor error:', error);
                 if (!this._ready) {
-                    this.port.postMessage({ type: 'error', message: err?.message ?? String(err) });
+                    this.port.postMessage({ type: 'error', message: error?.message ?? String(error) });
                 }
             }
         };
@@ -63,7 +64,9 @@ class ScoringProcessor extends AudioWorkletProcessor {
 
     _passthrough(input, output) {
         for (let ch = 0; ch < Math.min(input.length, output.length); ch++) {
-            if (input[ch] && output[ch]) {output[ch].set(input[ch]);}
+            if (input[ch] && output[ch]) {
+                output[ch].set(input[ch]);
+            }
         }
     }
 
@@ -72,11 +75,15 @@ class ScoringProcessor extends AudioWorkletProcessor {
         const output = outputs[0];
 
         if (!this._ready || this._faulted) {
-            if (input && output) {this._passthrough(input, output);}
+            if (input && output) {
+                this._passthrough(input, output);
+            }
             return true;
         }
 
-        if (!input || output.length < 1 || input.length < 1) {return true;}
+        if (!input || output.length === 0 || input.length === 0) {
+            return true;
+        }
 
         const frames = input[0].length;
 
@@ -87,7 +94,9 @@ class ScoringProcessor extends AudioWorkletProcessor {
 
             const mem = this._memory.buffer;
             output[0].set(new Float32Array(mem, leftPtr, frames));
-            if (output[1]) {output[1].set(new Float32Array(mem, rightPtr, frames));}
+            if (output[1]) {
+                output[1].set(new Float32Array(mem, rightPtr, frames));
+            }
 
             // Send telemetry periodically
             this._frameCount++;
@@ -109,10 +118,12 @@ class ScoringProcessor extends AudioWorkletProcessor {
                     }
                 }
             }
-        } catch (err) {
+        } catch (error) {
             this._faulted = true;
-            this.port.postMessage({ type: 'error', message: String(err) });
-            if (input && output) {this._passthrough(input, output);}
+            this.port.postMessage({ type: 'error', message: String(error) });
+            if (input && output) {
+                this._passthrough(input, output);
+            }
         }
 
         return true;

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { transposeForChordTrack } from '../transposeForChordTrack';
 
 const mocks = vi.hoisted(() => ({

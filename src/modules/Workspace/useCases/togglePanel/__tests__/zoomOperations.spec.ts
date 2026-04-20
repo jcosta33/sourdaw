@@ -1,17 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { zoomToFit } from '../zoomOperations/zoomToFit';
-import { zoomToSelection } from '../zoomOperations/zoomToSelection';
+
+import { defaultWorkspaceState } from '../../../models/WorkspaceState';
+import * as workspaceRepo from '../../../repositories/workspace';
 import { cycleAutomationVisibility } from '../zoomOperations/cycleAutomationVisibility';
+import { onScrollToPlayhead } from '../zoomOperations/onScrollToPlayhead';
 import { onZoomToFit } from '../zoomOperations/onZoomToFit';
 import { onZoomToSelection } from '../zoomOperations/onZoomToSelection';
-import { onScrollToPlayhead } from '../zoomOperations/onScrollToPlayhead';
-import * as workspaceRepo from '../../../repositories/workspace';
-import { defaultWorkspaceState } from '../../../models/WorkspaceState';
+import { zoomToFit } from '../zoomOperations/zoomToFit';
+import { zoomToSelection } from '../zoomOperations/zoomToSelection';
 
-const mocks = vi.hoisted(() => ({ mockEventBus: {
+const mocks = vi.hoisted(() => ({
+    mockEventBus: {
         emit: vi.fn().mockResolvedValue(undefined),
         on: vi.fn(),
-    } }));
+    },
+}));
 
 vi.mock('#/app/registerDependencies', () => ({
     eventBus: mocks.mockEventBus,
@@ -24,8 +27,8 @@ vi.mock('../../../repositories/workspace', () => ({
 // We also need to mock trackStore because zoomToSelection uses it
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {
-        value: { tracks: [] }
-    }
+        value: { tracks: [] },
+    },
 }));
 
 describe('zoomOperations', () => {

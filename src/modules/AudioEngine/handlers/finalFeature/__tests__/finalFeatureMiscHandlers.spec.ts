@@ -1,4 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { connectPush, disconnectPush } from '#/modules/Plugin/useCases';
+import { addCvOutput } from '#/modules/Synth/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { setProtocol } from '../../../useCases/controlSurface/setProtocol';
+import { loadModel } from '../../../useCases/rave/loadModel';
+import { setTransferBlend } from '../../../useCases/rave/setTransferBlend';
 import { handleAddCvOutput } from '../handleAddCvOutput';
 import { handleConnectPush } from '../handleConnectPush';
 import { handleDisconnectPush } from '../handleDisconnectPush';
@@ -6,13 +14,6 @@ import { handleExportDawProject } from '../handleExportDawProject';
 import { handleLoadRaveModel } from '../handleLoadRaveModel';
 import { handleSetControlSurface } from '../handleSetControlSurface';
 import { handleSetRaveBlend } from '../handleSetRaveBlend';
-
-import { addCvOutput } from '#/modules/Synth/useCases';
-import { connectPush, disconnectPush } from '#/modules/Plugin/useCases';
-import { notifyUser } from '#/utils/Notification/notifyUser';
-import { loadModel } from '../../../useCases/rave/loadModel';
-import { setProtocol } from '../../../useCases/controlSurface/setProtocol';
-import { setTransferBlend } from '../../../useCases/rave/setTransferBlend';
 
 vi.mock('#/modules/Synth/useCases', () => ({ addCvOutput: vi.fn() }));
 vi.mock('#/modules/Plugin/useCases', () => ({ connectPush: vi.fn(), disconnectPush: vi.fn() }));

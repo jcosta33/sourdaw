@@ -1,4 +1,5 @@
 import { type KeyboardEvent, type ReactElement } from 'react';
+
 import { DawCompactInput } from './DawCompactInput';
 
 type DawMenuInlineEditorProps = {

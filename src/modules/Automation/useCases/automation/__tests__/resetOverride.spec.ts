@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { resetOverride } from '../resetOverride';
+
 import { automationStore } from '../../../stores/automationStore';
+import { resetOverride } from '../resetOverride';
 
 describe('resetOverride', () => {
     beforeEach(() => {
@@ -13,7 +14,15 @@ describe('resetOverride', () => {
                     parameterName: 'P1',
                     points: [],
                     objects: [
-                        { id: 'o1', laneId: 'l1', startBeat: 0, endBeat: 4, points: [], name: 'Obj 1', overrides: { points: true } },
+                        {
+                            id: 'o1',
+                            laneId: 'l1',
+                            startBeat: 0,
+                            endBeat: 4,
+                            points: [],
+                            name: 'Obj 1',
+                            overrides: { points: true },
+                        },
                     ],
                     visible: true,
                     enabled: true,
@@ -21,7 +30,7 @@ describe('resetOverride', () => {
                     virginTerritory: false,
                     minValue: 0,
                     maxValue: 1,
-                }
+                },
             ],
         });
     });

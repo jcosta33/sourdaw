@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { isLlmAvailable } from '../isLlmAvailable';
 
 const mocks = vi.hoisted(() => ({

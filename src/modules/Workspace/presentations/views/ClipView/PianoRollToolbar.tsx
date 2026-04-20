@@ -3,13 +3,15 @@
  * chord mode, paint mode, lasso mode, and zoom controls.
  */
 import { type ReactElement } from 'react';
+
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
-import { cn } from '#/utils/Styles/cn';
-import { SCALES, SCALE_ROOT_LABELS } from '../../helpers/pianoRollConstants';
 import { CHORD_TYPE_KEYS } from '#/modules/MIDI/useCases';
+import { cn } from '#/utils/Styles/cn';
+
+import { SCALES, SCALE_ROOT_LABELS } from '../../helpers/pianoRollConstants';
 
 const ToolbarDivider = (): ReactElement => (
     <div
@@ -307,7 +309,9 @@ export const PianoRollToolbar = ({
         {showExpressionView && activeExpressionLane !== undefined && onActiveExpressionLaneChange !== undefined ? (
             <DawCompactSelect
                 value={activeExpressionLane}
-                onChange={(e) => onActiveExpressionLaneChange(e.target.value as 'velocity' | 'pressure' | 'slide' | 'pitchBend')}
+                onChange={(e) =>
+                    onActiveExpressionLaneChange(e.target.value as 'velocity' | 'pressure' | 'slide' | 'pitchBend')
+                }
                 size="micro"
                 aria-label="Active expression lane"
             >

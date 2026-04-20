@@ -1,8 +1,9 @@
-import { findClipById } from '../../services/findClipById';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getWorkspaceState } from '#/modules/Workspace/useCases';
-import { removeClip } from '../clip/removeClip';
+
+import { findClipById } from '../../services/findClipById';
 import { setClipClipboard } from '../../stores/clipboardStore';
+import { removeClip } from '../clip/removeClip';
 
 export function cutSelectedClip(): void {
     const workspace = getWorkspaceState();

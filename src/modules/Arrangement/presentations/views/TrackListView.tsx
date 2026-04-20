@@ -7,8 +7,13 @@ import {
     useState,
     useLayoutEffect,
 } from 'react';
-import { useStore } from '#/infra/store/useStore';
-import { confirmUser } from '#/utils/Notification/confirmUser';
+
+import { Plus, FolderPlus, Rows3, Music, Mic2, GitBranch, FileStack, Wand2 } from 'lucide-react';
+
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { DawMenuSectionLabel } from '#/components/daw/DawMenuParts';
+import { Button } from '#/components/ui/button';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -16,30 +21,24 @@ import {
     DropdownMenuTrigger,
     DropdownMenuSeparator,
 } from '#/components/ui/dropdown-menu';
-import { DawMenuSectionLabel } from '#/components/daw/DawMenuParts';
-import { getTrackTemplates, loadTrackTemplate } from '../../useCases/trackTemplate';
-import { Button } from '#/components/ui/button';
-import { Plus, FolderPlus, Rows3, Music, Mic2, GitBranch, FileStack, Wand2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { useTracks } from '../hooks/useTracks';
-import { TrackHeader } from './TrackHeader';
+import { useStore } from '#/infra/store/useStore';
+import { injectPromptCommand } from '#/modules/AiRuntime/useCases';
+import { preferencesStore } from '#/modules/Workspace/stores';
+import { defaultPreferences, type Preferences, setTrackHeight, setWorkspaceMode } from '#/modules/Workspace/useCases';
+import { confirmUser } from '#/utils/Notification/confirmUser';
+
+import { timelineViewStore, setScrollY, type TimelineViewState } from '../../stores/timelineViewStore';
 import { addTrack } from '../../useCases/addTrack';
 import { createFolder } from '../../useCases/folder/createFolder';
+import { removeTrack } from '../../useCases/removeTrack';
 import { reorderTrack } from '../../useCases/toggleTrackState/reorderTrack';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
-import { removeTrack } from '../../useCases/removeTrack';
-import { preferencesStore } from '#/modules/Workspace/stores';
-import {
-    defaultPreferences,
-    type Preferences,
-    setTrackHeight,
-    setWorkspaceMode,
-} from '#/modules/Workspace/useCases';
-import { timelineViewStore, setScrollY, type TimelineViewState } from '../../stores/timelineViewStore';
-import { injectPromptCommand } from '#/modules/AiRuntime/useCases';
+import { getTrackTemplates, loadTrackTemplate } from '../../useCases/trackTemplate';
+import { useTracks } from '../hooks/useTracks';
+
 import { MiniMasterSpectrum } from './MiniMasterSpectrum';
-import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { DawEmptyState } from '#/components/daw/DawEmptyState';
+import { TrackHeader } from './TrackHeader';
 
 const HEIGHT_CYCLE: Preferences['trackHeight'][] = ['compact', 'normal', 'large'];
 const HEIGHT_LABELS: Record<Preferences['trackHeight'], string> = {

@@ -1,6 +1,7 @@
 import { type ReactElement, useState } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
 import { X, Sparkles, Music, RefreshCw, AudioWaveform, Library, Info, Upload, Loader2 } from 'lucide-react';
+
 import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
@@ -9,15 +10,24 @@ import { DawUtilityNotice } from '#/components/daw/DawUtilityNotice';
 import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
-import { isTauri } from '#/utils/tauriBridge';
-import { notifyUser } from '#/utils/Notification/notifyUser';
-import { workspaceStore } from '#/modules/Workspace/stores';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { useStore } from '#/infra/store/useStore';
 import { aiStore } from '#/modules/AiGeneration/stores';
-import { toggleAiPanel, handleGenerateMidiPrompt, handleGenerateAudioFallback, handleStemSeparationPreview, cancelProcessingTask } from '#/modules/AiGeneration/useCases';
+import {
+    toggleAiPanel,
+    handleGenerateMidiPrompt,
+    handleGenerateAudioFallback,
+    handleStemSeparationPreview,
+    cancelProcessingTask,
+} from '#/modules/AiGeneration/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { transportStore } from '#/modules/Transport/stores';
+import { workspaceStore } from '#/modules/Workspace/stores';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+import { isTauri } from '#/utils/tauriBridge';
+
 import { AiTaskResultCard } from '../components/AiTaskResultCard';
 import { GenreGrid, MoodGrid, InstrumentGrid } from '../components/GenerativeParamGrids';
+
 import { PatternBrowser } from './PatternBrowser';
 
 type GenerativePanelWorkspaceState = {
@@ -95,12 +105,8 @@ export const GenerativeAiPanel = (): ReactElement | null => {
 
     // In-flight detection — disable the Generate button while a task of the matching
     // type is already processing. This prevents double-submits and gives clear feedback.
-    const midiIsProcessing = state.tasks.some(
-        (t) => t.type === 'midi-generation' && t.status === 'processing'
-    );
-    const audioIsProcessing = state.tasks.some(
-        (t) => t.type === 'audio-generation' && t.status === 'processing'
-    );
+    const midiIsProcessing = state.tasks.some((t) => t.type === 'midi-generation' && t.status === 'processing');
+    const audioIsProcessing = state.tasks.some((t) => t.type === 'audio-generation' && t.status === 'processing');
 
     const handleCancelAudio = (): void => {
         cancelProcessingTask('audio-generation');
@@ -132,7 +138,10 @@ export const GenerativeAiPanel = (): ReactElement | null => {
 
         if (activeTab === 'audio') {
             const bpm = transportStore.value?.tempo ?? 120;
-            void handleGenerateAudioFallback(`${String(Math.round(bpm))} BPM, ${finalPrompt}`, audioDuration.toString());
+            void handleGenerateAudioFallback(
+                `${String(Math.round(bpm))} BPM, ${finalPrompt}`,
+                audioDuration.toString()
+            );
         } else if (activeTab === 'midi') {
             void handleGenerateMidiPrompt(finalPrompt, midiNotes, creativity / 100);
         }
@@ -389,7 +398,11 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 <ParamSection label="Mood" value={midiMood} onClear={() => setMidiMood('')}>
                                     <MoodGrid value={midiMood} onChange={setMidiMood} />
                                 </ParamSection>
-                                <ParamSection label="Instrument" value={midiInstrument} onClear={() => setMidiInstrument('')}>
+                                <ParamSection
+                                    label="Instrument"
+                                    value={midiInstrument}
+                                    onClear={() => setMidiInstrument('')}
+                                >
                                     <InstrumentGrid value={midiInstrument} onChange={setMidiInstrument} />
                                 </ParamSection>
                             </div>

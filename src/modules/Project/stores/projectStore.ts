@@ -25,8 +25,13 @@ export type ProjectStoreState = {
 
 export const projectStore = createStore<ProjectStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'projectMeta', {
-        toCrdt: ({ name, createdAt, updatedAt, keyRoot, scaleName, tuning }) => ({ 
-            name, createdAt, updatedAt, keyRoot, scaleName, tuning 
+        toCrdt: ({ name, createdAt, updatedAt, keyRoot, scaleName, tuning }) => ({
+            name,
+            createdAt,
+            updatedAt,
+            keyRoot,
+            scaleName,
+            tuning,
         }),
     }),
     initialData: {
@@ -39,7 +44,7 @@ export const projectStore = createStore<ProjectStoreState>({
         scaleName: 'chromatic',
         tuning: {
             name: 'Equal Temperament',
-            frequencies: Array.from({ length: 128 }, (_, i) => 440 * Math.pow(2, (i - 69) / 12)),
+            frequencies: Array.from({ length: 128 }, (_, i) => 440 * 2 ** ((i - 69) / 12)),
         },
         initialized: false,
     },

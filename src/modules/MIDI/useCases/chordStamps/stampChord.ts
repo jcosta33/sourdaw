@@ -1,7 +1,9 @@
-import { midiStore } from '../../stores/midiStore';
 import { createMidiNote, type MidiNote } from '../../models/MidiNote';
-import type { ChordType } from './helpers';
+import { midiStore } from '../../stores/midiStore';
+
 import { CHORD_TYPES } from './helpers';
+
+import type { ChordType } from './helpers';
 
 /**
  * Stamp a chord at the given position, returning the created note IDs.

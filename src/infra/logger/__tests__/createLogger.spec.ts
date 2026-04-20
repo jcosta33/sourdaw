@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { createLogger } from '../createLogger';
 import { type LogWriter } from '../types';
 

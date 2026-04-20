@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { KIT_808_DEF, DRUM_KIT_DEFS, getDrumKitDefByIndex } from '../kitDefinitions/getDrumKitDefByIndex';
 
 describe('drum kit definitions', () => {

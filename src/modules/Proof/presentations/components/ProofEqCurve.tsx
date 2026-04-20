@@ -6,6 +6,7 @@
  * Band type and M/S mode shown as color coding.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { type ProofPatch } from '../../models/ProofPatch';
 
 const MIN_FREQ = 20;
@@ -17,7 +18,7 @@ const CHANNEL_INDICATORS: Record<number, string> = { 0: '', 1: 'M', 2: 'S' };
 const freqToX = (freq: number, w: number): number =>
     (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * w;
 
-const xToFreq = (x: number, w: number): number => MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, x / w);
+const xToFreq = (x: number, w: number): number => MIN_FREQ * (MAX_FREQ / MIN_FREQ) ** (x / w);
 
 const gainToY = (gain: number, h: number): number => h / 2 - (gain / DB_RANGE) * (h / 2);
 
@@ -31,7 +32,7 @@ const peakingMag = (f: number, fc: number, gainDb: number, Q: number): number =>
     const w = f / fc;
     const w2 = w * w;
     const bw = w / Q;
-    const A = Math.pow(10, gainDb / 40);
+    const A = 10 ** (gainDb / 40);
     const num = (1 - w2) ** 2 + (bw * A) ** 2;
     const den = (1 - w2) ** 2 + (bw / A) ** 2;
     return 10 * Math.log10(num / den);
@@ -51,9 +52,13 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) {return;}
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) {return;}
+        if (!ctx) {
+            return;
+        }
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
@@ -113,12 +118,12 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
         const NUM_POINTS = 200;
         const freqs = Array.from(
             { length: NUM_POINTS },
-            (_, i) => MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, i / (NUM_POINTS - 1))
+            (_, i) => MIN_FREQ * (MAX_FREQ / MIN_FREQ) ** (i / (NUM_POINTS - 1))
         );
 
         // Per-band curves + sum
-        const bandMags: number[][] = patch.eqBands.map(() => new Array(NUM_POINTS).fill(0));
-        const sumMag = new Array(NUM_POINTS).fill(0);
+        const bandMags: number[][] = patch.eqBands.map(() => Array.from({ length: NUM_POINTS }).fill(0));
+        const sumMag = Array.from({ length: NUM_POINTS }).fill(0);
 
         for (let b = 0; b < patch.eqBands.length; b++) {
             const band = patch.eqBands[b]!;
@@ -138,7 +143,9 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
         // Draw per-band filled curves (subtle)
         for (let b = 0; b < patch.eqBands.length; b++) {
             const band = patch.eqBands[b]!;
-            if (!band.enabled || Math.abs(band.gain) < 0.01) {continue;}
+            if (!band.enabled || Math.abs(band.gain) < 0.01) {
+                continue;
+            }
 
             ctx.beginPath();
             ctx.moveTo(freqToX(freqs[0]!, w), zeroY);
@@ -147,7 +154,7 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
             }
             ctx.lineTo(freqToX(freqs[NUM_POINTS - 1]!, w), zeroY);
             ctx.closePath();
-            ctx.fillStyle = BAND_COLORS[b]! + '1a';
+            ctx.fillStyle = `${BAND_COLORS[b]!}1a`;
             ctx.fill();
         }
 
@@ -155,7 +162,7 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
         ctx.beginPath();
         for (let i = 0; i < NUM_POINTS; i++) {
             const x = freqToX(freqs[i]!, w);
-            const y = gainToY(sumMag[i]!, h);
+            const y = gainToY(sumMag[i], h);
             if (i === 0) {
                 ctx.moveTo(x, y);
             } else {
@@ -195,7 +202,7 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
             } else {
                 ctx.beginPath();
                 ctx.arc(x, y, 3, 0, Math.PI * 2);
-                ctx.fillStyle = color + '40';
+                ctx.fillStyle = `${color}40`;
                 ctx.fill();
             }
             ctx.strokeStyle = band.enabled ? 'rgba(255,255,255,0.85)' : 'transparent';
@@ -216,7 +223,9 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
     // Drag handling
     const handlePointerDown = (e: React.PointerEvent) => {
         const canvas = canvasRef.current;
-        if (!canvas) {return;}
+        if (!canvas) {
+            return;
+        }
         const rect = canvas.getBoundingClientRect();
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;
@@ -243,9 +252,13 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
 
     const handlePointerMove = (e: React.PointerEvent) => {
         const idx = dragBandRef.current;
-        if (idx === null) {return;}
+        if (idx === null) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (!canvas) {return;}
+        if (!canvas) {
+            return;
+        }
         const rect = canvas.getBoundingClientRect();
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;

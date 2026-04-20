@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { PluginDummy } from '#/modules/Arrangement/__tests__/PluginDummy';
+
 import { EffectsTab } from '../EffectsTab';
 
 const renderWithTooltip = (ui: React.ReactElement) => {
@@ -28,8 +30,8 @@ describe('EffectsTab', () => {
             isPlaying: false,
             currentUrl: null,
             error: null,
-            isLoading: false
-        }
+            isLoading: false,
+        },
     };
 
     beforeEach(() => {
@@ -37,23 +39,17 @@ describe('EffectsTab', () => {
     });
 
     it('should render without crashing', () => {
-        renderWithTooltip(
-            <EffectsTab {...defaultProps} />
-        );
+        renderWithTooltip(<EffectsTab {...defaultProps} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should render with useCase bindings', () => {
-        renderWithTooltip(
-            <EffectsTab {...defaultProps} />
-        );
+        renderWithTooltip(<EffectsTab {...defaultProps} />);
         expect(document.body).toBeTruthy();
     });
 
     it('should have interactive elements', () => {
-        renderWithTooltip(
-            <EffectsTab {...defaultProps} />
-        );
+        renderWithTooltip(<EffectsTab {...defaultProps} />);
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });

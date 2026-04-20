@@ -1,13 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleSetSnapValue } from '../handleSetSnapValue';
-import { handleSetMarkerColor } from '../handleSetMarkerColor';
+
+import { setMarkerColor } from '#/modules/Arrangement/useCases';
+import {
+    addAutomationLane,
+    addAutomationPoint,
+    getAutomationStoreState,
+    removeAutomationPoint,
+} from '#/modules/Automation/useCases';
+
+import { setSnapValue } from '../../../useCases/togglePanel/panelToggles/setSnapValue';
 import { handleAddAutomationLane } from '../handleAddAutomationLane';
 import { handleAddAutomationPoint } from '../handleAddAutomationPoint';
 import { handleRemoveAutomationPoint } from '../handleRemoveAutomationPoint';
-
-import { setSnapValue } from '../../../useCases/togglePanel/panelToggles/setSnapValue';
-import { setMarkerColor } from '#/modules/Arrangement/useCases';
-import { addAutomationLane, addAutomationPoint, getAutomationStoreState, removeAutomationPoint } from '#/modules/Automation/useCases';
+import { handleSetMarkerColor } from '../handleSetMarkerColor';
+import { handleSetSnapValue } from '../handleSetSnapValue';
 
 vi.mock('../../../useCases/togglePanel/panelToggles/setSnapValue', () => ({ setSnapValue: vi.fn() }));
 vi.mock('#/modules/Arrangement/useCases', () => ({ setMarkerColor: vi.fn() }));
@@ -34,30 +40,42 @@ describe('Workspace Misc Handlers', () => {
     });
 
     it('handleAddAutomationLane should delegate to addAutomationLane', () => {
-        handleAddAutomationLane.execute({ type: 'addAutomationLane', payload: { trackId: 't1', parameterId: 'gain', parameterName: 'Gain' } });
+        handleAddAutomationLane.execute({
+            type: 'addAutomationLane',
+            payload: { trackId: 't1', parameterId: 'gain', parameterName: 'Gain' },
+        });
         expect(addAutomationLane).toHaveBeenCalledWith('t1', 'gain', 'Gain');
     });
 
     it('handleAddAutomationPoint should delegate to addAutomationPoint', () => {
-        handleAddAutomationPoint.execute({ type: 'addAutomationPoint', payload: { laneId: 'l1', beat: 4, value: 0.5 } });
+        handleAddAutomationPoint.execute({
+            type: 'addAutomationPoint',
+            payload: { laneId: 'l1', beat: 4, value: 0.5 },
+        });
         expect(addAutomationPoint).toHaveBeenCalledWith('l1', { beat: 4, value: 0.5, curve: 'linear', tension: 0 });
     });
 
     it('handleRemoveAutomationPoint should delegate to removeAutomationPoint', () => {
         vi.mocked(getAutomationStoreState).mockReturnValue({
-            lanes: [{ id: 'l1', points: [{ beat: 4, value: 0.5, curve: 'linear', tension: 0 }] }]
+            lanes: [{ id: 'l1', points: [{ beat: 4, value: 0.5, curve: 'linear', tension: 0 }] }],
         } as any);
-        
-        handleRemoveAutomationPoint.execute({ type: 'removeAutomationPoint', payload: { laneId: 'l1', pointIndex: 0 } });
+
+        handleRemoveAutomationPoint.execute({
+            type: 'removeAutomationPoint',
+            payload: { laneId: 'l1', pointIndex: 0 },
+        });
         expect(removeAutomationPoint).toHaveBeenCalledWith('l1', 4);
     });
 
     it('handleRemoveAutomationPoint should do nothing if state is missing or out of bounds', () => {
         vi.mocked(getAutomationStoreState).mockReturnValue({
-            lanes: [{ id: 'l1', points: [] }]
+            lanes: [{ id: 'l1', points: [] }],
         } as any);
-        
-        handleRemoveAutomationPoint.execute({ type: 'removeAutomationPoint', payload: { laneId: 'l1', pointIndex: 0 } });
+
+        handleRemoveAutomationPoint.execute({
+            type: 'removeAutomationPoint',
+            payload: { laneId: 'l1', pointIndex: 0 },
+        });
         expect(removeAutomationPoint).not.toHaveBeenCalled();
     });
 });

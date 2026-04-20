@@ -1,10 +1,13 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+
 import { App } from '../App';
 
 // Mock providers and components
 vi.mock('@tanstack/react-query', () => ({
-    QueryClientProvider: ({ children }: { children: React.ReactNode }) => <div data-testid="query-provider">{children}</div>,
+    QueryClientProvider: ({ children }: { children: React.ReactNode }) => (
+        <div data-testid="query-provider">{children}</div>
+    ),
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -12,7 +15,9 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 vi.mock('#/components/ui/tooltip', () => ({
-    TooltipProvider: ({ children }: { children: React.ReactNode }) => <div data-testid="tooltip-provider">{children}</div>,
+    TooltipProvider: ({ children }: { children: React.ReactNode }) => (
+        <div data-testid="tooltip-provider">{children}</div>
+    ),
 }));
 
 vi.mock('#/modules/Workspace/presentations/components/ErrorBoundary', () => ({

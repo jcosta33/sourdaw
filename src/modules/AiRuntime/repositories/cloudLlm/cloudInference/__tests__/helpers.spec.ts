@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { CLOUD_MODEL } from '../helpers';
 
 describe('cloudInference helpers', () => {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { audioEngine } from '../../../repositories/createWebAudioEngine';
 import { updateDeviceBypass } from '../updateDeviceBypass';
 

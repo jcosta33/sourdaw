@@ -1,4 +1,5 @@
 import { type ReactElement, useEffect, useRef } from 'react';
+
 import { cn } from '#/utils/Styles/cn';
 
 /**
@@ -303,7 +304,6 @@ export const PianoModel3D = ({
         let rafId = 0;
 
         const render = (): void => {
-
             const W = canvas.width;
             const H = canvas.height;
             gl.viewport(0, 0, W, H);
@@ -497,11 +497,7 @@ export const PianoModel3D = ({
                 uploadBuffer[i] = buf[i]!;
             }
             gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-            gl.bufferData(
-                gl.ARRAY_BUFFER,
-                uploadBuffer.subarray(0, vertexCount),
-                gl.DYNAMIC_DRAW
-            );
+            gl.bufferData(gl.ARRAY_BUFFER, uploadBuffer.subarray(0, vertexCount), gl.DYNAMIC_DRAW);
             gl.drawArrays(gl.TRIANGLES, 0, vertexCount / 6);
 
             rafId = requestAnimationFrame(render);

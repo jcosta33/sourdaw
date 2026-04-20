@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { PatternBrowser } from '../PatternBrowser';
 
 // Mock external dependencies
@@ -25,7 +26,10 @@ vi.mock('../../../models/midiPatternLibrary', () => ({
     ALL_KEYS: ['C', 'D', 'E', 'F', 'G', 'A', 'B'],
     SCALE_TYPES: ['major', 'minor'],
     SCALE_LABELS: { major: 'Major', minor: 'Minor' },
-    ALL_GENRES: [{ id: 'pop', label: 'Pop' }, { id: 'rock', label: 'Rock' }],
+    ALL_GENRES: [
+        { id: 'pop', label: 'Pop' },
+        { id: 'rock', label: 'Rock' },
+    ],
     filterTemplates: vi.fn(({ query, category }: { query?: string; category?: string }) => {
         const templates = [
             {
@@ -38,8 +42,12 @@ vi.mock('../../../models/midiPatternLibrary', () => ({
             },
         ];
         return templates.filter((t) => {
-            if (category && t.category !== category) {return false;}
-            if (query && !t.name.toLowerCase().includes(query.toLowerCase())) {return false;}
+            if (category && t.category !== category) {
+                return false;
+            }
+            if (query && !t.name.toLowerCase().includes(query.toLowerCase())) {
+                return false;
+            }
             return true;
         });
     }),
@@ -102,7 +110,7 @@ describe('PatternBrowser', () => {
     it('should filter patterns by category when clicked', () => {
         render(<PatternBrowser />);
         const chordsButtons = screen.getAllByText(/Chords/i);
-        const chordsButton = chordsButtons.find(b => b.tagName === 'BUTTON');
+        const chordsButton = chordsButtons.find((b) => b.tagName === 'BUTTON');
         fireEvent.click(chordsButton!);
         // Category filter should be applied
         expect(chordsButton).toHaveClass('bg-accent');

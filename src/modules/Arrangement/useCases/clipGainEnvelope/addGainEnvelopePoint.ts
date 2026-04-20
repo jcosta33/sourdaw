@@ -1,4 +1,5 @@
 import { type GainEnvelopePoint, setEnvelope } from '../../stores/gainEnvelopeStore';
+
 import { ensureClipGainEnvelope } from './getClipGainEnvelope';
 
 export type { GainEnvelopePoint };
@@ -17,7 +18,8 @@ export function addGainEnvelopePoint(clipId: string, beatOffset: number, gainDb:
     };
 
     const idx = env.points.findIndex((p) => p.beatOffset > beatOffset);
-    const nextPoints = idx === -1 ? [...env.points, point] : [...env.points.slice(0, idx), point, ...env.points.slice(idx)];
+    const nextPoints =
+        idx === -1 ? [...env.points, point] : [...env.points.slice(0, idx), point, ...env.points.slice(idx)];
     setEnvelope(clipId, { ...env, points: nextPoints });
     return point;
 }

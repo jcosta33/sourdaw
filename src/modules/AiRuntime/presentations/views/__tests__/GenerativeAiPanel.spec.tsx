@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { GenerativeAiPanel } from '../GenerativeAiPanel';
 
 // Mock external dependencies
@@ -123,11 +124,11 @@ describe('GenerativeAiPanel', () => {
 
     it('should switch between tabs when clicked', () => {
         render(<GenerativeAiPanel />);
-        
+
         const audioTab = screen.getByText('Audio');
         fireEvent.click(audioTab);
         expect(screen.getByText(/requires the Sourdaw desktop app/i)).toBeInTheDocument();
-        
+
         const stemsTab = screen.getByText('Stems');
         fireEvent.click(stemsTab);
         // Use getAllByText and check length

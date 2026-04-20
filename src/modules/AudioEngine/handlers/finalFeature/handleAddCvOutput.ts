@@ -1,5 +1,5 @@
-import { createHandler } from '#/utils/createHandler';
 import { addCvOutput } from '#/modules/Synth/useCases';
+import { createHandler } from '#/utils/createHandler';
 
 // AudioEngine-local shape (AGENTS.md §95 — model isolation).
 type CvOutputType = 'cv-pitch' | 'cv-velocity' | 'cv-modulation' | 'gate' | 'trigger' | 'clock';

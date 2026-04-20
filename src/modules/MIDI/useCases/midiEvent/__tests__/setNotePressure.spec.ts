@@ -1,14 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { setNotePressure } from '../setNotePressure';
+
 import { midiStore } from '../../../stores/midiStore';
+import { setNotePressure } from '../setNotePressure';
 
 describe('setNotePressure', () => {
     beforeEach(() => {
         midiStore.set({
             notesByClipId: {
-                clip1: [
-                    { id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }
-                ]
+                clip1: [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
             },
             ccByClipId: {},
             pitchBendByClipId: {},

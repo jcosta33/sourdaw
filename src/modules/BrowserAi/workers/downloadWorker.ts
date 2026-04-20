@@ -137,7 +137,7 @@ async function downloadModel(req: DownloadRequest): Promise<void> {
             lastError = error;
             if (attempt < maxRetries - 1) {
                 // Exponential backoff: 1s, 2s, 4s
-                await new Promise<void>((resolve) => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+                await new Promise<void>((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
             }
         }
     }

@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import { type WAMDescriptor, type WAMInstance } from '#/modules/Plugin/models/WamPluginHostTypes';
 
-import { instances } from '../helpers';
 import { getActiveInstances } from '../getActiveInstances';
+import { instances } from '../helpers';
 
 const descriptor: WAMDescriptor = {
     id: 'd1',

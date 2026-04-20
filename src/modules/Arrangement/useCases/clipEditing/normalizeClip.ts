@@ -1,10 +1,8 @@
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
+
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import {
-    computeNormalizationScale,
-    type NormalizationMode,
-} from '../../transformers/clipDspTransformers';
+import { computeNormalizationScale, type NormalizationMode } from '../../transformers/clipDspTransformers';
 
 export function normalizeClip(clipId: string, mode: NormalizationMode = 'peak', targetDb?: number): void {
     const state = getTrackState();

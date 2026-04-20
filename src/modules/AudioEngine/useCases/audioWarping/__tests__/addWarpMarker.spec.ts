@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { addWarpMarker } from '../addWarpMarker';
 
 const mocks = vi.hoisted(() => ({
@@ -9,7 +10,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/AudioEngine/stores/audioWarp', () => ({
     audioWarpStore: {
-        get value() { return mocks.audioWarpStoreValue.value; },
+        get value() {
+            return mocks.audioWarpStoreValue.value;
+        },
         set: mocks.audioWarpStoreSet,
     },
     DEFAULT_WARP_SETTINGS: { markers: [] },

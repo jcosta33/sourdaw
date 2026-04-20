@@ -3,12 +3,14 @@
  * All controls visible — 9 params is manageable without collapsing.
  */
 import { type ReactElement } from 'react';
-import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
-import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
-import { SectionHeader } from '../SectionHeader';
-import { DeviceParameterControl } from '../DeviceParameterControl';
+
 import { EQCurve } from '#/components/daw/visualizers/EQCurve';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
+
+import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
+import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
+import { DeviceParameterControl } from '../DeviceParameterControl';
+import { SectionHeader } from '../SectionHeader';
 
 type P = DeviceLayoutProps['parameters'][number];
 const Param = ({

@@ -1,5 +1,5 @@
-import { scratchPadStore } from '../../../stores/scratchPadStore';
 import { createScratchPadSection } from '../../../models/ScratchPadSection';
+import { scratchPadStore } from '../../../stores/scratchPadStore';
 
 export function addScratchPadSection(startBeat: number, endBeat: number, name: string, color: string): void {
     const state = scratchPadStore.value;

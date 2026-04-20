@@ -1,4 +1,5 @@
 import { type RefObject, useEffect, useRef } from 'react';
+
 import { getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
 import { getEngineState, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';

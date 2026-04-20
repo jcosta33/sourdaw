@@ -4,6 +4,7 @@ import { trackStore, markerStore } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
+
 import { type ProjectSnapshot } from '../../../models/ProjectVersion';
 
 /**
@@ -11,7 +12,7 @@ import { type ProjectSnapshot } from '../../../models/ProjectVersion';
  */
 export const restoreSnapshot = inject({ logger })(
     ({ logger }) =>
-        (function restoreSnapshot(snapshot: ProjectSnapshot): void {
+        function restoreSnapshot(snapshot: ProjectSnapshot): void {
             try {
                 const parsed = JSON.parse(snapshot.data);
                 if (typeof parsed !== 'object' || parsed === null) {
@@ -36,5 +37,5 @@ export const restoreSnapshot = inject({ logger })(
             } catch (error) {
                 logger.error(new Error('Corrupt snapshot — failed to parse', { cause: error }));
             }
-        })
+        }
 );

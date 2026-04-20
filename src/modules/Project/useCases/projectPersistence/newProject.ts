@@ -1,15 +1,16 @@
 import { logger } from '#/infra/logger/appLogger';
-import { addTrack } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { addTrack } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
+import { removeProjectJson } from '../../repositories/project/storageOperations';
 import { arrangementStore, defaultArrangementId } from '../../stores/arrangementStore';
 import { projectStore } from '../../stores/projectStore';
-import { removeProjectJson } from '../../repositories/project/storageOperations';
+
 import { setAutoSaveHandle, stopActiveAutoSave } from './helpers/autoSaveHandle';
 import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
 
@@ -57,7 +58,7 @@ export function newProject(name = 'Untitled Project'): void {
         scaleName: 'chromatic',
         tuning: {
             name: 'Equal Temperament',
-            frequencies: Array.from({ length: 128 }, (_, i) => 440 * Math.pow(2, (i - 69) / 12)),
+            frequencies: Array.from({ length: 128 }, (_, i) => 440 * 2 ** ((i - 69) / 12)),
         },
         initialized: true,
     });

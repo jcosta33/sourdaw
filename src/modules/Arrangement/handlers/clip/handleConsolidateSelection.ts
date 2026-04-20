@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+
 import { bounceSelection } from '../../useCases/freezeBounce/bounceOperations';
 
 export const handleConsolidateSelection = createHandler<'consolidateSelection'>({

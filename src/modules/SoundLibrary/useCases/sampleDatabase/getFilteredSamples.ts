@@ -1,6 +1,6 @@
-import { sampleDatabaseStore } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
 import { type SampleEntry } from '#/modules/SoundLibrary/models/SampleEntry';
 import { AUTO_TAG_RULES } from '#/modules/SoundLibrary/services/sampleTaggingHelpers';
+import { sampleDatabaseStore } from '#/modules/SoundLibrary/stores/sampleDatabaseStore';
 
 /**
  * §69.2 — Identity-keyed memo cache. The full filter+sort pipeline is

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { addMonitor } from '../addMonitor';
+
 import { type ControlRoomState } from '../../../stores/controlRoom';
+import { addMonitor } from '../addMonitor';
 
 const { storeCell, applySet } = vi.hoisted(() => {
     const storeCell = { state: null as ControlRoomState | null };

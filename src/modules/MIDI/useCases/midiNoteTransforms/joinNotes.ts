@@ -1,5 +1,5 @@
-import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
 import { type MidiNote } from '../../models/MidiNote';
+import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
 
 /**
  * Merges adjacent selected notes on the same pitch into single notes (R-A6).

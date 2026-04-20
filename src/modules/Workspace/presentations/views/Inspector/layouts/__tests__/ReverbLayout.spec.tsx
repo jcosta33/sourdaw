@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import type { DeviceLayoutProps } from '../../deviceLayoutRegistry';
 
 // Mock external dependencies
@@ -19,9 +20,7 @@ vi.mock('#/components/daw/visualizers/ReverbDecay', () => ({
 }));
 
 vi.mock('../../../../components/Inspector/SurfaceCard', () => ({
-    SurfaceCard: ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="surface-card">{children}</div>
-    ),
+    SurfaceCard: ({ children }: { children: React.ReactNode }) => <div data-testid="surface-card">{children}</div>,
 }));
 
 vi.mock('../../DeviceParameterControl', () => ({
@@ -47,10 +46,58 @@ describe('ReverbLayout', () => {
     };
 
     const mockParameters = [
-        { id: 'rev-size', name: 'Size', type: 'float', value: 0.5, defaultValue: 0.5, minValue: 0, maxValue: 1, unit: '', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-        { id: 'rev-decay', name: 'Decay', type: 'float', value: 2, defaultValue: 2, minValue: 0.1, maxValue: 10, unit: 's', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-        { id: 'rev-damping', name: 'Damping', type: 'float', value: 0.5, defaultValue: 0.5, minValue: 0, maxValue: 1, unit: '', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-        { id: 'rev-mix', name: 'Mix', type: 'float', value: 0.3, defaultValue: 0.3, minValue: 0, maxValue: 1, unit: '', automatable: true, hasAutomation: false, deviceId: 'device-1' },
+        {
+            id: 'rev-size',
+            name: 'Size',
+            type: 'float',
+            value: 0.5,
+            defaultValue: 0.5,
+            minValue: 0,
+            maxValue: 1,
+            unit: '',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
+        {
+            id: 'rev-decay',
+            name: 'Decay',
+            type: 'float',
+            value: 2,
+            defaultValue: 2,
+            minValue: 0.1,
+            maxValue: 10,
+            unit: 's',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
+        {
+            id: 'rev-damping',
+            name: 'Damping',
+            type: 'float',
+            value: 0.5,
+            defaultValue: 0.5,
+            minValue: 0,
+            maxValue: 1,
+            unit: '',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
+        {
+            id: 'rev-mix',
+            name: 'Mix',
+            type: 'float',
+            value: 0.3,
+            defaultValue: 0.3,
+            minValue: 0,
+            maxValue: 1,
+            unit: '',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
     ];
 
     const mockProps: DeviceLayoutProps = {

@@ -90,11 +90,11 @@ export { snapClipToScale } from './snapClipToScale';
 export { toggleStepRecording } from './stepRecording/toggleStepRecording';
 export { stepRecordNoteOn } from './stepRecording/stepRecordNoteOn';
 export { stepRecordNoteOff } from './stepRecording/stepRecordNoteOff';
-export { 
-    stepRecordAdvance, 
+export {
+    stepRecordAdvance,
     stepRecordRetreat,
     stepRecordStepUp,
-    stepRecordStepDown 
+    stepRecordStepDown,
 } from './stepRecording/stepRecordNavigation';
 
 export { setMidiOutput } from './midiRouting/setMidiOutput';

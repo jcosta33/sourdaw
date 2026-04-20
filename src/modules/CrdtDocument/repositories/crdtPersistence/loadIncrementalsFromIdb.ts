@@ -1,4 +1,5 @@
 import { type DocId } from '../../models/CrdtDocumentTypes';
+
 import { STORE_NAME, openDatabase } from './helpers';
 
 /** Load all incremental chunks for a document and apply them to the base. */

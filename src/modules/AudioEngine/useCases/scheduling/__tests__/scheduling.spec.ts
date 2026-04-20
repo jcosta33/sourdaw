@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { getCurrentTime } from '../getCurrentTime';
 import { scheduleClick } from '../scheduleClick';
 import { stopAllScheduled } from '../stopAllScheduled';
-import { getCurrentTime } from '../getCurrentTime';
 
 const mocks = vi.hoisted(() => ({
     scheduleClick: vi.fn(),
     stopAllScheduled: vi.fn(),
-    context: { 
+    context: {
         currentTime: 123.456,
         createOscillator: vi.fn(),
         createGain: vi.fn(),

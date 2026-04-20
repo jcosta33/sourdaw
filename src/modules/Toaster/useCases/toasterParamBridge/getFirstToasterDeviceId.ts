@@ -1,5 +1,5 @@
-import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { type Track } from '#/modules/Arrangement/models/Track';
+import { getAllTracks } from '#/modules/Arrangement/useCases';
 
 /**
  * §62.3 — The Toaster sequencer calls this at ~100 Hz. The previous

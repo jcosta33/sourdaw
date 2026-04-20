@@ -1,15 +1,17 @@
 import { useEffect } from 'react';
+
 import { importMidiFile } from '#/modules/Arrangement/useCases';
-import { saveProject, newProject } from '#/modules/Project/useCases';
 import { undo, redo } from '#/modules/Command/useCases';
+import { saveProject, newProject } from '#/modules/Project/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
+
+import { onCommandRedo } from '../../useCases/appEventSubscribers/onCommandRedo';
+import { onCommandUndo } from '../../useCases/appEventSubscribers/onCommandUndo';
+import { onMidiImport } from '../../useCases/appEventSubscribers/onMidiImport';
+import { onProjectNew } from '../../useCases/appEventSubscribers/onProjectNew';
+import { onProjectSave } from '../../useCases/appEventSubscribers/onProjectSave';
 import { onDialogOpenExport } from '../../useCases/dialogs/onDialogOpenExport';
 import { onDialogOpenPreferences } from '../../useCases/dialogs/onDialogOpenPreferences';
-import { onProjectSave } from '../../useCases/appEventSubscribers/onProjectSave';
-import { onProjectNew } from '../../useCases/appEventSubscribers/onProjectNew';
-import { onCommandUndo } from '../../useCases/appEventSubscribers/onCommandUndo';
-import { onCommandRedo } from '../../useCases/appEventSubscribers/onCommandRedo';
-import { onMidiImport } from '../../useCases/appEventSubscribers/onMidiImport';
 
 type AppEventCallbacks = {
     onOpenExport: () => void;
@@ -52,6 +54,10 @@ export const useAppEventHandlers = ({ onOpenExport, onOpenPreferences }: AppEven
                 }
             }),
         ];
-        return () => unsubs.forEach((unsub) => unsub());
+        return () => {
+            for (const unsub of unsubs) {
+                unsub();
+            }
+        };
     }, [onOpenExport, onOpenPreferences]);
 };

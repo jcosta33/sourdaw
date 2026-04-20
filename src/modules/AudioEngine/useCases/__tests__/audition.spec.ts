@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { playAuditionNote } from '../audition';
 
 const { mocks } = vi.hoisted(() => {
@@ -14,7 +15,7 @@ const { mocks } = vi.hoisted(() => {
                         stop: vi.fn(),
                     }) as unknown as OscillatorNode & { _env?: GainNode }
             ),
-        }
+        },
     };
 });
 
@@ -25,7 +26,7 @@ vi.mock('../../repositories/createWebAudioEngine', () => ({
             deviceNodes: [],
         })),
         context: { currentTime: 0 },
-    }
+    },
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
@@ -63,4 +64,3 @@ describe('playAuditionNote', () => {
         expect(mocks.getTrackById).toHaveBeenCalledWith('track-a');
     });
 });
-

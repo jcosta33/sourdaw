@@ -1,11 +1,12 @@
-import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
+import { clearIncrementalsFromIdb } from '../repositories/crdtPersistence/clearIncrementalsFromIdb';
 import { hasCrdtDocsInIdb } from '../repositories/crdtPersistence/hasCrdtDocsInIdb';
 import { loadAllFromIdb } from '../repositories/crdtPersistence/loadAllFromIdb';
 import { saveAllToIdb } from '../repositories/crdtPersistence/saveAllToIdb';
 import { saveIncrementalToIdb } from '../repositories/crdtPersistence/saveIncrementalToIdb';
-import { clearIncrementalsFromIdb } from '../repositories/crdtPersistence/clearIncrementalsFromIdb';
 import { isNativeCrdtAvailable } from '../repositories/nativeCrdtPersistence/isNativeCrdtAvailable';
+
+import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
 
 // §121.1 — Holder object instead of a raw module-level \`let\` so the
 // compaction counter isn't externally writable.

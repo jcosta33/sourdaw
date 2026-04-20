@@ -5,22 +5,25 @@
  * return early) or `false` to continue with the general select/drag logic.
  */
 import { type RefObject } from 'react';
-import { hitTestClip } from '../../useCases/timelineInteractions/hitTestClip/hitTestClip';
-import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
-import { hitTestAutomationSubLane } from '../../useCases/timelineInteractions/hitTestAutomationSubLane';
-import { splitClip } from '../../useCases/clipEditing/splitClip';
-import { addClip } from '../../useCases/clip/addClip';
-import { removeClip } from '../../useCases/clip/removeClip';
-import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
-import { type AutomationPoint } from '../../models/AutomationViewTypes';
+
 import { automationStore } from '#/modules/Automation/stores';
 import { addAutomationPoint, addAutomationLane } from '#/modules/Automation/useCases';
-import { addMidiNote, removeMidiNote } from '#/modules/MIDI/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
-import { trackStore } from '../../stores/trackStore';
-import { snapToGrid } from '../../useCases/timelineInteractions/snapToGrid';
-import { getContentY, resolveTrackAtY, valueAtTrackY } from './timelineMouse';
+import { addMidiNote, removeMidiNote } from '#/modules/MIDI/useCases';
+
+import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { timelineViewStore } from '../../stores/timelineViewStore';
+import { trackStore } from '../../stores/trackStore';
+import { addClip } from '../../useCases/clip/addClip';
+import { removeClip } from '../../useCases/clip/removeClip';
+import { splitClip } from '../../useCases/clipEditing/splitClip';
+import { hitTestAutomationSubLane } from '../../useCases/timelineInteractions/hitTestAutomationSubLane';
+import { hitTestClip } from '../../useCases/timelineInteractions/hitTestClip/hitTestClip';
+import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
+import { snapToGrid } from '../../useCases/timelineInteractions/snapToGrid';
+import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
+
+import { getContentY, resolveTrackAtY, valueAtTrackY } from './timelineMouse';
 
 type AutoDragRef = RefObject<{ laneId: string; trackId: string; points: AutomationPoint[] } | null>;
 type DrawDragRef = RefObject<{ trackId: string; startBeat: number; clipType: 'audio' | 'midi' } | null>;
@@ -73,7 +76,7 @@ export const handleCutTool = (x: number, y: number, beat: number): boolean => {
 export const handleDrawTool = (x: number, y: number, beat: number, drawDragRef: DrawDragRef): boolean => {
     const hit = hitTestClip(x, y);
     const trackId = hit?.trackId ?? hitTestTrack(y);
-    
+
     if (hit?.noteId && hit.clipId) {
         // Hitting a note with draw tool: delete it (logic pro style)
         const noteId = hit.noteId;
@@ -84,7 +87,7 @@ export const handleDrawTool = (x: number, y: number, beat: number, drawDragRef: 
 
     if (hit?.clipId && !hit.noteId) {
         const trackState = trackStore.value;
-        const clip = trackState?.tracks.flatMap(t => t.clips).find(c => c.id === hit.clipId);
+        const clip = trackState?.tracks.flatMap((t) => t.clips).find((c) => c.id === hit.clipId);
         if (clip?.isInlineEditing && clip.type === 'midi') {
             // Draw a new note inside the inline clip
             const pitch = hit.pitch ?? 60;
@@ -164,9 +167,13 @@ export const tryPaintSubLane = (x: number, y: number, autoDragRef: AutoDragRef):
 
 export const paintAutoDragPoint = (x: number, y: number, scrollY: number, autoDragRef: AutoDragRef): void => {
     const ref = autoDragRef.current;
-    if (!ref) {return;}
+    if (!ref) {
+        return;
+    }
     const view = timelineViewStore.value;
-    if (!view) {return;}
+    if (!view) {
+        return;
+    }
     const beat = x / view.pixelsPerBeat + view.scrollX / view.pixelsPerBeat;
     const contentY = getContentY(y, scrollY);
     const trackHit = resolveTrackAtY(contentY);

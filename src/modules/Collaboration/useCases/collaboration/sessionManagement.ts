@@ -1,12 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
-import { type PeerId, type PeerMessage, type SignalingMessage, PEER_COLORS } from '../../models/CollaborationTypes';
-import { createCollaborationError } from '../../errors/CollaborationError';
-import { transportStore } from '#/modules/Transport/stores';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
-import { type CollaborationPeer, type PresenceData } from '../collaborationQueries';
-
+import { branchStore } from '#/modules/CrdtDocument/stores';
 import {
     setupProjectionBridge,
     subscribeToCrdtChanges,
@@ -17,13 +13,17 @@ import {
     persistCrdtProject,
     hasCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
-import { branchStore } from '#/modules/CrdtDocument/stores';
-import { collaborationStore } from '../../stores/collaborationStore';
-import { PeerConnectionManager } from '../../repositories/peerConnection';
-import { AutomergeSync } from '../automergeSync';
-import { AssetTransfer } from '../assetTransfer';
-import { PermissionManager } from '../permissions';
+import { transportStore } from '#/modules/Transport/stores';
+
+import { createCollaborationError } from '../../errors/CollaborationError';
+import { type PeerId, type PeerMessage, type SignalingMessage, PEER_COLORS } from '../../models/CollaborationTypes';
 import { DOC_ID_ASSET, DOC_ID_BRANCHES } from '../../models/syncChannelConstants';
+import { PeerConnectionManager } from '../../repositories/peerConnection';
+import { collaborationStore } from '../../stores/collaborationStore';
+import { AssetTransfer } from '../assetTransfer';
+import { AutomergeSync } from '../automergeSync';
+import { type CollaborationPeer, type PresenceData } from '../collaborationQueries';
+import { PermissionManager } from '../permissions';
 
 const MAIN_BRANCH_ID = 'main';
 
@@ -136,7 +136,7 @@ const startBranchSync = (isHost: boolean): void => {
         mutateCrdtDoc({
             id: DOC_ID_BRANCHES,
             changeFn: (doc: Record<string, unknown>) => {
-                doc['branches'] = currentBranches;
+                doc.branches = currentBranches;
             },
         });
     }
@@ -153,7 +153,7 @@ const startBranchSync = (isHost: boolean): void => {
         mutateCrdtDoc({
             id: DOC_ID_BRANCHES,
             changeFn: (doc: Record<string, unknown>) => {
-                doc['branches'] = state.branches;
+                doc.branches = state.branches;
             },
         });
     });
@@ -769,7 +769,7 @@ async function readAllChunks(stream: ReadableStream<Uint8Array>): Promise<Uint8A
         if (done) {
             break;
         }
-        chunks.push(value!);
+        chunks.push(value);
     }
     const total = chunks.reduce((n, c) => n + c.length, 0);
     const result = new Uint8Array(total);
@@ -789,7 +789,7 @@ async function compressInvite(json: string): Promise<string> {
     writer.close();
     const result = await readAllChunks(stream.readable);
     const binary = Array.from(result, (b) => String.fromCharCode(b)).join('');
-    return 'z:' + btoa(binary);
+    return `z:${btoa(binary)}`;
 }
 
 async function decompressInvite(raw: string): Promise<string> {

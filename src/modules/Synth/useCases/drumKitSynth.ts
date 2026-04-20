@@ -4,6 +4,7 @@
  */
 
 import { scheduleNote } from './builtinSynth';
+
 import type { SynthParams } from '#/modules/AudioEngine/useCases';
 
 // Synth-local shape (AGENTS.md §95 — model isolation). Structurally compatible

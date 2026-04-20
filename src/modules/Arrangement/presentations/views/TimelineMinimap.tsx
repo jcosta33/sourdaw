@@ -1,7 +1,10 @@
 import { type ReactElement, type MouseEvent, useRef, useLayoutEffect, useState } from 'react';
+
 import { useStore } from '#/infra/store/useStore';
-import { trackStore, type TrackStoreState } from '../../stores/trackStore';
+
 import { timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
+import { trackStore, type TrackStoreState } from '../../stores/trackStore';
+
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 
 const MINIMAP_HEIGHT = 28;

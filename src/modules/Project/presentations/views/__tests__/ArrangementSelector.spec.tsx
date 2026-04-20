@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
 import { forwardRef } from 'react';
+
+import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { ArrangementSelector } from '../ArrangementSelector';
 
 // Mock external dependencies
@@ -38,13 +40,7 @@ vi.mock('#/modules/Project/useCases/arrangement/switchArrangement', () => ({
 // Mock UI components
 vi.mock('#/components/daw/DawCompactInput', () => ({
     DawCompactInput: forwardRef(({ value, onChange, onKeyDown }: any, ref: any) => (
-        <input 
-            ref={ref}
-            value={value} 
-            onChange={onChange} 
-            onKeyDown={onKeyDown}
-            data-testid="compact-input"
-        />
+        <input ref={ref} value={value} onChange={onChange} onKeyDown={onKeyDown} data-testid="compact-input" />
     )),
 }));
 
@@ -89,7 +85,7 @@ describe('ArrangementSelector', () => {
             arrangements: [{ id: 'arr-1', name: 'Arrangement 1' }],
             activeArrangementId: 'arr-1',
         });
-        
+
         const { container } = render(<ArrangementSelector />);
         expect(container.firstChild).toBeNull();
     });

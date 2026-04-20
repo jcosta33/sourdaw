@@ -2,6 +2,7 @@
  * CrustSatCurve — 80×80 px canvas showing the saturation transfer function.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { type CrustSatAlgorithm } from '../../models/CrustPatch';
 
 type Props = {

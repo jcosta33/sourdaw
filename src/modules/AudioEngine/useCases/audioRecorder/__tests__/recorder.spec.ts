@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { requestMicPermission } from '../requestMicPermission';
 import { startAudioRecording } from '../startAudioRecording';
 import { stopAudioRecording } from '../stopAudioRecording';
-import { requestMicPermission } from '../requestMicPermission';
 
 const mocks = vi.hoisted(() => ({
     startAudioRecordingRepo: vi.fn(),

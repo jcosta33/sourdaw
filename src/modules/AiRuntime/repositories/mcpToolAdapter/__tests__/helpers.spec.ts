@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { toMcpTools, getMcpTools } from '../helpers';
 
 vi.mock('#/modules/AiRuntime/models/toolDefinitions', () => ({
@@ -12,11 +13,11 @@ vi.mock('#/modules/AiRuntime/models/toolDefinitions', () => ({
                     type: 'object',
                     properties: {
                         name: { type: 'string' },
-                        kind: { type: 'string', enum: ['audio', 'midi'] }
+                        kind: { type: 'string', enum: ['audio', 'midi'] },
                     },
-                    required: ['name']
-                }
-            }
+                    required: ['name'],
+                },
+            },
         },
         {
             type: 'function',
@@ -26,11 +27,11 @@ vi.mock('#/modules/AiRuntime/models/toolDefinitions', () => ({
                 parameters: {
                     type: 'object',
                     properties: {},
-                    required: []
-                }
-            }
-        }
-    ]
+                    required: [],
+                },
+            },
+        },
+    ],
 }));
 
 describe('mcpToolAdapter helpers', () => {
@@ -42,7 +43,7 @@ describe('mcpToolAdapter helpers', () => {
         const mcpTools = toMcpTools();
 
         expect(mcpTools).toHaveLength(2);
-        
+
         expect(mcpTools[0]).toEqual({
             name: 'addTrack',
             description: 'Creates a track',
@@ -50,10 +51,10 @@ describe('mcpToolAdapter helpers', () => {
                 type: 'object',
                 properties: {
                     name: { type: 'string' },
-                    kind: { type: 'string', enum: ['audio', 'midi'] }
+                    kind: { type: 'string', enum: ['audio', 'midi'] },
                 },
-                required: ['name']
-            }
+                required: ['name'],
+            },
         });
 
         // If required is empty, it should be undefined in MCP
@@ -63,15 +64,15 @@ describe('mcpToolAdapter helpers', () => {
             inputSchema: {
                 type: 'object',
                 properties: {},
-                required: undefined
-            }
+                required: undefined,
+            },
         });
     });
 
     it('getMcpTools caches the result', () => {
         const firstCall = getMcpTools();
         const secondCall = getMcpTools();
-        
+
         expect(firstCall).toBe(secondCall); // Exact same reference
     });
 });

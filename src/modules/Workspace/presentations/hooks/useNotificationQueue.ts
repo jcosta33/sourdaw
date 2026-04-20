@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+
 import { onNotification } from '../../useCases/onNotification';
 
 type AppNotification = {

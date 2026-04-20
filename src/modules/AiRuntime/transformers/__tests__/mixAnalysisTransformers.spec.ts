@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { detectIssues, generateSuggestions, type DetectIssuesInput, type GenerateSuggestionsInput } from '../mixAnalysisTransformers';
+
 import { type MixAnalysis } from '../../models/MixAnalysis';
 import { type FrequencyBands } from '../../repositories/mixAnalysis/readFrequencyBalance';
+import {
+    detectIssues,
+    generateSuggestions,
+    type DetectIssuesInput,
+    type GenerateSuggestionsInput,
+} from '../mixAnalysisTransformers';
 
 describe('mixAnalysisTransformers', () => {
     describe('detectIssues', () => {

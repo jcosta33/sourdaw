@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { TrackDummy } from '../../../../Arrangement/__tests__/TrackDummy';
 import { hasToasterDevice } from '../hasToasterDevice';
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { pausePlayback } from '../pausePlayback';
 import { startPlayback } from '../startPlayback';
 
@@ -77,7 +78,7 @@ describe('Pause/Start Playback', () => {
 
     describe('startPlayback', () => {
         it('resumes engine, ensures strips, and starts scheduler', async () => {
-            mocks.getTransportState.mockReturnValue({ 
+            mocks.getTransportState.mockReturnValue({
                 playheadPosition: 10,
                 preRollEnabled: false,
             });
@@ -94,7 +95,7 @@ describe('Pause/Start Playback', () => {
         });
 
         it('calculates pre-roll position if enabled', async () => {
-            mocks.getTransportState.mockReturnValue({ 
+            mocks.getTransportState.mockReturnValue({
                 playheadPosition: 16,
                 preRollEnabled: true,
                 preRollBars: 2,
@@ -105,9 +106,11 @@ describe('Pause/Start Playback', () => {
 
             // 16 - (2 * 4) = 8.
             await vi.waitFor(() => {
-                expect(mocks.updateTransportState).toHaveBeenCalledWith(expect.objectContaining({
-                    playheadPosition: 8,
-                }));
+                expect(mocks.updateTransportState).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        playheadPosition: 8,
+                    })
+                );
                 expect(mocks.playheadPositionRef.current).toBe(8);
             });
         });

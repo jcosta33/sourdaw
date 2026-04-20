@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useVoiceRecording } from '../useVoiceRecording';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { voiceStatusStore } from '../../../stores/voiceStatusStore';
+import { useVoiceRecording } from '../useVoiceRecording';
 
 const mocks = vi.hoisted(() => ({
     onVoiceToggle: vi.fn(() => () => {}),
@@ -46,7 +47,7 @@ describe('useVoiceRecording', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         voiceStatusStore.set({ isListening: false, transcribing: false });
-        
+
         // Mock global window.SpeechRecognition
         (window as any).SpeechRecognition = undefined;
         (window as any).webkitSpeechRecognition = undefined;
@@ -70,7 +71,7 @@ describe('useVoiceRecording', () => {
         expect(mocks.ensureWhisperReady).toHaveBeenCalled();
         expect(mocks.onDictationResult).toHaveBeenCalled();
         expect(mocks.startDictation).toHaveBeenCalled();
-        
+
         expect(result.current.isListening).toBe(true);
         expect(result.current.voiceMode).toBe('whisper');
         expect(voiceStatusStore.value?.isListening).toBe(true);
@@ -78,7 +79,7 @@ describe('useVoiceRecording', () => {
 
     it('sets error if no voice mode is available', () => {
         mocks.isTauri.mockReturnValue(false); // No Tauri, no SpeechRecognition
-        
+
         const { result } = renderHook(() => useVoiceRecording());
 
         act(() => {

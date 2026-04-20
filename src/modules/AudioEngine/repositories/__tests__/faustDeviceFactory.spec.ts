@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { createFaustDevice } from '../faustDeviceFactory';
 
 const { mocks } = vi.hoisted(() => ({
@@ -6,7 +7,7 @@ const { mocks } = vi.hoisted(() => ({
         logger: { warn: vi.fn() },
         compileFaustDSP: vi.fn().mockResolvedValue(false),
         createFaustNode: vi.fn(),
-    }
+    },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({

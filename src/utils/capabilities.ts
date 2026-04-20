@@ -13,6 +13,7 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
+
 import { isTauri } from './tauriBridge';
 
 export { isTauri };
@@ -27,7 +28,10 @@ export function hasSharedArrayBuffer(): boolean {
  * Required for SharedArrayBuffer-backed WASM DSP (Grand Boule, Gluten, Proof).
  */
 export function isCrossOriginIsolated(): boolean {
-    return typeof globalThis !== 'undefined' && Boolean((globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated);
+    return (
+        typeof globalThis !== 'undefined' &&
+        Boolean((globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated)
+    );
 }
 
 /**

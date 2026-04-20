@@ -3,21 +3,22 @@
  */
 
 import { type MidiProcessor } from '../models/MidiProcessor';
+
 import { Arpeggiator } from './processors/Arpeggiator';
-import { ChordGenerator } from './processors/ChordGenerator';
-import { ScaleQuantizer } from './processors/ScaleQuantizer';
-import { NoteRepeater } from './processors/NoteRepeater';
-import { VelocityProcessor } from './processors/VelocityProcessor';
-import { Humanizer } from './processors/Humanizer';
-import { NoteFilter } from './processors/NoteFilter';
-import { Transposer } from './processors/Transposer';
-import { Harmonizer } from './processors/Harmonizer';
 import { CCGenerator } from './processors/CCGenerator';
-import { GrooveModule } from './processors/GrooveModule';
+import { ChordGenerator } from './processors/ChordGenerator';
+import { ChordMemory } from './processors/ChordMemory';
 import { EuclideanGenerator } from './processors/EuclideanGenerator';
+import { GrooveModule } from './processors/GrooveModule';
+import { Harmonizer } from './processors/Harmonizer';
+import { Humanizer } from './processors/Humanizer';
 import { MarkovChain } from './processors/MarkovChain';
 import { MutationEngine } from './processors/MutationEngine';
-import { ChordMemory } from './processors/ChordMemory';
+import { NoteFilter } from './processors/NoteFilter';
+import { NoteRepeater } from './processors/NoteRepeater';
+import { ScaleQuantizer } from './processors/ScaleQuantizer';
+import { Transposer } from './processors/Transposer';
+import { VelocityProcessor } from './processors/VelocityProcessor';
 
 export type ProcessorType =
     | 'arpeggiator'

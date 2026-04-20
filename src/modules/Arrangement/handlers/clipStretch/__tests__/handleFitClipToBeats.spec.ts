@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleFitClipToBeats } from '../handleFitClipToBeats';
 
 const mocks = vi.hoisted(() => ({

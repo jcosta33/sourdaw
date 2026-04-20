@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { restoreGrooveOriginals } from '../restoreGrooveOriginals';
 
 const mocks = vi.hoisted(() => ({
     midiStoreValue: {
         value: {
-            notesByClipId: {} as Record<string, { id: string; pitch: number; startBeat: number; duration: number; velocity: number }[]>,
+            notesByClipId: {} as Record<
+                string,
+                { id: string; pitch: number; startBeat: number; duration: number; velocity: number }[]
+            >,
             ccByClipId: {},
             pitchBendByClipId: {},
         },
@@ -54,9 +58,7 @@ describe('restoreGrooveOriginals', () => {
     });
 
     it('should restore startBeat and velocity from the originals map', () => {
-        const originals = new Map([
-            ['n1', { startBeat: 0, velocity: 100 }],
-        ]);
+        const originals = new Map([['n1', { startBeat: 0, velocity: 100 }]]);
 
         restoreGrooveOriginals('c1', originals);
 

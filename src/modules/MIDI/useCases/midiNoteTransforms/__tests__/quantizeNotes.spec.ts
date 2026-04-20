@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { midiStore } from '../../../stores/midiStore';
-
 import { quantizeNotes } from '../quantizeNotes';
 
 const note = (id: string, startBeat: number) => ({

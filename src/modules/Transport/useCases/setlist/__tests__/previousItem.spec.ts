@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type SetlistItem, type SetlistState } from '../../../stores/setlistStore';
-import { previousItem } from '../previousItem';
 import { goToItem } from '../goToItem';
+import { previousItem } from '../previousItem';
 
 const mockSetlistStore = vi.hoisted(() => ({
     value: null as any,
@@ -46,7 +47,7 @@ describe('previousItem', () => {
             totalDuration: 2,
         };
         mockSetlistStore.value = state;
-        
+
         previousItem();
         expect(goToItem).toHaveBeenCalledWith(0);
     });

@@ -1,15 +1,5 @@
-import { transportStore } from '../stores/transportStore';
-import { playheadPositionRef } from '../stores/playheadPositionRef';
-import { tempoMapStore } from '../stores/tempoMapStore';
-import { getTempoAtBeat } from '../models/TempoMap';
-import { startRecording, stopRecording, addTakeLane, addTake } from '#/modules/Arrangement/useCases';
 import { trackStore, takeLaneStore } from '#/modules/Arrangement/stores';
-import { evaluateFollowActions } from './evaluateFollowActions';
-import { 
-    startAutomationRecording, 
-    stopAutomationRecording, 
-    applyModulation,
-} from '#/modules/Automation/useCases';
+import { startRecording, stopRecording, addTakeLane, addTake } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     stopAllScheduled,
@@ -18,11 +8,19 @@ import {
     getAudioContext,
     audioEngine,
 } from '#/modules/AudioEngine/useCases';
+import { startAutomationRecording, stopAutomationRecording, applyModulation } from '#/modules/Automation/useCases';
+
+import { getTempoAtBeat } from '../models/TempoMap';
+import { playheadPositionRef } from '../stores/playheadPositionRef';
+import { tempoMapStore } from '../stores/tempoMapStore';
+import { transportStore } from '../stores/transportStore';
+
+import { evaluateFollowActions } from './evaluateFollowActions';
+import { applyAutomation } from './scheduling/applyAutomation/applyAutomation';
+import { applyVcaGains } from './scheduling/applyAutomation/applyVcaGains';
+import { scheduleAudioClips } from './scheduling/scheduleAudioClips';
 import { scheduleMetronome, resetMetronomeBeat } from './scheduling/scheduleMetronome';
 import { scheduleMidiNotes } from './scheduling/scheduleMidiNotes';
-import { scheduleAudioClips } from './scheduling/scheduleAudioClips';
-import { applyVcaGains } from './scheduling/applyAutomation/applyVcaGains';
-import { applyAutomation } from './scheduling/applyAutomation/applyAutomation';
 
 export type SourceWithFade = AudioBufferSourceNode & { fadeGainNode?: GainNode };
 
@@ -132,7 +130,7 @@ export function startPlayheadScheduler(): void {
             schedulerSession.accumulatedPosition,
             newPosition
         );
-        let jumpToPosition = rawJumpToPosition;
+        const jumpToPosition = rawJumpToPosition;
 
         if (shouldStop) {
             import('./transportControls/stopPlayback').then(({ stopPlayback }) => stopPlayback());
@@ -151,11 +149,11 @@ export function startPlayheadScheduler(): void {
 
         schedulerSession.accumulatedPosition = newPosition;
         playheadPositionRef.current = newPosition;
-        
+
         // Sync to AudioEngine for real-time DSP (SAB-backed)
         audioEngine.setTransportInfo(
-            newPosition, 
-            currentTempo, 
+            newPosition,
+            currentTempo,
             current.isPlaying,
             current.loopStart,
             current.loopEnd,
@@ -211,7 +209,13 @@ export function startPlayheadScheduler(): void {
         const lookAheadBeats = SCHEDULE_AHEAD_SECONDS * beatsPerSecond;
         const scheduleUpTo = newPosition + lookAheadBeats;
 
-        scheduleMetronome(schedulerSession.lastScheduledBeat, scheduleUpTo, schedulerSession.accumulatedPosition, current, currentTempo);
+        scheduleMetronome(
+            schedulerSession.lastScheduledBeat,
+            scheduleUpTo,
+            schedulerSession.accumulatedPosition,
+            current,
+            currentTempo
+        );
         await scheduleMidiNotes(
             schedulerSession.lastScheduledBeat,
             scheduleUpTo,
@@ -239,7 +243,9 @@ export function startPlayheadScheduler(): void {
     };
 
     if (!schedulerSession.worker) {
-        schedulerSession.worker = new Worker(new URL('../workers/schedulerWorker.ts', import.meta.url), { type: 'module' });
+        schedulerSession.worker = new Worker(new URL('../workers/schedulerWorker.ts', import.meta.url), {
+            type: 'module',
+        });
         schedulerSession.worker.onmessage = (e) => {
             if (e.data?.type === 'tick') {
                 tick();

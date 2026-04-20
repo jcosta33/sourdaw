@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+
 import { clearReportedLatency } from '../clearReportedLatency';
 import { externalLatencyRegistry } from '../helpers';
 

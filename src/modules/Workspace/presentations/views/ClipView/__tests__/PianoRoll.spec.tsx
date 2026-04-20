@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { PianoRoll } from '../PianoRoll';
 
 vi.mock('#/utils/Styles/cn', () => ({
@@ -10,7 +11,9 @@ vi.mock('#/utils/Styles/cn', () => ({
                 classes.push(input);
             } else if (typeof input === 'object' && input !== null && !Array.isArray(input)) {
                 for (const [key, value] of Object.entries(input)) {
-                    if (value) {classes.push(key);}
+                    if (value) {
+                        classes.push(key);
+                    }
                 }
             }
         }
@@ -66,8 +69,18 @@ vi.mock('../../../helpers/pianoRollConstants', () => ({
 }));
 
 vi.mock('#/components/daw/DawGridHeaderCell', () => ({
-    DawGridHeaderCell: ({ children, className, style }: { children?: React.ReactNode; className?: string; style?: React.CSSProperties }) => (
-        <div className={className} style={style}>{children}</div>
+    DawGridHeaderCell: ({
+        children,
+        className,
+        style,
+    }: {
+        children?: React.ReactNode;
+        className?: string;
+        style?: React.CSSProperties;
+    }) => (
+        <div className={className} style={style}>
+            {children}
+        </div>
     ),
 }));
 

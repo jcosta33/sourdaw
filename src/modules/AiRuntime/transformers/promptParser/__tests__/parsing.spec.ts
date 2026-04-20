@@ -1,14 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { 
-    isComplexPrompt, 
-    buildPresetContext, 
-    tryParameterizedPath, 
-    tryCompoundFastPath, 
-    matchSoundDesignRecipe, 
-    findTrack,
-    requiresConfirmation 
-} from '../parsing';
+
 import { type ProjectContext } from '../../../models/ProjectContext';
+import {
+    isComplexPrompt,
+    buildPresetContext,
+    tryParameterizedPath,
+    tryCompoundFastPath,
+    matchSoundDesignRecipe,
+    findTrack,
+    requiresConfirmation,
+} from '../parsing';
 
 describe('promptParser parsing', () => {
     describe('isComplexPrompt', () => {
@@ -49,8 +50,8 @@ describe('promptParser parsing', () => {
                         clipCount: 1,
                         deviceCount: 0,
                         clips: [{ id: 'c1', name: 'Vox 1', type: 'audio', startBeat: 0, endBeat: 4, noteCount: 0 }],
-                        devices: []
-                    }
+                        devices: [],
+                    },
                 ],
                 selectedTrackId: 't1',
                 selectedClipId: 'c1',
@@ -84,8 +85,8 @@ describe('promptParser parsing', () => {
                     clipCount: 0,
                     deviceCount: 0,
                     clips: [],
-                    devices: []
-                }
+                    devices: [],
+                },
             ],
             selectedTrackId: 't1',
             selectedClipId: 'c1', // Assuming clip c1 exists on t1 conceptually for tests
@@ -135,7 +136,7 @@ describe('promptParser parsing', () => {
                     clipCount: 0,
                     deviceCount: 0,
                     clips: [],
-                    devices: []
+                    devices: [],
                 },
                 {
                     id: 't2',
@@ -149,8 +150,8 @@ describe('promptParser parsing', () => {
                     clipCount: 0,
                     deviceCount: 0,
                     clips: [],
-                    devices: []
-                }
+                    devices: [],
+                },
             ],
             selectedTrackId: 't1',
             selectedClipId: null,
@@ -232,7 +233,7 @@ describe('promptParser parsing', () => {
             tracks: [
                 { id: 't1', name: 'Lead Vocals' },
                 { id: 't2', name: 'Bass' },
-            ]
+            ],
         } as ProjectContext;
 
         it('finds track by exact lower case name', () => {
@@ -261,10 +262,12 @@ describe('promptParser parsing', () => {
         });
 
         it('returns false for safe actions', () => {
-            expect(requiresConfirmation([
-                { type: 'setTempo', payload: { bpm: 120 } },
-                { type: 'addTrack', payload: { name: 't', kind: 'audio' } }
-            ])).toBe(false);
+            expect(
+                requiresConfirmation([
+                    { type: 'setTempo', payload: { bpm: 120 } },
+                    { type: 'addTrack', payload: { name: 't', kind: 'audio' } },
+                ])
+            ).toBe(false);
         });
     });
 });

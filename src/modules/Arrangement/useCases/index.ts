@@ -124,8 +124,6 @@ export { setDeviceParameter } from './device/setDeviceParameter/setDeviceParamet
 export { persistDeviceParam } from './device/setDeviceParameter/persistDeviceParam';
 export { persistDevicePatch } from './device/setDeviceParameter/persistDevicePatch';
 
-
-
 export { deleteTime } from './timeOperations/deleteTime';
 export { insertTime, duplicateTimeRange } from './timeOperations/duplicateTimeRange';
 
@@ -193,12 +191,7 @@ export { zoomTracksVertical } from './trackZoom';
 
 // ── Track Template ────────────────────────────────────────────────────────────
 
-export {
-    saveTrackAsTemplate,
-    loadTrackTemplate,
-    getTrackTemplates,
-    deleteTrackTemplate,
-} from './trackTemplate';
+export { saveTrackAsTemplate, loadTrackTemplate, getTrackTemplates, deleteTrackTemplate } from './trackTemplate';
 
 // ── VCA ───────────────────────────────────────────────────────────────────────
 

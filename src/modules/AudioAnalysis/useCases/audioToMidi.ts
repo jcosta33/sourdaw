@@ -158,8 +158,7 @@ function detectPitchForOnsets(onsets: DetectedOnset[], buffer: AudioBuffer, targ
 }
 
 export function audioToMidi(options: AudioToMidiOptions): void {
-    const { clipId, trackId, sensitivity = 0.5, minInterval = 0.25, targetPitch = 36, mode = 'rhythm' } =
-        options;
+    const { clipId, trackId, sensitivity = 0.5, minInterval = 0.25, targetPitch = 36, mode = 'rhythm' } = options;
 
     const clip = getAllTracks()
         .flatMap((t) => t.clips)
@@ -215,7 +214,9 @@ export function audioToMidi(options: AudioToMidiOptions): void {
 
     let maxAmplitude = 1e-8;
     for (const o of onsets) {
-        if (o.amplitude > maxAmplitude) { maxAmplitude = o.amplitude; }
+        if (o.amplitude > maxAmplitude) {
+            maxAmplitude = o.amplitude;
+        }
     }
 
     for (let i = 0; i < onsets.length; i++) {

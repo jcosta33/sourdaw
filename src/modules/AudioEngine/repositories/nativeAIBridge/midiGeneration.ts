@@ -1,6 +1,6 @@
-import { invokeAI } from './isTauri';
-
 import { type GeneratedNote } from '../../models/GeneratedNote';
+
+import { invokeAI } from './isTauri';
 
 export type MidiGenerationResult = {
     notes: GeneratedNote[];

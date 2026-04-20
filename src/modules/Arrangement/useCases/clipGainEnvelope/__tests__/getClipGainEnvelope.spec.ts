@@ -1,8 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-    __resetGainEnvelopesForTest,
-    gainEnvelopeStore,
-} from '../../../stores/gainEnvelopeStore';
+
+import { __resetGainEnvelopesForTest, gainEnvelopeStore } from '../../../stores/gainEnvelopeStore';
 import { getClipGainEnvelope, ensureClipGainEnvelope } from '../getClipGainEnvelope';
 
 describe('getClipGainEnvelope', () => {
@@ -12,7 +10,7 @@ describe('getClipGainEnvelope', () => {
 
     it('returns a default envelope without caching when missing', () => {
         const first = getClipGainEnvelope('clip-a');
-        
+
         expect(first.clipId).toBe('clip-a');
         expect(Object.keys(gainEnvelopeStore.value?.envelopes ?? {})).toHaveLength(0);
     });

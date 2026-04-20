@@ -17,8 +17,8 @@ vi.mock('../../../stores/trackStore', () => {
     };
 });
 
-import { trackStore } from '../../../stores/trackStore';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { trackStore } from '../../../stores/trackStore';
 import { updateTracks } from '../updateTracks';
 
 describe('updateTracks', () => {
@@ -31,7 +31,10 @@ describe('updateTracks', () => {
         const tracks = [TrackDummy.create({ id: 't1', muted: false }), TrackDummy.create({ id: 't2', muted: false })];
         trackStore.set({ tracks, selectedTrackId: null });
 
-        updateTracks((t) => t.id === 't1', (t) => ({ ...t, muted: true }));
+        updateTracks(
+            (t) => t.id === 't1',
+            (t) => ({ ...t, muted: true })
+        );
 
         expect(trackStore.value!.tracks[0].muted).toBe(true);
         expect(trackStore.value!.tracks[1].muted).toBe(false);

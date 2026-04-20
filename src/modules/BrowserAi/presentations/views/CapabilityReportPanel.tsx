@@ -1,11 +1,13 @@
 import { type ReactElement } from 'react';
-import { useStore } from '#/infra/store/useStore';
-import { Button } from '#/components/ui/button';
-import { DawEmptyState } from '#/components/daw/DawEmptyState';
+
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
-import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
-import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
+import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
+import { Button } from '#/components/ui/button';
+import { useStore } from '#/infra/store/useStore';
+
 import { capabilityStore } from '../../stores/capabilityStore';
 import { detectCapabilities } from '../../useCases/detectCapabilities';
 
@@ -32,13 +34,7 @@ export function CapabilityReportPanel(): ReactElement {
     }
 
     if (state.phase === 'detecting') {
-        return (
-            <DawEmptyState
-                compact
-                title="Detecting…"
-                description="Detecting browser AI capabilities."
-            />
-        );
+        return <DawEmptyState compact title="Detecting…" description="Detecting browser AI capabilities." />;
     }
 
     if (state.phase === 'error') {
@@ -82,11 +78,7 @@ export function CapabilityReportPanel(): ReactElement {
     }
 
     const tierTone =
-        report.webGpuTier === 'webgpu-fast'
-            ? 'success'
-            : report.webGpuTier === 'webgpu-slow'
-              ? 'peach'
-              : 'danger';
+        report.webGpuTier === 'webgpu-fast' ? 'success' : report.webGpuTier === 'webgpu-slow' ? 'peach' : 'danger';
 
     const tierLabel =
         report.webGpuTier === 'webgpu-fast'
@@ -112,15 +104,9 @@ export function CapabilityReportPanel(): ReactElement {
             aria-label="Browser AI capabilities"
         >
             <div className="space-y-1">
-                <DawReadoutRow
-                    label="WebGPU"
-                    value={<DawMicroBadge tone={tierTone}>{tierLabel}</DawMicroBadge>}
-                />
+                <DawReadoutRow label="WebGPU" value={<DawMicroBadge tone={tierTone}>{tierLabel}</DawMicroBadge>} />
                 {report.benchmarkMs !== null ? (
-                    <DawReadoutRow
-                        label="Benchmark"
-                        value={`${report.benchmarkMs.toFixed(1)}ms`}
-                    />
+                    <DawReadoutRow label="Benchmark" value={`${report.benchmarkMs.toFixed(1)}ms`} />
                 ) : null}
                 <DawReadoutRow
                     label="Shared Memory"
@@ -139,10 +125,7 @@ export function CapabilityReportPanel(): ReactElement {
                     }
                 />
                 {report.chromeVersion !== null ? (
-                    <DawReadoutRow
-                        label="Chrome Version"
-                        value={String(report.chromeVersion)}
-                    />
+                    <DawReadoutRow label="Chrome Version" value={String(report.chromeVersion)} />
                 ) : null}
             </div>
         </DawUtilitySection>

@@ -2,8 +2,11 @@
  * FolderTree — browsable folder hierarchy with expand/collapse.
  */
 import { type ReactElement } from 'react';
-import { DawHierarchyRow } from '#/components/daw/DawHierarchyRow';
+
 import { ChevronRight, ChevronDown, Folder, FolderOpen } from 'lucide-react';
+
+import { DawHierarchyRow } from '#/components/daw/DawHierarchyRow';
+
 import { type FolderNode } from '../../models/LibraryTypes';
 
 type FolderTreeProps = {

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleCreateProjectVersion } from '../handleCreateProjectVersion';
-import { handleRestoreProjectVersion } from '../handleRestoreProjectVersion';
 import { handleCreateVersionBranch } from '../handleCreateVersionBranch';
+import { handleRestoreProjectVersion } from '../handleRestoreProjectVersion';
 
 vi.mock('../../../useCases/versionControl/createProjectVersion', () => ({
     createProjectVersion: vi.fn(),

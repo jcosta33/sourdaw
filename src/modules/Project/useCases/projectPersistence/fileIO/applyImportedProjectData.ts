@@ -3,8 +3,9 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getAudioContext, resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
-import { arrangementStore, defaultArrangementId } from '../../../stores/arrangementStore';
+
 import { type ProjectData } from '../../../models/ProjectData';
+import { arrangementStore, defaultArrangementId } from '../../../stores/arrangementStore';
 import { projectStore } from '../../../stores/projectStore';
 import { hydrateModuleStoresFromProjectData } from '../helpers/hydrateModuleStoresFromProjectData';
 import { verifyAudioBufferReferences } from '../helpers/verifyAudioBufferReferences';
@@ -39,20 +40,25 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
             {
                 id: defaultArrangementId,
                 name: 'Main Arrangement',
-                tracks: { 
+                tracks: {
                     tracks: data.arrangement.tracks || [],
-                    selectedTrackId: null 
+                    selectedTrackId: null,
                 },
                 automation: data.automation || { lanes: [] },
-                midi: { 
-                    notesByClipId: data.arrangement.tracks.reduce((acc, t) => {
-                        t.clips.forEach(c => {
-                            if (c.notes) acc[c.id] = c.notes;
-                        });
-                        return acc;
-                    }, {} as Record<string, any[]>),
+                midi: {
+                    notesByClipId: data.arrangement.tracks.reduce(
+                        (acc, t) => {
+                            for (const c of t.clips) {
+                                if (c.notes) {
+                                    acc[c.id] = c.notes;
+                                }
+                            }
+                            return acc;
+                        },
+                        {} as Record<string, any[]>
+                    ),
                     ccByClipId: {},
-                    pitchBendByClipId: {}
+                    pitchBendByClipId: {},
                 },
             },
         ],

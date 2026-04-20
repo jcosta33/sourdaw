@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type PunchRecordingState } from '../../../stores/punchRecordingStore';
 import { stopBackgroundCapture } from '../stopBackgroundCapture';
 
@@ -40,7 +41,7 @@ describe('stopBackgroundCapture', () => {
                 },
             ],
         });
-        
+
         stopBackgroundCapture('c1');
         const next = mockPunchRecordingStore.set.mock.calls[0]![0] as PunchRecordingState;
         expect(next.captures[0]!.recording).toBe(false);

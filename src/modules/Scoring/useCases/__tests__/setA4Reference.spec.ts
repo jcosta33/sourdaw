@@ -5,8 +5,8 @@ vi.mock('../../stores/scoringStore', () => ({
     getScoringState: vi.fn(() => ({ a4Reference: 440, mode: 'note' })),
 }));
 
-import { setA4Reference } from '../setA4Reference';
 import { scoringStore, getScoringState } from '../../stores/scoringStore';
+import { setA4Reference } from '../setA4Reference';
 
 describe('setA4Reference', () => {
     beforeEach(() => {

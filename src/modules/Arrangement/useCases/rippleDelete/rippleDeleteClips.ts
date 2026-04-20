@@ -1,6 +1,7 @@
 import { getTrackStoreState } from '../getTrackStoreState';
-import { type PlanRippleDeleteOutput, planRippleDelete } from './planRippleDelete';
 import { setTrackState } from '../setTrackState';
+
+import { type PlanRippleDeleteOutput, planRippleDelete } from './planRippleDelete';
 
 type RippleDeleteClipsInput = {
     trackId: string;
@@ -9,12 +10,10 @@ type RippleDeleteClipsInput = {
 
 type RippleDeletePlan = NonNullable<PlanRippleDeleteOutput>;
 
-type RippleDeleteClipsOutput =
-    | {
-          removedClips: RippleDeletePlan['removedClips'];
-          shiftedClips: RippleDeletePlan['shiftedClips'];
-      }
-    | null;
+type RippleDeleteClipsOutput = {
+    removedClips: RippleDeletePlan['removedClips'];
+    shiftedClips: RippleDeletePlan['shiftedClips'];
+} | null;
 
 export function rippleDeleteClips({ trackId, clipIds }: RippleDeleteClipsInput): RippleDeleteClipsOutput {
     const plan = planRippleDelete({ trackId, clipIds });

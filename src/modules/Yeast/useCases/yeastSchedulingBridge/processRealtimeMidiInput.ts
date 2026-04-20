@@ -1,13 +1,10 @@
-import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
-import { getYeastRack } from '../../stores/yeastStore';
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
-export function processYeastMidi(
-    events: MidiEvent[],
-    blockStartSamples: number,
-    blockEndSamples: number
-): MidiEvent[] {
+import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
+import { getYeastRack } from '../../stores/yeastStore';
+
+export function processYeastMidi(events: MidiEvent[], blockStartSamples: number, blockEndSamples: number): MidiEvent[] {
     const rack = getYeastRack();
     const processorIds = rack.getProcessorIds();
 

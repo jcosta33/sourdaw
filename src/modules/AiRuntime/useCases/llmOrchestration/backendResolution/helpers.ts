@@ -1,5 +1,7 @@
 import { isTauri } from '#/utils/tauriBridge';
+
 import { isCloudAvailable } from '../../../repositories/cloudLlm/keyManagement';
+
 export type AiBackend = 'native' | 'webllm' | 'cloud' | 'none';
 
 /**

@@ -1,4 +1,5 @@
 import { preferencesStore } from '../stores/preferencesStore';
+
 import { type Preferences } from './workspaceQueries/helpers';
 
 export function setTrackHeight(height: Preferences['trackHeight']): void {

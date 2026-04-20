@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { AudioDevicePicker } from '../AudioDevicePicker';
 
 // Mock external dependencies
@@ -10,12 +11,14 @@ vi.mock('#/infra/store/useStore', () => ({
     })),
 }));
 
-const mockGetAudioDevices = vi.fn(() => Promise.resolve([
-    { id: 'out1', kind: 'audiooutput', label: 'Headphones' },
-    { id: 'out2', kind: 'audiooutput', label: 'Speakers' },
-    { id: 'in1', kind: 'audioinput', label: 'Microphone' },
-    { id: 'in2', kind: 'audioinput', label: 'Line In' },
-]));
+const mockGetAudioDevices = vi.fn(() =>
+    Promise.resolve([
+        { id: 'out1', kind: 'audiooutput', label: 'Headphones' },
+        { id: 'out2', kind: 'audiooutput', label: 'Speakers' },
+        { id: 'in1', kind: 'audioinput', label: 'Microphone' },
+        { id: 'in2', kind: 'audioinput', label: 'Line In' },
+    ])
+);
 const mockSetOutputDevice = vi.fn();
 const mockSetInputDevice = vi.fn();
 
@@ -123,7 +126,9 @@ describe('AudioDevicePicker', () => {
 
     it('should show loading state', async () => {
         const { container } = render(<AudioDevicePicker />);
-        expect(container.querySelector('[aria-busy="true"]') || screen.queryByText('Detecting devices...')).toBeTruthy();
+        expect(
+            container.querySelector('[aria-busy="true"]') || screen.queryByText('Detecting devices...')
+        ).toBeTruthy();
     });
 
     it('should have correct aria labels', async () => {

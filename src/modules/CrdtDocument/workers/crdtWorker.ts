@@ -59,7 +59,7 @@ function processLoad(bundle: Map<string, Uint8Array>): {
         const docId = key.substring(0, key.indexOf(':incremental:'));
         const doc = docs.get(docId);
         if (doc) {
-            docs.set(docId, Automerge.loadIncremental(doc, bytes) as Automerge.Doc<AnyDoc>);
+            docs.set(docId, Automerge.loadIncremental(doc, bytes));
         }
     }
 
@@ -132,7 +132,7 @@ self.onmessage = ({ data }: MessageEvent): void => {
                 newDocIds: result.newDocIds,
             });
         }
-    } catch (err) {
-        self.postMessage({ id, type: 'error', message: String(err) });
+    } catch (error) {
+        self.postMessage({ id, type: 'error', message: String(error) });
     }
 };

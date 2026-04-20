@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { Container } from '#/infra/di/Container';
-import { triggerToasterPad } from '../triggerPad';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { ensureTrackStrip } from '#/modules/AudioEngine/useCases';
+
+import { triggerToasterPad } from '../triggerPad';
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),

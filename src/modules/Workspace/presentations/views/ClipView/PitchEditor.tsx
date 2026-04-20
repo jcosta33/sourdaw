@@ -1,10 +1,11 @@
 import { type ReactElement, useEffect, useRef, useState, type PointerEvent } from 'react';
+
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
+import { analyzePitchForClip } from '#/modules/AudioEngine/useCases';
+import { commitPitchEditCommand } from '#/modules/Command/useCases';
 import { kneadStore, defaultKneadState } from '#/modules/Knead/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
-import { analyzePitchForClip } from '#/modules/AudioEngine/useCases';
-import { Button } from '#/components/ui/button';
-import { commitPitchEditCommand } from '#/modules/Command/useCases';
 
 type PitchEditorProps = {
     clipId: string;
@@ -15,12 +16,12 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [zoom] = useState(1);
-    
+
     // We store the manual shifts array in React state for immediate interactive feedback.
     // In a real application, this might live in the store or be synchronized.
     const [shifts, setShifts] = useState<{ start_time_ms: number; end_time_ms: number; shift_semitones: number }[]>([]);
-    
-    const dragRef = useRef<{ startY: number, initialShift: number, segmentIndex: number } | null>(null);
+
+    const dragRef = useRef<{ startY: number; initialShift: number; segmentIndex: number } | null>(null);
 
     // Any contour data available for this clip?
     // We cast to any because the store type hasn't been strictly updated yet.
@@ -61,15 +62,21 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
 
         ctx.clearRect(0, 0, width, height);
 
-        if (!contour.points || contour.points.length === 0) return;
+        if (!contour.points || contour.points.length === 0) {
+            return;
+        }
 
         // Determine min/max frequency to scale the Y axis
         let minHz = 20000;
         let maxHz = 0;
         for (const pt of contour.points) {
             if (pt.voiced && pt.frequency_hz > 20) {
-                if (pt.frequency_hz < minHz) minHz = pt.frequency_hz;
-                if (pt.frequency_hz > maxHz) maxHz = pt.frequency_hz;
+                if (pt.frequency_hz < minHz) {
+                    minHz = pt.frequency_hz;
+                }
+                if (pt.frequency_hz > maxHz) {
+                    maxHz = pt.frequency_hz;
+                }
             }
         }
 
@@ -79,7 +86,7 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
 
         const hzToY = (hz: number, semitoneShift = 0) => {
             // Apply shift
-            const shiftedHz = hz * Math.pow(2, semitoneShift / 12);
+            const shiftedHz = hz * 2 ** (semitoneShift / 12);
             // Log scale for pitch
             const logMin = Math.log2(minHz);
             const logMax = Math.log2(maxHz);
@@ -100,18 +107,18 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
         let isDrawing = false;
 
         const getShiftAtTime = (ms: number) => {
-            const seg = shifts.find(s => ms >= s.start_time_ms && ms < s.end_time_ms);
+            const seg = shifts.find((s) => ms >= s.start_time_ms && ms < s.end_time_ms);
             return seg ? seg.shift_semitones : 0;
         };
 
         for (let i = 0; i < contour.points.length; i++) {
             const pt = contour.points[i];
-            
+
             if (pt.voiced && pt.confidence > 0.3) {
                 const shift = getShiftAtTime(pt.time_ms);
                 const x = msToX(pt.time_ms);
                 const y = hzToY(pt.frequency_hz, shift);
-                
+
                 if (!isDrawing) {
                     ctx.beginPath();
                     ctx.moveTo(x, y);
@@ -119,7 +126,7 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
                 } else {
                     ctx.lineTo(x, y);
                 }
-                
+
                 // Draw a small "blob" for the point
                 ctx.fillStyle = resolveToken('--color-accent-peach', '#ffb86c');
                 ctx.fillRect(x - 1, y - 2, 3, 4);
@@ -153,33 +160,37 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
     };
 
     const handlePointerDown = (e: PointerEvent<HTMLCanvasElement>) => {
-        if (!contour) return;
+        if (!contour) {
+            return;
+        }
         const rect = e.currentTarget.getBoundingClientRect();
         const x = e.clientX - rect.left;
-        
+
         const totalTimeMs = contour.points[contour.points.length - 1]?.time_ms || 0;
         const clickedTimeMs = (x / rect.width) * totalTimeMs;
-        
-        const segIdx = shifts.findIndex(s => clickedTimeMs >= s.start_time_ms && clickedTimeMs < s.end_time_ms);
+
+        const segIdx = shifts.findIndex((s) => clickedTimeMs >= s.start_time_ms && clickedTimeMs < s.end_time_ms);
         if (segIdx !== -1) {
             const shiftVal = shifts[segIdx]?.shift_semitones ?? 0;
             dragRef.current = {
                 startY: e.clientY,
                 initialShift: shiftVal,
-                segmentIndex: segIdx
+                segmentIndex: segIdx,
             };
             e.currentTarget.setPointerCapture(e.pointerId);
         }
     };
 
     const handlePointerMove = (e: PointerEvent<HTMLCanvasElement>) => {
-        if (!dragRef.current) return;
-        
+        if (!dragRef.current) {
+            return;
+        }
+
         // 10 pixels roughly equals 1 semitone
         const dy = dragRef.current.startY - e.clientY;
         const dSemitones = Math.round(dy / 10);
-        
-        setShifts(prev => {
+
+        setShifts((prev) => {
             const next = [...prev];
             const currentDrag = dragRef.current;
             if (currentDrag && next[currentDrag.segmentIndex]) {
@@ -197,7 +208,9 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
     };
 
     const handleCommit = () => {
-        if (!contour || shifts.length === 0) return;
+        if (!contour || shifts.length === 0) {
+            return;
+        }
         commitPitchEditCommand(clipId, shifts, contour);
     };
 
@@ -205,8 +218,8 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
         <div className="absolute inset-0 pointer-events-none flex flex-col z-10">
             {!contour && !kneadState.isAnalyzing && (
                 <div className="absolute top-2 right-2 pointer-events-auto flex gap-2">
-                    <Button 
-                        size="xs" 
+                    <Button
+                        size="xs"
                         variant="secondary"
                         onClick={handleAnalyze}
                         className="text-[10px] h-6 bg-[var(--color-bg-base)] border-border/50 text-[var(--color-accent-peach)]"
@@ -215,11 +228,11 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
                     </Button>
                 </div>
             )}
-            
+
             {contour && (
                 <div className="absolute top-2 right-2 pointer-events-auto flex gap-2">
-                    <Button 
-                        size="xs" 
+                    <Button
+                        size="xs"
                         variant="secondary"
                         onClick={handleCommit}
                         className="text-[10px] h-6 bg-[var(--color-bg-base)] border-border/50 text-white"
@@ -228,12 +241,12 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
                     </Button>
                 </div>
             )}
-            
+
             {kneadState.isAnalyzing && (
                 <div className="absolute top-2 right-2 flex items-center gap-2 bg-[var(--color-bg-base)] border border-border/50 rounded px-2 py-1 pointer-events-auto">
                     <div className="w-16 h-1.5 bg-black rounded overflow-hidden">
-                        <div 
-                            className="h-full bg-[var(--color-accent-peach)] transition-all duration-100" 
+                        <div
+                            className="h-full bg-[var(--color-accent-peach)] transition-all duration-100"
                             style={{ width: `${Math.max(5, kneadState.analysisProgress * 100)}%` }}
                         />
                     </div>
@@ -244,8 +257,8 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
             )}
 
             <div ref={containerRef} className="flex-1 w-full h-full relative">
-                <canvas 
-                    ref={canvasRef} 
+                <canvas
+                    ref={canvasRef}
                     className="absolute inset-0 w-full h-full pointer-events-auto cursor-ns-resize"
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}

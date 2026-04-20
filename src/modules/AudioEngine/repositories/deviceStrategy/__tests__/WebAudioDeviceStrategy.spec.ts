@@ -11,9 +11,9 @@ vi.mock('../../deviceNodeFactory', () => ({
     },
 }));
 
+import { type Device } from '../../../models/TrackViewTypes';
 import { applyParams } from '../../deviceNodeFactory';
 import { WebAudioDeviceStrategy, createWebAudioDevice } from '../WebAudioDeviceStrategy';
-import { type Device } from '../../../models/TrackViewTypes';
 
 describe('WebAudioDeviceStrategy', () => {
     it('should delegate setParam to applyParams with the device type', () => {
@@ -44,11 +44,7 @@ describe('createWebAudioDevice', () => {
         const strategy = createWebAudioDevice(ctx, device);
 
         expect(strategy.node).toBeDefined();
-        expect(vi.mocked(applyParams)).toHaveBeenCalledWith(
-            strategy.node,
-            'builtin-gain',
-            device.parameterValues
-        );
+        expect(vi.mocked(applyParams)).toHaveBeenCalledWith(strategy.node, 'builtin-gain', device.parameterValues);
     });
 
     it('should throw when the device type is unknown', () => {
@@ -60,8 +56,6 @@ describe('createWebAudioDevice', () => {
             parameterValues: {},
         };
 
-        expect(() => createWebAudioDevice({} as BaseAudioContext, device)).toThrow(
-            /Unknown WebAudio device type/
-        );
+        expect(() => createWebAudioDevice({} as BaseAudioContext, device)).toThrow(/Unknown WebAudio device type/);
     });
 });

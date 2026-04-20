@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { ArrangementBar } from '../ArrangementBar';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { useStore } from '#/infra/store/useStore';
+
 import { addSection } from '../../../useCases/marker/sectionOperations/addSection';
+import { ArrangementBar } from '../ArrangementBar';
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({

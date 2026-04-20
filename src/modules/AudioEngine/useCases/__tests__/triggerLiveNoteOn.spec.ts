@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleNoteOn } from '../../repositories/webMidi/messageHandlers';
 import { triggerLiveNoteOn } from '../triggerLiveNoteOn';
 

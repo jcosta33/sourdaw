@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getEffectiveVolume } from '../getEffectiveVolume';
+
 import { type ControlRoomState } from '../../../stores/controlRoom';
+import { getEffectiveVolume } from '../getEffectiveVolume';
 
 const storeCell = vi.hoisted(() => ({
     value: null as ControlRoomState | null,

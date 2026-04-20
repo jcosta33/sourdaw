@@ -80,7 +80,7 @@ export const tryCatch = <TValue, TError>(
 ): Result<TValue, TError> => {
     try {
         return ok(fn());
-    } catch (caught) {
-        return err(errorFactory(caught));
+    } catch (error) {
+        return err(errorFactory(error));
     }
 };

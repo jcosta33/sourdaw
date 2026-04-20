@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleSetEditingTool } from '../handleSetEditingTool';
 
 const mocks = vi.hoisted(() => ({
@@ -15,7 +16,7 @@ describe('handleSetEditingTool', () => {
     it('delegates to setEditingTool use case', () => {
         handleSetEditingTool.execute({
             type: 'setEditingTool',
-            payload: { tool: 'cut' }
+            payload: { tool: 'cut' },
         });
         expect(mocks.setEditingTool).toHaveBeenCalledWith('cut');
     });

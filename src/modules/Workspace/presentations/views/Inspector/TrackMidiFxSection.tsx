@@ -1,12 +1,15 @@
 import { type ReactElement } from 'react';
-import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { Button } from '#/components/ui/button';
+
 import { Power, Trash2, Settings2 } from 'lucide-react';
-import { type Track } from '../../../models/TrackViewTypes';
-import { cn } from '#/utils/Styles/cn';
-import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
-import { addMidiFx, removeMidiFx, bypassMidiFx, updateMidiFxParam } from '#/modules/Arrangement/useCases';
+
+import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Button } from '#/components/ui/button';
+import { addMidiFx, removeMidiFx, bypassMidiFx, updateMidiFxParam } from '#/modules/Arrangement/useCases';
+import { cn } from '#/utils/Styles/cn';
+
+import { type Track } from '../../../models/TrackViewTypes';
+import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
 import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
 
 type TrackMidiFxSectionProps = {
@@ -14,7 +17,9 @@ type TrackMidiFxSectionProps = {
 };
 
 export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactElement | null => {
-    if (track.kind !== 'midi') return null;
+    if (track.kind !== 'midi') {
+        return null;
+    }
 
     const midiFx = track.midiFx || [];
 
@@ -42,22 +47,27 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                 title="MIDI FX"
                 actions={
                     <div className="flex gap-1">
-                        <Button variant="ghost" size="xs" className="h-6 px-1.5 text-[9px]" onClick={handleAddArp}>+ ARP</Button>
-                        <Button variant="ghost" size="xs" className="h-6 px-1.5 text-[9px]" onClick={handleAddVelocity}>+ VEL</Button>
-                        <Button variant="ghost" size="xs" className="h-6 px-1.5 text-[9px]" onClick={handleAddProbability}>+ PROB</Button>
+                        <Button variant="ghost" size="xs" className="h-6 px-1.5 text-[9px]" onClick={handleAddArp}>
+                            + ARP
+                        </Button>
+                        <Button variant="ghost" size="xs" className="h-6 px-1.5 text-[9px]" onClick={handleAddVelocity}>
+                            + VEL
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="xs"
+                            className="h-6 px-1.5 text-[9px]"
+                            onClick={handleAddProbability}
+                        >
+                            + PROB
+                        </Button>
                     </div>
                 }
             />
-            
+
             <div className="space-y-2">
                 {midiFx.map((fx: any) => (
-                    <ChoiceCard
-                        key={fx.id}
-                        className={cn(
-                            'flex flex-col gap-2 p-2',
-                            fx.bypassed ? 'opacity-50' : ''
-                        )}
-                    >
+                    <ChoiceCard key={fx.id} className={cn('flex flex-col gap-2 p-2', fx.bypassed ? 'opacity-50' : '')}>
                         <div className="flex items-center justify-between w-full">
                             <div className="flex items-center gap-1.5">
                                 <Settings2 className="size-3 text-accent-primary" />
@@ -88,17 +98,17 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                             {fx.type === 'arp' && (
                                 <>
                                     <div className="flex flex-col items-center gap-1">
-                                        <RotaryKnob 
-                                            size="sm" 
-                                            value={fx.parameterValues.rate || 0.25} 
-                                            min={0.125} max={1.0} 
+                                        <RotaryKnob
+                                            size="sm"
+                                            value={fx.parameterValues.rate || 0.25}
+                                            min={0.125}
+                                            max={1.0}
                                             onChange={(v) => handleParamChange(fx.id, 'rate', v)}
                                         />
-                                        <MixerStripValue size="sm">
-Rate</MixerStripValue>
+                                        <MixerStripValue size="sm">Rate</MixerStripValue>
                                     </div>
                                     <div className="flex flex-col items-center gap-1">
-                                        <select 
+                                        <select
                                             className="bg-surface-base text-[10px] rounded border border-border/50 px-1 outline-none"
                                             value={fx.parameterValues.mode || 0}
                                             onChange={(e) => handleParamChange(fx.id, 'mode', parseInt(e.target.value))}
@@ -108,45 +118,44 @@ Rate</MixerStripValue>
                                             <option value={2}>UpDown</option>
                                             <option value={3}>Random</option>
                                         </select>
-                                        <MixerStripValue size="sm">
-Mode</MixerStripValue>
+                                        <MixerStripValue size="sm">Mode</MixerStripValue>
                                     </div>
                                 </>
                             )}
                             {fx.type === 'velocity' && (
                                 <>
                                     <div className="flex flex-col items-center gap-1">
-                                        <RotaryKnob 
-                                            size="sm" 
-                                            value={fx.parameterValues.scale || 1.0} 
-                                            min={0.1} max={2.0} 
+                                        <RotaryKnob
+                                            size="sm"
+                                            value={fx.parameterValues.scale || 1.0}
+                                            min={0.1}
+                                            max={2.0}
                                             onChange={(v) => handleParamChange(fx.id, 'scale', v)}
                                         />
-                                        <MixerStripValue size="sm">
-Scale</MixerStripValue>
+                                        <MixerStripValue size="sm">Scale</MixerStripValue>
                                     </div>
                                     <div className="flex flex-col items-center gap-1">
-                                        <RotaryKnob 
-                                            size="sm" 
-                                            value={fx.parameterValues.offset || 0} 
-                                            min={-64} max={64} 
+                                        <RotaryKnob
+                                            size="sm"
+                                            value={fx.parameterValues.offset || 0}
+                                            min={-64}
+                                            max={64}
                                             onChange={(v) => handleParamChange(fx.id, 'offset', v)}
                                         />
-                                        <MixerStripValue size="sm">
-Offset</MixerStripValue>
+                                        <MixerStripValue size="sm">Offset</MixerStripValue>
                                     </div>
                                 </>
                             )}
                             {fx.type === 'probability' && (
                                 <div className="flex flex-col items-center gap-1">
-                                    <RotaryKnob 
-                                        size="sm" 
-                                        value={fx.parameterValues.seed || 12345} 
-                                        min={1} max={65535} 
+                                    <RotaryKnob
+                                        size="sm"
+                                        value={fx.parameterValues.seed || 12345}
+                                        min={1}
+                                        max={65535}
                                         onChange={(v) => handleParamChange(fx.id, 'seed', v)}
                                     />
-                                    <MixerStripValue size="sm">
-Seed</MixerStripValue>
+                                    <MixerStripValue size="sm">Seed</MixerStripValue>
                                 </div>
                             )}
                         </div>

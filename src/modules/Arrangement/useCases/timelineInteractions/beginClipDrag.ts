@@ -1,5 +1,6 @@
-import { trackStore } from '../../stores/trackStore';
 import { timelineViewStore } from '../../stores/timelineViewStore';
+import { trackStore } from '../../stores/trackStore';
+
 import { hitTestClip } from './hitTestClip/hitTestClip';
 
 export type DragState = {

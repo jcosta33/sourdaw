@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type LoopSlot, type LoopStationState } from '../../../stores/loopStationStore';
-import { clearSlot } from '../clearSlot';
 import { loopStationStore } from '../../../stores/loopStationStore';
+import { clearSlot } from '../clearSlot';
 
 vi.mock('../../../stores/loopStationStore', () => ({
     loopStationStore: { value: null, set: vi.fn() },
@@ -34,7 +35,7 @@ describe('clearSlot', () => {
             syncToTransport: true,
             fixedLoopLength: 0,
         };
-        
+
         loopStationStore.value = baseState as any;
 
         clearSlot('slot-a');

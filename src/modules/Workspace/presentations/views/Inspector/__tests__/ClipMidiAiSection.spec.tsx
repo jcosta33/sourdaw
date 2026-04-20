@@ -1,9 +1,20 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { ClipMidiAiSection } from '../ClipMidiAiSection';
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
-    DawHeaderBand: ({ title, startSlot, compact, className }: { title: string; startSlot?: React.ReactNode; compact?: boolean; className?: string }) => (
+    DawHeaderBand: ({
+        title,
+        startSlot,
+        compact,
+        className,
+    }: {
+        title: string;
+        startSlot?: React.ReactNode;
+        compact?: boolean;
+        className?: string;
+    }) => (
         <div className={className} data-compact={compact}>
             {startSlot}
             <span>{title}</span>
@@ -12,7 +23,17 @@ vi.mock('#/components/daw/DawHeaderBand', () => ({
 }));
 
 vi.mock('#/components/ui/button', () => ({
-    Button: ({ children, onClick, disabled, className }: { children: React.ReactNode; onClick?: () => void; disabled?: boolean; className?: string }) => (
+    Button: ({
+        children,
+        onClick,
+        disabled,
+        className,
+    }: {
+        children: React.ReactNode;
+        onClick?: () => void;
+        disabled?: boolean;
+        className?: string;
+    }) => (
         <button type="button" onClick={onClick} disabled={disabled} className={className}>
             {children}
         </button>

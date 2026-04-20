@@ -1,5 +1,5 @@
-import { inject } from '#/infra/di/inject';
 import { eventBus } from '#/app/registerDependencies';
+import { inject } from '#/infra/di/inject';
 
 // ── Device-type → panel-event mapping (kept in the use-case layer) ────────────
 
@@ -43,7 +43,7 @@ const DEVICE_TYPE_TO_PANEL_EVENT: Partial<Record<string, DevicePanelEvent>> = {
  */
 export const showDevicePanelForType = inject({ eventBus })(
     ({ eventBus }) =>
-        (function showDevicePanelForType(deviceType: string, deviceId: string): void {
+        function showDevicePanelForType(deviceType: string, deviceId: string): void {
             const event = DEVICE_TYPE_TO_PANEL_EVENT[deviceType];
             if (!event) {
                 return;
@@ -54,5 +54,5 @@ export const showDevicePanelForType = inject({ eventBus })(
 
             // Legacy per-device event — kept for backward compatibility
             eventBus.emit(event, { deviceId });
-        })
+        }
 );

@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { type ExtensionManifest, type ExtensionMarketplaceState, type InstalledExtension } from '../../../stores/extension';
+
+import {
+    type ExtensionManifest,
+    type ExtensionMarketplaceState,
+    type InstalledExtension,
+} from '../../../stores/extension';
 import { toggleExtension } from '../toggleExtension';
 
 const mocks = vi.hoisted(() => ({
@@ -45,7 +50,7 @@ describe('toggleExtension', () => {
         const installed: InstalledExtension[] = [
             { manifest: manifest('x'), enabled: true, installedAt: '', lastUpdatedAt: '', state: {} },
         ];
-        
+
         mocks.extensionStore.value = baseState({ installed });
         mocks.extensionStore.set = set;
 

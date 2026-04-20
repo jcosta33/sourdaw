@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleAddSidechainRoute } from '../handleAddSidechainRoute';
 
 const mocks = vi.hoisted(() => ({
@@ -32,9 +33,7 @@ describe('handleAddSidechainRoute', () => {
 
     it('bails if the target track has no sidechain device', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [
-                { id: 't2', devices: [{ id: 'd1', type: 'EQ' }] }
-            ]
+            tracks: [{ id: 't2', devices: [{ id: 'd1', type: 'EQ' }] }],
         });
 
         handleAddSidechainRoute.execute({
@@ -47,9 +46,7 @@ describe('handleAddSidechainRoute', () => {
 
     it('adds a route if a sidechain device exists', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [
-                { id: 't2', devices: [{ id: 'd1', type: 'Compressor (Sidechain)' }] }
-            ]
+            tracks: [{ id: 't2', devices: [{ id: 'd1', type: 'Compressor (Sidechain)' }] }],
         });
 
         handleAddSidechainRoute.execute({

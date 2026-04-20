@@ -4,8 +4,8 @@ vi.mock('../../repositories/libraryPersistence/restoreLibrary', () => ({
     restoreLibrary: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { restoreLibrary } from '../restoreLibrary';
 import { restoreLibrary as repoRestoreLibrary } from '../../repositories/libraryPersistence/restoreLibrary';
+import { restoreLibrary } from '../restoreLibrary';
 
 describe('restoreLibrary', () => {
     beforeEach(() => {

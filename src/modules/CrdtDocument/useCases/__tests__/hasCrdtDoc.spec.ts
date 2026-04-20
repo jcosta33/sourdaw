@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { hasCrdtDoc } from '../hasCrdtDoc';
 

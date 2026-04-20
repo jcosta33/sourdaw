@@ -1,19 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleTogglePlayback } from '../handleTogglePlayback';
-import { handleStopPlayback } from '../handleStopPlayback';
-import { handleSeekPlayhead } from '../handleSeekPlayhead';
-import { handleToggleLoop } from '../handleToggleLoop';
-import { handleSetLoopRegion } from '../handleSetLoopRegion';
+
 import { handleAddTimeSignatureChange } from '../handleAddTimeSignatureChange';
 import { handleRemoveTimeSignatureChange } from '../handleRemoveTimeSignatureChange';
+import { handleSeekPlayhead } from '../handleSeekPlayhead';
 import { handleSetCountInBars } from '../handleSetCountInBars';
+import { handleSetLoopRegion } from '../handleSetLoopRegion';
 import { handleSetMasterGain } from '../handleSetMasterGain';
 import { handleSetMetronomeVolume } from '../handleSetMetronomeVolume';
 import { handleSetPreRollBars } from '../handleSetPreRollBars';
 import { handleSetPunchIn } from '../handleSetPunchIn';
 import { handleSetPunchOut } from '../handleSetPunchOut';
+import { handleStopPlayback } from '../handleStopPlayback';
 import { handleToggleCountIn } from '../handleToggleCountIn';
+import { handleToggleLoop } from '../handleToggleLoop';
 import { handleToggleMetronome } from '../handleToggleMetronome';
+import { handleTogglePlayback } from '../handleTogglePlayback';
 import { handleTogglePreRoll } from '../handleTogglePreRoll';
 import { handleTogglePunch } from '../handleTogglePunch';
 import { handleToggleRecording } from '../handleToggleRecording';
@@ -44,18 +45,26 @@ vi.mock('../../../useCases/transportControls/stopPlayback', () => ({ stopPlaybac
 vi.mock('../../../useCases/transportControls/seekPlayhead', () => ({ seekPlayhead: mocks.seekPlayhead }));
 vi.mock('../../../useCases/transportControls/toggleLoop', () => ({ toggleLoop: mocks.toggleLoop }));
 vi.mock('../../../useCases/transportControls/setLoopRegion', () => ({ setLoopRegion: mocks.setLoopRegion }));
-vi.mock('../../../useCases/timeSignatureChanges/addTimeSignatureChange', () => ({ addTimeSignatureChange: mocks.addTimeSignatureChange }));
-vi.mock('../../../useCases/timeSignatureChanges/removeTimeSignatureChange', () => ({ removeTimeSignatureChange: mocks.removeTimeSignatureChange }));
+vi.mock('../../../useCases/timeSignatureChanges/addTimeSignatureChange', () => ({
+    addTimeSignatureChange: mocks.addTimeSignatureChange,
+}));
+vi.mock('../../../useCases/timeSignatureChanges/removeTimeSignatureChange', () => ({
+    removeTimeSignatureChange: mocks.removeTimeSignatureChange,
+}));
 vi.mock('../../../useCases/transportControls/setCountInBars', () => ({ setCountInBars: mocks.setCountInBars }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({ setMasterGain: mocks.setMasterGain }));
-vi.mock('../../../useCases/transportControls/setMetronomeVolume', () => ({ setMetronomeVolume: mocks.setMetronomeVolume }));
+vi.mock('../../../useCases/transportControls/setMetronomeVolume', () => ({
+    setMetronomeVolume: mocks.setMetronomeVolume,
+}));
 vi.mock('../../../useCases/transportControls/setPreRollBars', () => ({ setPreRollBars: mocks.setPreRollBars }));
 vi.mock('../../../useCases/transportControls/setPunchIn', () => ({ setPunchIn: mocks.setPunchIn }));
 vi.mock('../../../useCases/transportControls/setPunchOut', () => ({ setPunchOut: mocks.setPunchOut }));
 vi.mock('../../../useCases/transportControls/toggleCountIn', () => ({ toggleCountIn: mocks.toggleCountIn }));
 vi.mock('../../../useCases/transportControls/toggleMetronome', () => ({ toggleMetronome: mocks.toggleMetronome }));
 vi.mock('../../../useCases/transportControls/togglePreRoll', () => ({ togglePreRoll: mocks.togglePreRoll }));
-vi.mock('../../../useCases/transportControls/togglePunchEnabled', () => ({ togglePunchEnabled: mocks.togglePunchEnabled }));
+vi.mock('../../../useCases/transportControls/togglePunchEnabled', () => ({
+    togglePunchEnabled: mocks.togglePunchEnabled,
+}));
 vi.mock('../../../useCases/transportControls/toggleRecording', () => ({ toggleRecording: mocks.toggleRecording }));
 
 describe('Transport Handlers', () => {
@@ -87,7 +96,10 @@ describe('Transport Handlers', () => {
     });
 
     it('handleAddTimeSignatureChange delegates to use case', () => {
-        handleAddTimeSignatureChange.execute({ type: 'addTimeSignatureChange', payload: { beat: 0, numerator: 3, denominator: 4 } });
+        handleAddTimeSignatureChange.execute({
+            type: 'addTimeSignatureChange',
+            payload: { beat: 0, numerator: 3, denominator: 4 },
+        });
         expect(mocks.addTimeSignatureChange).toHaveBeenCalledWith(0, 3, 4);
     });
 

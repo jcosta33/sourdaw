@@ -6,6 +6,8 @@
  * octave expansion, velocity modes, latch, and multiple trigger modes.
  */
 
+import { type ArpStep, createDefaultPattern } from '../../models/ArpPattern';
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import {
     type MidiEvent,
     type TransportInfo,
@@ -13,9 +15,7 @@ import {
     rateToBeats,
     samplesPerBeat,
 } from '../../models/MidiEvent';
-import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import { type ActiveNote, ScheduledEventQueue } from '../../models/MidiProcessor';
-import { type ArpStep, createDefaultPattern } from '../../models/ArpPattern';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -333,12 +333,20 @@ export class Arpeggiator extends BaseMidiProcessor {
         const octaves: number[] = [];
 
         if (this.octaveDirection === 'up') {
-            for (let o = 0; o < this.octaveRange; o++) {octaves.push(o);}
+            for (let o = 0; o < this.octaveRange; o++) {
+                octaves.push(o);
+            }
         } else if (this.octaveDirection === 'down') {
-            for (let o = 0; o > -this.octaveRange; o--) {octaves.push(o);}
+            for (let o = 0; o > -this.octaveRange; o--) {
+                octaves.push(o);
+            }
         } else {
-            for (let o = 0; o < this.octaveRange; o++) {octaves.push(o);}
-            for (let o = this.octaveRange - 2; o > 0; o--) {octaves.push(o);}
+            for (let o = 0; o < this.octaveRange; o++) {
+                octaves.push(o);
+            }
+            for (let o = this.octaveRange - 2; o > 0; o--) {
+                octaves.push(o);
+            }
         }
 
         for (const oct of octaves) {

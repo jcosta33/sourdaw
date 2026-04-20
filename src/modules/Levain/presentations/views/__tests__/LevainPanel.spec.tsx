@@ -1,10 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { LevainPanel } from '../LevainPanel';
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn(() => ({ mappings: [], patch: {
+    useStore: vi.fn(() => ({
+        mappings: [],
+        patch: {
             instrumentId: 'violin-1',
             instrumentFamily: 'Strings',
             articulations: [],
@@ -60,9 +63,7 @@ vi.mock('#/components/daw/DawPluginChip', () => ({
 }));
 
 vi.mock('#/components/daw/DawPluginLed', () => ({
-    DawPluginLed: ({ children }: { children: React.ReactNode }) => (
-        <span data-testid="daw-plugin-led">{children}</span>
-    ),
+    DawPluginLed: ({ children }: { children: React.ReactNode }) => <span data-testid="daw-plugin-led">{children}</span>,
 }));
 
 vi.mock('#/components/daw/DawPluginMetricTile', () => ({
@@ -94,9 +95,9 @@ vi.mock('#/components/daw/DawReadoutRow', () => ({
 
 vi.mock('#/components/daw/RotaryKnob', () => ({
     RotaryKnob: ({ value, onChange }: any) => (
-        <input 
-            type="range" 
-            value={value} 
+        <input
+            type="range"
+            value={value}
             onChange={(e) => onChange(Number(e.target.value))}
             data-testid="rotary-knob"
         />
@@ -146,8 +147,8 @@ describe('LevainPanel', () => {
         render(<LevainPanel />);
         expect(screen.getByText('All')).toBeInTheDocument();
         const chips = screen.getAllByTestId('daw-plugin-chip');
-        expect(chips.some(c => c.textContent === 'Strings')).toBe(true);
-        expect(chips.some(c => c.textContent === 'Brass')).toBe(true);
+        expect(chips.some((c) => c.textContent === 'Strings')).toBe(true);
+        expect(chips.some((c) => c.textContent === 'Brass')).toBe(true);
     });
 
     it('should render section cards', () => {
@@ -193,6 +194,6 @@ describe('LevainPanel', () => {
     it('should display engine status', () => {
         render(<LevainPanel />);
         const leds = screen.getAllByTestId('daw-plugin-led');
-        expect(leds.some(l => l.textContent === 'Ready')).toBe(true);
+        expect(leds.some((l) => l.textContent === 'Ready')).toBe(true);
     });
 });

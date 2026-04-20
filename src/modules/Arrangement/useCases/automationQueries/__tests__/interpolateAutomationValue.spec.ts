@@ -4,12 +4,7 @@ import { type AutomationPoint } from '../../../models/AutomationViewTypes';
 import { interpolateAutomationValue as interpolateFromTransformers } from '../../../transformers/automationTransformers';
 import { interpolateAutomationValue } from '../interpolateAutomationValue';
 
-function pt(
-    beat: number,
-    value: number,
-    curve: AutomationPoint['curve'] = 'linear',
-    tension = 0
-): AutomationPoint {
+function pt(beat: number, value: number, curve: AutomationPoint['curve'] = 'linear', tension = 0): AutomationPoint {
     return { beat, value, curve, tension };
 }
 

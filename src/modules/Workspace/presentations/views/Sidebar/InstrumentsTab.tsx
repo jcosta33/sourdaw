@@ -1,10 +1,13 @@
 import { type ReactElement, useState } from 'react';
+
+import { Save, X, ChevronRight, Star, Folder, Music2, Drum, Music, Piano, Disc3 } from 'lucide-react';
+
+import { eventBus } from '#/app/registerDependencies';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
+import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
-import { Save, X, ChevronRight, Star, Folder, Music2, Drum, Music, Piano, Disc3 } from 'lucide-react';
-import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import {
     addTrack,
     getFactoryPresets,
@@ -15,11 +18,11 @@ import {
     loadPresetToTrack,
     getAllTracks,
 } from '#/modules/Arrangement/useCases';
-import { type SoundPresetView as SoundPreset, type SoundPresetCategory } from '../../../models/SoundPresetViewTypes';
-import { createDrumTrackStack } from '#/modules/Toaster/useCases';
 import { createGrandBouleTrack } from '#/modules/GrandBoule/useCases';
+import { createDrumTrackStack } from '#/modules/Toaster/useCases';
 
-import { PresetItem } from '../../components/Sidebar/PresetItem';
+import { type SoundPresetView as SoundPreset, type SoundPresetCategory } from '../../../models/SoundPresetViewTypes';
+import { EmptyState } from '../../components/Sidebar/EmptyState';
 import {
     InstrumentCard,
     FERMENTER_THEME,
@@ -28,13 +31,13 @@ import {
     CRUMBS_THEME,
     GRAND_BOULE_THEME,
 } from '../../components/Sidebar/InstrumentCard';
-import { EmptyState } from '../../components/Sidebar/EmptyState';
+import { PresetItem } from '../../components/Sidebar/PresetItem';
 import { SearchSummary } from '../../components/Sidebar/SearchSummary';
-import { NavCard } from '../Sidebar/effectsTabHelpers';
 import { PRESET_CATEGORIES, CATEGORY_ICONS, CATEGORY_COLORS } from '../../components/Sidebar/sidebarConstants';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
+import { NavCard } from '../Sidebar/effectsTabHelpers';
+
 import { type SidebarRoute } from './SidebarTypes';
-import { eventBus } from '#/app/registerDependencies';
 
 // ── Instrument Family Groups ────────────────────────────────────────────────
 
@@ -327,12 +330,13 @@ export const InstrumentsTab = ({
                     <>
                         {premiumMatches.map((id) => {
                             const card = renderPremiumInstrument(id);
-                            if (card)
-                                {return (
+                            if (card) {
+                                return (
                                     <div key={id} className="mb-3 mt-1.5 px-0.5 drop-shadow-sm">
                                         {card}
                                     </div>
-                                );}
+                                );
+                            }
                             return null;
                         })}
                         {allResults.map((preset) => (

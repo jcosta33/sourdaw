@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
+
 import { SpectrumAnalyzer } from '../SpectrumAnalyzer';
 
 const renderWithTooltip = (ui: React.ReactElement) => {

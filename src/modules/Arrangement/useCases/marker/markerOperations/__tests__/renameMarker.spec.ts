@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { renameMarker } from '../renameMarker';
 
 const mocks = vi.hoisted(() => ({
@@ -8,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../../stores/markerStore', () => ({
     markerStore: {
-        get value() { return mocks.markerStoreValue.value; },
+        get value() {
+            return mocks.markerStoreValue.value;
+        },
         set: mocks.markerStoreSet,
-    }
+    },
 }));
 
 describe('renameMarker', () => {
@@ -18,13 +21,13 @@ describe('renameMarker', () => {
 
     it('updates marker name', () => {
         mocks.markerStoreValue.value = {
-            markers: [{ id: 'm1', name: 'Old' }]
+            markers: [{ id: 'm1', name: 'Old' }],
         };
 
         renameMarker('m1', 'New');
 
         expect(mocks.markerStoreSet).toHaveBeenCalledWith({
-            markers: [{ id: 'm1', name: 'New' }]
+            markers: [{ id: 'm1', name: 'New' }],
         });
     });
 });

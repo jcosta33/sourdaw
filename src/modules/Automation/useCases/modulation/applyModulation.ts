@@ -16,7 +16,9 @@ export function applyModulation(playheadBeat: number): void {
     let changed = false;
 
     for (const mod of state.modulators) {
-        if (!mod.enabled) {continue;}
+        if (!mod.enabled) {
+            continue;
+        }
 
         let value = 0;
         const cfg = mod.config;
@@ -24,7 +26,7 @@ export function applyModulation(playheadBeat: number): void {
         if (cfg.kind === 'lfo') {
             const period = cfg.rate || 1;
             const phase = cfg.phase || 0;
-            const x = ((playheadBeat / period + phase) % 1 + 1) % 1;
+            const x = (((playheadBeat / period + phase) % 1) + 1) % 1;
 
             switch (cfg.waveform) {
                 case 'sine':

@@ -1,16 +1,23 @@
 import { type ReactElement } from 'react';
-import {
-    Shield,
-    Waves as WavesIcon,
-    Gauge,
-    Sparkles,
-    AudioLines,
-    Layers,
-    Guitar,
-    Bug,
-    GitBranch,
-} from 'lucide-react';
+
+import { Shield, Waves as WavesIcon, Gauge, Sparkles, AudioLines, Layers, Guitar, Bug, GitBranch } from 'lucide-react';
+
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
+import { addDevice, getFactoryPresets, createTrackFromPreset, loadPresetToTrack } from '#/modules/Arrangement/useCases';
+import { PluginBrowser } from '#/modules/AudioEngine/presentations/views';
+import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases';
+
+import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
+import { type SoundPresetView as SoundPreset } from '../../../models/SoundPresetViewTypes';
+import { showBacteriaPanel } from '../../../useCases/panels/devicePanels/showBacteriaPanel';
+import { showCrustPanel } from '../../../useCases/panels/devicePanels/showCrustPanel';
+import { showDevicePanel } from '../../../useCases/panels/devicePanels/showDevicePanel';
+import { showDutchOvenPanel } from '../../../useCases/panels/devicePanels/showDutchOvenPanel';
+import { showGlutenPanel } from '../../../useCases/panels/devicePanels/showGlutenPanel';
+import { showProofPanel } from '../../../useCases/panels/devicePanels/showProofPanel';
+import { showScoringPanel } from '../../../useCases/panels/devicePanels/showScoringPanel';
+import { showYeastPanel } from '../../../useCases/panels/devicePanels/showYeastPanel';
+import { EmptyState } from '../../components/Sidebar/EmptyState';
 import {
     InstrumentCard,
     PROOF_THEME,
@@ -22,30 +29,12 @@ import {
     BACTERIA_THEME,
     YEAST_THEME,
 } from '../../components/Sidebar/InstrumentCard';
-import { showProofPanel } from '../../../useCases/panels/devicePanels/showProofPanel';
-import { showGlutenPanel } from '../../../useCases/panels/devicePanels/showGlutenPanel';
-import { showCrustPanel } from '../../../useCases/panels/devicePanels/showCrustPanel';
-import { showDutchOvenPanel } from '../../../useCases/panels/devicePanels/showDutchOvenPanel';
-import { showScoringPanel } from '../../../useCases/panels/devicePanels/showScoringPanel';
-import { showDevicePanel } from '../../../useCases/panels/devicePanels/showDevicePanel';
-import { showBacteriaPanel } from '../../../useCases/panels/devicePanels/showBacteriaPanel';
-import { showYeastPanel } from '../../../useCases/panels/devicePanels/showYeastPanel';
-import {
-    addDevice,
-    getFactoryPresets,
-    createTrackFromPreset,
-    loadPresetToTrack,
-} from '#/modules/Arrangement/useCases';
-import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
-import { type SoundPresetView as SoundPreset } from '../../../models/SoundPresetViewTypes';
-import { PluginBrowser } from '#/modules/AudioEngine/presentations/views';
 import { PresetItem } from '../../components/Sidebar/PresetItem';
-import { EmptyState } from '../../components/Sidebar/EmptyState';
 import { SearchSummary } from '../../components/Sidebar/SearchSummary';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
-import { type SidebarRoute } from './SidebarTypes';
+
 import { NavCard, EffectItem, EFFECT_GROUPS, type EffectPlugin, Waves, Music2 } from './effectsTabHelpers';
-import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases';
+import { type SidebarRoute } from './SidebarTypes';
 
 const FX_PRESET_CATEGORIES = new Set(['fx', 'vocal']);
 
@@ -83,8 +72,11 @@ export const EffectsTab = ({
         : fxPresets;
 
     const handleFxPresetClick = (preset: SoundPreset) => {
-        if (selectedTrackId) {loadPresetToTrack(selectedTrackId, preset);}
-        else {createTrackFromPreset(preset);}
+        if (selectedTrackId) {
+            loadPresetToTrack(selectedTrackId, preset);
+        } else {
+            createTrackFromPreset(preset);
+        }
     };
 
     const groupedEffects = new Map<string, EffectPlugin[]>();
@@ -264,12 +256,13 @@ export const EffectsTab = ({
                         <div className="flex flex-col">
                             {filteredEffects.map((plugin) => {
                                 const card = renderPremiumCard(plugin.id);
-                                if (card)
-                                    {return (
+                                if (card) {
+                                    return (
                                         <div key={plugin.id} className="mb-1 mt-1.5 px-0.5 drop-shadow-sm">
                                             {card}
                                         </div>
-                                    );}
+                                    );
+                                }
                                 return <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />;
                             })}
                         </div>
@@ -336,7 +329,7 @@ export const EffectsTab = ({
         );
     }
 
-if (currentRoute.id.startsWith('effects-audiofx-')) {
+    if (currentRoute.id.startsWith('effects-audiofx-')) {
         const groupId = currentRoute.id.replace('effects-audiofx-', '');
         const items = groupId === 'other' ? uncategorized : (groupedEffects.get(groupId) ?? []);
 
@@ -344,8 +337,12 @@ if (currentRoute.id.startsWith('effects-audiofx-')) {
         const sortedItems = [...items].sort((a, b) => {
             const aIsPremium = !!renderPremiumCard(a.id);
             const bIsPremium = !!renderPremiumCard(b.id);
-            if (aIsPremium && !bIsPremium) {return -1;}
-            if (!aIsPremium && bIsPremium) {return 1;}
+            if (aIsPremium && !bIsPremium) {
+                return -1;
+            }
+            if (!aIsPremium && bIsPremium) {
+                return 1;
+            }
             return a.name.localeCompare(b.name);
         });
 
@@ -354,12 +351,13 @@ if (currentRoute.id.startsWith('effects-audiofx-')) {
                 {sortedItems.length === 0 ? <EmptyState message="Empty category." /> : null}
                 {sortedItems.map((plugin) => {
                     const card = renderPremiumCard(plugin.id);
-                    if (card)
-                        {return (
+                    if (card) {
+                        return (
                             <div key={plugin.id} className="mb-3 mt-1.5 px-0.5 drop-shadow-sm">
                                 {card}
                             </div>
-                        );}
+                        );
+                    }
                     return <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />;
                 })}
             </div>

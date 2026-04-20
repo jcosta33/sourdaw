@@ -1,6 +1,8 @@
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { getMasterAnalyser, getTrackAnalyser, getAudioSampleRate } from '#/modules/AudioEngine/useCases';
+
 import { createWebGpuSpectrumRenderer, type SpectrumRenderer } from '../../renderers/createWebGpuSpectrumRenderer';
 
 type WebGpuSpectrumAnalyzerProps = {
@@ -21,7 +23,9 @@ export const WebGpuSpectrumAnalyzer = ({
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
 
         let disposed = false;
         const analyser = trackId ? (getTrackAnalyser(trackId) ?? getMasterAnalyser()) : getMasterAnalyser();
@@ -62,12 +66,7 @@ export const WebGpuSpectrumAnalyzer = ({
 
     return (
         <DawMeterFrame>
-            <canvas
-                ref={canvasRef}
-                className="block"
-                aria-label="WebGPU Spectrum analyzer"
-                role="img"
-            />
+            <canvas ref={canvasRef} className="block" aria-label="WebGPU Spectrum analyzer" role="img" />
         </DawMeterFrame>
     );
 };

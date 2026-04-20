@@ -1,6 +1,7 @@
 import { type ComponentProps, type ReactElement } from 'react';
-import { cn } from '#/utils/Styles/cn';
+
 import { Input } from '#/components/ui/input';
+import { cn } from '#/utils/Styles/cn';
 
 type DawCompactInputProps = Omit<ComponentProps<typeof Input>, 'size'> & {
     size?: 'micro' | 'sm';

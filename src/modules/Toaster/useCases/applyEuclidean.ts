@@ -3,6 +3,7 @@
  */
 
 import { toasterStore } from '../stores/toasterStore';
+
 import { euclidean } from './euclidean';
 
 export function applyEuclideanToTrack(padIndex: number, hits: number, steps: number, rotation: number = 0): void {

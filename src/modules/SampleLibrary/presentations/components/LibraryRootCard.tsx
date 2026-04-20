@@ -2,7 +2,9 @@
  * LibraryRootCard — shows a connected folder root with status and actions.
  */
 import { type ReactElement } from 'react';
+
 import { HardDrive, RefreshCw, X, ShieldAlert } from 'lucide-react';
+
 import { type LibraryRoot } from '../../models/LibraryTypes';
 
 type LibraryRootCardProps = {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { setTrackStoreState } from '../setTrackStoreState';
+
 import { trackStore } from '../../stores/trackStore';
+import { setTrackStoreState } from '../setTrackStoreState';
 
 vi.mock('../../stores/trackStore', () => ({
     trackStore: {
@@ -12,7 +13,7 @@ vi.mock('../../stores/trackStore', () => ({
 describe('setTrackStoreState', () => {
     it('delegates to the injected track store set', () => {
         const nextState = { tracks: [], selectedTrackId: null as string | null } as any;
-        
+
         setTrackStoreState(nextState);
 
         expect(trackStore.set).toHaveBeenCalledTimes(1);

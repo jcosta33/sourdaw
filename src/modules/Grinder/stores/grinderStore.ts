@@ -3,7 +3,7 @@
  * Keyed by deviceId to support multiple simultaneous instances.
  */
 import { createStore } from '#/infra/store/createStore';
-import { updateGrinderTelemetry } from './grinderTelemetryStore';
+
 import {
     type GrinderMic,
     type GrinderPatch,
@@ -12,6 +12,8 @@ import {
     DEFAULT_PATCH,
     migrateGrinderPatch,
 } from '../models/GrinderPatch';
+
+import { updateGrinderTelemetry } from './grinderTelemetryStore';
 
 export type GrinderState = {
     patch: GrinderPatch;
@@ -44,7 +46,9 @@ export function loadGrinderPatch(deviceId: string, patch: GrinderPatch): void {
 export function replaceGrinderPatchLocally(deviceId: string, patch: GrinderPatch): void {
     const instances = grinderStore.value ?? {};
     const state = instances[deviceId];
-    if (!state) {return;}
+    if (!state) {
+        return;
+    }
     grinderStore.set({ ...instances, [deviceId]: { ...state, patch: migrateGrinderPatch(patch) } });
 }
 
@@ -71,18 +75,15 @@ export function setGrinderPedalParam(
 ): void {
     const instances = grinderStore.value ?? {};
     const state = instances[deviceId];
-    if (!state) {return;}
+    if (!state) {
+        return;
+    }
 
     const chainKey = isPost ? 'postPedals' : 'prePedals';
-    const nextPedals = upsertPedal(
-        state.patch[chainKey],
-        pedalType,
-        defaults,
-        (current) => ({
-            ...current,
-            params: { ...current.params, [paramKey]: value },
-        })
-    );
+    const nextPedals = upsertPedal(state.patch[chainKey], pedalType, defaults, (current) => ({
+        ...current,
+        params: { ...current.params, [paramKey]: value },
+    }));
 
     grinderStore.set({
         ...instances,
@@ -101,7 +102,9 @@ export function setGrinderMicParam<K extends keyof GrinderMic>(
 ): void {
     const instances = grinderStore.value ?? {};
     const state = instances[deviceId];
-    if (!state) {return;}
+    if (!state) {
+        return;
+    }
 
     const micKey = micIndex === 1 ? 'mic1' : 'mic2';
     grinderStore.set({

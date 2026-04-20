@@ -1,11 +1,13 @@
 import { type ReactElement, type KeyboardEvent, useState, useEffect, useRef } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
 import { DawKeycap } from '#/components/daw/DawKeycap';
 import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { Input } from '#/components/ui/input';
-import { cn } from '#/utils/Styles/cn';
+import { useStore } from '#/infra/store/useStore';
 import { workspaceStore } from '#/modules/Workspace/stores';
 import { closeCommandPalette, type WorkspaceState } from '#/modules/Workspace/useCases';
+import { cn } from '#/utils/Styles/cn';
+
 import { searchCommands, type CommandEntry } from '../../models/CommandRegistry';
 import { executeAppAction } from '../../useCases/executeAppAction';
 

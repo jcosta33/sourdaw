@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { getNextClipId } from '../getNextClipId';
+
 import { getNextClipId as allocateClipIdFromCounter } from '../../repositories/clipIdCounter';
+import { getNextClipId } from '../getNextClipId';
 
 vi.mock('../../repositories/clipIdCounter', () => ({
     getNextClipId: vi.fn(),

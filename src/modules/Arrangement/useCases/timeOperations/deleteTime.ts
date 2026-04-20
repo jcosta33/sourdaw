@@ -1,9 +1,10 @@
+import { automationStore } from '#/modules/Automation/stores';
+import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
+
+import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { markerStore } from '../../stores/markerStore';
-import { automationStore } from '#/modules/Automation/stores';
-import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
-import { type Clip } from '../../models/Track';
 
 export function deleteTime(startBeat: number, endBeat: number): void {
     const state = getTrackState();

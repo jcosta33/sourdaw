@@ -1,4 +1,5 @@
 import { persistDeviceParam } from '#/modules/Arrangement/useCases';
+
 import { bridges } from './helpers';
 
 export function setProofParam(deviceId: string, name: string, value: number): void {

@@ -8,9 +8,10 @@
  */
 
 import proofProcessorUrl from '../services/proofProcessor.ts?worker&url';
+
+import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, PROOF_IDX } from './telemetryAllocator';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
-import { requireSharedArrayBuffer } from './pluginHostingErrors';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 

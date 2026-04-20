@@ -4,8 +4,8 @@ vi.mock('../../stores/sidechainStore', () => ({
     sidechainStore: { hydrate: vi.fn() },
 }));
 
-import { hydrateSidechainRoutes } from '../hydrateSidechainRoutes';
 import { sidechainStore } from '../../stores/sidechainStore';
+import { hydrateSidechainRoutes } from '../hydrateSidechainRoutes';
 
 describe('hydrateSidechainRoutes', () => {
     beforeEach(() => {

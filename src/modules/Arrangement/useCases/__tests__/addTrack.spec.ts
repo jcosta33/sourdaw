@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { addTrack } from '../addTrack';
+
+import { eventBus } from '#/app/registerDependencies';
+
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
-import { eventBus } from '#/app/registerDependencies';
+import { addTrack } from '../addTrack';
 
 vi.mock('../../repositories/track/getTrackState', () => ({
     getTrackState: vi.fn(),

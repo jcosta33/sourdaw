@@ -2,7 +2,9 @@
  * Lane header strip — parameter name badge, current value, mode indicators.
  */
 import { type ReactElement } from 'react';
+
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+
 import { formatParameterValue } from '../../helpers/automationLaneConstants';
 
 type AutomationLaneHeaderProps = {

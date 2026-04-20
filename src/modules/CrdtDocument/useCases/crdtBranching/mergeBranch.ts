@@ -1,4 +1,5 @@
 import * as Automerge from '@automerge/automerge';
+
 import { createBranchError } from '../../errors/BranchError';
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';

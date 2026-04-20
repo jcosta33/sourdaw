@@ -3,15 +3,17 @@
  * semantic parameter grouping, and collapsible advanced sections.
  */
 import { type ReactElement } from 'react';
-import { type DeviceLayoutProps, registerPrefixLayout } from '../deviceLayoutRegistry';
-import { SectionHeader } from '../SectionHeader';
-import { DeviceParameterControl } from '../DeviceParameterControl';
-import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
+
 import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
-import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
+import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
+import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
+
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
+import { type DeviceLayoutProps, registerPrefixLayout } from '../deviceLayoutRegistry';
+import { DeviceParameterControl } from '../DeviceParameterControl';
+import { SectionHeader } from '../SectionHeader';
 
 type P = DeviceLayoutProps['parameters'][number];
 
@@ -114,10 +116,10 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                     <SectionHeader title="Envelope" />
                     <div className="flex justify-center mb-2">
                         <ADSREnvelope
-                            attack={pv['attack'] ?? pv['Attack'] ?? 0.01}
-                            decay={pv['decay'] ?? pv['Decay'] ?? 0.2}
-                            sustain={pv['sustain'] ?? pv['Sustain'] ?? 0.7}
-                            release={pv['release'] ?? pv['Release'] ?? 0.3}
+                            attack={pv.attack ?? pv.Attack ?? 0.01}
+                            decay={pv.decay ?? pv.Decay ?? 0.2}
+                            sustain={pv.sustain ?? pv.Sustain ?? 0.7}
+                            release={pv.release ?? pv.Release ?? 0.3}
                             width={200}
                             height={70}
                             onParamChange={change}
@@ -131,8 +133,8 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                     <SectionHeader title="Filter" />
                     <div className="flex justify-center mb-2">
                         <FilterResponse
-                            cutoff={pv['cutoff'] ?? pv['Cutoff'] ?? pv['frequency'] ?? 5000}
-                            resonance={pv['resonance'] ?? pv['Resonance'] ?? pv['q'] ?? 1}
+                            cutoff={pv.cutoff ?? pv.Cutoff ?? pv.frequency ?? 5000}
+                            resonance={pv.resonance ?? pv.Resonance ?? pv.q ?? 1}
                             filterType={0}
                             width={200}
                             height={60}
@@ -147,10 +149,10 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                     <SectionHeader title="Compression" />
                     <div className="flex justify-center mb-2">
                         <CompressorCurve
-                            threshold={pv['threshold'] ?? pv['Threshold'] ?? -20}
-                            ratio={pv['ratio'] ?? pv['Ratio'] ?? 4}
-                            knee={pv['knee'] ?? pv['Knee'] ?? 6}
-                            makeup={pv['makeup'] ?? pv['Makeup'] ?? 0}
+                            threshold={pv.threshold ?? pv.Threshold ?? -20}
+                            ratio={pv.ratio ?? pv.Ratio ?? 4}
+                            knee={pv.knee ?? pv.Knee ?? 6}
+                            makeup={pv.makeup ?? pv.Makeup ?? 0}
                             width={200}
                             height={120}
                             onParamChange={change}
@@ -166,8 +168,8 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                         <OscillatorWaveform
                             waveform="sawtooth"
                             osc2Waveform="sawtooth"
-                            osc2Mix={pv['osc2_mix'] ?? pv['mix'] ?? 0}
-                            detune={pv['detune'] ?? pv['Detune'] ?? 0}
+                            osc2Mix={pv.osc2_mix ?? pv.mix ?? 0}
+                            detune={pv.detune ?? pv.Detune ?? 0}
                             width={200}
                             height={50}
                         />

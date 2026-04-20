@@ -1,19 +1,21 @@
 import { type ReactElement, useRef, useEffect, useLayoutEffect, useState, type PointerEvent } from 'react';
-import { kneadStore, updateClipKneadState } from '#/modules/Knead/stores';
-import { analyzePitchForClip } from '#/modules/AudioEngine/useCases';
-import { useStore } from '#/infra/store/useStore';
-import { useTracks } from '../../hooks/useTracks';
-import { addDevice } from '#/modules/Arrangement/useCases';
+
+import { Mic } from 'lucide-react';
+
+import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
-import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
-import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
-import { Mic } from 'lucide-react';
 import { logger } from '#/infra/logger/appLogger';
+import { useStore } from '#/infra/store/useStore';
+import { addDevice } from '#/modules/Arrangement/useCases';
+import { analyzePitchForClip } from '#/modules/AudioEngine/useCases';
+import { kneadStore, updateClipKneadState } from '#/modules/Knead/stores';
+import { projectStore } from '#/modules/Project/stores';
+import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
+import { quantizeCentsToScale, SCALE_NAMES, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { projectStore } from '#/modules/Project/stores';
-import { quantizeCentsToScale, SCALE_NAMES, KEY_NAMES } from '#/utils/Music/MusicalScale';
+import { useTracks } from '../../hooks/useTracks';
 
 type KneadHotspot = 'BODY' | 'TOP' | 'BOTTOM' | 'LEFT' | 'RIGHT' | 'CENTER_UPPER' | 'CENTER_LOWER';
 
@@ -51,7 +53,9 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
     const contour = kneadStoreState.contours[clipId];
 
     const handleCorrectPitch = () => {
-        if (!clipId) return;
+        if (!clipId) {
+            return;
+        }
         updateClipKneadState(clipId, (state) => ({
             ...state,
             blobs: state.blobs.map((blob) => ({
@@ -72,7 +76,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
 
     // Refs for animation loop to avoid dependency-triggered re-runs of the loop itself
     const stateRef = useRef({ kneadState, zoom, transportState, isDragging, contour });
-    
+
     useEffect(() => {
         stateRef.current = { kneadState, zoom, transportState, isDragging, contour };
     }, [kneadState, zoom, transportState, isDragging, contour]);
@@ -91,8 +95,8 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                         );
                     }
                 })
-                .catch((err) => {
-                    logger.error(err);
+                .catch((error) => {
+                    logger.error(error);
                     notifyUser('Pitch analysis failed. See logs for details.', 'error');
                 });
         }
@@ -103,21 +107,37 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
 
     const getHotspot = (x: number, y: number, bx: number, by: number, bw: number, bh: number): KneadHotspot => {
         const padding = 8;
-        if (x < bx + padding) return 'LEFT';
-        if (x > bx + bw - padding) return 'RIGHT';
-        if (y < by - bh / 2 + padding) return 'TOP';
-        if (y > by + bh / 2 - padding) return 'BOTTOM';
-        if (y < by) return 'CENTER_UPPER';
+        if (x < bx + padding) {
+            return 'LEFT';
+        }
+        if (x > bx + bw - padding) {
+            return 'RIGHT';
+        }
+        if (y < by - bh / 2 + padding) {
+            return 'TOP';
+        }
+        if (y > by + bh / 2 - padding) {
+            return 'BOTTOM';
+        }
+        if (y < by) {
+            return 'CENTER_UPPER';
+        }
         return 'CENTER_LOWER';
     };
 
     // Render loop for the Canvas-based Blob Editor
     useEffect(() => {
-        if (!hasKnead) {return;}
+        if (!hasKnead) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (!canvas) {return;}
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) {return;}
+        if (!ctx) {
+            return;
+        }
 
         const style = getComputedStyle(document.documentElement);
         const bgCol = `hsl(${style.getPropertyValue('--color-surface-sunken') || '0, 0%, 8%'})`;
@@ -128,7 +148,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
         const render = () => {
             const { kneadState: currentKnead, zoom: currentZoom, transportState: currentTransport } = stateRef.current;
             const currentPPS = 300 * currentZoom;
-            
+
             const width = canvas.width;
             const height = canvas.height;
 
@@ -150,8 +170,9 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
             if (stateRef.current.contour && stateRef.current.contour.points.length > 0) {
                 const currentContour = stateRef.current.contour;
                 const avgCents =
-                    (currentKnead?.blobs?.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) ?? 6000) / (currentKnead?.blobs?.length || 1) || 6000;
-                
+                    (currentKnead?.blobs?.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) ?? 6000) /
+                        (currentKnead?.blobs?.length || 1) || 6000;
+
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
                 ctx.lineWidth = 1;
                 ctx.beginPath();
@@ -165,7 +186,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                     const midiNote = 69 + 12 * Math.log2(pt.frequency_hz / 440);
                     const cents = midiNote * 100;
                     const py = height / 2 - ((cents - avgCents) / 100) * rowHeight;
-                    
+
                     if (first) {
                         ctx.moveTo(px, py);
                         first = false;
@@ -179,10 +200,13 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
             // Draw Knead Blobs
             if (currentKnead && currentKnead.blobs.length > 0) {
                 const avgCents =
-                    currentKnead.blobs.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) / currentKnead.blobs.length;
+                    currentKnead.blobs.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) /
+                    currentKnead.blobs.length;
 
                 for (const blob of currentKnead.blobs) {
-                    if (!blob.pitchCenterCents) {continue;}
+                    if (!blob.pitchCenterCents) {
+                        continue;
+                    }
 
                     // Map time to X
                     const x = blob.startTime * currentPPS;
@@ -210,8 +234,11 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                         for (let i = 0; i < blob.pitchCurveCents.length; i++) {
                             const px = x + i * step;
                             const py = y - ((blob.pitchCurveCents[i] || 0) / 100) * rowHeight;
-                            if (i === 0) {ctx.moveTo(px, py);}
-                            else {ctx.lineTo(px, py);}
+                            if (i === 0) {
+                                ctx.moveTo(px, py);
+                            } else {
+                                ctx.lineTo(px, py);
+                            }
                         }
                         ctx.stroke();
                     }
@@ -221,7 +248,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                         ctx.globalAlpha = 1.0;
                         ctx.strokeStyle = '#ffffff';
                         ctx.lineWidth = 1;
-                        
+
                         // Top/Bottom pitch drift handles
                         ctx.beginPath();
                         ctx.arc(x + w / 2, y - rowHeight / 2 + 2, 3, 0, Math.PI * 2);
@@ -286,7 +313,9 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
     }, [zoom]);
 
     const handlePointerDown = (e: PointerEvent<HTMLCanvasElement>) => {
-        if (!kneadState) {return;}
+        if (!kneadState) {
+            return;
+        }
         const rect = canvasRef.current!.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
@@ -307,13 +336,14 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
             const by = canvasRef.current!.height / 2 - ((hit.pitchCenterCents - avgCents) / 100) * rowHeight;
             const hotspot = getHotspot(x, y, bx, by, bw, rowHeight);
 
-            dragStart.current = { 
-                x, y, 
-                blobId: hit.id, 
-                hotspot, 
+            dragStart.current = {
+                x,
+                y,
+                blobId: hit.id,
+                hotspot,
                 startCents: hit.pitchCenterCents,
                 startTime: hit.startTime,
-                endTime: hit.endTime
+                endTime: hit.endTime,
             };
             setIsDragging(true);
             canvasRef.current!.setPointerCapture(e.pointerId);
@@ -328,8 +358,9 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
         if (!isDragging) {
             // Hover detection
             const avgCents =
-                (kneadState?.blobs?.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) ?? 6000) / (kneadState?.blobs?.length || 1);
-            
+                (kneadState?.blobs?.reduce((a, b) => a + (b.pitchCenterCents || 6000), 0) ?? 6000) /
+                (kneadState?.blobs?.length || 1);
+
             const hit = kneadState?.blobs.find((blob) => {
                 const bx = blob.startTime * pixelsPerSecond;
                 const bw = (blob.endTime - blob.startTime) * pixelsPerSecond;
@@ -343,12 +374,17 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                 const bw = (hit.endTime - hit.startTime) * pixelsPerSecond;
                 const by = canvasRef.current!.height / 2 - ((hit.pitchCenterCents - avgCents) / 100) * rowHeight;
                 const hotspot = getHotspot(x, y, bx, by, bw, rowHeight);
-                
+
                 // Cursor feedback
-                if (hotspot === 'LEFT' || hotspot === 'RIGHT') canvasRef.current!.style.cursor = 'ew-resize';
-                else if (hotspot === 'TOP' || hotspot === 'BOTTOM') canvasRef.current!.style.cursor = 'ns-resize';
-                else if (hotspot === 'CENTER_UPPER') canvasRef.current!.style.cursor = 'pointer';
-                else canvasRef.current!.style.cursor = 'move';
+                if (hotspot === 'LEFT' || hotspot === 'RIGHT') {
+                    canvasRef.current!.style.cursor = 'ew-resize';
+                } else if (hotspot === 'TOP' || hotspot === 'BOTTOM') {
+                    canvasRef.current!.style.cursor = 'ns-resize';
+                } else if (hotspot === 'CENTER_UPPER') {
+                    canvasRef.current!.style.cursor = 'pointer';
+                } else {
+                    canvasRef.current!.style.cursor = 'move';
+                }
             } else {
                 setHoveredBlobId(null);
                 canvasRef.current!.style.cursor = 'crosshair';
@@ -356,7 +392,9 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
             return;
         }
 
-        if (!dragStart.current || !kneadState) {return;}
+        if (!dragStart.current || !kneadState) {
+            return;
+        }
 
         const dx = x - dragStart.current.x;
         const dy = y - dragStart.current.y;
@@ -419,31 +457,48 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                                 value={[kneadState.retuneSpeedMs ?? 25]}
                                 min={0}
                                 max={200}
-                                onValueChange={([val]) => updateClipKneadState(clipId, (s) => ({ ...s, retuneSpeedMs: val ?? 25 }))}
+                                onValueChange={([val]) =>
+                                    updateClipKneadState(clipId, (s) => ({ ...s, retuneSpeedMs: val ?? 25 }))
+                                }
                             />
                         </div>
 
                         <div className="h-4 w-[1px] bg-border mx-1" />
 
                         <div className="flex items-center gap-3">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Scale</p>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                Scale
+                            </p>
                             <div className="flex items-center gap-1">
-                                <select 
+                                <select
                                     className="bg-transparent text-[11px] font-medium outline-none cursor-pointer hover:text-accent-primary transition-colors"
                                     value={keyRoot}
                                     onChange={(e) => handleKeyChange(parseInt(e.target.value))}
                                 >
-                                    {KEY_NAMES.map((name, i) => <option key={name} value={i} className="bg-surface-elevated text-foreground">{name}</option>)}
+                                    {KEY_NAMES.map((name, i) => (
+                                        <option key={name} value={i} className="bg-surface-elevated text-foreground">
+                                            {name}
+                                        </option>
+                                    ))}
                                 </select>
-                                <select 
+                                <select
                                     className="bg-transparent text-[11px] font-medium outline-none cursor-pointer hover:text-accent-primary transition-colors capitalize"
                                     value={scaleName}
                                     onChange={(e) => handleScaleChange(e.target.value)}
                                 >
-                                    {SCALE_NAMES.map((name) => <option key={name} value={name} className="bg-surface-elevated text-foreground">{name.replace(/([A-Z])/g, ' $1')}</option>)}
+                                    {SCALE_NAMES.map((name) => (
+                                        <option key={name} value={name} className="bg-surface-elevated text-foreground">
+                                            {name.replaceAll(/([A-Z])/g, ' $1')}
+                                        </option>
+                                    ))}
                                 </select>
                             </div>
-                            <Button variant="ghost" size="xs" className="h-7 px-2 text-[11px] font-semibold hover:bg-accent-primary/10 hover:text-accent-primary ml-2" onClick={handleCorrectPitch}>
+                            <Button
+                                variant="ghost"
+                                size="xs"
+                                className="h-7 px-2 text-[11px] font-semibold hover:bg-accent-primary/10 hover:text-accent-primary ml-2"
+                                onClick={handleCorrectPitch}
+                            >
                                 Correct All
                             </Button>
                         </div>

@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { PluginBrowser } from '../PluginBrowser';
 
 // Mock external dependencies
@@ -95,13 +96,21 @@ describe('PluginBrowser', () => {
     });
 
     it('should show plugin count', () => {
-        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({ scannedPlugins: mockPlugins, isScanning: false, errors: [] });
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scannedPlugins: mockPlugins,
+            isScanning: false,
+            errors: [],
+        });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         expect(screen.getByText('3')).toBeInTheDocument();
     });
 
     it('should group plugins by format', () => {
-        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({ scannedPlugins: mockPlugins, isScanning: false, errors: [] });
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scannedPlugins: mockPlugins,
+            isScanning: false,
+            errors: [],
+        });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         // Use getAllByText since format appears in both header badge and plugin row
         expect(screen.getAllByText('vst3').length).toBeGreaterThanOrEqual(1);
@@ -110,7 +119,11 @@ describe('PluginBrowser', () => {
     });
 
     it('should render plugin names', () => {
-        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({ scannedPlugins: mockPlugins, isScanning: false, errors: [] });
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scannedPlugins: mockPlugins,
+            isScanning: false,
+            errors: [],
+        });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         expect(screen.getByText('Test VST')).toBeInTheDocument();
         expect(screen.getByText('CLAP Synth')).toBeInTheDocument();
@@ -118,7 +131,11 @@ describe('PluginBrowser', () => {
     });
 
     it('should filter plugins by local search', () => {
-        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({ scannedPlugins: mockPlugins, isScanning: false, errors: [] });
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scannedPlugins: mockPlugins,
+            isScanning: false,
+            errors: [],
+        });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         const searchInput = screen.getByLabelText('Filter external plugins');
         fireEvent.change(searchInput, { target: { value: 'VST' } });
@@ -132,14 +149,22 @@ describe('PluginBrowser', () => {
     });
 
     it('should render format badges', () => {
-        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({ scannedPlugins: mockPlugins, isScanning: false, errors: [] });
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scannedPlugins: mockPlugins,
+            isScanning: false,
+            errors: [],
+        });
         render(<PluginBrowser selectedTrackId={null} searchQuery="" />);
         const formatBadges = screen.getAllByText(/vst3|clap|au/i);
         expect(formatBadges.length).toBeGreaterThan(0);
     });
 
     it('should call loadExternalPlugin when plugin is clicked', () => {
-        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({ scannedPlugins: mockPlugins, isScanning: false, errors: [] });
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scannedPlugins: mockPlugins,
+            isScanning: false,
+            errors: [],
+        });
         render(<PluginBrowser selectedTrackId="track1" searchQuery="" />);
         const plugin = screen.getByText('Test VST');
         fireEvent.click(plugin.closest('[role="button"]') || plugin);

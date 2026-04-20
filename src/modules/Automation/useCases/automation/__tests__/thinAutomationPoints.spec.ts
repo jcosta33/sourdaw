@@ -1,10 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { thinAutomationPoints } from '../thinAutomationPoints';
 
 const { mocks } = vi.hoisted(() => ({
     mocks: {
         rdpSimplify: vi.fn(),
-    }
+    },
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {

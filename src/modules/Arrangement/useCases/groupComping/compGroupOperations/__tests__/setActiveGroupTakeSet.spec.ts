@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { setActiveGroupTakeSet } from '../setActiveGroupTakeSet';
 
 const mocks = vi.hoisted(() => ({
@@ -8,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Arrangement/stores/groupComping', () => ({
     groupCompingStore: {
-        get value() { return mocks.groupCompingStoreValue.value; },
+        get value() {
+            return mocks.groupCompingStoreValue.value;
+        },
         set: mocks.groupCompingStoreSet,
-    }
+    },
 }));
 
 describe('setActiveGroupTakeSet', () => {
@@ -18,13 +21,13 @@ describe('setActiveGroupTakeSet', () => {
 
     it('updates activeTakeSetId for the group', () => {
         mocks.groupCompingStoreValue.value = {
-            groups: [{ id: 'g1', activeTakeSetId: 'old' }]
+            groups: [{ id: 'g1', activeTakeSetId: 'old' }],
         } as any;
 
         setActiveGroupTakeSet('g1', 'new');
 
         expect(mocks.groupCompingStoreSet).toHaveBeenCalledWith({
-            groups: [{ id: 'g1', activeTakeSetId: 'new' }]
+            groups: [{ id: 'g1', activeTakeSetId: 'new' }],
         });
     });
 });

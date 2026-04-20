@@ -1,7 +1,9 @@
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
+
 import { arrangementStore } from '../../stores/arrangementStore';
 import { markDirty } from '../projectPersistence/saveProject/markDirty';
+
 import { loadSnapshot, syncCurrentArrangementToStore } from './helpers';
 
 export function switchArrangement(id: string): void {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type ProjectData } from '../../../../models/ProjectData';
 
 const mocks = vi.hoisted(() => ({

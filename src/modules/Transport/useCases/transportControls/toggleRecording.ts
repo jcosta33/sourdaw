@@ -1,5 +1,3 @@
-import { getTransportState } from '../../repositories/transport/getTransportState';
-import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { getTrackStoreState, updateClip, startRecording, stopRecording } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
@@ -10,7 +8,11 @@ import {
     stopAudioRecording,
     getCompensationDelay,
 } from '#/modules/AudioEngine/useCases';
+
+import { getTransportState } from '../../repositories/transport/getTransportState';
+import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { ensureTrackStrips } from '../ensureTrackStrips';
+
 import { startPlayback } from './startPlayback';
 
 let countInTimerId: ReturnType<typeof setTimeout> | null = null;
@@ -36,7 +38,7 @@ function beginActualRecording(): void {
                 if (recClip) {
                     const transport = getTransportState();
                     const bpm = transport?.tempo ?? 120;
-                    
+
                     const offsetBeats = totalLatencySec * (bpm / 60);
                     const newStartBeat = Math.max(0, recClip.startBeat - offsetBeats);
                     const durationBeats = buffer.duration * (bpm / 60);
@@ -44,11 +46,11 @@ function beginActualRecording(): void {
 
                     // Update in one go
                     Promise.resolve().then(() => {
-                        updateClip(recClip.id, (c) => ({ 
-                            ...c, 
+                        updateClip(recClip.id, (c) => ({
+                            ...c,
                             audioBufferId: bufferId,
                             startBeat: newStartBeat,
-                            endBeat: exactEndBeat
+                            endBeat: exactEndBeat,
                         }));
                     });
                 }

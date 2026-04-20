@@ -1,5 +1,5 @@
-import { automationStore } from '../../stores/automationStore';
 import { type AutomationPoint } from '../../models/Automation';
+import { automationStore } from '../../stores/automationStore';
 
 export function setAutomationPointCurve(
     laneId: string,

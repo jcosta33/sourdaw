@@ -1,11 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { startAutomationRecording } from '../startAutomationRecording';
 
 const { activeRecording, pendingPoints, touchActive, automationSnapshot } = vi.hoisted(() => {
-    const activeRecording = new Map<
-        string,
-        import('../recordingSessionState').RecordingSession
-    >();
+    const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
     const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
     const touchActive = new Set<string>();
     const automationSnapshot: {
@@ -63,9 +61,7 @@ describe('startAutomationRecording', () => {
     });
 
     it('returns early when automation store has no snapshot', () => {
-        vi.mocked(getAllTracks).mockReturnValue([
-            { id: 't1', kind: 'audio', automationMode: 'write' },
-        ] as any);
+        vi.mocked(getAllTracks).mockReturnValue([{ id: 't1', kind: 'audio', automationMode: 'write' }] as any);
 
         startAutomationRecording();
 

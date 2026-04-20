@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleTriggerScene } from '../handleTriggerScene';
 
 const mocks = vi.hoisted(() => ({

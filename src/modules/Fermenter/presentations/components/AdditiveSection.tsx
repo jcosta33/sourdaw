@@ -2,6 +2,7 @@
  * Additive synthesis controls — partials, tilt, odd emphasis, inharmonicity.
  */
 import { type ReactElement } from 'react';
+
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 

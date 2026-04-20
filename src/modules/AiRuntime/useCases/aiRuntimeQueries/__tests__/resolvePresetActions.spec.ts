@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { resolvePresetActions } from '../resolvePresetActions';
 
 vi.mock('#/modules/AiRuntime/models/presetActions/registry', () => ({
@@ -17,7 +18,7 @@ vi.mock('#/modules/AiRuntime/models/presetActions/registry', () => ({
         {
             id: 'null-action',
             buildAction: () => null,
-        }
+        },
     ],
 }));
 

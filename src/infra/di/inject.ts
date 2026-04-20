@@ -1,6 +1,6 @@
 import { Container } from './Container';
-import { type DependencyKey } from './types';
 import { registrations, cache, testOverrides } from './internal/containerState';
+import { type DependencyKey } from './types';
 
 type ResolveDependency<TDep> = TDep extends new (...args: any[]) => infer TInstance ? TInstance : TDep;
 
@@ -50,7 +50,7 @@ function getDependencyOverride(dependencyToken: unknown): { hasOverride: boolean
 
 function assertSyncDependency(key: string, resolved: unknown): unknown {
     if (resolved instanceof Promise) {
-        throw new Error(`Async dependencies are forbidden: ${key}`);
+        throw new TypeError(`Async dependencies are forbidden: ${key}`);
     }
 
     return resolved;

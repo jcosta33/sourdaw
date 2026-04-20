@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { trackStore } from '../../../stores/trackStore';
-import { freezeTrack } from '../freezeTrack';
+
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
+
 import { updateTrack } from '../../../repositories/track/updateTrack';
 import { computeTrackHash } from '../../../services/computeTrackHash';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { trackStore } from '../../../stores/trackStore';
+import { freezeTrack } from '../freezeTrack';
 import { renderTrackOffline } from '../renderOffline';
 
 vi.mock('../../../repositories/track/updateTrack', () => ({
@@ -84,13 +86,13 @@ describe('freezeTrack', () => {
         // Second call: sets status to 'frozen'
         const frozenUpdater = vi.mocked(updateTrack).mock.calls[1][1] as any;
         const frozenTrack = frozenUpdater(trackStore.value!.tracks[0]);
-        
+
         expect(frozenTrack.frozen).toBe(true);
         expect(frozenTrack.frozenBufferId).toMatch(/^freeze-t1-/);
         expect(frozenTrack.freezeState.status).toBe('frozen');
         expect(frozenTrack.freezeState.sourceContentHash).toBe('mock-hash');
         expect(frozenTrack.freezeState.renderedAt).toBe(1234567890);
-        
+
         expect(audioBufferCache.set).toHaveBeenCalledWith(frozenTrack.frozenBufferId, expect.any(Object));
         expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 2, 6 + 4, expect.any(Object)); // 6 end + 4 tail
     });
@@ -116,7 +118,7 @@ describe('freezeTrack', () => {
 
         const errorUpdater = vi.mocked(updateTrack).mock.calls[1][1] as any;
         const errorTrack = errorUpdater(trackStore.value!.tracks[0]);
-        
+
         expect(errorTrack.freezeState.status).toBe('error');
         expect(errorTrack.freezeState.errorMessage).toBe('Render crashed');
     });
@@ -140,7 +142,7 @@ describe('freezeTrack', () => {
         } as any);
 
         await freezeTrack('t1');
-        
+
         expect(renderTrackOffline).toHaveBeenCalledWith(expect.any(Object), 0, 1 + 4, expect.any(Object));
     });
 });

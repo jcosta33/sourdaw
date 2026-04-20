@@ -7,33 +7,33 @@
  * eliminating the 10 type-guard branches.
  */
 
-import { type BuiltinDeviceNode } from '../models/AudioEngineState';
-import { logger } from '#/infra/logger/appLogger';
 import { eventBus } from '#/app/registerDependencies';
-
-import { isKneadDevice, createKneadNode, type KneadNodeResult } from './KneadNode';
-import { isFermenterDevice, createFermenterNode, type FermenterNodeResult } from './FermenterNode';
-import { isToasterDevice, createToasterNode, type ToasterNodeResult } from './ToasterNode';
-import { isLevainDevice, createLevainNode, type LevainNodeResult } from './LevainNode';
-import { isProofChamberDevice, createProofChamberNode, type ProofChamberNodeResult } from './ProofChamberNode';
-import { isGlutenDevice, createGlutenNode, type GlutenNodeResult } from './GlutenNode';
-import { isBacteriaDevice, createBacteriaNode, type BacteriaNodeResult } from './BacteriaNode';
-import { isGrinderDevice, createGrinderNode, type GrinderNodeResult } from './GrinderNode';
-import { isProofDevice, createProofNode, type ProofNodeResult } from './ProofNode';
-import { isScoringDevice, createScoringNode, type ScoringNodeResult } from './ScoringNode';
-import { isGrandBouleDevice, createGrandBouleNode, type GrandBouleNodeResult } from './GrandBouleNode';
-
-import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
+import { logger } from '#/infra/logger/appLogger';
 import { updateBacteriaMeters } from '#/modules/Bacteria/stores';
+import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { updateGlutenMeters } from '#/modules/Gluten/stores';
 import { updateGrinderMeters } from '#/modules/Grinder/stores';
-import { registerLevainDevice, unregisterLevainDevice as _unregisterLevainDevice } from '#/modules/Levain/useCases';
 import { setEngineReady } from '#/modules/Levain/stores';
-import { registerProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
-import { updateProofMeters } from '#/modules/Proof/stores';
-import { updateTunerTelemetry } from '#/modules/Scoring/stores';
-import { createFaustDeviceNode } from '../useCases/deviceResolvers/createFaustDeviceNode';
+import { registerLevainDevice, unregisterLevainDevice as _unregisterLevainDevice } from '#/modules/Levain/useCases';
 import { isFaustModule } from '#/modules/Plugin/useCases';
+import { updateProofMeters } from '#/modules/Proof/stores';
+import { registerProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
+import { updateTunerTelemetry } from '#/modules/Scoring/stores';
+
+import { type BuiltinDeviceNode } from '../models/AudioEngineState';
+import { createFaustDeviceNode } from '../useCases/deviceResolvers/createFaustDeviceNode';
+
+import { isBacteriaDevice, createBacteriaNode, type BacteriaNodeResult } from './BacteriaNode';
+import { isFermenterDevice, createFermenterNode, type FermenterNodeResult } from './FermenterNode';
+import { isGlutenDevice, createGlutenNode, type GlutenNodeResult } from './GlutenNode';
+import { isGrandBouleDevice, createGrandBouleNode, type GrandBouleNodeResult } from './GrandBouleNode';
+import { isGrinderDevice, createGrinderNode, type GrinderNodeResult } from './GrinderNode';
+import { isKneadDevice, createKneadNode, type KneadNodeResult } from './KneadNode';
+import { isLevainDevice, createLevainNode, type LevainNodeResult } from './LevainNode';
+import { isProofChamberDevice, createProofChamberNode, type ProofChamberNodeResult } from './ProofChamberNode';
+import { isProofDevice, createProofNode, type ProofNodeResult } from './ProofNode';
+import { isScoringDevice, createScoringNode, type ScoringNodeResult } from './ScoringNode';
+import { isToasterDevice, createToasterNode, type ToasterNodeResult } from './ToasterNode';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -103,7 +103,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                     },
                 });
             })
-            .catch((err) => logger.warn(`[WebAudioEngine] Fermenter failed: ${err}`));
+            .catch((error) => logger.warn(`[WebAudioEngine] Fermenter failed: ${error}`));
         return { placeholder, loadPromise };
     },
 };
@@ -148,7 +148,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                 });
                 eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
             })
-            .catch((err) => logger.warn(`[WebAudioEngine] Toaster failed: ${err}`));
+            .catch((error) => logger.warn(`[WebAudioEngine] Toaster failed: ${error}`));
         return { placeholder, loadPromise };
     },
 };
@@ -199,11 +199,11 @@ const levainDescriptor: WasmDeviceDescriptor = {
                         handleCc: result.handleCc,
                         setInstrument: result.setInstrument,
                     },
-                    result.workletNode.port,
+                    result.workletNode.port
                 );
                 setEngineReady(true);
             })
-            .catch((err) => logger.warn(`[WebAudioEngine] Levain failed: ${err}`));
+            .catch((error) => logger.warn(`[WebAudioEngine] Levain failed: ${error}`));
         return { placeholder, loadPromise };
     },
 };
@@ -234,7 +234,7 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
             })
-            .catch((err) => logger.warn(`[WebAudioEngine] Dutch Oven failed: ${err}`));
+            .catch((error) => logger.warn(`[WebAudioEngine] Dutch Oven failed: ${error}`));
         return { placeholder, loadPromise };
     },
 };
@@ -275,7 +275,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
             })
-            .catch((err) => logger.warn(`[WebAudioEngine] Gluten failed: ${err}`));
+            .catch((error) => logger.warn(`[WebAudioEngine] Gluten failed: ${error}`));
         return { placeholder, loadPromise };
     },
 };
@@ -309,7 +309,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
             })
-            .catch((err) => logger.warn(`[WebAudioEngine] Bacteria failed: ${err}`));
+            .catch((error) => logger.warn(`[WebAudioEngine] Bacteria failed: ${error}`));
         return { placeholder, loadPromise };
     },
 };
@@ -360,7 +360,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
             })
-            .catch((err) => logger.warn(`[WebAudioEngine] Grinder failed: ${err}`));
+            .catch((error) => logger.warn(`[WebAudioEngine] Grinder failed: ${error}`));
         return { placeholder, loadPromise };
     },
 };
@@ -400,7 +400,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                 });
                 syncFullPatch(deviceId);
             })
-            .catch((err) => logger.warn(`[WebAudioEngine] Proof failed: ${err}`));
+            .catch((error) => logger.warn(`[WebAudioEngine] Proof failed: ${error}`));
         return { placeholder, loadPromise };
     },
 };
@@ -434,7 +434,7 @@ const scoringDescriptor: WasmDeviceDescriptor = {
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
             })
-            .catch((err) => logger.warn(`[WebAudioEngine] Scoring failed: ${err}`));
+            .catch((error) => logger.warn(`[WebAudioEngine] Scoring failed: ${error}`));
         return { placeholder, loadPromise };
     },
 };
@@ -491,7 +491,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                 });
                 eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
             })
-            .catch((err) => logger.warn(`[WebAudioEngine] Grand Boule failed: ${err}`));
+            .catch((error) => logger.warn(`[WebAudioEngine] Grand Boule failed: ${error}`));
         return { placeholder, loadPromise };
     },
 };
@@ -508,7 +508,9 @@ const faustDescriptor: WasmDeviceDescriptor = {
         };
         const loadPromise = createFaustDeviceNode(context, deviceType)
             .then((result) => {
-                if (!result) return;
+                if (!result) {
+                    return;
+                }
                 const controls = result.wamControls;
                 for (const { name, value, time } of pendingParams) {
                     if (time !== undefined) {
@@ -527,7 +529,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
                 });
                 eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
             })
-            .catch((err) => logger.warn(`[WebAudioEngine] Faust failed: ${err}`));
+            .catch((error) => logger.warn(`[WebAudioEngine] Faust failed: ${error}`));
         return { placeholder, loadPromise };
     },
 };
@@ -572,7 +574,7 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                     },
                 });
             })
-            .catch((err) => logger.warn(`[WebAudioEngine] Knead failed: ${err}`));
+            .catch((error) => logger.warn(`[WebAudioEngine] Knead failed: ${error}`));
         return { placeholder, loadPromise };
     },
 };

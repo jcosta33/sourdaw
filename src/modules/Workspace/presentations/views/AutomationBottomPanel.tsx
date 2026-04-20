@@ -1,28 +1,28 @@
 import { type ReactElement, type RefObject, type WheelEvent, useRef, useState, useLayoutEffect } from 'react';
+
+import { ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
+
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { useStore } from '#/infra/store/useStore';
-import { automationStore } from '#/modules/Automation/stores';
-import {
-    addAutomationLane,
-    toggleLaneCollapsed,
-    removeAutomationLane,
-} from '#/modules/Automation/useCases';
+import { BeatRulerBar, TimelineChromeSurface } from '#/modules/Arrangement/presentations/views';
 import { trackStore, timelineViewStore, scrollTimeline } from '#/modules/Arrangement/stores';
 import { setAutomationMode } from '#/modules/Arrangement/useCases';
-import { BeatRulerBar, TimelineChromeSurface } from '#/modules/Arrangement/presentations/views';
-import { workspaceStore } from '../../stores/workspaceStore';
+import { automationStore } from '#/modules/Automation/stores';
+import { addAutomationLane, toggleLaneCollapsed, removeAutomationLane } from '#/modules/Automation/useCases';
+
+import { type AutomationLane } from '../../models/AutomationViewTypes';
+import { type EditingTool } from '../../models/EditingTool';
+import { type Track } from '../../models/TrackViewTypes';
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
+import { workspaceStore } from '../../stores/workspaceStore';
+import { getAutomatableParams, LANE_HEIGHT } from '../helpers/automationViewHelpers';
+
+import { AutomationAddLaneControl, AutomationModeControl } from './AutomationView/AutomationControls';
 import { AutomationLaneRow } from './AutomationView/AutomationLaneRow';
 import { AutomationSidebarCell } from './AutomationView/AutomationSidebarCell';
-import { AutomationAddLaneControl, AutomationModeControl } from './AutomationView/AutomationControls';
-import { getAutomatableParams, LANE_HEIGHT } from '../helpers/automationViewHelpers';
-import { type AutomationLane } from '../../models/AutomationViewTypes';
-import { type Track } from '../../models/TrackViewTypes';
-import { type EditingTool } from '../../models/EditingTool';
-import { ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
 
 const SPARKLINE_HEIGHT = 24;
 

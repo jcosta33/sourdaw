@@ -6,6 +6,7 @@
  * Updates in real-time as waveform selection changes.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type OscillatorWaveformProps = {
@@ -49,9 +50,13 @@ export const OscillatorWaveform = ({
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {
+            return;
+        }
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
@@ -98,8 +103,11 @@ export const OscillatorWaveform = ({
                 const sample = waveformSample(osc2Waveform, t);
                 const x = pad + i;
                 const y = height / 2 - sample * (plotH / 2) * 0.85;
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
             }
             ctx.strokeStyle = `${accent2}${Math.round(osc2Mix * 180)
                 .toString(16)
@@ -115,8 +123,11 @@ export const OscillatorWaveform = ({
             const sample = waveformSample(waveform, t);
             const x = pad + i;
             const y = height / 2 - sample * (plotH / 2) * 0.85;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         }
         ctx.strokeStyle = `${accent}30`;
         ctx.lineWidth = 5;
@@ -129,8 +140,11 @@ export const OscillatorWaveform = ({
             const sample = waveformSample(waveform, t);
             const x = pad + i;
             const y = height / 2 - sample * (plotH / 2) * 0.85;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         }
         ctx.strokeStyle = accent;
         ctx.lineWidth = 2;

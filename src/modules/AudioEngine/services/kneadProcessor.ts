@@ -1,12 +1,11 @@
 // @ts-nocheck
 /**
  * AudioWorkletProcessor for the Knead pitch editor.
- * 
+ *
  * Manages the WASM KneadInstance and applies pitch shifts derived from
  * the current playback position and the active clip's NoteBlobs.
  */
 
-import '../wasm/workletPolyfill.js';
 import { initSync, KneadInstance } from '../wasm/daw_dsp.js';
 
 class KneadProcessor extends AudioWorkletProcessor {
@@ -15,7 +14,7 @@ class KneadProcessor extends AudioWorkletProcessor {
     _ready = false;
     _faulted = false;
     _bypassed = false;
-    
+
     // Transport Synchronization
     _transportSAB = null;
     _transportView = null;
@@ -40,9 +39,9 @@ class KneadProcessor extends AudioWorkletProcessor {
                 } else if (msg.type === 'bypass') {
                     this._bypassed = msg.bypassed;
                 }
-            } catch (err) {
-                console.error('KneadProcessor error:', err);
-                this.port.postMessage({ type: 'error', message: String(err) });
+            } catch (error) {
+                console.error('KneadProcessor error:', error);
+                this.port.postMessage({ type: 'error', message: String(error) });
             }
         };
     }
@@ -64,12 +63,14 @@ class KneadProcessor extends AudioWorkletProcessor {
         const output = outputs[0];
 
         if (!this._ready || this._faulted || !input || !output || input.length === 0 || output.length === 0) {
-            if (input && output) this._passthrough(input, output);
+            if (input && output) {
+                this._passthrough(input, output);
+            }
             return true;
         }
 
         const frames = input[0].length;
-        
+
         // 1. Resolve current temporal position
         let currentShiftSemitones = 0;
         if (this._transportView) {
@@ -96,8 +97,8 @@ class KneadProcessor extends AudioWorkletProcessor {
                     const clipTimeSeconds = songTimeSeconds - clipStartTimeSeconds;
 
                     // Find active blob
-                    const blob = activeClip.blobs.find(b => 
-                        clipTimeSeconds >= b.startTime && clipTimeSeconds <= b.endTime
+                    const blob = activeClip.blobs.find(
+                        (b) => clipTimeSeconds >= b.startTime && clipTimeSeconds <= b.endTime
                     );
 
                     if (blob) {
@@ -114,25 +115,29 @@ class KneadProcessor extends AudioWorkletProcessor {
 
             const inputLeftPtr = this._instance.get_input_left_ptr();
             const inputRightPtr = this._instance.get_input_right_ptr();
-            
+
             const mem = this._memory.buffer;
             const wasmInL = new Float32Array(mem, inputLeftPtr, frames);
             const wasmInR = new Float32Array(mem, inputRightPtr, frames);
-            
+
             wasmInL.set(input[0]);
-            if (input[1]) wasmInR.set(input[1]);
-            else wasmInR.set(input[0]);
+            if (input[1]) {
+                wasmInR.set(input[1]);
+            } else {
+                wasmInR.set(input[0]);
+            }
 
             // Call native process
             const resultPtr = this._instance.process(frames);
-            
+
             const wasmOutL = new Float32Array(mem, resultPtr, frames);
             output[0].set(wasmOutL);
-            if (output[1]) output[1].set(wasmOutL);
-
-        } catch (err) {
+            if (output[1]) {
+                output[1].set(wasmOutL);
+            }
+        } catch (error) {
             this._faulted = true;
-            this.port.postMessage({ type: 'error', message: String(err) });
+            this.port.postMessage({ type: 'error', message: String(error) });
             this._passthrough(input, output);
         }
 
@@ -141,7 +146,9 @@ class KneadProcessor extends AudioWorkletProcessor {
 
     _passthrough(input, output) {
         for (let ch = 0; ch < Math.min(input.length, output.length); ch++) {
-            if (input[ch] && output[ch]) output[ch].set(input[ch]);
+            if (input[ch] && output[ch]) {
+                output[ch].set(input[ch]);
+            }
         }
     }
 }

@@ -1,5 +1,5 @@
-import { chamberStore } from '../../stores/chamberStore';
 import { createDefaultChamberState } from '../../models/ProofChamberState';
+import { chamberStore } from '../../stores/chamberStore';
 
 /**
  * Ensures a ProofChamber device instance is tracked in the store and sets it as active.

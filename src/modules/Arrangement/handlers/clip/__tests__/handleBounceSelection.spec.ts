@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleBounceSelection } from '../handleBounceSelection';
 
 const mocks = vi.hoisted(() => ({

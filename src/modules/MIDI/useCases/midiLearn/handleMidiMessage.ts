@@ -1,5 +1,3 @@
-import { midiLearnStore } from '../../stores/midiLearnStore';
-
 import {
     setTrackGain as setTrackGainArrangement,
     setTrackPan as setTrackPanArrangement,
@@ -7,11 +5,12 @@ import {
     getTrackStoreState,
     getAllTracks,
 } from '#/modules/Arrangement/useCases';
-
 import { setTrackGain as engineSetTrackGain, setTrackPan as engineSetTrackPan } from '#/modules/AudioEngine/useCases';
-import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
 import { recordAutomationValue } from '#/modules/Automation/useCases';
+import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
+
+import { midiLearnStore } from '../../stores/midiLearnStore';
 
 export function scaleMidiValue(raw: number, min: number, max: number): number {
     return min + (raw / 127) * (max - min);

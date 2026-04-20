@@ -1,6 +1,6 @@
+import { getPreferredRendererBackend, type TimelineRenderer } from '../models/RendererBackend';
 import { createCanvasRenderer } from '../presentations/renderers/createCanvasRenderer';
 import { createWebGpuRenderer } from '../presentations/renderers/createWebGpuRenderer';
-import { getPreferredRendererBackend, type TimelineRenderer } from '../models/RendererBackend';
 
 export const initTimelineRendererDependencies = {
     getPreferredRendererBackend,

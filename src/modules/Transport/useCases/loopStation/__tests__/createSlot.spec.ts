@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type LoopStationState } from '../../../stores/loopStationStore';
-import { createSlot } from '../createSlot';
 import { loopStationStore } from '../../../stores/loopStationStore';
+import { createSlot } from '../createSlot';
 
 vi.mock('../../../stores/loopStationStore', () => ({
     loopStationStore: { value: null, set: vi.fn() },
@@ -21,7 +22,7 @@ describe('createSlot', () => {
             syncToTransport: true,
             fixedLoopLength: 0,
         };
-        
+
         loopStationStore.value = baseState as any;
 
         createSlot('track-1', 0, 0);

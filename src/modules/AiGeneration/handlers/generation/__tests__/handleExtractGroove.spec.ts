@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleExtractGroove } from '../handleExtractGroove';
 
 vi.mock('../../../useCases/grooveTemplate/operations/extractGroove', () => ({

@@ -3,6 +3,7 @@
  * Uses Bjorklund's algorithm. Can drive the arp pattern or standalone note emission.
  */
 
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import {
     type MidiEvent,
     type TransportInfo,
@@ -10,22 +11,25 @@ import {
     rateToBeats,
     samplesPerBeat,
 } from '../../models/MidiEvent';
-import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import { ScheduledEventQueue } from '../../models/MidiProcessor';
 
 /** Bjorklund's algorithm — distribute `hits` across `steps` as evenly as possible. */
 function bjorklund(hits: number, steps: number): boolean[] {
-    if (hits >= steps) {return new Array(steps).fill(true);}
-    if (hits <= 0) {return new Array(steps).fill(false);}
+    if (hits >= steps) {
+        return new Array(steps).fill(true);
+    }
+    if (hits <= 0) {
+        return new Array(steps).fill(false);
+    }
 
-    let pattern: boolean[][] = [];
+    const pattern: boolean[][] = [];
     for (let i = 0; i < steps; i++) {
         pattern.push([i < hits]);
     }
 
     let level = 0;
-    let counts: number[] = [];
-    let remainders: number[] = [];
+    const counts: number[] = [];
+    const remainders: number[] = [];
 
     // Build counts/remainders
     remainders.push(steps - hits);
@@ -85,7 +89,9 @@ export class EuclideanGenerator extends BaseMidiProcessor {
             output.push(event);
         }
 
-        if (!transport.isPlaying) {return;}
+        if (!transport.isPlaying) {
+            return;
+        }
 
         const stepLen = rateToBeats(this.rate) * samplesPerBeat(transport);
         const noteLen = stepLen * this.gate;
@@ -118,7 +124,9 @@ export class EuclideanGenerator extends BaseMidiProcessor {
 
         // Drain scheduled Note Offs
         const drained = this.scheduled.drainRange(0, blockEnd);
-        for (const e of drained) {output.push(e);}
+        for (const e of drained) {
+            output.push(e);
+        }
     }
 
     reset(): void {

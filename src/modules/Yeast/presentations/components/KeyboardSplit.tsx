@@ -32,8 +32,11 @@ export const KeyboardSplit = ({
     const whiteKeys: number[] = [];
     const blackKeys: number[] = [];
     for (let n = RANGE_LOW; n < RANGE_HIGH; n++) {
-        if (isBlack(n)) {blackKeys.push(n);}
-        else {whiteKeys.push(n);}
+        if (isBlack(n)) {
+            blackKeys.push(n);
+        } else {
+            whiteKeys.push(n);
+        }
     }
 
     const whiteKeyWidth = width / whiteKeys.length;
@@ -43,7 +46,9 @@ export const KeyboardSplit = ({
         // Count white keys below this note
         let whiteCount = 0;
         for (let n = RANGE_LOW; n < note; n++) {
-            if (!isBlack(n)) {whiteCount++;}
+            if (!isBlack(n)) {
+                whiteCount++;
+            }
         }
         if (isBlack(note)) {
             return whiteCount * whiteKeyWidth - whiteKeyWidth * 0.3;
@@ -80,7 +85,7 @@ export const KeyboardSplit = ({
                         style={{
                             left: x,
                             width: whiteKeyWidth - 1,
-                            height: height,
+                            height,
                             background: sounding
                                 ? 'var(--color-accent-peach)'
                                 : held
@@ -121,7 +126,9 @@ export const KeyboardSplit = ({
             {/* Octave labels */}
             {[2, 3, 4, 5, 6].map((oct) => {
                 const note = oct * 12 + 12; // Cn
-                if (note < RANGE_LOW || note >= RANGE_HIGH) {return null;}
+                if (note < RANGE_LOW || note >= RANGE_HIGH) {
+                    return null;
+                }
                 const x = noteToX(note);
                 return (
                     <span

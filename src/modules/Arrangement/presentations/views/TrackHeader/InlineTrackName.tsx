@@ -1,6 +1,7 @@
 import { type ReactElement, useState, useRef, useEffect } from 'react';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
+
 import { type Track } from '../../../models/Track';
 import { renameTrack } from '../../../useCases/renameTrack';
 

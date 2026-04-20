@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TrackNotesSection } from '../TrackNotesSection';
+
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
@@ -48,13 +50,7 @@ vi.mock('#/components/daw/DawCompactTextarea', () => ({
 }));
 
 vi.mock('../../../components/Inspector/InsetPanel', () => ({
-    InsetPanel: ({
-        children,
-        className,
-    }: {
-        children: React.ReactNode;
-        className?: string;
-    }) => (
+    InsetPanel: ({ children, className }: { children: React.ReactNode; className?: string }) => (
         <div data-testid="inset-panel" className={className}>
             {children}
         </div>

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { batchAddAutomationPoints } from '../batchAddAutomationPoints';
+
 import { type AutomationLane, type AutomationPoint } from '../../../models/Automation';
+import { batchAddAutomationPoints } from '../batchAddAutomationPoints';
 
 const storeCell = vi.hoisted(() => ({
     state: null as { lanes: AutomationLane[] } | null,

@@ -3,6 +3,7 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
+
 import { type CapabilityReport } from '../models/CapabilityReport';
 
 export type CapabilityState =

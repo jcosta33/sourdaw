@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { toggleTalkback } from '../toggleTalkback';
 
 const mocks = vi.hoisted(() => ({

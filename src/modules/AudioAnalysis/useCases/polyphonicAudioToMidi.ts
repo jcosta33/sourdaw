@@ -17,8 +17,8 @@ import { type NoteEventTime } from '@spotify/basic-pitch';
 import basicPitchModelUrl from '@spotify/basic-pitch/model/model.json?url';
 
 import { logger } from '#/infra/logger/appLogger';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 
 // ── Types ───────────────────────────────────────────────────────────────
 

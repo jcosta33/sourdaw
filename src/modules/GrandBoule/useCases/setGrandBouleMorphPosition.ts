@@ -1,4 +1,3 @@
-import { type GrandBouleState } from '../stores/grandBouleStore';
 import { type Store } from '#/infra/store/types';
 /**
  * Update the Grand Boule morph position and dispatch interpolated
@@ -9,8 +8,9 @@ import { type Store } from '#/infra/store/types';
  * values through `setParam`.
  */
 
-import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
 import { type GrandBoulePianoModel, findPianoModelById } from '../models/GrandBouleMorphState';
+import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
+import { type GrandBouleState } from '../stores/grandBouleStore';
 
 type SetGrandBouleMorphPositionInput = {
     engine: GrandBouleEngineHandle;

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { generateMelody } from '../algorithm';
 
 describe('generateMelody (algorithm)', () => {
@@ -36,9 +37,16 @@ describe('generateMelody (algorithm)', () => {
     it('respects density settings', () => {
         // Rhythmic style with very high density
         const dense = generateMelody({ style: 'rhythmic', key: 0, scale: 'pentatonic', bars: 4, density: 1, seed: 5 });
-        
+
         // Rhythmic style with very low density (lots of rests)
-        const sparse = generateMelody({ style: 'rhythmic', key: 0, scale: 'pentatonic', bars: 4, density: 0.1, seed: 5 });
+        const sparse = generateMelody({
+            style: 'rhythmic',
+            key: 0,
+            scale: 'pentatonic',
+            bars: 4,
+            density: 0.1,
+            seed: 5,
+        });
 
         expect(sparse.notes.length).toBeLessThan(dense.notes.length);
     });

@@ -1,8 +1,12 @@
 import { type ReactElement } from 'react';
-import { Button } from '#/components/ui/button';
+
 import { LayoutTemplate } from 'lucide-react';
-import type { Preferences } from '../../../models/Preferences';
+
+import { Button } from '#/components/ui/button';
+
 import { SectionTitle, FieldGroup } from '../preferencesShared';
+
+import type { Preferences } from '../../../models/Preferences';
 
 type SectionProps = {
     prefs: Preferences;

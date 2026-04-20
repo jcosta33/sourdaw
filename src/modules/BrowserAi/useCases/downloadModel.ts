@@ -7,10 +7,11 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { downloadModel as downloadModelRepo } from '../repositories/modelDownloadManager';
-import { setStorageUsed } from '../stores/modelRegistryStore';
-import { getStorageStatus } from '../repositories/storageManager';
+
 import { type ModelDownloadProgressPayload } from '../events/ModelDownloadProgressEvent';
+import { downloadModel as downloadModelRepo } from '../repositories/modelDownloadManager';
+import { getStorageStatus } from '../repositories/storageManager';
+import { setStorageUsed } from '../stores/modelRegistryStore';
 
 type DownloadModelInput = {
     modelId: string;

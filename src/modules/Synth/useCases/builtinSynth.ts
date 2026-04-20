@@ -3,11 +3,7 @@
  * Delegates to SynthModels for types/defaults.
  */
 
-import {
-    defaultSynthParams,
-    type MpeParams,
-    type SynthParams,
-} from '#/modules/AudioEngine/useCases';
+import { defaultSynthParams, type MpeParams, type SynthParams } from '#/modules/AudioEngine/useCases';
 
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only fields used here.
 type Device = { type: string; parameterValues: Record<string, number> };
@@ -375,10 +371,7 @@ export function scheduleNoteOffline(
     const filter = ctx.createBiquadFilter();
     filter.type = params.filterType;
     const velSens = params.filterVelocitySensitivity ?? 0;
-    const velocityScale =
-        velSens > 0
-            ? 1 - velSens + velSens * (velocity / 127)
-            : 0.3 + 0.7 * (velocity / 127);
+    const velocityScale = velSens > 0 ? 1 - velSens + velSens * (velocity / 127) : 0.3 + 0.7 * (velocity / 127);
     const pitchScale = Math.sqrt(frequency / 440);
     const filterCutoff = Math.min(params.filterCutoff * velocityScale * pitchScale, 20000);
 

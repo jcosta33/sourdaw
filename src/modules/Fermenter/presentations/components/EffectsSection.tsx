@@ -4,12 +4,13 @@
  * with knobs for precise adjustment below.
  */
 import { type ReactElement, useState } from 'react';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
-import { EQCurve } from '#/components/daw/visualizers/EQCurve';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { DelayTaps } from '#/components/daw/visualizers/DelayTaps';
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
+import { EQCurve } from '#/components/daw/visualizers/EQCurve';
 
 type EffectsSectionProps = {
     reverbMix: number;

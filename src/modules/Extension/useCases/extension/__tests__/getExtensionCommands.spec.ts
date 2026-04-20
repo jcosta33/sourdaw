@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type ExtensionMarketplaceState, type ScriptCommand } from '../../../stores/extension';
 import { getExtensionCommands } from '../getExtensionCommands';
 
@@ -28,11 +29,9 @@ describe('getExtensionCommands', () => {
     });
 
     it('returns commands from store', () => {
-        const cmds: ScriptCommand[] = [
-            { id: 'a.b', extensionId: 'a', label: 'B', description: '', handler: vi.fn() },
-        ];
+        const cmds: ScriptCommand[] = [{ id: 'a.b', extensionId: 'a', label: 'B', description: '', handler: vi.fn() }];
         mocks.extensionStore.value = baseState({ commands: cmds });
-        
+
         expect(getExtensionCommands()).toEqual(cmds);
     });
 });

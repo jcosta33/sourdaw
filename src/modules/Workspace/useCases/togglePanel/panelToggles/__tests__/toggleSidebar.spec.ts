@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { toggleSidebar } from '../toggleSidebar';
 
 const mocks = vi.hoisted(() => ({

@@ -1,11 +1,14 @@
 import { type ReactElement, useState, useTransition } from 'react';
 
-import { Row, Stack, Grid } from '#/components/layout';
-import { useStore } from '#/infra/store/useStore';
 import { Search } from 'lucide-react';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Row, Stack, Grid } from '#/components/layout';
+import { useStore } from '#/infra/store/useStore';
+
+import { type BacteriaPatch } from '../../models/BacteriaPatch';
 import {
     bacteriaStore,
     type BacteriaState,
@@ -18,18 +21,17 @@ import {
 import { loadBacteriaPatchWithAudio } from '../../useCases/bacteriaParamBridge/loadBacteriaPatchWithAudio';
 import { setBacteriaBandParamWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaBandParamWithAudio';
 import { setBacteriaParamWithAudio } from '../../useCases/bacteriaParamBridge/setBacteriaParamWithAudio';
-import { type BacteriaPatch } from '../../models/BacteriaPatch';
 import { BACTERIA_PRESETS } from '../../useCases/bacteriaPresets';
-import { XYMorphPad } from '../components/XYMorphPad';
-import { CrossoverDisplay } from '../components/CrossoverDisplay';
 import { BandStrip } from '../components/BandStrip';
-import { WaveshaperEditor } from '../components/WaveshaperEditor';
 import { BezierLfoEditor } from '../components/BezierLfoEditor';
-import { SpectralBinEditor } from '../components/SpectralBinEditor';
-import { StepSequencerEditor } from '../components/StepSequencerEditor';
+import { CrossoverDisplay } from '../components/CrossoverDisplay';
 import { ModulationDock } from '../components/ModulationDock';
-import { SpectrumAnalyzer } from '../components/SpectrumAnalyzer';
 import { NodeGraphEditor } from '../components/NodeGraphEditor';
+import { SpectralBinEditor } from '../components/SpectralBinEditor';
+import { SpectrumAnalyzer } from '../components/SpectrumAnalyzer';
+import { StepSequencerEditor } from '../components/StepSequencerEditor';
+import { WaveshaperEditor } from '../components/WaveshaperEditor';
+import { XYMorphPad } from '../components/XYMorphPad';
 
 const LEVELS: Array<{ id: BacteriaUiLevel; label: string; eyebrow: string; description: string }> = [
     { id: 1, label: 'Play', eyebrow: 'Morph floor', description: 'Macros, presets, and the petri pad.' },
@@ -134,7 +136,7 @@ function getModuleMeta(moduleId: string) {
         return moduleMeta;
     }
 
-    return EFFECT_MODULES[0]!;
+    return EFFECT_MODULES[0];
 }
 
 function setGlobalParam<K extends keyof BacteriaPatch>(deviceId: string, key: K, value: BacteriaPatch[K]): void {
@@ -289,7 +291,12 @@ const PresetRail = ({
     const activeBand = state.patch.bands[state.activeBand] ?? state.patch.bands[0]!;
 
     return (
-        <Stack as="aside" gap={2} shrink={false} className="bacteria-window h-full w-[248px] gap-2.5 overflow-hidden p-2.5">
+        <Stack
+            as="aside"
+            gap={2}
+            shrink={false}
+            className="bacteria-window h-full w-[248px] gap-2.5 overflow-hidden p-2.5"
+        >
             <SectionHeader
                 eyebrow="Presets"
                 title="Cultures"
@@ -355,7 +362,11 @@ const PresetRail = ({
                             );
                         })
                     ) : (
-                        <Stack align="center" justify="center" className="h-full px-4 text-center text-[11px] text-muted-foreground">
+                        <Stack
+                            align="center"
+                            justify="center"
+                            className="h-full px-4 text-center text-[11px] text-muted-foreground"
+                        >
                             Nothing matches that jar label yet.
                         </Stack>
                     )}
@@ -828,7 +839,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                         <Row gap={2}>
                             <BChip
                                 active={Boolean(band.distortionEnabled)}
-                                onClick={() => setBandParam('distortionEnabled', !Boolean(band.distortionEnabled))}
+                                onClick={() => setBandParam('distortionEnabled', !band.distortionEnabled)}
                             >
                                 Enabled
                             </BChip>
@@ -841,9 +852,9 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                     >
                                         {mode.replace('-', ' ')}
                                     </BChip>
-                                    ))}
-                                    </Row>
-                                    </Row>
+                                ))}
+                            </Row>
+                        </Row>
 
                         <Row wrap gap={4}>
                             <K
@@ -944,7 +955,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                         <Row gap={2}>
                             <BChip
                                 active={Boolean(band.filterEnabled)}
-                                onClick={() => setBandParam('filterEnabled', !Boolean(band.filterEnabled))}
+                                onClick={() => setBandParam('filterEnabled', !band.filterEnabled)}
                             >
                                 Enabled
                             </BChip>
@@ -957,9 +968,9 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                     >
                                         {mode}
                                     </BChip>
-                                    ))}
-                                    </Row>
-                                    </Row>
+                                ))}
+                            </Row>
+                        </Row>
 
                         <Row wrap gap={4}>
                             <K
@@ -1028,7 +1039,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                     <Stack gap={3}>
                         <BChip
                             active={Boolean(band.chorusEnabled)}
-                            onClick={() => setBandParam('chorusEnabled', !Boolean(band.chorusEnabled))}
+                            onClick={() => setBandParam('chorusEnabled', !band.chorusEnabled)}
                         >
                             Enabled
                         </BChip>
@@ -1086,7 +1097,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                     <Stack gap={3}>
                         <BChip
                             active={Boolean(band.phaserEnabled)}
-                            onClick={() => setBandParam('phaserEnabled', !Boolean(band.phaserEnabled))}
+                            onClick={() => setBandParam('phaserEnabled', !band.phaserEnabled)}
                         >
                             Enabled
                         </BChip>
@@ -1145,13 +1156,13 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                         <Row gap={2}>
                             <BChip
                                 active={Boolean(band.granularEnabled)}
-                                onClick={() => setBandParam('granularEnabled', !Boolean(band.granularEnabled))}
+                                onClick={() => setBandParam('granularEnabled', !band.granularEnabled)}
                             >
                                 Enabled
                             </BChip>
                             <BChip
                                 active={Boolean(band.grainFreeze)}
-                                onClick={() => setBandParam('grainFreeze', !Boolean(band.grainFreeze))}
+                                onClick={() => setBandParam('grainFreeze', !band.grainFreeze)}
                             >
                                 Freeze
                             </BChip>
@@ -1224,13 +1235,13 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                         <Row gap={2}>
                             <BChip
                                 active={Boolean(band.spectralEnabled)}
-                                onClick={() => setBandParam('spectralEnabled', !Boolean(band.spectralEnabled))}
+                                onClick={() => setBandParam('spectralEnabled', !band.spectralEnabled)}
                             >
                                 Enabled
                             </BChip>
                             <BChip
                                 active={Boolean(band.spectralFreeze)}
-                                onClick={() => setBandParam('spectralFreeze', !Boolean(band.spectralFreeze))}
+                                onClick={() => setBandParam('spectralFreeze', !band.spectralFreeze)}
                             >
                                 Freeze
                             </BChip>
@@ -1266,7 +1277,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                     <Stack gap={3}>
                         <BChip
                             active={Boolean(band.freqShiftEnabled)}
-                            onClick={() => setBandParam('freqShiftEnabled', !Boolean(band.freqShiftEnabled))}
+                            onClick={() => setBandParam('freqShiftEnabled', !band.freqShiftEnabled)}
                         >
                             Enabled
                         </BChip>
@@ -1302,7 +1313,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                     <Stack gap={3}>
                         <BChip
                             active={Boolean(band.lofiEnabled)}
-                            onClick={() => setBandParam('lofiEnabled', !Boolean(band.lofiEnabled))}
+                            onClick={() => setBandParam('lofiEnabled', !band.lofiEnabled)}
                         >
                             Enabled
                         </BChip>
@@ -1338,7 +1349,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                     <Stack gap={3}>
                         <BChip
                             active={Boolean(band.convolutionEnabled)}
-                            onClick={() => setBandParam('convolutionEnabled', !Boolean(band.convolutionEnabled))}
+                            onClick={() => setBandParam('convolutionEnabled', !band.convolutionEnabled)}
                         >
                             Enabled
                         </BChip>
@@ -1824,9 +1835,9 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
                         </Stack>
                         <BChip
                             active={Boolean(state.patch.bypass)}
-                            onClick={() => setGlobalParam(deviceId, 'bypass', !Boolean(state.patch.bypass))}
+                            onClick={() => setGlobalParam(deviceId, 'bypass', !state.patch.bypass)}
                         >
-                            {Boolean(state.patch.bypass) ? 'Bypassed' : 'Live'}
+                            {state.patch.bypass ? 'Bypassed' : 'Live'}
                         </BChip>
                     </Row>
                 </Row>

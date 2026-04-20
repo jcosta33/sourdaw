@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { interpolateLatent } from '../interpolateLatent';
 
 describe('interpolateLatent', () => {

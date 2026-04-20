@@ -5,7 +5,9 @@
  * Level 3+: compact sidebar list.
  */
 import { type ReactElement } from 'react';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
+
 import { type ArticulationEntry, type ArticulationType } from '../../models/LevainPatch';
 
 type ArticulationListProps = {

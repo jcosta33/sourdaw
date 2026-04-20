@@ -1,9 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
 import { readTextFile } from '@tauri-apps/plugin-fs';
-import { projectStore } from '../stores/projectStore';
+
 import { registerTuningTable } from '#/modules/AudioEngine';
-import { pickFiles } from './fileDialog';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { projectStore } from '../stores/projectStore';
+
+import { pickFiles } from './fileDialog';
 
 export async function importSclFile(): Promise<void> {
     const paths = await pickFiles({
@@ -11,22 +14,26 @@ export async function importSclFile(): Promise<void> {
         filters: [{ name: 'Scala', extensions: ['scl'] }],
     });
 
-    if (!paths || paths.length === 0) return;
+    if (!paths || paths.length === 0) {
+        return;
+    }
 
     try {
         const path = typeof paths[0] === 'string' ? paths[0] : (paths[0] as any).path;
         const content = await readTextFile(path);
-        
-        const result = await (invoke as any)('parse_scl', {
+
+        const result = (await (invoke as any)('parse_scl', {
             content,
-        }) as {
+        })) as {
             name: string;
             description: string;
             frequencies: number[];
         };
 
         const project = projectStore.value;
-        if (!project) return;
+        if (!project) {
+            return;
+        }
 
         projectStore.set({
             ...project,

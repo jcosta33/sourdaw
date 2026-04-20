@@ -1,5 +1,5 @@
-import { tempoMapStore } from '../../stores/tempoMapStore';
 import { createTempoChange, type TempoChange } from '../../models/TempoMap';
+import { tempoMapStore } from '../../stores/tempoMapStore';
 
 export function addTempoChange(beat: number, tempo: number, curve: TempoChange['curve'] = 'instant'): void {
     const state = tempoMapStore.value;

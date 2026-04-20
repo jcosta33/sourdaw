@@ -1,5 +1,6 @@
 import { type ReactElement, useState } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
+import { History, Undo2, Trash2, ChevronDown, ChevronRight, X, Bot, User } from 'lucide-react';
 
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
@@ -7,15 +8,14 @@ import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
-import { History, Undo2, Trash2, ChevronDown, ChevronRight, X, Bot, User } from 'lucide-react';
-import { aiActionHistoryStore, toggleAiHistoryPanel, clearAiHistory } from '../../stores/aiActionHistoryStore';
-import { revertAiActionGroup } from '../../useCases/aiHistoryActions';
+import { useStore } from '#/infra/store/useStore';
 import { actionHistoryStore, clearActionHistory } from '#/modules/CrdtDocument/stores';
 import { canRevertAction, revertAction } from '#/modules/CrdtDocument/useCases';
 
-type AiActionEntryView =
-    | { kind: 'appAction'; actionType: string; label: string }
-    | { kind: 'jsonEdit'; label: string };
+import { aiActionHistoryStore, toggleAiHistoryPanel, clearAiHistory } from '../../stores/aiActionHistoryStore';
+import { revertAiActionGroup } from '../../useCases/aiHistoryActions';
+
+type AiActionEntryView = { kind: 'appAction'; actionType: string; label: string } | { kind: 'jsonEdit'; label: string };
 
 type AiActionGroupView = {
     id: string;

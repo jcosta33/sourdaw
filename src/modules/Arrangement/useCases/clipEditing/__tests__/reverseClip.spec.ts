@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { reverseClip } from '../reverseClip';
 
 const mocks = vi.hoisted(() => ({
@@ -20,7 +21,7 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
     audioBufferCache: {
         get: mocks.audioBufferCacheGet,
         set: mocks.audioBufferCacheSet,
-    }
+    },
 }));
 
 describe('reverseClip', () => {
@@ -28,13 +29,13 @@ describe('reverseClip', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        
+
         mockCtx = {
             createBuffer: vi.fn(),
         };
 
         // Use regular function to satisfy 'constructor' check
-        globalThis.OfflineAudioContext = function() {
+        globalThis.OfflineAudioContext = function () {
             return mockCtx;
         } as any;
     });
@@ -42,7 +43,7 @@ describe('reverseClip', () => {
     it('reverses an audio clip buffer and updates its ID', () => {
         const mockClip = { id: 'c1', type: 'audio', audioBufferId: 'buf1', name: 'Sample' };
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ clips: [mockClip] }]
+            tracks: [{ clips: [mockClip] }],
         });
 
         const originalData = new Float32Array(100);
@@ -69,7 +70,7 @@ describe('reverseClip', () => {
 
         expect(mocks.audioBufferCacheSet).toHaveBeenCalled();
         expect(mocks.updateClip).toHaveBeenCalledWith('c1', expect.any(Function));
-        
+
         const updater = mocks.updateClip.mock.calls[0][1];
         const result = updater(mockClip);
         expect(result.audioBufferId).toMatch(/^reversed-buf1-/);
@@ -82,7 +83,7 @@ describe('reverseClip', () => {
 
     it('bails if clip is not found or not audio', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ clips: [{ id: 'c1', type: 'midi' }] }]
+            tracks: [{ clips: [{ id: 'c1', type: 'midi' }] }],
         });
 
         reverseClip('c1');

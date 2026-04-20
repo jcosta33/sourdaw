@@ -8,7 +8,6 @@
  * Effect processor: reads from inputs[0] (main) and inputs[1] (sidechain), writes to outputs[0].
  */
 
-import '../wasm/workletPolyfill.js';
 import { initSync, GlutenInstance } from '../wasm/daw_dsp.js';
 
 /** Map camelCase param names from TypeScript to snake_case for Rust. */
@@ -75,7 +74,9 @@ class GlutenProcessor extends AudioWorkletProcessor {
             const msg = e.data;
             try {
                 if (msg.type === 'init') {
-                    if (this._ready) {return;}
+                    if (this._ready) {
+                        return;
+                    }
                     this._initWasm(msg.wasmBytes);
                 } else if (msg.type === 'init-sab') {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
@@ -83,10 +84,10 @@ class GlutenProcessor extends AudioWorkletProcessor {
                     const rustName = PARAM_MAP[msg.name] ?? msg.name;
                     this._instance.set_param(rustName, msg.value);
                 }
-            } catch (err) {
-                console.error('GlutenProcessor error:', err);
+            } catch (error) {
+                console.error('GlutenProcessor error:', error);
                 if (!this._ready) {
-                    this.port.postMessage({ type: 'error', message: err?.message ?? String(err) });
+                    this.port.postMessage({ type: 'error', message: error?.message ?? String(error) });
                 }
             }
         };
@@ -101,16 +102,24 @@ class GlutenProcessor extends AudioWorkletProcessor {
     }
 
     _passthrough(input, output) {
-        if (output[0] && input[0]) {output[0].set(input[0]);}
-        if (output[1] && (input[1] ?? input[0])) {output[1].set(input[1] ?? input[0]);}
+        if (output[0] && input[0]) {
+            output[0].set(input[0]);
+        }
+        if (output[1] && (input[1] ?? input[0])) {
+            output[1].set(input[1] ?? input[0]);
+        }
     }
 
     process(inputs, outputs) {
-        if (!this._ready || this._faulted) {return true;}
+        if (!this._ready || this._faulted) {
+            return true;
+        }
 
         const input = inputs[0];
         const output = outputs[0];
-        if (!input || input.length < 2 || !output || output.length < 2) {return true;}
+        if (!input || input.length < 2 || !output || output.length < 2) {
+            return true;
+        }
 
         const frames = output[0].length;
 
@@ -125,7 +134,7 @@ class GlutenProcessor extends AudioWorkletProcessor {
 
             // Write external sidechain if available (input 1)
             const scInput = inputs[1];
-            if (scInput && scInput.length >= 1 && scInput[0].length > 0) {
+            if (scInput && scInput.length > 0 && scInput[0].length > 0) {
                 const scLeftPtr = inst.get_sc_left_ptr();
                 const scRightPtr = inst.get_sc_right_ptr();
                 new Float32Array(mem, scLeftPtr, frames).set(scInput[0]);
@@ -136,7 +145,9 @@ class GlutenProcessor extends AudioWorkletProcessor {
             const outRightPtr = inst.get_right_ptr();
 
             output[0].set(new Float32Array(mem, outLeftPtr, frames));
-            if (output[1]) {output[1].set(new Float32Array(mem, outRightPtr, frames));}
+            if (output[1]) {
+                output[1].set(new Float32Array(mem, outRightPtr, frames));
+            }
 
             this._meterCounter++;
             if (this._meterCounter >= 8) {
@@ -150,9 +161,9 @@ class GlutenProcessor extends AudioWorkletProcessor {
                     this._sabView[5] = inst.get_latency_samples();
                 }
             }
-        } catch (err) {
+        } catch (error) {
             this._faulted = true;
-            this.port.postMessage({ type: 'error', message: String(err) });
+            this.port.postMessage({ type: 'error', message: String(error) });
             this._passthrough(input, output);
         }
 

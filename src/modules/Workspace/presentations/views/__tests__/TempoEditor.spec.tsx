@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TempoEditor } from '../TempoEditor';
 
 const mockState = {
@@ -55,7 +56,7 @@ describe('TempoEditor', () => {
         render(<TempoEditor />);
         const tapButton = screen.getByText('TAP');
         fireEvent.click(tapButton);
-        
+
         expect(mockState.handleTapTempo).toHaveBeenCalled();
     });
 
@@ -63,7 +64,7 @@ describe('TempoEditor', () => {
         render(<TempoEditor />);
         const mapButton = screen.getByLabelText('Toggle tempo map');
         fireEvent.click(mapButton);
-        
+
         expect(mockState.setMapOpen).toHaveBeenCalledWith(true);
     });
 
@@ -71,7 +72,7 @@ describe('TempoEditor', () => {
         render(<TempoEditor />);
         const timeSigButton = screen.getByText('4/4');
         fireEvent.click(timeSigButton);
-        
+
         expect(mockState.startTimeSigEdit).toHaveBeenCalled();
     });
 });

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { searchPresets } from '../searchPresets';
 
 vi.mock('#/modules/AiRuntime/services/fuzzySearch', () => ({
@@ -12,7 +13,7 @@ vi.mock('#/modules/AiRuntime/services/fuzzySearch', () => ({
                 isDestructive: false,
                 buildAction: vi.fn(),
             },
-        }
+        },
     ]),
 }));
 

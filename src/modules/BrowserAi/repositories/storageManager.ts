@@ -12,6 +12,7 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+
 import { type StorageStatus, DEFAULT_CACHE_LIMIT_BYTES } from '../models/StorageStatus';
 
 type ModelPath = {
@@ -96,7 +97,9 @@ export const readModel = inject({ logger })(
             try {
                 const root = await navigator.storage.getDirectory();
                 const modelsDir = await root.getDirectoryHandle('models', { create: false });
-                const fileHandle = await resolveFileHandle(modelsDir, toOpfsPath({ family, modelId }), { create: false });
+                const fileHandle = await resolveFileHandle(modelsDir, toOpfsPath({ family, modelId }), {
+                    create: false,
+                });
                 const file = await fileHandle.getFile();
                 return file.arrayBuffer();
             } catch (error) {
@@ -114,7 +117,7 @@ export const writeModel = inject({ logger })(
             const fileHandle = await resolveFileHandle(modelsDir, toOpfsPath({ family, modelId }), { create: true });
             // Use createWritable for main-thread writes (no sync access handles on main thread)
             // slice(0) ensures we have a plain ArrayBuffer (not SharedArrayBuffer)
-            const safeData = data.slice(0) as ArrayBuffer;
+            const safeData = data.slice(0);
             const writable = await fileHandle.createWritable();
             await writable.write(safeData);
             await writable.close();
@@ -186,12 +189,14 @@ export const getStorageStatus = inject({ logger })(
                 async function measureDir(dir: FileSystemDirectoryHandle): Promise<number> {
                     let size = 0;
                     // FileSystemDirectoryHandle is async iterable in Chrome (OPFS)
-                    for await (const [, handle] of dir as unknown as AsyncIterable<[string, FileSystemFileHandle | FileSystemDirectoryHandle]>) {
+                    for await (const [, handle] of dir as unknown as AsyncIterable<
+                        [string, FileSystemFileHandle | FileSystemDirectoryHandle]
+                    >) {
                         if (handle.kind === 'file') {
-                            const file = await (handle as FileSystemFileHandle).getFile();
+                            const file = await handle.getFile();
                             size += file.size;
                         } else if (handle.kind === 'directory') {
-                            size += await measureDir(handle as FileSystemDirectoryHandle);
+                            size += await measureDir(handle);
                         }
                     }
                     return size;
@@ -247,9 +252,7 @@ export async function computeRenderCacheKey(input: {
     qualityParams: string;
     seed?: number;
 }): Promise<string> {
-    const encoded = new TextEncoder().encode(
-        `${input.modelId}:${input.qualityParams}:${String(input.seed ?? 0)}`
-    );
+    const encoded = new TextEncoder().encode(`${input.modelId}:${input.qualityParams}:${String(input.seed ?? 0)}`);
     const combined = new Uint8Array(encoded.byteLength + input.inputData.byteLength);
     combined.set(encoded);
     combined.set(new Uint8Array(input.inputData), encoded.byteLength);

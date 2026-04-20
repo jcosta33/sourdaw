@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+
 import { sampleDatabaseStore } from '../sampleDatabaseStore';
 
 describe('sampleDatabaseStore', () => {
@@ -25,9 +26,16 @@ describe('sampleDatabaseStore', () => {
     });
 
     it('should store samples', () => {
-        const sample = { id: 's1', name: 'Kick 01', path: '/path/1', category: 'kicks' as const, tags: [], favorite: false };
+        const sample = {
+            id: 's1',
+            name: 'Kick 01',
+            path: '/path/1',
+            category: 'kicks' as const,
+            tags: [],
+            favorite: false,
+        };
         sampleDatabaseStore.update((s) => ({ ...s!, samples: [sample] }));
-        
+
         expect(sampleDatabaseStore.value?.samples).toHaveLength(1);
         expect(sampleDatabaseStore.value?.samples[0]).toEqual(sample);
     });

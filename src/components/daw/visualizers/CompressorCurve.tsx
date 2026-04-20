@@ -8,6 +8,7 @@
  * Uses design tokens for consistent DAW aesthetic.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type CompressorCurveProps = {
@@ -54,9 +55,13 @@ export const CompressorCurve = ({
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {
+            return;
+        }
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
@@ -124,8 +129,11 @@ export const CompressorCurve = ({
         ctx.beginPath();
         for (let i = 0; i < curvePoints.length; i++) {
             const [x, y] = curvePoints[i]!;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         }
         ctx.lineTo(dbToX(DB_MAX), dbToY(DB_MIN));
         ctx.lineTo(dbToX(DB_MIN), dbToY(DB_MIN));
@@ -140,8 +148,11 @@ export const CompressorCurve = ({
         ctx.beginPath();
         for (let i = 0; i < curvePoints.length; i++) {
             const [x, y] = curvePoints[i]!;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         }
         ctx.strokeStyle = `${accentPeach}28`;
         ctx.lineWidth = 5;
@@ -151,8 +162,11 @@ export const CompressorCurve = ({
         ctx.beginPath();
         for (let i = 0; i < curvePoints.length; i++) {
             const [x, y] = curvePoints[i]!;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
         }
         ctx.strokeStyle = accentPeach;
         ctx.lineWidth = 2;
@@ -209,18 +223,26 @@ export const CompressorCurve = ({
     }, [threshold, ratio, knee, makeup, width, height, isInteractive]);
 
     const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange) return;
+        if (!onParamChange) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         isDragging.current = true;
         canvas.setPointerCapture(e.pointerId);
         canvas.style.cursor = 'grabbing';
     };
 
     const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange || !isDragging.current) return;
+        if (!onParamChange || !isDragging.current) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         const rect = canvas.getBoundingClientRect();
         const pad = 4;
         const plotH = height - pad * 2;
@@ -232,9 +254,13 @@ export const CompressorCurve = ({
     };
 
     const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange) return;
+        if (!onParamChange) {
+            return;
+        }
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         isDragging.current = false;
         canvas.releasePointerCapture(e.pointerId);
         canvas.style.cursor = 'grab';

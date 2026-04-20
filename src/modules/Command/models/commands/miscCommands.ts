@@ -1,7 +1,8 @@
-import { type CommandEntry } from '../CommandEntry';
 import { eventBus } from '#/app/registerDependencies';
-import { getSelectedClipId } from '../../useCases/selectionHelpers/getSelectedClipId';
+
 import { executeAppAction } from '../../useCases/executeAppAction';
+import { getSelectedClipId } from '../../useCases/selectionHelpers/getSelectedClipId';
+import { type CommandEntry } from '../CommandEntry';
 
 /**
  * Miscellaneous commands covering: time editing, app settings,

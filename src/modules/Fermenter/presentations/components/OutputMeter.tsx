@@ -3,6 +3,7 @@
  * Renders L/R peak levels as vertical bars.
  */
 import { type ReactElement } from 'react';
+
 import { useFermenterPeaks } from '../hooks/useFermenterTelemetry';
 
 type OutputMeterProps = {
@@ -14,7 +15,9 @@ export const OutputMeter = ({ deviceId, height = 48 }: OutputMeterProps): ReactE
     const { peakL, peakR } = useFermenterPeaks(deviceId);
 
     const toDb = (v: number): number => {
-        if (v < 0.0001) {return -60;}
+        if (v < 0.0001) {
+            return -60;
+        }
         return 20 * Math.log10(v);
     };
 
@@ -30,8 +33,12 @@ export const OutputMeter = ({ deviceId, height = 48 }: OutputMeterProps): ReactE
     const rPct = dbToPercent(rDb);
 
     const barColor = (pct: number): string => {
-        if (pct > 0.9) {return 'var(--color-state-danger)';}
-        if (pct > 0.7) {return 'var(--color-accent-peach)';}
+        if (pct > 0.9) {
+            return 'var(--color-state-danger)';
+        }
+        if (pct > 0.7) {
+            return 'var(--color-accent-peach)';
+        }
         return 'var(--color-accent-mint)';
     };
 

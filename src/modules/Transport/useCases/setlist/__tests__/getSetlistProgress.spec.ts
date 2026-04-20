@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type SetlistState } from '../../../stores/setlistStore';
 import { getSetlistProgress } from '../getSetlistProgress';
 

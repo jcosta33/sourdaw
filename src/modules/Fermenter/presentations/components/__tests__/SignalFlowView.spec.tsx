@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
-import { SignalFlowView } from '../SignalFlowView';
+import { describe, it, expect, vi } from 'vitest';
+
 import { DEFAULT_PATCH } from '../../../models/FermenterPatch';
+import { SignalFlowView } from '../SignalFlowView';
 
 describe('SignalFlowView', () => {
     it('should render', () => {

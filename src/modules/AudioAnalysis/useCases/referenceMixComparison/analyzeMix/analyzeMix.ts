@@ -27,7 +27,7 @@ function estimateFrequencyProfile(tracks: Array<{ kind: string; gain?: number }>
 
     const max = Math.max(...Object.values(profile));
     for (const band of Object.keys(profile) as FrequencyBand[]) {
-        profile[band] = Math.min(1, profile[band]! / max);
+        profile[band] = Math.min(1, profile[band] / max);
     }
 
     return profile;

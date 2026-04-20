@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { FACTORY_GROOVES, getGrooveById } from '../factoryGrooves';
 
 describe('factoryGrooves', () => {
@@ -22,7 +23,7 @@ describe('factoryGrooves', () => {
 
     it('ensures straight groove is flat', () => {
         const straight = getGrooveById('straight');
-        expect(straight?.offsets.every(o => o === 0)).toBe(true);
-        expect(straight?.velocities.every(v => v === 1)).toBe(true);
+        expect(straight?.offsets.every((o) => o === 0)).toBe(true);
+        expect(straight?.velocities.every((v) => v === 1)).toBe(true);
     });
 });

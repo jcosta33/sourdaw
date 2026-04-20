@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { addAutomationSubLane } from '../addAutomationSubLane';
 import { removeAutomationSubLane } from '../removeAutomationSubLane';
 import { swapAutomationSubLaneParam } from '../swapAutomationSubLaneParam';
@@ -22,7 +23,7 @@ describe('Automation Sub-Lanes', () => {
 
     it('addAutomationSubLane appends a new paramId', () => {
         mocks.getWorkspaceState.mockReturnValue({
-            automationSubLanes: { t1: ['p1'] }
+            automationSubLanes: { t1: ['p1'] },
         });
 
         addAutomationSubLane('t1', 'p2');
@@ -32,7 +33,7 @@ describe('Automation Sub-Lanes', () => {
 
     it('removeAutomationSubLane removes paramId at index', () => {
         mocks.getWorkspaceState.mockReturnValue({
-            automationSubLanes: { t1: ['p1', 'p2', 'p3'] }
+            automationSubLanes: { t1: ['p1', 'p2', 'p3'] },
         });
 
         removeAutomationSubLane('t1', 1); // remove p2
@@ -42,7 +43,7 @@ describe('Automation Sub-Lanes', () => {
 
     it('swapAutomationSubLaneParam updates paramId at index', () => {
         mocks.getWorkspaceState.mockReturnValue({
-            automationSubLanes: { t1: ['p1', 'p2'] }
+            automationSubLanes: { t1: ['p1', 'p2'] },
         });
 
         swapAutomationSubLaneParam('t1', 0, 'new-p1');

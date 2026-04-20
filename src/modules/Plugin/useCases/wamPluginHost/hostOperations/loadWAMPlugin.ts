@@ -1,8 +1,10 @@
-import { type WAMInstance } from '../../../models/WamPluginHostTypes';
-import { findPluginLoader } from '../../../services/pluginLoaderRegistry';
-import { instances, registry } from './helpers';
 import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { type WAMInstance } from '../../../models/WamPluginHostTypes';
+import { findPluginLoader } from '../../../services/pluginLoaderRegistry';
+
+import { instances, registry } from './helpers';
 
 export async function loadWAMPlugin(
     pluginId: string,
@@ -40,11 +42,11 @@ export async function loadWAMPlugin(
                 numberOfInputs: 1,
                 numberOfOutputs: 1,
             });
-        } catch (e) {
+        } catch (error) {
             // §61.2 — HighEndPluginProcessor worklet not registered. Return
             // null (not a silent passthrough) so callers can fall back or
             // alert the user rather than silently routing unprocessed audio.
-            logger.warn(`[WAM] HighEndPluginProcessor not registered for ${pluginId}`, e);
+            logger.warn(`[WAM] HighEndPluginProcessor not registered for ${pluginId}`, error);
             notifyUser(
                 `Plugin "${descriptor.name}" failed to load — the HighEnd audio worklet isn't registered in this context.`,
                 'error'

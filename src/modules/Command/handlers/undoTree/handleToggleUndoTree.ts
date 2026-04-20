@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+
 import { toggleUndoTree } from '../../useCases/undoTree/toggleUndoTree/toggleUndoTree';
 
 export const handleToggleUndoTree = createHandler<'toggleUndoTree'>({

@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { useTimelineFileDrop } from '../useTimelineFileDrop';
 
 const mocks = vi.hoisted(() => ({
@@ -23,12 +24,20 @@ vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestTrack', () =>
 
 vi.mock('../../../stores/trackStore', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    trackStore: { get value() { return mocks.trackStoreValue.value; } },
+    trackStore: {
+        get value() {
+            return mocks.trackStoreValue.value;
+        },
+    },
 }));
 
 vi.mock('#/modules/SampleLibrary/stores', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    libraryStore: { get value() { return mocks.libraryStoreValue.value; } },
+    libraryStore: {
+        get value() {
+            return mocks.libraryStoreValue.value;
+        },
+    },
 }));
 
 vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
@@ -84,7 +93,7 @@ describe('useTimelineFileDrop', () => {
 
     it('handles plugin drop', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
-        
+
         const mockEvent = {
             preventDefault: vi.fn(),
             dataTransfer: {
@@ -95,7 +104,7 @@ describe('useTimelineFileDrop', () => {
                     return '';
                 },
                 files: [],
-            }
+            },
         };
 
         mocks.hitTestTrack.mockReturnValue('t1');
@@ -111,27 +120,27 @@ describe('useTimelineFileDrop', () => {
 
     it('handles sample drop by creating a new track if needed', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
-        
+
         const mockEvent = {
             preventDefault: vi.fn(),
             dataTransfer: {
                 getData: (type: string) => {
                     if (type === 'application/x-sourdaw-sample') {
-                        return JSON.stringify({ 
-                            name: 'Kick', 
-                            id: 's1', 
-                            path: 'kick.wav', 
+                        return JSON.stringify({
+                            name: 'Kick',
+                            id: 's1',
+                            path: 'kick.wav',
                             libraryRootId: 'root1',
-                            durationSeconds: 2
+                            durationSeconds: 2,
                         });
                     }
                     return '';
                 },
                 files: [],
-            }
+            },
         };
 
-        mocks.hitTestTrack.mockReturnValue(null); 
+        mocks.hitTestTrack.mockReturnValue(null);
         mocks.addTrack.mockReturnValue({ id: 'new-track-id' });
         mocks.decodeAudioFile.mockResolvedValue({ id: 'buf1', buffer: { duration: 2 } });
 
@@ -153,7 +162,7 @@ describe('useTimelineFileDrop', () => {
 
     it('handles external file drop (MIDI)', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
-        
+
         // Mock MIDI file
         const mockFile = new File(['MThd\x00\x00\x00\x06\x00\x01\x00\x01\x00\x80'], 'song.mid', { type: 'audio/midi' });
         const mockEvent = {
@@ -161,7 +170,7 @@ describe('useTimelineFileDrop', () => {
             dataTransfer: {
                 getData: () => '',
                 files: [mockFile],
-            }
+            },
         };
 
         await act(async () => {
@@ -175,14 +184,14 @@ describe('useTimelineFileDrop', () => {
 
     it('handles external file drop (Audio)', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
-        
+
         const mockFile = new File([''], 'snare.wav', { type: 'audio/wav' });
         const mockEvent = {
             preventDefault: vi.fn(),
             dataTransfer: {
                 getData: () => '',
                 files: [mockFile],
-            }
+            },
         };
 
         mocks.hitTestTrack.mockReturnValue('t1');
@@ -194,12 +203,14 @@ describe('useTimelineFileDrop', () => {
         });
 
         await waitFor(() => {
-            expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({
-                trackId: 't1',
-                name: 'snare',
-                type: 'audio',
-                audioBufferId: 'buf2'
-            }));
+            expect(mocks.addClip).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    trackId: 't1',
+                    name: 'snare',
+                    type: 'audio',
+                    audioBufferId: 'buf2',
+                })
+            );
         });
     });
 });

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { reorderTrack } from '../reorderTrack';
 
 const mocks = vi.hoisted(() => ({
@@ -19,34 +20,26 @@ describe('reorderTrack', () => {
 
     it('reorders tracks by moving a track to a new index', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [
-                { id: 't1' },
-                { id: 't2' },
-                { id: 't3' },
-            ]
+            tracks: [{ id: 't1' }, { id: 't2' }, { id: 't3' }],
         });
 
         // Move t1 to index 1 (between t2 and t3)
         reorderTrack('t1', 1);
 
         expect(mocks.updateTrackState).toHaveBeenCalledWith({
-            tracks: [
-                { id: 't2' },
-                { id: 't1' },
-                { id: 't3' },
-            ]
+            tracks: [{ id: 't2' }, { id: 't1' }, { id: 't3' }],
         });
     });
 
     it('moves track to the end if newIndex is high', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1' }, { id: 't2' }]
+            tracks: [{ id: 't1' }, { id: 't2' }],
         });
 
         reorderTrack('t1', 10);
 
         expect(mocks.updateTrackState).toHaveBeenCalledWith({
-            tracks: [{ id: 't2' }, { id: 't1' }]
+            tracks: [{ id: 't2' }, { id: 't1' }],
         });
     });
 

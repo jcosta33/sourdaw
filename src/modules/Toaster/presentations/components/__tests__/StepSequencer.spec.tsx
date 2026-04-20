@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { StepSequencer } from '../StepSequencer';
+import { describe, it, expect, vi } from 'vitest';
+
 import { type PadState, type Pattern, type Step } from '../../../models/ToasterKit';
+import { StepSequencer } from '../StepSequencer';
 
 function makePad(index: number): PadState {
     return {

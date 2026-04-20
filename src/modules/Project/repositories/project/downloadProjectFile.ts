@@ -1,8 +1,10 @@
+import { save } from '@tauri-apps/plugin-dialog';
+
 import { logger } from '#/infra/logger/appLogger';
+import { isTauri } from '#/utils/tauriBridge';
+
 import { type ProjectData } from '../../models/ProjectData';
 import { saveProjectToFile } from '../nativeProjectFiles/saveProjectToFile';
-import { isTauri } from '#/utils/tauriBridge';
-import { save } from '@tauri-apps/plugin-dialog';
 
 /**
  * Download a project as a .sourdaw file.

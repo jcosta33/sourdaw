@@ -1,15 +1,12 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+
 import { TransportValuePill } from '../TransportValuePill';
 
 describe('TransportValuePill', () => {
     it('should render children and handle click', () => {
         const onClick = vi.fn();
-        render(
-            <TransportValuePill onClick={onClick}>
-                4
-            </TransportValuePill>
-        );
+        render(<TransportValuePill onClick={onClick}>4</TransportValuePill>);
         fireEvent.click(screen.getByRole('button', { name: '4' }));
         expect(onClick).toHaveBeenCalledTimes(1);
     });

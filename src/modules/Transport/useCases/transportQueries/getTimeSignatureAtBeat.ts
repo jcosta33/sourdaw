@@ -1,5 +1,5 @@
-import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { getTimeSignatureAtBeat as getAtBeat } from '../../models/TimeSignatureMap';
+import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 
 /**
  * Get the time signature (numerator/denominator) at a specific beat.

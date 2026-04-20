@@ -1,6 +1,7 @@
 import { type KeyboardEvent, type RefObject, type FormEvent, useState, useRef, useEffect } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
 import { logger } from '#/infra/logger/appLogger';
+import { useStore } from '#/infra/store/useStore';
 import { llmStatusStore, pushAiActionGroup } from '#/modules/AiRuntime/stores';
 import {
     parsePromptToActions,
@@ -14,14 +15,11 @@ import {
     isLlmAvailable,
     initEngine,
 } from '#/modules/AiRuntime/useCases';
-import {
-    executeAppAction,
-    generateGroupId,
-    describeAction,
-} from '#/modules/Command/useCases';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
-import { workspaceStore } from '../../stores/workspaceStore';
+import { executeAppAction, generateGroupId, describeAction } from '#/modules/Command/useCases';
+
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
+import { workspaceStore } from '../../stores/workspaceStore';
 
 const defaultLlmStatus: typeof llmStatusStore.value = { state: 'idle' };
 

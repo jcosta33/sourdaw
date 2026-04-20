@@ -1,15 +1,11 @@
-import { getTrackState } from '../../repositories/track/getTrackState';
-import { setTrackState } from '../../repositories/track/setTrackState';
-import { type Clip } from '../../models/Track';
 import { shiftClipAutomation } from '#/modules/Automation/useCases';
 import { shiftClipMidiNotes } from '#/modules/MIDI/useCases';
 
-export function moveClip(
-    clipId: string,
-    targetTrackId: string,
-    startBeat: number,
-    originalStartBeat?: number
-): void {
+import { type Clip } from '../../models/Track';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { setTrackState } from '../../repositories/track/setTrackState';
+
+export function moveClip(clipId: string, targetTrackId: string, startBeat: number, originalStartBeat?: number): void {
     const state = getTrackState();
     if (!state) {
         return;
@@ -37,9 +33,7 @@ export function moveClip(
 
     setTrackState({
         ...state,
-        tracks: tracksWithoutClip.map((t) =>
-            t.id === targetTrackId ? { ...t, clips: [...t.clips, movedClip!] } : t
-        ),
+        tracks: tracksWithoutClip.map((t) => (t.id === targetTrackId ? { ...t, clips: [...t.clips, movedClip!] } : t)),
     });
 
     // Automation: shift from the original drag start (preview doesn't shift automation)

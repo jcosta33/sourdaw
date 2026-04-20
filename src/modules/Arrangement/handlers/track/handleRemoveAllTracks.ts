@@ -1,6 +1,7 @@
+import { createHandler } from '#/utils/createHandler';
+
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { removeTrack } from '../../useCases/removeTrack';
-import { createHandler } from '#/utils/createHandler';
 
 export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
     execute: () => {

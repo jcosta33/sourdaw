@@ -2,11 +2,13 @@
  * Reverb Layout — Decay visualization, all controls visible.
  */
 import { type ReactElement } from 'react';
+
+import { ReverbDecay } from '#/components/daw/visualizers/ReverbDecay';
+
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
-import { SectionHeader } from '../SectionHeader';
 import { DeviceParameterControl } from '../DeviceParameterControl';
-import { ReverbDecay } from '#/components/daw/visualizers/ReverbDecay';
+import { SectionHeader } from '../SectionHeader';
 
 type P = DeviceLayoutProps['parameters'][number];
 const Param = ({

@@ -1,16 +1,18 @@
 import { type DragEvent, useState } from 'react';
-import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
-import { trackStore } from '../../stores/trackStore';
+
+import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
+import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { libraryStore } from '#/modules/SampleLibrary/stores';
-import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
-import { getAssetTransfer } from '#/modules/Collaboration/useCases';
-import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
+
+import { trackStore } from '../../stores/trackStore';
+import { addTrack } from '../../useCases/addTrack';
+import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { addClip } from '../../useCases/clip/addClip';
 import { addDevice } from '../../useCases/device/addDevice';
-import { addTrack } from '../../useCases/addTrack';
 import { importMidiFile } from '../../useCases/importMidiFile';
+import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
 
 type GetCanvasCoords = (e: DragEvent<HTMLDivElement>) => { x: number; y: number };
 type GetBeatFromX = (x: number) => number;
@@ -53,12 +55,12 @@ export const useTimelineFileDrop = ({
                     durationSeconds: number;
                 };
                 let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
-                const targetTrack = targetTrackId
-                    ? trackStore.value?.tracks.find((t) => t.id === targetTrackId)
-                    : null;
+                const targetTrack = targetTrackId ? trackStore.value?.tracks.find((t) => t.id === targetTrackId) : null;
                 if (!targetTrackId || !targetTrack || targetTrack.kind !== 'audio') {
                     const newTrack = addTrack({ name: render.name, kind: 'audio' });
-                    if (!newTrack) return;
+                    if (!newTrack) {
+                        return;
+                    }
                     targetTrackId = newTrack.id;
                 }
                 const model = buildTimelineRenderModel();
@@ -71,7 +73,9 @@ export const useTimelineFileDrop = ({
                     type: 'audio',
                     audioBufferId: render.bufferId,
                 });
-            } catch { /* ignored */ }
+            } catch {
+                /* ignored */
+            }
             return;
         }
 

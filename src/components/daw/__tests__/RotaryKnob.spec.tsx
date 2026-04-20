@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type MidiLearnState } from '#/modules/MIDI/stores/midiLearnStore';
-import { RotaryKnob } from '../RotaryKnob';
 import { startMidiLearn } from '#/modules/MIDI/useCases/midiLearn/startMidiLearn';
+
+import { RotaryKnob } from '../RotaryKnob';
 
 const baseMidiState: MidiLearnState = {
     mappings: [],
@@ -32,9 +34,7 @@ describe('RotaryKnob', () => {
 
     it('should reset to default on double click', () => {
         const onChange = vi.fn();
-        const { container } = render(
-            <RotaryKnob value={10} onChange={onChange} defaultValue={50} min={0} max={100} />
-        );
+        const { container } = render(<RotaryKnob value={10} onChange={onChange} defaultValue={50} min={0} max={100} />);
         fireEvent.doubleClick(container.firstChild as HTMLElement);
         expect(onChange).toHaveBeenCalledWith(50);
     });
@@ -77,9 +77,7 @@ describe('RotaryKnob', () => {
                 paramId: 'p-learn',
             },
         };
-        const { container } = render(
-            <RotaryKnob value={50} onChange={vi.fn()} paramId="p-learn" />
-        );
+        const { container } = render(<RotaryKnob value={50} onChange={vi.fn()} paramId="p-learn" />);
         expect(container.querySelector('.border-dashed')).toBeInTheDocument();
     });
 
@@ -133,9 +131,7 @@ describe('RotaryKnob', () => {
     });
 
     it('should render bipolar arc for values past center', () => {
-        const { container } = render(
-            <RotaryKnob value={75} onChange={vi.fn()} bipolar min={0} max={100} />
-        );
+        const { container } = render(<RotaryKnob value={75} onChange={vi.fn()} bipolar min={0} max={100} />);
         const arc = container.querySelector('[style*="conic-gradient"]');
         expect(arc).toBeTruthy();
     });

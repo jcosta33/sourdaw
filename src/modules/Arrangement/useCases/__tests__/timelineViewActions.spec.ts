@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { selectTrack } from '../timelineViewActions';
 import * as selectTrackModule from '../toggleTrackState/selectTrack';
 

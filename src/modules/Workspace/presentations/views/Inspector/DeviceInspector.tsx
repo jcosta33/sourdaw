@@ -1,12 +1,16 @@
 import { type ReactElement } from 'react';
-import { getBuiltinPlugins, bypassDevice } from '#/modules/Arrangement/useCases';
-import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
+
 import { MechanicalSwitch } from '#/components/daw/MechanicalSwitch';
+import { getBuiltinPlugins, bypassDevice } from '#/modules/Arrangement/useCases';
+
+import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
 import { type Device } from '../../../models/TrackViewTypes';
+import { InspectorDetailHeader } from '../../components/Inspector/InspectorDetailHeader';
+import { MetaText } from '../../components/Inspector/MetaText';
+
 import { resolveDeviceLayout } from './deviceLayoutRegistry';
 import { GenericDeviceLayout } from './GenericDeviceLayout';
-import { MetaText } from '../../components/Inspector/MetaText';
-import { InspectorDetailHeader } from '../../components/Inspector/InspectorDetailHeader';
+
 import './layouts';
 
 type DeviceInspectorProps = {
@@ -60,7 +64,7 @@ function deriveParamsFromValues(device: Device): DeviceParameter[] {
         return {
             id,
             deviceId: device.id,
-            name: id.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+            name: id.replaceAll('_', ' ').replaceAll(/\b\w/g, (c) => c.toUpperCase()),
             type: 'float' as const,
             value: numVal,
             defaultValue: numVal,

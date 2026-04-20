@@ -1,4 +1,5 @@
 import { getCloudClient } from '../keyManagement';
+
 import { CLOUD_MODEL } from './helpers';
 
 export async function streamCloudChatCompletion(

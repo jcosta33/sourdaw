@@ -1,6 +1,8 @@
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
-import { updatePad } from '../../stores/toasterStore';
+
 import { type PadState } from '../../models/ToasterKit';
+import { updatePad } from '../../stores/toasterStore';
+
 import { findDeviceRef } from './helpers';
 
 const padPending = new Map<string, number>();
@@ -39,6 +41,9 @@ export function setToasterPadParam(deviceId: string, padIndex: number, key: keyo
     const cacheKey = `${deviceId}_${padIndex}_${key}`;
     padLatest.set(cacheKey, { pad: padIndex, name: key, value });
     if (!padPending.has(cacheKey)) {
-        padPending.set(cacheKey, requestAnimationFrame(() => flushPadParam(cacheKey, ref.trackId)));
+        padPending.set(
+            cacheKey,
+            requestAnimationFrame(() => flushPadParam(cacheKey, ref.trackId))
+        );
     }
 }

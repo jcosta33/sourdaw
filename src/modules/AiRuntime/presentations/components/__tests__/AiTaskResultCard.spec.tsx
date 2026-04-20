@@ -1,7 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { AiTaskResultCard } from '../AiTaskResultCard';
+import { describe, it, expect, vi } from 'vitest';
+
 import { type AiTaskResult } from '#/modules/AiGeneration/stores/aiStore';
+
+import { AiTaskResultCard } from '../AiTaskResultCard';
 
 const { removeTaskMock } = vi.hoisted(() => ({ removeTaskMock: vi.fn() }));
 

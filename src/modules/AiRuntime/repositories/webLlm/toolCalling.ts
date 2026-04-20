@@ -4,6 +4,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
 import { parseToolCallXml, type ToolCallResult } from '../../transformers/toolCallParser';
+
 import { generateWebLlmCompletion } from './engineLifecycle';
 
 /**

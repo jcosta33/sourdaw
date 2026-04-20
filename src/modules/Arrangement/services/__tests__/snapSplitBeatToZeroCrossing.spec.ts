@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { snapSplitBeatToZeroCrossing } from '../snapSplitBeatToZeroCrossing';
+
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getTransportState } from '#/modules/Transport/useCases';
-import { findNearestZeroCrossing } from '../../transformers/clipDspTransformers';
+
 import { ClipDummy } from '../../__tests__/ClipDummy';
+import { findNearestZeroCrossing } from '../../transformers/clipDspTransformers';
+import { snapSplitBeatToZeroCrossing } from '../snapSplitBeatToZeroCrossing';
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
     audioBufferCache: {
@@ -47,17 +49,17 @@ describe('snapSplitBeatToZeroCrossing', () => {
         };
         vi.mocked(audioBufferCache.get).mockReturnValue(mockBuffer as any);
         vi.mocked(getTransportState).mockReturnValue({ tempo: 120 } as any);
-        
+
         // 120 bpm = 2 beats per second.
         // splitBeat = 2.1, startBeat = 1.0 -> relativeBeat = 1.1.
         // targetTime = 1.1 / 2 = 0.55s.
         // targetSample = 0.55 * 48000 = 26400.
-        
+
         // Mock findNearestZeroCrossing to return sample 24000 (which is exactly 0.5s -> 1 beat)
         vi.mocked(findNearestZeroCrossing).mockReturnValue(24000);
 
         const result = snapSplitBeatToZeroCrossing(clip, 2.1);
-        
+
         // snappedRelativeBeat = (24000 / 48000) * 2 = 1.0 beat.
         // result = startBeat (1.0) + snappedRelativeBeat (1.0) = 2.0.
         expect(result).toBe(2.0);

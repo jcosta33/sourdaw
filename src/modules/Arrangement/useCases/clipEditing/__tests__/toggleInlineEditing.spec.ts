@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { toggleInlineEditing } from '#/modules/Arrangement/useCases/clipEditing/toggleInlineEditing';
 import { updateClip } from '#/modules/Arrangement/useCases/updateClip';
 

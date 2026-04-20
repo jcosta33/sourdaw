@@ -3,9 +3,9 @@
  * Makes mechanical MIDI feel more like a live performance.
  */
 
-import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import { LCG_MAX, nextLcg } from '../../models/lcgRandom';
+import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 
 type HumanizePreset = 'tight' | 'loose' | 'drunk' | 'rushed' | 'laidBack';
 

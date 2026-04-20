@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { setTrackHeight } from '../setTrackHeight';
 
 const mocks = vi.hoisted(() => ({
@@ -8,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../stores/preferencesStore', () => ({
     preferencesStore: {
-        get value() { return mocks.preferencesStoreValue.value; },
+        get value() {
+            return mocks.preferencesStoreValue.value;
+        },
         set: mocks.preferencesStoreSet,
-    }
+    },
 }));
 
 describe('setTrackHeight', () => {
@@ -18,7 +21,7 @@ describe('setTrackHeight', () => {
 
     it('updates trackHeight in preferencesStore', () => {
         mocks.preferencesStoreValue.value = { trackHeight: 'normal' } as any;
-        
+
         setTrackHeight('compact');
 
         expect(mocks.preferencesStoreSet).toHaveBeenCalledWith({

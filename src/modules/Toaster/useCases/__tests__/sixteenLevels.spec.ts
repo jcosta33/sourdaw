@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { Container } from '#/infra/di/Container';
+
 import { trigger16Level } from '../sixteenLevels';
 import { triggerToasterPad } from '../triggerPad';
 

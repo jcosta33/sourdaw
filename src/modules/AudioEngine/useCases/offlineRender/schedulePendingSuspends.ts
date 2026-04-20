@@ -20,10 +20,12 @@ export function schedulePendingSuspends(
     events.sort((a, b) => a.time - b.time || (a.type === 'off' ? -1 : 1));
 
     for (const evt of events) {
-        if (evt.time >= durationSeconds) continue;
-        
+        if (evt.time >= durationSeconds) {
+            continue;
+        }
+
         const sampleFrame = Math.max(0, Math.floor(evt.time * offlineCtx.sampleRate));
-        
+
         if (evt.type === 'on') {
             if (evt.isToaster) {
                 const pad = evt.toasterPadIndex >= 0 ? evt.toasterPadIndex : evt.pitch % 16;

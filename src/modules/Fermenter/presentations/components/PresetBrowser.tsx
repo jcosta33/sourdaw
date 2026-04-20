@@ -3,6 +3,7 @@
  * Replaces the single select dropdown with a full browsing experience.
  */
 import { type ReactElement, useState } from 'react';
+
 import { Search, Star, ChevronRight } from 'lucide-react';
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only the fields this browser renders.
 type SoundPreset = {

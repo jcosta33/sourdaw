@@ -1,7 +1,10 @@
 import { type ReactElement } from 'react';
+
 import { CheckCircle2 } from 'lucide-react';
-import { useStore } from '#/infra/store/useStore';
+
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { useStore } from '#/infra/store/useStore';
+
 import { inferenceProgressStore } from '../../stores/inferenceProgressStore';
 import { renderQueueStore } from '../../stores/renderQueueStore';
 import { cancelRender } from '../../useCases/cancelRender';
@@ -60,7 +63,9 @@ export function RenderProgressIndicator({ phraseId }: RenderProgressIndicatorPro
         const queueEntry = queueState?.entries.find((e) => e.phraseId === phraseId);
         const queuedRequestId = queueEntry?.requestId;
         const handleCancelQueued = (): void => {
-            if (queuedRequestId) cancelRender({ phraseId, requestId: queuedRequestId });
+            if (queuedRequestId) {
+                cancelRender({ phraseId, requestId: queuedRequestId });
+            }
         };
         return (
             <div className="flex items-center gap-2 px-2 py-1 text-[9px] bg-surface-overlay border border-border/40 rounded">
@@ -84,11 +89,7 @@ export function RenderProgressIndicator({ phraseId }: RenderProgressIndicatorPro
 
     if (phraseStatus === 'error') {
         return (
-            <DawMicroBadge
-                tone="danger"
-                role="alert"
-                aria-label="Render failed"
-            >
+            <DawMicroBadge tone="danger" role="alert" aria-label="Render failed">
                 ✕ Error
             </DawMicroBadge>
         );
@@ -101,7 +102,9 @@ export function RenderProgressIndicator({ phraseId }: RenderProgressIndicatorPro
     if (!activeRender) {
         return (
             <DawMicroBadge tone="muted" role="status" aria-label="Rendering…">
-                <span className="animate-pulse" aria-hidden="true">●</span>
+                <span className="animate-pulse" aria-hidden="true">
+                    ●
+                </span>
                 <span>Rendering…</span>
             </DawMicroBadge>
         );
@@ -123,7 +126,9 @@ export function RenderProgressIndicator({ phraseId }: RenderProgressIndicatorPro
         >
             <div className="flex-1 space-y-0.5">
                 <div className="flex items-center justify-between gap-1">
-                    <span className="text-muted-foreground truncate" title={stage}>{stage}</span>
+                    <span className="text-muted-foreground truncate" title={stage}>
+                        {stage}
+                    </span>
                     <span className="text-muted-foreground/70 tabular-nums">{Math.round(progress * 100)}%</span>
                 </div>
                 <div className="w-full h-0.5 bg-border/40 rounded-full overflow-hidden" aria-hidden="true">

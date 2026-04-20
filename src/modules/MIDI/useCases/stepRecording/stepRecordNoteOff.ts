@@ -2,7 +2,9 @@ import { stepRecordStore } from '../../stores/stepRecordStore';
 
 export function stepRecordNoteOff(pitch: number): void {
     const state = stepRecordStore.value;
-    if (!state || !state.active || !state.activeNotes.has(pitch)) return;
+    if (!state || !state.active || !state.activeNotes.has(pitch)) {
+        return;
+    }
 
     const nextActive = new Set(state.activeNotes);
     nextActive.delete(pitch);

@@ -6,8 +6,10 @@
  * Follows the same pattern as FermenterNode.
  */
 
-import levainProcessorUrl from '../services/levainProcessor.ts?worker&url';
 import { logger } from '#/infra/logger/appLogger';
+
+import levainProcessorUrl from '../services/levainProcessor.ts?worker&url';
+
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
@@ -143,4 +145,3 @@ export async function createLevainNode(ctx: BaseAudioContext, wasmUrl?: string):
         ready: readyPromise,
     };
 }
-

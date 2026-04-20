@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { Container } from '#/infra/di/Container';
-import { exportPatternToTimeline } from '../exportPatternToTimeline';
 import { getAllTracks, addClip } from '#/modules/Arrangement/useCases';
 import { addMidiNote } from '#/modules/MIDI/useCases';
+
+import { exportPatternToTimeline } from '../exportPatternToTimeline';
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),

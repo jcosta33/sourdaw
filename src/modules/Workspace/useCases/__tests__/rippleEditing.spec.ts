@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { toggleRippleEditing } from '../rippleEditing';
 
 const mocks = vi.hoisted(() => ({
@@ -8,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../stores/workspaceStore', () => ({
     workspaceStore: {
-        get value() { return mocks.workspaceStoreValue.value; },
+        get value() {
+            return mocks.workspaceStoreValue.value;
+        },
         set: mocks.workspaceStoreSet,
-    }
+    },
 }));
 
 describe('toggleRippleEditing', () => {

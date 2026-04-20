@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import { setVcaGain } from '../setVcaGain';
 
 const mockGetVcaGroupsState = vi.fn();
 const mockSetVcaGroupsState = vi.fn();
 vi.mock('../../../stores/vcaGroupStore', () => ({
     getVcaGroupsState: () => mockGetVcaGroupsState(),
-    setVcaGroupsState: (...args: any[]) => mockSetVcaGroupsState(...args)
+    setVcaGroupsState: (...args: any[]) => mockSetVcaGroupsState(...args),
 }));
 
 describe('setVcaGain', () => {

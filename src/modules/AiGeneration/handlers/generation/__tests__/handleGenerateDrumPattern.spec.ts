@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleGenerateDrumPattern } from '../handleGenerateDrumPattern';
 
 const mocks = vi.hoisted(() => ({
@@ -54,11 +55,7 @@ describe('handleGenerateDrumPattern', () => {
             },
         });
 
-        expect(mocks.applyDrumPatternToTrack).toHaveBeenCalledWith(
-            't1',
-            { style: 'house', bars: 2, density: 0.8 },
-            8
-        );
+        expect(mocks.applyDrumPatternToTrack).toHaveBeenCalledWith('t1', { style: 'house', bars: 2, density: 0.8 }, 8);
     });
 
     it('falls back to default style for invalid inputs', () => {
@@ -71,11 +68,7 @@ describe('handleGenerateDrumPattern', () => {
             },
         });
 
-        expect(mocks.applyDrumPatternToTrack).toHaveBeenCalledWith(
-            't1',
-            { style: 'rock', bars: 4, density: 0.5 },
-            8
-        );
+        expect(mocks.applyDrumPatternToTrack).toHaveBeenCalledWith('t1', { style: 'rock', bars: 4, density: 0.5 }, 8);
     });
 
     it('bails if track cannot be resolved or created', () => {

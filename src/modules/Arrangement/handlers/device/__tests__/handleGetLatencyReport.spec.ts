@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleGetLatencyReport } from '../handleGetLatencyReport';
 
 const mocks = vi.hoisted(() => ({
@@ -23,9 +24,7 @@ describe('handleGetLatencyReport', () => {
         mocks.getLatencyReport.mockReturnValue({
             maxLatencyMs: 15.5,
             contextBaseLatencyMs: 10.0,
-            tracks: [
-                { trackId: 't1', deviceLatencyMs: 5.5, totalLatencyMs: 15.5 }
-            ],
+            tracks: [{ trackId: 't1', deviceLatencyMs: 5.5, totalLatencyMs: 15.5 }],
         });
 
         handleGetLatencyReport.execute({ type: 'getLatencyReport', payload: {} });
@@ -38,9 +37,7 @@ describe('handleGetLatencyReport', () => {
         mocks.getLatencyReport.mockReturnValue({
             maxLatencyMs: 10.0,
             contextBaseLatencyMs: 10.0,
-            tracks: [
-                { trackId: 't1', deviceLatencyMs: 0, totalLatencyMs: 10.0 }
-            ],
+            tracks: [{ trackId: 't1', deviceLatencyMs: 0, totalLatencyMs: 10.0 }],
         });
 
         handleGetLatencyReport.execute({ type: 'getLatencyReport', payload: {} });

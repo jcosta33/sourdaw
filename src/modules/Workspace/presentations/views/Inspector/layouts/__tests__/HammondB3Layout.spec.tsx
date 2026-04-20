@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import type { DeviceLayoutProps } from '../../deviceLayoutRegistry';
 
 // Mock external dependencies
@@ -20,13 +21,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 
 vi.mock('#/components/ui/slider', () => ({
-    Slider: ({
-        value,
-        onValueChange,
-    }: {
-        value: number[];
-        onValueChange: (values: number[]) => void;
-    }) => (
+    Slider: ({ value, onValueChange }: { value: number[]; onValueChange: (values: number[]) => void }) => (
         <input
             type="range"
             data-testid="slider"
@@ -37,9 +32,7 @@ vi.mock('#/components/ui/slider', () => ({
 }));
 
 vi.mock('../../../../components/Inspector/SurfaceCard', () => ({
-    SurfaceCard: ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="surface-card">{children}</div>
-    ),
+    SurfaceCard: ({ children }: { children: React.ReactNode }) => <div data-testid="surface-card">{children}</div>,
 }));
 
 vi.mock('../../DeviceParameterControl', () => ({
@@ -66,9 +59,45 @@ describe('HammondB3Layout', () => {
             drawbar_1: 0,
         },
         parameters: [
-            { id: 'drawbar_16', name: '16\' Sub', type: 'int', value: 8, defaultValue: 8, minValue: 0, maxValue: 8, unit: '', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-            { id: 'drawbar_513', name: '5 1/3\'', type: 'int', value: 8, defaultValue: 8, minValue: 0, maxValue: 8, unit: '', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-            { id: 'drawbar_8', name: '8\'', type: 'int', value: 8, defaultValue: 8, minValue: 0, maxValue: 8, unit: '', automatable: true, hasAutomation: false, deviceId: 'device-1' },
+            {
+                id: 'drawbar_16',
+                name: "16' Sub",
+                type: 'int',
+                value: 8,
+                defaultValue: 8,
+                minValue: 0,
+                maxValue: 8,
+                unit: '',
+                automatable: true,
+                hasAutomation: false,
+                deviceId: 'device-1',
+            },
+            {
+                id: 'drawbar_513',
+                name: "5 1/3'",
+                type: 'int',
+                value: 8,
+                defaultValue: 8,
+                minValue: 0,
+                maxValue: 8,
+                unit: '',
+                automatable: true,
+                hasAutomation: false,
+                deviceId: 'device-1',
+            },
+            {
+                id: 'drawbar_8',
+                name: "8'",
+                type: 'int',
+                value: 8,
+                defaultValue: 8,
+                minValue: 0,
+                maxValue: 8,
+                unit: '',
+                automatable: true,
+                hasAutomation: false,
+                deviceId: 'device-1',
+            },
         ],
     };
 

@@ -1,5 +1,5 @@
-import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type CompRegion } from '../../models/TakeLane';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 
 export function setCompRegion(trackId: string, region: CompRegion): void {
     const state = takeLaneStore.value;

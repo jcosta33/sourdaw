@@ -3,10 +3,12 @@
  * Large waveform display as hero, controls alongside.
  */
 import { type ReactElement } from 'react';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
+
 import { ENGINE_NAMES, WAVEFORM_NAMES, NOISE_COLOR_NAMES } from '../../models/FermenterPatch';
 
 const WAVEFORM_KEYS = ['sine', 'sawtooth', 'square', 'triangle'] as const;

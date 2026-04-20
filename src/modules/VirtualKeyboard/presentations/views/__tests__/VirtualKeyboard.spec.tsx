@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { VirtualKeyboard } from '../VirtualKeyboard';
 
 // Mock external dependencies
@@ -18,19 +19,13 @@ vi.mock('#/modules/AudioEngine/useCases/triggerLiveNoteOff', () => ({
     triggerLiveNoteOff: vi.fn(),
 }));
 
-vi.mock(
-    '#/modules/Workspace/useCases/togglePanel/panelToggles/setVirtualKeyboardVelocity',
-    () => ({
-        setVirtualKeyboardVelocity: vi.fn(),
-    }),
-);
+vi.mock('#/modules/Workspace/useCases/togglePanel/panelToggles/setVirtualKeyboardVelocity', () => ({
+    setVirtualKeyboardVelocity: vi.fn(),
+}));
 
-vi.mock(
-    '#/modules/Workspace/useCases/togglePanel/panelToggles/setVirtualKeyboardOctave',
-    () => ({
-        setVirtualKeyboardOctave: vi.fn(),
-    }),
-);
+vi.mock('#/modules/Workspace/useCases/togglePanel/panelToggles/setVirtualKeyboardOctave', () => ({
+    setVirtualKeyboardOctave: vi.fn(),
+}));
 
 // Mock UI components
 vi.mock('#/components/daw/DawHeaderBand', () => ({
@@ -63,7 +58,9 @@ vi.mock('#/components/daw/DawInlineHint', () => ({
 
 vi.mock('#/components/ui/button', () => ({
     Button: ({ children, onClick, 'aria-label': ariaLabel }: any) => (
-        <button onClick={onClick} aria-label={ariaLabel}>{children}</button>
+        <button onClick={onClick} aria-label={ariaLabel}>
+            {children}
+        </button>
     ),
 }));
 
@@ -75,9 +72,9 @@ vi.mock('#/components/ui/tooltip', () => ({
 
 vi.mock('#/components/ui/slider', () => ({
     Slider: ({ value, onValueChange }: any) => (
-        <input 
-            type="range" 
-            value={value?.[0] || 0} 
+        <input
+            type="range"
+            value={value?.[0] || 0}
             onChange={(e) => onValueChange?.([Number(e.target.value)])}
             data-testid="velocity-slider"
         />

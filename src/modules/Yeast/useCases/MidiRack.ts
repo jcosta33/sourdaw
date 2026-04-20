@@ -37,8 +37,12 @@ export class MidiRack {
 
     /** Reorder: move processor from fromIdx to toIdx. */
     reorder(fromIdx: number, toIdx: number): void {
-        if (fromIdx < 0 || fromIdx >= this.processors.length) {return;}
-        if (toIdx < 0 || toIdx >= this.processors.length) {return;}
+        if (fromIdx < 0 || fromIdx >= this.processors.length) {
+            return;
+        }
+        if (toIdx < 0 || toIdx >= this.processors.length) {
+            return;
+        }
         const [proc] = this.processors.splice(fromIdx, 1);
         this.processors.splice(toIdx, 0, proc!);
     }

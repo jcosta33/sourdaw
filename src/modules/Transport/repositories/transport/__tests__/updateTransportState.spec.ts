@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { updateTransportState } from '../updateTransportState';
+
 import { transportStore } from '../../../stores/transportStore';
+import { updateTransportState } from '../updateTransportState';
 
 vi.mock('../../../stores/transportStore', () => {
     const internal = { value: { tempo: 120, playing: false } as { tempo: number; playing: boolean } | null };

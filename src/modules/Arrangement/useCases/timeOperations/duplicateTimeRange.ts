@@ -1,9 +1,10 @@
+import { automationStore } from '#/modules/Automation/stores';
+import { shiftMidiNotesAfterBeat } from '#/modules/MIDI/useCases';
+import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
+
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { markerStore } from '../../stores/markerStore';
-import { automationStore } from '#/modules/Automation/stores';
-import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
-import { shiftMidiNotesAfterBeat } from '#/modules/MIDI/useCases';
 
 export function insertTime(atBeat: number, durationBeats: number): void {
     const state = getTrackState();
@@ -35,9 +36,7 @@ export function insertTime(atBeat: number, durationBeats: number): void {
     if (markerState) {
         markerStore.set({
             ...markerState,
-            markers: markerState.markers.map((m) =>
-                m.beat >= atBeat ? { ...m, beat: m.beat + durationBeats } : m
-            ),
+            markers: markerState.markers.map((m) => (m.beat >= atBeat ? { ...m, beat: m.beat + durationBeats } : m)),
         });
     }
 
@@ -47,9 +46,7 @@ export function insertTime(atBeat: number, durationBeats: number): void {
             ...autoState,
             lanes: autoState.lanes.map((lane) => ({
                 ...lane,
-                points: lane.points.map((p) =>
-                    p.beat >= atBeat ? { ...p, beat: p.beat + durationBeats } : p
-                ),
+                points: lane.points.map((p) => (p.beat >= atBeat ? { ...p, beat: p.beat + durationBeats } : p)),
             })),
         });
     }
@@ -59,9 +56,7 @@ export function insertTime(atBeat: number, durationBeats: number): void {
     if (tempoState) {
         tempoMapStore.set({
             ...tempoState,
-            changes: tempoState.changes.map((c) =>
-                c.beat >= atBeat ? { ...c, beat: c.beat + durationBeats } : c
-            ),
+            changes: tempoState.changes.map((c) => (c.beat >= atBeat ? { ...c, beat: c.beat + durationBeats } : c)),
         });
     }
 
@@ -70,9 +65,7 @@ export function insertTime(atBeat: number, durationBeats: number): void {
     if (timeSigState) {
         timeSignatureMapStore.set({
             ...timeSigState,
-            changes: timeSigState.changes.map((c) =>
-                c.beat >= atBeat ? { ...c, beat: c.beat + durationBeats } : c
-            ),
+            changes: timeSigState.changes.map((c) => (c.beat >= atBeat ? { ...c, beat: c.beat + durationBeats } : c)),
         });
     }
 
@@ -95,10 +88,7 @@ export function duplicateTimeRange(startBeat: number, endBeat: number): void {
         ...state,
         tracks: state.tracks.map((track) => {
             const clipsInRange = track.clips.filter(
-                (c) =>
-                    c.startBeat >= startBeat &&
-                    c.endBeat <= endBeat + duration &&
-                    c.startBeat < endBeat
+                (c) => c.startBeat >= startBeat && c.endBeat <= endBeat + duration && c.startBeat < endBeat
             );
             const duplicated = clipsInRange.map((c) => ({
                 ...c,

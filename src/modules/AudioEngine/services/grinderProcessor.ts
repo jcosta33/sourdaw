@@ -8,7 +8,6 @@
  * Effect processor: reads from inputs[0], writes to outputs[0].
  */
 
-import '../wasm/workletPolyfill.js';
 import { initSync, GrinderInstance } from '../wasm/daw_dsp.js';
 
 const PARAM_MAP = {
@@ -136,7 +135,9 @@ class GrinderProcessor extends AudioWorkletProcessor {
             const msg = e.data;
             try {
                 if (msg.type === 'init') {
-                    if (this._ready) {return;}
+                    if (this._ready) {
+                        return;
+                    }
                     this._initWasm(msg.wasmBytes);
                 } else if (msg.type === 'init-sab') {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
@@ -144,8 +145,8 @@ class GrinderProcessor extends AudioWorkletProcessor {
                     const rustName = PARAM_MAP[msg.name] ?? msg.name;
                     this._instance.set_param(rustName, msg.value);
                 }
-            } catch (err) {
-                console.error('GrinderProcessor error:', err);
+            } catch (error) {
+                console.error('GrinderProcessor error:', error);
             }
         };
     }
@@ -161,8 +162,12 @@ class GrinderProcessor extends AudioWorkletProcessor {
     _passthrough(input, output) {
         const leftIn = input[0];
         const rightIn = input[1] ?? leftIn;
-        if (output[0] && leftIn) {output[0].set(leftIn);}
-        if (output[1] && rightIn) {output[1].set(rightIn);}
+        if (output[0] && leftIn) {
+            output[0].set(leftIn);
+        }
+        if (output[1] && rightIn) {
+            output[1].set(rightIn);
+        }
     }
 
     process(inputs, outputs, parameters) {
@@ -170,10 +175,12 @@ class GrinderProcessor extends AudioWorkletProcessor {
         const output = outputs[0];
 
         if (!this._ready || this._faulted) {
-            if (input && output) {this._passthrough(input, output);}
+            if (input && output) {
+                this._passthrough(input, output);
+            }
             return true;
         }
-        if (!input || input.length < 1 || !output || output.length < 1) {
+        if (!input || input.length === 0 || !output || output.length === 0) {
             return true;
         }
 
@@ -190,7 +197,9 @@ class GrinderProcessor extends AudioWorkletProcessor {
             // Update AudioParams
             for (const name in parameters) {
                 const values = parameters[name];
-                if (values.length === 0) {continue;}
+                if (values.length === 0) {
+                    continue;
+                }
                 const value = values.length > 1 ? values[frames - 1] : values[0];
                 const rustName = PARAM_MAP[name] ?? name;
                 inst.set_param(rustName, value);
@@ -234,11 +243,11 @@ class GrinderProcessor extends AudioWorkletProcessor {
                     this._sabView[9] = inst.get_neural_warmup_progress();
                 }
             }
-        } catch (err) {
+        } catch (error) {
             // A WASM panic leaves WasmRefCell borrow counts corrupted — mark
             // faulted so we stop calling into WASM and fall back to passthrough.
             this._faulted = true;
-            this.port.postMessage({ type: 'error', message: String(err) });
+            this.port.postMessage({ type: 'error', message: String(error) });
             this._passthrough(input, output);
         }
 

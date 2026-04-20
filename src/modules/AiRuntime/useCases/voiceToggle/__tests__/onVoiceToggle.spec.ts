@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { onVoiceToggle } from '../onVoiceToggle';
+
 import { eventBus } from '#/app/registerDependencies';
+
+import { onVoiceToggle } from '../onVoiceToggle';
 
 vi.mock('#/app/registerDependencies', () => ({
     eventBus: {
         on: vi.fn(),
-    }
+    },
 }));
 
 describe('onVoiceToggle', () => {

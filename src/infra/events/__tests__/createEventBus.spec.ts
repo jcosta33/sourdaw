@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { createEventBus } from '../createEventBus';
 import { recordEvents } from '../testing/recordEvents';
 

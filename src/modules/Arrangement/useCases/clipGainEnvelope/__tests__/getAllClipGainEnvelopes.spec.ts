@@ -1,9 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import {
-    __resetGainEnvelopesForTest,
-    setEnvelope,
-} from '#/modules/Arrangement/stores/gainEnvelopeStore';
+import { __resetGainEnvelopesForTest, setEnvelope } from '#/modules/Arrangement/stores/gainEnvelopeStore';
 
 import { getAllClipGainEnvelopes } from '../getAllClipGainEnvelopes';
 

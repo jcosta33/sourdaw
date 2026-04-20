@@ -1,12 +1,14 @@
 import { type ReactElement } from 'react';
+
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { selectTrack } from '#/modules/Arrangement/useCases';
 import { defaultSidechainStoreState, sidechainStore } from '#/modules/Routing/stores';
-import { type Track } from '../../models/TrackViewTypes';
 import { resolveToken } from '#/utils/UI/resolveToken';
+
+import { type Track } from '../../models/TrackViewTypes';
 
 type RoutingTrackState = {
     tracks: Track[];

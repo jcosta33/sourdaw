@@ -1,6 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
-import { addChordEvent } from '../../useCases/chordTrack/addChordEvent';
+
 import { type ChordType, CHORD_TYPES } from '../../useCases/chordStamps/helpers';
+import { addChordEvent } from '../../useCases/chordTrack/addChordEvent';
 
 const VALID_CHORD_QUALITIES = new Set(Object.keys(CHORD_TYPES));
 

@@ -1,9 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { onNotification } from '../onNotification';
 
-const mocks = vi.hoisted(() => ({ mockEventBus: {
+const mocks = vi.hoisted(() => ({
+    mockEventBus: {
         on: vi.fn(),
-    } }));
+    },
+}));
 
 vi.mock('#/app/registerDependencies', () => ({
     eventBus: mocks.mockEventBus,

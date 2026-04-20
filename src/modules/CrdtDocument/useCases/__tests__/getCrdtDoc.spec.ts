@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { getCrdtDoc } from '../getCrdtDoc';
 
 const mocks = vi.hoisted(() => ({
@@ -8,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../repositories/automergeRepository', () => ({
     automergeRepository: {
         getDoc: mocks.getDoc,
-    }
+    },
 }));
 
 describe('getCrdtDoc', () => {

@@ -1,5 +1,5 @@
-import { markerStore } from '../../../stores/markerStore';
 import { createSection } from '../../../models/Marker';
+import { markerStore } from '../../../stores/markerStore';
 
 export function addSection(startBeat: number, endBeat: number, name: string): void {
     const state = markerStore.value;

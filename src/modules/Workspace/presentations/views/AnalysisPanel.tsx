@@ -1,15 +1,18 @@
 import { type ReactElement, type ReactNode, useRef, useState, useEffect } from 'react';
+
 import { DawAnalysisCard } from '#/components/daw/DawAnalysisCard';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { ScrollArea } from '#/components/ui/scroll-area';
-import { LUFSMeter } from './Metering/LUFSMeter';
-import { PhaseCorrelationDisplay } from './Metering/PhaseCorrelationDisplay';
-import { Oscilloscope } from './Metering/Oscilloscope';
-import { SpectrumAnalyzer } from './Metering/SpectrumAnalyzer';
-import { Spectrogram } from './Metering/Spectrogram';
-import { Goniometer } from './Metering/Goniometer';
+
 import { SpatialPanner } from '../components/SpatialPanner';
 import { Wavetable3D } from '../components/Wavetable3D';
+
+import { Goniometer } from './Metering/Goniometer';
+import { LUFSMeter } from './Metering/LUFSMeter';
+import { Oscilloscope } from './Metering/Oscilloscope';
+import { PhaseCorrelationDisplay } from './Metering/PhaseCorrelationDisplay';
+import { Spectrogram } from './Metering/Spectrogram';
+import { SpectrumAnalyzer } from './Metering/SpectrumAnalyzer';
 
 /* ── Measured container ─────────────────────────────── */
 type MeasuredProps = {

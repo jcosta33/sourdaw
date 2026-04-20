@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleLeaveCollabSession } from '../handleLeaveCollabSession';
 
 const mocks = vi.hoisted(() => ({
@@ -15,7 +16,7 @@ describe('handleLeaveCollabSession', () => {
     it('delegates to leaveSession use case', () => {
         handleLeaveCollabSession.execute({
             type: 'leaveCollabSession',
-            payload: {}
+            payload: {},
         });
         expect(mocks.leaveSession).toHaveBeenCalledTimes(1);
     });

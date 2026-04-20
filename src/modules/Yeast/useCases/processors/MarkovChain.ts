@@ -3,6 +3,7 @@
  * Creates recognizable patterns with controlled randomness, unlike pure random mode.
  */
 
+import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import {
     type MidiEvent,
     type TransportInfo,
@@ -10,7 +11,6 @@ import {
     rateToBeats,
     samplesPerBeat,
 } from '../../models/MidiEvent';
-import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
 import { ScheduledEventQueue } from '../../models/MidiProcessor';
 
 const MAX_STATES = 12; // max pitch classes or held notes
@@ -33,7 +33,7 @@ export class MarkovChain extends BaseMidiProcessor {
 
     // Map states to MIDI notes (from held notes or scale degrees).
     // Pre-allocated at MAX_STATES; `stateNoteCount` tracks the active length.
-    private readonly stateToNote: number[] = new Array<number>(MAX_STATES).fill(0);
+    private readonly stateToNote: number[] = Array.from({ length: MAX_STATES }).fill(0);
     private stateNoteCount = 0;
     private held: number[] = [];
 
@@ -42,7 +42,7 @@ export class MarkovChain extends BaseMidiProcessor {
         // Pre-allocate the full MAX_STATES × MAX_STATES matrix once
         this.probs = [];
         for (let i = 0; i < MAX_STATES; i++) {
-            const row = new Array<number>(MAX_STATES).fill(0);
+            const row = Array.from({ length: MAX_STATES }).fill(0);
             this.probs.push(row);
         }
         this.fillDefaultMatrix(7); // default: 7 notes (one octave scale)
@@ -82,9 +82,13 @@ export class MarkovChain extends BaseMidiProcessor {
     }
 
     private sampleNext(): number {
-        if (this.stateCount === 0) {return 0;}
+        if (this.stateCount === 0) {
+            return 0;
+        }
         const row = this.probs[this.currentState % this.stateCount];
-        if (!row) {return 0;}
+        if (!row) {
+            return 0;
+        }
 
         this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
         const r = this.rngState / 0x7fffffff;
@@ -92,7 +96,9 @@ export class MarkovChain extends BaseMidiProcessor {
 
         for (let i = 0; i < this.stateCount; i++) {
             cumulative += row[i]!;
-            if (r <= cumulative) {return i;}
+            if (r <= cumulative) {
+                return i;
+            }
         }
         return this.stateCount - 1;
     }
@@ -126,14 +132,18 @@ export class MarkovChain extends BaseMidiProcessor {
             }
         }
 
-        if (!transport.isPlaying || this.stateNoteCount === 0) {return;}
+        if (!transport.isPlaying || this.stateNoteCount === 0) {
+            return;
+        }
 
         const stepLen = rateToBeats(this.rate) * samplesPerBeat(transport);
         const noteLen = stepLen * this.gate;
         const now = input.length > 0 ? input[0]!.timeSamples : 0;
         const blockEnd = now + 128;
 
-        if (this.lastStepTime === -Infinity) {this.lastStepTime = now;}
+        if (this.lastStepTime === -Infinity) {
+            this.lastStepTime = now;
+        }
 
         let safety = 0;
         while (this.lastStepTime + stepLen <= blockEnd && safety < 64) {
@@ -157,7 +167,9 @@ export class MarkovChain extends BaseMidiProcessor {
         }
 
         const drained = this.scheduled.drainRange(0, blockEnd);
-        for (const e of drained) {output.push(e);}
+        for (const e of drained) {
+            output.push(e);
+        }
     }
 
     reset(): void {
@@ -184,13 +196,17 @@ export class MarkovChain extends BaseMidiProcessor {
     /** Set a specific transition probability. For UI matrix editor. */
     setTransition(from: number, to: number, prob: number): void {
         if (from < this.stateCount && to < this.stateCount && this.probs[from]) {
-            this.probs[from]![to] = Math.max(0, prob);
+            this.probs[from][to] = Math.max(0, prob);
             // Re-normalize active portion of row
-            const row = this.probs[from]!;
+            const row = this.probs[from];
             let sum = 0;
-            for (let i = 0; i < this.stateCount; i++) {sum += row[i]!;}
+            for (let i = 0; i < this.stateCount; i++) {
+                sum += row[i]!;
+            }
             if (sum > 0) {
-                for (let i = 0; i < this.stateCount; i++) {row[i] = row[i]! / sum;}
+                for (let i = 0; i < this.stateCount; i++) {
+                    row[i] = row[i]! / sum;
+                }
             }
         }
     }

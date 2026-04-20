@@ -1,36 +1,37 @@
 import { type ReactElement, useRef, useState } from 'react';
 
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
-import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawMenuInlineEditor } from '#/components/daw/DawMenuInlineEditor';
+import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { useStore } from '#/infra/store/useStore';
+import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
+import { runAiActionWithToast } from '#/modules/AiRuntime/useCases';
+import { detectTempo, detectKey } from '#/modules/AudioAnalysis/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
 import { selectClip, setWorkspaceMode } from '#/modules/Workspace/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { runAiActionWithToast } from '#/modules/AiRuntime/useCases';
-import { handleAiDenoiseClip } from '#/modules/AiGeneration/useCases';
+import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
+
+import { CLIP_COLOR_OPTIONS } from '../../models/colorPalette';
 import { trackStore, defaultTrackState } from '../../stores/trackStore';
-import { detectTempo, detectKey } from '#/modules/AudioAnalysis/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
-import { splitClipWithUndo } from '../../useCases/clipEditing/splitClipWithUndo';
-import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
-import { normalizeClip } from '../../useCases/clipEditing/normalizeClip';
-import { reverseClip } from '../../useCases/clipEditing/reverseClip';
-import { lockClip } from '../../useCases/clipEditing/lockClip';
-import { setClipColor } from '../../useCases/clipEditing/setClipColor';
-import { renameClip } from '../../useCases/clipEditing/renameClip';
-import { muteClip } from '../../useCases/clipEditing/muteClip';
-import { removeClip } from '../../useCases/clip/removeClip';
 import { duplicateClip } from '../../useCases/clip/duplicateClip';
 import { duplicateClipToNextBar } from '../../useCases/clip/duplicateClipToNextBar';
+import { removeClip } from '../../useCases/clip/removeClip';
 import { copySelectedClip } from '../../useCases/clipboard/copySelectedClip';
 import { cutSelectedClip } from '../../useCases/clipboard/cutSelectedClip';
-import { exportMidiClip } from '../../useCases/exportMidiClip';
 import { pasteClip } from '../../useCases/clipboard/pasteClip';
+import { lockClip } from '../../useCases/clipEditing/lockClip';
+import { muteClip } from '../../useCases/clipEditing/muteClip';
+import { normalizeClip } from '../../useCases/clipEditing/normalizeClip';
+import { renameClip } from '../../useCases/clipEditing/renameClip';
+import { reverseClip } from '../../useCases/clipEditing/reverseClip';
+import { setClipColor } from '../../useCases/clipEditing/setClipColor';
+import { splitClipWithUndo } from '../../useCases/clipEditing/splitClipWithUndo';
+import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
+import { exportMidiClip } from '../../useCases/exportMidiClip';
 import { stripSilence } from '../../useCases/stripSilence';
-import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
-import { CLIP_COLOR_OPTIONS } from '../../models/colorPalette';
 
 type ClipContextMenuProps = {
     x: number;
@@ -161,15 +162,12 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                 role="menuitem"
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
                 onClick={act(() =>
-                    runAiActionWithToast(
-                        () => handleAiDenoiseClip(clipId, 0.7),
-                        {
-                            startMsg: 'Denoising audio…',
-                            successMsg: 'Audio denoised',
-                            successDetails: ['Noise reduction applied to clip'],
-                            failMsg: 'Audio denoise failed',
-                        }
-                    )
+                    runAiActionWithToast(() => handleAiDenoiseClip(clipId, 0.7), {
+                        startMsg: 'Denoising audio…',
+                        successMsg: 'Audio denoised',
+                        successDetails: ['Noise reduction applied to clip'],
+                        failMsg: 'Audio denoise failed',
+                    })
                 )}
             >
                 Denoise
@@ -179,10 +177,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
 
     const renderMidiActions = (): ReactElement => (
         <>
-            <DawMenuButton
-                role="menuitem"
-                onClick={act(() => toggleInlineEditing(clipId))}
-            >
+            <DawMenuButton role="menuitem" onClick={act(() => toggleInlineEditing(clipId))}>
                 {clip?.isInlineEditing ? 'Close Inline Editor' : 'Open Inline Editor'}
             </DawMenuButton>
             <DawMenuButton

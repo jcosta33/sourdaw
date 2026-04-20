@@ -1,11 +1,13 @@
 import { type ReactElement, type MouseEvent, useState, useRef } from 'react';
+
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
-import { cn } from '#/utils/Styles/cn';
+import { useStore } from '#/infra/store/useStore';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { addMidiCC, removeMidiCC, moveMidiCC } from '#/modules/MIDI/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { cn } from '#/utils/Styles/cn';
+
 import { type MidiCC } from '../../../models/MidiNoteViewTypes';
-import { useStore } from '#/infra/store/useStore';
 
 type CCLaneProps = {
     clipId: string | null;

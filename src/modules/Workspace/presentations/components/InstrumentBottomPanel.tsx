@@ -1,5 +1,7 @@
 import { type ReactElement, type ReactNode } from 'react';
+
 import { X } from 'lucide-react';
+
 import { Button } from '#/components/ui/button';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 

@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { IndexPage } from '../index';
 
 // Mock workspace state
@@ -29,7 +30,7 @@ describe('IndexPage', () => {
     it('should render AutomationView when mode is automation', async () => {
         const { useWorkspaceState } = await import('#/modules/Workspace/presentations/hooks/useWorkspaceState');
         vi.mocked(useWorkspaceState).mockReturnValue({ mode: 'automation' } as any);
-        
+
         render(<IndexPage />);
         expect(screen.getByTestId('automation-view')).toBeInTheDocument();
     });
@@ -37,7 +38,7 @@ describe('IndexPage', () => {
     it('should render ArrangeView when mode is arrange', async () => {
         const { useWorkspaceState } = await import('#/modules/Workspace/presentations/hooks/useWorkspaceState');
         vi.mocked(useWorkspaceState).mockReturnValue({ mode: 'arrange' } as any);
-        
+
         render(<IndexPage />);
         expect(screen.getByTestId('arrange-view')).toBeInTheDocument();
     });

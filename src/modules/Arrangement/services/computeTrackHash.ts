@@ -21,7 +21,7 @@ export async function computeTrackHash(clips: Clip[], devices: Device[]): Promis
         return `${device.id}:${device.type}:${sortedParams}:${device.bypassed}`;
     });
 
-    const contentString = clipStrings.join('|') + '||' + deviceStrings.join('|');
+    const contentString = `${clipStrings.join('|')}||${deviceStrings.join('|')}`;
 
     const encoder = new TextEncoder();
     const data = encoder.encode(contentString);

@@ -1,16 +1,19 @@
 import { trackStore, markerStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
-import { projectStore } from '../../../stores/projectStore';
-import { transportStore } from '#/modules/Transport/stores';
-import { defaultTransportState } from '#/modules/Transport/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane } from '#/modules/Automation/useCases';
-import type { MidiNote } from '../../../models/DemoProjectTypes';
-import { note } from '../demoUtils/note';
+import { midiStore } from '#/modules/MIDI/stores';
+import { transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState } from '#/modules/Transport/useCases';
+
+import { projectStore } from '../../../stores/projectStore';
 import { applyPreset } from '../demoUtils/applyPreset';
 import { createMidiClip } from '../demoUtils/createMidiClip';
+import { note } from '../demoUtils/note';
 import { syncArrangement } from '../demoUtils/syncArrangement';
+
+import type { MidiNote } from '../../../models/DemoProjectTypes';
+
 export async function demo4_NativeShowcase(): Promise<void> {
     const bpm = 83;
     const TB = 816;
@@ -1443,7 +1446,7 @@ export async function demo4_NativeShowcase(): Promise<void> {
         scaleName: 'chromatic',
         tuning: {
             name: 'Equal Temperament',
-            frequencies: Array.from({ length: 128 }, (_, i) => 440 * Math.pow(2, (i - 69) / 12)),
+            frequencies: Array.from({ length: 128 }, (_, i) => 440 * 2 ** ((i - 69) / 12)),
         },
     });
 }

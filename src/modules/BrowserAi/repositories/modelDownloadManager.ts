@@ -10,15 +10,17 @@
  */
 
 import { unzip } from 'fflate';
+
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { writeModel, getStorageStatus, requestPersistentStorage } from './storageManager';
-import { updateModelStatus } from '../stores/modelRegistryStore';
+
 import { type ModelDownloadProgressPayload } from '../events/ModelDownloadProgressEvent';
+import { updateModelStatus } from '../stores/modelRegistryStore';
+
+import { writeModel, getStorageStatus, requestPersistentStorage } from './storageManager';
 
 const BROADCAST_CHANNEL_NAME = 'sourdaw-model-downloads';
 const MAX_RETRIES = 3;
-
 
 type ModelDownloadSpec = {
     modelId: string;
@@ -64,7 +66,9 @@ export const downloadModel = inject({ logger })(
 
             for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
                 try {
-                    logger.info(`[ModelDownload] Downloading ${modelId} (attempt ${String(attempt + 1)}/${String(MAX_RETRIES)})`);
+                    logger.info(
+                        `[ModelDownload] Downloading ${modelId} (attempt ${String(attempt + 1)}/${String(MAX_RETRIES)})`
+                    );
 
                     const response = await fetch(url);
                     if (!response.ok) {
@@ -118,19 +122,30 @@ export const downloadModel = inject({ logger })(
                             .map((b) => b.toString(16).padStart(2, '0'))
                             .join('');
                         if (hashHex !== sha256) {
-                            throw new Error(`Integrity check failed for ${modelId}: expected ${sha256}, got ${hashHex}`);
+                            throw new Error(
+                                `Integrity check failed for ${modelId}: expected ${sha256}, got ${hashHex}`
+                            );
                         }
                     }
 
                     // Extract ONNX from ZIP/oudep container if needed.
                     // Uses async unzip (fflate) to avoid blocking the main thread.
-                    let onnxData: ArrayBuffer = fullData.buffer as ArrayBuffer;
+                    let onnxData: ArrayBuffer = fullData.buffer;
                     if (url.endsWith('.oudep') || url.endsWith('.zip')) {
-                        broadcast({ modelId, bytesDownloaded, totalBytes: sizeBytes, progress: 0.97, stage: 'extracting' });
+                        broadcast({
+                            modelId,
+                            bytesDownloaded,
+                            totalBytes: sizeBytes,
+                            progress: 0.97,
+                            stage: 'extracting',
+                        });
                         const files = await new Promise<Record<string, Uint8Array>>((resolve, reject) => {
                             unzip(fullData, (err, result) => {
-                                if (err) reject(err);
-                                else resolve(result);
+                                if (err) {
+                                    reject(err);
+                                } else {
+                                    resolve(result);
+                                }
                             });
                         });
                         const onnxEntry = Object.keys(files).find((name) => name.endsWith('.onnx'));
@@ -140,7 +155,7 @@ export const downloadModel = inject({ logger })(
                         }
                         // .slice() copies just the ONNX bytes — fflate returns views into a
                         // shared backing buffer, so .buffer alone would include adjacent ZIP entries.
-                        onnxData = onnxBytes.slice(0).buffer as ArrayBuffer;
+                        onnxData = onnxBytes.slice(0).buffer;
                         logger.info(`[ModelDownload] Extracted ${onnxEntry} from ZIP for ${modelId}`);
                     }
 
@@ -156,14 +171,22 @@ export const downloadModel = inject({ logger })(
                     }
 
                     updateModelStatus(modelId, { status: 'ready', downloadProgress: 1 });
-                    broadcast({ modelId, bytesDownloaded: sizeBytes, totalBytes: sizeBytes, progress: 1, stage: 'complete' });
+                    broadcast({
+                        modelId,
+                        bytesDownloaded: sizeBytes,
+                        totalBytes: sizeBytes,
+                        progress: 1,
+                        stage: 'complete',
+                    });
                     logger.info(`[ModelDownload] Completed: ${modelId}`);
                     return;
                 } catch (error) {
                     lastError = error;
-                    logger.warn(`[ModelDownload] Attempt ${String(attempt + 1)} failed for ${modelId}: ${String(error)}`);
+                    logger.warn(
+                        `[ModelDownload] Attempt ${String(attempt + 1)} failed for ${modelId}: ${String(error)}`
+                    );
                     if (attempt < MAX_RETRIES - 1) {
-                        await new Promise<void>((resolve) => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+                        await new Promise<void>((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
                     }
                 }
             }
@@ -177,6 +200,8 @@ export const downloadModel = inject({ logger })(
                 stage: 'error',
                 error: String(lastError),
             });
-            throw new Error(`Failed to download ${modelId} after ${String(MAX_RETRIES)} attempts: ${String(lastError)}`);
+            throw new Error(
+                `Failed to download ${modelId} after ${String(MAX_RETRIES)} attempts: ${String(lastError)}`
+            );
         }
 );

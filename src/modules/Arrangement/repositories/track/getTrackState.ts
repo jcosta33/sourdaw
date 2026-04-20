@@ -1,5 +1,5 @@
-import { trackStore } from '../../stores/trackStore';
 import { type Track } from '../../models/Track';
+import { trackStore } from '../../stores/trackStore';
 
 export type TrackState = {
     tracks: Track[];

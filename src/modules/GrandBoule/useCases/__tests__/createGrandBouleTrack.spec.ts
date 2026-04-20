@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { createGrandBouleTrack } from '../createGrandBouleTrack';
+import { type Track } from '#/modules/Arrangement/models/Track';
 import { createTrack } from '#/modules/Arrangement/useCases/createTrack';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
 import { setTrackStoreState } from '#/modules/Arrangement/useCases/setTrackStoreState';
 import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip';
-import { type Track } from '#/modules/Arrangement/models/Track';
+
+import { createGrandBouleTrack } from '../createGrandBouleTrack';
 
 vi.mock('#/modules/Arrangement/useCases/createTrack', () => ({
     createTrack: vi.fn(),
@@ -63,7 +65,11 @@ describe('createGrandBouleTrack', () => {
 
         expect(id).toBe('track-gb');
         expect(setTrackStoreState).toHaveBeenCalled();
-        expect(addDeviceToStrip).toHaveBeenCalledWith('track-gb', expect.stringMatching(/^grand-boule-/), 'grand-boule');
+        expect(addDeviceToStrip).toHaveBeenCalledWith(
+            'track-gb',
+            expect.stringMatching(/^grand-boule-/),
+            'grand-boule'
+        );
         expect(eventBus.emit).toHaveBeenCalledWith(
             'track.added',
             expect.objectContaining({ trackId: 'track-gb', name: 'Grand Boule', kind: 'midi' })

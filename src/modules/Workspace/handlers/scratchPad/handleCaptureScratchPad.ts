@@ -1,5 +1,6 @@
-import { createHandler } from '#/utils/createHandler';
 import { captureArrangementToScratchPad } from '#/modules/Arrangement/useCases';
+import { createHandler } from '#/utils/createHandler';
+
 import { workspaceStore } from '../../stores/workspaceStore';
 
 export const handleCaptureScratchPad = createHandler<'captureScratchPad'>({

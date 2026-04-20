@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { zoomToFit } from '../zoomToFit';
 import { zoomToSelection } from '../zoomToSelection';
 
@@ -17,7 +18,11 @@ vi.mock('../../../../repositories/workspace', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: { get value() { return mocks.trackStoreValue.value; } },
+    trackStore: {
+        get value() {
+            return mocks.trackStoreValue.value;
+        },
+    },
 }));
 
 describe('Zoom Operations', () => {
@@ -44,9 +49,14 @@ describe('Zoom Operations', () => {
             mocks.getWorkspaceState.mockReturnValue({ selectedClipIds: ['c1', 'c3'], selectedClipId: null });
             mocks.trackStoreValue.value = {
                 tracks: [
-                    { clips: [{ id: 'c1', startBeat: 4, endBeat: 8 }, { id: 'c2', startBeat: 10, endBeat: 12 }] },
-                    { clips: [{ id: 'c3', startBeat: 2, endBeat: 6 }] }
-                ]
+                    {
+                        clips: [
+                            { id: 'c1', startBeat: 4, endBeat: 8 },
+                            { id: 'c2', startBeat: 10, endBeat: 12 },
+                        ],
+                    },
+                    { clips: [{ id: 'c3', startBeat: 2, endBeat: 6 }] },
+                ],
             } as any;
 
             zoomToSelection();
@@ -61,7 +71,7 @@ describe('Zoom Operations', () => {
         it('uses single selectedClipId if selectedClipIds is empty', () => {
             mocks.getWorkspaceState.mockReturnValue({ selectedClipIds: [], selectedClipId: 'c1' });
             mocks.trackStoreValue.value = {
-                tracks: [{ clips: [{ id: 'c1', startBeat: 10, endBeat: 20 }] }]
+                tracks: [{ clips: [{ id: 'c1', startBeat: 10, endBeat: 20 }] }],
             } as any;
 
             zoomToSelection();

@@ -1,21 +1,24 @@
 import { type ReactElement, useRef } from 'react';
+
+import { History, Users } from 'lucide-react';
+
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { DawMeterBar } from '#/components/daw/DawMeterBar';
 import { DawMetricCluster } from '#/components/daw/DawMetricCluster';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawStatusDot, getDawStatusDotClassName } from '#/components/daw/DawStatusDot';
-import { useUndoState } from '../hooks/useUndoState';
-import { useCollaborationState } from '../hooks/useCollaborationState';
-import { useStatusBarMetrics } from '../hooks/useStatusBarMetrics';
-import { useSelectionLabel } from '../hooks/useSelectionLabel';
-import { toggleCollaborationPanel } from '../../useCases/togglePanel/panelToggles/toggleCollaborationPanel';
-import { toggleUndoHistory } from '../../useCases/togglePanel/panelToggles/toggleUndoHistory';
+import { Button } from '#/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { llmStatusStore } from '#/modules/AiRuntime/stores';
 import { renderQueueStore } from '#/modules/BrowserAi/stores';
-import { History, Users } from 'lucide-react';
-import { Button } from '#/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+
+import { toggleCollaborationPanel } from '../../useCases/togglePanel/panelToggles/toggleCollaborationPanel';
+import { toggleUndoHistory } from '../../useCases/togglePanel/panelToggles/toggleUndoHistory';
+import { useCollaborationState } from '../hooks/useCollaborationState';
+import { useSelectionLabel } from '../hooks/useSelectionLabel';
+import { useStatusBarMetrics } from '../hooks/useStatusBarMetrics';
+import { useUndoState } from '../hooks/useUndoState';
 
 type StatusBarLlmState =
     | { state: 'idle' }

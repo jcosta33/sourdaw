@@ -1,4 +1,5 @@
 import { type DocumentBundle } from '../../models/CrdtDocumentTypes';
+
 import { STORE_NAME, openDatabase } from './helpers';
 
 /** Save all documents to IndexedDB. */

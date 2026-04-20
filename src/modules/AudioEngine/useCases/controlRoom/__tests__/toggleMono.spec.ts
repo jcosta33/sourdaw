@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { toggleMono } from '../toggleMono';
 
 const mocks = vi.hoisted(() => ({

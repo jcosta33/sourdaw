@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { ProofLimiterSection } from '../ProofLimiterSection';
+import { describe, it, expect, vi } from 'vitest';
+
 import { DEFAULT_PATCH } from '../../../models/ProofPatch';
+import { ProofLimiterSection } from '../ProofLimiterSection';
 
 describe('ProofLimiterSection', () => {
     it('should render', () => {

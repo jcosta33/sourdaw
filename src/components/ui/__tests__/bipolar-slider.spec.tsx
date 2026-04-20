@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+
 import { BipolarSlider } from '../bipolar-slider';
 
 describe('BipolarSlider', () => {
@@ -21,9 +22,7 @@ describe('BipolarSlider', () => {
 
     it('should reset value on meta+pointer down on track wrapper', () => {
         const onValueChange = vi.fn();
-        render(
-            <BipolarSlider value={0.5} onValueChange={onValueChange} min={-1} max={1} defaultValue={0} />
-        );
+        render(<BipolarSlider value={0.5} onValueChange={onValueChange} min={-1} max={1} defaultValue={0} />);
         const wrapper = screen.getByRole('slider', { name: 'Bipolar value' }).parentElement?.parentElement;
         expect(wrapper).not.toBeNull();
         fireEvent.pointerDown(wrapper as HTMLElement, { pointerId: 1, metaKey: true });
@@ -32,9 +31,7 @@ describe('BipolarSlider', () => {
 
     it('should reset value on ctrl+pointer down on track wrapper', () => {
         const onValueChange = vi.fn();
-        render(
-            <BipolarSlider value={0.5} onValueChange={onValueChange} min={-1} max={1} defaultValue={0} />
-        );
+        render(<BipolarSlider value={0.5} onValueChange={onValueChange} min={-1} max={1} defaultValue={0} />);
         const wrapper = screen.getByRole('slider', { name: 'Bipolar value' }).parentElement?.parentElement;
         expect(wrapper).not.toBeNull();
         fireEvent.pointerDown(wrapper as HTMLElement, { pointerId: 1, ctrlKey: true });

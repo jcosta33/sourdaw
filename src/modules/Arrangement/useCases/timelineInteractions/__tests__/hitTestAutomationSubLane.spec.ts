@@ -1,35 +1,47 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import { type TimelineRenderModel } from '../../../models/TimelineRenderModel';
 import { hitTestAutomationSubLane } from '../hitTestAutomationSubLane';
 
-const { 
-    mockTimelineViewValue, 
-    mockTrackValue, 
-    mockWorkspaceValue, 
-    mockAutomationValue, 
-    mockBuildTimelineRenderModel 
-} = vi.hoisted(() => ({
-    mockTimelineViewValue: { value: null } as any,
-    mockTrackValue: { value: null } as any,
-    mockWorkspaceValue: { value: null } as any,
-    mockAutomationValue: { value: null } as any,
-    mockBuildTimelineRenderModel: vi.fn(),
-}));
+const { mockTimelineViewValue, mockTrackValue, mockWorkspaceValue, mockAutomationValue, mockBuildTimelineRenderModel } =
+    vi.hoisted(() => ({
+        mockTimelineViewValue: { value: null } as any,
+        mockTrackValue: { value: null } as any,
+        mockWorkspaceValue: { value: null } as any,
+        mockAutomationValue: { value: null } as any,
+        mockBuildTimelineRenderModel: vi.fn(),
+    }));
 
 vi.mock('../../../stores/timelineViewStore', () => ({
-    timelineViewStore: { get value() { return mockTimelineViewValue.value; } }
+    timelineViewStore: {
+        get value() {
+            return mockTimelineViewValue.value;
+        },
+    },
 }));
 
 vi.mock('../../../stores/trackStore', () => ({
-    trackStore: { get value() { return mockTrackValue.value; } }
+    trackStore: {
+        get value() {
+            return mockTrackValue.value;
+        },
+    },
 }));
 
 vi.mock('#/modules/Workspace/stores', async (importOriginal) => {
     const actual = await importOriginal<any>();
     return {
         ...actual,
-        workspaceStore: { get value() { return mockWorkspaceValue.value; } },
-        preferencesStore: { get value() { return actual.preferencesStore?.value ?? {}; } }
+        workspaceStore: {
+            get value() {
+                return mockWorkspaceValue.value;
+            },
+        },
+        preferencesStore: {
+            get value() {
+                return actual.preferencesStore?.value ?? {};
+            },
+        },
     };
 });
 
@@ -37,12 +49,16 @@ vi.mock('#/modules/Automation/stores', async (importOriginal) => {
     const actual = await importOriginal<any>();
     return {
         ...actual,
-        automationStore: { get value() { return mockAutomationValue.value; } }
+        automationStore: {
+            get value() {
+                return mockAutomationValue.value;
+            },
+        },
     };
 });
 
 vi.mock('../../buildTimelineRenderModel', () => ({
-    buildTimelineRenderModel: () => mockBuildTimelineRenderModel()
+    buildTimelineRenderModel: () => mockBuildTimelineRenderModel(),
 }));
 
 describe('hitTestAutomationSubLane', () => {
@@ -133,4 +149,3 @@ describe('hitTestAutomationSubLane', () => {
         expect(hitTestAutomationSubLane(0, 0)).toBeNull();
     });
 });
-

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { getToasterPresets, DEFAULT_PAD_NAMES, TOASTER_PRESETS } from '../toasterQueries';
 
 describe('toasterQueries', () => {

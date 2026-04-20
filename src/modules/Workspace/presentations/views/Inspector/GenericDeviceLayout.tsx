@@ -10,13 +10,17 @@
  * custom layouts, reducing scrolling for effects with many parameters.
  */
 import { type ReactElement, useState } from 'react';
+
 import { ChevronDown } from 'lucide-react';
-import { Stack, Row, Grid } from '#/components/layout';
+
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
+import { Stack, Row, Grid } from '#/components/layout';
+
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
+
 import { type DeviceLayoutProps } from './deviceLayoutRegistry';
-import { SectionHeader } from './SectionHeader';
 import { DeviceParameterControl } from './DeviceParameterControl';
+import { SectionHeader } from './SectionHeader';
 
 type DeviceParam = DeviceLayoutProps['parameters'][number];
 

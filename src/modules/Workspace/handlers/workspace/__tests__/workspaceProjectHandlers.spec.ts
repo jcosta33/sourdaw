@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleNewProject } from '../handleNewProject';
-import { handleSaveProject } from '../handleSaveProject';
-import { handleImportAudioFile } from '../handleImportAudioFile';
-import { handleImportMidiFile } from '../handleImportMidiFile';
+
+import { importAudioFile, importMidiFile, exportMidiClip } from '#/modules/Arrangement/useCases';
+import { newProject, saveProject, exportProjectFile, pickFiles } from '#/modules/Project/useCases';
+
 import { handleExportMidi } from '../handleExportMidi';
 import { handleExportProject } from '../handleExportProject';
-
-import { newProject, saveProject, exportProjectFile, pickFiles } from '#/modules/Project/useCases';
-import { importAudioFile, importMidiFile, exportMidiClip } from '#/modules/Arrangement/useCases';
+import { handleImportAudioFile } from '../handleImportAudioFile';
+import { handleImportMidiFile } from '../handleImportMidiFile';
+import { handleNewProject } from '../handleNewProject';
+import { handleSaveProject } from '../handleSaveProject';
 
 vi.mock('#/modules/Project/useCases', () => ({
     newProject: vi.fn(),
@@ -43,7 +44,9 @@ describe('Workspace Project Handlers', () => {
 
     it('handleImportAudioFile should pick files and import', async () => {
         await handleImportAudioFile.execute({ type: 'importAudioFile', payload: {} });
-        expect(pickFiles).toHaveBeenCalledWith({ filters: [{ name: 'Audio', extensions: ['wav', 'mp3', 'ogg', 'flac', 'aiff', 'aac'] }] });
+        expect(pickFiles).toHaveBeenCalledWith({
+            filters: [{ name: 'Audio', extensions: ['wav', 'mp3', 'ogg', 'flac', 'aiff', 'aac'] }],
+        });
         expect(importAudioFile).toHaveBeenCalledWith('/mock/path.wav');
     });
 

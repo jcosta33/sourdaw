@@ -1,27 +1,29 @@
+import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
+
 import { createTrack as createTrackModel } from '../models/Track';
-import { type Track, type TrackKind } from '../stores/trackStore';
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
-import { eventBus } from '#/app/registerDependencies';
+import { type Track, type TrackKind } from '../stores/trackStore';
 
 type AddTrackInput = { id?: string; name: string; kind: TrackKind };
 
-export const addTrack = inject({ eventBus })(({ eventBus }) =>
-    function addTrack(input: AddTrackInput): Track | null {
-        const state = getTrackState();
-        if (!state) {
-            return null;
+export const addTrack = inject({ eventBus })(
+    ({ eventBus }) =>
+        function addTrack(input: AddTrackInput): Track | null {
+            const state = getTrackState();
+            if (!state) {
+                return null;
+            }
+
+            const track = createTrackModel(input);
+            setTrackState({
+                ...state,
+                tracks: [...state.tracks, track],
+                selectedTrackId: track.id,
+            });
+
+            eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
+            return track;
         }
-
-        const track = createTrackModel(input) as Track;
-        setTrackState({
-            ...state,
-            tracks: [...state.tracks, track],
-            selectedTrackId: track.id,
-        });
-
-        eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
-        return track;
-    }
 );

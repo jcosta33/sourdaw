@@ -5,10 +5,10 @@ vi.mock('@tauri-apps/api/core', () => ({
     invoke: mockInvoke,
 }));
 
-import { invokeLink, isTauri } from '../helpers';
-import { getLinkStatus } from '../getLinkStatus';
-import { enableLink } from '../enableLink';
 import { disableLink } from '../disableLink';
+import { enableLink } from '../enableLink';
+import { getLinkStatus } from '../getLinkStatus';
+import { invokeLink, isTauri } from '../helpers';
 
 describe('linkBridge repository', () => {
     const originalWindow = global.window;
@@ -41,7 +41,7 @@ describe('linkBridge repository', () => {
             global.window = { __TAURI__: {} } as any;
             const mockStatus = { enabled: true, tempo: 120 };
             mockInvoke.mockResolvedValue(mockStatus);
-            
+
             const status = await getLinkStatus();
             expect(status).toEqual(mockStatus);
         });
@@ -50,10 +50,10 @@ describe('linkBridge repository', () => {
     describe('enableLink / disableLink', () => {
         it('should call tauri commands', async () => {
             global.window = { __TAURI__: {} } as any;
-            
+
             await enableLink();
             expect(mockInvoke).toHaveBeenCalledWith('enable_link', undefined);
-            
+
             await disableLink();
             expect(mockInvoke).toHaveBeenCalledWith('disable_link', undefined);
         });

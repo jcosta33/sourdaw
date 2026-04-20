@@ -1,4 +1,5 @@
 import { updateClip } from '../../repositories/track/updateClip';
+
 import { clampRatio } from './helpers';
 
 export function setClipStretchRatio(clipId: string, ratio: number): void {

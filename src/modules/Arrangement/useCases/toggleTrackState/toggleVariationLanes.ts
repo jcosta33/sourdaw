@@ -5,14 +5,14 @@ import { trackStore } from '../../stores/trackStore';
  */
 export function toggleVariationLanes(trackId: string, force?: boolean): void {
     const state = trackStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     trackStore.set({
         ...state,
         tracks: state.tracks.map((t) =>
-            t.id === trackId
-                ? { ...t, showVariationLanes: force !== undefined ? force : !t.showVariationLanes }
-                : t
+            t.id === trackId ? { ...t, showVariationLanes: force !== undefined ? force : !t.showVariationLanes } : t
         ),
     });
 }

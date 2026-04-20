@@ -3,6 +3,7 @@
  * X-Y oscilloscope showing L+R vs L-R with phosphor glow decay.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
 import { getMasterAnalyser } from '#/modules/AudioEngine/useCases';
 import { resolveToken } from '#/utils/UI/resolveToken';

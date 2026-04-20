@@ -37,14 +37,14 @@ describe('isTauri repository', () => {
 
         it('should call tauri invoke if in Tauri environment', async () => {
             global.window = { __TAURI__: {} } as any;
-            
+
             // Mock the dynamic import of @tauri-apps/api/core
             vi.mock('@tauri-apps/api/core', () => ({
                 invoke: vi.fn().mockResolvedValue('ok'),
             }));
 
             const result = await invokeAI('test_cmd', { arg: 1 });
-            
+
             const { invoke } = await import('@tauri-apps/api/core');
             expect(invoke).toHaveBeenCalledWith('test_cmd', { arg: 1 });
             expect(result).toBe('ok');

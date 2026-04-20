@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+
 import { toggleInspector } from '../../useCases/togglePanel/panelToggles/toggleInspector';
 
 export const handleToggleInspector = createHandler<'toggleInspector'>({

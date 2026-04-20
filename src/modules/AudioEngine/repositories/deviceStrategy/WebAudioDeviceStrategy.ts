@@ -1,6 +1,7 @@
-import { type AudioDeviceStrategy } from './AudioDeviceStrategy';
 import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode, DEVICE_FACTORIES, applyParams } from '../deviceNodeFactory';
+
+import { type AudioDeviceStrategy } from './AudioDeviceStrategy';
 
 export class WebAudioDeviceStrategy implements AudioDeviceStrategy {
     constructor(

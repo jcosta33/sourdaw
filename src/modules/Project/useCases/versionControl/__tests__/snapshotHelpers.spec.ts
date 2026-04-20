@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { restoreSnapshot } from '../snapshotHelpers/restoreSnapshot';
-import { trackStore } from '#/modules/Arrangement/stores/trackStore';
+
 import { markerStore } from '#/modules/Arrangement/stores/markerStore';
+import { trackStore } from '#/modules/Arrangement/stores/trackStore';
 import { automationStore } from '#/modules/Automation/stores/automationStore';
 import { midiStore } from '#/modules/MIDI/stores/midiStore';
 import { transportStore } from '#/modules/Transport/stores/transportStore';
+
+import { restoreSnapshot } from '../snapshotHelpers/restoreSnapshot';
 
 vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
     trackStore: { set: vi.fn(), value: null },
@@ -28,7 +30,7 @@ const { mockLogger } = vi.hoisted(() => ({
         info: vi.fn(),
         warn: vi.fn(),
         debug: vi.fn(),
-    }
+    },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({

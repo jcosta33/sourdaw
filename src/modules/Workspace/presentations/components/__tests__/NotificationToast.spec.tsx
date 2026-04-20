@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+
 import { NotificationToast } from '../NotificationToast';
 
 const notifyHandlerRef: {
@@ -8,7 +9,10 @@ const notifyHandlerRef: {
 
 vi.mock('#/app/registerDependencies', () => ({
     eventBus: {
-        on: (event: string, handler: (payload: { message: string; level: 'warning' | 'error' | 'info' | 'success' }) => void) => {
+        on: (
+            event: string,
+            handler: (payload: { message: string; level: 'warning' | 'error' | 'info' | 'success' }) => void
+        ) => {
             if (event === 'ui.notify') {
                 notifyHandlerRef.current = handler;
             }

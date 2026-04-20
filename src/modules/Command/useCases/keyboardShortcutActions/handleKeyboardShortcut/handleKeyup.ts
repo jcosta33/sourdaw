@@ -1,5 +1,5 @@
-import { inject } from '#/infra/di/inject';
 import { eventBus } from '#/app/registerDependencies';
+import { inject } from '#/infra/di/inject';
 import { toolSwapStore } from '#/modules/Workspace/stores';
 import { setEditingTool } from '#/modules/Workspace/useCases';
 
@@ -8,7 +8,7 @@ import { setEditingTool } from '#/modules/Workspace/useCases';
  */
 export const handleKeyup = inject({ eventBus })(
     ({ eventBus }) =>
-        (function handleKeyup(key: string): void {
+        function handleKeyup(key: string): void {
             if (key === 'v') {
                 eventBus.emit('voice.toggle', { active: false });
             }
@@ -22,5 +22,5 @@ export const handleKeyup = inject({ eventBus })(
                 }
                 toolSwapStore.set({ lastDownTime: null, lastDownKey: null, previousTool: null });
             }
-        })
+        }
 );

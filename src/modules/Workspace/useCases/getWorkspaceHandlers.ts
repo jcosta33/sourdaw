@@ -1,4 +1,5 @@
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
+
 import { handleAddAutomationLane } from '../handlers/workspace/handleAddAutomationLane';
 import { handleAddAutomationPoint } from '../handlers/workspace/handleAddAutomationPoint';
 import { handleAddMarker } from '../handlers/workspace/handleAddMarker';
@@ -24,8 +25,8 @@ import { handleScaleAllVelocities } from '../handlers/workspace/handleScaleAllVe
 import { handleScaleVelocities } from '../handlers/workspace/handleScaleVelocities';
 import { handleSetAllVelocities } from '../handlers/workspace/handleSetAllVelocities';
 import { handleSetEditingTool } from '../handlers/workspace/handleSetEditingTool';
-import { handleSetMarqueeSelection } from '../handlers/workspace/handleSetMarqueeSelection';
 import { handleSetMarkerColor } from '../handlers/workspace/handleSetMarkerColor';
+import { handleSetMarqueeSelection } from '../handlers/workspace/handleSetMarqueeSelection';
 import { handleSetSnapValue } from '../handlers/workspace/handleSetSnapValue';
 import { handleSetWorkspaceMode } from '../handlers/workspace/handleSetWorkspaceMode';
 import { handleToggleChatPanel } from '../handlers/workspace/handleToggleChatPanel';

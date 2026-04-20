@@ -4,8 +4,9 @@ vi.mock('#/modules/Plugin/useCases', () => ({
     registerFaustDSP: vi.fn(),
 }));
 
-import { registerProSynthInstruments } from '../proSynthInstruments';
 import { registerFaustDSP } from '#/modules/Plugin/useCases';
+
+import { registerProSynthInstruments } from '../proSynthInstruments';
 
 describe('registerProSynthInstruments', () => {
     beforeEach(() => {

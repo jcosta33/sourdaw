@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { stopRecording } from '../stopRecording';
 
 const mocks = vi.hoisted(() => ({
@@ -25,9 +26,11 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/Arrangement/stores/takeLaneStore', () => ({
     takeLaneStore: {
-        get value() { return mocks.takeLaneStoreValue.value; },
+        get value() {
+            return mocks.takeLaneStoreValue.value;
+        },
         set: mocks.takeLaneStoreSet,
-    }
+    },
 }));
 
 vi.mock('../../../stores/activeRecordingRef', () => ({
@@ -43,11 +46,11 @@ describe('stopRecording', () => {
     it('updates clip endBeat and clears active recording ref', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [
-                { 
-                    id: 't1', 
-                    clips: [{ id: 'c1', type: 'audio', startBeat: 4, endBeat: 4 }] 
-                }
-            ]
+                {
+                    id: 't1',
+                    clips: [{ id: 'c1', type: 'audio', startBeat: 4, endBeat: 4 }],
+                },
+            ],
         });
         mocks.getTransportState.mockReturnValue({ playheadPosition: 8 });
         mocks.takeLaneStoreValue.value = null;
@@ -62,7 +65,7 @@ describe('stopRecording', () => {
 
     it('enforces minimum 1 beat for MIDI clips', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ clips: [{ id: 'c1', type: 'midi', startBeat: 4, endBeat: 4 }] }]
+            tracks: [{ clips: [{ id: 'c1', type: 'midi', startBeat: 4, endBeat: 4 }] }],
         });
         mocks.getTransportState.mockReturnValue({ playheadPosition: 4.1 });
 
@@ -76,9 +79,7 @@ describe('stopRecording', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [{ clips: [] }] });
         mocks.getTransportState.mockReturnValue({ playheadPosition: 10 });
         mocks.takeLaneStoreValue.value = {
-            lanes: [
-                { id: 'l1', takes: [{ clipId: 'c1', startBeat: 0, endBeat: 0 }] }
-            ]
+            lanes: [{ id: 'l1', takes: [{ clipId: 'c1', startBeat: 0, endBeat: 0 }] }],
         };
 
         stopRecording();

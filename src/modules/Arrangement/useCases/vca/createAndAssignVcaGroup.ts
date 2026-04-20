@@ -1,5 +1,5 @@
-import { createVCAGroup } from '../vcaFader/createVCAGroup';
 import { assignTrackToVCA } from '../vcaFader/assignTrackToVCA';
+import { createVCAGroup } from '../vcaFader/createVCAGroup';
 import { getAllVCAGroups } from '../vcaFader/getAllVCAGroups';
 
 /**

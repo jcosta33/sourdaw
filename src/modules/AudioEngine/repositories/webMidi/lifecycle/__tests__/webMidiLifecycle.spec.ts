@@ -5,11 +5,12 @@ vi.stubGlobal('navigator', {
     requestMIDIAccess: vi.fn(),
 });
 
-import { initWebMidi } from '../initWebMidi';
-import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+
 import * as state from '../../state';
 import * as helpers from '../helpers';
+import { initWebMidi } from '../initWebMidi';
 
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(),
@@ -98,7 +99,7 @@ describe('initWebMidi', () => {
     it('should subscribe to trackStore once', async () => {
         await initWebMidi();
         await initWebMidi();
-        
+
         expect(trackStore.subscribe).toHaveBeenCalledTimes(1);
     });
 });

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { initEngine } from '../initEngine';
+
 import { llmStatusStore } from '../../../../stores/llmStatusStore';
+import { initEngine } from '../initEngine';
 
 const mocks = vi.hoisted(() => ({
     resolveBackend: vi.fn(),

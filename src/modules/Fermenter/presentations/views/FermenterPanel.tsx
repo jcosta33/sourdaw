@@ -1,10 +1,14 @@
 import { type ReactElement, useState } from 'react';
-import { useStoreSelector } from '#/infra/store/useStoreSelector';
+
 import { Cpu, RotateCcw, Save, Shuffle } from 'lucide-react';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
-import { Slider } from '#/components/ui/slider';
 import { Button } from '#/components/ui/button';
+import { Slider } from '#/components/ui/slider';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
+
+import { DEFAULT_PATCH, type FermenterPatch, ENGINE_NAMES } from '../../models/FermenterPatch';
 import {
     fermenterStore,
     getFermenterState,
@@ -12,33 +16,33 @@ import {
     setFermenterUiLevel,
     type FermenterState,
 } from '../../stores/fermenterStore';
-import { DEFAULT_PATCH, type FermenterPatch, ENGINE_NAMES } from '../../models/FermenterPatch';
 import { loadFermenterPatchWithAudio } from '../../useCases/fermenterParamBridge/loadFermenterPatchWithAudio';
 import { setFermenterParamWithAudio } from '../../useCases/fermenterParamBridge/setFermenterParamWithAudio';
 import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries/helpers';
+import { AdditiveSection } from '../components/AdditiveSection';
+import { CrumbsSection } from '../components/CrumbsSection';
+import { EffectsSection } from '../components/EffectsSection';
+import { EnvelopeSection } from '../components/EnvelopeSection';
+import { FilterSection } from '../components/FilterSection';
+import { FmSection } from '../components/FmSection';
+import { GranularSection } from '../components/GranularSection';
+import { KarplusSection } from '../components/KarplusSection';
+import { LayerStack } from '../components/LayerStack';
+import { LfoSection } from '../components/LfoSection';
 import { MacroStrip } from '../components/MacroStrip';
-import { XYPad } from '../components/XYPad';
+import { ModulationSection } from '../components/ModulationSection';
+import { OscillatorSection } from '../components/OscillatorSection';
 import { Oscilloscope } from '../components/Oscilloscope';
 import { OutputMeter } from '../components/OutputMeter';
 import { PresetBrowser } from '../components/PresetBrowser';
 import { SectionNav, type FermenterSection } from '../components/SectionNav';
-import { OscillatorSection } from '../components/OscillatorSection';
-import { FilterSection } from '../components/FilterSection';
-import { EnvelopeSection } from '../components/EnvelopeSection';
-import { UnisonSection } from '../components/UnisonSection';
-import { FmSection } from '../components/FmSection';
-import { KarplusSection } from '../components/KarplusSection';
-import { GranularSection } from '../components/GranularSection';
-import { AdditiveSection } from '../components/AdditiveSection';
-import { CrumbsSection } from '../components/CrumbsSection';
-import { LfoSection } from '../components/LfoSection';
-import { WarpSection } from '../components/WarpSection';
-import { ModulationSection } from '../components/ModulationSection';
-import { EffectsSection } from '../components/EffectsSection';
-import { LayerStack } from '../components/LayerStack';
 import { SignalFlowView } from '../components/SignalFlowView';
-import { TransformPad } from './TransformPad';
 import { SpectrumAnalyzer } from '../components/SpectrumAnalyzer';
+import { UnisonSection } from '../components/UnisonSection';
+import { WarpSection } from '../components/WarpSection';
+import { XYPad } from '../components/XYPad';
+
+import { TransformPad } from './TransformPad';
 
 const USER_PATCHES_KEY = 'fermenter-user-patches';
 
@@ -457,7 +461,9 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
         fermenterStore,
         (state: Record<string, FermenterState> | null) => {
             const s = state ? state[deviceId] : null;
-            if (!s) return getFermenterState(deviceId);
+            if (!s) {
+                return getFermenterState(deviceId);
+            }
             return {
                 patch: s.patch,
                 activeVoices: s.activeVoices,

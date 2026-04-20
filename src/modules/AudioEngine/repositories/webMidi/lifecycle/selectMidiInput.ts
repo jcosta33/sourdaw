@@ -1,4 +1,5 @@
 import { getMidiAccess, getTauriMode, setState } from '../state';
+
 import { attachInput, selectMidiInputTauri } from './helpers';
 
 export function selectMidiInput(deviceId: string): void {

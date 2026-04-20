@@ -1,10 +1,12 @@
 import { type ReactElement, type MouseEvent, type PointerEvent, useRef, useLayoutEffect } from 'react';
-import { midiStore } from '#/modules/MIDI/stores';
+
+import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { pushUndoEntry } from '#/modules/Command/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
+
 import { colorWithAlpha, brightenColor } from '../../helpers/oklchColor';
-import { useStore } from '#/infra/store/useStore';
 
 type MidiNote = NonNullable<typeof midiStore.value>['notesByClipId'][string][number];
 
@@ -176,7 +178,9 @@ export const NotePropertyLane = ({
         if (e.shiftKey && sortedSelected.length >= 2) {
             const firstNote = sortedSelected[0]!;
             const lastNote = sortedSelected[sortedSelected.length - 1]!;
-            const initialValues = new Map<string, number>(sortedSelected.map((n: MidiNote) => [n.id, getValue(n)] as [string, number]));
+            const initialValues = new Map<string, number>(
+                sortedSelected.map((n: MidiNote) => [n.id, getValue(n)] as [string, number])
+            );
             const startVal = initialValues.get(firstNote.id) ?? getValue(firstNote);
             const beatSpan = lastNote.startBeat - firstNote.startBeat;
 
@@ -299,34 +303,40 @@ export const NotePropertyLane = ({
     };
 
     const handleRampDrag = (side: 'left' | 'right', e: PointerEvent<HTMLDivElement>) => {
-        if (!clipId) return;
+        if (!clipId) {
+            return;
+        }
         const container = containerRef.current;
-        if (!container || sortedSelected.length < 2) return;
-        
+        if (!container || sortedSelected.length < 2) {
+            return;
+        }
+
         e.stopPropagation();
         e.preventDefault();
-        
+
         const firstNote = sortedSelected[0];
         const lastNote = sortedSelected[sortedSelected.length - 1];
-        if (!firstNote || !lastNote) return;
+        if (!firstNote || !lastNote) {
+            return;
+        }
 
         const h = container.getBoundingClientRect().height;
         const startLeftVal = getValue(firstNote);
         const startRightVal = getValue(lastNote);
-        
-        const initialValues = new Map(sortedSelected.map(n => [n.id, getValue(n)]));
-        
+
+        const initialValues = new Map(sortedSelected.map((n) => [n.id, getValue(n)]));
+
         const onMove = (me: globalThis.PointerEvent) => {
             const containerRect = container.getBoundingClientRect();
             const ry = me.clientY - containerRect.top;
             const r = 1 - Math.max(0, Math.min(1, (ry - 2) / (h - 4)));
             const newVal = Math.round(r * 127);
-            
+
             const currentLeft = side === 'left' ? newVal : startLeftVal;
             const currentRight = side === 'right' ? newVal : startRightVal;
-            
+
             const beatSpan = lastNote.startBeat - firstNote.startBeat;
-            
+
             for (const n of sortedSelected) {
                 let interpolated = currentLeft;
                 if (beatSpan > 0) {
@@ -336,16 +346,16 @@ export const NotePropertyLane = ({
                 setValue(clipId, n.id, Math.round(interpolated));
             }
         };
-        
+
         const onUp = () => {
             window.removeEventListener('pointermove', onMove);
             window.removeEventListener('pointerup', onUp);
-            
+
             const stateNotes = midiStore.value?.notesByClipId[clipId] ?? [];
             const changes: { id: string; oldVal: number; newVal: number }[] = [];
-            
+
             for (const [id, oldVal] of initialValues.entries()) {
-                const finalNote = stateNotes.find(n => n.id === id);
+                const finalNote = stateNotes.find((n) => n.id === id);
                 if (finalNote) {
                     const newVal = getValue(finalNote);
                     if (newVal !== oldVal) {
@@ -353,28 +363,38 @@ export const NotePropertyLane = ({
                     }
                 }
             }
-            
+
             if (changes.length > 0) {
                 pushUndoEntry(
                     `${undoLabel} ramp`,
                     () => {
                         if (setValues) {
-                            setValues(clipId, changes.map(c => ({ noteId: c.id, velocity: c.oldVal })));
+                            setValues(
+                                clipId,
+                                changes.map((c) => ({ noteId: c.id, velocity: c.oldVal }))
+                            );
                         } else {
-                            for (const c of changes) setValue(clipId, c.id, c.oldVal);
+                            for (const c of changes) {
+                                setValue(clipId, c.id, c.oldVal);
+                            }
                         }
                     },
                     () => {
                         if (setValues) {
-                            setValues(clipId, changes.map(c => ({ noteId: c.id, velocity: c.newVal })));
+                            setValues(
+                                clipId,
+                                changes.map((c) => ({ noteId: c.id, velocity: c.newVal }))
+                            );
                         } else {
-                            for (const c of changes) setValue(clipId, c.id, c.newVal);
+                            for (const c of changes) {
+                                setValue(clipId, c.id, c.newVal);
+                            }
                         }
                     }
                 );
             }
         };
-        
+
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
     };
@@ -382,9 +402,13 @@ export const NotePropertyLane = ({
     const firstSelected = sortedSelected[0];
     const lastSelected = sortedSelected[sortedSelected.length - 1];
 
-    const leftX = firstSelected ? firstSelected.startBeat * beatWidth + Math.max(3, firstSelected.duration * beatWidth - 2) / 2 : 0;
-    const rightX = lastSelected ? lastSelected.startBeat * beatWidth + Math.max(3, lastSelected.duration * beatWidth - 2) / 2 : 0;
-    
+    const leftX = firstSelected
+        ? firstSelected.startBeat * beatWidth + Math.max(3, firstSelected.duration * beatWidth - 2) / 2
+        : 0;
+    const rightX = lastSelected
+        ? lastSelected.startBeat * beatWidth + Math.max(3, lastSelected.duration * beatWidth - 2) / 2
+        : 0;
+
     const leftVal = firstSelected ? getValue(firstSelected) : 0;
     const rightVal = lastSelected ? getValue(lastSelected) : 0;
 
@@ -393,7 +417,7 @@ export const NotePropertyLane = ({
     return (
         <div ref={containerRef} className="relative h-full w-full" role="group" aria-label={`${label} lane`}>
             <canvas ref={canvasRef} className="cursor-ns-resize" onMouseDown={handleMouseDown} />
-            
+
             {sortedSelected.length > 1 ? (
                 <>
                     <svg className="absolute inset-0 pointer-events-none w-full h-full overflow-visible">

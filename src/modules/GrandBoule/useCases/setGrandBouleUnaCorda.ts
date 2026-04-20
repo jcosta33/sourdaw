@@ -1,4 +1,3 @@
-import { type GrandBouleState } from '../stores/grandBouleStore';
 import { type Store } from '#/infra/store/types';
 /**
  * Update the Grand Boule una-corda pedal (CC67) state.
@@ -9,6 +8,7 @@ import { type Store } from '#/infra/store/types';
  */
 
 import { type GrandBouleEngineHandle } from '../repositories/grandBouleEngineHandle';
+import { type GrandBouleState } from '../stores/grandBouleStore';
 
 type SetGrandBouleUnaCordaInput = {
     engine: GrandBouleEngineHandle;

@@ -1,5 +1,6 @@
-import { automationStore } from '../../stores/automationStore';
 import { rdpSimplify } from '#/modules/Arrangement/useCases';
+
+import { automationStore } from '../../stores/automationStore';
 
 export const thinAutomationPointsDependencies = {
     rdpSimplify,

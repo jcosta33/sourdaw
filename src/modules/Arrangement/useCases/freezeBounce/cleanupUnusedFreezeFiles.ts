@@ -1,5 +1,6 @@
-import { trackStore } from '../../stores/trackStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+
+import { trackStore } from '../../stores/trackStore';
 
 export async function cleanupUnusedFreezeFiles(): Promise<void> {
     const state = trackStore.value;

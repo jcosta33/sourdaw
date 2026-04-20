@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { saveSnapshot } from '../saveSnapshot';
 
 const mocks = vi.hoisted(() => ({

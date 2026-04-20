@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { DeviceParameterControl } from '../DeviceParameterControl';
+
 import type { DeviceParameterView } from '../../../../models/PluginDescriptorViewTypes';
 import type { Device } from '../../../../models/TrackViewTypes';
 
@@ -48,13 +50,7 @@ vi.mock('#/components/daw/DawCompactSelect', () => ({
 }));
 
 vi.mock('#/components/daw/RotaryKnob', () => ({
-    RotaryKnob: ({
-        value,
-        onChange,
-    }: {
-        value: number;
-        onChange: (v: number) => void;
-    }) => (
+    RotaryKnob: ({ value, onChange }: { value: number; onChange: (v: number) => void }) => (
         <button data-testid="rotary-knob" data-value={value} onClick={() => onChange(value + 1)}>
             Knob
         </button>
@@ -62,13 +58,7 @@ vi.mock('#/components/daw/RotaryKnob', () => ({
 }));
 
 vi.mock('#/components/ui/bipolar-slider', () => ({
-    BipolarSlider: ({
-        value,
-        onValueChange,
-    }: {
-        value: number;
-        onValueChange: (v: number) => void;
-    }) => (
+    BipolarSlider: ({ value, onValueChange }: { value: number; onValueChange: (v: number) => void }) => (
         <input
             type="range"
             data-testid="bipolar-slider"

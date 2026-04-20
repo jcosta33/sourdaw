@@ -1,24 +1,26 @@
 import { type ReactElement, useRef } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
-import { notifyUser } from '#/utils/Notification/notifyUser';
-import { addMarker } from '../../useCases/marker/markerOperations/addMarker';
-import { setMarkerColor } from '../../useCases/marker/markerOperations/setMarkerColor';
-import { removeMarker as removeMarkerUseCase } from '../../useCases/marker/markerOperations/removeMarker';
+import { useStore } from '#/infra/store/useStore';
+import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
+import { transportStore } from '#/modules/Transport/stores';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
+import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
+
+import { MARKER_COLOR_PRESETS } from '../../models/colorPalette';
 import { defaultMarkerStoreState, markerStore } from '../../stores/markerStore';
 import { trackStore } from '../../stores/trackStore';
-import { transportStore } from '#/modules/Transport/stores';
-import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
+import { addTrack } from '../../useCases/addTrack';
 import { addClip } from '../../useCases/clip/addClip';
 import { pasteClip } from '../../useCases/clipboard/pasteClip';
-import { addTrack } from '../../useCases/addTrack';
 import { importMidiFile } from '../../useCases/importMidiFile';
-import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
-import { MARKER_COLOR_PRESETS } from '../../models/colorPalette';
+import { addMarker } from '../../useCases/marker/markerOperations/addMarker';
+import { removeMarker as removeMarkerUseCase } from '../../useCases/marker/markerOperations/removeMarker';
+import { setMarkerColor } from '../../useCases/marker/markerOperations/setMarkerColor';
 
 // ── Nearby marker color sub-menu ────────────────────────────────────
 

@@ -1,4 +1,5 @@
 import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
+
 import { handleInvertAutomation } from '../handlers/automation/handleInvertAutomation';
 import { handleQuantizeAutomation } from '../handlers/automation/handleQuantizeAutomation';
 import { handleReverseAutomation } from '../handlers/automation/handleReverseAutomation';

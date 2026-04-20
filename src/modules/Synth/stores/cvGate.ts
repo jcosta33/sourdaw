@@ -6,6 +6,7 @@
 
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+
 const DOC_PREFIX_ROOT = 'root';
 
 export type VoltageStandard = '1v-per-octave' | 'hz-per-volt';

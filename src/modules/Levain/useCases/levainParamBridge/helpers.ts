@@ -1,9 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
+import { type persistDeviceParam, type getAllTracks } from '#/modules/Arrangement/useCases';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
+
 import { type LevainPatch } from '../../models/LevainPatch';
 import { levainStore, setLevainParam, setMacro } from '../../stores/levainStore';
-import { autoLoadLevainSamples } from '../autoLoadSamples';
-import { persistDeviceParam, getAllTracks } from '#/modules/Arrangement/useCases';
+import { type autoLoadLevainSamples } from '../autoLoadSamples';
 
 export type LevainDevice = {
     setParam: (name: string, value: number) => void;
@@ -18,7 +19,7 @@ export type LevainBridgeDeps = {
 };
 
 export function camelToSnake(str: string): string {
-    return str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+    return str.replaceAll(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
 }
 
 export function createLevainBridge(deps: LevainBridgeDeps) {
@@ -55,8 +56,8 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         if (!activePort) {
             return;
         }
-        deps.autoLoadLevainSamples(activePort, instrumentId).catch((err) => {
-            logger.warn('[LevainBridge] Sample load failed:', err);
+        deps.autoLoadLevainSamples(activePort, instrumentId).catch((error) => {
+            logger.warn('[LevainBridge] Sample load failed:', error);
         });
     }
 
@@ -80,11 +81,11 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
                 queueParam('humanize_amount', state.patch.humanize.amount);
                 queueParam('vibrato_depth', state.patch.expression.vibratoDepthMax);
 
-                state.patch.micPositions.forEach((m, i) => {
+                for (const [i, m] of state.patch.micPositions.entries()) {
                     queueParam(`mic_${i}_volume`, m.volume);
                     queueParam(`mic_${i}_pan`, m.pan);
                     queueParam(`mic_${i}_enabled`, m.enabled ? 1 : 0);
-                });
+                }
             }
         }
     }
@@ -115,10 +116,10 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         } else if (typeof value === 'object' && value !== null) {
             for (const [childKey, childVal] of Object.entries(value)) {
                 if (typeof childVal === 'number') {
-                    const rustKey = camelToSnake(key as string) + '_' + camelToSnake(childKey);
+                    const rustKey = `${camelToSnake(key as string)}_${camelToSnake(childKey)}`;
                     queueParam(rustKey, childVal);
                 } else if (typeof childVal === 'boolean') {
-                    const rustKey = camelToSnake(key as string) + '_' + camelToSnake(childKey);
+                    const rustKey = `${camelToSnake(key as string)}_${camelToSnake(childKey)}`;
                     queueParam(rustKey, childVal ? 1.0 : 0.0);
                 }
             }

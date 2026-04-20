@@ -1,4 +1,5 @@
 import { type OfflineDeviceNode } from '../types';
+
 import { makeBitcrusherCurve } from './helpers';
 
 export function createBitcrusher(ctx: BaseAudioContext): OfflineDeviceNode {

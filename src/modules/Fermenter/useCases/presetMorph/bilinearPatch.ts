@@ -16,7 +16,7 @@ export function lerpPatch(a: FermenterPatch, b: FermenterPatch, t: number): Ferm
             (result as Record<string, unknown>)[key] = va + (vb - va) * clamped;
         } else if (Array.isArray(va) && Array.isArray(vb) && va.length === vb.length) {
             // Assume number array (e.g. macros)
-            const arr = new Array(va.length);
+            const arr = Array.from({ length: va.length });
             for (let i = 0; i < va.length; i++) {
                 const aVal = va[i];
                 const bVal = vb[i];

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
 import { initNativeEngine, stopNativeEngine } from '../lifecycle';
 
 const { mockLogger } = vi.hoisted(() => ({
@@ -7,7 +8,7 @@ const { mockLogger } = vi.hoisted(() => ({
         warn: vi.fn(),
         error: vi.fn(),
         debug: vi.fn(),
-    }
+    },
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 

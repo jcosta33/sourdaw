@@ -1,8 +1,9 @@
 import { type KeyboardEvent, type ReactElement, type RefObject } from 'react';
 
+import { Brain, Send, Square, Zap } from 'lucide-react';
+
 import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
-import { Brain, Send, Square, Zap } from 'lucide-react';
 
 type ChatComposerProps = {
     chatMode: 'chat' | 'prompt';

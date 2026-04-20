@@ -1,6 +1,8 @@
 import { searchPresets as searchInternalPresets } from '../../services/fuzzySearch';
-import type { PresetSearchContext, PromptPreset } from './helpers';
+
 import { toPromptPreset } from './helpers';
+
+import type { PresetSearchContext, PromptPreset } from './helpers';
 
 export type FuzzyResult = {
     preset: PromptPreset;

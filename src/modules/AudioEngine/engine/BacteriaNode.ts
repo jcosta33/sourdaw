@@ -6,9 +6,10 @@
  */
 
 import bacteriaProcessorUrl from '../services/bacteriaProcessor.ts?worker&url';
+
+import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, BACTERIA_IDX, BACTERIA_BAND_COUNT, type TelemetrySlot } from './telemetryAllocator';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
-import { requireSharedArrayBuffer } from './pluginHostingErrors';
 
 /** Linear amplitude → dB with a -100 dB floor (matches input/output dB range). */
 function linearToDb(linear: number): number {
@@ -93,7 +94,9 @@ export async function createBacteriaNode(ctx: BaseAudioContext, wasmUrl?: string
                 cancelAnimationFrame(meterRafId);
                 meterRafId = null;
             }
-            if (!slot) {return;}
+            if (!slot) {
+                return;
+            }
             const view = slot.view;
             const poll = () => {
                 const bandLevels = new Array<number>(BACTERIA_BAND_COUNT);

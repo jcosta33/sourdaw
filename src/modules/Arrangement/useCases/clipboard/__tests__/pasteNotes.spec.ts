@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { createMidiNote } from '#/modules/MIDI/useCases';
+
 import { setNoteClipboard } from '../../../stores/clipboardStore';
 import { pasteNotes } from '../pasteNotes';
-import { createMidiNote } from '#/modules/MIDI/useCases';
 
 vi.mock('#/modules/MIDI/useCases', () => ({
     createMidiNote: vi.fn(),

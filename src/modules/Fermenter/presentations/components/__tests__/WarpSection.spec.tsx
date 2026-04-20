@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { WarpSection } from '../WarpSection';
+import { describe, it, expect, vi } from 'vitest';
+
 import { DEFAULT_PATCH } from '../../../models/FermenterPatch';
+import { WarpSection } from '../WarpSection';
 
 describe('WarpSection', () => {
     it('should render', () => {

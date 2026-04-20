@@ -1,5 +1,6 @@
 import { type LibraryRoot } from '../../models/LibraryTypes';
 import { addLibraryRoot } from '../../stores/libraryStore';
+
 import { scanBrowserDirectory, scanTauriDirectory } from './helpers';
 
 async function connectFolderBrowser(): Promise<string | null> {

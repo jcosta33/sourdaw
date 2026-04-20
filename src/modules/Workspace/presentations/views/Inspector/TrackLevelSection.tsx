@@ -1,9 +1,11 @@
 import { type ReactElement } from 'react';
+
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { Slider } from '#/components/ui/slider';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Slider } from '#/components/ui/slider';
 import { MidiLearnButton } from '#/modules/Arrangement/presentations/views';
 import { setTrackGain, setTrackPan } from '#/modules/Arrangement/useCases';
+
 import { type Track } from '../../../models/TrackViewTypes';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { velocityToCv } from '../velocityToCv';
 
 describe('velocityToCv', () => {

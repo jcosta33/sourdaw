@@ -1,10 +1,11 @@
-import { getTrackState } from '../../repositories/track/getTrackState';
+import { midiStore } from '#/modules/MIDI/stores';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 import { getTransportState } from '#/modules/Transport/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
-import { addClip } from '../clip/addClip';
+
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
+import { getTrackState } from '../../repositories/track/getTrackState';
 import { clipboardStore } from '../../stores/clipboardStore';
+import { addClip } from '../clip/addClip';
 
 export function pasteClip(): void {
     const clipClipboard = clipboardStore.value?.clipClipboard ?? [];
@@ -21,7 +22,9 @@ export function pasteClip(): void {
     const playheadBeat = playheadPositionRef.current;
     let minStartBeat = Infinity;
     for (const e of clipClipboard) {
-        if (e.clip.startBeat < minStartBeat) { minStartBeat = e.clip.startBeat; }
+        if (e.clip.startBeat < minStartBeat) {
+            minStartBeat = e.clip.startBeat;
+        }
     }
     const offset = playheadBeat - minStartBeat;
 

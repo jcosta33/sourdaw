@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleClearMidiOutput } from '../handleClearMidiOutput';
 
 const mocks = vi.hoisted(() => ({
@@ -15,7 +16,7 @@ describe('handleClearMidiOutput', () => {
     it('delegates to clearMidiOutput use case', () => {
         handleClearMidiOutput.execute({
             type: 'clearMidiOutput',
-            payload: { trackId: 't1' }
+            payload: { trackId: 't1' },
         });
         expect(mocks.clearMidiOutput).toHaveBeenCalledWith('t1');
     });

@@ -4,6 +4,7 @@
  * Extracted to keep EffectsTab focused on routing/view logic.
  */
 import { type ReactElement } from 'react';
+
 import {
     Waves,
     Plus,
@@ -20,9 +21,11 @@ import {
     AlertCircle,
 } from 'lucide-react';
 import { type LucideIcon } from 'lucide-react';
+
 import { DawChooserCard } from '#/components/daw/DawChooserCard';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { addDevice } from '#/modules/Arrangement/useCases';
+
 import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -55,7 +58,16 @@ export const EFFECT_GROUPS: EffectGroup[] = [
         description: 'Compression, limiting & gating',
         icon: Activity,
         color: 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]',
-        categories: ['compressor', 'sidechain-compressor', 'limiter', 'gate', 'expander', 'de-esser', 'gluten', 'crust'],
+        categories: [
+            'compressor',
+            'sidechain-compressor',
+            'limiter',
+            'gate',
+            'expander',
+            'de-esser',
+            'gluten',
+            'crust',
+        ],
     },
     {
         id: 'time-space',

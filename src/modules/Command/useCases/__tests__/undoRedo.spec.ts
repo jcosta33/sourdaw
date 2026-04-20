@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { undo, redo } from '../undoRedo';
 
 const mocks = vi.hoisted(() => ({
@@ -9,9 +10,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../stores/undoStore', () => ({
     undoStore: {
-        get value() { return mocks.undoStoreValue.value; },
+        get value() {
+            return mocks.undoStoreValue.value;
+        },
         set: mocks.undoStoreSet,
-    }
+    },
 }));
 
 // Mock executeAppAction from the relative path as used in undoRedo.ts,

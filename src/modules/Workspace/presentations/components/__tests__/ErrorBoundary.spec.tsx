@@ -1,6 +1,8 @@
 import { type ReactElement } from 'react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
 import { ErrorBoundary } from '../ErrorBoundary';
 
 let shouldThrow = true;

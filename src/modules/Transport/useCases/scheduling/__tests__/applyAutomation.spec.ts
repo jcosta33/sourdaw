@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { applyVcaGains } from '../applyAutomation/applyVcaGains';
-import { applyAutomation } from '../applyAutomation/applyAutomation';
+
 import { setTrackGain } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
+
+import { applyAutomation } from '../applyAutomation/applyAutomation';
+import { applyVcaGains } from '../applyAutomation/applyVcaGains';
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Arrangement/stores')>();

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { findWasmDescriptor } from '../wasmDeviceRegistry';
 
 const REGISTERED_WASM_DEVICE_TYPES = [

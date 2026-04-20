@@ -1,8 +1,9 @@
 import { type TempoChange } from '#/modules/Transport/useCases/transportQueries/helpers';
+
 import { type AutomationLane, type AutomationPoint } from '../../models/AutomationViewTypes';
-import { type DeviceNodeEntry } from '../../useCases/buildDeviceChain';
 import { beatToSeconds } from '../../services/beatConversion';
 import { resolveDeviceParam, resolveDeviceParamScale } from '../../services/deviceResolution';
+import { type DeviceNodeEntry } from '../../useCases/buildDeviceChain';
 
 function interpolateValue(p1: AutomationPoint, p2: AutomationPoint, beat: number): number {
     if (p2.beat === p1.beat) {
@@ -108,8 +109,7 @@ export const scheduleTrackAutomation = (
             const audioParam = resolveDeviceParam(deviceEntry.deviceType, paramKey, deviceEntry.node);
             if (audioParam) {
                 const scale = resolveDeviceParamScale(deviceEntry.deviceType, paramKey);
-                const points =
-                    scale !== 1 ? lane.points.map((p) => ({ ...p, value: p.value * scale })) : lane.points;
+                const points = scale !== 1 ? lane.points.map((p) => ({ ...p, value: p.value * scale })) : lane.points;
                 scheduleAutomationOnParam(audioParam, points, durationSeconds, defaultTempo, changes);
             }
             continue;
@@ -122,8 +122,7 @@ export const scheduleTrackAutomation = (
             const audioParam = resolveDeviceParam(directEntry.deviceType, lane.parameterId, directEntry.node);
             if (audioParam) {
                 const scale = resolveDeviceParamScale(directEntry.deviceType, lane.parameterId);
-                const points =
-                    scale !== 1 ? lane.points.map((p) => ({ ...p, value: p.value * scale })) : lane.points;
+                const points = scale !== 1 ? lane.points.map((p) => ({ ...p, value: p.value * scale })) : lane.points;
                 scheduleAutomationOnParam(audioParam, points, durationSeconds, defaultTempo, changes);
             }
         }

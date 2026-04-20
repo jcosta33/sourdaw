@@ -1,4 +1,5 @@
 import { createWarpMarker } from '../../models/WarpMarker';
+
 import { getWarpState, warpStates } from './helpers';
 
 export function addWarpMarker(clipId: string, originalBeat: number, warpedBeat: number): void {

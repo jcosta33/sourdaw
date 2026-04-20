@@ -1,5 +1,6 @@
-import { automationStore } from '../../stores/automationStore';
 import { pushUndoEntry } from '#/modules/Command/useCases';
+
+import { automationStore } from '../../stores/automationStore';
 
 export function deleteSelectedPoints(laneId: string, selectedBeats: number[]): void {
     const state = automationStore.value;

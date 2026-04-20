@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { removeClip } from '../removeClip';
 
 const mocks = vi.hoisted(() => ({
@@ -21,10 +22,7 @@ describe('removeClip', () => {
         const updater = mocks.mapAllTracks.mock.calls[0][0];
 
         const mockTrack = {
-            clips: [
-                { id: 'c1' },
-                { id: 'c2' },
-            ]
+            clips: [{ id: 'c1' }, { id: 'c2' }],
         };
 
         const updatedTrack = updater(mockTrack);

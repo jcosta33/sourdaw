@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { updateWorkspaceState } from '../workspaceState';
+
 import { updateWorkspaceState as updateWorkspaceStateRepo } from '../../repositories/workspace';
+import { updateWorkspaceState } from '../workspaceState';
 
 vi.mock('../../repositories/workspace', () => ({
     updateWorkspaceState: vi.fn(),

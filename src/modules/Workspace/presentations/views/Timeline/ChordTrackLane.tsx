@@ -7,10 +7,12 @@
  */
 
 import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
-import { useStore } from '#/infra/store/useStore';
-import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
-import { DawInlineHint } from '#/components/daw/DawInlineHint';
+
 import { Music2, Plus, Power, Trash2 } from 'lucide-react';
+
+import { DawInlineHint } from '#/components/daw/DawInlineHint';
+import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
+import { useStore } from '#/infra/store/useStore';
 import { chordTrackStore } from '#/modules/MIDI/stores';
 import {
     addChordEvent,
@@ -21,8 +23,9 @@ import {
     clearChordTrack,
     formatChordName,
 } from '#/modules/MIDI/useCases';
-const ROOT_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 import { cn } from '#/utils/Styles/cn';
+
+const ROOT_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 
 type ChordTrackLaneProps = {
     pixelsPerBeat: number;

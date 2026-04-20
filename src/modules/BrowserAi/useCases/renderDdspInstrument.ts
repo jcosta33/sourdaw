@@ -13,13 +13,14 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+
+import { type RenderProvenance } from '../models/RenderProgress';
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
 import { readRenderCache, writeRenderCache, computeRenderCacheKey } from '../repositories/storageManager';
-import { enqueueRender, markRenderComplete, updateRenderStatus } from '../stores/renderQueueStore';
-import { startActiveRender, clearActiveRender } from '../stores/inferenceProgressStore';
-import { midiToDdspInput, type MidiNote } from '../services/midiToDdspInput';
 import { resampleTo44100, applyFades, normalizePeak } from '../services/audioResampler';
-import { type RenderProvenance } from '../models/RenderProgress';
+import { midiToDdspInput, type MidiNote } from '../services/midiToDdspInput';
+import { startActiveRender, clearActiveRender } from '../stores/inferenceProgressStore';
+import { enqueueRender, markRenderComplete, updateRenderStatus } from '../stores/renderQueueStore';
 
 const FADE_SAMPLES = 441; // 10 ms at 44.1 kHz
 
@@ -55,7 +56,11 @@ export const renderDdspInstrument = inject({ logger, readRenderCache, writeRende
             const inputData = new ArrayBuffer(pitchHz.byteLength + loudnessDb.byteLength);
             new Float32Array(inputData).set(pitchHz);
             new Float32Array(inputData, pitchHz.byteLength).set(loudnessDb);
-            const cacheKey = await computeRenderCacheKey({ modelId, inputData, qualityParams: `ddsp-${String(nFrames)}` });
+            const cacheKey = await computeRenderCacheKey({
+                modelId,
+                inputData,
+                qualityParams: `ddsp-${String(nFrames)}`,
+            });
 
             // Check render cache first
             const cached = await readRenderCache({ cacheKey });

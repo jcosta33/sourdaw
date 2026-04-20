@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import {
     MICRO_FADE_SECONDS,
     MIN_RENDER_TIMEOUT_MS,

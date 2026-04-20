@@ -1,5 +1,5 @@
-import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
 import { createMidiNote } from '../../models/MidiNote';
+import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
 
 /**
  * Splits each selected note that spans the given beat position into two notes (R-A5).

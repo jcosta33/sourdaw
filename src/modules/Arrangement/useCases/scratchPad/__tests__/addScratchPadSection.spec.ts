@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { addScratchPadSection } from '../scratchPadCrud/addScratchPadSection';
 
 const mocks = vi.hoisted(() => ({
@@ -8,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../stores/scratchPadStore', () => ({
     scratchPadStore: {
-        get value() { return mocks.scratchPadStoreValue.value; },
+        get value() {
+            return mocks.scratchPadStoreValue.value;
+        },
         set: mocks.scratchPadStoreSet,
-    }
+    },
 }));
 
 describe('addScratchPadSection', () => {

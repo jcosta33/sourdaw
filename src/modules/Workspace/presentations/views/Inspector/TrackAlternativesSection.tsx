@@ -1,9 +1,12 @@
 import { type ReactElement } from 'react';
+
+import { Plus, Trash2 } from 'lucide-react';
+
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
-import { Plus, Trash2 } from 'lucide-react';
 import { executeAppAction } from '#/modules/Command/useCases';
+
 import { type Track } from '../../../models/TrackViewTypes';
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
 

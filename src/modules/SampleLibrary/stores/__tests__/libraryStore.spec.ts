@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { 
-    libraryStore, 
-    addLibraryRoot, 
-    removeLibraryRoot, 
-    updateLibraryRootStatus, 
-    addSamples, 
-    toggleSampleFavorite, 
+
+import {
+    libraryStore,
+    addLibraryRoot,
+    removeLibraryRoot,
+    updateLibraryRootStatus,
+    addSamples,
+    toggleSampleFavorite,
     addSampleTag,
     setActiveRoot,
     setCurrentFolder,
@@ -15,7 +16,7 @@ import {
     setSortField,
     setScanProgress,
     setFolderTree,
-    toggleFolderExpanded
+    toggleFolderExpanded,
 } from '../libraryStore';
 
 describe('libraryStore', () => {
@@ -42,8 +43,17 @@ describe('libraryStore', () => {
     });
 
     it('should add and remove a library root', () => {
-        const root = { id: 'r1', name: 'Root 1', provider: 'browser' as const, rootRef: '', connectedAt: 0, status: 'ready' as const, fileCount: 0, settings: { recursive: true } };
-        
+        const root = {
+            id: 'r1',
+            name: 'Root 1',
+            provider: 'browser' as const,
+            rootRef: '',
+            connectedAt: 0,
+            status: 'ready' as const,
+            fileCount: 0,
+            settings: { recursive: true },
+        };
+
         addLibraryRoot(root);
         expect(libraryStore.value?.roots).toHaveLength(1);
         expect(libraryStore.value?.activeRootId).toBe('r1');
@@ -58,7 +68,16 @@ describe('libraryStore', () => {
     });
 
     it('should update root status', () => {
-        const root = { id: 'r1', name: 'Root 1', provider: 'browser' as const, rootRef: '', connectedAt: 0, status: 'offline' as const, fileCount: 0, settings: { recursive: true } };
+        const root = {
+            id: 'r1',
+            name: 'Root 1',
+            provider: 'browser' as const,
+            rootRef: '',
+            connectedAt: 0,
+            status: 'offline' as const,
+            fileCount: 0,
+            settings: { recursive: true },
+        };
         addLibraryRoot(root);
 
         updateLibraryRootStatus('r1', 'ready', 42);
@@ -68,18 +87,40 @@ describe('libraryStore', () => {
     });
 
     it('should add samples', () => {
-        const s1 = { id: 's1', libraryRootId: 'r1', relativePath: '', displayName: 'Sample 1', ext: 'wav', folder: '/', sync: { exists: true, status: 'discovered' as const }, format: {}, tags: [], favorite: false };
+        const s1 = {
+            id: 's1',
+            libraryRootId: 'r1',
+            relativePath: '',
+            displayName: 'Sample 1',
+            ext: 'wav',
+            folder: '/',
+            sync: { exists: true, status: 'discovered' as const },
+            format: {},
+            tags: [],
+            favorite: false,
+        };
         addSamples([s1]);
-        
+
         expect(libraryStore.value?.samples).toHaveLength(1);
-        
+
         // Ignore duplicate id
         addSamples([s1]);
         expect(libraryStore.value?.samples).toHaveLength(1);
     });
 
     it('should toggle favorite status', () => {
-        const s1 = { id: 's1', libraryRootId: 'r1', relativePath: '', displayName: 'Sample 1', ext: 'wav', folder: '/', sync: { exists: true, status: 'discovered' as const }, format: {}, tags: [], favorite: false };
+        const s1 = {
+            id: 's1',
+            libraryRootId: 'r1',
+            relativePath: '',
+            displayName: 'Sample 1',
+            ext: 'wav',
+            folder: '/',
+            sync: { exists: true, status: 'discovered' as const },
+            format: {},
+            tags: [],
+            favorite: false,
+        };
         addSamples([s1]);
 
         toggleSampleFavorite('s1');
@@ -90,7 +131,18 @@ describe('libraryStore', () => {
     });
 
     it('should add tags', () => {
-        const s1 = { id: 's1', libraryRootId: 'r1', relativePath: '', displayName: 'Sample 1', ext: 'wav', folder: '/', sync: { exists: true, status: 'discovered' as const }, format: {}, tags: [], favorite: false };
+        const s1 = {
+            id: 's1',
+            libraryRootId: 'r1',
+            relativePath: '',
+            displayName: 'Sample 1',
+            ext: 'wav',
+            folder: '/',
+            sync: { exists: true, status: 'discovered' as const },
+            format: {},
+            tags: [],
+            favorite: false,
+        };
         addSamples([s1]);
 
         addSampleTag('s1', 'kick');
@@ -126,14 +178,29 @@ describe('libraryStore', () => {
     });
 
     it('should set and expand folder trees', () => {
-        const root = { id: 'r1', name: 'Root 1', provider: 'browser' as const, rootRef: '', connectedAt: 0, status: 'ready' as const, fileCount: 0, settings: { recursive: true } };
+        const root = {
+            id: 'r1',
+            name: 'Root 1',
+            provider: 'browser' as const,
+            rootRef: '',
+            connectedAt: 0,
+            status: 'ready' as const,
+            fileCount: 0,
+            settings: { recursive: true },
+        };
         addLibraryRoot(root);
 
-        const tree = { name: 'Root', path: '/', fileCount: 0, expanded: false, children: [{ name: 'Sub', path: '/sub', fileCount: 0, expanded: false, children: [] }] };
+        const tree = {
+            name: 'Root',
+            path: '/',
+            fileCount: 0,
+            expanded: false,
+            children: [{ name: 'Sub', path: '/sub', fileCount: 0, expanded: false, children: [] }],
+        };
         setFolderTree('r1', tree);
-        expect(libraryStore.value?.folderTrees['r1']?.name).toBe('Root');
+        expect(libraryStore.value?.folderTrees.r1?.name).toBe('Root');
 
         toggleFolderExpanded('/sub');
-        expect(libraryStore.value?.folderTrees['r1']?.children[0]?.expanded).toBe(true);
+        expect(libraryStore.value?.folderTrees.r1?.children[0]?.expanded).toBe(true);
     });
 });

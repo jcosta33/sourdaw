@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { getProjectDirectory } from '../getProjectDirectory';
-import { isNativeFileSystemAvailable } from '../isNativeFileSystemAvailable';
 import { tauriInvoke, isTauriAvailable } from '../helpers';
+import { isNativeFileSystemAvailable } from '../isNativeFileSystemAvailable';
 
 vi.mock('../helpers', () => ({
     tauriInvoke: vi.fn(),
@@ -16,9 +17,9 @@ describe('nativeProjectFiles repository', () => {
     describe('getProjectDirectory', () => {
         it('should return the documents path and attempt to create it', async () => {
             vi.mocked(tauriInvoke).mockResolvedValue('/home/user');
-            
+
             const dir = await getProjectDirectory();
-            
+
             expect(dir).toBe('/home/user/Documents/Sourdaw Projects');
             expect(tauriInvoke).toHaveBeenCalledWith('get_home_dir');
             expect(tauriInvoke).toHaveBeenCalledWith('write_audio_file', expect.anything());
@@ -26,7 +27,7 @@ describe('nativeProjectFiles repository', () => {
 
         it('should fallback to /tmp if home dir fails', async () => {
             vi.mocked(tauriInvoke).mockRejectedValue(new Error('fail'));
-            
+
             const dir = await getProjectDirectory();
             expect(dir).toBe('/tmp/Documents/Sourdaw Projects');
         });

@@ -1,27 +1,28 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import { type TimelineRenderModel } from '../../../models/TimelineRenderModel';
 import { hitTestClipEdge } from '../hitTestClipEdge';
 
-const { 
-    mockTimelineViewValue, 
-    mockBuildTimelineRenderModel,
-    mockGetTrackAtY
-} = vi.hoisted(() => ({
+const { mockTimelineViewValue, mockBuildTimelineRenderModel, mockGetTrackAtY } = vi.hoisted(() => ({
     mockTimelineViewValue: { value: null } as any,
     mockBuildTimelineRenderModel: vi.fn(),
     mockGetTrackAtY: vi.fn(),
 }));
 
 vi.mock('../../../stores/timelineViewStore', () => ({
-    timelineViewStore: { get value() { return mockTimelineViewValue.value; } }
+    timelineViewStore: {
+        get value() {
+            return mockTimelineViewValue.value;
+        },
+    },
 }));
 
 vi.mock('../../buildTimelineRenderModel', () => ({
-    buildTimelineRenderModel: () => mockBuildTimelineRenderModel()
+    buildTimelineRenderModel: () => mockBuildTimelineRenderModel(),
 }));
 
 vi.mock('../getTrackAtY', () => ({
-    getTrackAtY: (...args: any[]) => mockGetTrackAtY(...args)
+    getTrackAtY: (...args: any[]) => mockGetTrackAtY(...args),
 }));
 
 describe('hitTestClipEdge', () => {
@@ -103,5 +104,3 @@ describe('hitTestClipEdge', () => {
         expect(hitTestClipEdge(0, 0)).toBeNull();
     });
 });
-
-

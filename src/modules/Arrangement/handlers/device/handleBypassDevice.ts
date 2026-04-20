@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+
 import { bypassDevice } from '../../useCases/device/bypassDevice';
 
 export const handleBypassDevice = createHandler<'bypassDevice'>({

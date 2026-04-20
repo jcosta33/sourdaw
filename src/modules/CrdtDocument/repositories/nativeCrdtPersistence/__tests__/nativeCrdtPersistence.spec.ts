@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { invokeCommand } from '../helpers';
 import { nativeApplyChange } from '../nativeApplyChange';
 import { nativeCreateProject } from '../nativeCreateProject';
 import { nativeGetDocumentState } from '../nativeGetDocumentState';
 import { nativeLoadBundle } from '../nativeLoadBundle';
 import { nativeMergeBundle } from '../nativeMergeBundle';
 import { nativeSaveBundle } from '../nativeSaveBundle';
-import { invokeCommand } from '../helpers';
 
 vi.mock('../helpers', () => ({
     invokeCommand: vi.fn(),

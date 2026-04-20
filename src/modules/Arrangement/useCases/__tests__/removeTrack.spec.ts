@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { removeTrack } from '../removeTrack';
-import { getTrackState } from '../../repositories/track/getTrackState';
-import { getTrackById } from '../../repositories/track/getTrackById';
-import { setTrackState } from '../../repositories/track/setTrackState';
+
 import { eventBus } from '#/app/registerDependencies';
+
+import { getTrackById } from '../../repositories/track/getTrackById';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { setTrackState } from '../../repositories/track/setTrackState';
+import { removeTrack } from '../removeTrack';
 
 vi.mock('../../repositories/track/getTrackState', () => ({
     getTrackState: vi.fn(),

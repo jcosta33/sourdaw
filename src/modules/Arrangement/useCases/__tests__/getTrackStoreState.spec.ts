@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { getTrackStoreState } from '../getTrackStoreState';
+
 import { trackStore } from '../../stores/trackStore';
+import { getTrackStoreState } from '../getTrackStoreState';
 
 vi.mock('../../stores/trackStore', () => ({
     trackStore: {

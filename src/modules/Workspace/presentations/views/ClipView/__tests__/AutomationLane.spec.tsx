@@ -1,9 +1,24 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { AutomationLane } from '../AutomationLane';
 
 vi.mock('#/components/daw/DawCompactSelect', () => ({
-    DawCompactSelect: ({ id, value, onChange, children, size, 'aria-label': ariaLabel }: { id: string; value: string; onChange: (e: { target: { value: string } }) => void; children: React.ReactNode; size: string; 'aria-label'?: string }) => (
+    DawCompactSelect: ({
+        id,
+        value,
+        onChange,
+        children,
+        size,
+        'aria-label': ariaLabel,
+    }: {
+        id: string;
+        value: string;
+        onChange: (e: { target: { value: string } }) => void;
+        children: React.ReactNode;
+        size: string;
+        'aria-label'?: string;
+    }) => (
         <select id={id} value={value} onChange={onChange} data-size={size} aria-label={ariaLabel}>
             {children}
         </select>
@@ -27,7 +42,11 @@ vi.mock('../../AutomationLane/SlideLane', () => ({
 }));
 
 vi.mock('../../AutomationLane/CCLane', () => ({
-    CCLane: ({ controller }: { controller: number }) => <div data-testid="cc-lane" data-controller={controller}>CC Lane {controller}</div>,
+    CCLane: ({ controller }: { controller: number }) => (
+        <div data-testid="cc-lane" data-controller={controller}>
+            CC Lane {controller}
+        </div>
+    ),
 }));
 
 vi.mock('../../AutomationLane/PitchBendLane', () => ({

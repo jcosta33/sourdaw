@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import { type WAMDescriptor } from '#/modules/Plugin/models/WamPluginHostTypes';
 
-import { registry } from '../helpers';
 import { getRegisteredPlugins } from '../getRegisteredPlugins';
+import { registry } from '../helpers';
 import { registerWAMPlugin } from '../registerWAMPlugin';
 
 const desc = (id: string): WAMDescriptor => ({

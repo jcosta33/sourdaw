@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { ClipContextMenu } from '../ClipContextMenu';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { defaultWorkspaceState, workspaceStore } from '#/modules/Workspace/stores';
+
+import { ClipContextMenu } from '../ClipContextMenu';
 
 // useStore reads via getSnapshot(); workspaceStore must reflect workspaceStore.set() in tests.
 vi.mock('#/infra/store/useStore', () => ({
@@ -83,28 +85,12 @@ describe('ClipContextMenu', () => {
     });
 
     it('should render without crashing', () => {
-        render(
-            <ClipContextMenu
-                x={100}
-                y={100}
-                clipId="clip1"
-                splitBeat={4}
-                onClose={mockOnClose}
-            />
-        );
+        render(<ClipContextMenu x={100} y={100} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
         expect(screen.getByText(/Split/i)).toBeInTheDocument();
     });
 
     it('should render at correct position', () => {
-        render(
-            <ClipContextMenu
-                x={150}
-                y={200}
-                clipId="clip1"
-                splitBeat={4}
-                onClose={mockOnClose}
-            />
-        );
+        render(<ClipContextMenu x={150} y={200} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
         const surface = screen.getByTestId('context-menu-surface');
         expect(surface).toHaveStyle({ left: '150px', top: '200px' });
     });
@@ -115,15 +101,7 @@ describe('ClipContextMenu', () => {
             selectedClipIds: ['clip1', 'clip2', 'clip3'],
         });
 
-        render(
-            <ClipContextMenu
-                x={100}
-                y={100}
-                clipId="clip1"
-                splitBeat={8}
-                onClose={mockOnClose}
-            />
-        );
+        render(<ClipContextMenu x={100} y={100} clipId="clip1" splitBeat={8} onClose={mockOnClose} />);
         expect(screen.getByText('3 clips selected')).toBeInTheDocument();
     });
 });

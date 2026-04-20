@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { useTimelineInteractions } from '../useTimelineInteractions';
 
 // Massive mock list
@@ -13,7 +14,7 @@ const mocks = vi.hoisted(() => ({
     hitTestClip: vi.fn(),
     hitTestTrack: vi.fn(),
     hitTestClipEdge: vi.fn(),
-    snapToGrid: vi.fn(b => b),
+    snapToGrid: vi.fn((b) => b),
     workspaceStoreValue: { value: { activeTool: 'select', selectedClipIds: [], automationVisibility: 'hidden' } },
     toggleClipInSelection: vi.fn(),
     selectClipWithFocus: vi.fn(),
@@ -36,7 +37,7 @@ const mocks = vi.hoisted(() => ({
     trimClipEnd: vi.fn(),
     buildTimelineRenderModel: vi.fn(),
     getTrackAtY: vi.fn(),
-    canvasXToBeat: vi.fn(x => x / 100),
+    canvasXToBeat: vi.fn((x) => x / 100),
     getContentY: vi.fn((y, s) => y + s),
     tryPaintSubLane: vi.fn(),
     paintAutoDragPoint: vi.fn(),
@@ -44,24 +45,42 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    broadcastPresence: mocks.broadcastPresence
+    broadcastPresence: mocks.broadcastPresence,
 }));
-vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: { get value() { return mocks.collaborationStoreValue.value; } } }));
-vi.mock('../../../stores/timelineViewStore', async (importOriginal) => ({ 
+vi.mock('#/modules/Collaboration/stores', () => ({
+    collaborationStore: {
+        get value() {
+            return mocks.collaborationStoreValue.value;
+        },
+    },
+}));
+vi.mock('../../../stores/timelineViewStore', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    timelineViewStore: { get value() { return mocks.timelineViewStoreValue.value; } },
+    timelineViewStore: {
+        get value() {
+            return mocks.timelineViewStoreValue.value;
+        },
+    },
     zoomTimeline: mocks.zoomTimeline,
 }));
-vi.mock('../../../useCases/timelineInteractions/setPlayheadFromClick', () => ({ setPlayheadFromClick: mocks.setPlayheadFromClick }));
+vi.mock('../../../useCases/timelineInteractions/setPlayheadFromClick', () => ({
+    setPlayheadFromClick: mocks.setPlayheadFromClick,
+}));
 vi.mock('../../../useCases/timelineInteractions/beginClipDrag', () => ({ beginClipDrag: mocks.beginClipDrag }));
 vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestClip', () => ({ hitTestClip: mocks.hitTestClip }));
-vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestTrack', () => ({ hitTestTrack: mocks.hitTestTrack }));
+vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestTrack', () => ({
+    hitTestTrack: mocks.hitTestTrack,
+}));
 vi.mock('../../../useCases/timelineInteractions/hitTestClipEdge', () => ({ hitTestClipEdge: mocks.hitTestClipEdge }));
 vi.mock('../../../useCases/timelineInteractions/snapToGrid', () => ({ snapToGrid: mocks.snapToGrid }));
 vi.mock('#/modules/Workspace/stores', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    workspaceStore: { get value() { return mocks.workspaceStoreValue.value; } },
-    preferencesStore: { value: {} }
+    workspaceStore: {
+        get value() {
+            return mocks.workspaceStoreValue.value;
+        },
+    },
+    preferencesStore: { value: {} },
 }));
 vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
@@ -72,7 +91,13 @@ vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
     selectClip: mocks.selectClip,
     setWorkspaceMode: mocks.setWorkspaceMode,
 }));
-vi.mock('../../../stores/trackStore', () => ({ trackStore: { get value() { return mocks.trackStoreValue.value; } } }));
+vi.mock('../../../stores/trackStore', () => ({
+    trackStore: {
+        get value() {
+            return mocks.trackStoreValue.value;
+        },
+    },
+}));
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     toggleLoop: mocks.toggleLoop,
@@ -86,7 +111,7 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
-    pushUndoEntry: mocks.pushUndoEntry
+    pushUndoEntry: mocks.pushUndoEntry,
 }));
 vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({ selectTrack: mocks.selectTrack }));
 vi.mock('../../../useCases/clip/addClip', () => ({ addClip: mocks.addClip }));
@@ -94,7 +119,9 @@ vi.mock('../../../useCases/clip/removeClip', () => ({ removeClip: mocks.removeCl
 vi.mock('../../../useCases/clip/moveClip', () => ({ moveClip: mocks.moveClip }));
 vi.mock('../../../useCases/clipEditing/trimClipStart', () => ({ trimClipStart: mocks.trimClipStart }));
 vi.mock('../../../useCases/clipEditing/trimClipEnd', () => ({ trimClipEnd: mocks.trimClipEnd }));
-vi.mock('../../../useCases/buildTimelineRenderModel', () => ({ buildTimelineRenderModel: mocks.buildTimelineRenderModel }));
+vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
+    buildTimelineRenderModel: mocks.buildTimelineRenderModel,
+}));
 vi.mock('../../../useCases/timelineInteractions/getTrackAtY', () => ({ getTrackAtY: mocks.getTrackAtY }));
 vi.mock('../helpers/timelineMouse', () => ({
     canvasXToBeat: mocks.canvasXToBeat,
@@ -125,7 +152,7 @@ describe('useTimelineInteractions', () => {
 
     it('selects a clip on mouse down', () => {
         const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
-        
+
         mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
 
         act(() => {
@@ -138,7 +165,7 @@ describe('useTimelineInteractions', () => {
 
     it('clears selection and starts rubber band when clicking empty space', () => {
         const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
-        
+
         mocks.hitTestClip.mockReturnValue(null);
         mocks.hitTestTrack.mockReturnValue('t1');
 
@@ -153,7 +180,7 @@ describe('useTimelineInteractions', () => {
 
     it('opens context menu on right click', () => {
         const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
-        
+
         mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
 
         const mockEvent = {
@@ -177,7 +204,7 @@ describe('useTimelineInteractions', () => {
 
     it('handles rubber band dragging', () => {
         const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
-        
+
         // Start rubber band
         act(() => {
             result.current.handleMouseDown({ button: 0, clientX: 10, clientY: 10 } as any);

@@ -1,5 +1,5 @@
-import { createHandler } from '#/utils/createHandler';
 import { addAutomationLane } from '#/modules/Automation/useCases';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleAddAutomationLane = createHandler<'addAutomationLane'>({
     execute: (a) => {

@@ -8,10 +8,11 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
-import { setFermenterMappedParam } from '../setFermenterMappedParam';
-import { setFermenterParamWithAudio } from '../fermenterParamBridge/setFermenterParamWithAudio';
 import { logger } from '#/infra/logger/appLogger';
+
+import { setFermenterParamWithAudio } from '../fermenterParamBridge/setFermenterParamWithAudio';
 import { FERMENTER_PARAMS } from '../fermenterQueries/FERMENTER_PARAMS';
+import { setFermenterMappedParam } from '../setFermenterMappedParam';
 
 describe('setFermenterMappedParam', () => {
     beforeEach(() => {

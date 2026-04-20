@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { setAutomationSubLanes } from '../automationSubLanes/helpers';
+
+import { defaultWorkspaceState } from '../../models/WorkspaceState';
+import { getWorkspaceState, updateWorkspaceState } from '../../repositories/workspace';
 import { addAutomationSubLane } from '../automationSubLanes/addAutomationSubLane';
+import { setAutomationSubLanes } from '../automationSubLanes/helpers';
 import { removeAutomationSubLane } from '../automationSubLanes/removeAutomationSubLane';
 import { swapAutomationSubLaneParam } from '../automationSubLanes/swapAutomationSubLaneParam';
-import { getWorkspaceState, updateWorkspaceState } from '../../repositories/workspace';
-import { defaultWorkspaceState } from '../../models/WorkspaceState';
 
 vi.mock('../../repositories/workspace', () => ({
     getWorkspaceState: vi.fn(),

@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
+
 import { parseToolCallXml } from '../toolCallParser';
 
 describe('toolCallParser', () => {
     it('parses valid JSON array directly', () => {
         const input = `[{"name": "addTrack", "arguments": {"name": "Vocals", "kind": "audio"}}]`;
         const result = parseToolCallXml(input);
-        
+
         expect(result).toHaveLength(1);
         expect(result[0]).toEqual({
             name: 'addTrack',
@@ -16,7 +17,7 @@ describe('toolCallParser', () => {
     it('parses wrapped JSON mode {"actions": [...]}', () => {
         const input = `{"actions": [{"name": "muteTrack", "arguments": {"trackId": "t1"}}]}`;
         const result = parseToolCallXml(input);
-        
+
         expect(result).toHaveLength(1);
         expect(result[0]!.name).toBe('muteTrack');
     });
@@ -24,7 +25,7 @@ describe('toolCallParser', () => {
     it('parses wrapped JSON mode {"tool_calls": [...]}', () => {
         const input = `{"tool_calls": [{"name": "soloTrack", "arguments": {"trackId": "t2"}}]}`;
         const result = parseToolCallXml(input);
-        
+
         expect(result).toHaveLength(1);
         expect(result[0]!.name).toBe('soloTrack');
     });
@@ -32,7 +33,7 @@ describe('toolCallParser', () => {
     it('parses single tool call object', () => {
         const input = `{"name": "addDevice", "arguments": {"deviceType": "EQ"}}`;
         const result = parseToolCallXml(input);
-        
+
         expect(result).toHaveLength(1);
         expect(result[0]!.name).toBe('addDevice');
     });

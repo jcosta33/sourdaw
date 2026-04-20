@@ -69,7 +69,9 @@ export function setActiveKneadClip(clipId: string | null): void {
 
 export function updateClipKneadState(clipId: string, updater: (state: KneadClipState) => KneadClipState): void {
     const state = kneadStore.value;
-    if (!state) {return;}
+    if (!state) {
+        return;
+    }
 
     const clipState = state.clips[clipId] ?? {
         clipId,

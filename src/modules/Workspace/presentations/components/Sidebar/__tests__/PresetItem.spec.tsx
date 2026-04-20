@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { PresetItem } from '../PresetItem';
+import { describe, it, expect, vi } from 'vitest';
+
 import { type SoundPresetView } from '../../../../models/SoundPresetViewTypes';
+import { PresetItem } from '../PresetItem';
 
 const basePreset: SoundPresetView = {
     id: 'preset-1',

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleAddNotes } from '../handleAddNotes';
 
 vi.mock('#/modules/MIDI/useCases/midiNoteCrud/addMidiNote', () => ({

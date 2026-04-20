@@ -1,6 +1,6 @@
+import { generateMentorLessons } from '#/modules/AiRuntime/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
-import { generateMentorLessons } from '#/modules/AiRuntime/useCases';
 
 export const handleGetMentorTips = createHandler<'getMentorTips'>({
     execute: () => {

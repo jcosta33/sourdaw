@@ -1,21 +1,18 @@
 import { type ReactElement, type CSSProperties, useState, useRef, useEffect, useId, type KeyboardEvent } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
+import { X, Trash2, Bot, User, ChevronRight, ChevronDown, Zap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import {
-    chatStore,
-    clearChatMessages,
-    toggleReasoning,
-    setChatMode,
-    stopGenerating,
-} from '../../stores/chatStore';
-import { sendChatMessage } from '../../useCases/sendChatMessage';
-import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
+
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
-import { X, Trash2, Bot, User, ChevronRight, ChevronDown, Zap } from 'lucide-react';
+import { useStore } from '#/infra/store/useStore';
 import { cn } from '#/utils/Styles/cn';
+
+import { chatStore, clearChatMessages, toggleReasoning, setChatMode, stopGenerating } from '../../stores/chatStore';
+import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
 import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution/isLlmAvailable';
+import { sendChatMessage } from '../../useCases/sendChatMessage';
 import { ChatComposer } from '../components/ChatComposer';
 
 /** Collapsible reasoning block — shows model's internal thinking in a subdued, smaller style. */

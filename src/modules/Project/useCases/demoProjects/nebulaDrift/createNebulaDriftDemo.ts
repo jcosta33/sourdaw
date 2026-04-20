@@ -14,18 +14,20 @@
  */
 import { trackStore, markerStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
-import { projectStore } from '../../../stores/projectStore';
-import { transportStore } from '#/modules/Transport/stores';
-import { defaultTransportState } from '#/modules/Transport/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane } from '#/modules/Automation/useCases';
-import type { MidiNote } from '../../../models/DemoProjectTypes';
-import { note } from '../demoUtils/note';
+import { midiStore } from '#/modules/MIDI/stores';
+import { DEFAULT_PAD_NAMES } from '#/modules/Toaster/useCases';
+import { transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState } from '#/modules/Transport/useCases';
+
+import { projectStore } from '../../../stores/projectStore';
 import { applyPreset } from '../demoUtils/applyPreset';
 import { createMidiClip } from '../demoUtils/createMidiClip';
+import { note } from '../demoUtils/note';
 import { syncArrangement } from '../demoUtils/syncArrangement';
-import { DEFAULT_PAD_NAMES } from '#/modules/Toaster/useCases';
+
+import type { MidiNote } from '../../../models/DemoProjectTypes';
 
 const TB = 380;
 const bpm = 76;
@@ -584,9 +586,9 @@ export async function demo5_NebulaDrift(): Promise<void> {
     for (let b = 20, s = 0; b < TB; b += 16, s++) {
         const rp = risePairs[s % risePairs.length]!;
         const vel = 50 + ((s * 5) % 11) + (b >= S.peak ? 14 : 0);
-        riseN.push(hum(rp[0]!, b, 13, vel, s));
+        riseN.push(hum(rp[0], b, 13, vel, s));
         if (s % 2 === 0 || b >= S.build1) {
-            riseN.push(hum(rp[1]!, b + 6, 8, vel - 6, s + 7));
+            riseN.push(hum(rp[1], b + 6, 8, vel - 6, s + 7));
         }
     }
 
@@ -1045,9 +1047,9 @@ export async function demo5_NebulaDrift(): Promise<void> {
     tLevLow.clips = [cLL];
     tLevCall.clips = [cLC];
     tLevAnswer.clips = [cLA];
-    toasterPadTracks.forEach((t, i) => {
+    for (const [i, t] of toasterPadTracks.entries()) {
         t.clips = toasterTrackClips[i] ?? [];
-    });
+    }
 
     const tracks = [
         masterTrack,
@@ -2027,7 +2029,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
         scaleName: 'chromatic',
         tuning: {
             name: 'Equal Temperament',
-            frequencies: Array.from({ length: 128 }, (_, i) => 440 * Math.pow(2, (i - 69) / 12)),
+            frequencies: Array.from({ length: 128 }, (_, i) => 440 * 2 ** ((i - 69) / 12)),
         },
     });
 }

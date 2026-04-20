@@ -4,11 +4,11 @@ vi.mock('../../stores/fermenterStore', () => ({
     loadFermenterPatch: vi.fn(),
 }));
 
-import { lerpPatch, bilinearPatch } from '../presetMorph/bilinearPatch';
-import { applyMorphedPatch } from '../presetMorph/applyMorphedPatch';
+import { type FermenterPatch } from '../../models/FermenterPatch';
 import { loadFermenterPatch } from '../../stores/fermenterStore';
 import { setFermenterDependencies } from '../fermenterDependencies';
-import { type FermenterPatch } from '../../models/FermenterPatch';
+import { applyMorphedPatch } from '../presetMorph/applyMorphedPatch';
+import { lerpPatch, bilinearPatch } from '../presetMorph/bilinearPatch';
 
 function patch(name: string, overrides: Partial<FermenterPatch>): FermenterPatch {
     return { name, version: 1, gain: 0, threshold: 0, ratio: 1, ...overrides } as unknown as FermenterPatch;

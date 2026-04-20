@@ -1,9 +1,10 @@
 import { type ReactElement } from 'react';
 
+import { AudioWaveform, Loader2, Music4, Play, Plus, RefreshCw, X } from 'lucide-react';
+
 import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
 import { Button } from '#/components/ui/button';
 import { removeTask } from '#/modules/AiGeneration/useCases';
-import { AudioWaveform, Loader2, Music4, Play, Plus, RefreshCw, X } from 'lucide-react';
 
 type AiTaskType = 'midi-generation' | 'audio-generation' | 'stem-separation' | 'denoise';
 

@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+
 import { splitClip } from '../../useCases/clipEditing/splitClip';
 
 export const handleSplitClip = createHandler<'splitClip'>({

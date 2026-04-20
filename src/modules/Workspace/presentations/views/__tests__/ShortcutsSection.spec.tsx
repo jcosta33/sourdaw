@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { ShortcutsSection } from '../ShortcutsSection';
 
 const mocks = vi.hoisted(() => ({
@@ -57,13 +58,9 @@ vi.mock('#/modules/Command/stores', () => ({
 }));
 
 vi.mock('../../components/CaptureKeyButton', () => ({
-    CaptureKeyButton: ({
-        children,
-        onClick,
-    }: {
-        children: React.ReactNode;
-        onClick?: () => void;
-    }) => <button onClick={onClick}>{children}</button>,
+    CaptureKeyButton: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
+        <button onClick={onClick}>{children}</button>
+    ),
 }));
 
 vi.mock('../preferencesShared', () => ({
@@ -91,9 +88,7 @@ describe('ShortcutsSection', () => {
     it('clears customMappings on `Reset to Defaults`', () => {
         render(<ShortcutsSection />);
         fireEvent.click(screen.getByText('Reset to Defaults'));
-        expect(mocks.setSpy).toHaveBeenCalledWith(
-            expect.objectContaining({ customMappings: {} })
-        );
+        expect(mocks.setSpy).toHaveBeenCalledWith(expect.objectContaining({ customMappings: {} }));
     });
 
     it('enters capture mode when a binding button is clicked', () => {

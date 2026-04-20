@@ -5,8 +5,30 @@ const { setMock, mockStore } = vi.hoisted(() => {
         value: {
             voltageStandard: '1v-per-octave' as const,
             clockDivision: 1,
-            outputs: [] as { id: string; name: string; outputChannel: number; type: string; minVoltage: number; maxVoltage: number; value: number; active: boolean }[],
-        } as { voltageStandard: '1v-per-octave' | 'hz-per-volt'; clockDivision: number; outputs: { id: string; name: string; outputChannel: number; type: string; minVoltage: number; maxVoltage: number; value: number; active: boolean }[] } | null,
+            outputs: [] as {
+                id: string;
+                name: string;
+                outputChannel: number;
+                type: string;
+                minVoltage: number;
+                maxVoltage: number;
+                value: number;
+                active: boolean;
+            }[],
+        } as {
+            voltageStandard: '1v-per-octave' | 'hz-per-volt';
+            clockDivision: number;
+            outputs: {
+                id: string;
+                name: string;
+                outputChannel: number;
+                type: string;
+                minVoltage: number;
+                maxVoltage: number;
+                value: number;
+                active: boolean;
+            }[];
+        } | null,
     };
     const setMock = vi.fn((next: typeof ref.value) => {
         ref.value = next;
@@ -33,9 +55,9 @@ vi.mock('#/modules/Synth/stores/cvGate', () => {
 
 import { addCvOutput } from '../cvOutputOperations/addCvOutput';
 import { removeCvOutput } from '../cvOutputOperations/removeCvOutput';
+import { setClockDivision } from '../cvOutputOperations/setClockDivision';
 import { setCvValue } from '../cvOutputOperations/setCvValue';
 import { setVoltageStandard } from '../cvOutputOperations/setVoltageStandard';
-import { setClockDivision } from '../cvOutputOperations/setClockDivision';
 
 describe('cvOutputOperations', () => {
     beforeEach(() => {
@@ -58,8 +80,26 @@ describe('cvOutputOperations', () => {
             voltageStandard: '1v-per-octave',
             clockDivision: 1,
             outputs: [
-                { id: 'a', name: 'A', outputChannel: 0, type: 'cv-pitch', minVoltage: 0, maxVoltage: 5, value: 0, active: true },
-                { id: 'b', name: 'B', outputChannel: 1, type: 'gate', minVoltage: 0, maxVoltage: 5, value: 0, active: true },
+                {
+                    id: 'a',
+                    name: 'A',
+                    outputChannel: 0,
+                    type: 'cv-pitch',
+                    minVoltage: 0,
+                    maxVoltage: 5,
+                    value: 0,
+                    active: true,
+                },
+                {
+                    id: 'b',
+                    name: 'B',
+                    outputChannel: 1,
+                    type: 'gate',
+                    minVoltage: 0,
+                    maxVoltage: 5,
+                    value: 0,
+                    active: true,
+                },
             ],
         };
         removeCvOutput('a');
@@ -72,7 +112,16 @@ describe('cvOutputOperations', () => {
             voltageStandard: '1v-per-octave',
             clockDivision: 1,
             outputs: [
-                { id: 'a', name: 'A', outputChannel: 0, type: 'cv-pitch', minVoltage: 0, maxVoltage: 5, value: 0, active: true },
+                {
+                    id: 'a',
+                    name: 'A',
+                    outputChannel: 0,
+                    type: 'cv-pitch',
+                    minVoltage: 0,
+                    maxVoltage: 5,
+                    value: 0,
+                    active: true,
+                },
             ],
         };
         setCvValue('a', 2);

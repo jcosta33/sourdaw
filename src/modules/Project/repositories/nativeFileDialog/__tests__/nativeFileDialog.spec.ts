@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { isTauri } from '#/utils/tauriBridge';
+
+import * as helpers from '../helpers';
 import { openFileDialog } from '../openFileDialog';
 import { pickFiles } from '../pickFiles';
 import { saveFileDialog } from '../saveFileDialog';
-import * as helpers from '../helpers';
-import { isTauri } from '#/utils/tauriBridge';
 
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(),
@@ -27,7 +29,7 @@ describe('nativeFileDialog', () => {
         it('should use openViaTauri when in Tauri', async () => {
             vi.mocked(isTauri).mockReturnValue(true);
             vi.mocked(helpers.openViaTauri).mockResolvedValue(['/path/file.wav']);
-            
+
             const result = await openFileDialog();
             expect(result).toEqual(['/path/file.wav']);
             expect(helpers.openViaTauri).toHaveBeenCalled();
@@ -36,7 +38,7 @@ describe('nativeFileDialog', () => {
         it('should use openViaBrowser when not in Tauri', async () => {
             vi.mocked(isTauri).mockReturnValue(false);
             vi.mocked(helpers.openViaBrowser).mockResolvedValue(['file.wav']);
-            
+
             const result = await openFileDialog();
             expect(result).toEqual(['file.wav']);
             expect(helpers.openViaBrowser).toHaveBeenCalled();
@@ -67,7 +69,7 @@ describe('nativeFileDialog', () => {
         it('should return File objects in Tauri', async () => {
             vi.mocked(isTauri).mockReturnValue(true);
             vi.mocked(helpers.openViaTauri).mockResolvedValue(['/path/test.wav']);
-            
+
             const result = await pickFiles();
             expect(result).toHaveLength(1);
             expect(result![0]).toBeInstanceOf(File);

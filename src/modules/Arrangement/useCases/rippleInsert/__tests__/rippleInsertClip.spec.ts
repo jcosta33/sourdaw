@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { rippleInsertClip } from '#/modules/Arrangement/useCases/rippleInsert/rippleInsertClip';
+
 import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
+import { rippleInsertClip } from '#/modules/Arrangement/useCases/rippleInsert/rippleInsertClip';
 import { setTrackState } from '#/modules/Arrangement/useCases/setTrackState';
 
 vi.mock('#/modules/Arrangement/useCases/getTrackStoreState', () => ({
@@ -43,16 +44,18 @@ describe('rippleInsertClip', () => {
             plan,
         });
 
-        expect(vi.mocked(setTrackState)).toHaveBeenCalledWith(expect.objectContaining({
-            tracks: [
-                expect.objectContaining({
-                    id: 't1',
-                    clips: [
-                        expect.objectContaining({ id: 'c2', startBeat: 3.5 }),
-                        expect.objectContaining({ id: 'c3', startBeat: 6.5 }),
-                    ],
-                }),
-            ],
-        }));
+        expect(vi.mocked(setTrackState)).toHaveBeenCalledWith(
+            expect.objectContaining({
+                tracks: [
+                    expect.objectContaining({
+                        id: 't1',
+                        clips: [
+                            expect.objectContaining({ id: 'c2', startBeat: 3.5 }),
+                            expect.objectContaining({ id: 'c3', startBeat: 6.5 }),
+                        ],
+                    }),
+                ],
+            })
+        );
     });
 });

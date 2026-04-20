@@ -1,15 +1,17 @@
 import { type ReactElement, useState, useEffect, useRef } from 'react';
-import { logger } from '#/infra/logger/appLogger';
+
+import { Loader2, Sparkles, GraduationCap } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+
 import { DawDialogBody } from '#/components/daw/DawDialogBody';
 import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
 import { DawDialogSection } from '#/components/daw/DawDialogSection';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { Button } from '#/components/ui/button';
-import { Loader2, Sparkles, GraduationCap } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import { mixHealthAnalysis } from '#/modules/AudioAnalysis/useCases';
+import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
+import { logger } from '#/infra/logger/appLogger';
 import { streamCloudChatCompletion } from '#/modules/AiRuntime/useCases';
+import { mixHealthAnalysis } from '#/modules/AudioAnalysis/useCases';
 
 type MixHealthDialogProps = {
     open: boolean;

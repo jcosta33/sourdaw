@@ -35,4 +35,3 @@ export const clipDragPreviewRef: { current: ClipDragPreview | null } = { current
  * canvas dirty.
  */
 export const previewDirtyFlag = { value: false };
-

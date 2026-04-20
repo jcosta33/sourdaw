@@ -3,7 +3,9 @@
  * Horizontal in wide contexts, grid in narrow (sidebar) contexts.
  */
 import { type ReactElement } from 'react';
+
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import { MACRO_LABELS } from '../../models/FermenterPatch';
 
 type MacroStripProps = {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { applyDrumPatternToTrack } from '../applyToTrack';
 
 const { batchAddMidiNotesMock } = vi.hoisted(() => ({
@@ -19,11 +20,7 @@ describe('applyDrumPatternToTrack', () => {
     });
 
     it('does not add notes when addClip fails', () => {
-        applyDrumPatternToTrack(
-            't1',
-            { style: 'house', bars: 1, timeSignature: [4, 4] },
-            0
-        );
+        applyDrumPatternToTrack('t1', { style: 'house', bars: 1, timeSignature: [4, 4] }, 0);
 
         expect(batchAddMidiNotesMock).not.toHaveBeenCalled();
     });

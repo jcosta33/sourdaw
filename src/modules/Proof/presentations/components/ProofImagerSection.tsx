@@ -2,9 +2,11 @@
  * ProofImagerSection — Per-band stereo width controls + correlation meter.
  */
 import { type ReactElement } from 'react';
+
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import { type ProofPatch } from '../../models/ProofPatch';
 
 const BAND_LABELS = ['Sub', 'Low-Mid', 'Hi-Mid', 'High'] as const;

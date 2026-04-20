@@ -1,9 +1,28 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { ClipInspector } from '../ClipInspector';
 
 vi.mock('#/components/daw/DawCompactInput', () => ({
-    DawCompactInput: ({ value, onChange, onBlur, onKeyDown, size, className, 'aria-label': ariaLabel, autoFocus }: { value: string; onChange: (e: { target: { value: string } }) => void; onBlur?: () => void; onKeyDown?: (e: { key: string }) => void; size: string; className?: string; 'aria-label'?: string; autoFocus?: boolean }) => (
+    DawCompactInput: ({
+        value,
+        onChange,
+        onBlur,
+        onKeyDown,
+        size,
+        className,
+        'aria-label': ariaLabel,
+        autoFocus,
+    }: {
+        value: string;
+        onChange: (e: { target: { value: string } }) => void;
+        onBlur?: () => void;
+        onKeyDown?: (e: { key: string }) => void;
+        size: string;
+        className?: string;
+        'aria-label'?: string;
+        autoFocus?: boolean;
+    }) => (
         <input
             type="text"
             value={value}
@@ -19,7 +38,23 @@ vi.mock('#/components/daw/DawCompactInput', () => ({
 }));
 
 vi.mock('#/components/daw/DawCompactSelect', () => ({
-    DawCompactSelect: ({ value, onChange, id, size, align, className, children }: { value: string; onChange: (e: { target: { value: string } }) => void; id: string; size: string; align?: string; className?: string; children: React.ReactNode }) => (
+    DawCompactSelect: ({
+        value,
+        onChange,
+        id,
+        size,
+        align,
+        className,
+        children,
+    }: {
+        value: string;
+        onChange: (e: { target: { value: string } }) => void;
+        id: string;
+        size: string;
+        align?: string;
+        className?: string;
+        children: React.ReactNode;
+    }) => (
         <select id={id} value={value} onChange={onChange} data-size={size} data-align={align} className={className}>
             {children}
         </select>
@@ -28,7 +63,9 @@ vi.mock('#/components/daw/DawCompactSelect', () => ({
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
     DawHeaderBand: ({ title, compact, className }: { title: string; compact?: boolean; className?: string }) => (
-        <div className={className} data-compact={compact}>{title}</div>
+        <div className={className} data-compact={compact}>
+            {title}
+        </div>
     ),
 }));
 
@@ -42,7 +79,21 @@ vi.mock('#/components/daw/DawReadoutRow', () => ({
 }));
 
 vi.mock('#/components/ui/slider', () => ({
-    Slider: ({ value, onValueChange, min, max, step, 'aria-label': ariaLabel }: { value: number[]; onValueChange: (v: number[]) => void; min?: number; max?: number; step?: number; 'aria-label'?: string }) => (
+    Slider: ({
+        value,
+        onValueChange,
+        min,
+        max,
+        step,
+        'aria-label': ariaLabel,
+    }: {
+        value: number[];
+        onValueChange: (v: number[]) => void;
+        min?: number;
+        max?: number;
+        step?: number;
+        'aria-label'?: string;
+    }) => (
         <input
             type="range"
             value={value[0]}
@@ -60,7 +111,17 @@ vi.mock('#/components/ui/separator', () => ({
 }));
 
 vi.mock('../../../components/Inspector/ControlHeader', () => ({
-    ControlHeader: ({ label, value, valueClassName, className }: { label: string; value?: string; valueClassName?: string; className?: string }) => (
+    ControlHeader: ({
+        label,
+        value,
+        valueClassName,
+        className,
+    }: {
+        label: string;
+        value?: string;
+        valueClassName?: string;
+        className?: string;
+    }) => (
         <div className={className}>
             <span>{label}</span>
             {value && <span className={valueClassName}>{value}</span>}
@@ -75,9 +136,19 @@ vi.mock('../../../components/Inspector/InsetPanel', () => ({
 }));
 
 vi.mock('../../../components/Inspector/InspectorDetailHeader', () => ({
-    InspectorDetailHeader: ({ title, onBack, backLabel }: { title: React.ReactNode; onBack: () => void; backLabel: string }) => (
+    InspectorDetailHeader: ({
+        title,
+        onBack,
+        backLabel,
+    }: {
+        title: React.ReactNode;
+        onBack: () => void;
+        backLabel: string;
+    }) => (
         <div>
-            <button type="button" onClick={onBack}>{backLabel}</button>
+            <button type="button" onClick={onBack}>
+                {backLabel}
+            </button>
             <div>{title}</div>
         </div>
     ),

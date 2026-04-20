@@ -1,8 +1,9 @@
-import { getTrackState } from '../../repositories/track/getTrackState';
-import { setTrackState } from '../../repositories/track/setTrackState';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { splitMidiNotesAtBeat } from '#/modules/MIDI/useCases';
+
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { setTrackState } from '../../repositories/track/setTrackState';
 
 function cleanupMidiForClip(clipId: string): void {
     const ms = midiStore.value;

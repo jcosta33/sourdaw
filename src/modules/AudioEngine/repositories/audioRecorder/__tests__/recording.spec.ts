@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { startAudioRecording } from '../recording';
-import { audioEngine } from '../../createWebAudioEngine';
-import { getSelectedInputId } from '../../../useCases/audioDeviceSelection/getSelectedInputId';
+
 import { logger } from '#/infra/logger/appLogger';
+
+import { getSelectedInputId } from '../../../useCases/audioDeviceSelection/getSelectedInputId';
+import { audioEngine } from '../../createWebAudioEngine';
+import { startAudioRecording } from '../recording';
 
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { trimClipStart } from '../trimClipStart';
 
 const mocks = vi.hoisted(() => ({
@@ -31,7 +32,7 @@ describe('trimClipStart', () => {
         trimClipStart('c1', -5);
         const updater = mocks.updateClip.mock.calls[0][1];
         const result = updater({ startBeat: 2, endBeat: 10, audioOffsetBeats: 0 });
-        
+
         expect(result.startBeat).toBe(0);
         expect(result.audioOffsetBeats).toBe(-2);
     });
@@ -41,7 +42,7 @@ describe('trimClipStart', () => {
         const updater = mocks.updateClip.mock.calls[0][1];
         const mockClip = { startBeat: 0, endBeat: 10 };
         const result = updater(mockClip);
-        
+
         expect(result).toBe(mockClip);
     });
 });

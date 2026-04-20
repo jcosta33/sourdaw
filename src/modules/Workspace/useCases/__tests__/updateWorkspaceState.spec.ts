@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { updateWorkspaceState } from '../workspaceState';
 
 const mocks = vi.hoisted(() => ({

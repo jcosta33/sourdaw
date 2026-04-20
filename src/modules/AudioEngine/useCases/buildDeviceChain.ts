@@ -1,11 +1,10 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
-
+import { isPluginRequiresIsolationError } from '../engine/pluginHostingErrors';
 import { type Device } from '../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../repositories/devices/types';
 import { deviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy/setupDeviceStrategies';
-import { isPluginRequiresIsolationError } from '../engine/pluginHostingErrors';
 
 export type DeviceNodeEntry = {
     deviceId: string;
@@ -98,12 +97,12 @@ export const buildDeviceChain = inject({ logger })(
                     strategy,
                     // Proxies for legacy support (to be phased out completely soon)
                     nativeDsp: {
-                        setParam: (name, value) => strategy!.setParam(name, value),
-                        setBypass: (bypassed) => strategy!.setBypass?.(bypassed),
+                        setParam: (name, value) => strategy.setParam(name, value),
+                        setBypass: (bypassed) => strategy.setBypass?.(bypassed),
                     },
                     instrumentControls: {
-                        noteOn: (note, vel, midi, sampleFrame) => strategy!.noteOn?.(note, vel, midi, sampleFrame),
-                        noteOff: (note, sampleFrame) => strategy!.noteOff?.(note, sampleFrame),
+                        noteOn: (note, vel, midi, sampleFrame) => strategy.noteOn?.(note, vel, midi, sampleFrame),
+                        noteOff: (note, sampleFrame) => strategy.noteOff?.(note, sampleFrame),
                     },
                 });
             }

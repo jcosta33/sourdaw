@@ -1,6 +1,7 @@
 import { timelineViewStore } from '../../../stores/timelineViewStore';
 import { buildTimelineRenderModel } from '../../buildTimelineRenderModel';
 import { getTrackAtY } from '../getTrackAtY';
+
 import { RULER_HEIGHT } from './helpers';
 
 export function hitTestTrack(canvasY: number): string | null {

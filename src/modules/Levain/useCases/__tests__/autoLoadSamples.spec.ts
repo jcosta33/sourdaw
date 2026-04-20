@@ -16,9 +16,9 @@ vi.mock('@tauri-apps/api/path', () => ({
     resolveResource: vi.fn().mockResolvedValue('/resolved/path'),
 }));
 
-import { autoLoadLevainSamples } from '../autoLoadSamples';
 import { loadInstrumentFromManifest } from '../../repositories/sampleLoader/loadInstrumentFromManifest';
 import { setSampleLoadProgress } from '../../stores/levainStore';
+import { autoLoadLevainSamples } from '../autoLoadSamples';
 
 describe('autoLoadLevainSamples', () => {
     beforeEach(() => {

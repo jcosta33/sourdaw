@@ -1,15 +1,14 @@
 import { type ReactElement } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
+import { Plus } from 'lucide-react';
+
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
-import { Plus } from 'lucide-react';
-import {
-    assignToVca,
-    removeFromVca,
-    createVcaGroup,
-} from '#/modules/Arrangement/useCases';
+import { useStore } from '#/infra/store/useStore';
 import { defaultVcaGroupState, vcaGroupStore } from '#/modules/Arrangement/stores';
+import { assignToVca, removeFromVca, createVcaGroup } from '#/modules/Arrangement/useCases';
+
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 

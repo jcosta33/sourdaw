@@ -21,7 +21,7 @@ describe('createHmrPersistentState', () => {
             (): TestState => ({
                 counter: 7,
                 label: 'first',
-            }),
+            })
         );
 
         const state = createHmrPersistentState<TestState>('test.first', factory);

@@ -2,8 +2,8 @@ import { type NoteBlob, updateClipKneadState } from '../stores/kneadStore';
 
 /**
  * Parses raw analysis frames from the Rust/WASM engine and converts them
- * into editable NoteBlobs. 
- * 
+ * into editable NoteBlobs.
+ *
  * Aggressive Implementation:
  * - Contiguous voiced frames are grouped into "blobs".
  * - Small gaps (e.g. < 50ms) are bridged if pitch is stable.

@@ -10,7 +10,6 @@
  * Writes metering data (LUFS, GR, correlation, tap levels) into a shared telemetry slot.
  */
 
-import '../wasm/workletPolyfill.js';
 import { initSync, ProofInstance } from '../wasm/daw_dsp.js';
 
 class ProofProcessor extends AudioWorkletProcessor {
@@ -27,17 +26,19 @@ class ProofProcessor extends AudioWorkletProcessor {
             const msg = e.data;
             try {
                 if (msg.type === 'init') {
-                    if (this._ready) {return;}
+                    if (this._ready) {
+                        return;
+                    }
                     this._initWasm(msg.wasmBytes);
                 } else if (msg.type === 'init-sab') {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                 } else if (this._ready && !this._faulted) {
                     this._handleMessage(msg);
                 }
-            } catch (err) {
-                console.error('ProofProcessor error:', err);
+            } catch (error) {
+                console.error('ProofProcessor error:', error);
                 if (!this._ready) {
-                    this.port.postMessage({ type: 'error', message: err?.message ?? String(err) });
+                    this.port.postMessage({ type: 'error', message: error?.message ?? String(error) });
                 }
             }
         };
@@ -69,16 +70,24 @@ class ProofProcessor extends AudioWorkletProcessor {
     }
 
     _passthrough(input, output) {
-        if (output[0] && input[0]) {output[0].set(input[0]);}
-        if (output[1] && (input[1] ?? input[0])) {output[1].set(input[1] ?? input[0]);}
+        if (output[0] && input[0]) {
+            output[0].set(input[0]);
+        }
+        if (output[1] && (input[1] ?? input[0])) {
+            output[1].set(input[1] ?? input[0]);
+        }
     }
 
     process(inputs, outputs) {
-        if (!this._ready || this._faulted) {return true;}
+        if (!this._ready || this._faulted) {
+            return true;
+        }
 
         const input = inputs[0];
         const output = outputs[0];
-        if (!input || input.length < 2 || !output || output.length < 2) {return true;}
+        if (!input || input.length < 2 || !output || output.length < 2) {
+            return true;
+        }
 
         const frames = output[0].length;
 
@@ -95,7 +104,9 @@ class ProofProcessor extends AudioWorkletProcessor {
             const outRightPtr = inst.get_right_ptr();
 
             output[0].set(new Float32Array(mem, outLeftPtr, frames));
-            if (output[1]) {output[1].set(new Float32Array(mem, outRightPtr, frames));}
+            if (output[1]) {
+                output[1].set(new Float32Array(mem, outRightPtr, frames));
+            }
 
             this._meterCounter++;
             if (this._meterCounter >= 8) {
@@ -128,9 +139,9 @@ class ProofProcessor extends AudioWorkletProcessor {
                     this._sabView[24] = inst.get_latency_samples();
                 }
             }
-        } catch (err) {
+        } catch (error) {
             this._faulted = true;
-            this.port.postMessage({ type: 'error', message: String(err) });
+            this.port.postMessage({ type: 'error', message: String(error) });
             this._passthrough(input, output);
         }
 

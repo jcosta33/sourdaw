@@ -31,9 +31,7 @@ export function shiftMidiNotesAfterBeat(input: ShiftMidiNotesAfterBeatInput): vo
 
     const nextNotes: typeof state.notesByClipId = {};
     for (const [clipId, notes] of Object.entries(state.notesByClipId)) {
-        nextNotes[clipId] = notes.map((n) =>
-            n.startBeat >= atBeat ? { ...n, startBeat: n.startBeat + delta } : n
-        );
+        nextNotes[clipId] = notes.map((n) => (n.startBeat >= atBeat ? { ...n, startBeat: n.startBeat + delta } : n));
     }
 
     const nextCc: typeof state.ccByClipId = {};

@@ -1,4 +1,5 @@
 import { type ReactElement, type ButtonHTMLAttributes, type Ref } from 'react';
+
 import { cn } from '#/utils/Styles/cn';
 
 type LatchButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -73,9 +74,9 @@ export function LatchButton({
                     ? {
                           // Reversed gradient + deep inset — sinks INTO the panel
                           background: 'linear-gradient(180deg, #111 0%, #181818 50%, #1c1c1c 100%)',
-                          boxShadow:
-                              'inset 0 2px 4px rgba(0,0,0,0.6), inset 0 1px 1px rgba(0,0,0,0.4)' +
-                              activeGlowShadow[variant],
+                          boxShadow: `inset 0 2px 4px rgba(0,0,0,0.6), inset 0 1px 1px rgba(0,0,0,0.4)${
+                              activeGlowShadow[variant]
+                          }`,
                           border: '1px solid rgba(0,0,0,0.6)',
                           borderTopColor: 'rgba(0,0,0,0.8)',
                           borderBottomColor: 'rgba(255,255,255,0.03)',

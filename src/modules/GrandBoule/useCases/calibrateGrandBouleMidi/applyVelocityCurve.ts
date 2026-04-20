@@ -1,4 +1,5 @@
 import { type GrandBouleMidiCalibration } from '../../models/GrandBouleMidiCalibration';
+
 import { clamp } from './helpers';
 
 /**
@@ -9,7 +10,7 @@ import { clamp } from './helpers';
  */
 export const applyVelocityCurve = (rawVelocity: number, calibration: GrandBouleMidiCalibration): number => {
     const normalised = clamp(rawVelocity / 127, 0, 1);
-    const curved = Math.pow(normalised, calibration.velocityCurveExponent);
+    const curved = normalised ** calibration.velocityCurveExponent;
     const { velocityFloor, velocityCeiling } = calibration;
     return velocityFloor + curved * (velocityCeiling - velocityFloor);
 };

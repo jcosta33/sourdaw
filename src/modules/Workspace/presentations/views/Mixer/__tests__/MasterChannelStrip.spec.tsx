@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { MasterChannelStrip } from '../MasterChannelStrip';
 
 // Mock hooks
@@ -16,17 +17,16 @@ vi.mock('#/modules/Transport/useCases/setMasterGain', () => ({
 
 // Mock child components
 vi.mock('#/components/daw/DawChannelStripShell', () => ({
-    DawChannelStripShell: ({ children, className }: any) => <div data-testid="channel-strip-shell" className={className}>{children}</div>,
+    DawChannelStripShell: ({ children, className }: any) => (
+        <div data-testid="channel-strip-shell" className={className}>
+            {children}
+        </div>
+    ),
 }));
 
 vi.mock('#/components/daw/Fader', () => ({
     Fader: ({ value, onChange }: any) => (
-        <input
-            type="range"
-            data-testid="fader"
-            value={value}
-            onChange={(e) => onChange(parseFloat(e.target.value))}
-        />
+        <input type="range" data-testid="fader" value={value} onChange={(e) => onChange(parseFloat(e.target.value))} />
     ),
 }));
 
@@ -58,7 +58,7 @@ describe('MasterChannelStrip', () => {
         render(<MasterChannelStrip widthClass="w-36" />);
         const fader = screen.getByTestId('fader');
         fireEvent.change(fader, { target: { value: '0.5' } });
-        
+
         const { setMasterGain } = await import('#/modules/Transport/useCases/setMasterGain');
         expect(setMasterGain).toHaveBeenCalledWith(50);
     });

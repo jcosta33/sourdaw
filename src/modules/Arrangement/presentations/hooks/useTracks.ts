@@ -1,4 +1,5 @@
 import { useStore } from '#/infra/store/useStore';
+
 import { trackStore, type TrackStoreState } from '../../stores/trackStore';
 
 const defaultState: TrackStoreState = { tracks: [], selectedTrackId: null };

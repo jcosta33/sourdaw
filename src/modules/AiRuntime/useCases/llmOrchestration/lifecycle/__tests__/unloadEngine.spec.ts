@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { unloadEngine } from '../unloadEngine';
+
 import { llmStatusStore } from '../../../../stores/llmStatusStore';
+import { unloadEngine } from '../unloadEngine';
 
 const mocks = vi.hoisted(() => ({
     isNativeEngineReady: vi.fn(),

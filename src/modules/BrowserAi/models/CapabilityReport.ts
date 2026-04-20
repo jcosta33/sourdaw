@@ -24,9 +24,4 @@ export type CapabilityReport = {
     detectedAt: number;
 };
 
-export type CapabilityDisabledReason =
-    | 'not-chrome'
-    | 'no-webgpu'
-    | 'tauri-macos'
-    | 'tauri-linux'
-    | 'unknown';
+export type CapabilityDisabledReason = 'not-chrome' | 'no-webgpu' | 'tauri-macos' | 'tauri-linux' | 'unknown';

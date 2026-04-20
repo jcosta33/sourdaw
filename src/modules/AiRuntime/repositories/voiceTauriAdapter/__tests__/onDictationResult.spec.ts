@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { onDictationResult } from '../onDictationResult';
+
 import { tauriListen } from '#/utils/tauriBridge';
+
+import { onDictationResult } from '../onDictationResult';
 
 vi.mock('#/utils/tauriBridge', () => ({
     tauriListen: vi.fn(),

@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { ModulationDock } from '../ModulationDock';
+import { describe, it, expect, vi } from 'vitest';
+
 import { DEFAULT_PATCH } from '../../../models/BacteriaPatch';
+import { ModulationDock } from '../ModulationDock';
 
 describe('ModulationDock', () => {
     it('should render', () => {

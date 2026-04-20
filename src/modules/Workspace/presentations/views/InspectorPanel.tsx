@@ -1,20 +1,24 @@
 import { type CSSProperties, type ReactElement, useState } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
+import { X } from 'lucide-react';
+
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
-import { ScrollArea } from '#/components/ui/scroll-area';
 import { Button } from '#/components/ui/button';
-import { X } from 'lucide-react';
-import { useTracks } from '../hooks/useTracks';
-import { workspaceStore } from '../../stores/workspaceStore';
+import { ScrollArea } from '#/components/ui/scroll-area';
+import { useStore } from '#/infra/store/useStore';
+
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
-import { toggleInspector } from '../../useCases/togglePanel/panelToggles/toggleInspector';
+import { workspaceStore } from '../../stores/workspaceStore';
 import { clearClipSelection } from '../../useCases/togglePanel/panelToggles/clearClipSelection';
 import { selectClipWithFocus } from '../../useCases/togglePanel/panelToggles/selectClipWithFocus';
-import { TrackInspector } from './Inspector/TrackInspector';
+import { toggleInspector } from '../../useCases/togglePanel/panelToggles/toggleInspector';
+import { useTracks } from '../hooks/useTracks';
+
 import { ClipInspector } from './Inspector/ClipInspector';
 import { DeviceInspector } from './Inspector/DeviceInspector';
+import { TrackInspector } from './Inspector/TrackInspector';
 
 type InspectorPanelProps = {
     style?: CSSProperties;

@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { DeviceInspector } from '../DeviceInspector';
 
 // Mock external dependencies
@@ -24,11 +25,7 @@ vi.mock('../../../components/Inspector/MetaText', () => ({
 }));
 
 vi.mock('../../../components/Inspector/InspectorDetailHeader', () => ({
-    InspectorDetailHeader: ({
-        title,
-        onBack,
-        actions,
-    }: any) => (
+    InspectorDetailHeader: ({ title, onBack, actions }: any) => (
         <div data-testid="inspector-header">
             <div data-testid="header-title">{title}</div>
             <button data-testid="back-btn" onClick={onBack}>
@@ -40,15 +37,8 @@ vi.mock('../../../components/Inspector/InspectorDetailHeader', () => ({
 }));
 
 vi.mock('#/components/daw/MechanicalSwitch', () => ({
-    MechanicalSwitch: ({
-        checked,
-        onChange,
-    }: any) => (
-        <button
-            data-testid="mechanical-switch"
-            data-checked={checked}
-            onClick={() => onChange(!checked)}
-        >
+    MechanicalSwitch: ({ checked, onChange }: any) => (
+        <button data-testid="mechanical-switch" data-checked={checked} onClick={() => onChange(!checked)}>
             Toggle
         </button>
     ),

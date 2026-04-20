@@ -1,33 +1,50 @@
-import { trackStore } from '../../stores/trackStore';
+import { getTransportState } from '#/modules/Transport/useCases';
+
 import { type Clip } from '../../models/Track';
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { getTransportState } from '#/modules/Transport/useCases';
+import { trackStore } from '../../stores/trackStore';
 
 export function flattenTrack(trackId: string): void {
     const state = trackStore.value;
-    if (!state) {return;}
+    if (!state) {
+        return;
+    }
 
     const track = state.tracks.find((t) => t.id === trackId);
-    if (!track || track.freezeState.status !== 'frozen') {return;}
+    if (!track || track.freezeState.status !== 'frozen') {
+        return;
+    }
 
     const { frozenBufferId } = track.freezeState;
-    if (!frozenBufferId) {return;}
+    if (!frozenBufferId) {
+        return;
+    }
 
     let startBeat = Infinity;
     let endBeat = -Infinity;
     for (const c of track.clips) {
-        if (c.startBeat < startBeat) {startBeat = c.startBeat;}
-        if (c.endBeat > endBeat) {endBeat = c.endBeat;}
+        if (c.startBeat < startBeat) {
+            startBeat = c.startBeat;
+        }
+        if (c.endBeat > endBeat) {
+            endBeat = c.endBeat;
+        }
     }
-    if (startBeat === Infinity) {startBeat = 0;}
-    if (endBeat === -Infinity) {endBeat = 1;}
+    if (startBeat === Infinity) {
+        startBeat = 0;
+    }
+    if (endBeat === -Infinity) {
+        endBeat = 1;
+    }
 
     const newClip: Clip = {
         id: `flattened-${crypto.randomUUID()}`,
         trackId,
         name: `${track.name} (Flattened)`,
         startBeat,
-        endBeat: endBeat + (track.freezeState.renderSettings?.tailLengthSeconds ?? 0) * ((getTransportState()?.tempo ?? 120) / 60),
+        endBeat:
+            endBeat +
+            (track.freezeState.renderSettings?.tailLengthSeconds ?? 0) * ((getTransportState()?.tempo ?? 120) / 60),
         type: 'audio',
         audioBufferId: frozenBufferId,
         fadeInBeats: 0,

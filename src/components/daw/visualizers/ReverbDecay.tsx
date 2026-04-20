@@ -6,6 +6,7 @@
  * Uses lavender accent (Time & Space category color) for consistency.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type ReverbDecayProps = {
@@ -29,9 +30,13 @@ export const ReverbDecay = ({
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {
+            return;
+        }
 
         const dpr = window.devicePixelRatio || 1;
         canvas.width = width * dpr;
@@ -142,8 +147,11 @@ export const ReverbDecay = ({
             }
 
             const y = pad + plotH - amp * plotH;
-            if (i === 0) ctx.moveTo(x, Math.max(pad, y));
-            else ctx.lineTo(x, Math.max(pad, y));
+            if (i === 0) {
+                ctx.moveTo(x, Math.max(pad, y));
+            } else {
+                ctx.lineTo(x, Math.max(pad, y));
+            }
         }
         ctx.strokeStyle = `${accentLavender}28`;
         ctx.lineWidth = 5;
@@ -173,8 +181,11 @@ export const ReverbDecay = ({
             }
 
             const y = pad + plotH - amp * plotH;
-            if (i === 0) ctx.moveTo(x, Math.max(pad, y));
-            else ctx.lineTo(x, Math.max(pad, y));
+            if (i === 0) {
+                ctx.moveTo(x, Math.max(pad, y));
+            } else {
+                ctx.lineTo(x, Math.max(pad, y));
+            }
         }
         ctx.strokeStyle = accentLavender;
         ctx.lineWidth = 1.5;

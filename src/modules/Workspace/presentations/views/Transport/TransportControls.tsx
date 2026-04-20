@@ -1,13 +1,13 @@
 import { type ReactElement } from 'react';
-import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
-import { Slider } from '#/components/ui/slider';
+
 import { Play, Pause, Square, Circle, Repeat, Scissors, ListOrdered, Layers } from 'lucide-react';
-import { Button } from '#/components/ui/button';
+
+import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { LED } from '#/components/daw/LED';
+import { Button } from '#/components/ui/button';
+import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { cn } from '#/utils/Styles/cn';
-import { TransportValuePill } from '../../components/Transport/TransportValuePill';
 import {
     togglePlayback,
     stopPlayback,
@@ -20,6 +20,9 @@ import {
     toggleCountIn,
     setCountInBars,
 } from '#/modules/Transport/useCases';
+import { cn } from '#/utils/Styles/cn';
+
+import { TransportValuePill } from '../../components/Transport/TransportValuePill';
 
 type TransportControlsProps = {
     isPlaying: boolean;

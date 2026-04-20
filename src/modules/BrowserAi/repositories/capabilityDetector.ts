@@ -10,6 +10,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri } from '#/utils/tauriBridge';
+
 import { type CapabilityReport, type WebGpuTier } from '../models/CapabilityReport';
 
 const STORAGE_KEY = 'sourdaw-browser-ai-capability';
@@ -58,7 +59,9 @@ async function runWebGpuBenchmark(): Promise<number> {
         const startTime = performance.now();
         // Check if WebGPU adapter is available and responsive
         if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
-            const adapter = await (navigator as unknown as { gpu: { requestAdapter: () => Promise<unknown> } }).gpu.requestAdapter();
+            const adapter = await (
+                navigator as unknown as { gpu: { requestAdapter: () => Promise<unknown> } }
+            ).gpu.requestAdapter();
             if (adapter) {
                 const endTime = performance.now();
                 // Adapter acquisition time is a proxy for WebGPU responsiveness
@@ -88,7 +91,9 @@ type DetectCapabilitiesOutput = Promise<CapabilityReport>;
 
 export const detectCapabilities = inject({ logger })(
     ({ logger }) =>
-        async function detectCapabilities({ forceRefresh = false }: { forceRefresh?: boolean } = {}): DetectCapabilitiesOutput {
+        async function detectCapabilities({
+            forceRefresh = false,
+        }: { forceRefresh?: boolean } = {}): DetectCapabilitiesOutput {
             // Check cached result first
             if (!forceRefresh && typeof localStorage !== 'undefined') {
                 const cached = localStorage.getItem(STORAGE_KEY);
@@ -106,7 +111,8 @@ export const detectCapabilities = inject({ logger })(
             const chromeVersion = detectChromeVersion();
             const webGpuAvailable = typeof navigator !== 'undefined' && 'gpu' in navigator;
             const sharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
-            const opfsAvailable = typeof navigator !== 'undefined' && 'storage' in navigator && 'getDirectory' in navigator.storage;
+            const opfsAvailable =
+                typeof navigator !== 'undefined' && 'storage' in navigator && 'getDirectory' in navigator.storage;
 
             let capability: CapabilityReport['capability'];
             let benchmarkMs: number | null = null;
@@ -115,7 +121,9 @@ export const detectCapabilities = inject({ logger })(
             if (isTauriNonWindowsPlatform()) {
                 // macOS/Linux Tauri — route to native pipeline instead
                 capability = 'unsupported-platform';
-                logger.info('[BrowserAi] Running in Tauri on macOS/Linux — browser AI disabled, native pipeline available');
+                logger.info(
+                    '[BrowserAi] Running in Tauri on macOS/Linux — browser AI disabled, native pipeline available'
+                );
             } else if (!chromeVersion) {
                 capability = 'unsupported-browser';
                 logger.info('[BrowserAi] Non-Chrome browser detected — browser AI disabled');

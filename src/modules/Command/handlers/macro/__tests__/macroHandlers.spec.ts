@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleStartMacroRecording } from '../handleStartMacroRecording';
-import { handleStopMacroRecording } from '../handleStopMacroRecording';
-import { handlePlayMacro } from '../handlePlayMacro';
-import { handleDeleteMacro } from '../handleDeleteMacro';
 
+import { deleteMacro } from '../../../useCases/macro/management/deleteMacro';
+import { playMacro } from '../../../useCases/macro/playback';
 import { startMacroRecording } from '../../../useCases/macro/recording/startMacroRecording';
 import { stopMacroRecording } from '../../../useCases/macro/recording/stopMacroRecording';
-import { playMacro } from '../../../useCases/macro/playback';
-import { deleteMacro } from '../../../useCases/macro/management/deleteMacro';
+import { handleDeleteMacro } from '../handleDeleteMacro';
+import { handlePlayMacro } from '../handlePlayMacro';
+import { handleStartMacroRecording } from '../handleStartMacroRecording';
+import { handleStopMacroRecording } from '../handleStopMacroRecording';
 
 vi.mock('../../../useCases/macro/recording/startMacroRecording', () => ({ startMacroRecording: vi.fn() }));
 vi.mock('../../../useCases/macro/recording/stopMacroRecording', () => ({ stopMacroRecording: vi.fn() }));

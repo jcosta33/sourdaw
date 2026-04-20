@@ -1,10 +1,11 @@
 import { type ReactElement } from 'react';
+
 import { ChevronsRight } from 'lucide-react';
+
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { timelineViewStore } from '#/modules/Arrangement/stores';
-import { toggleAutoScroll } from '#/modules/Arrangement/stores';
 import { useStore } from '#/infra/store/useStore';
+import { timelineViewStore, toggleAutoScroll } from '#/modules/Arrangement/stores';
 
 export const AutoScrollToggle = (): ReactElement => {
     const timelineViewState = useStore(timelineViewStore, {

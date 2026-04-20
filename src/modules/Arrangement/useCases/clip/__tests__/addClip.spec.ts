@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { addClip } from '../addClip';
 
 const mocks = vi.hoisted(() => ({
@@ -26,7 +27,7 @@ describe('addClip', () => {
 
     it('creates and adds a clip to the track', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', kind: 'audio', clips: [] }]
+            tracks: [{ id: 't1', kind: 'audio', clips: [] }],
         });
 
         const result = addClip({
@@ -50,7 +51,7 @@ describe('addClip', () => {
 
     it('infers type from track kind if not provided', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', kind: 'midi', clips: [] }]
+            tracks: [{ id: 't1', kind: 'midi', clips: [] }],
         });
 
         const result = addClip({
@@ -65,7 +66,7 @@ describe('addClip', () => {
 
     it('respects explicitly provided type', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', kind: 'audio', clips: [] }]
+            tracks: [{ id: 't1', kind: 'audio', clips: [] }],
         });
 
         const result = addClip({

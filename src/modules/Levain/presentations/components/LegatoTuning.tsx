@@ -5,10 +5,13 @@
  * Below: RotaryKnobs for thresholds and portamento velocity.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
-import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
+
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
+import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import { type LegatoConfig } from '../../models/LevainPatch';
+
 type LegatoTuningProps = {
     config: LegatoConfig;
     onChange: (partial: Partial<LegatoConfig>) => void;

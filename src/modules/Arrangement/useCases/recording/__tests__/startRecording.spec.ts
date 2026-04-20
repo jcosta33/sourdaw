@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { startRecording } from '../startRecording';
 
 const mocks = vi.hoisted(() => ({
@@ -51,7 +52,7 @@ describe('startRecording', () => {
             tracks: [
                 { id: 't1', armed: true, kind: 'audio', clips: [] },
                 { id: 't2', armed: false, kind: 'midi', clips: [] },
-            ]
+            ],
         });
         mocks.getTransportState.mockReturnValue({ playheadPosition: 4 });
         mocks.getTakeLaneForTrack.mockReturnValue(null);
@@ -74,12 +75,12 @@ describe('startRecording', () => {
     it('skips MIDI clip creation if overdubbing onto existing clip', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [
-                { id: 't1', armed: true, kind: 'midi', clips: [{ id: 'c1', type: 'midi', startBeat: 0, endBeat: 10 }] }
-            ]
+                { id: 't1', armed: true, kind: 'midi', clips: [{ id: 'c1', type: 'midi', startBeat: 0, endBeat: 10 }] },
+            ],
         });
-        mocks.getTransportState.mockReturnValue({ 
-            playheadPosition: 5, 
-            overdubEnabled: true 
+        mocks.getTransportState.mockReturnValue({
+            playheadPosition: 5,
+            overdubEnabled: true,
         });
 
         const newClips = startRecording();

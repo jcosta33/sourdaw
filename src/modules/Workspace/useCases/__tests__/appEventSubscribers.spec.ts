@@ -1,13 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
-import { onProjectSave } from '../appEventSubscribers/onProjectSave';
-import { onProjectNew } from '../appEventSubscribers/onProjectNew';
-import { onCommandUndo } from '../appEventSubscribers/onCommandUndo';
-import { onCommandRedo } from '../appEventSubscribers/onCommandRedo';
-import { onMidiImport } from '../appEventSubscribers/onMidiImport';
 
-const mocks = vi.hoisted(() => ({ mockEventBus: {
+import { onCommandRedo } from '../appEventSubscribers/onCommandRedo';
+import { onCommandUndo } from '../appEventSubscribers/onCommandUndo';
+import { onMidiImport } from '../appEventSubscribers/onMidiImport';
+import { onProjectNew } from '../appEventSubscribers/onProjectNew';
+import { onProjectSave } from '../appEventSubscribers/onProjectSave';
+
+const mocks = vi.hoisted(() => ({
+    mockEventBus: {
         on: vi.fn(),
-    } }));
+    },
+}));
 
 vi.mock('#/app/registerDependencies', () => ({
     eventBus: mocks.mockEventBus,

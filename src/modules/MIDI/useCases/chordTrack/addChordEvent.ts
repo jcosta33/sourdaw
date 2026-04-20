@@ -1,5 +1,5 @@
-import { chordTrackStore } from '../../stores/chordTrackStore';
 import { createChordEvent, type ChordEvent } from '../../models/ChordEvent';
+import { chordTrackStore } from '../../stores/chordTrackStore';
 import { type ChordType } from '../chordStamps/helpers';
 
 export function addChordEvent(beat: number, root: number, quality: ChordType, duration: number): ChordEvent | null {

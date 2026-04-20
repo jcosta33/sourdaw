@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { streamNativeCompletion } from '../streaming';
 
 const mocks = vi.hoisted(() => ({
@@ -34,7 +35,7 @@ describe('streamNativeCompletion', () => {
             const onToken = vi.fn();
             const messages = [
                 { role: 'system', content: 'You are a bot.' },
-                { role: 'user', content: 'Hello' }
+                { role: 'user', content: 'Hello' },
             ];
 
             await streamNativeCompletion(messages, onToken);
@@ -67,7 +68,7 @@ describe('streamNativeCompletion', () => {
 
         it('fetches SSE stream and parses tokens', async () => {
             const encoder = new TextEncoder();
-            
+
             // Create a mock stream chunk reader
             const mockReadChunks = [
                 encoder.encode('data: {"choices": [{"delta": {"content": "Hello"}}]}\n\n'),
@@ -82,12 +83,12 @@ describe('streamNativeCompletion', () => {
                         return { done: false, value: mockReadChunks[readIndex++] };
                     }
                     return { done: true, value: undefined };
-                })
+                }),
             };
 
             mocks.fetch.mockResolvedValue({
                 ok: true,
-                body: { getReader: () => mockReader }
+                body: { getReader: () => mockReader },
             });
 
             const tokens: string[] = [];
@@ -103,7 +104,7 @@ describe('streamNativeCompletion', () => {
             mocks.fetch.mockResolvedValue({
                 ok: false,
                 status: 404,
-                text: async () => 'Not Found'
+                text: async () => 'Not Found',
             });
 
             await expect(streamNativeCompletion([], vi.fn())).rejects.toThrow('llama-server error 404: Not Found');
@@ -112,7 +113,7 @@ describe('streamNativeCompletion', () => {
         it('throws if no body is returned', async () => {
             mocks.fetch.mockResolvedValue({
                 ok: true,
-                body: null
+                body: null,
             });
 
             await expect(streamNativeCompletion([], vi.fn())).rejects.toThrow('No response body');

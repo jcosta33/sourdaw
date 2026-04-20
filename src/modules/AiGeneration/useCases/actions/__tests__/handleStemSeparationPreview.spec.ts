@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleStemSeparationPreview } from '../handleStemSeparationPreview';
 
 const { separateStemsMock, updateTaskMock } = vi.hoisted(() => ({

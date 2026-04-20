@@ -1,12 +1,13 @@
-import { createHandler } from '#/utils/createHandler';
 import { logger } from '#/infra/logger/appLogger';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 import { addClip, addTrack } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { createHandler } from '#/utils/createHandler';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 export const handleGenerateAudioAiMidi = createHandler<'generateAudio'>({
     execute: async (a) => {
-        const { generateAudio: genAudio, isAudioGenerationAvailable } = await import('#/modules/AudioAnalysis/useCases');
+        const { generateAudio: genAudio, isAudioGenerationAvailable } =
+            await import('#/modules/AudioAnalysis/useCases');
 
         if (!isAudioGenerationAvailable()) {
             notifyUser('Audio generation requires the Sourdaw desktop app', 'warning');
@@ -47,7 +48,9 @@ export const handleGenerateAudioAiMidi = createHandler<'generateAudio'>({
                 audioBufferId: bufferId,
             });
 
-            logger.info(`[Audio AI] Created clip "${promptLabel}" (${String(durationBeats)} beats) on track ${trackId}`);
+            logger.info(
+                `[Audio AI] Created clip "${promptLabel}" (${String(durationBeats)} beats) on track ${trackId}`
+            );
         } catch (error) {
             logger.warn(`[Audio AI] Generation failed: ${String(error)}`);
             notifyUser(`Audio generation failed: ${String(error)}`, 'error');

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { applyDelayParams } from '../applyDelayParams';
+
 import { type OfflineDeviceNode } from '../../types';
+import { applyDelayParams } from '../applyDelayParams';
 
 function mockAudioParam(initial = 0) {
     return { value: initial };

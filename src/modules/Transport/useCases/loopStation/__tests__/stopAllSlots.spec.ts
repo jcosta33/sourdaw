@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type LoopStationState } from '../../../stores/loopStationStore';
-import { stopAllSlots } from '../stopAllSlots';
 import { loopStationStore } from '../../../stores/loopStationStore';
+import { stopAllSlots } from '../stopAllSlots';
 
 vi.mock('../../../stores/loopStationStore', () => ({
     loopStationStore: { value: null, set: vi.fn() },
@@ -42,9 +43,9 @@ describe('stopAllSlots', () => {
                 },
             ],
         } as any;
-        
+
         stopAllSlots();
-        
+
         const next = vi.mocked(loopStationStore.set).mock.calls[0]![0] as LoopStationState;
         expect(next.slots[0]!.state).toBe('stopped');
     });

@@ -1,9 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { MiniMasterSpectrum } from '../MiniMasterSpectrum';
+
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../../hooks/useTracks';
+import { MiniMasterSpectrum } from '../MiniMasterSpectrum';
 
 // Mock external dependencies
 vi.mock('#/modules/AudioEngine/useCases/engineAccess/getMasterAnalyser', () => ({
@@ -97,6 +99,9 @@ describe('MiniMasterSpectrum', () => {
 
     it('should have correct title attribute', () => {
         renderWithTooltip(<MiniMasterSpectrum />);
-        expect(screen.getByLabelText('Master Track Spectrum')).toHaveAttribute('title', 'Master Track (Click to inspect)');
+        expect(screen.getByLabelText('Master Track Spectrum')).toHaveAttribute(
+            'title',
+            'Master Track (Click to inspect)'
+        );
     });
 });

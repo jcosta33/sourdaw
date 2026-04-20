@@ -14,8 +14,8 @@ vi.mock('../undoTree/recordToTree', () => ({
 }));
 
 // Import after mocks so the SUT binds to them.
-import { commitUndoEntry } from '../commitUndoEntry';
 import { createUndoEntry } from '../commandQueries';
+import { commitUndoEntry } from '../commitUndoEntry';
 
 describe('commitUndoEntry', () => {
     beforeEach(() => {

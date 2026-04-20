@@ -4,11 +4,13 @@
  * telemetry sent back via MessagePort.
  */
 
-import scoringProcessorUrl from '../services/scoringProcessor.ts?worker&url';
-import { telemetryAllocator, SCORING_IDX, type TelemetrySlot } from './telemetryAllocator';
 import { NOTE_NAMES } from '#/utils/noteNames';
-import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
+
+import scoringProcessorUrl from '../services/scoringProcessor.ts?worker&url';
+
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
+import { telemetryAllocator, SCORING_IDX, type TelemetrySlot } from './telemetryAllocator';
+import { createReadyHandshake, ensureWorkletRegistered, fetchWasmBinary } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/scoring/scoring_bg.wasm';
 
@@ -88,7 +90,9 @@ export async function createScoringNode(ctx: BaseAudioContext): Promise<ScoringN
                 cancelAnimationFrame(telemetryRafId);
                 telemetryRafId = null;
             }
-            if (!slot) {return;}
+            if (!slot) {
+                return;
+            }
             const view = slot.view;
             const poll = () => {
                 const active = view[SCORING_IDX.active] !== 0;

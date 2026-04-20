@@ -1,12 +1,7 @@
 import { type GlutenPatch } from '../../models/GlutenPatch';
 import { setGlutenParam } from '../../stores/glutenStore';
 
-import {
-    encodeGlutenValue,
-    findDeviceRefGluten,
-    flushParam,
-    paramBatcher,
-} from './helpers';
+import { encodeGlutenValue, findDeviceRefGluten, flushParam, paramBatcher } from './helpers';
 
 export function setGlutenParamWithAudio<K extends keyof GlutenPatch>(
     deviceId: string,

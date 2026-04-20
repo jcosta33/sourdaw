@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { applyReverbParams } from '../applyReverbParams';
+
 import { type OfflineDeviceNode } from '../../types';
+import { applyReverbParams } from '../applyReverbParams';
 
 function mockAudioParam(initial = 0) {
     return { value: initial };

@@ -30,9 +30,11 @@
  *    during drag) without waiting for the next rAF tick.
  */
 import { type RefObject, useRef, useEffect } from 'react';
-import { midiStore } from '#/modules/MIDI/stores';
+
 import { trackStore } from '#/modules/Arrangement/stores';
+import { midiStore } from '#/modules/MIDI/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
+
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import {
     NOTE_NAMES,
@@ -72,9 +74,9 @@ type RendererDeps = {
         clips: Array<{ id: string; type: string; color: string }>;
     }> | null;
     /** Current draw preview (drag-to-create) */
-    drawPreviewRef: RefObject<{ beat: number; pitch: number; duration: number } | null | null>;
+    drawPreviewRef: RefObject<{ beat: number; pitch: number; duration: number } | null>;
     /** Active rubber band selection rectangle */
-    rubberBandRef: RefObject<{ x: number; y: number; w: number; h: number } | null | null>;
+    rubberBandRef: RefObject<{ x: number; y: number; w: number; h: number } | null>;
     /** Ephemeral drag preview — avoids flooding midiStore during note move/resize */
     dragPreviewRef: RefObject<{
         noteIds: Set<string>;
@@ -509,24 +511,38 @@ function drawOpenedClipNotes(
     pitchToRow: Map<number, number>,
     beatWidth: number,
     notesByClipId: Record<string, MidiNote[]>,
-    tracks: Array<{ id: string; kind: string; color: string; clips: Array<{ id: string; type: string; color: string }> }>,
+    tracks: Array<{
+        id: string;
+        kind: string;
+        color: string;
+        clips: Array<{ id: string; type: string; color: string }>;
+    }>,
     primaryClipId: string,
     openedClipIds: string[],
     selectedNoteIds: Set<string>
 ): void {
     for (const openedId of openedClipIds) {
-        if (openedId === primaryClipId) continue;
+        if (openedId === primaryClipId) {
+            continue;
+        }
         const openedNotes = notesByClipId[openedId];
-        if (!openedNotes) continue;
+        if (!openedNotes) {
+            continue;
+        }
         // Find the clip color from tracks
         let clipColor = 'oklch(0.7 0.12 250)'; // default blue-ish
         for (const track of tracks) {
             const clip = track.clips.find((c) => c.id === openedId);
-            if (clip) { clipColor = clip.color || track.color; break; }
+            if (clip) {
+                clipColor = clip.color || track.color;
+                break;
+            }
         }
         for (const note of openedNotes) {
             const row = pitchToRow.get(note.pitch) ?? -1;
-            if (row === -1) continue;
+            if (row === -1) {
+                continue;
+            }
             const x = note.startBeat * beatWidth;
             const y = row * ROW_HEIGHT;
             const w = note.duration * beatWidth;

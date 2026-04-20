@@ -1,18 +1,19 @@
 import { type ReactElement, useState } from 'react';
-import { logger } from '#/infra/logger/appLogger';
-import { useStore } from '#/infra/store/useStore';
+
+import { GitBranch, Plus, Merge, Trash2, Check, X } from 'lucide-react';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
-import { GitBranch, Plus, Merge, Trash2, Check, X } from 'lucide-react';
+import { logger } from '#/infra/logger/appLogger';
+import { useStore } from '#/infra/store/useStore';
 
 import { branchStore, type BranchRecord, type BranchStoreState, MAIN_BRANCH_ID } from '../../stores/branchStore';
-import { forkProjectBranch } from '../../useCases/crdtBranching/forkProjectBranch';
-import { switchBranch } from '../../useCases/crdtBranching/switchBranch';
-import { mergeBranch } from '../../useCases/crdtBranching/mergeBranch';
 import { deleteBranch } from '../../useCases/crdtBranching/deleteBranch';
+import { forkProjectBranch } from '../../useCases/crdtBranching/forkProjectBranch';
+import { mergeBranch } from '../../useCases/crdtBranching/mergeBranch';
+import { switchBranch } from '../../useCases/crdtBranching/switchBranch';
 
 const defaultState: BranchStoreState = {
     branches: [],

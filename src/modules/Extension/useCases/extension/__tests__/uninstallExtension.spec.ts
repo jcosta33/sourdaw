@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { type ExtensionManifest, type ExtensionMarketplaceState, type InstalledExtension } from '../../../stores/extension';
+
+import {
+    type ExtensionManifest,
+    type ExtensionMarketplaceState,
+    type InstalledExtension,
+} from '../../../stores/extension';
 import { uninstallExtension } from '../uninstallExtension';
 
 const mocks = vi.hoisted(() => ({

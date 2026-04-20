@@ -2,6 +2,7 @@
  * Karplus-Strong physical modeling controls.
  */
 import { type ReactElement } from 'react';
+
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 
 type KarplusSectionProps = {

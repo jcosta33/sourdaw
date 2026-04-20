@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { assertOk } from '../assertOk';
-import { assertErr } from '../assertErr';
+
 import { ok, err } from '../../result';
+import { assertErr } from '../assertErr';
+import { assertOk } from '../assertOk';
 
 describe('Testing helpers', () => {
     describe('assertOk', () => {

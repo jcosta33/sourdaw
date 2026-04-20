@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { setMock, mockStore } = vi.hoisted(() => {
     const ref = {
-        value: { changes: [] as { id: string; beat: number; numerator: number; denominator: number }[] } as { changes: { id: string; beat: number; numerator: number; denominator: number }[] } | null,
+        value: { changes: [] as { id: string; beat: number; numerator: number; denominator: number }[] } as {
+            changes: { id: string; beat: number; numerator: number; denominator: number }[];
+        } | null,
     };
     const setMock = vi.fn((next: typeof ref.value) => {
         ref.value = next;
@@ -29,8 +31,8 @@ vi.mock('../../models/TimeSignatureMap', () => ({
 }));
 
 import { addTimeSignatureChange } from '../timeSignatureChanges/addTimeSignatureChange';
-import { removeTimeSignatureChange } from '../timeSignatureChanges/removeTimeSignatureChange';
 import { getTimeSignatureChanges } from '../timeSignatureChanges/getTimeSignatureChanges';
+import { removeTimeSignatureChange } from '../timeSignatureChanges/removeTimeSignatureChange';
 
 describe('timeSignatureChanges', () => {
     beforeEach(() => {

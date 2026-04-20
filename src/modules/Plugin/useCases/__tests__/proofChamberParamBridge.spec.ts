@@ -1,15 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { updateProofChamberParam } from '../proofChamberParamBridge';
 
 const getAllTracks = vi.fn(() => []);
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
-    ...await importOriginal<typeof import('#/modules/Arrangement/useCases')>(),
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     getAllTracks: (...args: any[]) => getAllTracks(...args),
 }));
 
 const updateDeviceParam = vi.fn();
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
-    ...await importOriginal<typeof import('#/modules/AudioEngine/useCases')>(),
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     updateDeviceParam: (...args: any[]) => updateDeviceParam(...args),
 }));
 

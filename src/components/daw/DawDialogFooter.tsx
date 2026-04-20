@@ -20,12 +20,7 @@ export const DawDialogFooter = ({
     children,
     ...props
 }: DawDialogFooterProps): ReactElement => (
-    <Row
-        justify={align}
-        gap={2}
-        className={cn('px-4 py-3', TONE_CLASS_NAMES[tone], className)}
-        {...props}
-    >
+    <Row justify={align} gap={2} className={cn('px-4 py-3', TONE_CLASS_NAMES[tone], className)} {...props}>
         {children}
     </Row>
 );

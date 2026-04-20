@@ -1,4 +1,5 @@
 import { type ComponentProps, type ReactElement } from 'react';
+
 import { cn } from '#/utils/Styles/cn';
 
 type DawCompactCheckboxProps = ComponentProps<'input'>;

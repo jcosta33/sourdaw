@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { aiActionHistoryStore, pushAiActionGroup, markGroupReverted, toggleAiHistoryPanel, clearAiHistory } from '../aiActionHistoryStore';
+
+import {
+    aiActionHistoryStore,
+    pushAiActionGroup,
+    markGroupReverted,
+    toggleAiHistoryPanel,
+    clearAiHistory,
+} from '../aiActionHistoryStore';
 
 describe('aiActionHistoryStore', () => {
     beforeEach(() => {
@@ -85,7 +92,7 @@ describe('aiActionHistoryStore', () => {
     describe('toggleAiHistoryPanel', () => {
         it('toggles the panel visibility state', () => {
             expect(aiActionHistoryStore.value!.panelOpen).toBe(false);
-            
+
             toggleAiHistoryPanel();
             expect(aiActionHistoryStore.value!.panelOpen).toBe(true);
 

@@ -1,25 +1,38 @@
 import { type ReactElement, useEffect, useState, useMemo } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
 import { Cpu, Power } from 'lucide-react';
-import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
-import { onMidiNoteOn } from '../../useCases/midiEventSubscribers/onMidiNoteOn';
-import { onMidiNoteOff } from '../../useCases/midiEventSubscribers/onMidiNoteOff';
-import { onMidiPedalCc } from '../../useCases/midiEventSubscribers/onMidiPedalCc';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { useStore } from '#/infra/store/useStore';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+
 import { defaultGrandBouleState, createGrandBouleStore, type TemperamentIndex } from '../../stores/grandBouleStore';
+import { resetMidiCalibration } from '../../useCases/calibrateGrandBouleMidi/resetMidiCalibration';
+import { setAfterTouchSensitivity } from '../../useCases/calibrateGrandBouleMidi/setAfterTouchSensitivity';
+import { setCcSmoothingMs } from '../../useCases/calibrateGrandBouleMidi/setCcSmoothingMs';
+import { setSustainThreshold } from '../../useCases/calibrateGrandBouleMidi/setSustainThreshold';
+import { setVelocityCeiling } from '../../useCases/calibrateGrandBouleMidi/setVelocityCeiling';
+import { setVelocityCurveExponent } from '../../useCases/calibrateGrandBouleMidi/setVelocityCurveExponent';
+import { setVelocityFloor } from '../../useCases/calibrateGrandBouleMidi/setVelocityFloor';
 import { listGrandBoulePresets } from '../../useCases/listGrandBoulePresets';
 import { loadGrandBoulePreset } from '../../useCases/loadGrandBoulePreset';
+import { onMidiNoteOff } from '../../useCases/midiEventSubscribers/onMidiNoteOff';
+import { onMidiNoteOn } from '../../useCases/midiEventSubscribers/onMidiNoteOn';
+import { onMidiPedalCc } from '../../useCases/midiEventSubscribers/onMidiPedalCc';
 import { panicGrandBoule } from '../../useCases/panicGrandBoule';
 import { releaseGrandBouleNote } from '../../useCases/releaseGrandBouleNote';
 import { resolveGrandBouleEngine, type ResolvedGrandBouleEngine } from '../../useCases/resolveGrandBouleEngine';
-import { setGrandBouleMasterGain } from '../../useCases/setGrandBouleMasterGain';
-import { setGrandBouleSostenuto } from '../../useCases/setGrandBouleSostenuto';
 import { setGrandBouleAttackBite } from '../../useCases/setGrandBouleAttackBite';
+import { setGrandBouleMasterGain } from '../../useCases/setGrandBouleMasterGain';
+import { setGrandBouleMorphPosition } from '../../useCases/setGrandBouleMorphPosition';
+import { resetGrandBoulePerNoteParams } from '../../useCases/setGrandBoulePerNoteParam/resetGrandBoulePerNoteParams';
+import { setGrandBoulePerNoteParam } from '../../useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam';
+import { setGrandBouleSostenuto } from '../../useCases/setGrandBouleSostenuto';
 import { setGrandBouleSoundboardSend } from '../../useCases/setGrandBouleSoundboardSend';
 import { setGrandBouleStretchAmount } from '../../useCases/setGrandBouleStretchAmount';
 import { setGrandBouleSustain } from '../../useCases/setGrandBouleSustain';
@@ -27,17 +40,7 @@ import { setGrandBouleSympatheticSend } from '../../useCases/setGrandBouleSympat
 import { setGrandBouleTemperament } from '../../useCases/setGrandBouleTemperament';
 import { setGrandBouleUnaCorda } from '../../useCases/setGrandBouleUnaCorda';
 import { setGrandBouleVelocityCurve } from '../../useCases/setGrandBouleVelocityCurve';
-import { setGrandBouleMorphPosition } from '../../useCases/setGrandBouleMorphPosition';
-import { setGrandBoulePerNoteParam } from '../../useCases/setGrandBoulePerNoteParam/setGrandBoulePerNoteParam';
-import { resetGrandBoulePerNoteParams } from '../../useCases/setGrandBoulePerNoteParam/resetGrandBoulePerNoteParams';
 import { triggerGrandBouleNote } from '../../useCases/triggerGrandBouleNote';
-import { setVelocityCurveExponent } from '../../useCases/calibrateGrandBouleMidi/setVelocityCurveExponent';
-import { setVelocityFloor } from '../../useCases/calibrateGrandBouleMidi/setVelocityFloor';
-import { setVelocityCeiling } from '../../useCases/calibrateGrandBouleMidi/setVelocityCeiling';
-import { setCcSmoothingMs } from '../../useCases/calibrateGrandBouleMidi/setCcSmoothingMs';
-import { setSustainThreshold } from '../../useCases/calibrateGrandBouleMidi/setSustainThreshold';
-import { setAfterTouchSensitivity } from '../../useCases/calibrateGrandBouleMidi/setAfterTouchSensitivity';
-import { resetMidiCalibration } from '../../useCases/calibrateGrandBouleMidi/resetMidiCalibration';
 import { MidiCalibrationPanel } from '../components/MidiCalibrationPanel';
 import { MorphPanel } from '../components/MorphPanel';
 import { PerNoteEditor } from '../components/PerNoteEditor';
@@ -136,7 +139,9 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     useEffect(() => {
         const unsubs = [
             onMidiNoteOn(({ deviceId: eventDeviceId, midiNote, velocity }) => {
-                if (eventDeviceId && eventDeviceId !== deviceId) return;
+                if (eventDeviceId && eventDeviceId !== deviceId) {
+                    return;
+                }
                 setLastVelocity(Math.round(velocity * 127));
                 setActiveNotes((prev) => {
                     const next = new Map(prev);
@@ -145,7 +150,9 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                 });
             }),
             onMidiNoteOff(({ deviceId: eventDeviceId, midiNote }) => {
-                if (eventDeviceId && eventDeviceId !== deviceId) return;
+                if (eventDeviceId && eventDeviceId !== deviceId) {
+                    return;
+                }
                 setActiveNotes((prev) => {
                     if (!prev.has(midiNote)) {
                         return prev;
@@ -156,9 +163,13 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                 });
             }),
             onMidiPedalCc(({ deviceId: eventDeviceId, cc, value }) => {
-                if (eventDeviceId && eventDeviceId !== deviceId) return;
+                if (eventDeviceId && eventDeviceId !== deviceId) {
+                    return;
+                }
                 const s = store.value;
-                if (s === null) {return;}
+                if (s === null) {
+                    return;
+                }
                 if (cc === 64) {
                     store.set({ ...s, pedals: { ...s.pedals, sustain: value as number } });
                 } else if (cc === 66) {
@@ -168,7 +179,11 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                 }
             }),
         ];
-        return () => unsubs.forEach((unsub) => unsub());
+        return () => {
+            for (const unsub of unsubs) {
+                unsub();
+            }
+        };
     }, []);
 
     // On mount (or when the engine becomes available), dispatch the active
@@ -321,16 +336,11 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             />
                         </div>
                     </SectionCard>
-                    <SectionCard
-                        title="Realism"
-                        detail="Stretched tuning + attack bite (appendix §A6, §A8)."
-                    >
+                    <SectionCard title="Realism" detail="Stretched tuning + attack bite (appendix §A6, §A8).">
                         <div className="grid grid-cols-2 gap-x-2 gap-y-3">
                             <Knob
                                 value={config.stretchAmount}
-                                onChange={(value) =>
-                                    setGrandBouleStretchAmount({ engine, store, amount: value })
-                                }
+                                onChange={(value) => setGrandBouleStretchAmount({ engine, store, amount: value })}
                                 label="Stretch"
                                 min={0}
                                 max={2}
@@ -340,9 +350,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             />
                             <Knob
                                 value={config.attackBite}
-                                onChange={(value) =>
-                                    setGrandBouleAttackBite({ engine, store, amount: value })
-                                }
+                                onChange={(value) => setGrandBouleAttackBite({ engine, store, amount: value })}
                                 label="Bite"
                                 min={0}
                                 max={2}

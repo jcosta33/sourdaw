@@ -1,8 +1,10 @@
 import { type ReactElement } from 'react';
+
 import { createFileRoute } from '@tanstack/react-router';
+
+import { useWorkspaceState } from '#/modules/Workspace/presentations/hooks/useWorkspaceState';
 import { ArrangeView } from '#/modules/Workspace/presentations/views/ArrangeView';
 import { AutomationView } from '#/modules/Workspace/presentations/views/AutomationView';
-import { useWorkspaceState } from '#/modules/Workspace/presentations/hooks/useWorkspaceState';
 
 export const Route = createFileRoute('/')({
     component: IndexPage,

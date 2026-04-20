@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
-import { XYMorphPad } from '../XYMorphPad';
+import { describe, it, expect, vi } from 'vitest';
+
 import { DEFAULT_PATCH } from '../../../models/BacteriaPatch';
+import { XYMorphPad } from '../XYMorphPad';
 
 describe('XYMorphPad', () => {
     it('should render', () => {

@@ -25,12 +25,12 @@ describe('ProofChamberPatch constants', () => {
     });
 
     it('should keep PARAM_MAP keys aligned with DEFAULT_PARAMS fields', () => {
-        for (const key of Object.keys(PARAM_MAP) as Array<keyof typeof PARAM_MAP>) {
+        for (const key of Object.keys(PARAM_MAP)) {
             expect(key in DEFAULT_PARAMS || key === 'algorithm').toBe(true);
         }
     });
 
     it('should only use known algorithm labels in DEFAULT_PARAMS', () => {
-        expect(Object.keys(ALGORITHM_MAP)).toContain(DEFAULT_PARAMS.algorithm as AlgorithmType);
+        expect(Object.keys(ALGORITHM_MAP)).toContain(DEFAULT_PARAMS.algorithm);
     });
 });

@@ -1,11 +1,13 @@
 import { type ReactElement, type RefObject, useState } from 'react';
+
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
-import { VelocityLane } from '../AutomationLane/VelocityLane';
-import { ProbabilityLane } from '../AutomationLane/ProbabilityLane';
-import { PressureLane } from '../AutomationLane/PressureLane';
-import { SlideLane } from '../AutomationLane/SlideLane';
+
 import { CCLane } from '../AutomationLane/CCLane';
 import { PitchBendLane } from '../AutomationLane/PitchBendLane';
+import { PressureLane } from '../AutomationLane/PressureLane';
+import { ProbabilityLane } from '../AutomationLane/ProbabilityLane';
+import { SlideLane } from '../AutomationLane/SlideLane';
+import { VelocityLane } from '../AutomationLane/VelocityLane';
 
 type LaneMode =
     | { kind: 'velocity' }

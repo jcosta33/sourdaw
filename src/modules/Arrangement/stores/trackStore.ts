@@ -1,6 +1,8 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 
+import type { Track, Clip } from '../models/Track';
+
 export type {
     AutomationMode,
     Clip,
@@ -13,8 +15,6 @@ export type {
     TrackAlternative,
     TrackKind,
 } from '../models/Track';
-
-import type { Track, Clip } from '../models/Track';
 
 const DOC_PREFIX_ROOT = 'root';
 

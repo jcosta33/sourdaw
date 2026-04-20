@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { scheduleMidiNotes } from '../scheduleMidiNotes';
-import { defaultTransportState } from '../../../models/TransportState';
+
 import { getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
+
+import { defaultTransportState } from '../../../models/TransportState';
+import { scheduleMidiNotes } from '../scheduleMidiNotes';
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: { tracks: [] } },

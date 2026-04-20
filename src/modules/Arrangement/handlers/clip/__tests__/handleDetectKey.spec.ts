@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleDetectKey } from '../handleDetectKey';
 
 const mocks = vi.hoisted(() => ({
@@ -35,9 +36,7 @@ describe('handleDetectKey', () => {
 
     it('bails out if the clip has no audioBufferId', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [
-                { clips: [{ id: 'c1' }] }
-            ]
+            tracks: [{ clips: [{ id: 'c1' }] }],
         });
 
         handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
@@ -48,9 +47,7 @@ describe('handleDetectKey', () => {
 
     it('detects key and notifies user', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [
-                { clips: [{ id: 'c1', audioBufferId: 'buf1' }] }
-            ]
+            tracks: [{ clips: [{ id: 'c1', audioBufferId: 'buf1' }] }],
         });
         mocks.detectKey.mockReturnValue({ key: 'C', mode: 'Major', confidence: 0.856 });
 
@@ -62,9 +59,7 @@ describe('handleDetectKey', () => {
 
     it('notifies user if key cannot be detected', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [
-                { clips: [{ id: 'c1', audioBufferId: 'buf1' }] }
-            ]
+            tracks: [{ clips: [{ id: 'c1', audioBufferId: 'buf1' }] }],
         });
         mocks.detectKey.mockReturnValue(null);
 

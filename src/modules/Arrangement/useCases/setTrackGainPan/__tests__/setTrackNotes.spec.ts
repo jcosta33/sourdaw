@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { setTrackNotes } from '../setTrackNotes';
 
 const mocks = vi.hoisted(() => ({

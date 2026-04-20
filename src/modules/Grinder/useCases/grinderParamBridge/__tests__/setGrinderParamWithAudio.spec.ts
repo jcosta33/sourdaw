@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { setGrinderParamWithAudio } from '../setGrinderParamWithAudio';
+
 import { setGrinderParam } from '../../../stores/grinderStore';
 import { paramBatcher } from '../helpers';
+import { setGrinderParamWithAudio } from '../setGrinderParamWithAudio';
 
 vi.mock('../../../stores/grinderStore', () => ({
     setGrinderParam: vi.fn(),
@@ -45,10 +46,12 @@ describe('setGrinderParamWithAudio', () => {
     it('should update store and schedule audio engine update', () => {
         const deviceId = 'device-1';
         const trackId = 'track-1';
-        deps.getAllTracks.mockReturnValue([{
-            id: trackId,
-            devices: [{ id: deviceId, type: 'grinder' }]
-        }]);
+        deps.getAllTracks.mockReturnValue([
+            {
+                id: trackId,
+                devices: [{ id: deviceId, type: 'grinder' }],
+            },
+        ]);
 
         const action = setGrinderParamWithAudio(deps as any);
         action(deviceId, 'gain', 8.2);
@@ -61,10 +64,12 @@ describe('setGrinderParamWithAudio', () => {
 
     it('should handle boolean parameters correctly', () => {
         const deviceId = 'device-1';
-        deps.getAllTracks.mockReturnValue([{
-            id: 'track-1',
-            devices: [{ id: deviceId, type: 'grinder' }]
-        }]);
+        deps.getAllTracks.mockReturnValue([
+            {
+                id: 'track-1',
+                devices: [{ id: deviceId, type: 'grinder' }],
+            },
+        ]);
 
         const action = setGrinderParamWithAudio(deps as any);
         action(deviceId, 'bright', 1);

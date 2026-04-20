@@ -1,17 +1,11 @@
 import { type ReactElement, type ReactNode, lazy, Suspense, useEffect, useState } from 'react';
-import { LaunchScreen } from '../components/LaunchScreen';
-import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
-import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
-import { useWorkspaceState } from '../hooks/useWorkspaceState';
-import { updateWorkspaceState } from '../../useCases/workspaceState';
-import { useProjectState } from '../hooks/useProjectState';
-import { useAppInitialization } from '../hooks/useAppInitialization';
-import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
-import { onPanelShowAutomation } from '../../useCases/panels/devicePanels/onPanelShowAutomation';
-import { clamp } from '#/utils/Math/clamp';
-import { TransportBar } from './TransportBar';
-import { Sidebar } from './Sidebar';
-import { InspectorPanel } from './InspectorPanel';
+
+import { X } from 'lucide-react';
+
+import { Button } from '#/components/ui/button';
+import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
+import { useStore } from '#/infra/store/useStore';
+import { aiStore } from '#/modules/AiGeneration/stores';
 import {
     GenerativeAiPanel,
     ChatPanel,
@@ -20,48 +14,65 @@ import {
     AiActionHistoryPanel,
     MixAnalysisPanel,
 } from '#/modules/AiRuntime/presentations/views';
+import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
+import { CommandPalette, useGlobalKeyboardShortcuts, UndoHistoryPanel } from '#/modules/Command/presentations/views';
+import { CrumbsPanel } from '#/modules/Crumbs/presentations/views';
+import { CrustPanel } from '#/modules/Crust/presentations/views';
+import { FermenterPanel } from '#/modules/Fermenter/presentations/views';
+import { GlutenPanel } from '#/modules/Gluten/presentations/views';
+import { GrandBoulePanel } from '#/modules/GrandBoule/presentations/views';
+import { GrinderPanel } from '#/modules/Grinder/presentations/views';
+import { LevainPanel } from '#/modules/Levain/presentations/views';
+import { ProofChamberPanel } from '#/modules/Plugin/presentations/views';
+import { ToasterPanel } from '#/modules/Toaster/presentations/views';
+import { clamp } from '#/utils/Math/clamp';
+import { onPanelShowAutomation } from '../../useCases/panels/devicePanels/onPanelShowAutomation';
+import { updateWorkspaceState } from '../../useCases/workspaceState';
+import { LaunchScreen } from '../components/LaunchScreen';
+import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
+import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
+import { useWorkspaceState } from '../hooks/useWorkspaceState';
+import { useProjectState } from '../hooks/useProjectState';
+import { useAppInitialization } from '../hooks/useAppInitialization';
+import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
+
+
+import { AutomationBottomPanel } from './AutomationBottomPanel';
+import { InspectorPanel } from './InspectorPanel';
+import { Sidebar } from './Sidebar';
+import { TransportBar } from './TransportBar';
+
+
 import { MixerPanel } from './MixerPanel';
 import { SessionView } from './SessionView';
 import { RoutingMatrix } from './RoutingMatrix';
-import { AutomationBottomPanel } from './AutomationBottomPanel';
 import { ClipView } from './ClipView';
 import { AnalysisPanel } from './AnalysisPanel';
-import { FermenterPanel } from '#/modules/Fermenter/presentations/views';
-import { ToasterPanel } from '#/modules/Toaster/presentations/views';
+
+
 import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
-import { LevainPanel } from '#/modules/Levain/presentations/views';
-import { ProofChamberPanel } from '#/modules/Plugin/presentations/views';
-import { GlutenPanel } from '#/modules/Gluten/presentations/views';
-import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
-import { GrinderPanel } from '#/modules/Grinder/presentations/views';
-import { CrumbsPanel } from '#/modules/Crumbs/presentations/views';
-import { GrandBoulePanel } from '#/modules/GrandBoule/presentations/views';
 
 import { ProofPanel } from '#/modules/Proof/presentations/views';
 import { ScoringPanel } from '#/modules/Scoring/presentations/views';
 import { YeastPanel } from '#/modules/Yeast/presentations/views';
-import { CrustPanel } from '#/modules/Crust/presentations/views';
 import { VirtualKeyboard } from '#/modules/VirtualKeyboard/presentations/views';
+
 import { toggleVirtualKeyboard } from '../../useCases/togglePanel/panelToggles/toggleVirtualKeyboard';
 import { closeBranchManager } from '../../useCases/togglePanel/panelToggles/closeBranchManager';
-
-import { CommandPalette, useGlobalKeyboardShortcuts, UndoHistoryPanel } from '#/modules/Command/presentations/views';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { NotificationToast } from '../components/NotificationToast';
-import { useStore } from '#/infra/store/useStore';
-import { aiStore } from '#/modules/AiGeneration/stores';
+
 import { ExportDialog } from '#/modules/Project/presentations/views';
+
 import { PreferencesDialog } from './PreferencesDialog';
+
 import { openMixer } from '../../useCases/togglePanel/panelToggles/openMixer';
+
 import { StatusBar } from './StatusBar';
+
 import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
-
-import { Button } from '#/components/ui/button';
 import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
-
-import { X } from 'lucide-react';
 import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
-import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 import { preferencesStore } from '../../stores/preferencesStore';
 import { defaultPreferences } from '../../models/Preferences';
 import { MobileGate } from '../components/MobileGate';
@@ -315,7 +326,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 <div className="flex flex-1 overflow-hidden">
                     {/* Left dynamically placed panels */}
                     {renderSidePanel(sidebarOpen, prefs.panelPlacementSidebar, 'left', sidebarNode, onSidebarResize)}
-                    {renderSidePanel(inspectorOpen, prefs.panelPlacementInspector, 'left', inspectorNode, onInspectorResize)}
+                    {renderSidePanel(
+                        inspectorOpen,
+                        prefs.panelPlacementInspector,
+                        'left',
+                        inspectorNode,
+                        onInspectorResize
+                    )}
                     {renderSidePanel(chatPanelOpen, prefs.panelPlacementChat, 'left', chatNode, onChatResize)}
                     {renderSidePanel(aiPanelOpen, prefs.panelPlacementAi, 'left', aiNode('left'), onAiResize)}
 
@@ -624,7 +641,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
                     {/* Right dynamically placed panels */}
                     {renderSidePanel(sidebarOpen, prefs.panelPlacementSidebar, 'right', sidebarNode, onSidebarResize)}
-                    {renderSidePanel(inspectorOpen, prefs.panelPlacementInspector, 'right', inspectorNode, onInspectorResize)}
+                    {renderSidePanel(
+                        inspectorOpen,
+                        prefs.panelPlacementInspector,
+                        'right',
+                        inspectorNode,
+                        onInspectorResize
+                    )}
                     {renderSidePanel(chatPanelOpen, prefs.panelPlacementChat, 'right', chatNode, onChatResize)}
                     {renderSidePanel(aiPanelOpen, prefs.panelPlacementAi, 'right', aiNode('right'), onAiResize)}
                 </div>
@@ -672,4 +695,3 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         </MobileGate>
     );
 };
-

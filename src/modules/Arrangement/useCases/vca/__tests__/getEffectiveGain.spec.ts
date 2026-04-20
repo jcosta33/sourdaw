@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type Track } from '../../../models/Track';
 import { getVcaGroupsState } from '../../../stores/vcaGroupStore';
 import { getEffectiveGain } from '../getEffectiveGain';
@@ -9,7 +10,7 @@ vi.mock('../../../stores/vcaGroupStore', () => ({
 
 const mockGetTrackById = vi.fn();
 vi.mock('../../../repositories/track/getTrackById', () => ({
-    getTrackById: (...args: any[]) => mockGetTrackById(...args)
+    getTrackById: (...args: any[]) => mockGetTrackById(...args),
 }));
 
 describe('getEffectiveGain', () => {

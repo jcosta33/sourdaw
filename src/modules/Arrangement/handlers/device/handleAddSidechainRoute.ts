@@ -1,5 +1,6 @@
-import { createHandler } from '#/utils/createHandler';
 import { addSidechainRoute } from '#/modules/Routing/useCases';
+import { createHandler } from '#/utils/createHandler';
+
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 export const handleAddSidechainRoute = createHandler<'addSidechainRoute'>({

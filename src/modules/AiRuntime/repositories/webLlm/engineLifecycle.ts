@@ -152,9 +152,7 @@ export async function generateWebLlmCompletion(
     // line instead of an `UnsupportedModelIdError` stack trace. MLC models do
     // not support the native `tools` API; see `supportsToolsApi()` in
     // `#/utils/capabilities`.
-    logger.info(
-        `[WebLLM] completion model=${engineState.activeModelId} keys=${Object.keys(payload).sort().join(',')}`
-    );
+    logger.info(`[WebLLM] completion model=${engineState.activeModelId} keys=${Object.keys(payload).sort().join(',')}`);
 
     const response = (await eng.chat.completions.create(payload)) as {
         choices: Array<{ message: { content: string } }>;
@@ -163,5 +161,5 @@ export async function generateWebLlmCompletion(
     const raw = response.choices[0]?.message.content ?? '';
     // Qwen3 prefixes answers with <think>...</think> reasoning blocks.
     // Strip them so callers receive only the final output.
-    return raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    return raw.replaceAll(/<think>[\s\S]*?<\/think>/g, '').trim();
 }

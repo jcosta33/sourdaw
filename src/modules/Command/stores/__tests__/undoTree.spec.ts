@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+
 import { undoTreeStore } from '../undoTree';
 
 describe('undoTreeStore', () => {

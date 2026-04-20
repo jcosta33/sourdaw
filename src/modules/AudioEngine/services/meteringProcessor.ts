@@ -39,7 +39,9 @@ export class MeteringWorkletProcessor extends AudioWorkletProcessor {
             if (data) {
                 for (let i = 0; i < data.length; i++) {
                     const abs = Math.abs(data[i]!);
-                    if (abs > peak) peak = abs;
+                    if (abs > peak) {
+                        peak = abs;
+                    }
                 }
             }
         }

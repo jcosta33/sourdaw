@@ -1,4 +1,5 @@
 import { pluginScanStore } from '../../../stores/pluginScanStore';
+
 import { getState } from './helpers';
 
 export function addScanPath(path: string): void {

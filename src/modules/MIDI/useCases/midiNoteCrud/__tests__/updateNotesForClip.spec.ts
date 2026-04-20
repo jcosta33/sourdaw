@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { updateNotesForClip } from '../updateNotesForClip';
 
 const mocks = vi.hoisted(() => ({
     midiStoreValue: {
         value: {
-            notesByClipId: {} as Record<string, { id: string; pitch: number; startBeat: number; duration: number; velocity: number }[]>,
+            notesByClipId: {} as Record<
+                string,
+                { id: string; pitch: number; startBeat: number; duration: number; velocity: number }[]
+            >,
             ccByClipId: {},
             pitchBendByClipId: {},
         },

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { createCrdtDoc } from '../createCrdtDoc';
 
 const mocks = vi.hoisted(() => ({
@@ -8,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../repositories/automergeRepository', () => ({
     automergeRepository: {
         createChildDoc: mocks.createChildDoc,
-    }
+    },
 }));
 
 describe('createCrdtDoc', () => {

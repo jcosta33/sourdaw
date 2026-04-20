@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type LoopStationState } from '../../../stores/loopStationStore';
-import { setFixedLoopLength } from '../setFixedLoopLength';
 import { loopStationStore } from '../../../stores/loopStationStore';
+import { setFixedLoopLength } from '../setFixedLoopLength';
 
 vi.mock('../../../stores/loopStationStore', () => ({
     loopStationStore: { value: null, set: vi.fn() },
@@ -25,9 +26,9 @@ describe('setFixedLoopLength', () => {
 
     it('writes fixedLoopLength', () => {
         loopStationStore.value = emptyLoopState() as any;
-        
+
         setFixedLoopLength(8);
-        
+
         expect(loopStationStore.set).toHaveBeenCalledWith(expect.objectContaining({ fixedLoopLength: 8 }));
     });
 });

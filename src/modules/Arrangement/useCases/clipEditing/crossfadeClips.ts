@@ -1,6 +1,6 @@
+import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
-import { type Clip } from '../../models/Track';
 
 export function crossfadeClips(clipAId: string, clipBId: string, durationBeats = 0.5): void {
     const state = getTrackState();

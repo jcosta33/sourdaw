@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { setMonitorVolume } from '../setMonitorVolume';
 
 const mocks = vi.hoisted(() => ({

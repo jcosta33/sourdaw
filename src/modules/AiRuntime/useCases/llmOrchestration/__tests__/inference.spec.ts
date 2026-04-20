@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { generateToolCalls } from '../inference';
 
 vi.mock('../backendResolution/getBackendChain', () => ({
@@ -11,7 +12,7 @@ const { mockLogger } = vi.hoisted(() => ({
         info: vi.fn(),
         error: vi.fn(),
         debug: vi.fn(),
-    }
+    },
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({

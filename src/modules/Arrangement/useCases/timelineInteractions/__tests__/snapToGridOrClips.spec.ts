@@ -1,14 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import { snapToGridOrClips } from '../snapToGridOrClips';
 
 let mockTrackValue: any = null;
 vi.mock('../../../stores/trackStore', () => ({
-    trackStore: { get value() { return mockTrackValue; } }
+    trackStore: {
+        get value() {
+            return mockTrackValue;
+        },
+    },
 }));
 
 const mockSnapToGrid = vi.fn();
 vi.mock('../snapToGrid', () => ({
-    snapToGrid: (...args: any[]) => mockSnapToGrid(...args)
+    snapToGrid: (...args: any[]) => mockSnapToGrid(...args),
 }));
 
 describe('snapToGridOrClips', () => {

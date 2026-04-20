@@ -1,4 +1,5 @@
 import { createStore } from '#/infra/store/createStore';
+
 import { type ChordEvent } from '../models/ChordEvent';
 
 export type ChordTrackState = {

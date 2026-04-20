@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { Container } from '#/infra/di/Container';
+
 import { type ProjectData } from '../../../models/ProjectData';
-import { importProjectFile } from '../fileIO/pickAndImportProjectFile';
 import { applyImportedProjectData } from '../fileIO/applyImportedProjectData';
+import { importProjectFile } from '../fileIO/pickAndImportProjectFile';
 
 vi.mock('../fileIO/applyImportedProjectData', () => ({
     applyImportedProjectData: vi.fn().mockResolvedValue(true),

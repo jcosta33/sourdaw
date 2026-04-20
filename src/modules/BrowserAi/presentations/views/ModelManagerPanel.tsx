@@ -1,13 +1,12 @@
 import { type ReactElement } from 'react';
-import { useStore } from '#/infra/store/useStore';
-import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
-import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
+
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
+import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
+import { useStore } from '#/infra/store/useStore';
+
 import { type DiffSingerVoicebank } from '../../models/BrowserModel';
-import { modelRegistryStore } from '../../stores/modelRegistryStore';
-import { downloadModel } from '../../useCases/downloadModel';
-import { removeModel } from '../../useCases/removeModel';
 import {
     DDSP_INSTRUMENT_CATALOG,
     NSF_HIFIGAN_URL,
@@ -15,6 +14,9 @@ import {
     KOKORO_MODEL_URL,
     KOKORO_MODEL_SIZE_BYTES,
 } from '../../models/ddspInstrumentCatalog';
+import { modelRegistryStore } from '../../stores/modelRegistryStore';
+import { downloadModel } from '../../useCases/downloadModel';
+import { removeModel } from '../../useCases/removeModel';
 
 const KOKORO_MODEL_SPEC = {
     modelId: 'kokoro-82m-q8',
@@ -31,14 +33,22 @@ const VOCODER_MODEL_SPEC = {
 };
 
 function formatBytes(bytes: number): string {
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    if (bytes < 1024 * 1024) {
+        return `${(bytes / 1024).toFixed(1)} KB`;
+    }
+    if (bytes < 1024 * 1024 * 1024) {
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 function languageLabel(lang: 'en' | 'zh' | 'ja'): string {
-    if (lang === 'en') return 'English';
-    if (lang === 'zh') return 'Chinese';
+    if (lang === 'en') {
+        return 'English';
+    }
+    if (lang === 'zh') {
+        return 'Chinese';
+    }
     return 'Japanese';
 }
 
@@ -262,7 +272,10 @@ export function ModelManagerPanel(): ReactElement {
                                 description="CDN · ~15 MB · cached by browser"
                                 endSlot={
                                     status === 'ready' ? (
-                                        <DawMicroBadge tone="success" aria-label={`${instrument.name} cached and ready`}>
+                                        <DawMicroBadge
+                                            tone="success"
+                                            aria-label={`${instrument.name} cached and ready`}
+                                        >
                                             ✓ Cached
                                         </DawMicroBadge>
                                     ) : (
@@ -278,10 +291,7 @@ export function ModelManagerPanel(): ReactElement {
             </DawUtilitySection>
 
             {/* Kokoro TTS */}
-            <DawUtilitySection
-                title="Kokoro TTS (82M)"
-                detail="Vocal scratch tracks · Apache 2.0 · hexgrad"
-            >
+            <DawUtilitySection title="Kokoro TTS (82M)" detail="Vocal scratch tracks · Apache 2.0 · hexgrad">
                 <DawPickerRow
                     heading="Kokoro-82M (q8)"
                     description={`21 voices · ${formatBytes(KOKORO_MODEL_SPEC.sizeBytes)}`}
@@ -300,10 +310,7 @@ export function ModelManagerPanel(): ReactElement {
             </DawUtilitySection>
 
             {/* Vocoder */}
-            <DawUtilitySection
-                title="NSF-HiFiGAN Vocoder"
-                detail="Shared mel→audio · CC-BY-NC-SA 4.0 · openvpi"
-            >
+            <DawUtilitySection title="NSF-HiFiGAN Vocoder" detail="Shared mel→audio · CC-BY-NC-SA 4.0 · openvpi">
                 <DawPickerRow
                     heading="NSF-HiFiGAN 44.1k"
                     description={`Shared across all voices · ${formatBytes(VOCODER_MODEL_SPEC.sizeBytes)}`}
@@ -330,8 +337,8 @@ export function ModelManagerPanel(): ReactElement {
                     <div className="py-1.5 space-y-1">
                         <p className="text-[9px] text-muted-foreground/70">No voice packs installed.</p>
                         <p className="text-[9px] text-muted-foreground/50 leading-relaxed">
-                            Voice packs are added automatically when a DiffSinger voicebank is imported.
-                            Each voicebank requires ~115–160 MB of browser storage.
+                            Voice packs are added automatically when a DiffSinger voicebank is imported. Each voicebank
+                            requires ~115–160 MB of browser storage.
                         </p>
                     </div>
                 ) : (

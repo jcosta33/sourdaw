@@ -5,25 +5,21 @@
  * before execution. Human-readable summaries are generated for the action history.
  */
 import { logger } from '#/infra/logger/appLogger';
-import { type Dso } from '../../models/DsoTypes';
-import {
-    addClip,
-    addDevice,
-    addTrack,
-    removeTrack,
-    setSend,
-} from '#/modules/Arrangement/useCases';
-import { trackStore } from '#/modules/Arrangement/stores';
 import {
     applyChordProgressionToTrack,
     applyDrumPatternToTrack,
     applyMelodyToTrack,
 } from '#/modules/AiGeneration/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { addClip, addDevice, addTrack, removeTrack, setSend } from '#/modules/Arrangement/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { humanizeNotes } from '#/modules/MIDI/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { disableLooping, setLoopRegion } from '#/modules/Transport/useCases';
+
+import { type Dso } from '../../models/DsoTypes';
+
 // Shared style unions live in `AiGeneration/models/GenerationStyles` — a leaf
 // module with no runtime imports. Using `import type` keeps this file free of
 // any runtime dependency on `AiGeneration/useCases`, which would otherwise
@@ -290,11 +286,17 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
     const mockTracks: { id: string; name: string }[] = [];
 
     const findTrackId = (nameOrId: string): string | null => {
-        if (state.tracks.some((t) => t.id === nameOrId)) {return nameOrId;}
-        if (mockTracks.some((t) => t.id === nameOrId)) {return nameOrId;}
+        if (state.tracks.some((t) => t.id === nameOrId)) {
+            return nameOrId;
+        }
+        if (mockTracks.some((t) => t.id === nameOrId)) {
+            return nameOrId;
+        }
 
         let match = bestMatch(nameOrId, state.tracks, (t) => t.name);
-        if (!match) {match = bestMatch(nameOrId, mockTracks, (t) => t.name) as any;}
+        if (!match) {
+            match = bestMatch(nameOrId, mockTracks, (t) => t.name) as any;
+        }
         return match?.id ?? null;
     };
 
@@ -705,7 +707,7 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
                 addClip({
                     trackId: dso.destination_track_id,
                     name: `${sourceClip.name} (copy)`,
-                    type: (sourceClip.type as 'audio' | 'midi') ?? 'audio',
+                    type: sourceClip.type ?? 'audio',
                     startBeat: dso.destination_start_beats,
                     endBeat: dso.destination_start_beats + duration,
                     audioBufferId: sourceClip.audioBufferId,

@@ -1,11 +1,15 @@
 import { type ReactElement } from 'react';
+
+import { KeyboardMusic } from 'lucide-react';
+
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
-import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
-import { KeyboardMusic } from 'lucide-react';
 import { MidiDevicePicker } from '#/modules/AudioEngine/presentations/views';
-import type { Preferences } from '../../../models/Preferences';
+
 import { SectionTitle, FieldGroup } from '../preferencesShared';
+
+import type { Preferences } from '../../../models/Preferences';
 
 type SectionProps = {
     prefs: Preferences;

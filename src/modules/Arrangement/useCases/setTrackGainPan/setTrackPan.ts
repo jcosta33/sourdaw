@@ -1,9 +1,11 @@
+import { setTrackPan as engineSetTrackPan, updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { recordAutomationValue } from '#/modules/Automation/useCases';
+import { getTransportState } from '#/modules/Transport/useCases';
+
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
-import { getTransportState } from '#/modules/Transport/useCases';
 import { getAllTracks } from '../getAllTracks';
-import { recordAutomationValue } from '#/modules/Automation/useCases';
-import { setTrackPan as engineSetTrackPan, updateDeviceParam } from '#/modules/AudioEngine/useCases';
+
 import { maybeRecordAutomation, syncToasterPadParam } from './helpers';
 
 export function setTrackPan(trackId: string, pan: number): void {

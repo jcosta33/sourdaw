@@ -1,7 +1,20 @@
 import { type ReactElement, type PointerEvent, useState, useRef } from 'react';
+
 import { cn } from '#/utils/Styles/cn';
 
-type Tone = 'neutral' | 'amber' | 'cyan' | 'peach' | 'lavender' | 'mint' | 'steel' | 'danger' | 'rose' | 'indigo' | 'sage' | 'copper';
+type Tone =
+    | 'neutral'
+    | 'amber'
+    | 'cyan'
+    | 'peach'
+    | 'lavender'
+    | 'mint'
+    | 'steel'
+    | 'danger'
+    | 'rose'
+    | 'indigo'
+    | 'sage'
+    | 'copper';
 
 const TONE_CLASS_NAMES: Record<Tone, string> = {
     neutral: 'bg-white/50',

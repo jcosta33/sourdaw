@@ -1,5 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+
 import { type SidechainRoute } from '../models/SidechainRoute';
 
 const DOC_PREFIX_ROOT = 'root';

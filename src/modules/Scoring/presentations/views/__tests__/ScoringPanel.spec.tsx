@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { ScoringPanel } from '../ScoringPanel';
 
 // Mock external dependencies
@@ -16,7 +17,7 @@ vi.mock('#/infra/store/useStore', () => ({
                 mode: 'needle',
                 a4Reference: 440,
                 frequency: 440,
-            }
+            },
         };
     }),
 }));
@@ -45,9 +46,7 @@ vi.mock('../../../useCases/setA4Reference', () => ({
 
 // Mock UI components
 vi.mock('#/components/daw/DawPluginLed', () => ({
-    DawPluginLed: ({ children }: { children: React.ReactNode }) => (
-        <span data-testid="daw-plugin-led">{children}</span>
-    ),
+    DawPluginLed: ({ children }: { children: React.ReactNode }) => <span data-testid="daw-plugin-led">{children}</span>,
 }));
 
 vi.mock('#/components/daw/DawPluginMetricTile', () => ({
@@ -72,9 +71,9 @@ vi.mock('#/components/daw/DawPluginSectionCard', () => ({
 
 vi.mock('#/components/daw/RotaryKnob', () => ({
     RotaryKnob: ({ value, onChange }: any) => (
-        <input 
-            type="range" 
-            value={value} 
+        <input
+            type="range"
+            value={value}
             onChange={(e) => onChange(Number(e.target.value))}
             data-testid="rotary-knob"
         />

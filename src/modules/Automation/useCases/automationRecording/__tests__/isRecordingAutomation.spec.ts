@@ -1,11 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { isRecordingAutomation } from '../isRecordingAutomation';
 
 const { activeRecording, touchActive } = vi.hoisted(() => {
-    const activeRecording = new Map<
-        string,
-        import('../recordingSessionState').RecordingSession
-    >();
+    const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
     const touchActive = new Set<string>();
     return { activeRecording, touchActive };
 });

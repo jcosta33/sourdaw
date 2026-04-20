@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { analyzeMix } from '../analyzeMix';
 
-const getMasterAnalyserMock = vi.fn(() => (({}) as AnalyserNode));
+const getMasterAnalyserMock = vi.fn(() => ({}) as AnalyserNode);
 const readLevelsMock = vi.fn(() => ({ peakDb: -6, rmsDb: -12 }));
 const readFrequencyBalanceMock = vi.fn(() => ({
     sub: 0,

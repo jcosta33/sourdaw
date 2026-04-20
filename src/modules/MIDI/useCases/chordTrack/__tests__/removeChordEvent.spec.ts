@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { removeChordEvent } from '../removeChordEvent';
 
 const mocks = vi.hoisted(() => ({

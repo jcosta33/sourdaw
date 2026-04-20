@@ -1,14 +1,17 @@
 import { type ReactElement, useState, useEffect } from 'react';
+
+import { RefreshCw } from 'lucide-react';
+
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { Button } from '#/components/ui/button';
-import { RefreshCw } from 'lucide-react';
 import { useStore } from '#/infra/store/useStore';
-import { audioDeviceStore } from '../../useCases/audioDeviceSelection/helpers';
+
 import { getAudioDevices, type AudioDeviceInfo } from '../../useCases/audioDeviceSelection/getAudioDevices';
-import { setOutputDevice } from '../../useCases/audioDeviceSelection/setOutputDevice';
+import { audioDeviceStore } from '../../useCases/audioDeviceSelection/helpers';
 import { setInputDevice } from '../../useCases/audioDeviceSelection/setInputDevice';
+import { setOutputDevice } from '../../useCases/audioDeviceSelection/setOutputDevice';
 
 const defaultAudioDeviceState = {
     selectedOutputId: null,

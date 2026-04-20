@@ -1,7 +1,8 @@
 import { trackStore } from '#/modules/Arrangement/stores';
+
+import { type TempoMapPoint, type TempoMapResult } from '../../../models/TempoMappingTypes';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
-import { type TempoMapPoint, type TempoMapResult } from '../../../models/TempoMappingTypes';
 
 function createEmptyResult(): TempoMapResult {
     return {

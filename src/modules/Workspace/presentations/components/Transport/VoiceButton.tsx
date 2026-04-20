@@ -1,12 +1,14 @@
 import { type ReactElement } from 'react';
+
 import { Mic } from 'lucide-react';
+
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { cn } from '#/utils/Styles/cn';
+import { useStore } from '#/infra/store/useStore';
 import { isSpeechRecognitionAvailable } from '#/modules/AiRuntime/presentations/views';
 import { voiceStatusStore } from '#/modules/AiRuntime/stores';
 import { toggleVoiceInput } from '#/modules/AiRuntime/useCases';
-import { useStore } from '#/infra/store/useStore';
+import { cn } from '#/utils/Styles/cn';
 import { isTauri } from '#/utils/tauriBridge';
 
 const isVoiceAvailable = (): boolean => isSpeechRecognitionAvailable() || isTauri();

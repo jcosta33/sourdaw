@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+
 import { type Logger } from '#/utils/Logger/Logger';
 
 /** Avoid circular import: toasterSubscriber → engineAccess → wasmDeviceRegistry → registerDependencies → toasterSubscriber */

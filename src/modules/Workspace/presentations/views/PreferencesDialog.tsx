@@ -1,34 +1,29 @@
 import { type ReactElement, useState, useRef } from 'react';
-import { Button } from '#/components/ui/button';
-import { Separator } from '#/components/ui/separator';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
-import { DawSideRail } from '#/components/daw/DawSideRail';
+
+import { KeyboardMusic, AudioLines, Keyboard, Palette, Cpu, Sparkles, Settings, LayoutTemplate } from 'lucide-react';
+
 import { DawDialogBody } from '#/components/daw/DawDialogBody';
 import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
-import {
-    KeyboardMusic,
-    AudioLines,
-    Keyboard,
-    Palette,
-    Cpu,
-    Sparkles,
-    Settings,
-    LayoutTemplate,
-} from 'lucide-react';
-import { AudioDevicePicker, PluginScanSettings } from '#/modules/AudioEngine/presentations/views';
+import { DawSideRail } from '#/components/daw/DawSideRail';
+import { Button } from '#/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
+import { Separator } from '#/components/ui/separator';
 import { useStore } from '#/infra/store/useStore';
-import { preferencesStore } from '../../stores/preferencesStore';
-import { defaultPreferences, type Preferences } from '../../models/Preferences';
+import { AudioDevicePicker, PluginScanSettings } from '#/modules/AudioEngine/presentations/views';
 import { cn } from '#/utils/Styles/cn';
-import { SectionTitle, FieldGroup } from './preferencesShared';
-import { ShortcutsSection } from './ShortcutsSection';
-import { GeneralSection } from './preferences/GeneralSection';
+
+import { defaultPreferences, type Preferences } from '../../models/Preferences';
+import { preferencesStore } from '../../stores/preferencesStore';
+import { setSoloMode } from '../../useCases/togglePanel/panelToggles/setSoloMode';
+
+import { AiSection } from './preferences/AiSection';
 import { AppearanceSection } from './preferences/AppearanceSection';
+import { GeneralSection } from './preferences/GeneralSection';
 import { LayoutSection } from './preferences/LayoutSection';
 import { MidiSection } from './preferences/MidiSection';
 import { PerformanceSection } from './preferences/PerformanceSection';
-import { AiSection } from './preferences/AiSection';
-import { setSoloMode } from '../../useCases/togglePanel/panelToggles/setSoloMode';
+import { SectionTitle, FieldGroup } from './preferencesShared';
+import { ShortcutsSection } from './ShortcutsSection';
 
 // ── Types ─────────────────────────────────────────────────────────────
 

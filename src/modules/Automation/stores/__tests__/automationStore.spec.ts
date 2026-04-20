@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+
 import { automationStore } from '../automationStore';
 
 describe('automationStore', () => {
@@ -26,7 +27,7 @@ describe('automationStore', () => {
             maxValue: 1,
         };
         automationStore.set({ lanes: [lane] });
-        
+
         expect(automationStore.value?.lanes).toHaveLength(1);
         expect(automationStore.value?.lanes[0]).toEqual(lane);
     });

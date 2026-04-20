@@ -3,8 +3,8 @@
  * Also supports diatonic transposition (move by scale degrees, not semitones).
  */
 
-import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
+import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 
 const SCALE_PATTERNS: Record<string, number[]> = {
     major: [0, 2, 4, 5, 7, 9, 11],
@@ -72,7 +72,9 @@ export class ScaleQuantizer extends BaseMidiProcessor {
 
     private quantizeToScale(note: number, pattern: number[]): number {
         const pc = (((note - this.root) % 12) + 12) % 12;
-        if (pattern.includes(pc)) {return note;}
+        if (pattern.includes(pc)) {
+            return note;
+        }
 
         switch (this.remapMode) {
             case 'nearest': {
@@ -90,13 +92,17 @@ export class ScaleQuantizer extends BaseMidiProcessor {
             }
             case 'up': {
                 for (let offset = 1; offset <= 12; offset++) {
-                    if (pattern.includes((((pc + offset) % 12) + 12) % 12)) {return note + offset;}
+                    if (pattern.includes((((pc + offset) % 12) + 12) % 12)) {
+                        return note + offset;
+                    }
                 }
                 return note;
             }
             case 'down': {
                 for (let offset = 1; offset <= 12; offset++) {
-                    if (pattern.includes((((pc - offset) % 12) + 12) % 12)) {return note - offset;}
+                    if (pattern.includes((((pc - offset) % 12) + 12) % 12)) {
+                        return note - offset;
+                    }
                 }
                 return note;
             }
@@ -107,7 +113,9 @@ export class ScaleQuantizer extends BaseMidiProcessor {
         const pc = (((note - this.root) % 12) + 12) % 12;
         const octave = Math.floor((note - this.root) / 12);
         const degreeIdx = pattern.indexOf(pc);
-        if (degreeIdx === -1) {return note;} // not in scale, pass through
+        if (degreeIdx === -1) {
+            return note;
+        } // not in scale, pass through
 
         const newDegreeIdx = degreeIdx + degrees;
         const newOctaveOffset = Math.floor(newDegreeIdx / pattern.length);

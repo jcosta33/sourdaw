@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { startInputMonitoring, stopInputMonitoring } from '../inputMonitoring';
-import { audioEngine } from '../../createWebAudioEngine';
+
 import { getSelectedInputId } from '../../../useCases/audioDeviceSelection/getSelectedInputId';
+import { audioEngine } from '../../createWebAudioEngine';
+import { startInputMonitoring, stopInputMonitoring } from '../inputMonitoring';
 
 vi.mock('../../createWebAudioEngine', () => ({
     audioEngine: {
@@ -21,19 +22,19 @@ describe('inputMonitoring', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        
+
         // Mock navigator.mediaDevices.getUserMedia
         originalGetUserMedia = navigator.mediaDevices?.getUserMedia;
-        
+
         if (!global.navigator) {
             (global as any).navigator = {};
         }
         if (!global.navigator.mediaDevices) {
             (global as any).navigator.mediaDevices = {};
         }
-        
+
         global.navigator.mediaDevices.getUserMedia = vi.fn();
-        
+
         // Make sure state is clear (module variables)
         stopInputMonitoring();
         vi.clearAllMocks();
@@ -56,10 +57,10 @@ describe('inputMonitoring', () => {
         vi.mocked(getSelectedInputId).mockReturnValue(null);
 
         const result = await startInputMonitoring('t1');
-        
+
         expect(result).toBe(true);
         expect(global.navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
-            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
         });
         expect(audioEngine.context.createMediaStreamSource).toHaveBeenCalledWith(mockStream);
         expect(audioEngine.ensureTrackStrip).toHaveBeenCalledWith('t1');
@@ -77,14 +78,14 @@ describe('inputMonitoring', () => {
         vi.mocked(getSelectedInputId).mockReturnValue('dev-123');
 
         await startInputMonitoring('t1');
-        
+
         expect(global.navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
-            audio: { 
-                echoCancellation: false, 
-                noiseSuppression: false, 
+            audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
                 autoGainControl: false,
-                deviceId: { exact: 'dev-123' }
-            }
+                deviceId: { exact: 'dev-123' },
+            },
         });
     });
 
@@ -106,10 +107,10 @@ describe('inputMonitoring', () => {
 
         // Start first to set up the module state
         await startInputMonitoring('t1');
-        
+
         // Now stop
         stopInputMonitoring();
-        
+
         expect(mockSourceNode.disconnect).toHaveBeenCalled();
         expect(mockTrack.stop).toHaveBeenCalled();
     });

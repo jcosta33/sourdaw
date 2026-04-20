@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { strumNotes } from '../strumNotes';
 
 const mocks = vi.hoisted(() => ({
@@ -8,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../stores/midiStore', () => ({
     midiStore: {
-        get value() { return mocks.midiStoreValue.value; },
+        get value() {
+            return mocks.midiStoreValue.value;
+        },
         set: mocks.midiStoreSet,
-    }
+    },
 }));
 
 describe('strumNotes', () => {
@@ -28,7 +31,7 @@ describe('strumNotes', () => {
 
         expect(mocks.midiStoreSet).toHaveBeenCalledTimes(1);
         const updated = mocks.midiStoreSet.mock.calls[0][0].notesByClipId.c1;
-        
+
         // Sort order for 'up': Low(60) -> Mid(64) -> High(72)
         // Offsets: Low: 0*0.1=0, Mid: 1*0.1=0.1, High: 2*0.1=0.2
         const nLow = updated.find((n: any) => n.id === 'nLow');

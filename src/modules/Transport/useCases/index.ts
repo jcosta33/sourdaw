@@ -21,7 +21,12 @@ export { addTempoChange } from './tempoMap/addTempoChange';
 export { removeTempoChange } from './tempoMap/removeTempoChange';
 export { updateTempoChange } from './tempoMap/updateTempoChange';
 
-export { detectTempoFromOnsets, estimateOnsetsFromClips, applyTempoMap, detectProjectTempo } from './tempoMapping/operations/detectProjectTempo';
+export {
+    detectTempoFromOnsets,
+    estimateOnsetsFromClips,
+    applyTempoMap,
+    detectProjectTempo,
+} from './tempoMapping/operations/detectProjectTempo';
 export { adjustTempoPoint } from './tempoMapping/operations/adjustTempoPoint';
 
 export { seekPlayhead } from './transportControls/seekPlayhead';

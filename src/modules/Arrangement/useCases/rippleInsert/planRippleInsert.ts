@@ -1,5 +1,6 @@
-import { getTrackStoreState } from '../getTrackStoreState';
 import { getWorkspaceState } from '#/modules/Workspace/useCases';
+
+import { getTrackStoreState } from '../getTrackStoreState';
 
 type RippleInsertShift = {
     clipId: string;

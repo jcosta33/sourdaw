@@ -2,6 +2,7 @@
  * Sampler engine controls — playback mode, start/end points.
  */
 import { type ReactElement } from 'react';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 

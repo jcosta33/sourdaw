@@ -1,4 +1,5 @@
 import { type ReactElement, type DragEvent, useState, useEffect, useRef } from 'react';
+
 import {
     LayoutTemplate,
     Sparkles,
@@ -14,12 +15,14 @@ import {
     Piano,
     Layers,
 } from 'lucide-react';
-import { SourdawLogo } from './SourdawLogo';
-import { newProject, createFromTemplate, getTemplates } from '#/modules/Project/useCases';
+
 import { addTrack, addClip, importMidiFile } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
+import { newProject, createFromTemplate, getTemplates } from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { SourdawLogo } from './SourdawLogo';
 
 // ─────────────────────────────────────────────────────────────
 // Constants & metadata

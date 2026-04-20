@@ -8,7 +8,6 @@ import {
 } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
-import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 import {
     subscribeToCrdtChanges,
     getCrdtDoc,
@@ -18,10 +17,11 @@ import {
     getCrdtDocIds,
     persistCrdtProject,
 } from '#/modules/CrdtDocument/useCases';
-import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
-import { type PeerConnectionManager } from '../repositories/peerConnection';
+import { base64ToBytes, bytesToBase64 } from '#/utils/base64';
 
+import { type PeerId, type PeerMessage } from '../models/CollaborationTypes';
 import { DOC_ID_BRANCHES } from '../models/syncChannelConstants';
+import { type PeerConnectionManager } from '../repositories/peerConnection';
 
 const DOC_PREFIX_ROOT = 'root';
 

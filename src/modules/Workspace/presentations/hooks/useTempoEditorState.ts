@@ -1,6 +1,6 @@
 import { type RefObject, useState, useRef, useEffect } from 'react';
+
 import { useStore } from '#/infra/store/useStore';
-import { useTransportState } from './useTransportState';
 import { tempoMapStore } from '#/modules/Transport/stores';
 import {
     setTempo,
@@ -9,6 +9,8 @@ import {
     removeTempoChange,
     updateTempoChange,
 } from '#/modules/Transport/useCases';
+
+import { useTransportState } from './useTransportState';
 
 type TempoCurve = 'instant' | 'linear';
 

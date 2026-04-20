@@ -1,5 +1,6 @@
 import { getTrackStoreState } from '../getTrackStoreState';
 import { setTrackState } from '../setTrackState';
+
 import { type RippleInsertPlan } from './planRippleInsert';
 
 type RippleInsertClipInput = {

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { readFrequencyBalance } from '../readFrequencyBalance';
 
 describe('readFrequencyBalance', () => {
@@ -12,7 +13,7 @@ describe('readFrequencyBalance', () => {
         } as unknown as AnalyserNode;
 
         const bands = readFrequencyBalance(mockAnalyser);
-        
+
         expect(bands.sub).toBeCloseTo(-100);
         expect(bands.bass).toBeCloseTo(-100);
         expect(bands.lowMid).toBeCloseTo(-100);
@@ -42,7 +43,7 @@ describe('readFrequencyBalance', () => {
         } as unknown as AnalyserNode;
 
         const bands = readFrequencyBalance(mockAnalyser);
-        
+
         expect(bands.sub).toBeGreaterThan(-100);
         expect(bands.mid).toBeGreaterThan(-100);
         // High band should be silent since we filled it with -100

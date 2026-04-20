@@ -1,12 +1,14 @@
 import { type ReactElement } from 'react';
+
 import { MousePointer2, Scissors, Pencil, TrendingUp, MoveHorizontal, SquareDashed } from 'lucide-react';
+
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 
-import { useWorkspaceState } from '../hooks/useWorkspaceState';
-import { setEditingTool } from '../../useCases/setEditingTool';
 import { TOOL_LABELS, type EditingTool } from '../../models/EditingTool';
+import { setEditingTool } from '../../useCases/setEditingTool';
+import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
 const TOOL_ICONS: Record<EditingTool, ReactElement> = {
     select: <MousePointer2 className="size-3.5" aria-hidden="true" />,

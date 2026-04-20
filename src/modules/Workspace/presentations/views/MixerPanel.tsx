@@ -1,18 +1,13 @@
 import { type CSSProperties, type ReactElement, useState, useRef } from 'react';
+
+import { Columns3, Save, RotateCcw, Sparkles, Pencil } from 'lucide-react';
+
 import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
-import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
-import { ScrollArea } from '#/components/ui/scroll-area';
 import { Button } from '#/components/ui/button';
-import { Columns3, Save, RotateCcw, Sparkles, Pencil } from 'lucide-react';
-import { useTracks } from '../hooks/useTracks';
-import { useWorkspaceState } from '../hooks/useWorkspaceState';
-import { cycleChannelStripWidth } from '../../useCases/togglePanel/panelToggles/cycleChannelStripWidth';
-import { type ChannelStripWidth } from '../../models/WorkspaceState';
-import { ExpandedChannelStrip } from './Mixer/ExpandedChannelStrip';
-import { MasterChannelStrip } from './Mixer/MasterChannelStrip';
+import { ScrollArea } from '#/components/ui/scroll-area';
 import {
     saveMixerSnapshot,
     recallMixerSnapshot,
@@ -21,8 +16,17 @@ import {
     renameMixerSnapshot,
     restoreMixerChannels,
 } from '#/modules/Arrangement/useCases';
-import { MixHealthDialog } from './Mixer/MixHealthDialog';
 import { pushUndoEntry } from '#/modules/Command/useCases';
+import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
+
+import { type ChannelStripWidth } from '../../models/WorkspaceState';
+import { cycleChannelStripWidth } from '../../useCases/togglePanel/panelToggles/cycleChannelStripWidth';
+import { useTracks } from '../hooks/useTracks';
+import { useWorkspaceState } from '../hooks/useWorkspaceState';
+
+import { ExpandedChannelStrip } from './Mixer/ExpandedChannelStrip';
+import { MasterChannelStrip } from './Mixer/MasterChannelStrip';
+import { MixHealthDialog } from './Mixer/MixHealthDialog';
 
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only fields used by this view.
 type MixerSnapshot = { id: string; name: string };

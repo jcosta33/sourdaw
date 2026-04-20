@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TrackHeaderSection } from '../TrackHeaderSection';
+
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
@@ -30,19 +32,13 @@ vi.mock('#/modules/Arrangement/useCases/setTrackGainPan/setTrackColor', () => ({
 const mockFreezeTrack = vi.fn();
 const mockUnfreezeTrack = vi.fn();
 
-vi.mock(
-    '#/modules/Arrangement/useCases/freezeBounce/freezeTrack/unfreezeTrack',
-    () => ({
-        unfreezeTrack: (...args: unknown[]) => mockUnfreezeTrack(...args),
-    }),
-);
+vi.mock('#/modules/Arrangement/useCases/freezeBounce/freezeTrack/unfreezeTrack', () => ({
+    unfreezeTrack: (...args: unknown[]) => mockUnfreezeTrack(...args),
+}));
 
-vi.mock(
-    '#/modules/Arrangement/useCases/freezeBounce/freezeTrack/freezeTrack',
-    () => ({
-        freezeTrack: (...args: unknown[]) => mockFreezeTrack(...args),
-    }),
-);
+vi.mock('#/modules/Arrangement/useCases/freezeBounce/freezeTrack/freezeTrack', () => ({
+    freezeTrack: (...args: unknown[]) => mockFreezeTrack(...args),
+}));
 
 vi.mock('#/components/daw/DawCompactInput', () => ({
     DawCompactInput: ({
@@ -88,13 +84,7 @@ vi.mock('#/components/ui/button', () => ({
 }));
 
 vi.mock('../../../components/Inspector/InsetPanel', () => ({
-    InsetPanel: ({
-        children,
-        className,
-    }: {
-        children: React.ReactNode;
-        className?: string;
-    }) => (
+    InsetPanel: ({ children, className }: { children: React.ReactNode; className?: string }) => (
         <div data-testid="inset-panel" className={className}>
             {children}
         </div>
@@ -211,4 +201,3 @@ describe('TrackHeaderSection', () => {
         expect(mockSetTrackColor).toHaveBeenCalledWith('track-1', '#00ff00');
     });
 });
-

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { revertAction } from '../revertAction/revertAction';
 
 const executeAppAction = vi.fn();

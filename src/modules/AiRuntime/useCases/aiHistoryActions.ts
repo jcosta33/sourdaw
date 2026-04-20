@@ -1,5 +1,6 @@
 import { undoStore } from '#/modules/Command/stores';
 import { executeAppAction } from '#/modules/Command/useCases';
+
 import { type AiActionGroup, markGroupReverted } from '../stores/aiActionHistoryStore';
 
 export async function revertAiActionGroup(group: AiActionGroup): Promise<void> {

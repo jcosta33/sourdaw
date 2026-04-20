@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { generateWebLlmToolCalls } from '../toolCalling';
+
 import { generateWebLlmCompletion } from '../engineLifecycle';
+import { generateWebLlmToolCalls } from '../toolCalling';
 
 const { mockLogger } = vi.hoisted(() => ({
     mockLogger: {
@@ -8,7 +9,7 @@ const { mockLogger } = vi.hoisted(() => ({
         warn: vi.fn(),
         error: vi.fn(),
         debug: vi.fn(),
-    }
+    },
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 

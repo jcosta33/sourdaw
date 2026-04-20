@@ -32,11 +32,13 @@ function fermenterDevice(name: string, overrides: Partial<FermenterPatch> = {}):
     const patch = { ...DEFAULT_PATCH, ...overrides, name };
     const parameterValues: Record<string, number> = {};
     for (const [key, value] of Object.entries(patch)) {
-        if (key === 'version' || key === 'name') {continue;}
+        if (key === 'version' || key === 'name') {
+            continue;
+        }
         if (key === 'macros') {
-            (value as number[]).forEach((v, i) => {
+            for (const [i, v] of (value as number[]).entries()) {
                 parameterValues[`macro${i}`] = v;
-            });
+            }
         } else {
             parameterValues[key] = value as number;
         }

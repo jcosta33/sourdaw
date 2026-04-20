@@ -1,11 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleInvertNotes } from '../handleInvertNotes';
-import { handleRetrogradeNotes } from '../handleRetrogradeNotes';
-import { handleQuantizeNoteLengths } from '../handleQuantizeNoteLengths';
-import { handleTransposeNotes } from '../handleTransposeNotes';
-import { handleScaleVelocities } from '../handleScaleVelocities';
-import { handleSetAllVelocities } from '../handleSetAllVelocities';
-import { handleScaleAllVelocities } from '../handleScaleAllVelocities';
 
 import {
     invertNotes,
@@ -14,8 +7,16 @@ import {
     transposeNotes,
     scaleVelocities,
     setAllVelocities,
-    scaleAllVelocities
+    scaleAllVelocities,
 } from '#/modules/MIDI/useCases';
+
+import { handleInvertNotes } from '../handleInvertNotes';
+import { handleQuantizeNoteLengths } from '../handleQuantizeNoteLengths';
+import { handleRetrogradeNotes } from '../handleRetrogradeNotes';
+import { handleScaleAllVelocities } from '../handleScaleAllVelocities';
+import { handleScaleVelocities } from '../handleScaleVelocities';
+import { handleSetAllVelocities } from '../handleSetAllVelocities';
+import { handleTransposeNotes } from '../handleTransposeNotes';
 
 vi.mock('#/modules/MIDI/useCases', () => ({
     invertNotes: vi.fn(),
@@ -53,7 +54,10 @@ describe('Workspace Note Handlers', () => {
     });
 
     it('handleScaleVelocities should delegate to scaleVelocities', () => {
-        handleScaleVelocities.execute({ type: 'scaleVelocities', payload: { clipId: 'c1', curve: 'linear', minVelocity: 10, maxVelocity: 100 } });
+        handleScaleVelocities.execute({
+            type: 'scaleVelocities',
+            payload: { clipId: 'c1', curve: 'linear', minVelocity: 10, maxVelocity: 100 },
+        });
         expect(scaleVelocities).toHaveBeenCalledWith('c1', 'linear', 10, 100);
     });
 

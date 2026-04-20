@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
+
 import { DawTransportCluster } from '../DawTransportCluster';
 
 describe('DawTransportCluster', () => {

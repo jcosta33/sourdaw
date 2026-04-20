@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { startDictation } from '../startDictation';
 
 const mocks = vi.hoisted(() => ({

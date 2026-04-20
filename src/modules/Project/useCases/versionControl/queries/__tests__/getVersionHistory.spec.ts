@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getVersionHistory } from '../getVersionHistory';
+
 import { type VersionControlState } from '../../../../models/ProjectVersion';
+import { getVersionHistory } from '../getVersionHistory';
 
 const mockStore = vi.hoisted(() => ({
     value: null as VersionControlState | null,

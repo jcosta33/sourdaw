@@ -3,8 +3,10 @@
  */
 
 import { type ReactElement } from 'react';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import type { EnvelopeParams, FilterType, CrumbsMode, VoiceStackParams } from '../../models/CrumbsTypes';
 
 type CrumbsControlsProps = {
@@ -87,7 +89,13 @@ export const CrumbsControls = ({
             {/* Mode switcher */}
             <div className="flex items-center gap-1.5">
                 {MODES.map((m) => (
-                    <DawPluginChip key={m} active={mode === m} tone="lavender" size="sm" onClick={() => onModeChange(m)}>
+                    <DawPluginChip
+                        key={m}
+                        active={mode === m}
+                        tone="lavender"
+                        size="sm"
+                        onClick={() => onModeChange(m)}
+                    >
                         {m.charAt(0).toUpperCase() + m.slice(1)}
                     </DawPluginChip>
                 ))}

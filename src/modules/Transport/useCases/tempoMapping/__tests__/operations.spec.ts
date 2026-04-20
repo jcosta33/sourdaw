@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { estimateOnsetsFromClips, applyTempoMap, detectProjectTempo } from '../operations/detectProjectTempo';
+
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
+import { estimateOnsetsFromClips, applyTempoMap, detectProjectTempo } from '../operations/detectProjectTempo';
 
 const trackCell = vi.hoisted(() => ({
     value: null as { tracks: Array<{ kind: string; clips: Array<{ startBeat: number; endBeat: number }> }> } | null,

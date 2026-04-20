@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { ensureTrackStrips } from '../ensureTrackStrips';
 
 const mocks = vi.hoisted(() => ({
@@ -17,12 +18,20 @@ const mocks = vi.hoisted(() => ({
 
 // Mock the store file directly
 vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
-    trackStore: { get value() { return mocks.trackStoreValue.value; } }
+    trackStore: {
+        get value() {
+            return mocks.trackStoreValue.value;
+        },
+    },
 }));
 
 // Mock the barrel re-exports but satisfy the markerStore etc. if needed by other components
 vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: { get value() { return mocks.trackStoreValue.value; } },
+    trackStore: {
+        get value() {
+            return mocks.trackStoreValue.value;
+        },
+    },
     markerStore: { value: { markers: [], sections: [] } },
     chordTrackStore: { value: {} },
     scratchPadStore: { value: {} },
@@ -71,9 +80,7 @@ describe('ensureTrackStrips', () => {
                     muted: false,
                     soloed: false,
                     outputId: 'main',
-                    devices: [
-                        { id: 'd1', type: 'reverb', parameterValues: { room: 0.5 } }
-                    ],
+                    devices: [{ id: 'd1', type: 'reverb', parameterValues: { room: 0.5 } }],
                     sends: [{ busId: 'b1', level: 0.1, preFader: false }],
                 },
                 {
@@ -87,7 +94,7 @@ describe('ensureTrackStrips', () => {
                     devices: [],
                     sends: [],
                 },
-            ]
+            ],
         } as any;
 
         ensureTrackStrips();

@@ -1,6 +1,9 @@
 import { type ReactElement } from 'react';
-import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+
 import { Cpu } from 'lucide-react';
+
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+
 import {
     type Preferences,
     BUFFER_SIZE_OPTIONS,

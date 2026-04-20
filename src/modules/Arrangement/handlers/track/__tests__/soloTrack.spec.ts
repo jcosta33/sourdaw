@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleSoloTrack } from '../soloTrack';
 
 const mocks = vi.hoisted(() => ({
@@ -31,7 +32,7 @@ describe('handleSoloTrack', () => {
         expect(desc1.label).toBe('Solo track');
         expect(desc1.inverseAction).toEqual({
             type: 'soloTrack',
-            payload: { trackId: 't1', soloed: false }
+            payload: { trackId: 't1', soloed: false },
         });
 
         const desc2 = handleSoloTrack.describe({
@@ -41,7 +42,7 @@ describe('handleSoloTrack', () => {
         expect(desc2.label).toBe('Unsolo track');
         expect(desc2.inverseAction).toEqual({
             type: 'soloTrack',
-            payload: { trackId: 't1', soloed: true }
+            payload: { trackId: 't1', soloed: true },
         });
     });
 

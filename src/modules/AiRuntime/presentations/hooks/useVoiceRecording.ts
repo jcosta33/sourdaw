@@ -7,15 +7,17 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { onVoiceToggle } from '../../useCases/voiceToggle/onVoiceToggle';
+
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri as isTauriAvailable } from '#/utils/tauriBridge';
-import { injectPromptCommand } from '../../useCases/promptInjection';
+
 import { voiceStatusStore } from '../../stores/voiceStatusStore';
+import { injectPromptCommand } from '../../useCases/promptInjection';
 import { ensureWhisperReady } from '../../useCases/voiceDictation/ensureWhisperReady';
+import { onDictationResult } from '../../useCases/voiceDictation/onDictationResult';
 import { startDictation } from '../../useCases/voiceDictation/startDictation';
 import { stopDictation } from '../../useCases/voiceDictation/stopDictation';
-import { onDictationResult } from '../../useCases/voiceDictation/onDictationResult';
+import { onVoiceToggle } from '../../useCases/voiceToggle/onVoiceToggle';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -250,8 +252,8 @@ export const useVoiceRecording = (): VoiceRecordingState => {
         if (modeRef.current === 'whisper') {
             setTranscribingAndStore(true);
             setInterimText('Transcribing...');
-            stopDictation().catch((e: unknown) => {
-                logger.warn(`stop_dictation failed: ${String(e)}`);
+            stopDictation().catch((error: unknown) => {
+                logger.warn(`stop_dictation failed: ${String(error)}`);
             });
             // The dictation-result event listener (set in startWhisperRecording) handles the rest
             return;

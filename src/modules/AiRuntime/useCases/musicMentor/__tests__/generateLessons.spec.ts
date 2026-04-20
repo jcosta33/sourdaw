@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { generateMentorLessons } from '../generateLessons';
 
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
@@ -19,7 +20,7 @@ describe('generateMentorLessons', () => {
 
     it('uses the injected analyzeMix collaborator', async () => {
         const { analyzeMixFromTrackLayout } = await import('#/modules/AudioAnalysis/useCases');
-        
+
         generateMentorLessons();
 
         expect(analyzeMixFromTrackLayout).toHaveBeenCalled();

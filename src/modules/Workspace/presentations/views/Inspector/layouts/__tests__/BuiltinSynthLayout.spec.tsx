@@ -1,16 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import type { DeviceLayoutProps } from '../../deviceLayoutRegistry';
 
 // Import after mocking
 vi.mock('#/components/daw/DawHeaderBand', () => ({
-    DawHeaderBand: ({
-        title,
-        compact,
-    }: {
-        title?: string;
-        compact?: boolean;
-    }) => (
+    DawHeaderBand: ({ title, compact }: { title?: string; compact?: boolean }) => (
         <div data-testid="header-band" data-compact={compact}>
             {title}
         </div>
@@ -34,9 +29,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 
 vi.mock('../../../../components/Inspector/SurfaceCard', () => ({
-    SurfaceCard: ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="surface-card">{children}</div>
-    ),
+    SurfaceCard: ({ children }: { children: React.ReactNode }) => <div data-testid="surface-card">{children}</div>,
 }));
 
 vi.mock('../../DeviceParameterControl', () => ({
@@ -84,11 +77,72 @@ describe('BuiltinSynthLayout', () => {
     };
 
     const mockParameters = [
-        { id: 'waveform', name: 'Waveform', type: 'choice', value: 2, defaultValue: 2, minValue: 0, maxValue: 3, unit: '', automatable: true, hasAutomation: false, deviceId: 'device-1', choices: ['Sine', 'Triangle', 'Sawtooth', 'Square'] },
-        { id: 'osc2Waveform', name: 'Osc 2 Waveform', type: 'choice', value: 2, defaultValue: 2, minValue: 0, maxValue: 3, unit: '', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-        { id: 'filterCutoff', name: 'Cutoff', type: 'float', value: 5000, defaultValue: 5000, minValue: 20, maxValue: 20000, unit: 'Hz', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-        { id: 'attack', name: 'Attack', type: 'float', value: 0.01, defaultValue: 0.01, minValue: 0.001, maxValue: 5, unit: 's', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-        { id: 'gain', name: 'Gain', type: 'float', value: 0.8, defaultValue: 0.8, minValue: 0, maxValue: 1, unit: '', automatable: true, hasAutomation: false, deviceId: 'device-1' },
+        {
+            id: 'waveform',
+            name: 'Waveform',
+            type: 'choice',
+            value: 2,
+            defaultValue: 2,
+            minValue: 0,
+            maxValue: 3,
+            unit: '',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+            choices: ['Sine', 'Triangle', 'Sawtooth', 'Square'],
+        },
+        {
+            id: 'osc2Waveform',
+            name: 'Osc 2 Waveform',
+            type: 'choice',
+            value: 2,
+            defaultValue: 2,
+            minValue: 0,
+            maxValue: 3,
+            unit: '',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
+        {
+            id: 'filterCutoff',
+            name: 'Cutoff',
+            type: 'float',
+            value: 5000,
+            defaultValue: 5000,
+            minValue: 20,
+            maxValue: 20000,
+            unit: 'Hz',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
+        {
+            id: 'attack',
+            name: 'Attack',
+            type: 'float',
+            value: 0.01,
+            defaultValue: 0.01,
+            minValue: 0.001,
+            maxValue: 5,
+            unit: 's',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
+        {
+            id: 'gain',
+            name: 'Gain',
+            type: 'float',
+            value: 0.8,
+            defaultValue: 0.8,
+            minValue: 0,
+            maxValue: 1,
+            unit: '',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
     ];
 
     const mockProps: DeviceLayoutProps = {

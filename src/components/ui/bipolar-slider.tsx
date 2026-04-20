@@ -1,4 +1,5 @@
 import { type ReactElement, type PointerEvent } from 'react';
+
 import { Slider } from '#/components/ui/slider';
 import { cn } from '#/utils/Styles/cn';
 

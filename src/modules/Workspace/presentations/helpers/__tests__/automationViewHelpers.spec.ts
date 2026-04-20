@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    AUTOMATION_MODE_CONFIG,
-    LANE_HEIGHT,
-    buildCurvePath,
-} from '../automationViewHelpers';
 import { type AutomationPoint } from '../../../models/AutomationViewTypes';
+import { AUTOMATION_MODE_CONFIG, LANE_HEIGHT, buildCurvePath } from '../automationViewHelpers';
 
 const beatToX = (beat: number): number => beat * 10;
 const valueToY = (value: number): number => 100 - value * 100;

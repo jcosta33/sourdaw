@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { ChatPanel } from '../ChatPanel';
 
 // Mock external dependencies - factories are hoisted, so define mocks inside
@@ -43,7 +44,9 @@ vi.mock('remark-gfm', () => ({
 vi.mock('../../components/ChatComposer', () => ({
     ChatComposer: ({ onSend, onStop, isGenerating, isLlmAvailable }: any) => (
         <div data-testid="chat-composer">
-            <button onClick={onSend} disabled={!isLlmAvailable}>Send</button>
+            <button onClick={onSend} disabled={!isLlmAvailable}>
+                Send
+            </button>
             {isGenerating && <button onClick={onStop}>Stop</button>}
         </div>
     ),
@@ -52,7 +55,8 @@ vi.mock('../../components/ChatComposer', () => ({
 // Import the mocked modules to access mock functions
 const { useStore } = await import('#/infra/store/useStore');
 const { toggleChat } = await import('#/modules/AiRuntime/useCases/aiPanelActions/toggleChat');
-const { isLlmAvailable } = await import('#/modules/AiRuntime/useCases/llmOrchestration/backendResolution/isLlmAvailable');
+const { isLlmAvailable } =
+    await import('#/modules/AiRuntime/useCases/llmOrchestration/backendResolution/isLlmAvailable');
 
 describe('ChatPanel', () => {
     beforeEach(() => {
@@ -99,7 +103,7 @@ describe('ChatPanel', () => {
 
     it('should show LLM unavailable warning when not available', () => {
         (isLlmAvailable as ReturnType<typeof vi.fn>).mockReturnValue(false);
-        
+
         render(<ChatPanel />);
         expect(screen.getByText('Local AI Not Available')).toBeInTheDocument();
     });

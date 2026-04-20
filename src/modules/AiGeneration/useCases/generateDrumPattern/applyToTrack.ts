@@ -1,5 +1,6 @@
 import { addClip } from '#/modules/Arrangement/useCases';
 import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
+
 import { type GenerateDrumPatternOptions } from './algorithm';
 import { generateDrumPattern } from './algorithm';
 
@@ -38,7 +39,7 @@ export function applyDrumPatternToTrack(
             startBeat: startBeat + note.startBeat,
             duration: note.duration,
             velocity: note.velocity,
-        })),
+        }))
     );
 
     return { clipId: clip.id, noteCount: notes.length };

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { generateCloudToolCalls } from '../cloudInference/generateCloudToolCalls';
 import * as keyManagement from '../keyManagement';
 
@@ -8,7 +9,7 @@ const { mockLogger } = vi.hoisted(() => ({
         warn: vi.fn(),
         error: vi.fn(),
         debug: vi.fn(),
-    }
+    },
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 

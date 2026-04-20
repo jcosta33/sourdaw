@@ -2,8 +2,8 @@
  * Velocity Processor — fixed, compress, expand, remap, randomize velocity.
  */
 
-import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
+import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 
 type VelCurve = 'linear' | 'soft' | 'hard' | 'sCurve';
 

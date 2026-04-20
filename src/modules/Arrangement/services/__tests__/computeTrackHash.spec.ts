@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { computeTrackHash } from '../computeTrackHash';
+
 import { type Clip, type Device } from '../../models/Track';
+import { computeTrackHash } from '../computeTrackHash';
 
 describe('computeTrackHash', () => {
     it('computes a consistent SHA-256 hash for identical clips and devices', async () => {
@@ -8,7 +9,7 @@ describe('computeTrackHash', () => {
             { id: 'c1', startBeat: 0, endBeat: 4, assetHash: 'hash1', gain: 1 } as Clip,
             { id: 'c2', startBeat: 4, endBeat: 8, assetHash: 'hash2', gain: 0.5 } as Clip,
         ];
-        
+
         const devices: Device[] = [
             { id: 'd1', type: 'eq', bypassed: false, parameterValues: { freq: 1000, gain: 2 } } as any,
         ];

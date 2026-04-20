@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { findSimilarSamples } from '#/modules/SampleLibrary/useCases/findSimilarSamples';
+
 import { embeddingStore } from '#/modules/SampleLibrary/stores/embeddingStore';
+import { findSimilarSamples } from '#/modules/SampleLibrary/useCases/findSimilarSamples';
 
 describe('findSimilarSamples', () => {
     beforeEach(() => {

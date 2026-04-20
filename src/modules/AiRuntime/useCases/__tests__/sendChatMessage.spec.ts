@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { sendChatMessage } from '../sendChatMessage';
 
 vi.mock('../llmOrchestration/backendResolution/helpers', () => ({
@@ -24,10 +25,9 @@ describe('sendChatMessage injectables', () => {
 
     it('returns early when chat store is empty', async () => {
         const { setChatGenerating } = await import('../../stores/chatStore');
-        
+
         await sendChatMessage('hello');
 
         expect(setChatGenerating).not.toHaveBeenCalled();
     });
 });
-

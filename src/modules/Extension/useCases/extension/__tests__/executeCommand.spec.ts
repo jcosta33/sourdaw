@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type ExtensionMarketplaceState, type ScriptCommand } from '../../../stores/extension';
 import { executeCommand } from '../executeCommand';
 
@@ -34,9 +35,7 @@ describe('executeCommand', () => {
 
     it('runs handler when command exists', () => {
         const handler = vi.fn();
-        const cmds: ScriptCommand[] = [
-            { id: 'ext.cmd', extensionId: 'ext', label: 'C', description: '', handler },
-        ];
+        const cmds: ScriptCommand[] = [{ id: 'ext.cmd', extensionId: 'ext', label: 'C', description: '', handler }];
         mocks.extensionStore.value = baseState({ commands: cmds });
 
         executeCommand('ext.cmd');

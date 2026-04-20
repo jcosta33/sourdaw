@@ -22,8 +22,8 @@ vi.mock('../../stores/toasterStore', () => ({
     },
 }));
 
-import { setSoundLock } from '../soundLocks/setSoundLock';
 import { getSoundLock } from '../soundLocks/getSoundLock';
+import { setSoundLock } from '../soundLocks/setSoundLock';
 
 function freshKit(): { kit: Kit } {
     return {
@@ -32,9 +32,7 @@ function freshKit(): { kit: Kit } {
             patterns: [
                 {
                     id: 'p1',
-                    tracks: [
-                        { padIndex: 0, steps: [{ active: true }, { active: false }, { active: true }] },
-                    ],
+                    tracks: [{ padIndex: 0, steps: [{ active: true }, { active: false }, { active: true }] }],
                 },
             ],
         },

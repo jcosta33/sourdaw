@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { applySoloLogic, resetSoloLogic } from '../applySoloLogic';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+
 import { setTrackMute, setTrackGain } from '#/modules/AudioEngine/useCases';
 import { getWorkspaceState } from '#/modules/Workspace/useCases';
+
 import { TrackDummy } from '../../__tests__/TrackDummy';
+import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { applySoloLogic, resetSoloLogic } from '../applySoloLogic';
 
 vi.mock('../../useCases/getTrackStoreState', () => ({
     getTrackStoreState: vi.fn(),
@@ -104,17 +106,14 @@ describe('applySoloLogic', () => {
         it('should restore original gain when solo is cleared', () => {
             const t1 = TrackDummy.create({ id: 't1', gain: 0.5, soloed: true });
             const tracksSoloed = [t1, TrackDummy.create({ id: 't2', soloed: false })];
-            
+
             vi.mocked(getTrackStoreState).mockReturnValue({ tracks: tracksSoloed } as any);
             applySoloLogic();
             expect(setTrackGain).toHaveBeenCalledWith('t1', 1.0);
 
-            const tracksUnsoloed = [
-                { ...t1, soloed: false },
-                TrackDummy.create({ id: 't2', soloed: false }),
-            ];
+            const tracksUnsoloed = [{ ...t1, soloed: false }, TrackDummy.create({ id: 't2', soloed: false })];
             vi.mocked(getTrackStoreState).mockReturnValue({ tracks: tracksUnsoloed } as any);
-            
+
             applySoloLogic();
             expect(setTrackGain).toHaveBeenCalledWith('t1', 0.5);
         });

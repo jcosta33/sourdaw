@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+
 import { automationStore, type AutomationLane } from '../../../stores/automationStore';
 import { invertAutomation } from '../invertAutomation';
 

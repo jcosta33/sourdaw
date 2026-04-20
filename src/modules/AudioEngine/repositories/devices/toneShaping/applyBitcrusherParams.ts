@@ -1,4 +1,5 @@
 import { type OfflineDeviceNode } from '../types';
+
 import { makeBitcrusherCurve } from './helpers';
 
 export function applyBitcrusherParams(dn: OfflineDeviceNode, params: Record<string, number>): void {

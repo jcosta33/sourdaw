@@ -13,8 +13,9 @@
  */
 
 import grandBouleProcessorUrl from '../services/grandBouleProcessor.ts?worker&url';
-import { createReadyHandshake, ensureWorkletRegistered } from './workletInitShared';
+
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
+import { createReadyHandshake, ensureWorkletRegistered } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
@@ -164,15 +165,15 @@ export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: stri
         disconnect() {
             try {
                 node.disconnect();
-            } catch (err) {
-                console.error('[GrandBouleNode] Disconnect failed:', err);
+            } catch (error) {
+                console.error('[GrandBouleNode] Disconnect failed:', error);
             }
         },
         destroy() {
             try {
                 node.disconnect();
-            } catch (err) {
-                console.error('[GrandBouleNode] Disconnect failed during destroy:', err);
+            } catch (error) {
+                console.error('[GrandBouleNode] Disconnect failed during destroy:', error);
             }
             node.port.close();
             engineWorker.postMessage({ type: 'stop' });

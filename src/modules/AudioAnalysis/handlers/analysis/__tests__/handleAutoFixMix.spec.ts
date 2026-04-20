@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleAutoFixMix } from '../handleAutoFixMix';
+
 import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime/useCases';
+
 import { analyzeMix } from '../../../useCases/analyzeMix';
+import { handleAutoFixMix } from '../handleAutoFixMix';
 
 const mocks = vi.hoisted(() => ({
     executeAppAction: vi.fn(),
@@ -36,43 +38,49 @@ describe('handleAutoFixMix', () => {
         vi.mocked(getMixAnalysisStoreValue).mockReturnValue(initialState as any);
         vi.mocked(analyzeMix).mockResolvedValue({
             trackLevels: [],
-            overallLevel: { peakDb: -10 }
+            overallLevel: { peakDb: -10 },
         } as any);
 
         await handleAutoFixMix.execute({ type: 'autoFixMix', payload: {} });
 
         expect(setMixAnalysisStoreValue).toHaveBeenCalledWith(expect.objectContaining({ isAnalyzing: true }));
         expect(analyzeMix).toHaveBeenCalled();
-        expect(setMixAnalysisStoreValue).toHaveBeenCalledWith(expect.objectContaining({ isAnalyzing: false, panelOpen: true }));
+        expect(setMixAnalysisStoreValue).toHaveBeenCalledWith(
+            expect.objectContaining({ isAnalyzing: false, panelOpen: true })
+        );
     });
 
     it('should fix clipping tracks and master gain', async () => {
         const initialState = { isAnalyzing: false };
         vi.mocked(getMixAnalysisStoreValue).mockReturnValue(initialState as any);
-        
+
         // Track 1 is clipping at +2dB
         // Master is peaking at -1dB (should be reduced because > -3)
         vi.mocked(analyzeMix).mockResolvedValueOnce({
             trackLevels: [{ trackId: 't1', isClipping: true, peakDb: 2 }],
-            overallLevel: { peakDb: -1 }
+            overallLevel: { peakDb: -1 },
         } as any);
-        
+
         // Refresh call returns clean state
         vi.mocked(analyzeMix).mockResolvedValueOnce({
             trackLevels: [{ trackId: 't1', isClipping: false, peakDb: -6 }],
-            overallLevel: { peakDb: -10 }
+            overallLevel: { peakDb: -10 },
         } as any);
 
         await handleAutoFixMix.execute({ type: 'autoFixMix', payload: {} });
 
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(expect.objectContaining({
-            type: 'setTrackGain',
-            payload: expect.objectContaining({ trackId: 't1' })
-        }));
-        
-        expect(mocks.executeAppAction).toHaveBeenCalledWith(expect.objectContaining({
-            type: 'setMasterGain'
-        }));
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            expect.objectContaining({
+                type: 'setTrackGain',
+                payload: expect.objectContaining({ trackId: 't1' }),
+            })
+        );
+
+        expect(mocks.executeAppAction).toHaveBeenCalledWith(
+            expect.objectContaining({
+                type: 'setMasterGain',
+            })
+        );
     });
 
     it('should reset analyzing state on error', async () => {

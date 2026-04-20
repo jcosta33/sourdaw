@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { setLayerMix } from '../setLayerMix';
 
 const mocks = vi.hoisted(() => ({
@@ -8,7 +9,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Arrangement/stores/adjustmentLayer', () => ({
     adjustmentLayerStore: {
-        get value() { return mocks.adjustmentLayerStoreValue.value; },
+        get value() {
+            return mocks.adjustmentLayerStoreValue.value;
+        },
         set: mocks.adjustmentLayerStoreSet,
     },
 }));
@@ -18,7 +21,7 @@ describe('setLayerMix', () => {
 
     it('updates layer mix value clamped between 0 and 1', () => {
         mocks.adjustmentLayerStoreValue.value = {
-            layers: [{ id: 'l1', mix: 1 }]
+            layers: [{ id: 'l1', mix: 1 }],
         } as any;
 
         setLayerMix('l1', 0.5);

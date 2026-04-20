@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { storage } from '../helpers';
 import { loadTrackTemplates } from '../loadTrackTemplates';
 import { saveTrackTemplates } from '../saveTrackTemplates';
-import { storage } from '../helpers';
 
 vi.mock('../helpers', () => ({
     storage: {

@@ -1,10 +1,13 @@
 import { type ReactElement } from 'react';
+
 import { Folder, File, Star, Upload } from 'lucide-react';
+
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
-import { cn } from '#/utils/Styles/cn';
 import { addTrack, addClip } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { cn } from '#/utils/Styles/cn';
+
 import { PreviewButton } from '../../components/Sidebar/PreviewButton';
 import { type SampleItem } from '../../components/Sidebar/sidebarConstants';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { extractGrooveFromClip } from '../extractGrooveFromClip';
 
 const mocks = vi.hoisted(() => ({
@@ -7,8 +8,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../stores/midiStore', () => ({
     midiStore: {
-        get value() { return mocks.midiStoreValue.value; },
-    }
+        get value() {
+            return mocks.midiStoreValue.value;
+        },
+    },
 }));
 
 describe('extractGrooveFromClip', () => {
@@ -25,29 +28,33 @@ describe('extractGrooveFromClip', () => {
                 c1: [
                     { startBeat: 0.1, duration: 1, velocity: 120 },
                     { startBeat: 0.45, duration: 1, velocity: 80 },
-                ]
-            }
+                ],
+            },
         } as any;
 
         const groove = extractGrooveFromClip('c1', 0.25);
 
         expect(groove).not.toBeNull();
-        
+
         // Offset 0 for the first note (which defines the minBeat reference)
-        expect(groove?.offsets).toContainEqual(expect.objectContaining({
-            gridPosition: 0,
-            timingOffset: 0,
-            velocityScale: 1.2,
-        }));
+        expect(groove?.offsets).toContainEqual(
+            expect.objectContaining({
+                gridPosition: 0,
+                timingOffset: 0,
+                velocityScale: 1.2,
+            })
+        );
 
         // Offset 0.1 for the second note relative to the shifted grid
-        expect(groove?.offsets).toContainEqual(expect.objectContaining({
-            gridPosition: 1, // 0.1 + 0.25 = 0.35. Wrapped index 1 if division is 0.25? 
-            // Wait, wrappedIndex = i % (1/0.25) = i % 4. 
-            // i=1. Index 1.
-            timingOffset: expect.closeTo(0.1),
-            velocityScale: 0.8,
-        }));
+        expect(groove?.offsets).toContainEqual(
+            expect.objectContaining({
+                gridPosition: 1, // 0.1 + 0.25 = 0.35. Wrapped index 1 if division is 0.25?
+                // Wait, wrappedIndex = i % (1/0.25) = i % 4.
+                // i=1. Index 1.
+                timingOffset: expect.closeTo(0.1),
+                velocityScale: 0.8,
+            })
+        );
     });
 
     it('bails if no notes in clip', () => {

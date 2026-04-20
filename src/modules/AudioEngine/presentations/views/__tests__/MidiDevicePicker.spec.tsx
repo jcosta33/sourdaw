@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { MidiDevicePicker } from '../MidiDevicePicker';
 
 // Mock external dependencies
@@ -92,7 +93,11 @@ describe('MidiDevicePicker', () => {
     });
 
     it('should show unsupported message when MIDI is not supported', () => {
-        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({ isSupported: false, inputs: [], selectedInputId: null });
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            isSupported: false,
+            inputs: [],
+            selectedInputId: null,
+        });
         render(<MidiDevicePicker />);
         expect(screen.getByText('MIDI not supported in this browser')).toBeInTheDocument();
     });

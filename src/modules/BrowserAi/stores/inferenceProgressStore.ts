@@ -6,6 +6,7 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
+
 import { type ActiveRender } from '../models/RenderProgress';
 
 export type InferenceProgressState = {

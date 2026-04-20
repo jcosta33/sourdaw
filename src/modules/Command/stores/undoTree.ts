@@ -4,6 +4,7 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
+
 import { type UndoTree, createEmptyTree } from '../models/UndoTree';
 
 export type UndoTreeStoreState = {

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { readLevels } from '../readLevels';
 
 describe('readLevels', () => {
@@ -11,7 +12,7 @@ describe('readLevels', () => {
         } as unknown as AnalyserNode;
 
         const levels = readLevels(mockAnalyser);
-        
+
         expect(levels.peakDb).toBe(-100);
         expect(levels.rmsDb).toBe(-100);
     });
@@ -26,7 +27,7 @@ describe('readLevels', () => {
         } as unknown as AnalyserNode;
 
         const levels = readLevels(mockAnalyser);
-        
+
         expect(levels.peakDb).toBeCloseTo(-6.02, 1);
         expect(levels.rmsDb).toBeCloseTo(-6.02, 1);
     });
@@ -43,10 +44,10 @@ describe('readLevels', () => {
         } as unknown as AnalyserNode;
 
         const levels = readLevels(mockAnalyser);
-        
+
         // Peak = 0.5 -> -6.02 dB
         expect(levels.peakDb).toBeCloseTo(-6.02, 1);
-        
+
         // RMS = sqrt((0.01 + 0.25 + 0.04 + 0) / 4) = sqrt(0.3 / 4) = sqrt(0.075) ≈ 0.2738
         // 20 * log10(0.2738) ≈ -11.25 dB
         expect(levels.rmsDb).toBeCloseTo(-11.25, 1);

@@ -1,14 +1,16 @@
 import { type ReactElement, type ChangeEvent } from 'react';
+
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
-import { cn } from '#/utils/Styles/cn';
+import { useStore } from '#/infra/store/useStore';
 import { MidiLearnButton } from '#/modules/Arrangement/presentations/views';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
-import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
 import { automationStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
 import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases';
-import { useStore } from '#/infra/store/useStore';
+import { cn } from '#/utils/Styles/cn';
+
+import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
 import { type Device } from '../../../models/TrackViewTypes';
 
 type DeviceParameterControlProps = {
@@ -31,9 +33,7 @@ type DeviceAutomationState = {
  * (see audit §115.1). React Compiler memoizes this call on `lanes` identity,
  * so the lookup is rebuilt at most once per automation-store update.
  */
-function buildLaneLookup(
-    lanes: DeviceAutomationState['lanes']
-): Map<string, DeviceAutomationState['lanes'][number]> {
+function buildLaneLookup(lanes: DeviceAutomationState['lanes']): Map<string, DeviceAutomationState['lanes'][number]> {
     const map = new Map<string, DeviceAutomationState['lanes'][number]>();
     for (const lane of lanes) {
         map.set(`${lane.trackId}|${lane.parameterId}`, lane);
@@ -54,7 +54,7 @@ function deriveStep(param: DeviceParameter): number {
         return Math.max(1, Math.round(raw));
     }
     // For sub-1 steps, round to the nearest power-of-10 fraction
-    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const mag = 10 ** Math.floor(Math.log10(raw));
     return Math.max(0.001, Math.round(raw / mag) * mag);
 }
 
@@ -78,12 +78,16 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     const modulation = (() => {
         let total = 0;
         for (const mod of modState.modulators) {
-            if (!mod.enabled) continue;
+            if (!mod.enabled) {
+                continue;
+            }
             const val = modRtState.runtimeValues[mod.id] ?? 0;
             for (const mapping of mod.mappings) {
-                if (mapping.targetTrackId === trackId &&
+                if (
+                    mapping.targetTrackId === trackId &&
                     mapping.targetDeviceId === device.id &&
-                    mapping.targetParamId === param.id) {
+                    mapping.targetParamId === param.id
+                ) {
                     total += val * mapping.amount;
                 }
             }
@@ -144,7 +148,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             );
         };
         const toLog = (linearVal: number) => {
-            return (param.minValue || 0.001) * Math.pow(param.maxValue / (param.minValue || 0.001), linearVal);
+            return (param.minValue || 0.001) * (param.maxValue / (param.minValue || 0.001)) ** linearVal;
         };
 
         const mappedValue = isLog ? toLinear(value) : value;

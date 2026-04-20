@@ -1,16 +1,23 @@
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
+
 import { fermenterStore, type FermenterState } from '../../stores/fermenterStore';
 
 export function useFermenterTelemetry(deviceId: string) {
     return useStoreSelector(
         fermenterStore,
         (state: Record<string, FermenterState> | null) => {
-            if (!state) return null;
+            if (!state) {
+                return null;
+            }
             return state[deviceId] || null;
         },
         (a, b) => {
-            if (!a && !b) return true;
-            if (!a || !b) return false;
+            if (!a && !b) {
+                return true;
+            }
+            if (!a || !b) {
+                return false;
+            }
             return a.peakL === b.peakL && a.peakR === b.peakR && a.scopeBuffer === b.scopeBuffer;
         }
     );
@@ -20,7 +27,9 @@ export function useFermenterBuffer(deviceId: string) {
     return useStoreSelector(
         fermenterStore,
         (state: Record<string, FermenterState> | null) => {
-            if (!state) return null;
+            if (!state) {
+                return null;
+            }
             const s = state[deviceId];
             return s ? s.scopeBuffer : null;
         },
@@ -32,7 +41,9 @@ export function useFermenterPeaks(deviceId: string) {
     return useStoreSelector(
         fermenterStore,
         (state: Record<string, FermenterState> | null) => {
-            if (!state) return { peakL: 0, peakR: 0 };
+            if (!state) {
+                return { peakL: 0, peakR: 0 };
+            }
             const s = state[deviceId];
             return s ? { peakL: s.peakL, peakR: s.peakR } : { peakL: 0, peakR: 0 };
         },

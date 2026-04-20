@@ -1,6 +1,7 @@
+import { moveClip } from '../clip/moveClip';
 import { getTrackStoreState } from '../getTrackStoreState';
 import { setTrackState } from '../setTrackState';
-import { moveClip } from '../clip/moveClip';
+
 import { type RippleMovePlan } from './planRippleMove';
 
 type RippleMoveClipInput = {
@@ -47,9 +48,15 @@ export function rippleMoveClip({ trackId, clipId, newStartBeat, clipDuration, pl
                     const closesGap = gapCloseSet.has(clip.id);
                     const opensDestination = destOpenSet.has(clip.id);
                     let delta = 0;
-                    if (closesGap) delta -= clipDuration;
-                    if (opensDestination) delta += clipDuration;
-                    if (delta === 0) return clip;
+                    if (closesGap) {
+                        delta -= clipDuration;
+                    }
+                    if (opensDestination) {
+                        delta += clipDuration;
+                    }
+                    if (delta === 0) {
+                        return clip;
+                    }
                     return {
                         ...clip,
                         startBeat: clip.startBeat + delta,

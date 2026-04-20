@@ -1,5 +1,5 @@
-import { downloadBlob } from '../repositories/downloadFile';
 import { type MidiNote, type MidiCC } from '../models/MidiNote';
+import { downloadBlob } from '../repositories/downloadFile';
 
 const TICKS_PER_BEAT = 480;
 

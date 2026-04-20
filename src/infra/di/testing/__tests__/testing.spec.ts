@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { spy } from '../spy';
+
+import { Container } from '../../Container';
+import { inject } from '../../inject';
+import { resetContainerState } from '../../internal/containerState';
 import { createMock } from '../createMock';
 import { injectDependencies } from '../injectDependencies';
-import { inject } from '../../inject';
-import { Container } from '../../Container';
-import { resetContainerState } from '../../internal/containerState';
+import { spy } from '../spy';
 
 describe('DI Testing Helpers', () => {
     beforeEach(() => {

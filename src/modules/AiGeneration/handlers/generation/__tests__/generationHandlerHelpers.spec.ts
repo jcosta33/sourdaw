@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { resolveOrCreateMidiTrack, getPlayheadBeat } from '../generationHandlerHelpers';
 
 const mocks = vi.hoisted(() => ({
@@ -35,7 +36,7 @@ describe('generationHandlerHelpers', () => {
                 tracks: [
                     { id: 't1', kind: 'audio' },
                     { id: 't2', kind: 'midi' },
-                ]
+                ],
             });
             const id = resolveOrCreateMidiTrack(undefined, 'Fallback', deps);
             expect(id).toBe('t2');
@@ -48,7 +49,7 @@ describe('generationHandlerHelpers', () => {
                 tracks: [
                     { id: 't1', kind: 'audio' },
                     { id: 't3', kind: 'midi' },
-                ]
+                ],
             });
             const id = resolveOrCreateMidiTrack(undefined, 'Fallback', deps);
             expect(id).toBe('t3');
@@ -61,7 +62,7 @@ describe('generationHandlerHelpers', () => {
                 tracks: [
                     { id: 't1', kind: 'audio' },
                     { id: 't3', kind: 'midi' },
-                ]
+                ],
             });
             const id = resolveOrCreateMidiTrack(undefined, 'Fallback', deps);
             expect(id).toBe('t3');
@@ -71,9 +72,7 @@ describe('generationHandlerHelpers', () => {
         it('creates a new track if no midi tracks exist', () => {
             mocks.getTrackStoreState.mockReturnValue({
                 selectedTrackId: null,
-                tracks: [
-                    { id: 't1', kind: 'audio' },
-                ]
+                tracks: [{ id: 't1', kind: 'audio' }],
             });
             mocks.addTrack.mockReturnValue({ id: 'new-t' });
 
@@ -85,7 +84,7 @@ describe('generationHandlerHelpers', () => {
         it('returns null if track creation fails', () => {
             mocks.getTrackStoreState.mockReturnValue({
                 selectedTrackId: null,
-                tracks: []
+                tracks: [],
             });
             mocks.addTrack.mockReturnValue(null);
 

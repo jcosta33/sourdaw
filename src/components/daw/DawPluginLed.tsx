@@ -1,8 +1,20 @@
 import { type HTMLAttributes, type ReactElement } from 'react';
+
 import { cn } from '#/utils/Styles/cn';
 
 type DawPluginLedProps = HTMLAttributes<HTMLDivElement> & {
-    tone?: 'amber' | 'peach' | 'cyan' | 'mint' | 'lavender' | 'danger' | 'neutral' | 'rose' | 'indigo' | 'sage' | 'copper';
+    tone?:
+        | 'amber'
+        | 'peach'
+        | 'cyan'
+        | 'mint'
+        | 'lavender'
+        | 'danger'
+        | 'neutral'
+        | 'rose'
+        | 'indigo'
+        | 'sage'
+        | 'copper';
 };
 
 const TONE_CLASS_NAMES: Record<NonNullable<DawPluginLedProps['tone']>, string> = {

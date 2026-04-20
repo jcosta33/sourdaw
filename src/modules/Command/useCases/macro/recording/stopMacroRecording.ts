@@ -1,5 +1,5 @@
-import { macroStore } from '../../../stores/macroStore';
 import { type Macro } from '../../../models/Macro';
+import { macroStore } from '../../../stores/macroStore';
 
 export type { Macro };
 

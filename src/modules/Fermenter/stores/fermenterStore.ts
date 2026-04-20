@@ -5,6 +5,7 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
+
 import { type FermenterPatch, DEFAULT_PATCH } from '../models/FermenterPatch';
 
 export type FermenterState = {

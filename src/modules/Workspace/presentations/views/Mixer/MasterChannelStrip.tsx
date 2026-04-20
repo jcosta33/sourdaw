@@ -1,10 +1,11 @@
 import { type ReactElement } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
 import { DawChannelStripShell } from '#/components/daw/DawChannelStripShell';
 import { Fader } from '#/components/daw/Fader';
-import { cn } from '#/utils/Styles/cn';
+import { useStore } from '#/infra/store/useStore';
 import { transportStore } from '#/modules/Transport/stores';
 import { setMasterGain, defaultTransportState } from '#/modules/Transport/useCases';
+import { cn } from '#/utils/Styles/cn';
 
 import { MixerLevelReadout } from './MixerLevelReadout';
 

@@ -1,27 +1,30 @@
 import { type CSSProperties, type ReactElement, useState, useRef } from 'react';
-import { ScrollArea } from '#/components/ui/scroll-area';
-import { Input } from '#/components/ui/input';
-import { Button } from '#/components/ui/button';
+
 import { Search, Music, FileAudio, Waves, Upload, X, Zap, FolderSync, Settings } from 'lucide-react';
-import { notifyUser } from '#/utils/Notification/notifyUser';
-import { toggleSidebar } from '../../useCases/togglePanel/panelToggles/toggleSidebar';
-import { useTracks } from '../hooks/useTracks';
+
+import { Button } from '#/components/ui/button';
+import { Input } from '#/components/ui/input';
+import { ScrollArea } from '#/components/ui/scroll-area';
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
-import { usePreviewAudio } from '../hooks/usePreviewAudio';
-import { type SidebarRoute } from './Sidebar/SidebarTypes';
-import { SamplesTab } from './Sidebar/SamplesTab';
-import { InstrumentsTab } from './Sidebar/InstrumentsTab';
-import { EffectsTab } from './Sidebar/EffectsTab';
-import { ProjectTab } from './Sidebar/ProjectTab';
-
-export type { SidebarRoute };
-import { OnlineSampleBrowser } from './Sidebar/OnlineSampleBrowser';
-import { MacrosPanel } from './Sidebar/MacrosPanel';
 import { LibraryBrowser } from '#/modules/SampleLibrary/presentations/views';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { toggleSidebar } from '../../useCases/togglePanel/panelToggles/toggleSidebar';
 import { RailBackBar } from '../components/Sidebar/RailBackBar';
 import { RailTabBar } from '../components/Sidebar/RailTabBar';
+import { usePreviewAudio } from '../hooks/usePreviewAudio';
+import { useTracks } from '../hooks/useTracks';
 
+import { EffectsTab } from './Sidebar/EffectsTab';
+import { InstrumentsTab } from './Sidebar/InstrumentsTab';
+import { MacrosPanel } from './Sidebar/MacrosPanel';
+import { OnlineSampleBrowser } from './Sidebar/OnlineSampleBrowser';
+import { ProjectTab } from './Sidebar/ProjectTab';
+import { SamplesTab } from './Sidebar/SamplesTab';
+import { type SidebarRoute } from './Sidebar/SidebarTypes';
+
+export type { SidebarRoute };
 
 type UserSample = {
     id: string;
@@ -39,17 +42,22 @@ type SidebarProps = {
 /** User-imported samples only — no placeholder data */
 const SAMPLE_LIBRARY: { id: string; name: string; category: string; duration: string }[] = [];
 
-const TAB_ITEMS: { id: 'instruments' | 'effects' | 'library' | 'macros' | 'project'; label: string; Icon: typeof Music }[] =
-    [
-        { id: 'instruments', label: 'Instruments', Icon: Music },
-        { id: 'effects', label: 'Effects', Icon: Waves },
-        { id: 'library', label: 'Library', Icon: FileAudio },
-        { id: 'macros', label: 'Macros', Icon: Zap },
-        { id: 'project', label: 'Project', Icon: Settings },
-    ];
+const TAB_ITEMS: {
+    id: 'instruments' | 'effects' | 'library' | 'macros' | 'project';
+    label: string;
+    Icon: typeof Music;
+}[] = [
+    { id: 'instruments', label: 'Instruments', Icon: Music },
+    { id: 'effects', label: 'Effects', Icon: Waves },
+    { id: 'library', label: 'Library', Icon: FileAudio },
+    { id: 'macros', label: 'Macros', Icon: Zap },
+    { id: 'project', label: 'Project', Icon: Settings },
+];
 
 export const Sidebar = ({ style }: SidebarProps): ReactElement => {
-    const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'effects' | 'macros' | 'project'>('instruments');
+    const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'effects' | 'macros' | 'project'>(
+        'instruments'
+    );
     const [libSubTab, setLibSubTab] = useState<'mine' | 'find' | 'folders'>('folders');
     const [navStacks, setNavStacks] = useState<Record<string, SidebarRoute[]>>({
         library: [{ id: 'library', title: 'Library' }],

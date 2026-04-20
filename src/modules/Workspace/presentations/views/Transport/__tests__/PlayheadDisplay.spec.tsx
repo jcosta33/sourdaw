@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
+
 import { PlayheadDisplay } from '../PlayheadDisplay';
 
 vi.mock('#/infra/store/useStore', () => ({

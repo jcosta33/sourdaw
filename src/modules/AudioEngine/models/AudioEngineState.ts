@@ -172,11 +172,11 @@ export type AudioEngine = {
     waitForDevices(): Promise<void>;
     setMasterTrackId?(trackId: string): void;
     setTransportInfo(
-        beat: number, 
-        bpm: number, 
-        playing: boolean, 
-        loopStart?: number, 
-        loopEnd?: number, 
+        beat: number,
+        bpm: number,
+        playing: boolean,
+        loopStart?: number,
+        loopEnd?: number,
         isLooping?: boolean
     ): void;
 };

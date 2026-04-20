@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { toggleChat } from '../toggleChat';
 
 const mocks = vi.hoisted(() => ({

@@ -1,23 +1,26 @@
 import { type ReactElement, type ReactNode, useState } from 'react';
-import { Stack, Row, Grid } from '#/components/layout';
-import { useStore } from '#/infra/store/useStore';
+
 import { Activity, Flame, Radio, Search, SlidersHorizontal, Sun, Zap } from 'lucide-react';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
 import { DawPluginInsetCard } from '#/components/daw/DawPluginInsetCard';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
-import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginMetricStrip } from '#/components/daw/DawPluginMetricStrip';
+import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginRail } from '#/components/daw/DawPluginRail';
 import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
-import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
+import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Stack, Row, Grid } from '#/components/layout';
+import { useStore } from '#/infra/store/useStore';
+
 import { type GlutenPatch, type GlutenStyle, type GlutenTopology } from '../../models/GlutenPatch';
 import { glutenStore, getGlutenState, type GlutenState } from '../../stores/glutenStore';
-import { GLUTEN_PRESETS } from '../../useCases/glutenPresets';
 import { loadGlutenPatchWithAudio } from '../../useCases/glutenParamBridge/loadGlutenPatchWithAudio';
 import { setGlutenParamWithAudio } from '../../useCases/glutenParamBridge/setGlutenParamWithAudio';
+import { GLUTEN_PRESETS } from '../../useCases/glutenPresets';
 import { GlutenCurve } from '../components/GlutenCurve';
 import { GrHistory } from '../components/GrHistory';
 import { GrMeter } from '../components/GrMeter';
@@ -397,7 +400,12 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 );
                             })
                         ) : (
-                            <Stack grow align="center" justify="center" className="gluten-window px-4 py-6 text-center text-[11px] leading-5 text-muted-foreground">
+                            <Stack
+                                grow
+                                align="center"
+                                justify="center"
+                                className="gluten-window px-4 py-6 text-center text-[11px] leading-5 text-muted-foreground"
+                            >
                                 No preset matches that search yet. Try another category or a looser word.
                             </Stack>
                         )}
@@ -1005,9 +1013,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     label="All buttons"
                                     active={patch.allButtons}
                                     accentColor={accentColor}
-                                    onClick={() =>
-                                        setGlutenParamWithAudio(deviceId, 'allButtons', !patch.allButtons)
-                                    }
+                                    onClick={() => setGlutenParamWithAudio(deviceId, 'allButtons', !patch.allButtons)}
                                 />
                             </Stack>
                         ) : null}

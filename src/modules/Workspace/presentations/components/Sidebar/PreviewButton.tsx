@@ -1,5 +1,7 @@
 import { type ReactElement } from 'react';
+
 import { Play, Square } from 'lucide-react';
+
 import { cn } from '#/utils/Styles/cn';
 
 type PreviewButtonProps = {

@@ -3,9 +3,11 @@
  * Large shape preview with shape selector, rate + mod amount knobs.
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import { LFO_SHAPE_NAMES } from '../../models/FermenterPatch';
 
 type LfoSectionProps = {
@@ -23,9 +25,13 @@ const LfoPreview = ({ shape, rate }: { shape: number; rate: number }): ReactElem
     const canvasRef = useRef<HTMLCanvasElement>(null);
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) {return;}
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) {return;}
+        if (!ctx) {
+            return;
+        }
         const w = 200,
             h = 60;
         const dpr = window.devicePixelRatio || 1;
@@ -65,8 +71,11 @@ const LfoPreview = ({ shape, rate }: { shape: number; rate: number }): ReactElem
                     break;
             }
             const y = ((1 - v) / 2) * (h - 4) + 2;
-            if (i === 0) {ctx.moveTo(i, y);}
-            else {ctx.lineTo(i, y);}
+            if (i === 0) {
+                ctx.moveTo(i, y);
+            } else {
+                ctx.lineTo(i, y);
+            }
         }
         ctx.stroke();
     }, [shape, rate]);

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { resizeSection } from '../resizeSection';
 
 const mocks = vi.hoisted(() => ({
@@ -8,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../../stores/markerStore', () => ({
     markerStore: {
-        get value() { return mocks.markerStoreValue.value; },
+        get value() {
+            return mocks.markerStoreValue.value;
+        },
         set: mocks.markerStoreSet,
-    }
+    },
 }));
 
 describe('resizeSection', () => {
@@ -18,25 +21,25 @@ describe('resizeSection', () => {
 
     it('resizes section boundaries', () => {
         mocks.markerStoreValue.value = {
-            sections: [{ id: 's1', startBeat: 0, endBeat: 16 }]
+            sections: [{ id: 's1', startBeat: 0, endBeat: 16 }],
         };
 
         resizeSection('s1', 4, 20);
 
         expect(mocks.markerStoreSet).toHaveBeenCalledWith({
-            sections: [{ id: 's1', startBeat: 4, endBeat: 20 }]
+            sections: [{ id: 's1', startBeat: 4, endBeat: 20 }],
         });
     });
 
     it('enforces minimum duration of 4 beats', () => {
         mocks.markerStoreValue.value = {
-            sections: [{ id: 's1', startBeat: 0, endBeat: 16 }]
+            sections: [{ id: 's1', startBeat: 0, endBeat: 16 }],
         };
 
         resizeSection('s1', 0, 2);
 
         expect(mocks.markerStoreSet).toHaveBeenCalledWith({
-            sections: [{ id: 's1', startBeat: 0, endBeat: 4 }]
+            sections: [{ id: 's1', startBeat: 0, endBeat: 4 }],
         });
     });
 });

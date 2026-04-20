@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { createSession, leaveSession } from '../sessionManagement';
 
 const mocks = vi.hoisted(() => {
@@ -67,9 +68,11 @@ vi.mock('../../permissions', () => ({
 
 vi.mock('../../../stores/collaborationStore', () => ({
     collaborationStore: {
-        get value() { return mocks.collaborationStoreValue.value; },
+        get value() {
+            return mocks.collaborationStoreValue.value;
+        },
         set: mocks.collaborationStoreSet,
-    }
+    },
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
@@ -82,10 +85,12 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/CrdtDocument/stores', () => ({
     branchStore: {
-        get value() { return mocks.branchStoreValue.value; },
+        get value() {
+            return mocks.branchStoreValue.value;
+        },
         subscribe: mocks.branchStoreSubscribe,
         set: mocks.branchStoreSet,
-    }
+    },
 }));
 
 describe('collaboration sessionManagement', () => {
@@ -101,26 +106,30 @@ describe('collaboration sessionManagement', () => {
         expect(mocks.PeerConnectionManager).toHaveBeenCalled();
         expect(mocks.automergeStart).toHaveBeenCalled();
         expect(mocks.setupProjectionBridge).toHaveBeenCalled();
-        
-        expect(mocks.collaborationStoreSet).toHaveBeenCalledWith(expect.objectContaining({
-            isEnabled: true,
-            localName: 'Alice',
-            isHost: true,
-        }));
+
+        expect(mocks.collaborationStoreSet).toHaveBeenCalledWith(
+            expect.objectContaining({
+                isEnabled: true,
+                localName: 'Alice',
+                isHost: true,
+            })
+        );
     });
 
     it('leaveSession cleans up sub-systems and resets store', () => {
         mocks.collaborationStoreValue.value = { localPeerId: 'p1' } as any;
-        
+
         // Setup existing session state
         createSession('Alice');
-        
+
         leaveSession();
 
-        expect(mocks.collaborationStoreSet).toHaveBeenLastCalledWith(expect.objectContaining({
-            isEnabled: false,
-            sessionId: null,
-            peers: [],
-        }));
+        expect(mocks.collaborationStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                isEnabled: false,
+                sessionId: null,
+                peers: [],
+            })
+        );
     });
 });

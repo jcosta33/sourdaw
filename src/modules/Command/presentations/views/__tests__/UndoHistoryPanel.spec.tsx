@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { UndoHistoryPanel } from '../UndoHistoryPanel';
 
 // Mock external dependencies
@@ -43,7 +44,7 @@ describe('UndoHistoryPanel', () => {
             }
             return { past: [], future: [] };
         });
-        
+
         const { container } = render(<UndoHistoryPanel />);
         expect(container.firstChild).toBeNull();
     });
@@ -55,7 +56,7 @@ describe('UndoHistoryPanel', () => {
             }
             return { past: [], future: [] };
         });
-        
+
         render(<UndoHistoryPanel />);
         expect(screen.getByText(/Undo History/i)).toBeInTheDocument();
     });
@@ -67,7 +68,7 @@ describe('UndoHistoryPanel', () => {
             }
             return { past: [], future: [] };
         });
-        
+
         render(<UndoHistoryPanel />);
         expect(screen.getByText(/No history yet/i)).toBeInTheDocument();
     });
@@ -79,7 +80,7 @@ describe('UndoHistoryPanel', () => {
             }
             return { past: [], future: [] };
         });
-        
+
         render(<UndoHistoryPanel />);
         expect(screen.getByLabelText(/Close undo history/i)).toBeInTheDocument();
     });
@@ -91,7 +92,7 @@ describe('UndoHistoryPanel', () => {
             }
             return { past: [], future: [] };
         });
-        
+
         render(<UndoHistoryPanel />);
         const closeButton = screen.getByLabelText(/Close undo history/i);
         fireEvent.click(closeButton);

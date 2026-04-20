@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { AutomationLaneHeader } from '../AutomationLaneHeader';
 
 vi.mock('#/components/daw/DawMicroBadge', () => ({
@@ -81,7 +82,8 @@ describe('AutomationLaneHeader', () => {
 
     it('should render color indicator', () => {
         const { container } = render(<AutomationLaneHeader {...defaultProps} curveColor="#ff0000" />);
-        const colorIndicator = container.querySelector('[style*="background-color: rgb(255, 0, 0)"]') ||
+        const colorIndicator =
+            container.querySelector('[style*="background-color: rgb(255, 0, 0)"]') ||
             container.querySelector('[style*="#ff0000"]');
         expect(colorIndicator).toBeTruthy();
     });

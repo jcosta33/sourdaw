@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { TrackDummy } from '#/modules/Arrangement/__tests__/TrackDummy';
+
 import { InstrumentsTab } from '../InstrumentsTab';
 
 const renderWithTooltip = (ui: React.ReactElement) => {
@@ -22,7 +24,7 @@ describe('InstrumentsTab', () => {
 
     it('should render without crashing', () => {
         renderWithTooltip(
-            <InstrumentsTab 
+            <InstrumentsTab
                 selectedTrackId={mockTrack.id}
                 searchQuery=""
                 selectedTrack={mockTrack}
@@ -38,7 +40,7 @@ describe('InstrumentsTab', () => {
 
     it('should render with useCase bindings', () => {
         renderWithTooltip(
-            <InstrumentsTab 
+            <InstrumentsTab
                 selectedTrackId={mockTrack.id}
                 searchQuery=""
                 selectedTrack={mockTrack}
@@ -54,7 +56,7 @@ describe('InstrumentsTab', () => {
 
     it('should have interactive elements', () => {
         renderWithTooltip(
-            <InstrumentsTab 
+            <InstrumentsTab
                 selectedTrackId={mockTrack.id}
                 searchQuery=""
                 selectedTrack={mockTrack}

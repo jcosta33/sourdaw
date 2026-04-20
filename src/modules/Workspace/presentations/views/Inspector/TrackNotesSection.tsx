@@ -1,6 +1,8 @@
 import { type ReactElement, useState } from 'react';
+
 import { DawCompactTextarea } from '#/components/daw/DawCompactTextarea';
 import { setTrackNotes } from '#/modules/Arrangement/useCases';
+
 import { type Track } from '../../../models/TrackViewTypes';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
 import { MetaText } from '../../components/Inspector/MetaText';
@@ -45,9 +47,7 @@ export const TrackNotesSection = ({ track }: TrackNotesSectionProps): ReactEleme
                 className="min-h-[60px] flex-1 resize-y"
                 placeholder="Add notes…"
                 value={notesValue}
-                onChange={(e) =>
-                    setDraft({ trackId: track.id, lastSeen: track.notes, value: e.target.value })
-                }
+                onChange={(e) => setDraft({ trackId: track.id, lastSeen: track.notes, value: e.target.value })}
                 onBlur={() => {
                     if (notesValue !== track.notes) {
                         setTrackNotes(track.id, notesValue);

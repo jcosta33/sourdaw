@@ -40,7 +40,7 @@ function multToY(mult: number, height: number): number {
 function yToMult(y: number, height: number): number {
     const normalized = 1 - y / height;
     const logMult = normalized * 4 - 2;
-    return Math.pow(2, logMult);
+    return 2 ** logMult;
 }
 
 export const DecayEqOverlay = ({ multipliers, onChange, width, height }: DecayEqOverlayProps): ReactElement => {
@@ -87,7 +87,7 @@ export const DecayEqOverlay = ({ multipliers, onChange, width, height }: DecayEq
             // Convert pixel to frequency
             const logMin = Math.log10(20);
             const logMax = Math.log10(20000);
-            const freq = Math.pow(10, logMin + (px / width) * (logMax - logMin));
+            const freq = 10 ** (logMin + (px / width) * (logMax - logMin));
 
             // Interpolate multiplier from nearest bands
             let mult = 1.0;

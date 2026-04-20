@@ -1,18 +1,22 @@
 import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
+import { Flag } from 'lucide-react';
+
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
+import { useStore } from '#/infra/store/useStore';
+
+import { MARKER_COLOR_PRESETS as MARKER_COLORS } from '../../models/colorPalette';
+import { type Marker } from '../../models/Marker';
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 import { addMarker } from '../../useCases/marker/markerOperations/addMarker';
+import { moveMarker } from '../../useCases/marker/markerOperations/moveMarker';
 import { removeMarker } from '../../useCases/marker/markerOperations/removeMarker';
 import { renameMarker } from '../../useCases/marker/markerOperations/renameMarker';
 import { setMarkerColor } from '../../useCases/marker/markerOperations/setMarkerColor';
-import { moveMarker } from '../../useCases/marker/markerOperations/moveMarker';
-import { type Marker } from '../../models/Marker';
-import { Flag } from 'lucide-react';
+
 import { TimelineChromeSurface } from './TimelineChromeSurface';
-import { MARKER_COLOR_PRESETS as MARKER_COLORS } from '../../models/colorPalette';
 
 type MarkerLaneProps = {
     pixelsPerBeat: number;

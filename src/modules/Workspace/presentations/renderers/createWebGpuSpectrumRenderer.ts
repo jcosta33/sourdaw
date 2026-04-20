@@ -97,11 +97,15 @@ export async function createWebGpuSpectrumRenderer(
     numBins: number,
     sampleRate: number
 ): Promise<SpectrumRenderer | null> {
-    if (!navigator.gpu) return null;
+    if (!navigator.gpu) {
+        return null;
+    }
 
     try {
         const adapter = await navigator.gpu.requestAdapter();
-        if (!adapter) return null;
+        if (!adapter) {
+            return null;
+        }
         const device = await adapter.requestDevice();
         const context = canvas.getContext('webgpu')!;
         const format = navigator.gpu.getPreferredCanvasFormat();
@@ -114,29 +118,31 @@ export async function createWebGpuSpectrumRenderer(
             fragment: {
                 module: shader,
                 entryPoint: 'fs_main',
-                targets: [{
-                    format,
-                    blend: {
-                        color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-                        alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
-                    }
-                }]
+                targets: [
+                    {
+                        format,
+                        blend: {
+                            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+                            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+                        },
+                    },
+                ],
             },
-            primitive: { topology: 'triangle-strip' }
+            primitive: { topology: 'triangle-strip' },
         });
 
         const HISTORY_COUNT = 120;
         const freqBuf = device.createBuffer({
             size: numBins * 4,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
         const heatmapBuf = device.createBuffer({
             size: numBins * HISTORY_COUNT * 4,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
         const paramBuf = device.createBuffer({
             size: 32, // 6 floats
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
         const bindGroup = device.createBindGroup({
@@ -144,8 +150,8 @@ export async function createWebGpuSpectrumRenderer(
             entries: [
                 { binding: 0, resource: { buffer: freqBuf } },
                 { binding: 1, resource: { buffer: heatmapBuf } },
-                { binding: 2, resource: { buffer: paramBuf } }
-            ]
+                { binding: 2, resource: { buffer: paramBuf } },
+            ],
         });
 
         let currentHistoryHead = 0;
@@ -158,21 +164,25 @@ export async function createWebGpuSpectrumRenderer(
                 currentHistoryHead = (currentHistoryHead + 1) % HISTORY_COUNT;
                 device.queue.writeBuffer(heatmapBuf, 0, heatmapHistory);
             }
-            
+
             device.queue.writeBuffer(freqBuf, 0, freqData);
-            device.queue.writeBuffer(paramBuf, 0, new Float32Array([
-                canvas.width, canvas.height, numBins, sampleRate, showHeatmap ? 1 : 0, HISTORY_COUNT
-            ]));
+            device.queue.writeBuffer(
+                paramBuf,
+                0,
+                new Float32Array([canvas.width, canvas.height, numBins, sampleRate, showHeatmap ? 1 : 0, HISTORY_COUNT])
+            );
 
             const encoder = device.createCommandEncoder();
             const view = context.getCurrentTexture().createView();
             const pass = encoder.beginRenderPass({
-                colorAttachments: [{
-                    view,
-                    clearValue: { r: 0.02, g: 0.02, b: 0.03, a: 1.0 },
-                    loadOp: 'clear',
-                    storeOp: 'store'
-                }]
+                colorAttachments: [
+                    {
+                        view,
+                        clearValue: { r: 0.02, g: 0.02, b: 0.03, a: 1.0 },
+                        loadOp: 'clear',
+                        storeOp: 'store',
+                    },
+                ],
             });
             pass.setPipeline(pipeline);
             pass.setBindGroup(0, bindGroup);
@@ -194,8 +204,8 @@ export async function createWebGpuSpectrumRenderer(
         }
 
         return { render, resize, dispose };
-    } catch (e) {
-        console.error('Failed to create WebGPU Spectrum Renderer:', e);
+    } catch (error) {
+        console.error('Failed to create WebGPU Spectrum Renderer:', error);
         return null;
     }
 }

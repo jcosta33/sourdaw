@@ -1,10 +1,11 @@
 import { type SoundPreset } from '../../models/SoundPreset';
-import { synth } from './presetHelpers/synth';
-import { reverb } from './presetHelpers/reverb';
+
 import { delay } from './presetHelpers/delay';
 import { filter } from './presetHelpers/filter';
-import { tremolo } from './presetHelpers/tremolo';
 import { AUTHOR } from './presetHelpers/helpers';
+import { reverb } from './presetHelpers/reverb';
+import { synth } from './presetHelpers/synth';
+import { tremolo } from './presetHelpers/tremolo';
 
 export const padPresets: SoundPreset[] = [
     // ─── Pad ─────────────────────────────────────────────────────────────

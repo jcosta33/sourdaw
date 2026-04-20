@@ -42,10 +42,13 @@ describe('loadSampleFromPath', () => {
 
         expect(mocks.setLoading).toHaveBeenCalledWith('inst1', true);
         expect(mocks.loadSample).toHaveBeenCalledWith('inst1', '/path/to/kick.wav');
-        expect(mocks.setActiveSample).toHaveBeenCalledWith('inst1', expect.objectContaining({
-            sampleId: 's1',
-            fileName: 'kick.wav',
-        }));
+        expect(mocks.setActiveSample).toHaveBeenCalledWith(
+            'inst1',
+            expect.objectContaining({
+                sampleId: 's1',
+                fileName: 'kick.wav',
+            })
+        );
         expect(mocks.setWaveformPeaks).toHaveBeenCalledWith('inst1', [0.1, 0.5, 0.2]);
         expect(mocks.setLoading).toHaveBeenLastCalledWith('inst1', false);
     });

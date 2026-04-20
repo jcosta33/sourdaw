@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { type DrumKit } from '../drumKitSynth';
 
 describe('drumKitSynth types', () => {

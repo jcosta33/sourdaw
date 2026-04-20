@@ -1,6 +1,6 @@
-import { midiStore } from '../../stores/midiStore';
-import { createMidiNote, type MidiNote } from '../../models/MidiNote';
 import { createMidiError } from '../../errors/MidiError';
+import { createMidiNote, type MidiNote } from '../../models/MidiNote';
+import { midiStore } from '../../stores/midiStore';
 
 export function addMidiNote(
     clipId: string,

@@ -1,12 +1,15 @@
-import type { TrackChannelStrip, BuiltinDeviceNode, SendNode } from '../models/AudioEngineState';
+import { logger } from '#/infra/logger/appLogger';
 import { unregisterLevainDevice } from '#/modules/Levain/useCases';
 import { unregisterProofDevice } from '#/modules/Proof/useCases';
-import { DEVICE_FACTORIES } from '../useCases/deviceResolvers/helpers';
-import { applyParams } from '../useCases/deviceResolvers/applyParams';
-import { findWasmDescriptor } from './wasmDeviceRegistry';
-import { createNativePluginBridgeNode } from './NativePluginBridgeNode';
 import { hasSharedArrayBuffer } from '#/utils/capabilities';
-import { logger } from '#/infra/logger/appLogger';
+
+import { applyParams } from '../useCases/deviceResolvers/applyParams';
+import { DEVICE_FACTORIES } from '../useCases/deviceResolvers/helpers';
+
+import { createNativePluginBridgeNode } from './NativePluginBridgeNode';
+import { findWasmDescriptor } from './wasmDeviceRegistry';
+
+import type { TrackChannelStrip, BuiltinDeviceNode, SendNode } from '../models/AudioEngineState';
 
 export type TrackNodeDeps = {
     context: AudioContext;
@@ -102,9 +105,9 @@ export class TrackNode {
             bypassed: false,
             parameterValues: {},
         });
-        
+
         // Notify native engine if bridge is active
-        const nativeDevice = this.strip.deviceNodes.find(d => d.type === 'external-plugin');
+        const nativeDevice = this.strip.deviceNodes.find((d) => d.type === 'external-plugin');
         if (nativeDevice?.nativeDspControls) {
             // TODO: Send command to native bridge
         }
@@ -162,7 +165,9 @@ export class TrackNode {
             let peak = 0;
             for (let i = 0; i < this._analyserFallbackBuffer.length; i++) {
                 const abs = Math.abs(this._analyserFallbackBuffer[i]!);
-                if (abs > peak) peak = abs;
+                if (abs > peak) {
+                    peak = abs;
+                }
             }
             return peak;
         }
@@ -314,7 +319,7 @@ export class TrackNode {
             };
 
             const loadPromise = createNativePluginBridgeNode(
-                context as AudioContext,
+                context,
                 externalInstanceId ?? deviceId,
                 0 // engine plugin ID — will be assigned by Rust
             )
@@ -358,7 +363,7 @@ export class TrackNode {
                     return;
                 }
                 const { placeholder, loadPromise } = descriptor.create({
-                    context: context as AudioContext,
+                    context,
                     deviceId,
                     deviceType,
                     transportSAB: this.deps.transportSAB,
@@ -464,7 +469,9 @@ export class TrackNode {
 
     public updatePatch(deviceId: string, patch: Record<string, unknown>): void {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
-        if (!dn) return;
+        if (!dn) {
+            return;
+        }
 
         if (dn.fermenterControls) {
             dn.fermenterControls.setPatch?.(patch);

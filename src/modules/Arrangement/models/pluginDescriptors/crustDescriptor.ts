@@ -34,7 +34,7 @@ export const CRUST_DESCRIPTOR: PluginDescriptor = {
         id: p.id,
         deviceId: 'crust',
         name: p.label,
-        type: (p.step === 1 ? 'int' : 'float') as 'float' | 'int',
+        type: p.step === 1 ? 'int' : 'float',
         value: p.default,
         defaultValue: p.default,
         minValue: p.min,

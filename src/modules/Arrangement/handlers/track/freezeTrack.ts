@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+
 import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack';
 
 export const handleFreezeTrack = createHandler<'freezeTrack'>({

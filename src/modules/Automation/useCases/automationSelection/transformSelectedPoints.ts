@@ -35,10 +35,18 @@ export function transformSelectedPoints(
     let minVal = Infinity;
     let maxVal = -Infinity;
     for (const p of selected) {
-        if (p.beat < minBeat) minBeat = p.beat;
-        if (p.beat > maxBeat) maxBeat = p.beat;
-        if (p.value < minVal) minVal = p.value;
-        if (p.value > maxVal) maxVal = p.value;
+        if (p.beat < minBeat) {
+            minBeat = p.beat;
+        }
+        if (p.beat > maxBeat) {
+            maxBeat = p.beat;
+        }
+        if (p.value < minVal) {
+            minVal = p.value;
+        }
+        if (p.value > maxVal) {
+            maxVal = p.value;
+        }
     }
 
     const beatCenter = (minBeat + maxBeat) / 2;

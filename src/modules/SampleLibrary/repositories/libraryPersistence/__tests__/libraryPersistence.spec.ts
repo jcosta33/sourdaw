@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { libraryStore } from '../../../stores/libraryStore';
+import * as helpers from '../helpers';
 import { persistLibraryRoots } from '../persistLibraryRoots';
 import { persistSamples } from '../persistSamples';
 import { requestPermission } from '../requestPermission';
 import { restoreLibrary } from '../restoreLibrary';
-
-import { libraryStore } from '../../../stores/libraryStore';
-import * as helpers from '../helpers';
 
 vi.mock('../../../stores/libraryStore', () => ({
     libraryStore: { value: { roots: [], samples: [] } },
@@ -51,7 +51,7 @@ describe('Library Persistence', () => {
         it('should return true and update status if granted', async () => {
             const handle = { requestPermission: vi.fn().mockResolvedValue('granted') };
             vi.mocked(libraryStore).value = { roots: [{ id: 'r1', handle }] } as any;
-            
+
             const res = await requestPermission('r1');
             expect(res).toBe(true);
             expect(handle.requestPermission).toHaveBeenCalledWith({ mode: 'read' });

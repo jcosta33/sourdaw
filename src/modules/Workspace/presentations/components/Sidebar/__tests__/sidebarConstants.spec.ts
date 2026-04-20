@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { CATEGORY_COLORS, CATEGORY_ICONS, PRESET_CATEGORIES } from '../sidebarConstants';
 
 describe('sidebarConstants', () => {

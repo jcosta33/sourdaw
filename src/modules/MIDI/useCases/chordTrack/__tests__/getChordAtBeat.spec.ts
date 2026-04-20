@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import { chordTrackStore } from '../../../stores/chordTrackStore';
-
 import { getChordAtBeat } from '../getChordAtBeat';
 
 const CHORD_STORAGE_KEY = 'sourdaw_chord_track';

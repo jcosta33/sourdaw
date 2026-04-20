@@ -10,12 +10,14 @@
  */
 
 import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
+import { Copy, ArrowUpFromLine, Trash2, ChevronDown, ChevronUp, GripHorizontal } from 'lucide-react';
+
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
+import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
-import { DawInlineHint } from '#/components/daw/DawInlineHint';
-import { Copy, ArrowUpFromLine, Trash2, ChevronDown, ChevronUp, GripHorizontal } from 'lucide-react';
+import { useStore } from '#/infra/store/useStore';
 import { scratchPadStore } from '#/modules/Arrangement/stores';
 import {
     removeScratchPadSection,

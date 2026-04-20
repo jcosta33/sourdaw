@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateFollowActions } from '../evaluateFollowActions';
+
 import { type Track } from '#/modules/Arrangement/models/Track';
 
-function makeClip(overrides: Partial<{ id: string; startBeat: number; endBeat: number; followAction: string; loopEnabled: boolean }>) {
+import { evaluateFollowActions } from '../evaluateFollowActions';
+
+function makeClip(
+    overrides: Partial<{ id: string; startBeat: number; endBeat: number; followAction: string; loopEnabled: boolean }>
+) {
     return {
         id: 'c1',
         startBeat: 0,

@@ -12,22 +12,35 @@
  *   { type: 'param', name, value }
  */
 
-import '../wasm/workletPolyfill.js';
 import { initSync, FermenterInstance } from '../wasm/daw_dsp.js';
 
 /**
  * Convert camelCase to snake_case automatically.
  */
 function camelToSnake(str) {
-    const snake = str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+    const snake = str.replaceAll(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
     // Handle the 3 exceptions
-    if (snake === 'filter_cutoff') return 'cutoff';
-    if (snake === 'filter_resonance') return 'resonance';
-    if (snake === 'filter_env_amount') return 'mod_env_to_filter';
-    if (snake === 'lfo_pitch_amount') return 'mod_lfo_to_pitch';
-    if (snake === 'osc_engine') return 'engine';
-    if (snake === 'osc_drift') return 'drift';
-    if (snake === 'portamento_time') return 'portamento';
+    if (snake === 'filter_cutoff') {
+        return 'cutoff';
+    }
+    if (snake === 'filter_resonance') {
+        return 'resonance';
+    }
+    if (snake === 'filter_env_amount') {
+        return 'mod_env_to_filter';
+    }
+    if (snake === 'lfo_pitch_amount') {
+        return 'mod_lfo_to_pitch';
+    }
+    if (snake === 'osc_engine') {
+        return 'engine';
+    }
+    if (snake === 'osc_drift') {
+        return 'drift';
+    }
+    if (snake === 'portamento_time') {
+        return 'portamento';
+    }
     return snake;
 }
 
@@ -45,15 +58,17 @@ class FermenterProcessor extends AudioWorkletProcessor {
             const msg = e.data;
             try {
                 if (msg.type === 'init') {
-                    if (this._ready) {return;}
+                    if (this._ready) {
+                        return;
+                    }
                     this._initWasm(msg.wasmBytes);
                 } else if (this._ready && !this._faulted) {
                     this._handleMessage(msg);
                 }
-            } catch (err) {
-                console.error('FermenterProcessor error:', err);
+            } catch (error) {
+                console.error('FermenterProcessor error:', error);
                 if (!this._ready) {
-                    this.port.postMessage({ type: 'error', message: err?.message ?? String(err) });
+                    this.port.postMessage({ type: 'error', message: error?.message ?? String(error) });
                 }
             }
         };
@@ -72,8 +87,11 @@ class FermenterProcessor extends AudioWorkletProcessor {
             hi = this._queue.length;
         while (lo < hi) {
             const mid = (lo + hi) >>> 1;
-            if (this._queue[mid].sampleFrame <= msg.sampleFrame) {lo = mid + 1;}
-            else {hi = mid;}
+            if (this._queue[mid].sampleFrame <= msg.sampleFrame) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
         }
         this._queue.splice(lo, 0, msg);
     }
@@ -119,10 +137,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
 
     _drainQueue(blockEndFrame) {
         // Audio-thread hot path: advance the read head, no splice per block.
-        while (
-            this._queueHead < this._queue.length &&
-            this._queue[this._queueHead].sampleFrame <= blockEndFrame
-        ) {
+        while (this._queueHead < this._queue.length && this._queue[this._queueHead].sampleFrame <= blockEndFrame) {
             this._dispatch(this._queue[this._queueHead]);
             this._queueHead++;
         }
@@ -133,10 +148,14 @@ class FermenterProcessor extends AudioWorkletProcessor {
     }
 
     process(_inputs, outputs) {
-        if (!this._ready || this._faulted) {return true;}
+        if (!this._ready || this._faulted) {
+            return true;
+        }
 
         const output = outputs[0];
-        if (!output || output.length < 2) {return true;}
+        if (!output || output.length < 2) {
+            return true;
+        }
 
         const frames = output[0].length;
 
@@ -150,7 +169,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
             const mem = this._memory.buffer;
             const outL = new Float32Array(mem, leftPtr, frames);
             output[0].set(outL);
-            
+
             let outR = null;
             if (output[1]) {
                 outR = new Float32Array(mem, rightPtr, frames);
@@ -163,10 +182,14 @@ class FermenterProcessor extends AudioWorkletProcessor {
                 let peakR = 0;
                 for (let i = 0; i < frames; i++) {
                     const l = Math.abs(outL[i]);
-                    if (l > peakL) peakL = l;
+                    if (l > peakL) {
+                        peakL = l;
+                    }
                     if (outR) {
                         const r = Math.abs(outR[i]);
-                        if (r > peakR) peakR = r;
+                        if (r > peakR) {
+                            peakR = r;
+                        }
                     }
                 }
                 const scopeBuffer = new Float32Array(128);
@@ -177,10 +200,9 @@ class FermenterProcessor extends AudioWorkletProcessor {
                 }
                 this.port.postMessage({ type: 'telemetry', peakL, peakR, scopeBuffer }, [scopeBuffer.buffer]);
             }
-
-        } catch (err) {
+        } catch (error) {
             this._faulted = true;
-            this.port.postMessage({ type: 'error', message: String(err) });
+            this.port.postMessage({ type: 'error', message: String(error) });
         }
 
         return true;

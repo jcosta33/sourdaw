@@ -1,5 +1,6 @@
-import { type DocumentBundle } from './crdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
+
+import { type DocumentBundle } from './crdtDocumentTypes';
 
 /**
  * Restore all in-memory CRDT documents from a binary snapshot bundle.

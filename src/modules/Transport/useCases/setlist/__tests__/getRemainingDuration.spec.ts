@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type SetlistItem, type SetlistState } from '../../../stores/setlistStore';
 import { getRemainingDuration } from '../getRemainingDuration';
 
@@ -41,7 +42,7 @@ describe('getRemainingDuration', () => {
             totalDuration: 0,
         };
         mockSetlistStore.value = state;
-        
+
         expect(getRemainingDuration()).toBe(21);
     });
 });

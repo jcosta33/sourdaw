@@ -1,6 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
+
 import { VoiceButton } from '../VoiceButton';
 
 const { emitMock } = vi.hoisted(() => ({ emitMock: vi.fn() }));

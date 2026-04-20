@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+
 import { aiStore, getAiSnapshot, subscribeAiStore, type AiState } from '../aiStore';
 
 describe('aiStore', () => {

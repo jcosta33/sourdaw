@@ -1,9 +1,11 @@
-import { trackStore } from '../../stores/trackStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { type Clip, type Track } from '../../models/Track';
-import { renderTrackOffline } from './renderOffline';
-import { getTransportState } from '#/modules/Transport/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
+import { getTransportState } from '#/modules/Transport/useCases';
+
+import { type Clip, type Track } from '../../models/Track';
+import { trackStore } from '../../stores/trackStore';
+
+import { renderTrackOffline } from './renderOffline';
 
 export type BounceOptions = {
     includeInserts: boolean;
@@ -28,8 +30,12 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
     let startBeat = Infinity;
     let endBeat = -Infinity;
     for (const c of track.clips) {
-        if (c.startBeat < startBeat) { startBeat = c.startBeat; }
-        if (c.endBeat > endBeat) { endBeat = c.endBeat; }
+        if (c.startBeat < startBeat) {
+            startBeat = c.startBeat;
+        }
+        if (c.endBeat > endBeat) {
+            endBeat = c.endBeat;
+        }
     }
 
     // Add tail if requested

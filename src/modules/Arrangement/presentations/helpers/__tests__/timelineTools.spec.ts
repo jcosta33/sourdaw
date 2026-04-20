@@ -1,18 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleCutTool, handleDrawTool, handleAutomationTool, tryPaintSubLane } from '../timelineTools';
-import { hitTestClip } from '../../../useCases/timelineInteractions/hitTestClip/hitTestClip';
-import { hitTestTrack } from '../../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
-import { hitTestAutomationSubLane } from '../../../useCases/timelineInteractions/hitTestAutomationSubLane';
-import { splitClip } from '../../../useCases/clipEditing/splitClip';
-import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
-import { trackStore } from '../../../stores/trackStore';
-import { timelineViewStore } from '../../../stores/timelineViewStore';
+
 import { automationStore } from '#/modules/Automation/stores';
 import { addAutomationPoint, addAutomationLane } from '#/modules/Automation/useCases';
 
+import { timelineViewStore } from '../../../stores/timelineViewStore';
+import { trackStore } from '../../../stores/trackStore';
+import { splitClip } from '../../../useCases/clipEditing/splitClip';
+import { hitTestAutomationSubLane } from '../../../useCases/timelineInteractions/hitTestAutomationSubLane';
+import { hitTestClip } from '../../../useCases/timelineInteractions/hitTestClip/hitTestClip';
+import { hitTestTrack } from '../../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
+import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
+import { handleCutTool, handleDrawTool, handleAutomationTool, tryPaintSubLane } from '../timelineTools';
+
 vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestClip', () => ({ hitTestClip: vi.fn() }));
 vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestTrack', () => ({ hitTestTrack: vi.fn() }));
-vi.mock('../../../useCases/timelineInteractions/hitTestAutomationSubLane', () => ({ hitTestAutomationSubLane: vi.fn() }));
+vi.mock('../../../useCases/timelineInteractions/hitTestAutomationSubLane', () => ({
+    hitTestAutomationSubLane: vi.fn(),
+}));
 vi.mock('../../../useCases/clipEditing/splitClip', () => ({ splitClip: vi.fn() }));
 vi.mock('../../../useCases/clip/addClip', () => ({ addClip: vi.fn() }));
 vi.mock('../../../useCases/clip/removeClip', () => ({ removeClip: vi.fn() }));
@@ -54,7 +58,7 @@ describe('timelineTools', () => {
             vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1' } as any);
             const track = { id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 8 }], kind: 'audio' };
             vi.mocked(trackStore).value = { tracks: [track as any] };
-            
+
             handleCutTool(10, 10, 4);
             expect(splitClip).toHaveBeenCalledWith('c1', 4);
         });

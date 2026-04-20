@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TrackMidiOutputSection } from '../TrackMidiOutputSection';
+
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
@@ -21,19 +23,8 @@ vi.mock('#/modules/Arrangement/useCases/toggleTrackState/toggleChordTrackFollow'
 }));
 
 vi.mock('#/components/daw/DawCompactCheckbox', () => ({
-    DawCompactCheckbox: ({
-        checked,
-        onChange,
-    }: {
-        checked: boolean;
-        onChange: () => void;
-    }) => (
-        <input
-            type="checkbox"
-            data-testid="checkbox"
-            checked={checked}
-            onChange={onChange}
-        />
+    DawCompactCheckbox: ({ checked, onChange }: { checked: boolean; onChange: () => void }) => (
+        <input type="checkbox" data-testid="checkbox" checked={checked} onChange={onChange} />
     ),
 }));
 
@@ -58,9 +49,7 @@ vi.mock('#/components/daw/DawHeaderBand', () => ({
 }));
 
 vi.mock('../../../components/Inspector/SurfaceCard', () => ({
-    SurfaceCard: ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="surface-card">{children}</div>
-    ),
+    SurfaceCard: ({ children }: { children: React.ReactNode }) => <div data-testid="surface-card">{children}</div>,
 }));
 
 describe('TrackMidiOutputSection', () => {
@@ -97,10 +86,7 @@ describe('TrackMidiOutputSection', () => {
         followChordTrack: false,
     };
 
-    const mockAllTracks: Track[] = [
-        mockTrack,
-        { ...mockTrack, id: 'track-2', name: 'Destination Track' },
-    ];
+    const mockAllTracks: Track[] = [mockTrack, { ...mockTrack, id: 'track-2', name: 'Destination Track' }];
 
     beforeEach(() => {
         vi.clearAllMocks();

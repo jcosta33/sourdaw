@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { renderWithTimeout } from '../renderWithTimeout';
 
 function createOfflineContext(result: Promise<AudioBuffer>): OfflineAudioContext {

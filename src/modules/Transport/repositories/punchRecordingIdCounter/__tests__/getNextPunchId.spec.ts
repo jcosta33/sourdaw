@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { getNextPunchId } from '../getNextPunchId';
 
 describe('getNextPunchId', () => {

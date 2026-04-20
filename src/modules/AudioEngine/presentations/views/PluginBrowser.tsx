@@ -1,5 +1,7 @@
 import { type ReactElement, useState } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
+import { Search, ChevronDown, ChevronRight, Plug, RefreshCw, Loader2, Plus, AlertCircle, Monitor } from 'lucide-react';
+
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
@@ -7,8 +9,8 @@ import { DawInlineHint } from '#/components/daw/DawInlineHint';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { Button } from '#/components/ui/button';
-import { Search, ChevronDown, ChevronRight, Plug, RefreshCw, Loader2, Plus, AlertCircle, Monitor } from 'lucide-react';
-import { cn } from '#/utils/Styles/cn';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+import { useStore } from '#/infra/store/useStore';
 import { pluginScanStore, defaultPluginScanState } from '#/modules/Plugin/stores';
 import {
     startPluginScan,
@@ -17,7 +19,7 @@ import {
     type ScannedPlugin,
 } from '#/modules/Plugin/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
-import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+import { cn } from '#/utils/Styles/cn';
 
 type PluginBrowserProps = {
     selectedTrackId: string | null;

@@ -1,5 +1,6 @@
 import { type ProofPatch } from '../../models/ProofPatch';
 import { updateProofPatch } from '../../stores/proofStore';
+
 import { bridges } from './helpers';
 
 /** Set a patch parameter and send to audio engine. */

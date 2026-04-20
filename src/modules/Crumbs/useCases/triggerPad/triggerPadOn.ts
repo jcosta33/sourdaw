@@ -1,12 +1,9 @@
 import { logger } from '#/infra/logger/appLogger';
+
 import { crumbsNoteOn } from '../../repositories/crumbsBridge';
 import { padStore } from '../../stores/padStore';
 
-export async function triggerPadOn(
-    instanceId: string,
-    padIndex: number,
-    velocity: number = 100
-): Promise<void> {
+export async function triggerPadOn(instanceId: string, padIndex: number, velocity: number = 100): Promise<void> {
     const pads = padStore.value?.[instanceId];
     if (!pads) {
         return;
@@ -19,7 +16,7 @@ export async function triggerPadOn(
 
     try {
         await crumbsNoteOn(instanceId, pad.midiNote, velocity);
-    } catch (err) {
-        logger.warn('Note trigger failed:', err);
+    } catch (error) {
+        logger.warn('Note trigger failed:', error);
     }
 }

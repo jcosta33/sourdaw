@@ -1,7 +1,11 @@
 import { type ReactElement, useState } from 'react';
-import { DawCompactInput } from '#/components/daw/DawCompactInput';
-import { Button } from '#/components/ui/button';
+
 import { Snowflake, Zap, AlertCircle, RefreshCw } from 'lucide-react';
+
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
+import { DawMeterBar } from '#/components/daw/DawMeterBar';
+import { Button } from '#/components/ui/button';
+import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
 import {
     renameTrack,
     setTrackColor,
@@ -9,13 +13,12 @@ import {
     unfreezeTrack,
     cancelFreezeTrack,
 } from '#/modules/Arrangement/useCases';
-import { type Track } from '../../../models/TrackViewTypes';
+import { cn } from '#/utils/Styles/cn';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
+
+import { type Track } from '../../../models/TrackViewTypes';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
 import { MetaText } from '../../components/Inspector/MetaText';
-import { DawMeterBar } from '#/components/daw/DawMeterBar';
-import { Tooltip, TooltipTrigger, TooltipContent } from '#/components/ui/tooltip';
-import { cn } from '#/utils/Styles/cn';
 
 type TrackHeaderSectionProps = {
     track: Track;
@@ -82,12 +85,18 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                             {isFreezing ? (
                                 <div className="flex flex-col gap-1.5 min-w-32">
                                     <div className="flex items-center justify-between">
-                                        <span className="text-[9px] font-bold text-primary animate-pulse uppercase tracking-wider">Freezing...</span>
+                                        <span className="text-[9px] font-bold text-primary animate-pulse uppercase tracking-wider">
+                                            Freezing...
+                                        </span>
                                         <span className="text-[10px] text-muted-foreground tabular-nums">
                                             {Math.round((track.freezeState?.renderProgress ?? 0) * 100)}%
                                         </span>
                                     </div>
-                                    <DawMeterBar value={(track.freezeState?.renderProgress ?? 0) * 100} size="sm" fillClassName="bg-primary" />
+                                    <DawMeterBar
+                                        value={(track.freezeState?.renderProgress ?? 0) * 100}
+                                        size="sm"
+                                        fillClassName="bg-primary"
+                                    />
                                     <Button
                                         variant="ghost"
                                         size="xs"
@@ -104,10 +113,14 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                                             <TooltipTrigger asChild>
                                                 <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-state-warning/20 border border-state-warning/30 text-state-warning cursor-help">
                                                     <AlertCircle className="size-3" />
-                                                    <span className="text-[10px] font-bold uppercase tracking-tight">Stale</span>
+                                                    <span className="text-[10px] font-bold uppercase tracking-tight">
+                                                        Stale
+                                                    </span>
                                                 </div>
                                             </TooltipTrigger>
-                                            <TooltipContent>Content has changed since freeze. Update required.</TooltipContent>
+                                            <TooltipContent>
+                                                Content has changed since freeze. Update required.
+                                            </TooltipContent>
                                         </Tooltip>
                                     )}
                                     <Button
@@ -115,7 +128,8 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                                         size="xs"
                                         className={cn(
                                             'h-6 gap-1.5 px-2',
-                                            isStale && 'border-state-warning/40 text-state-warning hover:bg-state-warning/10'
+                                            isStale &&
+                                                'border-state-warning/40 text-state-warning hover:bg-state-warning/10'
                                         )}
                                         onClick={() => {
                                             if (track.frozen || isStale) {
@@ -126,7 +140,13 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                                         }}
                                         aria-pressed={track.frozen || isStale}
                                     >
-                                        {isStale ? <RefreshCw className="size-3" /> : track.frozen ? <Zap className="size-3" /> : <Snowflake className="size-3" />}
+                                        {isStale ? (
+                                            <RefreshCw className="size-3" />
+                                        ) : track.frozen ? (
+                                            <Zap className="size-3" />
+                                        ) : (
+                                            <Snowflake className="size-3" />
+                                        )}
                                         <span className="text-[10px] font-medium">
                                             {isStale ? 'Update Freeze' : track.frozen ? 'Unfreeze' : 'Freeze'}
                                         </span>

@@ -7,6 +7,7 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+
 import { renderQueueStore, enqueueRender } from '../stores/renderQueueStore';
 
 export const renderAllStale = inject({ logger })(

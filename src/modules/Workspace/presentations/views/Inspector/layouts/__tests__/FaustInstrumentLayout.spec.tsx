@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import type { DeviceLayoutProps } from '../../deviceLayoutRegistry';
 
 // Mock external dependencies
@@ -35,9 +36,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 
 vi.mock('../../../../components/Inspector/SurfaceCard', () => ({
-    SurfaceCard: ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="surface-card">{children}</div>
-    ),
+    SurfaceCard: ({ children }: { children: React.ReactNode }) => <div data-testid="surface-card">{children}</div>,
 }));
 
 vi.mock('../../DeviceParameterControl', () => ({
@@ -63,10 +62,58 @@ describe('FaustInstrumentLayout', () => {
     };
 
     const mockParameters = [
-        { id: 'attack', name: 'Attack', type: 'float', value: 0.01, defaultValue: 0.01, minValue: 0.001, maxValue: 5, unit: 's', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-        { id: 'decay', name: 'Decay', type: 'float', value: 0.2, defaultValue: 0.2, minValue: 0.001, maxValue: 5, unit: 's', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-        { id: 'sustain', name: 'Sustain', type: 'float', value: 0.7, defaultValue: 0.7, minValue: 0, maxValue: 1, unit: '', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-        { id: 'cutoff', name: 'Cutoff', type: 'float', value: 5000, defaultValue: 5000, minValue: 20, maxValue: 20000, unit: 'Hz', automatable: true, hasAutomation: false, deviceId: 'device-1' },
+        {
+            id: 'attack',
+            name: 'Attack',
+            type: 'float',
+            value: 0.01,
+            defaultValue: 0.01,
+            minValue: 0.001,
+            maxValue: 5,
+            unit: 's',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
+        {
+            id: 'decay',
+            name: 'Decay',
+            type: 'float',
+            value: 0.2,
+            defaultValue: 0.2,
+            minValue: 0.001,
+            maxValue: 5,
+            unit: 's',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
+        {
+            id: 'sustain',
+            name: 'Sustain',
+            type: 'float',
+            value: 0.7,
+            defaultValue: 0.7,
+            minValue: 0,
+            maxValue: 1,
+            unit: '',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
+        {
+            id: 'cutoff',
+            name: 'Cutoff',
+            type: 'float',
+            value: 5000,
+            defaultValue: 5000,
+            minValue: 20,
+            maxValue: 20000,
+            unit: 'Hz',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
     ];
 
     const mockProps: DeviceLayoutProps = {

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+
 import { modulationStore, modulationRuntimeStore } from '../../../stores/modulationStore';
 import { getModulationForParam } from '../getModulationForParam';
 
@@ -24,9 +25,7 @@ describe('getModulationForParam', () => {
                     trackId: 't1',
                     kind: 'lfo',
                     config: { kind: 'lfo', waveform: 'sine', rate: 1, sync: true, phase: 0, depth: 1 },
-                    mappings: [
-                        { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'p1', amount: -0.2 },
-                    ],
+                    mappings: [{ targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'p1', amount: -0.2 }],
                     enabled: true,
                 },
             ],
@@ -56,7 +55,7 @@ describe('getModulationForParam', () => {
         const state = modulationStore.value!;
         modulationStore.set({
             ...state,
-            modulators: state.modulators.map(m => m.id === 'mod1' ? { ...m, enabled: false } : m),
+            modulators: state.modulators.map((m) => (m.id === 'mod1' ? { ...m, enabled: false } : m)),
         });
         // only mod2: 0.5 * -0.2 = -0.1
         const result = getModulationForParam('t1', 'd1', 'p1');
@@ -68,9 +67,9 @@ describe('getModulationForParam', () => {
         modulationRuntimeStore.set({ runtimeValues: { mod1: 1.0, mod2: 1.0 } });
         modulationStore.set({
             ...state,
-            modulators: state.modulators.map(m =>
+            modulators: state.modulators.map((m) =>
                 m.id === 'mod1' ? { ...m, mappings: [{ ...m.mappings[0]!, amount: 1.0 }] } : m
-            )
+            ),
         });
         // mod1: 1.0 * 1.0 = 1.0
         // mod2: 1.0 * -0.2 = -0.2
@@ -80,9 +79,9 @@ describe('getModulationForParam', () => {
         // Make it > 1
         modulationStore.set({
             ...modulationStore.value!,
-            modulators: state.modulators.map(m => 
+            modulators: state.modulators.map((m) =>
                 m.id === 'mod1' ? { ...m, mappings: [{ ...m.mappings[0]!, amount: 2.0 }] } : m
-            )
+            ),
         });
         expect(getModulationForParam('t1', 'd1', 'p1')).toBe(1);
     });

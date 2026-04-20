@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { createTrackForPlugin } from '../createTrackForPlugin';
 
 const mocks = vi.hoisted(() => ({
@@ -15,7 +16,7 @@ describe('createTrackForPlugin', () => {
 
     it('delegates to addTrack use case', () => {
         mocks.addTrack.mockReturnValue({ id: 't1' });
-        
+
         const result = createTrackForPlugin('My Plugin', 'midi');
 
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'My Plugin', kind: 'midi' });

@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
-import { NodeGraphEditor } from '../NodeGraphEditor';
+import { describe, it, expect, vi } from 'vitest';
+
 import { DEFAULT_PATCH } from '../../../models/BacteriaPatch';
+import { NodeGraphEditor } from '../NodeGraphEditor';
 
 describe('NodeGraphEditor', () => {
     it('should render', () => {

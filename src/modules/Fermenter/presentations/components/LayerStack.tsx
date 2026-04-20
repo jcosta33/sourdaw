@@ -3,9 +3,12 @@
  * Part of the Level 3 (Build) experience.
  */
 import { type ReactElement } from 'react';
+
 import { Plus, Minus } from 'lucide-react';
-import { Button } from '#/components/ui/button';
+
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { Button } from '#/components/ui/button';
+
 import { ENGINE_NAMES } from '../../models/FermenterPatch';
 
 const LAYER_COLORS = [

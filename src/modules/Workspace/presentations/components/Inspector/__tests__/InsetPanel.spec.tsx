@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
+
 import { InsetPanel } from '../InsetPanel';
 
 describe('InsetPanel', () => {
@@ -14,6 +15,8 @@ describe('InsetPanel', () => {
                 X
             </InsetPanel>
         );
-        expect(container.querySelector('[data-testid="panel"]')).toHaveClass('shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]');
+        expect(container.querySelector('[data-testid="panel"]')).toHaveClass(
+            'shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]'
+        );
     });
 });

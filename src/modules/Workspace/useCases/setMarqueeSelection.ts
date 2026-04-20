@@ -1,4 +1,5 @@
 import { getWorkspaceState, updateWorkspaceState } from '../repositories/workspace';
+
 import { type MarqueeSelection } from './workspaceQueries/helpers';
 
 export function setMarqueeSelection(selection: MarqueeSelection | null): void {

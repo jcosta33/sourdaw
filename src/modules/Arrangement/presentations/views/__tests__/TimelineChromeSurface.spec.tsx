@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+
 import { TimelineChromeSurface } from '../TimelineChromeSurface';
 
 describe('TimelineChromeSurface', () => {
@@ -34,9 +35,7 @@ describe('TimelineChromeSurface', () => {
     });
 
     it('should pass through additional props', () => {
-        const { container } = render(
-            <TimelineChromeSurface data-testid="surface" style={{ height: 100 }} />
-        );
+        const { container } = render(<TimelineChromeSurface data-testid="surface" style={{ height: 100 }} />);
         const surface = screen.getByTestId('surface');
         expect(surface).toHaveStyle({ height: '100px' });
     });
@@ -53,7 +52,13 @@ describe('TimelineChromeSurface', () => {
 
     it('should forward ref', () => {
         const ref = { current: null as HTMLDivElement | null };
-        render(<TimelineChromeSurface ref={(el) => { ref.current = el; }} />);
+        render(
+            <TimelineChromeSurface
+                ref={(el) => {
+                    ref.current = el;
+                }}
+            />
+        );
         expect(ref.current).toBeInstanceOf(HTMLDivElement);
     });
 });

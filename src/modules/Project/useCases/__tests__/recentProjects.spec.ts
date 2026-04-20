@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { logger } from '#/infra/logger/appLogger';
+import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import { stopPlayback } from '#/modules/Transport/useCases';
+
+import { readNamedProjectJson } from '../../repositories/project/storageOperations';
 import { addToRecentProjects } from '../recentProjects/addToRecentProjects';
-import { removeFromRecentProjects } from '../recentProjects/removeFromRecentProjects';
 import { getRecentProjects } from '../recentProjects/helpers';
 import { loadRecentProject } from '../recentProjects/loadRecentProject';
-import { readNamedProjectJson } from '../../repositories/project/storageOperations';
-import { logger } from '#/infra/logger/appLogger';
-import { stopPlayback } from '#/modules/Transport/useCases';
-import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
+import { removeFromRecentProjects } from '../recentProjects/removeFromRecentProjects';
 
 type RecentEntry = { name: string; key: string; updatedAt: number };
 

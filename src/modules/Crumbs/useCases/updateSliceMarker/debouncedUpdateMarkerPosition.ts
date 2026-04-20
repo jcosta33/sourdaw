@@ -2,11 +2,7 @@ import { updateMarkerPosition } from '../../stores/sliceStore';
 
 const pendingUpdates = new Map<string, ReturnType<typeof setTimeout>>();
 
-export function debouncedUpdateMarkerPosition(
-    instanceId: string,
-    id: string,
-    framePosition: number
-): void {
+export function debouncedUpdateMarkerPosition(instanceId: string, id: string, framePosition: number): void {
     const key = `${instanceId}:${id}`;
     const existing = pendingUpdates.get(key);
     if (existing !== undefined) {

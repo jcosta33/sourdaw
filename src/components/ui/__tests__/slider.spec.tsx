@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+
 import { Slider } from '../slider';
 
 describe('Slider', () => {
@@ -20,14 +21,7 @@ describe('Slider', () => {
     it('should reset to default when meta+pointer down on thumb with handlers', () => {
         const onValueChange = vi.fn();
         render(
-            <Slider
-                value={[50]}
-                defaultValue={[25]}
-                min={0}
-                max={100}
-                onValueChange={onValueChange}
-                aria-label="Pan"
-            />
+            <Slider value={[50]} defaultValue={[25]} min={0} max={100} onValueChange={onValueChange} aria-label="Pan" />
         );
         const thumb = screen.getByRole('slider', { name: 'Pan' });
         fireEvent.pointerDown(thumb, { pointerId: 1, metaKey: true });

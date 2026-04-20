@@ -1,10 +1,11 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+
 import { midiLearnStore } from '../../stores/midiLearnStore';
 
 export const stopMidiLearn = inject({ logger })(
     ({ logger }) =>
-        (function stopMidiLearn(): void {
+        function stopMidiLearn(): void {
             const state = midiLearnStore.value;
             if (!state) {
                 return;
@@ -17,5 +18,5 @@ export const stopMidiLearn = inject({ logger })(
                 isLearning: false,
                 learningTarget: null,
             });
-        })
+        }
 );

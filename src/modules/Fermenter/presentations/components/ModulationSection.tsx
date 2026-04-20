@@ -3,6 +3,7 @@
  * This is the beginning of the "Modulation Dock" from the UX spec.
  */
 import { type ReactElement } from 'react';
+
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 
 type ModulationSectionProps = {

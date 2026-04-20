@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleRemoveClip } from '../handleRemoveClip';
 
 const mocks = vi.hoisted(() => ({
@@ -26,7 +27,11 @@ vi.mock('../../../useCases/rippleDelete/rippleDeleteClips', () => ({
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
-    midiStore: { get value() { return mocks.midiStoreValue.value; } },
+    midiStore: {
+        get value() {
+            return mocks.midiStoreValue.value;
+        },
+    },
 }));
 
 describe('handleRemoveClip', () => {
@@ -83,7 +88,7 @@ describe('handleRemoveClip', () => {
             const mockClip = { id: 'c1', name: 'Clip 1' };
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [mockClip] }] });
             mocks.planRippleDelete.mockReturnValue({ removedClips: [], shiftedClips: [] });
-            
+
             const mockMidiNotes = [{ id: 'n1', pitch: 60 }];
             mocks.midiStoreValue.value = {
                 notesByClipId: { c1: mockMidiNotes },
@@ -92,7 +97,7 @@ describe('handleRemoveClip', () => {
             };
 
             const desc = handleRemoveClip.describe({ type: 'removeClip', payload: { clipId: 'c1' } });
-            
+
             expect(desc.label).toBe('Remove clip');
             expect(desc.inverseAction).toBeDefined();
             expect(desc.inverseAction?.type).toBe('restoreClip');

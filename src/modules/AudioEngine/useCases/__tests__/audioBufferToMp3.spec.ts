@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { audioBufferToMp3 as encode } from '../../repositories/audioEncoders/mp3Encoder';
 import { audioBufferToMp3 } from '../audioBufferToMp3';
 

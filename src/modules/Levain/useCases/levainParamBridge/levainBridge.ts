@@ -1,7 +1,9 @@
 import { inject } from '#/infra/di/inject';
-import type { LevainBridgeApi } from './helpers';
+
 import { createLevainBridge } from './helpers';
 import { levainBridgeDependencies } from './levainBridgeDependencies';
+
+import type { LevainBridgeApi } from './helpers';
 
 /**
  * Injectable singleton — resolves **`getAllTracks`**, **`persistDeviceParam`**, **`autoLoadLevainSamples`** for tests via **`injectDependencies(levainBridge, …)`**.

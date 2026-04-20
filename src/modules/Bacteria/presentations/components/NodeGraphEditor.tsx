@@ -5,6 +5,7 @@
  * connection cables, and routing mode toggles.
  */
 import { type ReactElement, useState } from 'react';
+
 import { type BacteriaBand, type BacteriaRoutingMode } from '../../models/BacteriaPatch';
 
 type NodeDef = {

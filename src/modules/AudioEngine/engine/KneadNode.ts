@@ -1,12 +1,14 @@
 /**
  * KneadNode — AudioWorkletNode wrapper for the Knead real-time pitch processor.
- * 
+ *
  * Synchronizes with the kneadStore to receive per-clip pitch blobs and parameters.
  */
 
-import kneadProcessorUrl from '../services/kneadProcessor.ts?worker&url';
-import { ensureWorkletRegistered, fetchWasmBinary, createReadyHandshake } from './workletInitShared';
 import { type KneadClipState } from '#/modules/Knead/stores/kneadStore';
+
+import kneadProcessorUrl from '../services/kneadProcessor.ts?worker&url';
+
+import { ensureWorkletRegistered, fetchWasmBinary, createReadyHandshake } from './workletInitShared';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
@@ -22,7 +24,10 @@ export function isKneadDevice(deviceType: string): boolean {
     return deviceType.toLowerCase() === 'knead';
 }
 
-export async function createKneadNode(ctx: BaseAudioContext, transportSAB?: SharedArrayBuffer): Promise<KneadNodeResult> {
+export async function createKneadNode(
+    ctx: BaseAudioContext,
+    transportSAB?: SharedArrayBuffer
+): Promise<KneadNodeResult> {
     if (ctx instanceof AudioContext && ctx.state === 'suspended') {
         await ctx.resume();
     }
@@ -45,11 +50,14 @@ export async function createKneadNode(ctx: BaseAudioContext, transportSAB?: Shar
 
     const wasmBytes = await fetchWasmBinary(DEFAULT_WASM_URL);
     const copy = wasmBytes.slice(0);
-    node.port.postMessage({ 
-        type: 'init', 
-        wasmBytes: copy,
-        transportSAB
-    }, [copy]);
+    node.port.postMessage(
+        {
+            type: 'init',
+            wasmBytes: copy,
+            transportSAB,
+        },
+        [copy]
+    );
 
     return {
         workletNode: node,

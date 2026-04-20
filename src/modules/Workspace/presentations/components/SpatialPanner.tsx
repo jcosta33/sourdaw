@@ -4,6 +4,7 @@
  * Listener is at the center. Shows azimuth circle, distance rings, and L/R labels.
  */
 import { type ReactElement, type MouseEvent, useRef, useState, useEffect } from 'react';
+
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type SpatialPannerProps = {

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import { captureArrangementToScratchPad } from '../captureCommit/captureArrangementToScratchPad';
 import { commitScratchPadToArrangement } from '../captureCommit/commitScratchPadToArrangement';
 
@@ -6,18 +7,22 @@ const mockMarkerSet = vi.fn();
 let mockMarkerValue: any = null;
 vi.mock('../../../stores/markerStore', () => ({
     markerStore: {
-        get value() { return mockMarkerValue; },
-        set: (v: any) => mockMarkerSet(v)
-    }
+        get value() {
+            return mockMarkerValue;
+        },
+        set: (v: any) => mockMarkerSet(v),
+    },
 }));
 
 const mockScratchPadSet = vi.fn();
 let mockScratchPadValue: any = null;
 vi.mock('../../../stores/scratchPadStore', () => ({
     scratchPadStore: {
-        get value() { return mockScratchPadValue; },
-        set: (v: any) => mockScratchPadSet(v)
-    }
+        get value() {
+            return mockScratchPadValue;
+        },
+        set: (v: any) => mockScratchPadSet(v),
+    },
 }));
 
 describe('captureArrangementToScratchPad', () => {

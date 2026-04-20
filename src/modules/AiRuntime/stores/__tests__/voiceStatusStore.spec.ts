@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+
 import { voiceStatusStore } from '../voiceStatusStore';
 
 describe('voiceStatusStore', () => {

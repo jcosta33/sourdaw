@@ -2,6 +2,7 @@
  * CrustMeteringStrip — right panel: L/R output meters, GR meter, LUFS readouts, TP LED.
  */
 import { type ReactElement } from 'react';
+
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';

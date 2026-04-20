@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { MidiCalibrationPanel } from '../MidiCalibrationPanel';
+import { describe, it, expect, vi } from 'vitest';
+
 import { createDefaultMidiCalibration } from '../../../models/GrandBouleMidiCalibration';
+import { MidiCalibrationPanel } from '../MidiCalibrationPanel';
 
 describe('MidiCalibrationPanel', () => {
     it('should render', () => {

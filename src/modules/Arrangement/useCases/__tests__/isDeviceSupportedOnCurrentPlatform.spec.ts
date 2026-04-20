@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { isDeviceSupportedOnCurrentPlatform } from '../isDeviceSupportedOnCurrentPlatform';
 
 const mocks = vi.hoisted(() => ({

@@ -1,5 +1,5 @@
 import { type ReactElement, useState, useRef, useEffect } from 'react';
-import { DawKeycap } from '#/components/daw/DawKeycap';
+
 import {
     ChevronDown,
     Clock,
@@ -12,18 +12,22 @@ import {
     Trash2,
     Sparkles,
 } from 'lucide-react';
+
+import { DawKeycap } from '#/components/daw/DawKeycap';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { getRecentProjects, type RecentProjectEntry } from '../../useCases/recentProjects/helpers';
-import { removeFromRecentProjects } from '../../useCases/recentProjects/removeFromRecentProjects';
-import { loadRecentProject } from '../../useCases/recentProjects/loadRecentProject';
+import { openExportDialog } from '#/modules/Workspace/useCases';
+
 import { type TemplateCategory } from '../../models/ProjectTemplateTypes';
-import { newProject } from '../../useCases/projectPersistence/newProject';
-import { saveProject } from '../../useCases/projectPersistence/saveProject/saveProject';
 import { exportProjectFile } from '../../useCases/projectPersistence/fileIO/exportProjectFile';
 import { pickAndImportProjectFile } from '../../useCases/projectPersistence/fileIO/pickAndImportProjectFile';
+import { newProject } from '../../useCases/projectPersistence/newProject';
+import { saveProject } from '../../useCases/projectPersistence/saveProject/saveProject';
+import { getRecentProjects, type RecentProjectEntry } from '../../useCases/recentProjects/helpers';
+import { loadRecentProject } from '../../useCases/recentProjects/loadRecentProject';
+import { removeFromRecentProjects } from '../../useCases/recentProjects/removeFromRecentProjects';
+
 import { TemplateChooser } from './TemplateChooser';
-import { openExportDialog } from '#/modules/Workspace/useCases';
 
 const formatRelativeTime = (timestamp: number): string => {
     const now = Date.now();

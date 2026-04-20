@@ -1,4 +1,5 @@
 import { type Logger } from '#/infra/logger/types';
+
 import { type StorageAdapter } from './storage/types';
 
 export type StoreOptions<TData> = {

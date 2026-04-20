@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import { scheduleFaustNote } from '../faustInstrumentScheduler/scheduleFaustNote';
 import { startFaustNote } from '../faustInstrumentScheduler/startFaustNote';
 

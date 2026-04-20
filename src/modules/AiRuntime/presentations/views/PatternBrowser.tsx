@@ -1,13 +1,22 @@
 import { type ReactElement, useState, useRef, useLayoutEffect } from 'react';
+
 import { Search, Music, Plus, SlidersHorizontal } from 'lucide-react';
+
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawPickerCard } from '#/components/daw/DawPickerCard';
 import { Button } from '#/components/ui/button';
-import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Slider } from '#/components/ui/slider';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { addClip, addTrack } from '#/modules/Arrangement/useCases';
+import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
+import { getTransportState } from '#/modules/Transport/useCases';
+import { selectClipWithFocus } from '#/modules/Workspace/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
+
 import {
     PATTERN_CATEGORIES,
     PATTERN_TEMPLATES,
@@ -25,12 +34,6 @@ import {
     type ScaleType,
     type GenerationParams,
 } from '../../models/midiPatternLibrary';
-import { trackStore } from '#/modules/Arrangement/stores';
-import { addClip, addTrack } from '#/modules/Arrangement/useCases';
-import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
-import { getTransportState } from '#/modules/Transport/useCases';
-import { selectClipWithFocus } from '#/modules/Workspace/useCases';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 
 // ── Mini piano-roll preview ──
 
@@ -301,7 +304,7 @@ export const PatternBrowser = (): ReactElement => {
                 startBeat: note.startBeat,
                 duration: note.durationBeats,
                 velocity: note.velocity,
-            })),
+            }))
         );
         // §14.3 / G3 — use `selectClipWithFocus` so selection-aware surfaces
         // (TakesSection, multi-select, shortcut targets) see the new clip as

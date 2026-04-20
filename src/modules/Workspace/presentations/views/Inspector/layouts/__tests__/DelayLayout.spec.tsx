@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import type { DeviceLayoutProps } from '../../deviceLayoutRegistry';
 
 // Mock external dependencies
@@ -25,9 +26,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 
 vi.mock('../../../../components/Inspector/SurfaceCard', () => ({
-    SurfaceCard: ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="surface-card">{children}</div>
-    ),
+    SurfaceCard: ({ children }: { children: React.ReactNode }) => <div data-testid="surface-card">{children}</div>,
 }));
 
 vi.mock('../../DeviceParameterControl', () => ({
@@ -52,9 +51,45 @@ describe('DelayLayout', () => {
     };
 
     const mockParameters = [
-        { id: 'delay-time', name: 'Time', type: 'float', value: 250, defaultValue: 250, minValue: 1, maxValue: 5000, unit: 'ms', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-        { id: 'delay-feedback', name: 'Feedback', type: 'float', value: 0.4, defaultValue: 0.4, minValue: 0, maxValue: 1, unit: '', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-        { id: 'delay-mix', name: 'Mix', type: 'float', value: 0.3, defaultValue: 0.3, minValue: 0, maxValue: 1, unit: '', automatable: true, hasAutomation: false, deviceId: 'device-1' },
+        {
+            id: 'delay-time',
+            name: 'Time',
+            type: 'float',
+            value: 250,
+            defaultValue: 250,
+            minValue: 1,
+            maxValue: 5000,
+            unit: 'ms',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
+        {
+            id: 'delay-feedback',
+            name: 'Feedback',
+            type: 'float',
+            value: 0.4,
+            defaultValue: 0.4,
+            minValue: 0,
+            maxValue: 1,
+            unit: '',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
+        {
+            id: 'delay-mix',
+            name: 'Mix',
+            type: 'float',
+            value: 0.3,
+            defaultValue: 0.3,
+            minValue: 0,
+            maxValue: 1,
+            unit: '',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
     ];
 
     const mockProps: DeviceLayoutProps = {

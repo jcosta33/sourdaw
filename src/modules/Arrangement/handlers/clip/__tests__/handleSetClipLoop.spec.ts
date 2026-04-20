@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleSetClipLoop } from '../handleSetClipLoop';
 
 const mocks = vi.hoisted(() => ({

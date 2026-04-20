@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { removeAdjustmentRegion } from '../removeAdjustmentRegion';
 
 const mocks = vi.hoisted(() => ({
@@ -8,7 +9,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Arrangement/stores/adjustmentLayer', () => ({
     adjustmentLayerStore: {
-        get value() { return mocks.adjustmentLayerStoreValue.value; },
+        get value() {
+            return mocks.adjustmentLayerStoreValue.value;
+        },
         set: mocks.adjustmentLayerStoreSet,
     },
 }));
@@ -18,17 +21,13 @@ describe('removeAdjustmentRegion', () => {
 
     it('removes region from the specified layer', () => {
         mocks.adjustmentLayerStoreValue.value = {
-            layers: [
-                { id: 'l1', regions: [{ id: 'r1' }, { id: 'r2' }] }
-            ]
+            layers: [{ id: 'l1', regions: [{ id: 'r1' }, { id: 'r2' }] }],
         } as any;
 
         removeAdjustmentRegion('l1', 'r1');
 
         expect(mocks.adjustmentLayerStoreSet).toHaveBeenCalledWith({
-            layers: [
-                { id: 'l1', regions: [{ id: 'r2' }] }
-            ]
+            layers: [{ id: 'l1', regions: [{ id: 'r2' }] }],
         });
     });
 });

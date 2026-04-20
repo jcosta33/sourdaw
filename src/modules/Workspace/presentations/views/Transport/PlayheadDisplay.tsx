@@ -1,10 +1,12 @@
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { type TimeDisplayMode } from '../../../models/WorkspaceState';
-import { toggleTimeDisplayMode } from '../../../useCases/togglePanel/panelToggles/toggleTimeDisplayMode';
+import { useStore } from '#/infra/store/useStore';
 import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
-import { useStore } from '#/infra/store/useStore';
+
+import { type TimeDisplayMode } from '../../../models/WorkspaceState';
+import { toggleTimeDisplayMode } from '../../../useCases/togglePanel/panelToggles/toggleTimeDisplayMode';
 import { TransportSegmentedReadout } from '../../components/Transport/TransportSegmentedReadout';
 
 type PlayheadDisplayProps = {
@@ -84,7 +86,6 @@ export const PlayheadDisplay = ({ tempo, numerator, timeDisplayMode }: PlayheadD
         };
         rafRef.current = requestAnimationFrame(loop);
         return () => cancelAnimationFrame(rafRef.current);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isPlaying, isMusical]);
 
     // Compute initial values for SSR / first paint

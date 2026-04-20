@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { stopDictation } from '../stopDictation';
+
 import { tauriInvoke } from '#/utils/tauriBridge';
+
+import { stopDictation } from '../stopDictation';
 
 vi.mock('#/utils/tauriBridge', () => ({
     tauriInvoke: vi.fn().mockResolvedValue(undefined),

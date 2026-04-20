@@ -1,5 +1,6 @@
 import { addClip } from '#/modules/Arrangement/useCases';
 import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
+
 import { type GenerateChordProgressionOptions } from './algorithm';
 import { generateChordProgression } from './algorithm';
 
@@ -44,7 +45,7 @@ export function applyChordProgressionToTrack(
             startBeat: startBeat + note.startBeat,
             duration: Math.max(MIN_NOTE_DURATION, note.duration),
             velocity: note.velocity,
-        })),
+        }))
     );
 
     return { clipId: clip.id, noteCount: notes.length };

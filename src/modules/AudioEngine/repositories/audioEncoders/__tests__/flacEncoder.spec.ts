@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
 import { audioBufferToFlac } from '../flacEncoder';
 
 function createMockAudioBuffer(channels: number, length: number, sampleRate: number): AudioBuffer {
@@ -34,11 +35,13 @@ describe('flacEncoder', () => {
         const view = new DataView(arrayBuffer.buffer);
 
         // fLaC signature
-        expect(String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3))).toBe('fLaC');
-        
+        expect(String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3))).toBe(
+            'fLaC'
+        );
+
         // STREAMINFO block type should be 0 (with last-metadata-block flag = 0x80)
         expect(view.getUint8(4)).toBe(0x80);
-        
+
         // Min block size
         expect(view.getUint16(8, false)).toBe(4096);
     });
@@ -54,7 +57,9 @@ describe('flacEncoder', () => {
         const view = new DataView(arrayBuffer.buffer);
 
         // fLaC signature
-        expect(String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3))).toBe('fLaC');
+        expect(String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3))).toBe(
+            'fLaC'
+        );
     });
 
     it('should call onProgress during encoding', async () => {
@@ -64,10 +69,10 @@ describe('flacEncoder', () => {
         const onProgress = vi.fn();
 
         const promise = audioBufferToFlac(buffer, onProgress);
-        
+
         // Wait for first yield
         await vi.runAllTimersAsync();
-        
+
         expect(onProgress).toHaveBeenCalled();
         const result = await promise;
         expect(result).toBeDefined();

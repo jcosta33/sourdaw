@@ -1,4 +1,4 @@
-import { addTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { type addTrack, type getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
 
 export const VALID_DRUM_STYLES: ReadonlySet<string> = new Set([

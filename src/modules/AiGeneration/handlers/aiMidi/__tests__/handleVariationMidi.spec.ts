@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleVariationMidi } from '../handleVariationMidi';
 
 const mocks = vi.hoisted(() => ({
@@ -35,9 +36,7 @@ describe('handleVariationMidi', () => {
 
     it('generates a variation and replaces clip notes', async () => {
         mocks.getNotesForClip.mockReturnValue([{ pitch: 60, startBeat: 0, duration: 1 }]);
-        mocks.llmGenerateNotes.mockResolvedValue([
-            { pitch: 64, startBeat: 0, duration: 1, velocity: 80 }
-        ]);
+        mocks.llmGenerateNotes.mockResolvedValue([{ pitch: 64, startBeat: 0, duration: 1, velocity: 80 }]);
 
         await handleVariationMidi.execute({
             type: 'variationMidi',
@@ -55,7 +54,7 @@ describe('handleVariationMidi', () => {
         // Sets the notes, creating MIDI note domain models
         expect(mocks.createMidiNote).toHaveBeenCalledWith(64, 0, 1, 80);
         expect(mocks.setNotesForClip).toHaveBeenCalledWith('c1', [
-            { pitch: 64, startBeat: 0, duration: 1, velocity: 80 }
+            { pitch: 64, startBeat: 0, duration: 1, velocity: 80 },
         ]);
         expect(mocks.info).toHaveBeenCalledWith(expect.stringContaining('Generated variation'));
     });

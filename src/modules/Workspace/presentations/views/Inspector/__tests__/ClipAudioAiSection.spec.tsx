@@ -1,9 +1,20 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { ClipAudioAiSection } from '../ClipAudioAiSection';
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
-    DawHeaderBand: ({ title, startSlot, compact, className }: { title: string; startSlot?: React.ReactNode; compact?: boolean; className?: string }) => (
+    DawHeaderBand: ({
+        title,
+        startSlot,
+        compact,
+        className,
+    }: {
+        title: string;
+        startSlot?: React.ReactNode;
+        compact?: boolean;
+        className?: string;
+    }) => (
         <div className={className} data-compact={compact}>
             {startSlot}
             <span>{title}</span>
@@ -12,15 +23,52 @@ vi.mock('#/components/daw/DawHeaderBand', () => ({
 }));
 
 vi.mock('#/components/ui/button', () => ({
-    Button: ({ children, onClick, disabled, variant, size, className }: { children: React.ReactNode; onClick?: () => void; disabled?: boolean; variant?: string; size?: string; className?: string }) => (
-        <button type="button" onClick={onClick} disabled={disabled} data-variant={variant} data-size={size} className={className}>
+    Button: ({
+        children,
+        onClick,
+        disabled,
+        variant,
+        size,
+        className,
+    }: {
+        children: React.ReactNode;
+        onClick?: () => void;
+        disabled?: boolean;
+        variant?: string;
+        size?: string;
+        className?: string;
+    }) => (
+        <button
+            type="button"
+            onClick={onClick}
+            disabled={disabled}
+            data-variant={variant}
+            data-size={size}
+            className={className}
+        >
             {children}
         </button>
     ),
 }));
 
 vi.mock('#/components/ui/slider', () => ({
-    Slider: ({ value, onValueChange, min, max, step, className, 'aria-label': ariaLabel }: { value: number[]; onValueChange: (v: number[]) => void; min: number; max: number; step: number; className?: string; 'aria-label'?: string }) => (
+    Slider: ({
+        value,
+        onValueChange,
+        min,
+        max,
+        step,
+        className,
+        'aria-label': ariaLabel,
+    }: {
+        value: number[];
+        onValueChange: (v: number[]) => void;
+        min: number;
+        max: number;
+        step: number;
+        className?: string;
+        'aria-label'?: string;
+    }) => (
         <input
             type="range"
             value={value[0]}
@@ -41,7 +89,17 @@ vi.mock('#/components/ui/tooltip', () => ({
 }));
 
 vi.mock('../../../components/Inspector/ControlHeader', () => ({
-    ControlHeader: ({ label, value, valueClassName, className }: { label: string; value?: string; valueClassName?: string; className?: string }) => (
+    ControlHeader: ({
+        label,
+        value,
+        valueClassName,
+        className,
+    }: {
+        label: string;
+        value?: string;
+        valueClassName?: string;
+        className?: string;
+    }) => (
         <div className={className}>
             <span>{label}</span>
             {value && <span className={valueClassName}>{value}</span>}

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type LoopStationState } from '../../../stores/loopStationStore';
-import { triggerScene } from '../triggerScene';
 import { loopStationStore } from '../../../stores/loopStationStore';
+import { triggerScene } from '../triggerScene';
 
 vi.mock('../../../stores/loopStationStore', () => ({
     loopStationStore: { value: null, set: vi.fn() },
@@ -25,9 +26,9 @@ describe('triggerScene', () => {
 
     it('sets activeScene', () => {
         loopStationStore.value = emptyLoopState() as any;
-        
+
         triggerScene(3);
-        
+
         expect(loopStationStore.set).toHaveBeenCalledWith(expect.objectContaining({ activeScene: 3 }));
     });
 });

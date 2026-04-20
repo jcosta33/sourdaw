@@ -1,5 +1,5 @@
-import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type TakeLane } from '../../models/TakeLane';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 
 export function getTakeLaneForTrack(trackId: string): TakeLane | null {
     const state = takeLaneStore.value;

@@ -1,4 +1,5 @@
 import { tauriInvoke, isTauri } from '#/utils/tauriBridge';
+
 import { type ScanResult } from './types';
 
 export async function scanPlugins(paths: string[]): Promise<ScanResult> {

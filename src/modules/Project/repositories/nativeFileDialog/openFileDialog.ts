@@ -1,6 +1,8 @@
 import { isTauri } from '#/utils/tauriBridge';
-import type { OpenFileOptions } from './helpers';
+
 import { openViaBrowser, openViaTauri } from './helpers';
+
+import type { OpenFileOptions } from './helpers';
 
 /**
  * Opens a file picker dialog. Uses Tauri's native dialog when running as a

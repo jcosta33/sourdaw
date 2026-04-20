@@ -1,5 +1,6 @@
-import { type DocId } from './crdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
+
+import { type DocId } from './crdtDocumentTypes';
 
 /**
  * Unregister and release the CRDT document stored under `id`.

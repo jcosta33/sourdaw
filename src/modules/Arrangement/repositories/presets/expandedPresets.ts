@@ -3,21 +3,22 @@
  * These are merged into FACTORY_PRESETS at module load time.
  */
 import { type SoundPreset } from '../../models/SoundPreset';
-import { synth } from './presetHelpers/synth';
-import { eq } from './presetHelpers/eq';
-import { comp } from './presetHelpers/comp';
-import { reverb } from './presetHelpers/reverb';
-import { delay } from './presetHelpers/delay';
-import { chorus } from './presetHelpers/chorus';
-import { phaser } from './presetHelpers/phaser';
-import { flanger } from './presetHelpers/flanger';
-import { distortion } from './presetHelpers/distortion';
-import { tremolo } from './presetHelpers/tremolo';
+
 import { bitcrusher } from './presetHelpers/bitcrusher';
-import { filter } from './presetHelpers/filter';
-import { limiter } from './presetHelpers/limiter';
+import { chorus } from './presetHelpers/chorus';
+import { comp } from './presetHelpers/comp';
 import { convReverb } from './presetHelpers/convReverb';
+import { delay } from './presetHelpers/delay';
+import { distortion } from './presetHelpers/distortion';
+import { eq } from './presetHelpers/eq';
+import { filter } from './presetHelpers/filter';
+import { flanger } from './presetHelpers/flanger';
 import { AUTHOR } from './presetHelpers/helpers';
+import { limiter } from './presetHelpers/limiter';
+import { phaser } from './presetHelpers/phaser';
+import { reverb } from './presetHelpers/reverb';
+import { synth } from './presetHelpers/synth';
+import { tremolo } from './presetHelpers/tremolo';
 
 // ── Effect-Only Presets (audio track chains) ─────────────────────────────
 

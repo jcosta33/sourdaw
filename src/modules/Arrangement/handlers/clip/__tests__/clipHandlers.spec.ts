@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
+
 import { clipHandlers } from '../clipHandlers';
 import { handleAddClip } from '../handleAddClip';
-import { handleMoveClip } from '../handleMoveClip';
 import { handleDuplicateClip } from '../handleDuplicateClip';
+import { handleMoveClip } from '../handleMoveClip';
 import { handleRemoveClip } from '../handleRemoveClip';
 
 describe('clipHandlers', () => {
@@ -11,7 +12,7 @@ describe('clipHandlers', () => {
         expect(clipHandlers).toHaveProperty('moveClip');
         expect(clipHandlers).toHaveProperty('duplicateClip');
         expect(clipHandlers).toHaveProperty('removeClip');
-        
+
         expect(clipHandlers.addClip).toBe(handleAddClip);
         expect(clipHandlers.moveClip).toBe(handleMoveClip);
         expect(clipHandlers.duplicateClip).toBe(handleDuplicateClip);
@@ -20,15 +21,40 @@ describe('clipHandlers', () => {
 
     it('contains all expected clip handlers', () => {
         const expectedKeys = [
-            'addClip', 'moveClip', 'duplicateClip', 'duplicateClipToNextBar', 
-            'removeClip', 'renameClip', 'splitClip', 'trimClipStart', 
-            'trimClipEnd', 'setClipFade', 'copyClip', 'cutClip', 'pasteClip', 
-            'normalizeClip', 'reverseClip', 'glueClips', 'nudgeClip', 
-            'crossfadeClips', 'setClipGain', 'setClipColor', 'lockClip', 
-            'setClipLoop', 'setClipLoopLength', 'consolidateSelection', 
-            'bounceSelection', 'muteClip', 'audioToMidi', 'deleteTime', 
-            'insertTime', 'duplicateTimeRange', 'stripSilence', 'detectTempo', 
-            'detectKey', 'arpeggiate'
+            'addClip',
+            'moveClip',
+            'duplicateClip',
+            'duplicateClipToNextBar',
+            'removeClip',
+            'renameClip',
+            'splitClip',
+            'trimClipStart',
+            'trimClipEnd',
+            'setClipFade',
+            'copyClip',
+            'cutClip',
+            'pasteClip',
+            'normalizeClip',
+            'reverseClip',
+            'glueClips',
+            'nudgeClip',
+            'crossfadeClips',
+            'setClipGain',
+            'setClipColor',
+            'lockClip',
+            'setClipLoop',
+            'setClipLoopLength',
+            'consolidateSelection',
+            'bounceSelection',
+            'muteClip',
+            'audioToMidi',
+            'deleteTime',
+            'insertTime',
+            'duplicateTimeRange',
+            'stripSilence',
+            'detectTempo',
+            'detectKey',
+            'arpeggiate',
         ];
 
         const actualKeys = Object.keys(clipHandlers);

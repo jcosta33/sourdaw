@@ -1,5 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+
 import { midiLearnStore, type MidiMapping, type MidiMappingTargetType } from '../../stores/midiLearnStore';
 
 const VALUE_RANGES: Record<MidiMappingTargetType, { min: number; max: number }> = {
@@ -11,7 +12,7 @@ const VALUE_RANGES: Record<MidiMappingTargetType, { min: number; max: number }> 
 
 export const completeMidiLearn = inject({ logger })(
     ({ logger }) =>
-        (function completeMidiLearn(channel: number, cc: number): void {
+        function completeMidiLearn(channel: number, cc: number): void {
             const state = midiLearnStore.value;
             if (!state || !state.isLearning || !state.learningTarget) {
                 return;
@@ -49,5 +50,5 @@ export const completeMidiLearn = inject({ logger })(
                 isLearning: false,
                 learningTarget: null,
             });
-        })
+        }
 );

@@ -48,13 +48,13 @@ describe('switchBranch', () => {
 
     it('should set activeBranch on the fork node', () => {
         switchBranch('fork', 1);
-        expect(undoTreeStore.value?.tree.nodes['fork']?.activeBranch).toBe(1);
+        expect(undoTreeStore.value?.tree.nodes.fork?.activeBranch).toBe(1);
     });
 
     it('should not mutate when branch index is out of range', () => {
         const before = undoTreeStore.value;
         switchBranch('fork', 9);
-        expect(undoTreeStore.value?.tree.nodes['fork']?.activeBranch).toBe(0);
+        expect(undoTreeStore.value?.tree.nodes.fork?.activeBranch).toBe(0);
         expect(undoTreeStore.value).toBe(before);
     });
 

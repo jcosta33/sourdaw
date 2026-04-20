@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { type Track } from '../../../models/Track';
+
 import { setMidiInputTrack } from '#/modules/AudioEngine/useCases/webMidiInput/setMidiInputTrack';
+
+import { type Track } from '../../../models/Track';
 import { selectTrack } from '../selectTrack';
 
 vi.mock('#/modules/AudioEngine/useCases/webMidiInput/setMidiInputTrack', () => ({
@@ -9,12 +11,12 @@ vi.mock('#/modules/AudioEngine/useCases/webMidiInput/setMidiInputTrack', () => (
 
 const mockUpdateTrackState = vi.fn();
 vi.mock('../../../repositories/track/updateTrackState', () => ({
-    updateTrackState: (...args: any[]) => mockUpdateTrackState(...args)
+    updateTrackState: (...args: any[]) => mockUpdateTrackState(...args),
 }));
 
 const mockGetTrackById = vi.fn();
 vi.mock('../../../repositories/track/getTrackById', () => ({
-    getTrackById: (...args: any[]) => mockGetTrackById(...args)
+    getTrackById: (...args: any[]) => mockGetTrackById(...args),
 }));
 
 const mockStoreValue = { selectedTrackId: null as string | null };

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
 import { audioBufferToWav } from '../wavEncoder';
 
 function createMockAudioBuffer(channels: number, length: number, sampleRate: number): AudioBuffer {
@@ -34,11 +35,17 @@ describe('audioBufferToWav', () => {
         const view = new DataView(arrayBuffer);
 
         // RIFF header
-        expect(String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3))).toBe('RIFF');
+        expect(String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3))).toBe(
+            'RIFF'
+        );
         // WAVE header
-        expect(String.fromCharCode(view.getUint8(8), view.getUint8(9), view.getUint8(10), view.getUint8(11))).toBe('WAVE');
+        expect(String.fromCharCode(view.getUint8(8), view.getUint8(9), view.getUint8(10), view.getUint8(11))).toBe(
+            'WAVE'
+        );
         // fmt header
-        expect(String.fromCharCode(view.getUint8(12), view.getUint8(13), view.getUint8(14), view.getUint8(15))).toBe('fmt ');
+        expect(String.fromCharCode(view.getUint8(12), view.getUint8(13), view.getUint8(14), view.getUint8(15))).toBe(
+            'fmt '
+        );
         // AudioFormat (1 for PCM)
         expect(view.getUint16(20, true)).toBe(1);
         // NumChannels
@@ -52,7 +59,7 @@ describe('audioBufferToWav', () => {
         const dataOffset = 44;
         const s1 = view.getInt16(dataOffset, true);
         const s2 = view.getInt16(dataOffset + 2, true);
-        
+
         // With dither, it might be off by 1
         expect(s1).toBeGreaterThanOrEqual(0x7ffe);
         expect(s1).toBeLessThanOrEqual(0x7fff);
@@ -90,10 +97,10 @@ describe('audioBufferToWav', () => {
         const onProgress = vi.fn();
 
         const promise = audioBufferToWav(buffer, 16, onProgress);
-        
+
         // Wait for first yield
         await vi.runAllTimersAsync();
-        
+
         expect(onProgress).toHaveBeenCalled();
         const result = await promise;
         expect(result).toBeDefined();

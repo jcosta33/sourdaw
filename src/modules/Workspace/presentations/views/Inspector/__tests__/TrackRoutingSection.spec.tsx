@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TrackRoutingSection } from '../TrackRoutingSection';
+
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
@@ -32,9 +34,7 @@ vi.mock('#/components/daw/DawReadoutRow', () => ({
 }));
 
 vi.mock('../../../components/Inspector/SurfaceCard', () => ({
-    SurfaceCard: ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="surface-card">{children}</div>
-    ),
+    SurfaceCard: ({ children }: { children: React.ReactNode }) => <div data-testid="surface-card">{children}</div>,
 }));
 
 describe('TrackRoutingSection', () => {
@@ -88,9 +88,7 @@ describe('TrackRoutingSection', () => {
 
     it('should display outgoing routes', () => {
         mockUseStore.mockReturnValue({
-            routes: [
-                { id: 'route-1', sourceId: 'track-1', destinationId: 'bus-1', gain: 0.8 },
-            ],
+            routes: [{ id: 'route-1', sourceId: 'track-1', destinationId: 'bus-1', gain: 0.8 }],
         });
         render(<TrackRoutingSection track={mockTrack} />);
         expect(screen.getByText('→ bus-1')).toBeInTheDocument();
@@ -99,9 +97,7 @@ describe('TrackRoutingSection', () => {
 
     it('should display incoming routes', () => {
         mockUseStore.mockReturnValue({
-            routes: [
-                { id: 'route-1', sourceId: 'track-2', destinationId: 'track-1', gain: 0.5 },
-            ],
+            routes: [{ id: 'route-1', sourceId: 'track-2', destinationId: 'track-1', gain: 0.5 }],
         });
         render(<TrackRoutingSection track={mockTrack} />);
         expect(screen.getByText('← track-2')).toBeInTheDocument();
@@ -110,9 +106,7 @@ describe('TrackRoutingSection', () => {
 
     it('should render surface cards for routes', () => {
         mockUseStore.mockReturnValue({
-            routes: [
-                { id: 'route-1', sourceId: 'track-1', destinationId: 'bus-1', gain: 0.8 },
-            ],
+            routes: [{ id: 'route-1', sourceId: 'track-1', destinationId: 'bus-1', gain: 0.8 }],
         });
         render(<TrackRoutingSection track={mockTrack} />);
         expect(screen.getByTestId('surface-card')).toBeInTheDocument();

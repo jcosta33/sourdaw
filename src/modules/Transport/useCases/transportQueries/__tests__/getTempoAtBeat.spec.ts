@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { getTempoAtBeat } from '../getTempoAtBeat';
 
 const mocks = vi.hoisted(() => ({

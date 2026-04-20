@@ -1,6 +1,4 @@
-import {
-    type SpectralDescriptors,
-} from '../models/LibraryTypes';
+import { type SpectralDescriptors } from '../models/LibraryTypes';
 
 /**
  * Background analysis service for audio samples.

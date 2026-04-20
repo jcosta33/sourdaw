@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { resetMidiState as repoReset } from '../../../repositories/webMidi/lifecycle/resetMidiState';
 import { resetMidiState } from '../resetMidiState';
 

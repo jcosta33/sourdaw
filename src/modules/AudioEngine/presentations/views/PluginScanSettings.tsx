@@ -1,16 +1,18 @@
 import { type ReactElement, useState } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
+import { FolderOpen, Trash2, RefreshCw, Loader2, Plus, AlertCircle, CheckCircle2, Plug, Monitor } from 'lucide-react';
+
+import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
-import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { Button } from '#/components/ui/button';
-import { FolderOpen, Trash2, RefreshCw, Loader2, Plus, AlertCircle, CheckCircle2, Plug, Monitor } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+import { useStore } from '#/infra/store/useStore';
 import { pluginScanStore, defaultPluginScanState } from '#/modules/Plugin/stores';
 import { startPluginScan, addScanPath, removeScanPath } from '#/modules/Plugin/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
-import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 
 export const PluginScanSettings = (): ReactElement | null => {
     const state = useStore(pluginScanStore, defaultPluginScanState);

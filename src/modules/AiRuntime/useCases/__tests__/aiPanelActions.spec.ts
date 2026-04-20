@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { runAppAction } from '../aiPanelActions/runAppAction';
-import { undoLastAction } from '../aiPanelActions/undoLastAction';
 import { toggleChat } from '../aiPanelActions/toggleChat';
+import { undoLastAction } from '../aiPanelActions/undoLastAction';
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),

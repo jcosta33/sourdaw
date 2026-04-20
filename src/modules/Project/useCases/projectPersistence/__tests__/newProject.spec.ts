@@ -1,13 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { Container } from '#/infra/di/Container';
-import { newProject } from '../newProject';
-import { stopPlayback } from '#/modules/Transport/useCases';
-import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
-import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
-import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { addTrack } from '#/modules/Arrangement/useCases';
+import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { clearUndoHistory } from '#/modules/Command/useCases';
+import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
+import { stopPlayback } from '#/modules/Transport/useCases';
+
 import { removeProjectJson } from '../../../repositories/project/storageOperations';
+import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
+import { newProject } from '../newProject';
 
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();

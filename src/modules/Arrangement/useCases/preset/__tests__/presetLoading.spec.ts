@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { loadPresetToTrack } from '../presetLoading';
+
+import { addDeviceToStrip, updateDeviceParam, removeDeviceFromStrip } from '#/modules/AudioEngine/useCases';
+
 import { type SoundPreset } from '../../../models/SoundPreset';
 import { type Track } from '../../../models/Track';
 import { getTrackById } from '../../../repositories/track/getTrackById';
 import { updateTrack } from '../../../repositories/track/updateTrack';
 import { addDevice } from '../../device/addDevice';
 import { setDeviceParameter } from '../../device/setDeviceParameter/setDeviceParameter';
-import { addDeviceToStrip, updateDeviceParam, removeDeviceFromStrip } from '#/modules/AudioEngine/useCases';
+import { loadPresetToTrack } from '../presetLoading';
 
 vi.mock('../../../repositories/track/getTrackById', () => ({
     getTrackById: vi.fn(),
@@ -97,10 +99,7 @@ describe('loadPresetToTrack', () => {
             parameterValues: { size: 0.2 },
         });
 
-        loadPresetToTrack(
-            'ghost',
-            basePreset([{ type: 'reverb', name: 'Reverb', parameterValues: { size: 0.2 } }])
-        );
+        loadPresetToTrack('ghost', basePreset([{ type: 'reverb', name: 'Reverb', parameterValues: { size: 0.2 } }]));
 
         expect(removeDeviceFromStrip).not.toHaveBeenCalled();
         expect(addDevice).toHaveBeenCalledWith('ghost', 'Reverb');
@@ -121,4 +120,3 @@ describe('loadPresetToTrack', () => {
         expect(updateDeviceParam).toHaveBeenCalledWith('t2', expect.any(String), 'cutoff', 0.4);
     });
 });
-

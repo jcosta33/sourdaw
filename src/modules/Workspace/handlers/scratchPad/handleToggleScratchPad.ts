@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+
 import { workspaceStore } from '../../stores/workspaceStore';
 
 export const handleToggleScratchPad = createHandler<'toggleScratchPad'>({

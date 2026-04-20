@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { audioBufferToFlac as encode } from '../../repositories/audioEncoders/flacEncoder';
 import { audioBufferToFlac } from '../audioBufferToFlac';
 

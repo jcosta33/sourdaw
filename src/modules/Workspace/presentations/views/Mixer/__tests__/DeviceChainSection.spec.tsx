@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { TrackDummy } from '#/modules/Arrangement/__tests__/TrackDummy';
+
 import { DeviceChainSection } from '../DeviceChainSection';
 
 const renderWithTooltip = (ui: React.ReactElement) => {

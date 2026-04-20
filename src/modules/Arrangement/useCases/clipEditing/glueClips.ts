@@ -1,9 +1,10 @@
-import { getTrackState } from '../../repositories/track/getTrackState';
-import { updateTrack } from '../../repositories/track/updateTrack';
+import { logger } from '#/infra/logger/appLogger';
+import { midiStore } from '#/modules/MIDI/stores';
+
 import { type Clip } from '../../models/Track';
 import { getNextClipId } from '../../repositories/clipIdCounter';
-import { midiStore } from '#/modules/MIDI/stores';
-import { logger } from '#/infra/logger/appLogger';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { updateTrack } from '../../repositories/track/updateTrack';
 
 export function glueClips(clipIds: string[]): void {
     const state = getTrackState();
@@ -12,9 +13,7 @@ export function glueClips(clipIds: string[]): void {
     }
 
     // Guard: reject selections that span multiple tracks
-    const tracksWithMatchingClips = state.tracks.filter((t) =>
-        t.clips.some((c) => clipIds.includes(c.id))
-    );
+    const tracksWithMatchingClips = state.tracks.filter((t) => t.clips.some((c) => clipIds.includes(c.id)));
     if (tracksWithMatchingClips.length > 1) {
         logger.warn('glueClips: clips span multiple tracks — gluing is only supported within a single track');
         return;
@@ -31,8 +30,12 @@ export function glueClips(clipIds: string[]): void {
     let startBeat = Infinity;
     let endBeat = -Infinity;
     for (const c of clips) {
-        if (c.startBeat < startBeat) { startBeat = c.startBeat; }
-        if (c.endBeat > endBeat) { endBeat = c.endBeat; }
+        if (c.startBeat < startBeat) {
+            startBeat = c.startBeat;
+        }
+        if (c.endBeat > endBeat) {
+            endBeat = c.endBeat;
+        }
     }
     const gluedId = getNextClipId();
     const glued: Clip = {
@@ -73,9 +76,15 @@ export function glueClips(clipIds: string[]): void {
         }
 
         // Add merged data for the glued clip (only if there is data)
-        if (mergedNotes.length > 0) { newNotesByClipId[gluedId] = mergedNotes; }
-        if (mergedCc.length > 0) { newCcByClipId[gluedId] = mergedCc; }
-        if (mergedPb.length > 0) { newPbByClipId[gluedId] = mergedPb; }
+        if (mergedNotes.length > 0) {
+            newNotesByClipId[gluedId] = mergedNotes;
+        }
+        if (mergedCc.length > 0) {
+            newCcByClipId[gluedId] = mergedCc;
+        }
+        if (mergedPb.length > 0) {
+            newPbByClipId[gluedId] = mergedPb;
+        }
 
         midiStore.set({
             notesByClipId: newNotesByClipId,

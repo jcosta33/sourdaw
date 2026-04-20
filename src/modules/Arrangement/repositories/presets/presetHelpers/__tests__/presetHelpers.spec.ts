@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { synth } from '../synth';
+
 import { autopan } from '../autopan';
 import { bitcrusher } from '../bitcrusher';
 import { chorus } from '../chorus';
@@ -10,6 +10,7 @@ import { flanger } from '../flanger';
 import { limiter } from '../limiter';
 import { phaser } from '../phaser';
 import { reverb } from '../reverb';
+import { synth } from '../synth';
 import { tremolo } from '../tremolo';
 
 describe('presetHelpers', () => {

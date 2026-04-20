@@ -1,10 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { getTrackLatency } from '../compensation/helpers';
 
 const { mocks } = vi.hoisted(() => ({
     mocks: {
         getTrackStoreState: vi.fn().mockReturnValue(null),
-    }
+    },
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {

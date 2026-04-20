@@ -3,11 +3,8 @@
  * folder tree state, search, and filter state.
  */
 import { createStore } from '#/infra/store/createStore';
-import {
-    type LibraryRoot,
-    type SampleRecord,
-    type FolderNode,
-} from '../models/LibraryTypes';
+
+import { type LibraryRoot, type SampleRecord, type FolderNode } from '../models/LibraryTypes';
 
 export type LibrarySortField = 'name' | 'date' | 'duration' | 'size' | 'path';
 export type LibrarySortDirection = 'asc' | 'desc';

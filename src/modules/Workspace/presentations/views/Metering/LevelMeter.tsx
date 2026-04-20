@@ -1,9 +1,10 @@
 import { type ReactElement, useEffect, useRef } from 'react';
+
 import { DawMeterFrame } from '#/components/daw/DawMeterFrame';
-import { cn } from '#/utils/Styles/cn';
-import { resolveToken } from '#/utils/UI/resolveToken';
 import { getTrackPeakLevel, getMasterPeakLevel } from '#/modules/AudioEngine/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
+import { cn } from '#/utils/Styles/cn';
+import { resolveToken } from '#/utils/UI/resolveToken';
 
 type LevelMeterProps = {
     trackId: string | null;

@@ -6,15 +6,21 @@ import { embeddingStore } from '../stores/embeddingStore';
  */
 export function findSimilarSamples(sampleId: string, limit = 10): string[] {
     const state = embeddingStore.value;
-    if (!state) return [];
+    if (!state) {
+        return [];
+    }
 
     const target = state.embeddings.get(sampleId);
-    if (!target) return [];
+    if (!target) {
+        return [];
+    }
 
     const scores: { id: string; distance: number }[] = [];
 
     for (const [id, vector] of state.embeddings.entries()) {
-        if (id === sampleId) continue;
+        if (id === sampleId) {
+            continue;
+        }
         const dist = cosineDistance(target, vector);
         scores.push({ id, distance: dist });
     }
@@ -26,7 +32,9 @@ export function findSimilarSamples(sampleId: string, limit = 10): string[] {
 }
 
 function cosineDistance(a: Float32Array, b: Float32Array): number {
-    if (a.length !== b.length) return 1;
+    if (a.length !== b.length) {
+        return 1;
+    }
     let dot = 0;
     let normA = 0;
     let normB = 0;
@@ -35,6 +43,8 @@ function cosineDistance(a: Float32Array, b: Float32Array): number {
         normA += a[i]! * a[i]!;
         normB += b[i]! * b[i]!;
     }
-    if (normA === 0 || normB === 0) return 1;
+    if (normA === 0 || normB === 0) {
+        return 1;
+    }
     return 1 - dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }

@@ -1,25 +1,28 @@
 import { type ReactElement } from 'react';
+
 import { useStore } from '#/infra/store/useStore';
-import { useWorkspaceState } from '../hooks/useWorkspaceState';
-import { useTransportState } from '../hooks/useTransportState';
-import { useAudioRecordingState } from '../hooks/useAudioRecordingState';
-import { useUndoState } from '../hooks/useUndoState';
-import { useProjectState } from '../hooks/useProjectState';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { type Track } from '../../models/TrackViewTypes';
-import { TransportControls } from './Transport/TransportControls';
-import { AutoScrollToggle } from './Transport/AutoScrollToggle';
-import { PlayheadDisplay } from './Transport/PlayheadDisplay';
-import { UndoRedoButtons } from './Transport/UndoRedoButtons';
-import { SoloModeSelector } from './Transport/SoloModeSelector';
-import { VoiceButton } from '../components/Transport/VoiceButton';
-import { PanelToggles } from './Transport/PanelToggles';
-import { ProjectName } from './Transport/ProjectName';
-import { PromptBar } from './PromptBar';
-import { ToolSelector } from './ToolSelector';
-import { TempoEditor } from './TempoEditor';
 import { RecentProjectsMenu, ArrangementSelector } from '#/modules/Project/presentations/views';
+
+import { type Track } from '../../models/TrackViewTypes';
 import { toggleRippleEditing } from '../../useCases/rippleEditing';
+import { VoiceButton } from '../components/Transport/VoiceButton';
+import { useAudioRecordingState } from '../hooks/useAudioRecordingState';
+import { useProjectState } from '../hooks/useProjectState';
+import { useTransportState } from '../hooks/useTransportState';
+import { useUndoState } from '../hooks/useUndoState';
+import { useWorkspaceState } from '../hooks/useWorkspaceState';
+
+import { PromptBar } from './PromptBar';
+import { TempoEditor } from './TempoEditor';
+import { ToolSelector } from './ToolSelector';
+import { AutoScrollToggle } from './Transport/AutoScrollToggle';
+import { PanelToggles } from './Transport/PanelToggles';
+import { PlayheadDisplay } from './Transport/PlayheadDisplay';
+import { ProjectName } from './Transport/ProjectName';
+import { SoloModeSelector } from './Transport/SoloModeSelector';
+import { TransportControls } from './Transport/TransportControls';
+import { UndoRedoButtons } from './Transport/UndoRedoButtons';
 
 const getTracks = (state: { tracks: Track[] } | null): Track[] => state?.tracks ?? [];
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { type SetlistItem, type SetlistState } from '../../../stores/setlistStore';
 import { updateSetlistItem } from '../updateSetlistItem';
 
@@ -41,7 +42,7 @@ describe('updateSetlistItem', () => {
             totalDuration: 1,
         };
         mockSetlistStore.value = state;
-        
+
         updateSetlistItem('x', { name: 'New' });
         const next = mockSetlistStore.set.mock.calls[0]![0] as SetlistState;
         expect(next.items[0]!.name).toBe('New');

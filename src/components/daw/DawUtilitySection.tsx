@@ -1,7 +1,8 @@
 import { type HTMLAttributes, type ReactElement, type ReactNode } from 'react';
 
-import { DawEyebrowLabel } from './DawEyebrowLabel';
 import { cn } from '#/utils/Styles/cn';
+
+import { DawEyebrowLabel } from './DawEyebrowLabel';
 
 type DawUtilitySectionProps = HTMLAttributes<HTMLElement> & {
     title: ReactNode;

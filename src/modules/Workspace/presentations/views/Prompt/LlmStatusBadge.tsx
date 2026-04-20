@@ -1,6 +1,11 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
+
 import { Cpu, Download, HardDrive, Loader2, Power, Sparkles, Zap, Check } from 'lucide-react';
 
+import { DawChooserCard } from '#/components/daw/DawChooserCard';
+import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
+import { DawStatusDot } from '#/components/daw/DawStatusDot';
+import { Button } from '#/components/ui/button';
 import {
     isLlmAvailable,
     resolveBackend,
@@ -10,10 +15,6 @@ import {
     WEBLLM_MODELS,
     getActiveModelId,
 } from '#/modules/AiRuntime/useCases';
-import { Button } from '#/components/ui/button';
-import { DawChooserCard } from '#/components/daw/DawChooserCard';
-import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
-import { DawStatusDot } from '#/components/daw/DawStatusDot';
 
 type LlmStatusBadgeProps = {
     status: BadgeLlmStatus;

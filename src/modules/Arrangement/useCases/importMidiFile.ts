@@ -1,7 +1,9 @@
 import { commitUndoEntry, createCallbackUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { readMidiFile } from '#/modules/MIDI/useCases';
+
 import { type Clip, trackStore } from '../stores/trackStore';
+
 import { createTrack } from './createTrack';
 import { getNextClipId } from './getNextClipId';
 import { getTrackStoreState } from './getTrackStoreState';
@@ -32,7 +34,9 @@ export async function importMidiFile(file: File): Promise<void> {
         let maxBeat = 4;
         for (const note of parsedTrack.notes) {
             const v = note.startBeat + note.duration;
-            if (v > maxBeat) { maxBeat = v; }
+            if (v > maxBeat) {
+                maxBeat = v;
+            }
         }
         const endBeat = Math.ceil(maxBeat / 4) * 4;
         const clip: Clip = {
@@ -70,9 +74,7 @@ export async function importMidiFile(file: File): Promise<void> {
     const trackSnapshotAfter = trackStore.value;
     const midiSnapshotAfter = midiStore.value;
     const importedName =
-        parsedTracks.length === 1
-            ? (parsedTracks[0]?.name ?? 'MIDI file')
-            : `${parsedTracks.length} MIDI tracks`;
+        parsedTracks.length === 1 ? (parsedTracks[0]?.name ?? 'MIDI file') : `${parsedTracks.length} MIDI tracks`;
 
     commitUndoEntry(
         createCallbackUndoEntry(

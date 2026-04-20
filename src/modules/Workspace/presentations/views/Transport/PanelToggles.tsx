@@ -1,4 +1,5 @@
 import { type ReactElement } from 'react';
+
 import {
     PanelLeft,
     PanelRight,
@@ -11,22 +12,24 @@ import {
     Layers,
     Link as LinkIcon,
 } from 'lucide-react';
+
 import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-import { toggleSidebar } from '../../../useCases/togglePanel/panelToggles/toggleSidebar';
-import { toggleInspector } from '../../../useCases/togglePanel/panelToggles/toggleInspector';
-import { toggleMixer } from '../../../useCases/togglePanel/panelToggles/toggleMixer';
-import { toggleChatPanel } from '../../../useCases/togglePanel/panelToggles/toggleChatPanel';
-import { toggleTrackList } from '../../../useCases/togglePanel/panelToggles/toggleTrackList';
-import { toggleVirtualKeyboard } from '../../../useCases/togglePanel/panelToggles/toggleVirtualKeyboard';
-import { toggleDualView } from '../../../useCases/togglePanel/panelToggles';
 import { useStore } from '#/infra/store/useStore';
 import { aiStore } from '#/modules/AiGeneration/stores';
 import { toggleAiPanel } from '#/modules/AiGeneration/useCases';
 import { linkStatusStore, defaultLinkStatus } from '#/modules/AudioEngine/stores';
 import { enableLink, disableLink } from '#/modules/AudioEngine/useCases';
+
 import { openPreferencesDialog } from '../../../useCases/dialogs/openPreferencesDialog';
+import { toggleDualView } from '../../../useCases/togglePanel/panelToggles';
+import { toggleChatPanel } from '../../../useCases/togglePanel/panelToggles/toggleChatPanel';
+import { toggleInspector } from '../../../useCases/togglePanel/panelToggles/toggleInspector';
+import { toggleMixer } from '../../../useCases/togglePanel/panelToggles/toggleMixer';
+import { toggleSidebar } from '../../../useCases/togglePanel/panelToggles/toggleSidebar';
+import { toggleTrackList } from '../../../useCases/togglePanel/panelToggles/toggleTrackList';
+import { toggleVirtualKeyboard } from '../../../useCases/togglePanel/panelToggles/toggleVirtualKeyboard';
 
 type AiPanelState = {
     isPanelOpen: boolean;

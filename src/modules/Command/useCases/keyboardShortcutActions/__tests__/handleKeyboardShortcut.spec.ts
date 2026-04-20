@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
+
+import { eventBus } from '#/app/registerDependencies';
+
 import { handleKeydown, type KeyDescriptor } from '../handleKeyboardShortcut/handleKeydown';
 import { handleKeyup } from '../handleKeyboardShortcut/handleKeyup';
-import { eventBus } from '#/app/registerDependencies';
 
 vi.mock('#/app/registerDependencies', () => ({
     eventBus: {

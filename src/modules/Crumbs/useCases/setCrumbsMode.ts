@@ -4,15 +4,17 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
-import type { CrumbsMode } from '../models/CrumbsTypes';
+
 import { setCrumbsMode } from '../repositories/crumbsBridge';
 import { setMode } from '../stores/crumbsStore';
+
+import type { CrumbsMode } from '../models/CrumbsTypes';
 
 export async function switchCrumbsMode(instanceId: string, mode: CrumbsMode): Promise<void> {
     setMode(instanceId, mode);
     try {
         await setCrumbsMode(instanceId, mode);
-    } catch (err) {
-        logger.warn('Failed to crumbs mode:', err);
+    } catch (error) {
+        logger.warn('Failed to crumbs mode:', error);
     }
 }

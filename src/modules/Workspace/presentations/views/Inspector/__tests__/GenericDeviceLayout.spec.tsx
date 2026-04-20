@@ -1,7 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
+
 import { GenericDeviceLayout } from '../GenericDeviceLayout';
+
 import type { DeviceLayoutProps } from '../deviceLayoutRegistry';
 
 // Mock external dependencies
@@ -23,13 +26,7 @@ vi.mock('#/components/daw/DawHeaderBand', () => ({
 }));
 
 vi.mock('../../../components/Inspector/SurfaceCard', () => ({
-    SurfaceCard: ({
-        children,
-        className,
-    }: {
-        children: React.ReactNode;
-        className?: string;
-    }) => (
+    SurfaceCard: ({ children, className }: { children: React.ReactNode; className?: string }) => (
         <div data-testid="surface-card" className={className}>
             {children}
         </div>
@@ -100,10 +97,44 @@ describe('GenericDeviceLayout', () => {
             device: mockDevice,
             trackId: 'track-1',
             parameters: [
-                { id: 'gain', deviceId: 'device-1', name: 'Gain', type: 'float', value: 0.5, defaultValue: 0.5, minValue: 0, maxValue: 1, unit: '', automatable: true, hasAutomation: false },
-                { id: 'mix', deviceId: 'device-1', name: 'Mix', type: 'float', value: 0.5, defaultValue: 0.5, minValue: 0, maxValue: 1, unit: '', automatable: true, hasAutomation: false },
+                {
+                    id: 'gain',
+                    deviceId: 'device-1',
+                    name: 'Gain',
+                    type: 'float',
+                    value: 0.5,
+                    defaultValue: 0.5,
+                    minValue: 0,
+                    maxValue: 1,
+                    unit: '',
+                    automatable: true,
+                    hasAutomation: false,
+                },
+                {
+                    id: 'mix',
+                    deviceId: 'device-1',
+                    name: 'Mix',
+                    type: 'float',
+                    value: 0.5,
+                    defaultValue: 0.5,
+                    minValue: 0,
+                    maxValue: 1,
+                    unit: '',
+                    automatable: true,
+                    hasAutomation: false,
+                },
                 ...Array.from({ length: 9 }, (_, i) => ({
-                    id: `dummy-${i}`, deviceId: 'device-1', name: `Dummy ${i}`, type: 'float' as const, value: 0.5, defaultValue: 0.5, minValue: 0, maxValue: 1, unit: '', automatable: true, hasAutomation: false
+                    id: `dummy-${i}`,
+                    deviceId: 'device-1',
+                    name: `Dummy ${i}`,
+                    type: 'float' as const,
+                    value: 0.5,
+                    defaultValue: 0.5,
+                    minValue: 0,
+                    maxValue: 1,
+                    unit: '',
+                    automatable: true,
+                    hasAutomation: false,
                 })),
             ],
         };
@@ -116,10 +147,44 @@ describe('GenericDeviceLayout', () => {
             device: mockDevice,
             trackId: 'track-1',
             parameters: [
-                { id: 'filterCutoff', deviceId: 'device-1', name: 'Cutoff', type: 'float', value: 1000, defaultValue: 1000, minValue: 20, maxValue: 20000, unit: 'Hz', automatable: true, hasAutomation: false },
-                { id: 'filterResonance', deviceId: 'device-1', name: 'Resonance', type: 'float', value: 1, defaultValue: 1, minValue: 0.1, maxValue: 20, unit: '', automatable: true, hasAutomation: false },
+                {
+                    id: 'filterCutoff',
+                    deviceId: 'device-1',
+                    name: 'Cutoff',
+                    type: 'float',
+                    value: 1000,
+                    defaultValue: 1000,
+                    minValue: 20,
+                    maxValue: 20000,
+                    unit: 'Hz',
+                    automatable: true,
+                    hasAutomation: false,
+                },
+                {
+                    id: 'filterResonance',
+                    deviceId: 'device-1',
+                    name: 'Resonance',
+                    type: 'float',
+                    value: 1,
+                    defaultValue: 1,
+                    minValue: 0.1,
+                    maxValue: 20,
+                    unit: '',
+                    automatable: true,
+                    hasAutomation: false,
+                },
                 ...Array.from({ length: 9 }, (_, i) => ({
-                    id: `dummy-${i}`, deviceId: 'device-1', name: `Dummy ${i}`, type: 'float' as const, value: 0.5, defaultValue: 0.5, minValue: 0, maxValue: 1, unit: '', automatable: true, hasAutomation: false
+                    id: `dummy-${i}`,
+                    deviceId: 'device-1',
+                    name: `Dummy ${i}`,
+                    type: 'float' as const,
+                    value: 0.5,
+                    defaultValue: 0.5,
+                    minValue: 0,
+                    maxValue: 1,
+                    unit: '',
+                    automatable: true,
+                    hasAutomation: false,
                 })),
             ],
         };

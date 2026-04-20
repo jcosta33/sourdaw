@@ -5,7 +5,11 @@ export { setCvValue } from './cvGate/cvOutputOperations/setCvValue';
 export { setVoltageStandard } from './cvGate/cvOutputOperations/setVoltageStandard';
 export { setClockDivision } from './cvGate/cvOutputOperations/setClockDivision';
 export { scheduleKitNote } from './drumKitSynth';
-export { KIT_808_DEF, DRUM_KIT_DEFS, getDrumKitDefByIndex } from './drumSynthEngine/kitDefinitions/getDrumKitDefByIndex';
+export {
+    KIT_808_DEF,
+    DRUM_KIT_DEFS,
+    getDrumKitDefByIndex,
+} from './drumSynthEngine/kitDefinitions/getDrumKitDefByIndex';
 export { findVoiceByNote, scheduleDrumKitNote } from './drumSynthEngine/kitDefinitions/scheduleDrumKitNote';
 export { scheduleFaustNote } from './faustInstrumentScheduler/scheduleFaustNote';
 export { startFaustNote } from './faustInstrumentScheduler/startFaustNote';

@@ -73,8 +73,8 @@ export async function fetchAndDecode(url: string): Promise<{
                     }
                 }
                 resolve({ data, frameCount, channels, sampleRate });
-            } catch (err) {
-                reject(err);
+            } catch (error) {
+                reject(error);
             }
         });
     });

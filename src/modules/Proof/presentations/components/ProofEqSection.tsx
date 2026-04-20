@@ -3,11 +3,14 @@
  * Knobs for freq/gain/Q per band, band type selector, M/S per-band.
  */
 import { type ReactElement } from 'react';
+
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import { type ProofPatch } from '../../models/ProofPatch';
+
 import { ProofEqCurve } from './ProofEqCurve';
 
 const BAND_TYPES = ['Peak', 'Lo Shelf', 'Hi Shelf', 'HP', 'LP'] as const;

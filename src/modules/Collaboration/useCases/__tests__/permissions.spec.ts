@@ -16,8 +16,8 @@ vi.mock('../../stores/collaborationStore', () => {
     };
 });
 
-import { PermissionManager } from '../permissions';
 import { type PeerConnectionManager } from '../../repositories/peerConnection';
+import { PermissionManager } from '../permissions';
 
 function makePeerManager(): PeerConnectionManager {
     return {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { generateNativeCompletion } from '../completions';
 
 const mocks = vi.hoisted(() => ({
@@ -49,8 +50,8 @@ describe('generateNativeCompletion', () => {
             mocks.fetch.mockResolvedValue({
                 ok: true,
                 json: async () => ({
-                    choices: [{ message: { content: 'Fetch response' } }]
-                })
+                    choices: [{ message: { content: 'Fetch response' } }],
+                }),
             });
 
             const result = await generateNativeCompletion('system prompt', 'hello');
@@ -61,12 +62,12 @@ describe('generateNativeCompletion', () => {
                 body: JSON.stringify({
                     messages: [
                         { role: 'system', content: 'system prompt' },
-                        { role: 'user', content: 'hello' }
+                        { role: 'user', content: 'hello' },
                     ],
                     temperature: 0.1,
                     max_tokens: 2048,
-                    seed: 0
-                })
+                    seed: 0,
+                }),
             });
             expect(result).toBe('Fetch response');
         });
@@ -75,10 +76,12 @@ describe('generateNativeCompletion', () => {
             mocks.fetch.mockResolvedValue({
                 ok: false,
                 status: 500,
-                text: async () => 'Internal Server Error'
+                text: async () => 'Internal Server Error',
             });
 
-            await expect(generateNativeCompletion('sys', 'user')).rejects.toThrow('llama-server error 500: Internal Server Error');
+            await expect(generateNativeCompletion('sys', 'user')).rejects.toThrow(
+                'llama-server error 500: Internal Server Error'
+            );
         });
     });
 });

@@ -4,6 +4,7 @@
  * Shows band regions with color coding and crossover frequency handles.
  */
 import { type ReactElement, useRef } from 'react';
+
 import { type BacteriaCrossoverMode } from '../../models/BacteriaPatch';
 
 type CrossoverDisplayProps = {
@@ -43,7 +44,7 @@ function xToFreq(x: number, width: number): number {
     const minLog = Math.log10(20);
     const maxLog = Math.log10(20000);
     const log = minLog + (x / width) * (maxLog - minLog);
-    return Math.round(Math.pow(10, log));
+    return Math.round(10 ** log);
 }
 
 const DISPLAY_HEIGHT = 80;

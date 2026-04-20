@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+
 import type { DeviceLayoutProps } from '../../deviceLayoutRegistry';
 
 // Mock external dependencies
@@ -20,9 +21,7 @@ vi.mock('../../../components/ModulationLFO', () => ({
 }));
 
 vi.mock('../../../../components/Inspector/SurfaceCard', () => ({
-    SurfaceCard: ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="surface-card">{children}</div>
-    ),
+    SurfaceCard: ({ children }: { children: React.ReactNode }) => <div data-testid="surface-card">{children}</div>,
 }));
 
 vi.mock('../../DeviceParameterControl', () => ({
@@ -45,9 +44,45 @@ describe('ChorusLayout', () => {
     };
 
     const mockParameters = [
-        { id: 'chorus-rate', name: 'Rate', type: 'float', value: 1.5, defaultValue: 1.5, minValue: 0, maxValue: 20, unit: 'Hz', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-        { id: 'chorus-depth', name: 'Depth', type: 'float', value: 5, defaultValue: 5, minValue: 0, maxValue: 100, unit: '%', automatable: true, hasAutomation: false, deviceId: 'device-1' },
-        { id: 'chorus-mix', name: 'Mix', type: 'float', value: 0.5, defaultValue: 0.5, minValue: 0, maxValue: 1, unit: '', automatable: true, hasAutomation: false, deviceId: 'device-1' },
+        {
+            id: 'chorus-rate',
+            name: 'Rate',
+            type: 'float',
+            value: 1.5,
+            defaultValue: 1.5,
+            minValue: 0,
+            maxValue: 20,
+            unit: 'Hz',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
+        {
+            id: 'chorus-depth',
+            name: 'Depth',
+            type: 'float',
+            value: 5,
+            defaultValue: 5,
+            minValue: 0,
+            maxValue: 100,
+            unit: '%',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
+        {
+            id: 'chorus-mix',
+            name: 'Mix',
+            type: 'float',
+            value: 0.5,
+            defaultValue: 0.5,
+            minValue: 0,
+            maxValue: 1,
+            unit: '',
+            automatable: true,
+            hasAutomation: false,
+            deviceId: 'device-1',
+        },
     ];
 
     const mockProps: DeviceLayoutProps = {

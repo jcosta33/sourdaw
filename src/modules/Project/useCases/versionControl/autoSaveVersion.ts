@@ -1,4 +1,5 @@
 import { versionControlStore } from '../../stores/versionControlStore';
+
 import { createProjectVersion } from './createProjectVersion';
 
 export function autoSaveVersion(): void {

@@ -1,6 +1,6 @@
 import { MIDI_CC } from '../../../models/WebMidiTypes';
-import { getMidiAccess, getActiveInput, activeNotes, channelToNote } from '../state';
 import { audioEngine } from '../../createWebAudioEngine';
+import { getMidiAccess, getActiveInput, activeNotes, channelToNote } from '../state';
 
 export function resetMidiState(): void {
     for (const [note, noteData] of activeNotes) {

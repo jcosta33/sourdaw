@@ -1,5 +1,5 @@
-import { type Store, type StoreOptions } from './types';
 import { createMemoryStorage } from './storage/createMemoryStorage';
+import { type Store, type StoreOptions } from './types';
 
 export const createStore = <TData>(options: StoreOptions<TData> = {}): Store<TData> => {
     const logger = options.logger;

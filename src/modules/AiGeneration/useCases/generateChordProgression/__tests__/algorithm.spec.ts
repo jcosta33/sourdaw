@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { generateChordProgression } from '../algorithm';
 
 describe('generateChordProgression (algorithm)', () => {
@@ -39,12 +40,12 @@ describe('generateChordProgression (algorithm)', () => {
             rhythm: 'whole',
             seed: 1,
         });
-        
+
         // 4 bars * 1 event per bar = 4 events. Each chord has 3 or 4 notes.
         // For jazz, we use 7ths, so 4 notes per chord.
         // 4 events * 4 notes = 16 notes.
         expect(resultWhole.notes.length).toBe(16);
-        
+
         // 2 bars of 'quarter' rhythm = 8 chords total
         const resultQuarter = generateChordProgression({
             style: 'pop',
@@ -72,7 +73,7 @@ describe('generateChordProgression (algorithm)', () => {
 
         // 1 event * 2 notes = 2 notes total
         expect(result.notes.length).toBe(2);
-        
+
         // Check that it's a root and fifth relationship (7 semitones)
         const pitch1 = result.notes[0]!.pitch;
         const pitch2 = result.notes[1]!.pitch;

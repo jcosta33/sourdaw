@@ -1,13 +1,17 @@
 import { type ReactElement, type WheelEvent, useRef } from 'react';
-import { DawBlockedState } from '#/components/daw/DawBlockedState';
-import { timelineViewStore, scrollTimeline, setScrollY } from '#/modules/Arrangement/stores';
-import { ArrangementBar } from '#/modules/Arrangement/presentations/views';
-import { useTracks } from '../hooks/useTracks';
-import { TrackAutomationSection } from './AutomationView/TrackAutomationSection';
-import { Button } from '#/components/ui/button';
+
 import { X } from 'lucide-react';
-import { toggleAutomationPanel } from '../../useCases/togglePanel/panelToggles/toggleAutomationPanel';
+
+import { DawBlockedState } from '#/components/daw/DawBlockedState';
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
+import { ArrangementBar } from '#/modules/Arrangement/presentations/views';
+import { timelineViewStore, scrollTimeline, setScrollY } from '#/modules/Arrangement/stores';
+
+import { toggleAutomationPanel } from '../../useCases/togglePanel/panelToggles/toggleAutomationPanel';
+import { useTracks } from '../hooks/useTracks';
+
+import { TrackAutomationSection } from './AutomationView/TrackAutomationSection';
 
 type AutomationTimelineState = {
     scrollX: number;

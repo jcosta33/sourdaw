@@ -1,7 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
+
 import { type ArticulationType } from '../../models/LevainPatch';
-import type { SampleLodConfig } from './helpers';
+
 import { fetchAndDecode } from './helpers';
+
+import type { SampleLodConfig } from './helpers';
 
 export type ManifestZone = {
     file: string;
@@ -81,7 +84,7 @@ export async function loadInstrumentFromManifest(
     // Collect all unique sample file URLs.
     const allZones: { zone: ManifestZone; artId: number }[] = [];
     let numMics = manifest.micPositions.length;
-    let numArticulations = manifest.articulations.length;
+    const numArticulations = manifest.articulations.length;
 
     for (const art of manifest.articulations) {
         for (const zone of art.zones) {

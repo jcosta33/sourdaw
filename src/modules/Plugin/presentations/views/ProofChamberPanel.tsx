@@ -1,18 +1,22 @@
 import { type ComponentProps, type ReactElement, type ReactNode, useEffect, useRef, useState } from 'react';
 
-import { logger } from '#/infra/logger/appLogger';
+import { Waves } from 'lucide-react';
+
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
 import { DawPluginInsetCard } from '#/components/daw/DawPluginInsetCard';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
-import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginMetricStrip } from '#/components/daw/DawPluginMetricStrip';
+import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginRail } from '#/components/daw/DawPluginRail';
 import { DawPluginReadoutList } from '#/components/daw/DawPluginReadoutList';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
-import { Waves } from 'lucide-react';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+import { logger } from '#/infra/logger/appLogger';
+import { useStore } from '#/infra/store/useStore';
+import { executeAppAction } from '#/modules/Command/useCases';
+
 import {
     type ProofChamberAlgorithm,
     ALGORITHM_MAP,
@@ -22,15 +26,12 @@ import {
     SPACE_PRESETS,
     type SpaceType,
 } from '../../models/ProofChamberState';
-import { DecayEqOverlay } from '../components/DecayEqOverlay';
-import { IrBrowser } from '../components/IrBrowser';
-import { SignalFlowDiagram } from '../components/SignalFlowDiagram';
-
 import { chamberStore } from '../../stores/chamberStore';
 import { registerChamberInstance } from '../../useCases/proofChamber/registerChamberInstance';
 import { updateChamberEngine } from '../../useCases/proofChamber/updateChamberEngine';
-import { useStore } from '#/infra/store/useStore';
-import { executeAppAction } from '#/modules/Command/useCases';
+import { DecayEqOverlay } from '../components/DecayEqOverlay';
+import { IrBrowser } from '../components/IrBrowser';
+import { SignalFlowDiagram } from '../components/SignalFlowDiagram';
 
 const SPACES: ReadonlyArray<{ id: SpaceType; label: string; mood: string }> = [
     { id: 'hall', label: 'Hall', mood: 'Wide bloom' },
@@ -180,7 +181,9 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
     function setParam(key: keyof ProofChamberEngineState, value: number | boolean): void {
         updateChamberEngine(deviceId, (prev: ProofChamberEngineState) => ({ ...prev, [key]: value }));
         const rustKey = PARAM_MAP[key];
-        if (!rustKey) return;
+        if (!rustKey) {
+            return;
+        }
         const numericValue = typeof value === 'boolean' ? (value ? 1 : 0) : value;
         executeAppAction({
             type: 'setDeviceParameter',
@@ -200,9 +203,13 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         });
 
         for (const [key, rawValue] of Object.entries(nextParams)) {
-            if (key === 'algorithm' || key === 'space') continue;
+            if (key === 'algorithm' || key === 'space') {
+                continue;
+            }
             const rustKey = PARAM_MAP[key];
-            if (!rustKey) continue;
+            if (!rustKey) {
+                continue;
+            }
 
             if (typeof rawValue === 'boolean') {
                 executeAppAction({

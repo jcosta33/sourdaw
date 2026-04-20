@@ -3,6 +3,7 @@
  * Each strip: volume fader, pan, mute/solo, send indicators.
  */
 import { type ReactElement } from 'react';
+
 import { type PadState } from '../../models/ToasterKit';
 
 type PadMixerProps = {

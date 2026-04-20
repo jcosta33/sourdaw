@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { removeTask } from '../removeTask';
+
 import { aiStore } from '../../../stores/aiStore';
+import { removeTask } from '../removeTask';
 
 describe('removeTask', () => {
     beforeEach(() => {
@@ -15,14 +16,14 @@ describe('removeTask', () => {
 
     it('removes the specified task by id', () => {
         removeTask('t1');
-        
+
         expect(aiStore.value!.tasks).toHaveLength(1);
         expect(aiStore.value!.tasks[0]!.id).toBe('t2');
     });
 
     it('does nothing if the task is not found', () => {
         removeTask('missing');
-        
+
         expect(aiStore.value!.tasks).toHaveLength(2);
     });
 });

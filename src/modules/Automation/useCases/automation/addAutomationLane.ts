@@ -1,5 +1,5 @@
-import { automationStore } from '../../stores/automationStore';
 import { createAutomationLane } from '../../models/Automation';
+import { automationStore } from '../../stores/automationStore';
 
 export function addAutomationLane(trackId: string, parameterId: string, parameterName: string): void {
     const state = automationStore.value;

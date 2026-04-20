@@ -1,11 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { summarizeFeatures } from '#/modules/AudioAnalysis/useCases';
 import { addMidiNote } from '#/modules/MIDI/useCases';
+
 import { addTrack } from '../addTrack';
-import { addClip } from '../clip/addClip';
 import { audioToMidi } from '../audioAnalysis/audioToMidi';
 import { detectKey } from '../audioAnalysis/detectKey';
 import * as helpers from '../audioAnalysis/helpers';
+import { addClip } from '../clip/addClip';
 
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     summarizeFeatures: vi.fn(),

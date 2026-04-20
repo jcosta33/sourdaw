@@ -90,7 +90,7 @@ export function normalizePeak(audio: Float32Array): void {
  * MIDI 69 (A4) = 440 Hz.
  */
 export function midiToHz(midiNote: number): number {
-    return 440 * Math.pow(2, (midiNote - 69) / 12);
+    return 440 * 2 ** ((midiNote - 69) / 12);
 }
 
 /**

@@ -1,6 +1,8 @@
 import { type ReactElement } from 'react';
-import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
+
 import { Undo2, Redo2 } from 'lucide-react';
+
+import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { undo, redo } from '#/modules/Command/useCases';

@@ -1,6 +1,6 @@
-import { createHandler } from '#/utils/createHandler';
-import { scaleVelocities } from '#/modules/MIDI/useCases';
 import { type VelocityCurve } from '#/modules/Arrangement/useCases';
+import { scaleVelocities } from '#/modules/MIDI/useCases';
+import { createHandler } from '#/utils/createHandler';
 
 export const handleScaleVelocities = createHandler<'scaleVelocities'>({
     execute: (a) => {

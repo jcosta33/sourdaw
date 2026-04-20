@@ -1,6 +1,7 @@
-import { updateTrack } from '../../repositories/track/updateTrack';
-import { getTrackById } from '../../repositories/track/getTrackById';
 import { setMidiInputTrack } from '#/modules/AudioEngine/useCases';
+
+import { getTrackById } from '../../repositories/track/getTrackById';
+import { updateTrack } from '../../repositories/track/updateTrack';
 
 export function armTrack(trackId: string, armed: boolean): void {
     updateTrack(trackId, (t) => ({ ...t, armed }));

@@ -1,5 +1,5 @@
 import { type ReactElement, useState } from 'react';
-import { cn } from '#/utils/Styles/cn';
+
 import {
     selectTrack,
     bypassDevice,
@@ -8,9 +8,11 @@ import {
     reorderDevices,
     getPlatformPlugins,
 } from '#/modules/Arrangement/useCases';
-import { openInspector } from '../../../useCases/togglePanel/panelToggles/openInspector';
-import { type Track } from '../../../models/TrackViewTypes';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/Plugin/useCases';
+import { cn } from '#/utils/Styles/cn';
+
+import { type Track } from '../../../models/TrackViewTypes';
+import { openInspector } from '../../../useCases/togglePanel/panelToggles/openInspector';
 import { MixerInsetButton } from '../../components/Mixer/MixerInsetButton';
 import { MixerSection } from '../../components/Mixer/MixerSection';
 

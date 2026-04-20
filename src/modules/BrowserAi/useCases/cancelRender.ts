@@ -6,9 +6,10 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { cancelQueuedRender, updateRenderStatus, renderQueueStore } from '../stores/renderQueueStore';
-import { clearActiveRender } from '../stores/inferenceProgressStore';
+
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
+import { clearActiveRender } from '../stores/inferenceProgressStore';
+import { cancelQueuedRender, updateRenderStatus, renderQueueStore } from '../stores/renderQueueStore';
 
 type CancelRenderInput = {
     phraseId: string;

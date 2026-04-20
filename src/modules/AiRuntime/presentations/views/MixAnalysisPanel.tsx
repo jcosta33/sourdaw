@@ -1,15 +1,18 @@
 import { type ReactElement } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
+import { Activity, RefreshCw, Wrench, X } from 'lucide-react';
+
 import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
+import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
-import { Activity, RefreshCw, Wrench, X } from 'lucide-react';
+import { useStore } from '#/infra/store/useStore';
+
+import { type MixAnalysis } from '../../models/MixAnalysis';
 import { mixAnalysisStore, toggleMixAnalysisPanel } from '../../stores/mixAnalysisStore';
 import { runAppAction } from '../../useCases/aiPanelActions/runAppAction';
-import { type MixAnalysis } from '../../models/MixAnalysis';
 import {
     OverallLevel,
     FrequencyBalance,

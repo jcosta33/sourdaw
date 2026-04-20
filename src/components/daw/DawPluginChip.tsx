@@ -1,9 +1,22 @@
 import { type ButtonHTMLAttributes, type ReactElement } from 'react';
+
 import { cn } from '#/utils/Styles/cn';
 
 type DawPluginChipProps = ButtonHTMLAttributes<HTMLButtonElement> & {
     active?: boolean;
-    tone?: 'neutral' | 'amber' | 'cyan' | 'peach' | 'lavender' | 'mint' | 'steel' | 'danger' | 'rose' | 'indigo' | 'sage' | 'copper';
+    tone?:
+        | 'neutral'
+        | 'amber'
+        | 'cyan'
+        | 'peach'
+        | 'lavender'
+        | 'mint'
+        | 'steel'
+        | 'danger'
+        | 'rose'
+        | 'indigo'
+        | 'sage'
+        | 'copper';
     size?: 'xs' | 'sm';
     shape?: 'pill' | 'soft';
     caps?: boolean;

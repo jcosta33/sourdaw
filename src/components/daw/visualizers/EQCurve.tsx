@@ -5,6 +5,7 @@
  * Log frequency axis (20 Hz – 20 kHz), linear dB axis (±24 dB).
  */
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 type EQCurveProps = {
@@ -29,7 +30,7 @@ const peakingMag = (f: number, fc: number, gainDb: number, Q: number): number =>
     const w = f / fc;
     const w2 = w * w;
     const bw = w / Q;
-    const A = Math.pow(10, gainDb / 40);
+    const A = 10 ** (gainDb / 40);
     const num = (1 - w2) ** 2 + (bw * A) ** 2;
     const den = (1 - w2) ** 2 + (bw / A) ** 2;
     return 10 * Math.log10(num / den);
@@ -42,7 +43,7 @@ const DB_RANGE = 24;
 const freqToX = (freq: number, w: number): number =>
     (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * w;
 
-const xToFreq = (x: number, w: number): number => MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, x / w);
+const xToFreq = (x: number, w: number): number => MIN_FREQ * (MAX_FREQ / MIN_FREQ) ** (x / w);
 
 type BandId = 'low' | 'mid' | 'high';
 
@@ -148,7 +149,7 @@ export const EQCurve = ({
         const accentCyan = resolveToken('--color-accent-cyan', '#50d0e8');
         const points: [number, number][] = [];
         for (let i = 0; i <= width; i++) {
-            const logFreq = MIN_FREQ * Math.pow(MAX_FREQ / MIN_FREQ, i / width);
+            const logFreq = MIN_FREQ * (MAX_FREQ / MIN_FREQ) ** (i / width);
             const totalDb =
                 peakingMag(logFreq, lowFreq, lowGain, lowQ) +
                 peakingMag(logFreq, midFreq, midGain, midQ) +

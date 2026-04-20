@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { getTransportState } from '#/modules/Transport/useCases';
+
+import { getTrackState } from '../../../repositories/track/getTrackState';
 import { setClipClipboard } from '../../../stores/clipboardStore';
 import { pasteClip } from '../pasteClip';
-import { getTrackState } from '../../../repositories/track/getTrackState';
-import { getTransportState } from '#/modules/Transport/useCases';
 
 vi.mock('../../../repositories/track/getTrackState', () => ({
     getTrackState: vi.fn(),

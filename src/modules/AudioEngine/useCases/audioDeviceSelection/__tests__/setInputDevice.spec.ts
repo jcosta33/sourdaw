@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { setInputDevice } from '../setInputDevice';
 
 const mocks = vi.hoisted(() => ({
@@ -8,9 +9,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../helpers', () => ({
     audioDeviceStore: {
-        get value() { return mocks.audioDeviceStoreValue.value; },
+        get value() {
+            return mocks.audioDeviceStoreValue.value;
+        },
         set: mocks.audioDeviceStoreSet,
-    }
+    },
 }));
 
 describe('setInputDevice', () => {

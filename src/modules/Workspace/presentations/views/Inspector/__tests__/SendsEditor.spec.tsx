@@ -1,17 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { SendsEditor } from '../SendsEditor';
+
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
 const mockSetSend = vi.fn();
 
-vi.mock(
-    '#/modules/Arrangement/useCases/device/sendManagement/toggleSendPreFader',
-    () => ({
-        toggleSendPreFader: vi.fn(),
-    }),
-);
+vi.mock('#/modules/Arrangement/useCases/device/sendManagement/toggleSendPreFader', () => ({
+    toggleSendPreFader: vi.fn(),
+}));
 
 vi.mock('#/modules/Arrangement/useCases/device/sendManagement/setSend', () => ({
     setSend: (...args: unknown[]) => mockSetSend(...args),
@@ -50,13 +49,7 @@ vi.mock('#/components/daw/DawHeaderBand', () => ({
 }));
 
 vi.mock('#/components/daw/DawMicroBadge', () => ({
-    DawMicroBadge: ({
-        children,
-        tone,
-    }: {
-        children: React.ReactNode;
-        tone?: string;
-    }) => (
+    DawMicroBadge: ({ children, tone }: { children: React.ReactNode; tone?: string }) => (
         <span data-testid="micro-badge" data-tone={tone}>
             {children}
         </span>
@@ -64,13 +57,7 @@ vi.mock('#/components/daw/DawMicroBadge', () => ({
 }));
 
 vi.mock('#/components/ui/slider', () => ({
-    Slider: ({
-        value,
-        onValueChange,
-    }: {
-        value: number[];
-        onValueChange: (values: number[]) => void;
-    }) => (
+    Slider: ({ value, onValueChange }: { value: number[]; onValueChange: (values: number[]) => void }) => (
         <input
             type="range"
             data-testid="slider"
@@ -81,13 +68,7 @@ vi.mock('#/components/ui/slider', () => ({
 }));
 
 vi.mock('#/components/ui/button', () => ({
-    Button: ({
-        children,
-        onClick,
-    }: {
-        children: React.ReactNode;
-        onClick?: () => void;
-    }) => (
+    Button: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
         <button data-testid="button" onClick={onClick}>
             {children}
         </button>
@@ -104,9 +85,7 @@ vi.mock('../../../components/Inspector/ControlHeader', () => ({
 }));
 
 vi.mock('../../../components/Inspector/SurfaceCard', () => ({
-    SurfaceCard: ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="surface-card">{children}</div>
-    ),
+    SurfaceCard: ({ children }: { children: React.ReactNode }) => <div data-testid="surface-card">{children}</div>,
 }));
 
 describe('SendsEditor', () => {

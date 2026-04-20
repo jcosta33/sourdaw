@@ -11,8 +11,10 @@
  */
 
 import { type ReactElement, useState } from 'react';
-import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
+import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import {
     type GrandBoulePerNoteValues,
     PER_NOTE_PARAM_DESCRIPTORS,

@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { setTimeSignature } from '../setTimeSignature';
+
+import { defaultTransportState } from '../../models/TransportState';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
-import { defaultTransportState } from '../../models/TransportState';
+import { setTimeSignature } from '../setTimeSignature';
 
 vi.mock('../../repositories/transport/getTransportState');
 vi.mock('../../repositories/transport/updateTransportState');

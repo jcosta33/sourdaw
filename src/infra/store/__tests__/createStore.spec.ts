@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
+
+import { type Logger } from '#/infra/logger/types';
+
 import { createStore } from '../createStore';
 import { createMemoryStorage } from '../storage/createMemoryStorage';
-import { type Logger } from '#/infra/logger/types';
 
 const createDummyLogger = (): Logger => ({
     debug: vi.fn(),

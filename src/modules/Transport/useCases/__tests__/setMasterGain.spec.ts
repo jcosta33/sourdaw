@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { setMasterGain } from '../setMasterGain';
+
+import { setMasterGainValue } from '#/modules/AudioEngine/useCases';
+
+import { defaultTransportState } from '../../models/TransportState';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
-import { defaultTransportState } from '../../models/TransportState';
-import { setMasterGainValue } from '#/modules/AudioEngine/useCases';
+import { setMasterGain } from '../setMasterGain';
 
 vi.mock('../../repositories/transport/getTransportState');
 vi.mock('../../repositories/transport/updateTransportState');

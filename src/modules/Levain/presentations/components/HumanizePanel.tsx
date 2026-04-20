@@ -5,8 +5,10 @@
  * Below: detail knobs for timing, tuning, dynamic, vibrato variation.
  */
 import { type ReactElement } from 'react';
+
 import { DawPluginSectionHeader } from '#/components/daw/DawPluginSectionHeader';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
+
 import { type HumanizeConfig } from '../../models/LevainPatch';
 
 type HumanizePanelProps = {

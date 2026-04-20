@@ -5,12 +5,16 @@
  */
 
 import type { DragEvent } from 'react';
+
+import { logger } from '#/infra/logger/appLogger';
 import { isTauri } from '#/utils/tauriBridge';
-import type { SampleCategory, CrumbsMode } from '../models/CrumbsTypes';
+
+import { crumbsStore } from '../stores/crumbsStore';
+
 import { loadSampleFromPath } from './loadSample';
 import { switchCrumbsMode } from './setCrumbsMode';
-import { crumbsStore } from '../stores/crumbsStore';
-import { logger } from '#/infra/logger/appLogger';
+
+import type { SampleCategory, CrumbsMode } from '../models/CrumbsTypes';
 
 const AUDIO_EXTENSIONS = new Set(['.wav', '.mp3', '.flac', '.ogg', '.aac', '.aiff', '.aif', '.m4a']);
 
@@ -54,7 +58,9 @@ export async function handleCrumbsFileDrop(instanceId: string, event: DragEvent)
     }
 
     if (!isTauri()) {
-        logger.warn('[Crumbs] File drop is only supported in the desktop app. Use the sample browser to load audio on web.');
+        logger.warn(
+            '[Crumbs] File drop is only supported in the desktop app. Use the sample browser to load audio on web.'
+        );
         return;
     }
 

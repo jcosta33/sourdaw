@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { setSend } from '../setSend';
 
 const mocks = vi.hoisted(() => ({
@@ -36,17 +37,17 @@ describe('setSend', () => {
     });
 
     it('updates an existing send maintaining preFader state', () => {
-        mocks.getTrackById.mockReturnValue({ 
-            id: 't1', 
-            sends: [{ busId: 'bus1', level: 0.1, preFader: true }] 
+        mocks.getTrackById.mockReturnValue({
+            id: 't1',
+            sends: [{ busId: 'bus1', level: 0.1, preFader: true }],
         });
 
         // Try to change level, passing false for preFader but it should stay true
         setSend('t1', 'bus1', 0.8, false);
 
         const updater = mocks.updateTrack.mock.calls[0][1];
-        expect(updater({ sends: [{ busId: 'bus1', preFader: true }] })).toEqual({ 
-            sends: [{ busId: 'bus1', level: 0.8, preFader: true }] 
+        expect(updater({ sends: [{ busId: 'bus1', preFader: true }] })).toEqual({
+            sends: [{ busId: 'bus1', level: 0.8, preFader: true }],
         });
 
         expect(mocks.engineSetSend).toHaveBeenCalledWith('t1', 'bus1', 0.8, true);

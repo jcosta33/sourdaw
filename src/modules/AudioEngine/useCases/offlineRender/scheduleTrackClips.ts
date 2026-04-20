@@ -1,6 +1,7 @@
+import { type Track } from '#/modules/Arrangement/models/Track';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import { getAutomationLanes } from '#/modules/Automation/useCases';
-import { getMidiStoreState } from '#/modules/MIDI/useCases';
+import { type getMidiStoreState } from '#/modules/MIDI/useCases';
 import {
     getDrumKitDefByIndex,
     getSynthParamsFromDevices,
@@ -9,13 +10,14 @@ import {
     scheduleNoteOffline,
 } from '#/modules/Synth/useCases';
 import { type TempoChange } from '#/modules/Transport/useCases';
-import { type Track } from '#/modules/Arrangement/models/Track';
-import { audioBufferCache } from '../../stores/audioBufferCache';
+
+import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
 import { beatToSeconds } from '../../services/beatConversion';
 import { resolveDrumKit } from '../../services/deviceResolution';
-import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
+import { audioBufferCache } from '../../stores/audioBufferCache';
 import { type DeviceNodeEntry, buildDeviceChain } from '../buildDeviceChain';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
+
 import { MICRO_FADE_SECONDS, YIELD_EVERY_N_NOTES } from './constants';
 import { type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
@@ -265,7 +267,8 @@ export async function scheduleTrackClips(
                 const isLastIter = iter === maxIterations - 1 || iterStartBeat + loopLen >= clip.endBeat;
 
                 const remainingBeats = Math.min(loopLen, clip.endBeat - iterStartBeat);
-                const iterEndTime = beatToSeconds(iterStartBeat + remainingBeats, defaultTempo, changes) + compensationDelay;
+                const iterEndTime =
+                    beatToSeconds(iterStartBeat + remainingBeats, defaultTempo, changes) + compensationDelay;
                 const iterDurationSec = iterEndTime - iterStartTime;
                 const playDuration = Math.min(iterDurationSec, buffer.duration / safeStretchRatio);
 
@@ -307,7 +310,8 @@ export async function scheduleTrackClips(
                 if (isLastIter) {
                     if (clip.fadeOutBeats > 0) {
                         const fadeOutStartBeat = clip.endBeat - clip.fadeOutBeats;
-                        const fadeOutStartSec = beatToSeconds(fadeOutStartBeat, defaultTempo, changes) + compensationDelay;
+                        const fadeOutStartSec =
+                            beatToSeconds(fadeOutStartBeat, defaultTempo, changes) + compensationDelay;
                         const fadeOutOffset = Math.max(
                             startSec,
                             Math.max(fadeOutStartSec, endSec - playDuration * 0.5)

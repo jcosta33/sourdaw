@@ -13,5 +13,5 @@ export function midiNoteToCv(note: number): number {
     if (state.voltageStandard === '1v-per-octave') {
         return (note - 24) / 12;
     }
-    return 440 * Math.pow(2, (note - 69) / 12);
+    return 440 * 2 ** ((note - 69) / 12);
 }

@@ -1,6 +1,7 @@
+import { setSend as engineSetSend } from '#/modules/Routing/useCases';
+
 import { getTrackById } from '../../../repositories/track/getTrackById';
 import { updateTrack } from '../../../repositories/track/updateTrack';
-import { setSend as engineSetSend } from '#/modules/Routing/useCases';
 
 export function setSend(trackId: string, busId: string, level: number, preFader = false): void {
     const track = getTrackById(trackId);

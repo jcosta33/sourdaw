@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import * as arrangement from '#/modules/Arrangement/useCases';
+
 import { createGenerationHandler } from '../createGenerationHandler';
 import * as helpers from '../generationHandlerHelpers';
-import * as arrangement from '#/modules/Arrangement/useCases';
 
 vi.mock('../generationHandlerHelpers', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../generationHandlerHelpers')>();

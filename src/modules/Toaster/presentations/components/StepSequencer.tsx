@@ -1,4 +1,5 @@
 import { type ReactElement, useRef } from 'react';
+
 import { type PadState, type Pattern } from '../../models/ToasterKit';
 
 type StepSequencerProps = {

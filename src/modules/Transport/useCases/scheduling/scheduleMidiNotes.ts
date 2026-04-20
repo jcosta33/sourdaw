@@ -1,8 +1,5 @@
-import { getChordAtBeat, transposeForChordTrack } from '#/modules/MIDI/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
-import { tempoMapStore } from '../../stores/tempoMapStore';
-import { getTempoAtBeat } from '../../models/TempoMap';
-import { type TransportState } from '../../models/TransportState';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { resolveClipsWithComping, getSynthParamsForTrack, getGrooveOffsetAtBeat } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     createBufferSource,
@@ -12,8 +9,8 @@ import {
     getCurrentTime,
     getDrumKitByIndex,
 } from '#/modules/AudioEngine/useCases';
-import { resolveClipsWithComping, getSynthParamsForTrack, getGrooveOffsetAtBeat } from '#/modules/Arrangement/useCases';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { midiStore } from '#/modules/MIDI/stores';
+import { getChordAtBeat, transposeForChordTrack } from '#/modules/MIDI/useCases';
 import {
     getDrumKitDefByIndex,
     scheduleDrumKitNote,
@@ -22,8 +19,13 @@ import {
     scheduleNote,
 } from '#/modules/Synth/useCases';
 import { getYeastRack, getYeastWorkletNodeAsync } from '#/modules/Yeast/stores';
-import type { SynthParams } from '#/modules/AudioEngine/useCases';
+
+import { getTempoAtBeat } from '../../models/TempoMap';
+import { type TransportState } from '../../models/TransportState';
+import { tempoMapStore } from '../../stores/tempoMapStore';
 import { type SourceWithFade } from '../playheadScheduler';
+
+import type { SynthParams } from '#/modules/AudioEngine/useCases';
 
 // Worklet synth device types that share a common noteOn/noteOff controls interface.
 // Each entry maps a device type to the controls property name on the device node
@@ -244,18 +246,8 @@ export async function scheduleMidiNotes(
                     const ctx = getAudioContext();
                     const workletNode = await getYeastWorkletNodeAsync(ctx);
                     const processed = workletNode
-                        ? await workletNode.processBlock(
-                              midiEvents,
-                              blockStartSamples,
-                              blockEndSamples,
-                              yeastTransport
-                          )
-                        : yeastRack.processBlock(
-                              midiEvents,
-                              blockStartSamples,
-                              blockEndSamples,
-                              yeastTransport
-                          );
+                        ? await workletNode.processBlock(midiEvents, blockStartSamples, blockEndSamples, yeastTransport)
+                        : yeastRack.processBlock(midiEvents, blockStartSamples, blockEndSamples, yeastTransport);
 
                     // §154.1 — Build a per-note index of noteOff events so the
                     // noteOn → noteOff match is O(1) instead of O(N) per noteOn.
@@ -300,7 +292,7 @@ export async function scheduleMidiNotes(
                             const endBeat =
                                 offTime !== null ? (offTime * spb) / yeastSr - clip.startBeat : startBeat + 0.25;
                             transformedNotes.push({
-                                ...notes![0]!,
+                                ...notes[0]!,
                                 pitch: evtNote,
                                 velocity: evtVel,
                                 startBeat,
@@ -358,17 +350,17 @@ export async function scheduleMidiNotes(
                 }
             }
 
-            const workletSynthDevice = toasterRoute
-                ? null
-                : track.devices.find((d) => d.type in WORKLET_SYNTH_DEVICES);
+            const workletSynthDevice = toasterRoute ? null : track.devices.find((d) => d.type in WORKLET_SYNTH_DEVICES);
             const workletSynthEntry = workletSynthDevice
-                ? WORKLET_SYNTH_DEVICES[workletSynthDevice.type] ?? null
+                ? (WORKLET_SYNTH_DEVICES[workletSynthDevice.type] ?? null)
                 : null;
             const workletSynthNode = workletSynthDevice
                 ? (strip.deviceNodes.find((d) => d.deviceId === workletSynthDevice.id) ?? null)
                 : null;
             const workletSynthControls =
-                workletSynthEntry && workletSynthNode ? workletSynthNode[workletSynthEntry.controlsKey] ?? null : null;
+                workletSynthEntry && workletSynthNode
+                    ? (workletSynthNode[workletSynthEntry.controlsKey] ?? null)
+                    : null;
 
             const faustDevice =
                 toasterRoute || drumKitDef || drumKit || workletSynthControls
@@ -430,15 +422,7 @@ export async function scheduleMidiNotes(
                                 toasterRoute.controls.noteOn(pad, safeVelocity, pitchNote, sampleFrame);
                             }
                         } else if (drumKitDef) {
-                            scheduleDrumKitNote(
-                                ctx,
-                                strip.gainNode,
-                                drumKitDef,
-                                pitch,
-                                time,
-                                note.velocity,
-                                clip.gain
-                            );
+                            scheduleDrumKitNote(ctx, strip.gainNode, drumKitDef, pitch, time, note.velocity, clip.gain);
                         } else if (drumKit) {
                             scheduleKitNote(
                                 ctx,
@@ -469,9 +453,7 @@ export async function scheduleMidiNotes(
                             );
                         } else {
                             const mpe =
-                                note.pressure !== undefined ||
-                                note.slide !== undefined ||
-                                note.pitchBend !== undefined
+                                note.pressure !== undefined || note.slide !== undefined || note.pitchBend !== undefined
                                     ? { pressure: note.pressure, slide: note.slide, pitchBend: note.pitchBend }
                                     : undefined;
                             scheduleNote(

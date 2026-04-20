@@ -19,9 +19,10 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
-import { audioEngine } from '../createWebAudioEngine';
-import { getSelectedInputId } from '../../useCases/audioDeviceSelection/getSelectedInputId';
+
 import { audioRecordingStore } from '../../stores/audioRecordingStore';
+import { getSelectedInputId } from '../../useCases/audioDeviceSelection/getSelectedInputId';
+import { audioEngine } from '../createWebAudioEngine';
 
 export { audioRecordingStore };
 export type { AudioRecordingState } from '../../stores/audioRecordingStore';
@@ -51,16 +52,13 @@ type RecordingSession = {
 // session on `import.meta.hot.data` so the new module instance reads
 // back the same object the old one was writing to. In prod the call
 // collapses to a one-shot initializer with no runtime overhead.
-const recordingSession = createHmrPersistentState<RecordingSession>(
-    'audioRecorder.recordingSession',
-    () => ({
-        mediaStream: null,
-        sourceNode: null,
-        recordingNode: null,
-        recordingWorker: null,
-        onRecordingComplete: null,
-    }),
-);
+const recordingSession = createHmrPersistentState<RecordingSession>('audioRecorder.recordingSession', () => ({
+    mediaStream: null,
+    sourceNode: null,
+    recordingNode: null,
+    recordingWorker: null,
+    onRecordingComplete: null,
+}));
 
 /**
  * Pre-request microphone permission so the browser prompt fires on page load
@@ -75,7 +73,9 @@ export async function requestMicPermission(): Promise<boolean> {
                 autoGainControl: false,
             },
         });
-        for (const t of stream.getTracks()) {t.stop();}
+        for (const t of stream.getTracks()) {
+            t.stop();
+        }
         audioRecordingStore.set({ ...audioRecordingStore.value!, micPermissionGranted: true });
         return true;
     } catch {
@@ -86,10 +86,10 @@ export async function requestMicPermission(): Promise<boolean> {
 
 export const startAudioRecording = inject({ logger })(
     ({ logger }) =>
-        (async function startAudioRecording(
+        async function startAudioRecording(
             trackId: string,
             onComplete: (buffer: AudioBuffer) => void,
-            inputId?: string | null,
+            inputId?: string | null
         ): Promise<boolean> {
             try {
                 const selectedInputId = inputId ?? getSelectedInputId();
@@ -129,9 +129,12 @@ export const startAudioRecording = inject({ logger })(
                 recordingSession.sourceNode.connect(recordingSession.recordingNode);
 
                 // ── OPFS Worker ──────────────────────────────────────────────────────
-                recordingSession.recordingWorker = new Worker(new URL('../../workers/recordingWorker.ts', import.meta.url), {
-                    type: 'module',
-                });
+                recordingSession.recordingWorker = new Worker(
+                    new URL('../../workers/recordingWorker.ts', import.meta.url),
+                    {
+                        type: 'module',
+                    }
+                );
 
                 // Wire up the PCM-complete handler before sending 'start'.
                 recordingSession.recordingWorker.onmessage = ({ data }: MessageEvent): void => {
@@ -169,7 +172,7 @@ export const startAudioRecording = inject({ logger })(
                 cleanupNodes();
                 return false;
             }
-        })
+        }
 );
 
 export function stopAudioRecording(): void {
@@ -200,8 +203,8 @@ async function decodeAndDeliver(wavBuffer: ArrayBuffer, ctx: AudioContext): Prom
     try {
         const buffer = await ctx.decodeAudioData(wavBuffer);
         cb(buffer);
-    } catch (err) {
-        logger.error(new Error('Failed to decode recorded audio', { cause: err }));
+    } catch (error) {
+        logger.error(new Error('Failed to decode recorded audio', { cause: error }));
     }
 
     terminateWorker();

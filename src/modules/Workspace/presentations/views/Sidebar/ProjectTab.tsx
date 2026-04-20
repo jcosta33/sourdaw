@@ -1,15 +1,20 @@
 import { type ReactElement } from 'react';
+
+import { FileUp } from 'lucide-react';
+
+import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { projectStore, importSclFile } from '#/modules/Project';
-import { Button } from '#/components/ui/button';
-import { FileUp } from 'lucide-react';
-import { SectionHeader } from '../Inspector/SectionHeader';
+
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
+import { SectionHeader } from '../Inspector/SectionHeader';
 
 export const ProjectTab = (): ReactElement => {
     const project = useStore(projectStore);
 
-    if (!project) return <div />;
+    if (!project) {
+        return <div />;
+    }
 
     const keyNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -37,18 +42,17 @@ export const ProjectTab = (): ReactElement => {
                             <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-accent-orange)]">
                                 Global Tuning
                             </span>
-                            <span className="text-[10px] text-muted-foreground">
-                                {project.tuning.name}
-                            </span>
+                            <span className="text-[10px] text-muted-foreground">{project.tuning.name}</span>
                         </div>
-                        
+
                         <p className="text-[11px] leading-relaxed text-muted-foreground">
-                            Change the project's base tuning. Affects all built-in instruments and MTS-ESP compatible plugins.
+                            Change the project's base tuning. Affects all built-in instruments and MTS-ESP compatible
+                            plugins.
                         </p>
 
-                        <Button 
-                            variant="secondary" 
-                            size="sm" 
+                        <Button
+                            variant="secondary"
+                            size="sm"
                             className="h-7 w-full gap-1.5 text-[10px]"
                             onClick={() => importSclFile()}
                         >

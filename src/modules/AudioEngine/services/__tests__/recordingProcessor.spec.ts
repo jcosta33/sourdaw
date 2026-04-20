@@ -49,9 +49,13 @@ describe('RecordingWorkletProcessor', () => {
         }
 
         process(inputs: any[][][]) {
-            if (!this._active || !this._ring || !this._writeHead) return true;
+            if (!this._active || !this._ring || !this._writeHead) {
+                return true;
+            }
             const input = inputs[0]?.[0];
-            if (!input || input.length === 0) return true;
+            if (!input || input.length === 0) {
+                return true;
+            }
 
             const head = Atomics.load(this._writeHead, 0);
             const ringSize = this._ringSize;
@@ -83,7 +87,7 @@ describe('RecordingWorkletProcessor', () => {
         processor.handleMessage({ type: 'init', sab });
         const input = [[new Float32Array([0.5, 0.6])]];
         processor.process(input);
-        
+
         const head = new Int32Array(sab, 0, 1)[0];
         expect(head).toBe(0);
     });
@@ -91,13 +95,13 @@ describe('RecordingWorkletProcessor', () => {
     it('should record samples into the ring buffer when active', () => {
         processor.handleMessage({ type: 'init', sab });
         processor.handleMessage({ type: 'start' });
-        
+
         const inputData = new Float32Array([0.1, 0.2, 0.3]);
         processor.process([[inputData]]);
-        
+
         const head = new Int32Array(sab, 0, 1)[0];
         expect(head).toBe(3);
-        
+
         const ring = new Float32Array(sab, 4);
         expect(ring[0]).toBeCloseTo(0.1, 5);
         expect(ring[1]).toBeCloseTo(0.2, 5);
@@ -109,15 +113,15 @@ describe('RecordingWorkletProcessor', () => {
         const smallSab = new SharedArrayBuffer(4 + 4 * 4);
         processor.handleMessage({ type: 'init', sab: smallSab });
         processor.handleMessage({ type: 'start' });
-        
+
         // Fill 3 samples
         processor.process([[new Float32Array([1, 2, 3])]]);
         // Add 2 more (should wrap 1)
         processor.process([[new Float32Array([4, 5])]]);
-        
+
         const head = new Int32Array(smallSab, 0, 1)[0];
         expect(head).toBe(5);
-        
+
         const ring = new Float32Array(smallSab, 4);
         expect(ring[0]).toBe(5); // Wrapped
         expect(ring[1]).toBe(2);
@@ -129,7 +133,7 @@ describe('RecordingWorkletProcessor', () => {
         processor.handleMessage({ type: 'init', sab });
         processor.handleMessage({ type: 'start' });
         processor.process([[new Float32Array([0.1, 0.2])]]);
-        
+
         processor.handleMessage({ type: 'stop' });
         expect(processor.port.postMessage).toHaveBeenCalledWith({ type: 'stopped', writeHead: 2 });
         expect(processor._active).toBe(false);

@@ -1,4 +1,5 @@
 import { type NoteEventTime } from '@spotify/basic-pitch';
+
 import { addClip, addTrack, getAllTracks } from '#/modules/Arrangement/useCases';
 import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
@@ -22,7 +23,11 @@ export const insertPolyphonicMidiNotesDependencies = {
     batchAddMidiNotes,
 } as const;
 
-export function insertPolyphonicMidiNotes(notes: NoteEventTime[], sourceClip: SourceClip, targetTrackId: string): InsertPolyphonicMidiNotesResult | null {
+export function insertPolyphonicMidiNotes(
+    notes: NoteEventTime[],
+    sourceClip: SourceClip,
+    targetTrackId: string
+): InsertPolyphonicMidiNotesResult | null {
     const tempo = getTransportState()?.tempo ?? 120;
     const beatsPerSecond = tempo / 60;
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleQuantizeNotes } from '../handleQuantizeNotes';
 
 const mocks = vi.hoisted(() => ({
@@ -16,7 +17,7 @@ describe('handleQuantizeNotes', () => {
     it('delegates to quantizeNotes MIDI use case', () => {
         handleQuantizeNotes.execute({
             type: 'quantizeNotes',
-            payload: { clipId: 'c1', gridSize: 0.25 }
+            payload: { clipId: 'c1', gridSize: 0.25 },
         });
         expect(mocks.quantizeNotes).toHaveBeenCalledWith('c1', 0.25, undefined, undefined);
     });

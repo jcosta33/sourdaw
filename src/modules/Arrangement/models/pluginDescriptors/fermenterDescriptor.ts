@@ -3,8 +3,9 @@
  * Registers Fermenter as a proper instrument that can be added to MIDI tracks.
  */
 
-import { type PluginDescriptor } from '../DeviceParameterTypes';
 import { FERMENTER_PARAMS } from '#/modules/Fermenter/useCases';
+
+import { type PluginDescriptor } from '../DeviceParameterTypes';
 
 export const FERMENTER_DESCRIPTOR: PluginDescriptor = {
     id: 'fermenter',
@@ -17,7 +18,7 @@ export const FERMENTER_DESCRIPTOR: PluginDescriptor = {
         id: p.id,
         deviceId: 'fermenter',
         name: p.label,
-        type: (p.step === 1 ? 'int' : 'float') as 'float' | 'int',
+        type: p.step === 1 ? 'int' : 'float',
         value: p.default,
         defaultValue: p.default,
         minValue: p.min,

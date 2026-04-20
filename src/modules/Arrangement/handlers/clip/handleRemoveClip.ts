@@ -1,7 +1,8 @@
-import { createHandler } from '#/utils/createHandler';
 import { midiStore } from '#/modules/MIDI/stores';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { createHandler } from '#/utils/createHandler';
+
 import { removeClip } from '../../useCases/clip/removeClip';
+import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { planRippleDelete } from '../../useCases/rippleDelete/planRippleDelete';
 import { rippleDeleteClips } from '../../useCases/rippleDelete/rippleDeleteClips';
 

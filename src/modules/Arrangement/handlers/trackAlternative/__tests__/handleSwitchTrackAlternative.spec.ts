@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleSwitchTrackAlternative } from '../handleSwitchTrackAlternative';
 
 const mocks = vi.hoisted(() => ({
@@ -31,8 +32,8 @@ describe('handleSwitchTrackAlternative', () => {
                         { id: 'alt1', clips: [] },
                         { id: 'alt2', clips: alt2Clips },
                     ],
-                }
-            ]
+                },
+            ],
         });
 
         handleSwitchTrackAlternative.execute({
@@ -44,14 +45,14 @@ describe('handleSwitchTrackAlternative', () => {
         const track = newState.tracks[0];
         expect(track.activeAlternativeId).toBe('alt2');
         expect(track.clips).toEqual(alt2Clips);
-        
+
         // Verify alt1 now contains the clips that were active
         expect(track.alternatives[0].clips).toEqual([{ id: 'c1' }]);
     });
 
     it('bails if switching to the already active alternative', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', activeAlternativeId: 'alt1', alternatives: [{ id: 'alt1' }] }]
+            tracks: [{ id: 't1', activeAlternativeId: 'alt1', alternatives: [{ id: 'alt1' }] }],
         });
 
         handleSwitchTrackAlternative.execute({

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import {
     createUndoEntry,
     createCallbackUndoEntry,
@@ -62,7 +63,11 @@ describe('commandQueries (undo helpers)', () => {
 
     it('should narrow action entries with isActionEntry', () => {
         const actionEntry = createUndoEntry('a', { type: 'toggleLoop' }, null);
-        const cbEntry = createCallbackUndoEntry('b', () => {}, () => {});
+        const cbEntry = createCallbackUndoEntry(
+            'b',
+            () => {},
+            () => {}
+        );
         expect(isActionEntry(actionEntry)).toBe(true);
         expect(isActionEntry(cbEntry)).toBe(false);
     });

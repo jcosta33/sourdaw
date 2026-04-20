@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { trackStore } from '../../stores/trackStore';
+
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { type Clip } from '../../models/Track';
+import { trackStore } from '../../stores/trackStore';
 import { replaceClipAudioBuffer } from '../replaceClipAudioBuffer';
 
 const clip: Clip = {

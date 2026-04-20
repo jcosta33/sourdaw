@@ -1,6 +1,7 @@
-import { pluginScanStore } from '../../../stores/pluginScanStore';
-import { scanPlugins } from '../../../repositories/pluginBridge/scanPlugins';
 import { getDefaultPluginPaths } from '../../../repositories/pluginBridge/getDefaultPluginPaths';
+import { scanPlugins } from '../../../repositories/pluginBridge/scanPlugins';
+import { pluginScanStore } from '../../../stores/pluginScanStore';
+
 import { getState } from './helpers';
 
 export async function startPluginScan(): Promise<void> {

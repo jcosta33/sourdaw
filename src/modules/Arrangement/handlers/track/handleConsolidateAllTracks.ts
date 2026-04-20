@@ -1,6 +1,7 @@
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { createHandler } from '#/utils/createHandler';
+
 import { bounceInPlace } from '../../useCases/freezeBounce/bounceOperations';
+import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 export const handleConsolidateAllTracks = createHandler<'consolidateAllTracks'>({
     execute: async () => {

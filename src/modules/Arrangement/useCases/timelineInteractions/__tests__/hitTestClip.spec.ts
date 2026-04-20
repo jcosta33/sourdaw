@@ -1,21 +1,26 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import { type TimelineRenderModel } from '../../../models/TimelineRenderModel';
 import { hitTestClip } from '../hitTestClip/hitTestClip';
 import { hitTestTrack } from '../hitTestClip/hitTestTrack';
 
 let mockTimelineViewValue: any = null;
 vi.mock('../../../stores/timelineViewStore', () => ({
-    timelineViewStore: { get value() { return mockTimelineViewValue; } }
+    timelineViewStore: {
+        get value() {
+            return mockTimelineViewValue;
+        },
+    },
 }));
 
 const mockBuildTimelineRenderModel = vi.fn();
 vi.mock('../../buildTimelineRenderModel', () => ({
-    buildTimelineRenderModel: () => mockBuildTimelineRenderModel()
+    buildTimelineRenderModel: () => mockBuildTimelineRenderModel(),
 }));
 
 const mockGetTrackAtY = vi.fn();
 vi.mock('../getTrackAtY', () => ({
-    getTrackAtY: (...args: any[]) => mockGetTrackAtY(...args)
+    getTrackAtY: (...args: any[]) => mockGetTrackAtY(...args),
 }));
 
 describe('hitTestClip', () => {

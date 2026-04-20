@@ -1,4 +1,5 @@
 import { setlistStore } from '../../stores/setlistStore';
+
 import { goToItem } from './goToItem';
 
 export function previousItem(): void {

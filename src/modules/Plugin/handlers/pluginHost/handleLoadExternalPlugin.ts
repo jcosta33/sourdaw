@@ -1,5 +1,6 @@
-import { createHandler } from '#/utils/createHandler';
 import { addExternalDevice, addTrack } from '#/modules/Arrangement/useCases';
+import { createHandler } from '#/utils/createHandler';
+
 import { findPluginByName } from '../../useCases/pluginScan/queries';
 
 export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({

@@ -1,10 +1,7 @@
 import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { getMidiStoreState } from '#/modules/MIDI/useCases';
-import {
-    getTempoMapState,
-    getTransportStoreValue,
-    type TempoChange,
-} from '#/modules/Transport/useCases';
+import { getTempoMapState, getTransportStoreValue, type TempoChange } from '#/modules/Transport/useCases';
+
 import { beatToSeconds } from '../../services/beatConversion';
 
 export type OfflineRenderContext = {

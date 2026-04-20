@@ -1,6 +1,8 @@
 import { type ReactElement, useState } from 'react';
-import { cn } from '#/utils/Styles/cn';
+
 import { addMidiFx } from '#/modules/Arrangement/useCases';
+import { cn } from '#/utils/Styles/cn';
+
 import { type Track } from '../../../models/TrackViewTypes';
 import { MixerInsetButton } from '../../components/Mixer/MixerInsetButton';
 import { MixerSection } from '../../components/Mixer/MixerSection';
@@ -18,7 +20,9 @@ const MIDI_FX_TYPES = [
 export const MidiFxSection = ({ track }: MidiFxSectionProps): ReactElement | null => {
     const [showAdd, setShowAdd] = useState(false);
 
-    if (track.kind !== 'midi') return null;
+    if (track.kind !== 'midi') {
+        return null;
+    }
 
     return (
         <MixerSection label="MIDI FX">
@@ -32,14 +36,12 @@ export const MidiFxSection = ({ track }: MidiFxSectionProps): ReactElement | nul
                             )}
                             tone="accent"
                         >
-                            <span className="text-[10px] text-accent-primary/80">
-                                ♪ {fx.name}
-                            </span>
+                            <span className="text-[10px] text-accent-primary/80">♪ {fx.name}</span>
                         </MixerInsetButton>
                     </div>
                 ))}
             </div>
-            
+
             {showAdd ? (
                 <div className="space-y-0.5 mt-0.5">
                     {MIDI_FX_TYPES.map((fx) => (

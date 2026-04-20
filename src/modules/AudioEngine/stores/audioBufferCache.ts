@@ -268,9 +268,7 @@ export const audioBufferCache = {
             for (let bin = 0; bin < numBins; bin++) {
                 let peak = 0;
                 const start = Math.floor(mipmapWindowStart + bin * mipmapSamplesPerBin);
-                const end = Math.floor(
-                    Math.min(mipmapWindowStart + (bin + 1) * mipmapSamplesPerBin, mipmap.length)
-                );
+                const end = Math.floor(Math.min(mipmapWindowStart + (bin + 1) * mipmapSamplesPerBin, mipmap.length));
                 if (start === end) {
                     peak = mipmap[start] || 0;
                 } else {
@@ -288,9 +286,7 @@ export const audioBufferCache = {
             for (let bin = 0; bin < numBins; bin++) {
                 let peak = 0;
                 const start = Math.floor(windowStart + bin * samplesPerBin);
-                const end = Math.floor(
-                    Math.min(windowStart + (bin + 1) * samplesPerBin, windowEnd)
-                );
+                const end = Math.floor(Math.min(windowStart + (bin + 1) * samplesPerBin, windowEnd));
                 if (start === end) {
                     peak = Math.abs(channelData[start] || 0);
                 } else {
@@ -384,7 +380,9 @@ export const audioBufferCache = {
         // Pass 1: serialize buffers already in the in-memory cache
         for (const id of ids) {
             const buf = cache.get(id);
-            if (!buf) {continue;}
+            if (!buf) {
+                continue;
+            }
             updateAccessTimeInIdb(id);
             result[id] = {
                 sampleRate: buf.sampleRate,
@@ -412,7 +410,9 @@ export const audioBufferCache = {
                         req.onsuccess = () => resolve(req.result as SerializedBuffer | undefined);
                         req.onerror = () => reject(req.error);
                     });
-                    if (!data || (data.channelData[0]?.length ?? 0) === 0) {continue;}
+                    if (!data || (data.channelData[0]?.length ?? 0) === 0) {
+                        continue;
+                    }
                     updateAccessTimeInIdb(id);
                     result[id] = {
                         sampleRate: data.sampleRate,
@@ -433,11 +433,15 @@ export const audioBufferCache = {
      * Buffers whose ID already exists in the cache are skipped. */
     async importBuffers(buffers: Record<string, ExportedAudioBuffer>, context: BaseAudioContext): Promise<void> {
         for (const [id, data] of Object.entries(buffers)) {
-            if (cache.has(id)) {continue;}
+            if (cache.has(id)) {
+                continue;
+            }
             try {
                 const channels = data.channelData.map(base64ToFloat32);
                 const length = channels[0]?.length ?? 0;
-                if (length === 0) {continue;}
+                if (length === 0) {
+                    continue;
+                }
                 const buffer = context.createBuffer(data.numberOfChannels, length, data.sampleRate);
                 for (let ch = 0; ch < data.numberOfChannels; ch++) {
                     buffer.getChannelData(ch).set(channels[ch]!);
@@ -488,10 +492,10 @@ export const audioBufferCache = {
             const store = tx.objectStore(STORE_NAME);
             const req = store.getAll();
             const keysReq = store.getAllKeys();
-            
+
             const [data, keys] = await Promise.all([
                 new Promise<SerializedBuffer[]>((resolve) => (req.onsuccess = () => resolve(req.result))),
-                new Promise<IDBValidKey[]>((resolve) => (keysReq.onsuccess = () => resolve(keysReq.result)))
+                new Promise<IDBValidKey[]>((resolve) => (keysReq.onsuccess = () => resolve(keysReq.result))),
             ]);
 
             for (let i = 0; i < data.length; i++) {
@@ -504,7 +508,9 @@ export const audioBufferCache = {
                     deletedCount++;
                 }
             }
-        } catch { /* ignore */ }
+        } catch {
+            /* ignore */
+        }
         return deletedCount;
     },
 
@@ -519,27 +525,33 @@ export const audioBufferCache = {
 
             const [data, keys] = await Promise.all([
                 new Promise<SerializedBuffer[]>((resolve) => (req.onsuccess = () => resolve(req.result))),
-                new Promise<IDBValidKey[]>((resolve) => (keysReq.onsuccess = () => resolve(keysReq.result)))
+                new Promise<IDBValidKey[]>((resolve) => (keysReq.onsuccess = () => resolve(keysReq.result))),
             ]);
 
             // Sort by access time ascending (oldest first)
-            const entries = data.map((item, i) => ({
-                id: keys[i]! as string,
-                lastAccessed: item.lastAccessed ?? 0,
-                size: item.sizeInBytes ?? 0
-            })).sort((a, b) => a.lastAccessed - b.lastAccessed);
+            const entries = data
+                .map((item, i) => ({
+                    id: keys[i]! as string,
+                    lastAccessed: item.lastAccessed ?? 0,
+                    size: item.sizeInBytes ?? 0,
+                }))
+                .sort((a, b) => a.lastAccessed - b.lastAccessed);
 
             let currentTotal = entries.reduce((acc, e) => acc + e.size, 0);
-            
+
             for (const entry of entries) {
-                if (currentTotal <= maxSizeBytes) break;
+                if (currentTotal <= maxSizeBytes) {
+                    break;
+                }
                 store.delete(entry.id);
                 cache.delete(entry.id);
                 clearWaveformCachesForId(entry.id);
                 currentTotal -= entry.size;
                 deletedCount++;
             }
-        } catch { /* ignore */ }
+        } catch {
+            /* ignore */
+        }
         return deletedCount;
-    }
+    },
 };

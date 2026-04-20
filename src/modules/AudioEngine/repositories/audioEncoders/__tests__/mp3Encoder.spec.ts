@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { audioBufferToMp3 } from '../mp3Encoder';
 
 const mockEncoder = {
@@ -7,7 +8,7 @@ const mockEncoder = {
 };
 
 vi.mock('@breezystack/lamejs', () => ({
-    Mp3Encoder: vi.fn().mockImplementation(function() {
+    Mp3Encoder: vi.fn().mockImplementation(function () {
         return mockEncoder;
     }),
 }));
@@ -31,7 +32,7 @@ describe('mp3Encoder', () => {
         // 2 blocks * 1 call each + flush
         expect(mockEncoder.encodeBuffer).toHaveBeenCalledTimes(2);
         expect(mockEncoder.flush).toHaveBeenCalled();
-        
+
         // Final length should be (3 bytes * 2 blocks) + 2 bytes from flush = 8
         expect(result).toHaveLength(8);
     });

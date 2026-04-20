@@ -2,6 +2,7 @@
  * Unison controls — voice count, detune spread, stereo width.
  */
 import { type ReactElement } from 'react';
+
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 
 type UnisonSectionProps = {

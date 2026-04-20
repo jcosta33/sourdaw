@@ -1,4 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
+
 import { setSnapValue } from '../../useCases/togglePanel/panelToggles/setSnapValue';
 
 export const handleSetSnapValue = createHandler<'setSnapValue'>({

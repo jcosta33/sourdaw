@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleSetDeviceParameter } from '../handleSetDeviceParameter';
 
 const mocks = vi.hoisted(() => ({
@@ -26,9 +27,7 @@ describe('handleSetDeviceParameter', () => {
 
     it('sets the parameter and updates the audio engine', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [
-                { id: 't1', devices: [{ id: 'd1' }] }
-            ]
+            tracks: [{ id: 't1', devices: [{ id: 'd1' }] }],
         });
 
         handleSetDeviceParameter.execute({

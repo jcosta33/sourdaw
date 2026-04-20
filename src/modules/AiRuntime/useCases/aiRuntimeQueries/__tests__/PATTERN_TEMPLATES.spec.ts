@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { PATTERN_TEMPLATES } from '../PATTERN_TEMPLATES';
+
 import { PATTERN_TEMPLATES as modelPatternTemplates } from '../../../models/midiPatternLibrary';
+import { PATTERN_TEMPLATES } from '../PATTERN_TEMPLATES';
 
 describe('PATTERN_TEMPLATES', () => {
     it('exports mapped templates matching the length of the underlying model templates', () => {

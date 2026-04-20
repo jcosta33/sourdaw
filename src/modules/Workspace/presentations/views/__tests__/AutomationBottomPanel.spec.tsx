@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { AutomationBottomPanel } from '../AutomationBottomPanel';
 
 vi.mock('#/components/daw/DawBlockedState', () => ({
@@ -21,8 +22,18 @@ vi.mock('#/components/daw/DawEmptyState', () => ({
 }));
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
-    DawHeaderBand: ({ children, compact, className }: { children: React.ReactNode; compact?: boolean; className?: string }) => (
-        <div className={className} data-compact={compact}>{children}</div>
+    DawHeaderBand: ({
+        children,
+        compact,
+        className,
+    }: {
+        children: React.ReactNode;
+        compact?: boolean;
+        className?: string;
+    }) => (
+        <div className={className} data-compact={compact}>
+            {children}
+        </div>
     ),
 }));
 
@@ -37,8 +48,18 @@ vi.mock('#/modules/Arrangement/presentations/views/BeatRulerBar', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/presentations/views/TimelineChromeSurface', () => ({
-    TimelineChromeSurface: ({ children, className, tone }: { children?: React.ReactNode; className?: string; tone?: string }) => (
-        <div className={className} data-tone={tone}>{children}</div>
+    TimelineChromeSurface: ({
+        children,
+        className,
+        tone,
+    }: {
+        children?: React.ReactNode;
+        className?: string;
+        tone?: string;
+    }) => (
+        <div className={className} data-tone={tone}>
+            {children}
+        </div>
     ),
 }));
 
@@ -74,7 +95,9 @@ vi.mock('../AutomationView/AutomationSidebarCell', () => ({
 vi.mock('../AutomationView/AutomationControls', () => ({
     AutomationAddLaneControl: ({ params }: { params: { id: string; name: string }[] }) => (
         <div data-testid="add-lane-control">
-            {params.map((p) => <span key={p.id}>{p.name}</span>)}
+            {params.map((p) => (
+                <span key={p.id}>{p.name}</span>
+            ))}
         </div>
     ),
     AutomationModeControl: ({ automationMode, laneCount }: { automationMode: string; laneCount: number }) => (

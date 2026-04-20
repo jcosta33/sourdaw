@@ -1,13 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-    padStoreValue: { value: { inst1: { pads: [{ midiNote: 60 }, { midiNote: 62 }] } } as Record<string, { pads: Array<{ midiNote: number }> }> },
+    padStoreValue: {
+        value: { inst1: { pads: [{ midiNote: 60 }, { midiNote: 62 }] } } as Record<
+            string,
+            { pads: Array<{ midiNote: number }> }
+        >,
+    },
     crumbsNoteOn: vi.fn(),
     crumbsNoteOff: vi.fn(),
 }));
 
 vi.mock('../../../stores/padStore', () => ({
-    padStore: { get value() { return mocks.padStoreValue.value; } },
+    padStore: {
+        get value() {
+            return mocks.padStoreValue.value;
+        },
+    },
 }));
 
 vi.mock('../../../repositories/crumbsBridge', () => ({
@@ -15,8 +24,8 @@ vi.mock('../../../repositories/crumbsBridge', () => ({
     crumbsNoteOff: mocks.crumbsNoteOff,
 }));
 
-import { triggerPadOn } from '../triggerPadOn';
 import { triggerPadOff } from '../triggerPadOff';
+import { triggerPadOn } from '../triggerPadOn';
 
 describe('Crumbs Pad Triggering', () => {
     beforeEach(() => vi.clearAllMocks());

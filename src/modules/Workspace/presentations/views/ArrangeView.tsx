@@ -7,11 +7,10 @@ import {
     useEffect,
     useLayoutEffect,
 } from 'react';
+
+import { Piano, Upload, Headphones } from 'lucide-react';
+
 import { useStore } from '#/infra/store/useStore';
-import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
-import { timelineViewStore, setScrollX, markerStore } from '#/modules/Arrangement/stores';
-import { chordTrackStore } from '#/modules/MIDI/stores';
-import { addTrack, addClip, importMidiFile } from '#/modules/Arrangement/useCases';
 import {
     TimelineSurface,
     TimelineMinimap,
@@ -21,20 +20,25 @@ import {
     TimelineChromeSurface,
     TrackListView,
 } from '#/modules/Arrangement/presentations/views';
-import { useTracks } from '../hooks/useTracks';
-import { notifyUser } from '#/utils/Notification/notifyUser';
+import { timelineViewStore, setScrollX, markerStore } from '#/modules/Arrangement/stores';
+import { addTrack, addClip, importMidiFile } from '#/modules/Arrangement/useCases';
+import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
+import { chordTrackStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
-import { useWorkspaceState } from '../hooks/useWorkspaceState';
-import { setTrackListWidth } from '../../useCases/togglePanel/panelToggles/setTrackListWidth';
-import { setSessionViewWidth } from '../../useCases/togglePanel/panelToggles/setSessionViewWidth';
+import { clamp } from '#/utils/Math/clamp';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { closeScratchPad } from '../../useCases/togglePanel/panelToggles/closeScratchPad';
+import { setSessionViewWidth } from '../../useCases/togglePanel/panelToggles/setSessionViewWidth';
+import { setTrackListWidth } from '../../useCases/togglePanel/panelToggles/setTrackListWidth';
 import { ResizeHandle } from '../components/ResizeHandle';
-import { Piano, Upload, Headphones } from 'lucide-react';
+import { useTracks } from '../hooks/useTracks';
+import { useWorkspaceState } from '../hooks/useWorkspaceState';
+
+import { ArrangeEmptyStateShell } from './ArrangeEmptyStateShell';
+import { SessionView } from './SessionView';
 import { ChordTrackLane } from './Timeline/ChordTrackLane';
 import { ScratchPadView } from './Timeline/ScratchPadView';
-import { SessionView } from './SessionView';
-import { ArrangeEmptyStateShell } from './ArrangeEmptyStateShell';
-import { clamp } from '#/utils/Math/clamp';
 
 const TRACK_LIST_MIN = 120;
 const TRACK_LIST_MAX = 400;
@@ -44,7 +48,8 @@ const SESSION_VIEW_MAX = 800;
 
 export const ArrangeView = (): ReactElement => {
     const { tracks } = useTracks();
-    const { trackListOpen, trackListWidth, scratchPadOpen, scratchPadHeight, dualViewOpen, sessionViewWidth } = useWorkspaceState();
+    const { trackListOpen, trackListWidth, scratchPadOpen, scratchPadHeight, dualViewOpen, sessionViewWidth } =
+        useWorkspaceState();
 
     const hasUserTracks = tracks.filter((t) => t.kind !== 'master' && t.kind !== 'folder').length > 0;
 
@@ -91,7 +96,9 @@ export const ArrangeView = (): ReactElement => {
 
     useLayoutEffect(() => {
         const el = timelineContainerRef.current;
-        if (!el) {return;}
+        if (!el) {
+            return;
+        }
         const observer = new ResizeObserver(() => {
             setViewportWidth(el.clientWidth);
         });
@@ -100,7 +107,7 @@ export const ArrangeView = (): ReactElement => {
         return () => observer.disconnect();
         // Re-run when hasUserTracks flips so the observer attaches once the
         // timeline container div is mounted (absent during the empty-state path).
-    }, [hasUserTracks]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [hasUserTracks]);
 
     const viewState = useStore(timelineViewStore, {
         scrollX: 0,
@@ -131,7 +138,10 @@ export const ArrangeView = (): ReactElement => {
         <div className="flex h-full">
             {dualViewOpen ? (
                 <>
-                    <div className="flex flex-col border-r border-border/20 bg-surface-base" style={{ width: localSessionWidth }}>
+                    <div
+                        className="flex flex-col border-r border-border/20 bg-surface-base"
+                        style={{ width: localSessionWidth }}
+                    >
                         <SessionView />
                     </div>
                     <ResizeHandle

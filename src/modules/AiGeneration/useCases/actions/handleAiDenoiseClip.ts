@@ -1,7 +1,9 @@
-import { createAiGenerationError } from '../../errors/AiGenerationError';
 import { isAppError } from '#/infra/errors/isAppError';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { denoiseAudio, isTauri } from '#/modules/AudioEngine/useCases';
+
+import { createAiGenerationError } from '../../errors/AiGenerationError';
+
 import { addTask } from './addTask';
 import { updateTask } from './updateTask';
 
@@ -63,11 +65,7 @@ export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7
     } catch (error: unknown) {
         updateTask(taskId, {
             status: 'error',
-            error: isAppError(error)
-                ? error.message
-                : error instanceof Error
-                  ? error.message
-                  : 'Denoise failed',
+            error: isAppError(error) ? error.message : error instanceof Error ? error.message : 'Denoise failed',
         });
     }
 }

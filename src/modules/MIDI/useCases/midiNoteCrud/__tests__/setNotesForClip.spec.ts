@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { midiStore } from '../../../stores/midiStore';
-
 import { setNotesForClip } from '../setNotesForClip';
 
 const note = (id: string): { id: string; pitch: number; startBeat: number; duration: number; velocity: number } => ({

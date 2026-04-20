@@ -1,6 +1,8 @@
 import { isCloudAvailable } from '../../../repositories/cloudLlm/keyManagement';
-import type { AiBackend } from './helpers';
+
 import { resolveBackend } from './helpers';
+
+import type { AiBackend } from './helpers';
 
 /**
  * Returns the ordered fallback chain for inference.

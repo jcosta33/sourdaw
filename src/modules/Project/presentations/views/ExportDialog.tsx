@@ -1,13 +1,21 @@
 import { type ReactElement, useState, useRef } from 'react';
-import { notifyUser } from '#/utils/Notification/notifyUser';
-import { logger } from '#/infra/logger/appLogger';
+
+import { zipSync } from 'fflate';
+import { Flame, X, CheckCircle2 } from 'lucide-react';
+
 import { DawDialogBody } from '#/components/daw/DawDialogBody';
 import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
 import { DawDialogSection } from '#/components/daw/DawDialogSection';
 import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
-import { Flame, X, CheckCircle2 } from 'lucide-react';
+import { logger } from '#/infra/logger/appLogger';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+import { isTauri } from '#/utils/tauriBridge';
+
 import {
     renderOffline,
     exportStems,
@@ -17,11 +25,6 @@ import {
     encodeMp3,
     encodeFlac,
 } from '../../useCases/exportActions';
-import { trackStore } from '#/modules/Arrangement/stores';
-import { isTauri } from '#/utils/tauriBridge';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { getAudioContext } from '#/modules/AudioEngine/useCases';
-import { zipSync } from 'fflate';
 
 type ExportFormat = 'wav' | 'mp3' | 'flac';
 type ExportMode = 'mixdown' | 'stems';
@@ -166,14 +169,18 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         multiple: false,
                         title: 'Select Output Folder for Slices (Stems)',
                     })) as string | null;
-                    if (!tauriDirPath) {return;} // User cancelled
+                    if (!tauriDirPath) {
+                        return;
+                    } // User cancelled
                 } else {
                     const primaryExt = Array.from(formats)[0] || 'wav';
                     tauriFilePath = await save({
                         defaultPath: `${baseName}.${primaryExt}`,
                         filters: [{ name: 'Audio File', extensions: Array.from(formats) }],
                     });
-                    if (!tauriFilePath) {return;} // User cancelled
+                    if (!tauriFilePath) {
+                        return;
+                    } // User cancelled
                 }
             } else {
                 // Web Environment
@@ -197,9 +204,11 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     });
                 }
             }
-        } catch (e) {
+        } catch (error) {
             // If user clicked cancel, abort quietly
-            if (e instanceof Error && e.name === 'AbortError') {return;}
+            if (error instanceof Error && error.name === 'AbortError') {
+                return;
+            }
             // Otherwise, allow it to drop to fallback `<a download>` memory mode
         }
 
@@ -247,7 +256,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             ) => {
                 let currentPass = 0;
                 for (const f of formatList) {
-                    if (cancelledRef.current) {return;}
+                    if (cancelledRef.current) {
+                        return;
+                    }
 
                     const passProgress = (frac: number) => {
                         const subFraction = (currentPass + frac) / formatList.length;
@@ -300,7 +311,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     onProgress: (frac) => {
                         const barPct = frac * 50;
                         setProgress(barPct);
-                        if (Math.round(barPct) % 5 === 0) {setStatusText('Proofing slices...');}
+                        if (Math.round(barPct) % 5 === 0) {
+                            setStatusText('Proofing slices...');
+                        }
                     },
                     onWarning: (msg) => {
                         logger.warn(msg);
@@ -315,13 +328,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         'warning'
                     );
                 }
-                if (cancelledRef.current) {return;}
+                if (cancelledRef.current) {
+                    return;
+                }
 
                 let doneStems = 0;
                 const totalStems = stems.size;
 
                 for (const [trackId, buffer] of stems) {
-                    if (cancelledRef.current) {return;}
+                    if (cancelledRef.current) {
+                        return;
+                    }
                     const track = tracks.find((t) => t.id === trackId);
                     const safeTName = (track?.name || trackId).replaceAll(/[^a-zA-Z0-9_\- ]/g, '_');
 
@@ -342,7 +359,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     onProgress: (frac) => {
                         const barPct = frac * 60;
                         setProgress(barPct);
-                        if (Math.round(barPct) % 5 === 0) {setStatusText('Proofing whole loaf...');}
+                        if (Math.round(barPct) % 5 === 0) {
+                            setStatusText('Proofing whole loaf...');
+                        }
                     },
                     onWarning: (msg) => {
                         logger.warn(msg);
@@ -357,13 +376,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         'warning'
                     );
                 }
-                if (cancelledRef.current) {return;}
+                if (cancelledRef.current) {
+                    return;
+                }
 
                 // We map the remaining 40% of the progress bar to encoding the mixdown
                 await serializeAudio(buffer, baseName, 60, 40);
             }
 
-            if (cancelledRef.current) {return;}
+            if (cancelledRef.current) {
+                return;
+            }
 
             // ── 3. FINALIZE WEB SAVES ──
             if (!isTauri() && Object.keys(zipDirectory).length > 0) {
@@ -406,7 +429,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
             // Auto-close after 2.5s
             setTimeout(() => {
-                if (open) {onClose();}
+                if (open) {
+                    onClose();
+                }
             }, 2500);
         } catch (error) {
             if (cancelledRef.current) {

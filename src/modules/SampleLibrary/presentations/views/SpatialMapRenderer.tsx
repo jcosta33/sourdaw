@@ -1,5 +1,7 @@
 import { type ReactElement, useRef, useEffect } from 'react';
+
 import { useStore } from '#/infra/store/useStore';
+
 import { libraryStore } from '../../stores/libraryStore';
 
 type SpatialMapRendererProps = {
@@ -12,11 +14,7 @@ type SpatialMapRendererProps = {
  * 2D Spatial Map renderer.
  * R-G3: Browse samples by Timbral Proximity.
  */
-export const SpatialMapRenderer = ({
-    width,
-    height,
-    onSampleClick,
-}: SpatialMapRendererProps): ReactElement => {
+export const SpatialMapRenderer = ({ width, height, onSampleClick }: SpatialMapRendererProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const libState = useStore(libraryStore, {
         roots: [],
@@ -35,16 +33,22 @@ export const SpatialMapRenderer = ({
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {
+            return;
+        }
 
         ctx.clearRect(0, 0, width, height);
 
         const accentGold = getComputedStyle(canvas).getPropertyValue('--color-accent-gold').trim() || '#d4a017';
 
         for (const sample of libState.samples) {
-            if (!sample.spatialMap) continue;
+            if (!sample.spatialMap) {
+                continue;
+            }
 
             const x = (sample.spatialMap.x + 1) * 0.5 * width;
             const y = (sample.spatialMap.y + 1) * 0.5 * height;
@@ -64,14 +68,18 @@ export const SpatialMapRenderer = ({
 
     const handleClick = (e: React.MouseEvent) => {
         const rect = canvasRef.current?.getBoundingClientRect();
-        if (!rect) return;
+        if (!rect) {
+            return;
+        }
         const canvas = canvasRef.current!;
         const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
         const my = (e.clientY - rect.top) * (canvas.height / rect.height);
 
         // Hit test
         for (const sample of libState.samples) {
-            if (!sample.spatialMap) continue;
+            if (!sample.spatialMap) {
+                continue;
+            }
             const x = (sample.spatialMap.x + 1) * 0.5 * width;
             const y = (sample.spatialMap.y + 1) * 0.5 * height;
             const dist = Math.sqrt((x - mx) ** 2 + (y - my) ** 2);

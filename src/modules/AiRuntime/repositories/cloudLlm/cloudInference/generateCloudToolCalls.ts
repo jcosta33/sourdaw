@@ -1,10 +1,13 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { mcpToOpenAiTools } from '../../mcpToolAdapter/mcpToOpenAiTools';
+
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
+import { mcpToOpenAiTools } from '../../mcpToolAdapter/mcpToOpenAiTools';
 import { getCloudClient } from '../keyManagement';
+
 import { CLOUD_MODEL } from './helpers';
+
+import type Anthropic from '@anthropic-ai/sdk';
 
 const CLOUD_SYSTEM_PROMPT = `You are a professional music production AI integrated into a DAW (Digital Audio Workstation). Use the provided tools to execute all user requests. Never describe actions — execute them via tools. You understand music theory, mixing, mastering, and arrangement.
 
@@ -25,7 +28,7 @@ function getClaudeTools(): Anthropic.Messages.Tool[] {
 
 export const generateCloudToolCalls = inject({ logger })(
     ({ logger }) =>
-        (async function generateCloudToolCalls(projectState: string, userMessage: string): Promise<ToolCallResult[]> {
+        async function generateCloudToolCalls(projectState: string, userMessage: string): Promise<ToolCallResult[]> {
             const client = getCloudClient();
             if (!client) {
                 throw new Error('Cloud AI not configured. Set API key first.');
@@ -59,5 +62,5 @@ export const generateCloudToolCalls = inject({ logger })(
             );
 
             return results;
-        })
+        }
 );

@@ -6,6 +6,7 @@
  * that reads FFT data.
  */
 import { useRef, useEffect, useState } from 'react';
+
 import { getMasterAnalyser, getAudioSampleRate } from '#/modules/AudioEngine/useCases';
 
 export function useProofAnalyser(): {
@@ -29,7 +30,9 @@ export function useProofAnalyser(): {
 
     useEffect(() => {
         const masterAnalyser = getMasterAnalyser();
-        if (!masterAnalyser?.context) {return;}
+        if (!masterAnalyser?.context) {
+            return;
+        }
 
         // Create high-resolution analyser
         const ctx = masterAnalyser.context;
@@ -54,7 +57,9 @@ export function useProofAnalyser(): {
         const update = () => {
             rafId = requestAnimationFrame(update);
             frameCount++;
-            if (frameCount % 4 !== 0) {return;} // throttle to ~15fps
+            if (frameCount % 4 !== 0) {
+                return;
+            } // throttle to ~15fps
             if (analyserRef.current && dataRef.current) {
                 analyserRef.current.getFloatFrequencyData(dataRef.current);
                 setTick((t) => t + 1);

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { configureCloudApi } from '../configureCloudApi';
 
 const mocks = vi.hoisted(() => ({

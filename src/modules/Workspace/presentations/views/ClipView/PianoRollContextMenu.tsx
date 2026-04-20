@@ -3,10 +3,12 @@
  * quantize, transpose, humanize, strum, AI, and groove operations.
  */
 import { type ReactElement, useRef } from 'react';
-import { logger } from '#/infra/logger/appLogger';
+
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
-import { type MidiNote } from '../../../models/MidiNoteViewTypes';
+import { logger } from '#/infra/logger/appLogger';
+import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
+import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import {
     addMidiNote,
@@ -24,10 +26,10 @@ import {
     applyGrooveToClip,
     restoreGrooveOriginals,
 } from '#/modules/MIDI/useCases';
-import { copySelectedNotes, pasteNotes } from '#/modules/Arrangement/useCases';
-import { generateMidiAI, isTauri } from '#/modules/AudioEngine/useCases';
-import { type PianoRollMenu } from '../../helpers/pianoRollConstants';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
+
+import { type MidiNote } from '../../../models/MidiNoteViewTypes';
+import { type PianoRollMenu } from '../../helpers/pianoRollConstants';
 
 const pillBtnClass = 'rounded bg-accent/50 px-1.5 py-0.5 text-[9px] hover:bg-accent';
 
@@ -145,10 +147,14 @@ export const PianoRollContextMenu = ({
                             pushUndoEntry(
                                 `Quantize notes (${g === 1 ? '1/1' : g === 0.5 ? '1/2' : g === 0.25 ? '1/4' : '1/8'})`,
                                 () => {
-                                    for (const n of before) {moveMidiNote(clipId, n.id, n.pitch, n.startBeat);}
+                                    for (const n of before) {
+                                        moveMidiNote(clipId, n.id, n.pitch, n.startBeat);
+                                    }
                                 },
                                 () => {
-                                    for (const n of after) {moveMidiNote(clipId, n.id, n.pitch, n.startBeat);}
+                                    for (const n of after) {
+                                        moveMidiNote(clipId, n.id, n.pitch, n.startBeat);
+                                    }
                                 }
                             );
                         })}
@@ -211,7 +217,6 @@ export const PianoRollContextMenu = ({
             >
                 Snap to Scale
             </DawMenuButton>
-
 
             {/* Humanize */}
             <DawMenuSeparator className="border-border/50" />
@@ -367,11 +372,14 @@ export const PianoRollContextMenu = ({
                         pushUndoEntry(
                             `Delete ${deletedNotes.length} note${deletedNotes.length > 1 ? 's' : ''}`,
                             () => {
-                                for (const n of deletedNotes)
-                                    {addMidiNote(clipId, n.pitch, n.startBeat, n.duration, n.velocity);}
+                                for (const n of deletedNotes) {
+                                    addMidiNote(clipId, n.pitch, n.startBeat, n.duration, n.velocity);
+                                }
                             },
                             () => {
-                                for (const n of deletedNotes) {removeMidiNote(clipId, n.id);}
+                                for (const n of deletedNotes) {
+                                    removeMidiNote(clipId, n.id);
+                                }
                             }
                         );
                     }

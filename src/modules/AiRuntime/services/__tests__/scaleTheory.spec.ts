@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { getScalePitches, snapToScale, chordFromDegrees, filterTemplates } from '../scaleTheory';
+
 import { type PatternTemplate } from '../../models/MidiPatternType';
+import { getScalePitches, snapToScale, chordFromDegrees, filterTemplates } from '../scaleTheory';
 
 describe('scaleTheory', () => {
     describe('getScalePitches', () => {
@@ -15,7 +16,7 @@ describe('scaleTheory', () => {
             // A4 to A5: A, B, C, D, E, F, G, A
             expect(aMinor).toEqual([69, 71, 72, 74, 76, 77, 79, 81]);
         });
-        
+
         it('handles boundary ranges', () => {
             const pitches = getScalePitches('C', 'major', 60, 60);
             expect(pitches).toEqual([60]);
@@ -41,7 +42,7 @@ describe('scaleTheory', () => {
             const scale = [60, 62, 64, 65, 67, 69, 71, 72];
             // C Major Triad (I): degrees 0, 2, 4 (C, E, G)
             const notes = chordFromDegrees([0, 2, 4], scale, 0, 1, 2, 90);
-            
+
             expect(notes).toHaveLength(3);
             expect(notes[0]).toEqual({ pitch: 60, velocity: 90, startBeat: 1, durationBeats: 2 });
             expect(notes[1]).toEqual({ pitch: 64, velocity: 90, startBeat: 1, durationBeats: 2 });
@@ -88,7 +89,7 @@ describe('scaleTheory', () => {
                 genres: ['ambient', 'electronic'],
                 resolution: 4,
                 generate: () => [],
-            }
+            },
         ];
 
         it('filters by category', () => {
@@ -118,7 +119,7 @@ describe('scaleTheory', () => {
             expect(filtered2).toHaveLength(1);
             expect(filtered2[0]!.name).toBe('Pop Beat');
         });
-        
+
         it('returns all when no filters apply', () => {
             const filtered = filterTemplates(templates, {});
             expect(filtered).toHaveLength(3);

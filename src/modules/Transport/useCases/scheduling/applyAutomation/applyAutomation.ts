@@ -1,13 +1,12 @@
-import { automationStore } from '#/modules/Automation/stores';
-import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
-
 import {
     setTrackGain as engineSetTrackGain,
     setTrackPan as engineSetTrackPan,
     updateDeviceParam,
     updateMidiFxParam,
 } from '#/modules/AudioEngine/useCases';
+import { automationStore } from '#/modules/Automation/stores';
+import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
 
 /**
  * Per-parameter exponential slew state for plugin automation.
@@ -27,7 +26,9 @@ const automationState: {
 
 export function applyAutomation(currentBeat: number): void {
     const autoState = automationStore.value;
-    if (!autoState) return;
+    if (!autoState) {
+        return;
+    }
 
     const tracks = trackStore.value?.tracks;
 
@@ -39,20 +40,30 @@ export function applyAutomation(currentBeat: number): void {
     }
 
     for (const lane of autoState.lanes) {
-        if (lane.points.length === 0) continue;
+        if (lane.points.length === 0) {
+            continue;
+        }
 
         const track = automationState.trackIndex.get(lane.trackId);
-        if (!track || track.automationMode === 'off') continue;
+        if (!track || track.automationMode === 'off') {
+            continue;
+        }
 
         if (lane.clipId) {
             const clip = track.clips.find((c) => c.id === lane.clipId);
-            if (!clip || currentBeat < clip.startBeat || currentBeat > clip.endBeat) continue;
+            if (!clip || currentBeat < clip.startBeat || currentBeat > clip.endBeat) {
+                continue;
+            }
         }
 
-        if (isRecordingAutomation(lane.trackId, lane.parameterId)) continue;
+        if (isRecordingAutomation(lane.trackId, lane.parameterId)) {
+            continue;
+        }
 
         const value = getAutomationValueAtBeat(lane.id, currentBeat);
-        if (value === null) continue;
+        if (value === null) {
+            continue;
+        }
 
         if (lane.parameterId === 'gain') {
             engineSetTrackGain(lane.trackId, value);

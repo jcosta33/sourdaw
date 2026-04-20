@@ -30,8 +30,8 @@ class AnimationScheduler {
             for (const [id, cb] of this.callbacks.entries()) {
                 try {
                     cb(time, delta);
-                } catch (e) {
-                    logger.warn(`[AnimationScheduler] Callback "${id}" threw:`, e);
+                } catch (error) {
+                    logger.warn(`[AnimationScheduler] Callback "${id}" threw:`, error);
                 }
             }
 

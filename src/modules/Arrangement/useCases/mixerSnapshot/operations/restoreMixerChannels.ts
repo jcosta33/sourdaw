@@ -1,6 +1,6 @@
+import { type MixerChannelSnapshot } from '../../../models/MixerSnapshotTypes';
 import { getTrackState } from '../../../repositories/track/getTrackState';
 import { setTrackState } from '../../../repositories/track/setTrackState';
-import { type MixerChannelSnapshot } from '../../../models/MixerSnapshotTypes';
 
 export function restoreMixerChannels(channels: MixerChannelSnapshot[]): void {
     const state = getTrackState();

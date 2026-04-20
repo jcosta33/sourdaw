@@ -1,11 +1,14 @@
 import { type ReactElement } from 'react';
+
+import { AlertCircle, AlertTriangle, Info, Volume2 } from 'lucide-react';
+
 import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawStatusDot } from '#/components/daw/DawStatusDot';
-import { DawUtilityMetric } from '#/components/daw/DawUtilityMetric';
 import { DawUtilityListRow } from '#/components/daw/DawUtilityListRow';
+import { DawUtilityMetric } from '#/components/daw/DawUtilityMetric';
 import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
-import { AlertCircle, AlertTriangle, Info, Volume2 } from 'lucide-react';
+
 import { type MixAnalysis, type MixIssue } from '../../../models/MixAnalysis';
 
 // ── Shared helpers ──────────────────────────────────────────────────────

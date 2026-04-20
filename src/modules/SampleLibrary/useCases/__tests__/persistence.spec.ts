@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { restoreLibrary } from '../restoreLibrary';
+
 import { requestPermission } from '../requestPermission';
+import { restoreLibrary } from '../restoreLibrary';
 
 const mocks = vi.hoisted(() => ({
     restoreLibraryRepo: vi.fn(),

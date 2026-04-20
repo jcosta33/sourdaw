@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleGenerateBassline } from '../handleGenerateBassline';
 
 const mocks = vi.hoisted(() => ({
@@ -39,9 +40,7 @@ describe('handleGenerateBassline', () => {
     it('generates a bassline on a new track when trackId is omitted', async () => {
         mocks.getNotesForClip.mockReturnValue([{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }]);
         mocks.addTrack.mockReturnValue({ id: 't2' });
-        mocks.llmGenerateNotes.mockResolvedValue([
-            { pitch: 36, startBeat: 0, duration: 1, velocity: 80 }
-        ]);
+        mocks.llmGenerateNotes.mockResolvedValue([{ pitch: 36, startBeat: 0, duration: 1, velocity: 80 }]);
 
         await handleGenerateBassline.execute({
             type: 'generateBassline',
@@ -49,7 +48,7 @@ describe('handleGenerateBassline', () => {
         });
 
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Bass (root-fifth)', kind: 'midi' });
-        
+
         // Assert it calls LLM helper with the correct arguments
         expect(mocks.llmGenerateNotes).toHaveBeenCalledWith(
             mocks.generateToolCalls,

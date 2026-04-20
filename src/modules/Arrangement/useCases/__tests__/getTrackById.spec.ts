@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { type Track } from '../../models/Track';
-import { getTrackById } from '../getTrackById';
 import { getTrackById as repoGetTrackById } from '../../repositories/track/getTrackById';
+import { getTrackById } from '../getTrackById';
 
 vi.mock('../../repositories/track/getTrackById', () => ({
     getTrackById: vi.fn(),

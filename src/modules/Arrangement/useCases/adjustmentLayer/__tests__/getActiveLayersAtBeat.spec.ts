@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { getActiveLayersAtBeat } from '../getActiveLayersAtBeat';
 
 const mocks = vi.hoisted(() => ({
@@ -7,8 +8,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Arrangement/stores/adjustmentLayer', () => ({
     adjustmentLayerStore: {
-        get value() { return mocks.adjustmentLayerStoreValue.value; },
-    }
+        get value() {
+            return mocks.adjustmentLayerStoreValue.value;
+        },
+    },
 }));
 
 describe('getActiveLayersAtBeat', () => {
@@ -23,17 +26,17 @@ describe('getActiveLayersAtBeat', () => {
                 { id: 'l2', enabled: true, regions: [{ startBeat: 0, endBeat: 8 }] }, // Covers 0-8
                 { id: 'l3', enabled: true, regions: [{ startBeat: 16, endBeat: 32 }] }, // Covers 16-32
                 { id: 'l4', enabled: false, regions: [] }, // Disabled
-            ]
+            ],
         } as any;
 
         const activeAt4 = getActiveLayersAtBeat(4);
-        expect(activeAt4.map(l => l.id)).toEqual(['l1', 'l2']);
+        expect(activeAt4.map((l) => l.id)).toEqual(['l1', 'l2']);
 
         const activeAt10 = getActiveLayersAtBeat(10);
-        expect(activeAt10.map(l => l.id)).toEqual(['l1']);
+        expect(activeAt10.map((l) => l.id)).toEqual(['l1']);
 
         const activeAt20 = getActiveLayersAtBeat(20);
-        expect(activeAt20.map(l => l.id)).toEqual(['l1', 'l3']);
+        expect(activeAt20.map((l) => l.id)).toEqual(['l1', 'l3']);
     });
 
     it('returns empty array if store is unavailable', () => {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleSetTrackGain } from '../handleSetTrackGain';
 
 const mocks = vi.hoisted(() => ({
@@ -32,7 +33,7 @@ describe('handleSetTrackGain', () => {
     describe('describe', () => {
         it('returns inverse action with previous gain', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', gain: 1.0 }] });
-            
+
             const desc = handleSetTrackGain.describe({
                 type: 'setTrackGain',
                 payload: { trackId: 't1', gain: 0.5 },
@@ -41,13 +42,13 @@ describe('handleSetTrackGain', () => {
             expect(desc.label).toBe('Set track gain');
             expect(desc.inverseAction).toEqual({
                 type: 'setTrackGain',
-                payload: { trackId: 't1', gain: 1.0 }
+                payload: { trackId: 't1', gain: 1.0 },
             });
         });
 
         it('returns null inverse action if track not found', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
-            
+
             const desc = handleSetTrackGain.describe({
                 type: 'setTrackGain',
                 payload: { trackId: 't1', gain: 0.5 },

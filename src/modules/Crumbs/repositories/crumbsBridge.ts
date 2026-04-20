@@ -4,6 +4,7 @@
  */
 
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
+
 import type {
     LoopPointDetectionResult,
     MeteringResult,

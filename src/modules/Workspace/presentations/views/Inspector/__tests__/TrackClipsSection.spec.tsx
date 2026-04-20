@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TrackClipsSection } from '../TrackClipsSection';
+
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
@@ -23,9 +25,7 @@ vi.mock('#/components/daw/DawHeaderBand', () => ({
 }));
 
 vi.mock('#/components/daw/DawMicroBadge', () => ({
-    DawMicroBadge: ({ children }: { children: React.ReactNode }) => (
-        <span data-testid="micro-badge">{children}</span>
-    ),
+    DawMicroBadge: ({ children }: { children: React.ReactNode }) => <span data-testid="micro-badge">{children}</span>,
 }));
 
 vi.mock('#/components/ui/button', () => ({
@@ -78,8 +78,35 @@ describe('TrackClipsSection', () => {
         pan: 0,
         color: '#ff0000',
         clips: [
-            { id: 'clip-1', trackId: 'track-1', name: 'Clip 1', startBeat: 0, endBeat: 16, type: 'audio', fadeInBeats: 0, fadeOutBeats: 0, gain: 1, color: '#ff0000', locked: false, muted: false },
-            { id: 'clip-2', trackId: 'track-1', name: 'Clip 2', startBeat: 16, endBeat: 32, type: 'audio', fadeInBeats: 0, fadeOutBeats: 0, gain: 1, color: '#ff0000', locked: false, muted: false, isGhost: true },
+            {
+                id: 'clip-1',
+                trackId: 'track-1',
+                name: 'Clip 1',
+                startBeat: 0,
+                endBeat: 16,
+                type: 'audio',
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
+                gain: 1,
+                color: '#ff0000',
+                locked: false,
+                muted: false,
+            },
+            {
+                id: 'clip-2',
+                trackId: 'track-1',
+                name: 'Clip 2',
+                startBeat: 16,
+                endBeat: 32,
+                type: 'audio',
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
+                gain: 1,
+                color: '#ff0000',
+                locked: false,
+                muted: false,
+                isGhost: true,
+            },
         ],
         devices: [],
         sends: [],

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { polyphonicAudioToMidi } from '../polyphonicAudioToMidi';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -12,7 +13,7 @@ vi.mock('#/infra/logger/appLogger', () => ({
         warn: (...args: any[]) => loggerWarnMock(...args),
         info: vi.fn(),
         error: vi.fn(),
-    }
+    },
 }));
 
 describe('polyphonicAudioToMidi', () => {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { handleCreateBus } from '../handleCreateBus';
 
 const mocks = vi.hoisted(() => ({

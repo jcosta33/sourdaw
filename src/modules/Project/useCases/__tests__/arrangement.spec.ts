@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { Container } from '#/infra/di/Container';
+import { stopPlayback } from '#/modules/Transport/useCases';
+
 import { arrangementStore } from '../../stores/arrangementStore';
 import { switchArrangement } from '../arrangement/switchArrangement';
-import { stopPlayback } from '#/modules/Transport/useCases';
 import { markDirty } from '../projectPersistence/saveProject/markDirty';
 
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => {

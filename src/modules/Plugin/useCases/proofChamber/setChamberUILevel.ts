@@ -9,7 +9,7 @@ export function setChamberUILevel(id: string, level: 1 | 2 | 3 | 4 | 5): void {
         return;
     }
 
-    const instance = state.instances[id]!;
+    const instance = state.instances[id];
     chamberStore.set({
         ...state,
         instances: {

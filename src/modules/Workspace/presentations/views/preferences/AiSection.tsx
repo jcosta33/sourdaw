@@ -1,17 +1,15 @@
 import { type ReactElement, useState } from 'react';
-import { Button } from '#/components/ui/button';
-import { Separator } from '#/components/ui/separator';
-import { Input } from '#/components/ui/input';
-import { DawStatusDot } from '#/components/daw/DawStatusDot';
+
 import { Sparkles, Eye, EyeOff } from 'lucide-react';
-import {
-    configureCloudApi,
-    removeCloudApi,
-    isCloudAvailable,
-    resolveBackend,
-} from '#/modules/AiRuntime/useCases';
+
+import { DawStatusDot } from '#/components/daw/DawStatusDot';
+import { Button } from '#/components/ui/button';
+import { Input } from '#/components/ui/input';
+import { Separator } from '#/components/ui/separator';
+import { configureCloudApi, removeCloudApi, isCloudAvailable, resolveBackend } from '#/modules/AiRuntime/useCases';
 import { CapabilityReportPanel, ModelManagerPanel } from '#/modules/BrowserAi/presentations/views';
 import { cn } from '#/utils/Styles/cn';
+
 import { SectionTitle, FieldGroup } from '../preferencesShared';
 
 export const AiSection = (): ReactElement => {
@@ -127,8 +125,8 @@ export const AiSection = (): ReactElement => {
 
             <FieldGroup label="Browser AI">
                 <p className="text-[10px] text-muted-foreground leading-relaxed mb-2">
-                    Instrument synthesis (DDSP), vocal previews (Kokoro TTS), and singing voice synthesis
-                    (DiffSinger) — all running in the browser via WebGPU on Chrome. No server required.
+                    Instrument synthesis (DDSP), vocal previews (Kokoro TTS), and singing voice synthesis (DiffSinger) —
+                    all running in the browser via WebGPU on Chrome. No server required.
                 </p>
                 <div className="border border-border/30 rounded overflow-hidden">
                     <CapabilityReportPanel />

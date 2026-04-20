@@ -1,10 +1,10 @@
-import { createHandler } from '#/utils/createHandler';
 import { logger } from '#/infra/logger/appLogger';
-import { notifyUser } from '#/utils/Notification/notifyUser';
-import { addClip, addTrack } from '#/modules/Arrangement/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { addClip, addTrack } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { audioBufferToWav } from '#/modules/AudioEngine/useCases';
+import { createHandler } from '#/utils/createHandler';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 export const handleStemSeparate = createHandler<'stemSeparate'>({
     execute: async (a) => {

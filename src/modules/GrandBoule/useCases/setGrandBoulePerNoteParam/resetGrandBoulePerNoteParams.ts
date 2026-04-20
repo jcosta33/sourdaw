@@ -1,12 +1,12 @@
 import { type Store } from '#/infra/store/types';
-import { type GrandBouleState } from '../../stores/grandBouleStore';
-import { type GrandBouleEngineHandle } from '../../repositories/grandBouleEngineHandle';
 
 import {
     type GrandBoulePerNoteMap,
     createDefaultPerNoteValues,
     PER_NOTE_PARAM_DESCRIPTORS,
 } from '../../models/GrandBoulePerNoteParams';
+import { type GrandBouleEngineHandle } from '../../repositories/grandBouleEngineHandle';
+import { type GrandBouleState } from '../../stores/grandBouleStore';
 
 type ResetGrandBoulePerNoteParamsInput = {
     engine: GrandBouleEngineHandle;

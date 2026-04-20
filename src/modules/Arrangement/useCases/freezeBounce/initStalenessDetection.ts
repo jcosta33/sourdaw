@@ -1,6 +1,6 @@
-import { trackStore, type TrackStoreState } from '../../stores/trackStore';
-import { computeTrackHash } from '../../services/computeTrackHash';
 import { updateTrack } from '../../repositories/track/updateTrack';
+import { computeTrackHash } from '../../services/computeTrackHash';
+import { trackStore, type TrackStoreState } from '../../stores/trackStore';
 
 let isEvaluating = false;
 let prevState: TrackStoreState | null = null;
@@ -27,17 +27,19 @@ export function initStalenessDetection(): () => void {
         try {
             for (const track of state.tracks) {
                 const prevTrack = previous.tracks.find((t) => t.id === track.id);
-                if (!prevTrack) {continue;}
+                if (!prevTrack) {
+                    continue;
+                }
 
                 // Only evaluate if the track is frozen
-                if (track.freezeState.status === 'frozen') {
+                if (track.freezeState?.status === 'frozen') {
                     // Fast path: skip deep hash if object references haven't changed
                     if (track.clips !== prevTrack.clips || track.devices !== prevTrack.devices) {
                         const hash = await computeTrackHash(track.clips, track.devices);
                         if (hash !== track.freezeState.sourceContentHash) {
                             updateTrack(track.id, (t) => ({
                                 ...t,
-                                freezeState: { ...t.freezeState, status: 'stale' }
+                                freezeState: { ...(t.freezeState ?? { status: 'unfrozen' }), status: 'stale' },
                             }));
                         }
                     }

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+
 import { ensureWhisperReady } from '../ensureWhisperReady';
 
 const mocks = vi.hoisted(() => ({

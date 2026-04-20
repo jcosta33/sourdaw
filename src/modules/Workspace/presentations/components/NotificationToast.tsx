@@ -1,8 +1,12 @@
 import { type ReactElement } from 'react';
+
 import { AlertTriangle, X } from 'lucide-react';
+
 import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
+
 import { useNotificationQueue } from '../hooks/useNotificationQueue';
+
 export { notifyUser } from '#/utils/Notification/notifyUser';
 
 export const NotificationToast = (): ReactElement | null => {
@@ -37,12 +41,7 @@ export const NotificationToast = (): ReactElement | null => {
                     )}
                 />
                 <p className="flex-1 text-xs text-foreground">{latest.message}</p>
-                <Button
-                    variant="ghost"
-                    size="xs"
-                    onClick={dismissLatest}
-                    aria-label="Dismiss notification"
-                >
+                <Button variant="ghost" size="xs" onClick={dismissLatest} aria-label="Dismiss notification">
                     <X className="size-3" />
                 </Button>
             </div>

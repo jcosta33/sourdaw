@@ -18,21 +18,20 @@ vi.mock('../../../engine/ProofNode', () => ({ isProofDevice: vi.fn() }));
 vi.mock('../../../engine/ProofChamberNode', () => ({ isProofChamberDevice: vi.fn() }));
 vi.mock('../../../engine/ScoringNode', () => ({ isScoringDevice: vi.fn() }));
 
+import { isBacteriaDevice } from '../../../engine/BacteriaNode';
+import { isFermenterDevice } from '../../../engine/FermenterNode';
+import { isGlutenDevice } from '../../../engine/GlutenNode';
+import { isGrinderDevice } from '../../../engine/GrinderNode';
+import { isLevainDevice } from '../../../engine/LevainNode';
+import { isProofChamberDevice } from '../../../engine/ProofChamberNode';
+import { isProofDevice } from '../../../engine/ProofNode';
+import { isScoringDevice } from '../../../engine/ScoringNode';
+import { isToasterDevice } from '../../../engine/ToasterNode';
+import { isFaustModule } from '../../faustDeviceFactory';
 import { deviceRegistry } from '../AudioDeviceStrategy';
-import { createWebAudioDevice } from '../WebAudioDeviceStrategy';
 import { createFaustStrategy } from '../FaustDeviceStrategy';
 import { createNativeDspStrategy } from '../NativeDspDeviceStrategy';
-import { isFaustModule } from '../../faustDeviceFactory';
-
-import { isFermenterDevice } from '../../../engine/FermenterNode';
-import { isToasterDevice } from '../../../engine/ToasterNode';
-import { isLevainDevice } from '../../../engine/LevainNode';
-import { isGlutenDevice } from '../../../engine/GlutenNode';
-import { isBacteriaDevice } from '../../../engine/BacteriaNode';
-import { isGrinderDevice } from '../../../engine/GrinderNode';
-import { isProofDevice } from '../../../engine/ProofNode';
-import { isProofChamberDevice } from '../../../engine/ProofChamberNode';
-import { isScoringDevice } from '../../../engine/ScoringNode';
+import { createWebAudioDevice } from '../WebAudioDeviceStrategy';
 
 // Now import the module under test
 import '../setupDeviceStrategies';
@@ -48,12 +47,12 @@ describe('setupDeviceStrategies', () => {
 
     it('should register native DSP devices with a custom matcher', () => {
         const calls = vi.mocked(deviceRegistry.register).mock.calls;
-        const nativeCall = calls.find(c => c[1] === createNativeDspStrategy);
-        
+        const nativeCall = calls.find((c) => c[1] === createNativeDspStrategy);
+
         expect(nativeCall).toBeDefined();
-        
+
         const matcher = nativeCall![0] as (type: string) => boolean;
-        
+
         vi.mocked(isFermenterDevice).mockReturnValue(true);
         expect(matcher('any')).toBe(true);
 

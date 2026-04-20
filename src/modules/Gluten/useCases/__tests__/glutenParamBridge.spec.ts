@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { Container } from '#/infra/di/Container';
 
 const { mockUpdateDeviceParam, mockPersistDeviceParam, mockGetAllTracks } = vi.hoisted(() => ({
@@ -34,9 +35,9 @@ vi.mock('../../stores/glutenStore', () => ({
     loadGlutenPatch: vi.fn(),
 }));
 
-import { setGlutenParamWithAudio } from '../glutenParamBridge/setGlutenParamWithAudio';
-import { loadGlutenPatchWithAudio } from '../glutenParamBridge/loadGlutenPatchWithAudio';
 import { DEFAULT_PATCH } from '../../models/GlutenPatch';
+import { loadGlutenPatchWithAudio } from '../glutenParamBridge/loadGlutenPatchWithAudio';
+import { setGlutenParamWithAudio } from '../glutenParamBridge/setGlutenParamWithAudio';
 
 describe('glutenParamBridge', () => {
     beforeEach(() => {

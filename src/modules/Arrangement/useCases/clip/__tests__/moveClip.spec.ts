@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { moveClip } from '../moveClip';
 
 const mocks = vi.hoisted(() => ({
@@ -34,14 +35,14 @@ describe('moveClip', () => {
             tracks: [
                 { id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] },
                 { id: 't2', clips: [] },
-            ]
+            ],
         });
 
         moveClip('c1', 't2', 10);
 
         expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
         const newState = mocks.setTrackState.mock.calls[0][0];
-        
+
         expect(newState.tracks[0].clips).toHaveLength(0);
         expect(newState.tracks[1].clips).toHaveLength(1);
         expect(newState.tracks[1].clips[0]).toMatchObject({
@@ -54,7 +55,7 @@ describe('moveClip', () => {
 
     it('shifts MIDI notes when moving', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }]
+            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }],
         });
 
         moveClip('c1', 't1', 5);
@@ -65,7 +66,7 @@ describe('moveClip', () => {
 
     it('shifts automation when moving', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }]
+            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }],
         });
 
         moveClip('c1', 't1', 5);
@@ -76,7 +77,7 @@ describe('moveClip', () => {
 
     it('respects originalStartBeat for automation delta if provided', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 2, endBeat: 6 }] }]
+            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 2, endBeat: 6 }] }],
         });
 
         // Current start is 2. Target is 10. Drag started at 0.

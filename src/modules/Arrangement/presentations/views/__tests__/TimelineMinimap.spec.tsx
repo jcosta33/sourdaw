@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { TooltipProvider } from '#/components/ui/tooltip';
+
 import { TimelineMinimap } from '../TimelineMinimap';
 
 // Mock external dependencies
@@ -9,7 +11,7 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('../../../stores/trackStore', () => ({
-    trackStore: { 
+    trackStore: {
         value: { tracks: [], selectedTrackId: null },
         subscribe: vi.fn(() => vi.fn()),
         set: vi.fn(),
@@ -17,7 +19,7 @@ vi.mock('../../../stores/trackStore', () => ({
 }));
 
 vi.mock('../../../stores/timelineViewStore', () => ({
-    timelineViewStore: { 
+    timelineViewStore: {
         value: { scrollX: 0, pixelsPerBeat: 12 },
         subscribe: vi.fn(() => vi.fn()),
         set: vi.fn(),

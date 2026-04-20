@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { getSelectionBounds } from '../getSelectionBounds';
 
 const mocks = vi.hoisted(() => ({
@@ -7,8 +8,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../../stores/automationStore', () => ({
     automationStore: {
-        get value() { return mocks.automationStoreValue.value; },
-    }
+        get value() {
+            return mocks.automationStoreValue.value;
+        },
+    },
 }));
 
 describe('getSelectionBounds', () => {

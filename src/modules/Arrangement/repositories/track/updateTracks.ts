@@ -1,5 +1,5 @@
-import { trackStore } from '../../stores/trackStore';
 import { type Track } from '../../models/Track';
+import { trackStore } from '../../stores/trackStore';
 
 /** Update multiple tracks matching a predicate. */
 export function updateTracks(predicate: (track: Track) => boolean, updater: (track: Track) => Track): void {

@@ -1,16 +1,19 @@
 import { type ReactElement, useState, useRef, useEffect } from 'react';
-import { useStore } from '#/infra/store/useStore';
+
+import { ChevronDown, Plus, Copy, ListTree, Check, Edit2 } from 'lucide-react';
+
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
-import { ChevronDown, Plus, Copy, ListTree, Check, Edit2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+import { useStore } from '#/infra/store/useStore';
+import { cn } from '#/utils/Styles/cn';
+
 import { arrangementStore, defaultArrangementStoreState } from '../../stores/arrangementStore';
-import { switchArrangement } from '../../useCases/arrangement/switchArrangement';
 import { createArrangement } from '../../useCases/arrangement/createArrangement';
 import { duplicateArrangement } from '../../useCases/arrangement/duplicateArrangement';
 import { renameArrangement } from '../../useCases/arrangement/renameArrangement';
-import { cn } from '#/utils/Styles/cn';
+import { switchArrangement } from '../../useCases/arrangement/switchArrangement';
 
 export const ArrangementSelector = (): ReactElement | null => {
     const [open, setOpen] = useState(false);

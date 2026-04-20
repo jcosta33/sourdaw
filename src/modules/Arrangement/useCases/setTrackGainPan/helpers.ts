@@ -1,9 +1,11 @@
-import { getTrackById } from '../../repositories/track/getTrackById';
-import { getTransportState } from '#/modules/Transport/useCases';
-import { getAllTracks } from '../getAllTracks';
-import { recordAutomationValue } from '#/modules/Automation/useCases';
+import { type updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { type recordAutomationValue } from '#/modules/Automation/useCases';
+import { type getTransportState } from '#/modules/Transport/useCases';
+
+import { type getTrackById } from '../../repositories/track/getTrackById';
 import { type AutomationMode } from '../../stores/trackStore';
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { type getAllTracks } from '../getAllTracks';
+
 export const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);
 
 export type ToasterSyncDeps = {

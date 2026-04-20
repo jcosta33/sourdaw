@@ -1,5 +1,6 @@
-import { updateClip } from '../../repositories/track/updateClip';
 import { getTrackState } from '../../repositories/track/getTrackState';
+import { updateClip } from '../../repositories/track/updateClip';
+
 import { clampRatio } from './helpers';
 
 export function fitClipToBeats(clipId: string, targetBeats: number): void {

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { autoTagSample, generatePathHash, getNextSampleId } from '../sampleTaggingHelpers';
 
 describe('sampleTaggingHelpers', () => {
@@ -6,20 +7,20 @@ describe('sampleTaggingHelpers', () => {
         it('should tag a kick sample correctly', () => {
             const result = autoTagSample('heavy_kick.wav', '/samples/drums/kick/');
             expect(result.category).toBe('kicks');
-            expect(result.tags.map(t => t.name)).toContain('kick');
-            expect(result.tags.map(t => t.name)).toContain('low-end');
+            expect(result.tags.map((t) => t.name)).toContain('kick');
+            expect(result.tags.map((t) => t.name)).toContain('low-end');
         });
 
         it('should tag a hi-hat sample correctly', () => {
             const result = autoTagSample('closed_hh.wav', '/samples/drums/hats/');
             expect(result.category).toBe('hi-hats');
-            expect(result.tags.map(t => t.name)).toContain('hi-hat');
+            expect(result.tags.map((t) => t.name)).toContain('hi-hat');
         });
 
         it('should combine tags from multiple rules', () => {
             const result = autoTagSample('bass_loop.wav', '/samples/loops/');
             // Matches 'bass' and 'loop' rules
-            const tagNames = result.tags.map(t => t.name);
+            const tagNames = result.tags.map((t) => t.name);
             expect(tagNames).toContain('bass');
             expect(tagNames).toContain('loop');
             expect(tagNames).toContain('low-end');

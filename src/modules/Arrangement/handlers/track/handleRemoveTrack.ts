@@ -1,9 +1,10 @@
+import { automationStore } from '#/modules/Automation/stores';
+import { midiStore } from '#/modules/MIDI/stores';
+import { createHandler } from '#/utils/createHandler';
+
+import { takeLaneStore } from '../../stores/takeLaneStore';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { removeTrack } from '../../useCases/removeTrack';
-import { takeLaneStore } from '../../stores/takeLaneStore';
-import { automationStore } from '#/modules/Automation/stores';
-import { createHandler } from '#/utils/createHandler';
-import { midiStore } from '#/modules/MIDI/stores';
 
 // Local structural shapes (AGENTS.md model isolation). These match the minimum
 // guarantees of MIDI's store entries — used purely to produce inverse-action snapshots.

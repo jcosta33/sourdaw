@@ -6,19 +6,21 @@ import { updateTrack } from '../updateTrack';
  */
 export function dismissGhostClip(clipId: string): void {
     const state = trackStore.value;
-    if (!state) return;
+    if (!state) {
+        return;
+    }
 
     const ghost = (state.ghostClips ?? []).find((c) => c.id === clipId);
     if (!ghost) {
         // Fallback for pre-existing ghost-flag implementation
-        state.tracks.forEach(t => {
-            if (t.clips.some(c => c.id === clipId)) {
-                updateTrack(t.id, track => ({
+        for (const t of state.tracks) {
+            if (t.clips.some((c) => c.id === clipId)) {
+                updateTrack(t.id, (track) => ({
                     ...track,
-                    clips: track.clips.filter(x => x.id !== clipId)
+                    clips: track.clips.filter((x) => x.id !== clipId),
                 }));
             }
-        });
+        }
         return;
     }
 

@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as Automerge from '@automerge/automerge';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import { automergeRepository } from '../automergeRepository';
 
 vi.mock('@automerge/automerge', async (importOriginal) => {
@@ -8,8 +9,11 @@ vi.mock('@automerge/automerge', async (importOriginal) => {
         ...actual,
         init: vi.fn(() => ({})),
         change: vi.fn((doc, _msg, cb) => {
-            if (typeof _msg === 'function') _msg(doc);
-            else if (cb) cb(doc);
+            if (typeof _msg === 'function') {
+                _msg(doc);
+            } else if (cb) {
+                cb(doc);
+            }
             return { ...doc };
         }),
         getActorId: vi.fn(() => 'mock-actor'),
@@ -17,12 +21,15 @@ vi.mock('@automerge/automerge', async (importOriginal) => {
 });
 
 // Mock Worker
-vi.stubGlobal('Worker', vi.fn(() => ({
-    postMessage: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    terminate: vi.fn(),
-})));
+vi.stubGlobal(
+    'Worker',
+    vi.fn(() => ({
+        postMessage: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        terminate: vi.fn(),
+    }))
+);
 
 describe('AutomergeRepository', () => {
     beforeEach(() => {
@@ -69,7 +76,7 @@ describe('AutomergeRepository', () => {
     it('should remove a document', () => {
         automergeRepository.createChildDoc('to-remove' as any);
         expect(automergeRepository.hasDoc('to-remove' as any)).toBe(true);
-        
+
         automergeRepository.removeDoc('to-remove' as any);
         expect(automergeRepository.hasDoc('to-remove' as any)).toBe(false);
     });
@@ -77,9 +84,9 @@ describe('AutomergeRepository', () => {
     it('should reset state', () => {
         automergeRepository.createProject('test');
         automergeRepository.createChildDoc('child' as any);
-        
+
         automergeRepository.reset();
-        
+
         expect(automergeRepository.getDocIds()).toHaveLength(0);
         expect(automergeRepository.getRootId()).toBe('root');
     });

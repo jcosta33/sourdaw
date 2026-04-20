@@ -4,9 +4,11 @@
  */
 
 import { logger } from '#/infra/logger/appLogger';
-import type { SampleMeta } from '../models/CrumbsTypes';
+
 import { getWaveformPeaks, loadSample } from '../repositories/crumbsBridge';
 import { setActiveSample, setLoading, setWaveformPeaks } from '../stores/crumbsStore';
+
+import type { SampleMeta } from '../models/CrumbsTypes';
 
 export async function loadSampleFromPath(instanceId: string, filePath: string): Promise<void> {
     setLoading(instanceId, true);
@@ -34,8 +36,8 @@ export async function loadSampleFromPath(instanceId: string, filePath: string): 
         try {
             const peaks = await getWaveformPeaks(instanceId, result.sampleId, 0);
             setWaveformPeaks(instanceId, peaks);
-        } catch (err) {
-            logger.warn('Waveform peak loading failed:', err);
+        } catch (error) {
+            logger.warn('Waveform peak loading failed:', error);
         }
 
         setLoading(instanceId, false);

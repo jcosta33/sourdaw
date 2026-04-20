@@ -1,9 +1,3 @@
-import { createAiGenerationError } from '../errors/AiGenerationError';
-import { createAlternativeClips, getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases';
-import { type VariationNote } from '#/modules/Arrangement/useCases';
-import { trackStore } from '#/modules/Arrangement/stores';
-import { midiStore } from '#/modules/MIDI/stores';
-import { commitUndoEntry, createCallbackUndoEntry } from '#/modules/Command/useCases';
 import {
     resolveBackend,
     streamCloudChatCompletion,
@@ -11,7 +5,14 @@ import {
     generateWebLlmCompletion,
     isNativeEngineReady,
 } from '#/modules/AiRuntime/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { createAlternativeClips, getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases';
+import { type VariationNote } from '#/modules/Arrangement/useCases';
+import { commitUndoEntry, createCallbackUndoEntry } from '#/modules/Command/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
 import { getNotesForClip } from '#/modules/MIDI/useCases';
+
+import { createAiGenerationError } from '../errors/AiGenerationError';
 
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only the fields used here.
 type Clip = { id: string; type: 'audio' | 'midi'; startBeat: number; endBeat: number };
@@ -42,7 +43,10 @@ function isVariationNoteArray(arr: unknown): arr is VariationNote[] {
     );
 }
 
-export async function generateMidiVariations(clipId: string, options: GenerateMidiVariationsOptions = {}): Promise<number> {
+export async function generateMidiVariations(
+    clipId: string,
+    options: GenerateMidiVariationsOptions = {}
+): Promise<number> {
     const { onToken } = options;
 
     const state = getTrackState();

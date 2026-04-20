@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { trackStore } from '../../../stores/trackStore';
-import { initStalenessDetection } from '../initStalenessDetection';
+
 import { updateTrack } from '../../../repositories/track/updateTrack';
 import { computeTrackHash } from '../../../services/computeTrackHash';
+import { trackStore } from '../../../stores/trackStore';
+import { initStalenessDetection } from '../initStalenessDetection';
 
 vi.mock('../../../repositories/track/updateTrack', () => ({
     updateTrack: vi.fn(),
@@ -27,9 +28,7 @@ describe('initStalenessDetection', () => {
     it('does nothing if no tracks are frozen', async () => {
         const unsub = initStalenessDetection();
         trackStore.set({
-            tracks: [
-                { id: 't1', freezeState: { status: 'unfrozen' }, clips: [] } as any,
-            ],
+            tracks: [{ id: 't1', freezeState: { status: 'unfrozen' }, clips: [] } as any],
             selectedTrackId: null,
         });
 
@@ -44,11 +43,11 @@ describe('initStalenessDetection', () => {
         // Initial state with a frozen track
         trackStore.set({
             tracks: [
-                { 
-                    id: 't1', 
-                    freezeState: { status: 'frozen', sourceContentHash: 'old-hash' }, 
+                {
+                    id: 't1',
+                    freezeState: { status: 'frozen', sourceContentHash: 'old-hash' },
                     clips: [],
-                    devices: []
+                    devices: [],
                 } as any,
             ],
             selectedTrackId: null,
@@ -61,11 +60,11 @@ describe('initStalenessDetection', () => {
         // Mutate the clips array reference to trigger detection
         trackStore.set({
             tracks: [
-                { 
-                    id: 't1', 
-                    freezeState: { status: 'frozen', sourceContentHash: 'old-hash' }, 
+                {
+                    id: 't1',
+                    freezeState: { status: 'frozen', sourceContentHash: 'old-hash' },
                     clips: [{}], // new reference
-                    devices: []
+                    devices: [],
                 } as any,
             ],
             selectedTrackId: null,
@@ -87,11 +86,11 @@ describe('initStalenessDetection', () => {
     it('does not set status to stale if hash remains the same despite reference change', async () => {
         trackStore.set({
             tracks: [
-                { 
-                    id: 't1', 
-                    freezeState: { status: 'frozen', sourceContentHash: 'same-hash' }, 
+                {
+                    id: 't1',
+                    freezeState: { status: 'frozen', sourceContentHash: 'same-hash' },
                     clips: [],
-                    devices: []
+                    devices: [],
                 } as any,
             ],
             selectedTrackId: null,
@@ -104,11 +103,11 @@ describe('initStalenessDetection', () => {
         // Mutate the clips array reference
         trackStore.set({
             tracks: [
-                { 
-                    id: 't1', 
-                    freezeState: { status: 'frozen', sourceContentHash: 'same-hash' }, 
+                {
+                    id: 't1',
+                    freezeState: { status: 'frozen', sourceContentHash: 'same-hash' },
                     clips: [{}], // new reference
-                    devices: []
+                    devices: [],
                 } as any,
             ],
             selectedTrackId: null,

@@ -1,13 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
-import { openExportDialog } from '../dialogs/openExportDialog';
-import { openPreferencesDialog } from '../dialogs/openPreferencesDialog';
+
 import { onDialogOpenExport } from '../dialogs/onDialogOpenExport';
 import { onDialogOpenPreferences } from '../dialogs/onDialogOpenPreferences';
+import { openExportDialog } from '../dialogs/openExportDialog';
+import { openPreferencesDialog } from '../dialogs/openPreferencesDialog';
 
-const mocks = vi.hoisted(() => ({ mockEventBus: {
+const mocks = vi.hoisted(() => ({
+    mockEventBus: {
         emit: vi.fn().mockResolvedValue(undefined),
         on: vi.fn(),
-    } }));
+    },
+}));
 
 vi.mock('#/app/registerDependencies', () => ({
     eventBus: mocks.mockEventBus,
