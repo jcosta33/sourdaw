@@ -1,14 +1,19 @@
 import { describe, it, expect, vi } from 'vitest';
-import { setSessionViewWidth } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
-import { updateWorkspaceState } from '#/modules/Workspace/useCases/workspaceState';
 
-vi.mock('#/modules/Workspace/useCases/workspaceState', () => ({
+const mocks = vi.hoisted(() => ({
     updateWorkspaceState: vi.fn(),
 }));
+
+vi.mock('../../../../repositories/workspace', () => ({
+    getWorkspaceState: () => null,
+    updateWorkspaceState: mocks.updateWorkspaceState,
+}));
+
+import { setSessionViewWidth } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 
 describe('setSessionViewWidth', () => {
     it('should update sessionViewWidth', () => {
         setSessionViewWidth(500);
-        expect(vi.mocked(updateWorkspaceState)).toHaveBeenCalledWith({ sessionViewWidth: 500 });
+        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ sessionViewWidth: 500 });
     });
 });

@@ -22,12 +22,19 @@ describe('fileIO injectables', () => {
     });
 
     it('importProjectFile forwards valid payloads to applyImportedProjectData', async () => {
-        const minimal: ProjectData = {
+        const minimal = {
             version: 1,
-            name: 't',
-            createdAt: 1,
-            updatedAt: 1,
-            tracks: { tracks: [], selectedTrackId: null },
+            meta: {
+                name: 't',
+                createdAt: 1,
+                updatedAt: 1,
+                keyRoot: 0,
+                scaleName: 'major',
+                tuning: { name: 'equal', frequencies: [] },
+            },
+            arrangement: { tracks: [] },
+            automation: { lanes: [] },
+            midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
             transport: {
                 tempo: 120,
                 timeSignatureNumerator: 4,
@@ -46,9 +53,10 @@ describe('fileIO injectables', () => {
                 preRollBars: 2,
                 masterGain: 80,
             },
-            automation: { lanes: [] },
-            midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
-        };
+            mixer: { master: { gain: 1, pan: 0 }, buses: [] },
+            markers: [],
+            history: { checkpoints: [] },
+        } as unknown as ProjectData;
         const file = new File([JSON.stringify(minimal)], 'p.sourdaw');
         const result = await importProjectFile(file);
         expect(result).toBe(true);

@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { DragEvent } from 'react';
-import { handleSamplerFileDrop } from '../handleFileDrop';
+import { handleCrumbsFileDrop } from '../handleFileDrop';
 
 const mocks = vi.hoisted(() => ({
     isTauri: vi.fn(),
     loadSampleFromPath: vi.fn(),
-    switchSamplerMode: vi.fn(),
-    samplerStore: { value: null as any },
+    switchCrumbsMode: vi.fn(),
+    crumbsStore: { value: null as any },
+    logger: { warn: vi.fn() },
 }));
 
 vi.mock('#/utils/tauriBridge', () => ({
@@ -17,22 +18,26 @@ vi.mock('../loadSample', () => ({
     loadSampleFromPath: mocks.loadSampleFromPath,
 }));
 
-vi.mock('../setSamplerMode', () => ({
-    switchSamplerMode: mocks.switchSamplerMode,
+vi.mock('../setCrumbsMode', () => ({
+    switchCrumbsMode: mocks.switchCrumbsMode,
 }));
 
-vi.mock('../../../stores/samplerStore', () => ({
-    samplerStore: mocks.samplerStore,
+vi.mock('../../stores/crumbsStore', () => ({
+    crumbsStore: mocks.crumbsStore,
 }));
 
-describe('handleSamplerFileDrop', () => {
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: mocks.logger,
+}));
+
+describe('handleCrumbsFileDrop', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
     it('does not load when not running in Tauri', async () => {
         mocks.isTauri.mockReturnValue(false);
-        mocks.samplerStore.value = null;
+        mocks.crumbsStore.value = null;
 
         const file = new File([], 'clip.wav', { type: 'audio/wav' });
         const event = {
@@ -41,8 +46,9 @@ describe('handleSamplerFileDrop', () => {
             dataTransfer: { files: [file] },
         } as unknown as DragEvent;
 
-        await handleSamplerFileDrop(event);
+        await handleCrumbsFileDrop('instance-1', event);
 
         expect(mocks.loadSampleFromPath).not.toHaveBeenCalled();
+        expect(mocks.logger.warn).toHaveBeenCalled();
     });
 });

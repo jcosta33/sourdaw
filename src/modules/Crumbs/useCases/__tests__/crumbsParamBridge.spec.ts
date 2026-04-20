@@ -1,21 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-    setSamplerParam: vi.fn(),
-    samplerStore: { value: null as any },
+    setCrumbsParam: vi.fn(),
 }));
 
-vi.mock('../../repositories/samplerBridge', () => ({
-    setSamplerParam: mocks.setSamplerParam,
+vi.mock('../../repositories/crumbsBridge', () => ({
+    setCrumbsParam: mocks.setCrumbsParam,
 }));
 
-vi.mock('../../stores/samplerStore', () => ({
-    samplerStore: mocks.samplerStore,
-}));
-
-// §57.1 / §33.2 — createRafBatcher schedules through rAF, which jsdom
-// doesn't run synchronously. Replace the factory with one that flushes
-// immediately so test assertions can observe the side effect.
 vi.mock('#/utils/DOM/createRafBatcher', () => ({
     createRafBatcher: () => ({
         schedule: (key: string, value: unknown, flush: (k: string, v: unknown) => void) => {
@@ -27,10 +19,10 @@ vi.mock('#/utils/DOM/createRafBatcher', () => ({
     }),
 }));
 
-import { setSamplerParamImmediate } from '../samplerParamBridge/setSamplerParamImmediate';
-import { setSamplerParamThrottled } from '../samplerParamBridge/setSamplerParamThrottled';
+import { setCrumbsParamImmediate } from '../crumbsParamBridge/setCrumbsParamImmediate';
+import { setCrumbsParamThrottled } from '../crumbsParamBridge/setCrumbsParamThrottled';
 
-describe('samplerParamBridge', () => {
+describe('crumbsParamBridge', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
@@ -39,28 +31,15 @@ describe('samplerParamBridge', () => {
         vi.unstubAllGlobals();
     });
 
-    it('setSamplerParamImmediate forwards to IPC when an instance is active', () => {
-        mocks.setSamplerParam.mockResolvedValue(undefined);
-        mocks.samplerStore.value = { instanceId: 'inst-1' };
-
-        setSamplerParamImmediate('gain', 0.5);
-
-        expect(mocks.setSamplerParam).toHaveBeenCalledWith('inst-1', 'gain', 0.5);
+    it('setCrumbsParamImmediate forwards to the bridge', () => {
+        mocks.setCrumbsParam.mockResolvedValue(undefined);
+        setCrumbsParamImmediate('inst-1', 'gain', 0.5);
+        expect(mocks.setCrumbsParam).toHaveBeenCalledWith('inst-1', 'gain', 0.5);
     });
 
-    it('setSamplerParamThrottled flushes to IPC on the next animation frame', () => {
-        vi.stubGlobal(
-            'requestAnimationFrame',
-            (callback: FrameRequestCallback) => {
-                callback(0);
-                return 0;
-            }
-        );
-        mocks.setSamplerParam.mockResolvedValue(undefined);
-        mocks.samplerStore.value = null;
-
-        setSamplerParamThrottled('inst-2', 'gain', 0.25);
-
-        expect(mocks.setSamplerParam).toHaveBeenCalledWith('inst-2', 'gain', 0.25);
+    it('setCrumbsParamThrottled flushes to the bridge via rAF', () => {
+        mocks.setCrumbsParam.mockResolvedValue(undefined);
+        setCrumbsParamThrottled('inst-2', 'gain', 0.25);
+        expect(mocks.setCrumbsParam).toHaveBeenCalledWith('inst-2', 'gain', 0.25);
     });
 });

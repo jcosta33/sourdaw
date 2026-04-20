@@ -1,19 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { getAudioDevices } from '#/modules/AudioEngine/useCases';
 import { setTrackInput } from '../../../../useCases/setTrackInput';
 import { InputSelector } from '../InputSelector';
 
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+vi.mock('#/modules/AudioEngine/useCases/audioDeviceSelection/getAudioDevices', () => ({
+    getAudioDevices: vi.fn(),
+}));
+
+vi.mock('#/modules/AudioEngine/useCases', async () => {
+    const { getAudioDevices } = await import('#/modules/AudioEngine/useCases/audioDeviceSelection/getAudioDevices');
     return {
-        ...actual,
-        getAudioDevices: vi.fn(),
+        getAudioDevices,
     };
 });
 
 vi.mock('../../../../useCases/setTrackInput', () => ({
     setTrackInput: vi.fn(),
+}));
+
+vi.mock('#/components/ui/tooltip', () => ({
+    Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    TooltipContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 describe('InputSelector', () => {
@@ -24,42 +33,33 @@ describe('InputSelector', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(getAudioDevices).mockResolvedValue(mockDevices as any);
+        vi.mocked(getAudioDevices).mockResolvedValue(mockDevices as never);
     });
 
     it('should render correctly after fetching devices', async () => {
-        let container: HTMLElement;
-        await act(async () => {
-            const result = render(<InputSelector trackId="t1" inputId={null} />);
-            container = result.container;
-        });
-        
+        render(<InputSelector trackId="t1" inputId={null} />);
         await waitFor(() => {
             expect(screen.getByLabelText('Audio input device')).toBeInTheDocument();
         });
     });
 
     it('should fetch audio devices on mount', async () => {
-        await act(async () => {
-            render(<InputSelector trackId="t1" inputId={null} />);
+        render(<InputSelector trackId="t1" inputId={null} />);
+        await waitFor(() => {
+            expect(getAudioDevices).toHaveBeenCalled();
         });
-        expect(getAudioDevices).toHaveBeenCalled();
     });
 
     it('should show selected input', async () => {
-        await act(async () => {
-            render(<InputSelector trackId="t1" inputId="dev1" />);
-        });
+        render(<InputSelector trackId="t1" inputId="dev1" />);
         await waitFor(() => {
             expect(screen.getByText('Microphone')).toBeInTheDocument();
         });
     });
 
     it('should call setTrackInput when selection changes', async () => {
-        await act(async () => {
-            render(<InputSelector trackId="t1" inputId={null} />);
-        });
-        
+        render(<InputSelector trackId="t1" inputId={null} />);
+
         const select = await screen.findByLabelText('Audio input device');
         fireEvent.change(select, { target: { value: 'dev2' } });
 

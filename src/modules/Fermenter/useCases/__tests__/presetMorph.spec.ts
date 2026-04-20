@@ -4,14 +4,10 @@ vi.mock('../../stores/fermenterStore', () => ({
     loadFermenterPatch: vi.fn(),
 }));
 
-vi.mock('../fermenterParamBridge/setFermenterParamWithAudio', () => ({
-    setFermenterParamWithAudio: vi.fn(),
-}));
-
 import { lerpPatch, bilinearPatch } from '../presetMorph/bilinearPatch';
 import { applyMorphedPatch } from '../presetMorph/applyMorphedPatch';
 import { loadFermenterPatch } from '../../stores/fermenterStore';
-import { setFermenterParamWithAudio } from '../fermenterParamBridge/setFermenterParamWithAudio';
+import { setFermenterDependencies } from '../fermenterDependencies';
 import { type FermenterPatch } from '../../models/FermenterPatch';
 
 function patch(name: string, overrides: Partial<FermenterPatch>): FermenterPatch {
@@ -19,9 +15,24 @@ function patch(name: string, overrides: Partial<FermenterPatch>): FermenterPatch
 }
 
 describe('presetMorph', () => {
+    const getAllTracks = vi.fn(() => [{ id: 't1', devices: [{ id: 'd1' }] }] as never);
+    const updateDevicePatch = vi.fn();
+    const persistDevicePatch = vi.fn();
+    const updateDeviceParam = vi.fn();
+    const persistDeviceParam = vi.fn();
+
     beforeEach(() => {
         vi.mocked(loadFermenterPatch).mockClear();
-        vi.mocked(setFermenterParamWithAudio).mockClear();
+        updateDevicePatch.mockClear();
+        persistDevicePatch.mockClear();
+        getAllTracks.mockReturnValue([{ id: 't1', devices: [{ id: 'd1' }] }] as never);
+        setFermenterDependencies({
+            getAllTracks: getAllTracks as never,
+            updateDeviceParam: updateDeviceParam as never,
+            persistDeviceParam: persistDeviceParam as never,
+            updateDevicePatch: updateDevicePatch as never,
+            persistDevicePatch: persistDevicePatch as never,
+        });
     });
 
     it('lerpPatch interpolates numeric fields linearly', () => {
@@ -52,16 +63,15 @@ describe('presetMorph', () => {
         const tr = patch('TR', { gain: 10 });
         const bl = patch('BL', { gain: 20 });
         const br = patch('BR', { gain: 30 });
-        // center: avg of all four corners = 15
         expect(bilinearPatch(tl, tr, bl, br, 0.5, 0.5).gain).toBe(15);
     });
 
-    it('applyMorphedPatch updates store and forwards numeric params', () => {
+    it('applyMorphedPatch updates store and forwards the whole patch to engine + persistence', () => {
         const p = patch('P', { gain: 5, threshold: -8 });
         applyMorphedPatch('d1', p);
 
         expect(loadFermenterPatch).toHaveBeenCalledWith('d1', p);
-        expect(setFermenterParamWithAudio).toHaveBeenCalledWith('d1', 'gain', 5);
-        expect(setFermenterParamWithAudio).toHaveBeenCalledWith('d1', 'threshold', -8);
+        expect(updateDevicePatch).toHaveBeenCalledWith('t1', 'd1', p);
+        expect(persistDevicePatch).toHaveBeenCalledWith('d1', p);
     });
 });

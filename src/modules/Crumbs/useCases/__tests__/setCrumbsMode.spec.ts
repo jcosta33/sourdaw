@@ -1,33 +1,33 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { switchSamplerMode } from '../setSamplerMode';
 
 const mocks = vi.hoisted(() => ({
-    samplerStoreValue: { value: { instanceId: 'inst1' } },
     setMode: vi.fn(),
-    setSamplerMode: vi.fn(),
+    setCrumbsMode: vi.fn(),
 }));
 
-vi.mock('../../stores/samplerStore', () => ({
-    samplerStore: { get value() { return mocks.samplerStoreValue.value; } },
+vi.mock('../../stores/crumbsStore', () => ({
+    crumbsStore: { value: {} },
     setMode: mocks.setMode,
 }));
 
-vi.mock('../../repositories/samplerBridge', () => ({
-    setSamplerMode: mocks.setSamplerMode,
+vi.mock('../../repositories/crumbsBridge', () => ({
+    setCrumbsMode: mocks.setCrumbsMode,
 }));
 
-describe('switchSamplerMode', () => {
+import { switchCrumbsMode } from '../setCrumbsMode';
+
+describe('switchCrumbsMode', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('updates store and bridge', async () => {
-        await switchSamplerMode('slice');
-        expect(mocks.setMode).toHaveBeenCalledWith('slice');
-        expect(mocks.setSamplerMode).toHaveBeenCalledWith('inst1', 'slice');
+        await switchCrumbsMode('inst1', 'slice');
+        expect(mocks.setMode).toHaveBeenCalledWith('inst1', 'slice');
+        expect(mocks.setCrumbsMode).toHaveBeenCalledWith('inst1', 'slice');
     });
 
-    it('bails if no instanceId', async () => {
-        mocks.samplerStoreValue.value = null as any;
-        await switchSamplerMode('drum');
-        expect(mocks.setMode).not.toHaveBeenCalled();
+    it('logs warning when bridge fails but still updates store', async () => {
+        mocks.setCrumbsMode.mockRejectedValueOnce(new Error('bridge fail'));
+        await switchCrumbsMode('inst1', 'drum');
+        expect(mocks.setMode).toHaveBeenCalledWith('inst1', 'drum');
     });
 });

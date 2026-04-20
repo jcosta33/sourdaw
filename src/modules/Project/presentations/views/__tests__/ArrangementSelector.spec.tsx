@@ -31,7 +31,7 @@ vi.mock('../../../useCases/arrangement/createArrangement', () => ({
     createArrangement: vi.fn(),
 }));
 
-vi.mock('../../../useCases/arrangement/switchArrangement', () => ({
+vi.mock('#/modules/Project/useCases/arrangement/switchArrangement', () => ({
     switchArrangement: vi.fn(),
 }));
 
@@ -70,7 +70,7 @@ vi.mock('#/components/ui/tooltip', () => ({
 }));
 
 const { useStore } = await import('#/infra/store/useStore');
-const { switchArrangement } = await import('#/modules/Project/presentations/views/arrangement/switchArrangement');
+const { switchArrangement } = await import('#/modules/Project/useCases/arrangement/switchArrangement');
 
 describe('ArrangementSelector', () => {
     beforeEach(() => {

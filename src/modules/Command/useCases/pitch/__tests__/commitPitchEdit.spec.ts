@@ -27,9 +27,13 @@ vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(() => true),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    getBufferForClip: vi.fn(),
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        getBufferForClip: vi.fn(),
+    };
+});
 
 vi.mock('#/modules/AudioEngine/stores/audioBufferCache', () => ({
     audioBufferCache: {

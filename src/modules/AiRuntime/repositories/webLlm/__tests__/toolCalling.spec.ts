@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { generateWebLlmToolCalls } from '../toolCalling';
-import { initWebLlmEngine } from '../engineLifecycle';
+import { generateWebLlmCompletion } from '../engineLifecycle';
 
 const { mockLogger } = vi.hoisted(() => ({
     mockLogger: {
@@ -14,29 +14,31 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 
 vi.mock('../engineLifecycle', () => ({
     initWebLlmEngine: vi.fn(),
+    generateWebLlmCompletion: vi.fn(),
 }));
 
 describe('generateWebLlmToolCalls', () => {
     beforeEach(() => {
-        vi.mocked(initWebLlmEngine).mockReset();
+        vi.mocked(generateWebLlmCompletion).mockReset();
         vi.clearAllMocks();
     });
 
-    it('should return empty array when model returns no tool calls or text', async () => {
-        vi.mocked(initWebLlmEngine).mockResolvedValue({
-            chat: {
-                completions: {
-                    create: vi.fn().mockResolvedValue({
-                        choices: [{ message: { content: null, tool_calls: undefined } }],
-                    }),
-                },
-            },
-        } as never);
+    it('should return empty array when model returns empty text', async () => {
+        vi.mocked(generateWebLlmCompletion).mockResolvedValue('');
 
         const tools = [{ type: 'function' as const, function: { name: 'addTrack', description: '', parameters: {} } }];
         const result = await generateWebLlmToolCalls('sys', 'user', tools);
 
         expect(result).toEqual([]);
-        expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('No tool calls'));
+    });
+
+    it('should parse JSON tool calls from model response', async () => {
+        vi.mocked(generateWebLlmCompletion).mockResolvedValue('[{"name":"addTrack","arguments":{"kind":"audio"}}]');
+
+        const tools = [{ type: 'function' as const, function: { name: 'addTrack', description: '', parameters: {} } }];
+        const result = await generateWebLlmToolCalls('sys', 'user', tools);
+
+        expect(result).toHaveLength(1);
+        expect(result[0]?.name).toBe('addTrack');
     });
 });

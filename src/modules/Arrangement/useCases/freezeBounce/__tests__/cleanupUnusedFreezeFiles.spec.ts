@@ -6,6 +6,8 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
 vi.mock('#/modules/AudioEngine/stores', () => ({
     audioBufferCache: {
         garbageCollectFreezeFiles: vi.fn().mockResolvedValue(undefined),
+        garbageCollectByAge: vi.fn().mockResolvedValue(undefined),
+        garbageCollectBySize: vi.fn().mockResolvedValue(undefined),
     },
 }));
 

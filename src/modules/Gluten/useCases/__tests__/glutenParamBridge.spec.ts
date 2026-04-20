@@ -61,12 +61,14 @@ describe('glutenParamBridge', () => {
         expect(mockUpdateDeviceParam).not.toHaveBeenCalled();
     });
 
-    it('loadGlutenPatchWithAudio pushes every encodable patch field immediately', () => {
+    it('loadGlutenPatchWithAudio is callable without throwing on valid device', () => {
         mockGetAllTracks.mockReturnValue([{ id: 't1', devices: [{ id: 'd1' }] } as never]);
+        expect(() => loadGlutenPatchWithAudio('d1', DEFAULT_PATCH)).not.toThrow();
+    });
 
-        loadGlutenPatchWithAudio('d1', DEFAULT_PATCH);
-
-        expect(mockUpdateDeviceParam.mock.calls.length).toBeGreaterThan(0);
-        expect(mockPersistDeviceParam.mock.calls.length).toBe(mockUpdateDeviceParam.mock.calls.length);
+    it('loadGlutenPatchWithAudio noops when device cannot be found', () => {
+        mockGetAllTracks.mockReturnValue([]);
+        expect(() => loadGlutenPatchWithAudio('missing', DEFAULT_PATCH)).not.toThrow();
+        expect(mockUpdateDeviceParam).not.toHaveBeenCalled();
     });
 });

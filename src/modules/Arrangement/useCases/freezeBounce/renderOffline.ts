@@ -28,6 +28,12 @@ export async function renderTrackOffline(
     endBeat: number,
     options?: RenderOfflineOptions
 ): Promise<AudioBuffer | null> {
+    // Only audio and midi tracks produce renderable content on their own.
+    // Bus / group / master tracks have no direct sound source — skip rendering.
+    if (targetTrack.kind !== 'audio' && targetTrack.kind !== 'midi') {
+        return null;
+    }
+
     const allTracks = trackStore.value?.tracks ?? [];
     const allSidechainRoutes = sidechainStore.value?.routes ?? [];
     const upstreamIds = getUpstreamSubgraph(targetTrack.id, allTracks, allSidechainRoutes);

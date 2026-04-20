@@ -1,28 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
 
+const mocks = vi.hoisted(() => ({
+    updateWorkspaceState: vi.fn(),
+}));
+
+vi.mock('../../../../repositories/workspace', () => ({
+    getWorkspaceState: () => workspaceStore.value,
+    updateWorkspaceState: mocks.updateWorkspaceState,
+}));
+
+import { toggleDualView } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+
 describe('toggleDualView', () => {
     beforeEach(() => {
-        vi.resetModules();
         vi.clearAllMocks();
     });
 
-    it('should toggle dualViewOpen state', async () => {
-        const mockUpdate = vi.fn();
-        vi.doMock('#/modules/Workspace/useCases/workspaceState', () => ({
-            updateWorkspaceState: mockUpdate,
-        }));
-        
-        // Use relative path to match the factory's closure if needed
-        vi.doMock('../../workspaceState', () => ({
-            updateWorkspaceState: mockUpdate,
-        }));
-
-        const { toggleDualView } = await import('#/modules/Workspace/useCases/togglePanel/panelToggles');
-        
+    it('should toggle dualViewOpen state', () => {
         workspaceStore.set({ dualViewOpen: false } as any);
         toggleDualView();
-        
-        expect(mockUpdate).toHaveBeenCalledWith({ dualViewOpen: true });
+        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ dualViewOpen: true });
     });
 });

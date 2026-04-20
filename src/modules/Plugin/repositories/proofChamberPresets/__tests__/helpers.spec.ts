@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { DEFAULT_PARAMS } from '../../../models/ProofChamberPatch';
+import { DEFAULT_PARAMS } from '../../../models/ProofChamberState';
 import { FACTORY_PRESETS, getUserPresets } from '../helpers';
 
 const STORAGE_KEY = 'proof-chamber-user-presets';

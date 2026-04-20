@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { DEFAULT_PARAMS } from '../../../models/ProofChamberPatch';
+import { DEFAULT_PARAMS } from '../../../models/ProofChamberState';
 import { importPresetJson } from '../importPresetJson';
 
 describe('importPresetJson', () => {

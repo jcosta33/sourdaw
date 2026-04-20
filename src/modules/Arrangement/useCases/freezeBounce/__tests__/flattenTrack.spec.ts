@@ -54,7 +54,11 @@ describe('flattenTrack', () => {
                         { startBeat: 4, endBeat: 8 },
                         { startBeat: 2, endBeat: 6 },
                     ],
-                    freezeState: { status: 'frozen', frozenBufferId: 'buf-123' },
+                    freezeState: {
+                        status: 'frozen',
+                        frozenBufferId: 'buf-123',
+                        renderSettings: { tailLengthSeconds: 2 }, // 4 beats at 120 BPM
+                    },
                 } as any,
             ],
             selectedTrackId: null,
@@ -63,7 +67,7 @@ describe('flattenTrack', () => {
         flattenTrack('t1');
 
         expect(updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
-        
+
         // Execute the updater function passed to updateTrack
         const updater = vi.mocked(updateTrack).mock.calls[0][1] as any;
         const track = trackStore.value!.tracks[0];
@@ -75,10 +79,10 @@ describe('flattenTrack', () => {
         expect(updatedTrack.frozenBufferId).toBeUndefined();
         expect(updatedTrack.freezeState.status).toBe('unfrozen');
         expect(updatedTrack.clips).toHaveLength(1);
-        
+
         const clip = updatedTrack.clips[0];
         expect(clip.startBeat).toBe(2);
-        expect(clip.endBeat).toBe(12); // 8 + 4 tail
+        expect(clip.endBeat).toBe(12); // 8 (clip end) + 2s * (120 BPM / 60) = 8 + 4 beats
         expect(clip.type).toBe('audio');
         expect(clip.audioBufferId).toBe('buf-123');
         expect(clip.name).toBe('Synth (Flattened)');
@@ -93,7 +97,11 @@ describe('flattenTrack', () => {
                     name: 'Synth',
                     color: '#ff0000',
                     clips: [],
-                    freezeState: { status: 'frozen', frozenBufferId: 'buf-123' },
+                    freezeState: {
+                        status: 'frozen',
+                        frozenBufferId: 'buf-123',
+                        renderSettings: { tailLengthSeconds: 2 }, // 4 beats at 120 BPM
+                    },
                 } as any,
             ],
             selectedTrackId: null,
@@ -106,6 +114,6 @@ describe('flattenTrack', () => {
 
         const clip = updatedTrack.clips[0];
         expect(clip.startBeat).toBe(0);
-        expect(clip.endBeat).toBe(5); // 1 + 4 tail
+        expect(clip.endBeat).toBe(5); // 1 (default end) + 2s * (120 BPM / 60) = 1 + 4 beats
     });
 });

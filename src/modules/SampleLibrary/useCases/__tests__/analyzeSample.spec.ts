@@ -2,19 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { analyzeSample } from '#/modules/SampleLibrary/useCases/analyzeSample';
 import { libraryStore } from '#/modules/SampleLibrary/stores/libraryStore';
 import { performMusicalAnalysis } from '#/modules/SampleLibrary/services/analysisService';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 
 vi.mock('../../services/analysisService', () => ({
     performMusicalAnalysis: vi.fn(),
 }));
 
-// Mock AudioContext for test environment
-class MockAudioContext {
-    createBuffer() {
-        return { length: 44100, sampleRate: 44100, getChannelData: () => new Float32Array(100) };
-    }
-    async close() {}
-}
-vi.stubGlobal('AudioContext', MockAudioContext);
+vi.mock('#/modules/AudioEngine/stores', () => ({
+    audioBufferCache: { get: vi.fn() },
+}));
 
 describe('analyzeSample', () => {
     beforeEach(() => {
@@ -38,6 +34,11 @@ describe('analyzeSample', () => {
     });
 
     it('should update sample status and metadata on success', async () => {
+        vi.mocked(audioBufferCache.get).mockReturnValue({
+            length: 44100,
+            sampleRate: 44100,
+            getChannelData: () => new Float32Array(100),
+        } as unknown as AudioBuffer);
         vi.mocked(performMusicalAnalysis).mockResolvedValue({
             bpm: 125,
             key: 'Cm',

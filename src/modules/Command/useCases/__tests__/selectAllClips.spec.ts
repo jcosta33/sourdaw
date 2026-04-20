@@ -1,20 +1,33 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { selectAllClips } from '../selectAllClips';
 
 const mocks = vi.hoisted(() => ({
     updateWorkspaceState: vi.fn(),
     getTrackStoreState: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+vi.mock('#/modules/Workspace/useCases/workspaceState', () => ({
     updateWorkspaceState: mocks.updateWorkspaceState,
 }));
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+vi.mock('#/modules/Workspace/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Workspace/useCases')>(
+        '#/modules/Workspace/useCases'
+    );
+    return { ...actual, updateWorkspaceState: mocks.updateWorkspaceState };
+});
+
+vi.mock('#/modules/Arrangement/useCases/getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
 }));
+
+vi.mock('#/modules/Arrangement/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+        '#/modules/Arrangement/useCases'
+    );
+    return { ...actual, getTrackStoreState: mocks.getTrackStoreState };
+});
+
+import { selectAllClips } from '../selectAllClips';
 
 describe('selectAllClips', () => {
     beforeEach(() => vi.clearAllMocks());
@@ -23,8 +36,8 @@ describe('selectAllClips', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [
                 { clips: [{ id: 'c1' }, { id: 'c2' }] },
-                { clips: [{ id: 'c3' }] }
-            ]
+                { clips: [{ id: 'c3' }] },
+            ],
         });
 
         selectAllClips();

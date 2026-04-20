@@ -42,12 +42,7 @@ vi.mock('#/modules/Knead/stores/kneadStore', () => ({
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn(() => ({
-        activeClipId: null,
-        clips: {},
-        isAnalyzing: false,
-        analysisProgress: 0,
-    })),
+    useStore: vi.fn((_store: unknown, defaultValue: unknown) => defaultValue ?? {}),
 }));
 
 vi.mock('../../../hooks/useTracks', () => ({

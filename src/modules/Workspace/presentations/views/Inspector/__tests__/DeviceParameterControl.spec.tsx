@@ -25,11 +25,8 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
 }));
 
-vi.mock('#/modules/Automation/useCases/automationStore', () => ({
+vi.mock('#/modules/Automation/stores', () => ({
     automationStore: { id: 'automation' },
-}));
-
-vi.mock('#/modules/Automation/useCases/modulationStore', () => ({
     modulationStore: { id: 'modulation' },
     modulationRuntimeStore: { id: 'modulationRuntime' },
 }));

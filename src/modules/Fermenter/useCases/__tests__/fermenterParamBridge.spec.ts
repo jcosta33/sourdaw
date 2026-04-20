@@ -1,28 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { setFermenterDependencies } from '../fermenterDependencies';
 import { loadFermenterPatchWithAudio } from '../fermenterParamBridge/loadFermenterPatchWithAudio';
 import { setFermenterParamWithAudio } from '../fermenterParamBridge/setFermenterParamWithAudio';
 
-const { getAllTracks, persistDeviceParam } = vi.hoisted(() => ({
-    getAllTracks: vi.fn(() => []),
-    persistDeviceParam: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    getAllTracks: (...args: any[]) => getAllTracks(...args),
-    persistDeviceParam: (...args: any[]) => persistDeviceParam(...args),
-}));
-
-const { updateDeviceParam } = vi.hoisted(() => ({
-    updateDeviceParam: vi.fn(),
-}));
-
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    updateDeviceParam: (...args: any[]) => updateDeviceParam(...args),
-}));
-
 describe('fermenterParamBridge', () => {
+    const getAllTracks = vi.fn(() => []);
+    const persistDeviceParam = vi.fn();
+    const updateDeviceParam = vi.fn();
+
     beforeEach(() => {
         vi.clearAllMocks();
+        getAllTracks.mockReturnValue([]);
+        setFermenterDependencies({
+            getAllTracks: getAllTracks as never,
+            persistDeviceParam: persistDeviceParam as never,
+            updateDeviceParam: updateDeviceParam as never,
+        });
     });
 
     it('setFermenterParamWithAudio does not touch the engine when the device is unknown', () => {

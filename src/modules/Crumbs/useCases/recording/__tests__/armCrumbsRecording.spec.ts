@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import * as subject from '../armSamplerRecording';
+import * as subject from '../armCrumbsRecording';
 
-describe('armSamplerRecording', () => {
-    it('should export armSamplerRecording', () => {
-        expect(subject.armSamplerRecording).toBeDefined();
-        const t = typeof subject.armSamplerRecording;
+describe('armCrumbsRecording', () => {
+    it('should export armCrumbsRecording', () => {
+        expect(subject.armCrumbsRecording).toBeDefined();
+        const t = typeof subject.armCrumbsRecording;
         expect(t === 'function' || t === 'object').toBe(true);
     });
 });

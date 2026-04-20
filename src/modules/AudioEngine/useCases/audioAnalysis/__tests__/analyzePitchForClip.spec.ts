@@ -105,7 +105,7 @@ describe('analyzePitchForClip', () => {
         await new Promise(resolve => setTimeout(resolve, 0));
         await new Promise(resolve => setTimeout(resolve, 0));
 
-        expect((kneadStore.value as any).pitchContour).toEqual(mockContour);
+        expect((kneadStore.value as any).contours?.c1).toEqual(mockContour);
         
         // Check final state
         expect(kneadStore.value.isAnalyzing).toBe(false);

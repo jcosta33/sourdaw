@@ -11,10 +11,6 @@ import {
 } from './recordingSessionState';
 
 export function stopAutomationRecording(): void {
-    if (activeRecording.size === 0) {
-        return;
-    }
-
     // Snapshot lane state before flushing for undo
     const laneBefore = automationStore.value
         ? structuredClone(automationStore.value.lanes)

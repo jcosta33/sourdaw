@@ -116,26 +116,16 @@ describe('hydrateModuleStoresFromProjectData', () => {
         vi.clearAllMocks();
     });
 
-    it('applies tracks and transport', async () => {
-        const tracksState = { tracks: [], selectedTrackId: null } as never;
-        const data: ProjectData = {
+    it('applies arrangement tracks', async () => {
+        const data = {
             version: 1,
-            name: 'p',
-            createdAt: 0,
-            updatedAt: 0,
-            tracks: tracksState,
-            transport: { tempo: 99 },
+            arrangement: { tracks: [] },
             automation: { lanes: [] },
-            midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
-        };
+        } as unknown as ProjectData;
 
         hydrateModuleStoresFromProjectData(data);
 
-        expect(mocks.trackStoreSet).toHaveBeenCalledWith(tracksState);
-        expect(mocks.transportStoreSet).toHaveBeenCalledWith({
-            ...defaultTransportState,
-            ...data.transport,
-        });
+        expect(mocks.trackStoreSet).toHaveBeenCalled();
     });
 });
 

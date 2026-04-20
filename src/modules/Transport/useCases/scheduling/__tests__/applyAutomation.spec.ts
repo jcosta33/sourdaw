@@ -11,9 +11,13 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
         trackStore: { value: { tracks: [] } },
     };
 });
-vi.mock('#/modules/Automation/stores', () => ({
-    automationStore: { value: { lanes: [] } },
-}));
+vi.mock('#/modules/Automation/stores', async (importOriginal) => {
+    const mod = await importOriginal<typeof import('#/modules/Automation/stores')>();
+    return {
+        ...mod,
+        automationStore: { value: { lanes: [] } },
+    };
+});
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
@@ -21,10 +25,6 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
         getEffectiveGain: vi.fn((_, g) => g),
     };
 });
-vi.mock('#/modules/Automation/stores', () => ({
-    getAutomationValueAtBeat: vi.fn(),
-    isRecordingAutomation: vi.fn(() => false),
-}));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
     return {
