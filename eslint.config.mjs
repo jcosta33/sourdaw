@@ -448,7 +448,8 @@ export default defineConfig(
                 ...globals.browser,
             },
             parserOptions: {
-                projectService: true,
+                project: './tsconfig.json',
+                tsconfigRootDir: import.meta.dirname,
                 ecmaFeatures: { jsx: true },
             },
         },
