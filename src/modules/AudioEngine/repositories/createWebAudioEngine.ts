@@ -548,11 +548,3 @@ export function createAudioEngine(providedContext?: AudioContext): AudioEngine {
 }
 
 export const audioEngine = createAudioEngine();
-
-// Start worklet module loading eagerly — worklets don't require a user
-// gesture and loading them before first interaction closes the race where
-// UI handlers synchronously construct AudioWorkletNodes (e.g. TrackNode's
-// metering-processor) before initialize() has resolved. Consumers that
-// construct tracks or devices must await audioEngine.whenReady() before
-// their first call.
-void audioEngine.initialize();
