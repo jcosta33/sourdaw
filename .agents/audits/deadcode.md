@@ -273,3 +273,31 @@ The remaining work is to fix the 10 broken test imports, add `glob` to `package.
 - ~~`@tauri-apps/plugin-fs` incorrectly in `ignoreDependencies`~~ — removed; knip traces dynamic imports correctly.
 - ~~`@typescript-eslint/eslint-plugin` incorrectly in `ignoreDependencies`~~ — removed; knip detects it via `eslint.fast.config.mjs`.
 - ~~`workletPolyfill.js` unresolved imports~~ — superseded by commit `c2ddccaa` which removed all such imports from source.
+
+### Fixed in this session (2026-04-20, audit cleanup pass)
+
+- ~~10 broken test imports (unresolved)~~ — all fixed. `#/utils/Logger/Logger` → `#/infra/logger/types` (3 files); `PadGrid.spec.tsx` `SamplerTypes` → `CrumbsTypes`; GrandBoule `helpers.spec.ts` relative depth corrected; 4 Yeast processor specs `../../models/MidiEvent` → `../../../models/MidiEvent`; `pluginBrowserActions.spec.ts` — stale `DeviceBrowser` mock removed (the module doesn't exist and the test doesn't need it). All 10 tests now pass.
+- ~~Unused `@huggingface/transformers` dependency~~ — removed.
+- ~~Unused `sinon` and `@types/sinon` devDependencies~~ — removed.
+- ~~Unlisted `glob` dependency~~ — added as `glob@^13.0.6` to `devDependencies`.
+- ~~Truly unused exports~~ — `STANDARD_FREQ_MARKS`, `STANDARD_DB_MARKS`, `classifyDso`, `deleteEnvelope`, `WEBLLM_MODEL_INFO`, `getWebLlmModelById` removed along with their re-exports in `useCases/index.ts` and `aiRuntimeQueries/helpers.ts`.
+- ~~Orphaned `…Dependencies` / `…Deps` helpers (in-file)~~ — 15 in-file exports removed: `copySelectedNotesDependencies`, `addGainEnvelopePointDeps`, `toggleClipGainEnvelopeDeps`, `initTimelineRendererDependencies`, `beginClipDragDependencies`, `hitTestAutomationSubLaneDependencies`, `hitTestClipEdgeDependencies`, `snapToGridOrClipsDependencies`, `setVcaGainDependencies`, `insertPolyphonicMidiNotesDependencies`, `playAuditionNoteDependencies`, `initializeAudioEngineDependencies`, `thinAutomationPointsDependencies`, `handleCrumbsFileDropDependencies`, `exportPatternToTimelineDependencies`, `getToasterControlsDependencies`, `trigger16LevelDependencies`, `triggerToasterPadDependencies`, `scheduleMetronomeDependencies`. All are remnants of the old DI-via-object-literal pattern. Typecheck and full test suite (4929 tests) pass.
+
+### Counts after this session
+
+- Unused files: 92 → 92 (unchanged — whole-file deletions out of scope per repo safety rule)
+- Unused exports: 92 → 67
+- Unused exported types: 22 → 22 (deferred — see Next steps)
+- Unused dependencies: 1 → 0
+- Unused devDependencies: 2 → 0
+- Unlisted dependencies: 2 → 0
+- Unresolved imports: 10 → 0
+- Configuration hints: 1 (generic "92 unused files" note; knip's companion-test-file heuristic — see below)
+
+## Next steps (deferred, require explicit approval)
+
+1. **Standalone `…Dependencies.ts` files** — 16 files are whole-file Dependencies exports with no other content (e.g., `src/modules/AudioEngine/useCases/latencyCompensation/compensation/trackLatencyDependencies.ts`, `src/modules/Arrangement/useCases/audioAnalysis/audioToMidiDependencies.ts`). Deleting files requires explicit user approval per the repo safety rule.
+2. **Unused exported types (22)** — e.g., `MixAnalysis`, `AppActionType`, `FileEntry`. Types are zero-runtime-cost so pruning is lower priority; needs per-type verification.
+3. **Other in-file unused exports (~67 remaining)** — a mix of store setters for unfinished features (e.g., `enter16Levels`/`exit16Levels`/`is16LevelsActive`/`get16LevelsTarget` in Toaster — removing them would reveal the 16-levels feature is stubbed), and some genuine orphans (`RenderProgressIndicator`, `parsePhonemesTxt`, `parsePhonemesJson`). Needs per-symbol judgement call.
+4. **Unused files (92)** — many are the `events/index.ts` stubs (intentional architectural placeholders), frozen features, or unfinished feature roots. §3 above enumerates which are intentional.
+5. **knip v6.3.1 companion-test-file heuristic** — worth a one-paragraph note in `docs/agents/04-standards.md` so future sessions know some dead code is hidden when `.spec.ts` tests sit next to an unused source file. Upstream limitation; no config fix.

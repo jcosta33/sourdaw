@@ -132,7 +132,7 @@ function executeDuplicateTimeRange(startBeat: number, endBeat: number): void {
     );
 }
 
-export const handleKeydown = inject({ eventBus, executeAppAction })(({ eventBus, executeAppAction }) => {
+export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
     const executeShortcutAction = (action: ShortcutAction): boolean => {
         if (action.type === 'appAction') {
             const { type, payload } = action.action;
