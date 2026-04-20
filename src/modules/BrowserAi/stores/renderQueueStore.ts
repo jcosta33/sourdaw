@@ -64,8 +64,8 @@ export function markRenderComplete(phraseId: string, cacheKey: string): void {
         if (!state) {
             return state;
         }
-        // Update status to 'preview' in-place — entry is preserved so renderAllStale
-        // can recover the pipeline type if the phrase becomes stale later.
+        // Update status to 'preview' in-place. Entry is preserved so the pipeline type
+        // can be recovered if the phrase becomes stale later.
         const entries = state.entries.map((e) => (e.phraseId === phraseId ? { ...e, status: 'preview' as const } : e));
         const cachedPhraseIds = state.cachedPhraseIds.includes(cacheKey)
             ? state.cachedPhraseIds

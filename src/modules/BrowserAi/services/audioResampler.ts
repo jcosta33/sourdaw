@@ -39,17 +39,6 @@ export async function resampleTo44100({ audio, fromSampleRate, channels = 1 }: R
     return rendered.getChannelData(0);
 }
 
-/**
- * Convert a Float32Array PCM (at 44.1 kHz) to an AudioBuffer
- * that can be used with the Web Audio graph.
- */
-export function float32ToAudioBuffer(audio: Float32Array, sampleRate = TARGET_SAMPLE_RATE): AudioBuffer {
-    const ctx = new AudioContext({ sampleRate });
-    const buffer = ctx.createBuffer(1, audio.length, sampleRate);
-    buffer.copyToChannel(new Float32Array(audio), 0);
-    ctx.close();
-    return buffer;
-}
 
 /**
  * Apply a simple fade-in/fade-out at phrase boundaries to avoid clicks.
