@@ -1,7 +1,7 @@
 import { STORE_NAME, openDatabase } from './helpers';
 
 /** Check whether any CRDT documents exist in IndexedDB. */
-export const hasCrdtDocsInIdb = async (): Promise<boolean> => {
+export async function hasCrdtDocsInIdb(): Promise<boolean> {
     const database = await openDatabase();
     if (!database) {
         return false;

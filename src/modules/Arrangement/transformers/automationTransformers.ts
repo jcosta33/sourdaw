@@ -147,17 +147,19 @@ export function generateShapePoints(
     const duration = endBeat - startBeat;
     const mid = startBeat + duration / 2;
 
-    const pt = (
+    function pt(
         beat: number,
         norm: number,
         curve: AutomationPoint['curve'] = 'linear',
         tension = 0
-    ): AutomationPoint => ({
-        beat,
-        value: minValue + norm * range,
-        curve,
-        tension,
-    });
+    ): AutomationPoint {
+        return {
+            beat,
+            value: minValue + norm * range,
+            curve,
+            tension,
+        };
+    }
 
     switch (shape) {
         case 'square':

@@ -122,7 +122,7 @@ const PLAYHEAD_BROADCAST_HZ = 4;
  *
  * Only `branches` is synced; `activeBranchId` is per-peer and never shared.
  */
-const startBranchSync = (isHost: boolean): void => {
+function startBranchSync(isHost: boolean): void {
     // Snapshot current state so we can restore it on session end.
     sessionState.branchStoreSnapshot = branchStore.value
         ? { ...branchStore.value, branches: [...branchStore.value.branches] }
@@ -199,7 +199,7 @@ const startBranchSync = (isHost: boolean): void => {
  * Stop branch sync and restore the pre-session branchStore state.
  * Removes the `__branches__` Automerge doc so it isn't included in future saves.
  */
-const stopBranchSync = (): void => {
+function stopBranchSync(): void {
     if (sessionState.unsubscribeBranchStore) {
         sessionState.unsubscribeBranchStore();
         sessionState.unsubscribeBranchStore = null;
@@ -228,8 +228,12 @@ const stopBranchSync = (): void => {
     });
 };
 
-const generatePeerId = (): PeerId => crypto.randomUUID();
-const generateSessionId = (): string => crypto.randomUUID().slice(0, 8);
+function generatePeerId(): PeerId {
+    return crypto.randomUUID();
+}
+function generateSessionId(): string {
+    return crypto.randomUUID().slice(0, 8);
+}
 
 /** Pick the first color from PEER_COLORS not already in use. */
 const pickPeerColor = (excludeColors: string[]): string => {
@@ -304,7 +308,7 @@ export function createSession(name: string): string {
  * Generate an invite string containing the SDP offer for a new peer.
  * The host calls this, copies the result, and the joiner pastes it into `joinSession`.
  */
-export const generateInvite = async (): Promise<string> => {
+export async function generateInvite(): Promise<string> {
     if (!sessionState.peerManager) {
         throw createCollaborationError('No active session');
     }
@@ -457,7 +461,7 @@ export const acceptAnswer = async (answerString: string): Promise<void> => {
 };
 
 /** Tear down all subsystems without changing store state. */
-const cleanupSubsystems = (): void => {
+function cleanupSubsystems(): void {
     sessionState.pendingInviteId = null;
     stopPlayheadBroadcast();
     stopBranchSync();
@@ -558,7 +562,7 @@ const startPlayheadBroadcast = (): void => {
     }, 1000 / PLAYHEAD_BROADCAST_HZ);
 };
 
-const stopPlayheadBroadcast = (): void => {
+function stopPlayheadBroadcast(): void {
     if (sessionState.playheadBroadcastInterval !== null) {
         clearInterval(sessionState.playheadBroadcastInterval);
         sessionState.playheadBroadcastInterval = null;
@@ -682,7 +686,7 @@ const handlePeerConnected = (peerId: PeerId): void => {
     }
 };
 
-const handlePeerDisconnected = (peerId: PeerId): void => {
+function handlePeerDisconnected(peerId: PeerId): void {
     sessionState.automergeSync?.removePeer(peerId);
     updatePeerConnectionState(peerId, false);
 
@@ -805,4 +809,6 @@ async function decompressInvite(raw: string): Promise<string> {
     writer.close();
     const result = await readAllChunks(stream.readable);
     return new TextDecoder().decode(result);
+}
+ecoder().decode(result);
 }

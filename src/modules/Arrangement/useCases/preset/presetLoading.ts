@@ -51,7 +51,7 @@ export function createTrackFromPreset(preset: SoundPreset): string | null {
 }
 
 export const loadPresetToTrack = inject({ logger })(({ logger }) => {
-    const attachInstrumentDevice = (trackId: string, dp: DevicePreset): void => {
+    function attachInstrumentDevice(trackId: string, dp: DevicePreset): void {
         const device: Device = {
             id: `preset-dev-${crypto.randomUUID()}`,
             name: dp.name,

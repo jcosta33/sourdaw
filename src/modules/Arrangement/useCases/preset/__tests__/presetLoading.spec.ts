@@ -40,17 +40,19 @@ vi.mock('#/modules/AudioEngine/useCases/deviceControls/removeDeviceFromStrip', (
     removeDeviceFromStrip: vi.fn(),
 }));
 
-const basePreset = (devices: SoundPreset['devices']): SoundPreset => ({
-    id: 'p1',
-    name: 'Test Preset',
-    category: 'keys',
-    description: '',
-    trackKind: 'midi',
-    devices,
-    tags: [],
-    author: 'test',
-    isFactory: true,
-});
+function basePreset(devices: SoundPreset['devices']): SoundPreset {
+    return {
+        id: 'p1',
+        name: 'Test Preset',
+        category: 'keys',
+        description: '',
+        trackKind: 'midi',
+        devices,
+        tags: [],
+        author: 'test',
+        isFactory: true,
+    };
+}
 
 describe('loadPresetToTrack', () => {
     beforeEach(() => {

@@ -3,7 +3,7 @@ import { type DocId } from '../../models/CrdtDocumentTypes';
 import { STORE_NAME, openDatabase } from './helpers';
 
 /** Remove all incremental chunks for a document (after compaction). */
-export const clearIncrementalsFromIdb = async (id: DocId): Promise<void> => {
+export async function clearIncrementalsFromIdb(id: DocId): Promise<void> {
     const database = await openDatabase();
     if (!database) {
         return;

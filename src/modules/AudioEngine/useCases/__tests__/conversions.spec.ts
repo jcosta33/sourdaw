@@ -34,7 +34,7 @@ describe('Audio Buffer Conversion Use Cases', () => {
 
     it('audioBufferToFlac delegates to encoder', async () => {
         const buffer = {} as any;
-        const onProgress = () => {};
+        function onProgress() {}
         await audioBufferToFlac(buffer, onProgress);
         expect(mocks.flacEncode).toHaveBeenCalledWith(buffer, onProgress);
     });

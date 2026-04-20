@@ -1,7 +1,7 @@
 import { STORE_NAME, openDatabase } from './helpers';
 
 /** Clear all stored CRDT documents. */
-export const clearCrdtIdb = async (): Promise<void> => {
+export async function clearCrdtIdb(): Promise<void> {
     const database = await openDatabase();
     if (!database) {
         return;

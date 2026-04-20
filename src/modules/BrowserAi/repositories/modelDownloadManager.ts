@@ -51,7 +51,7 @@ export const downloadModel = inject({ logger })(
             // Request persistent storage on first download
             await requestPersistentStorage().catch(() => undefined);
 
-            const broadcast = (payload: ModelDownloadProgressPayload): void => {
+            function broadcast(payload: ModelDownloadProgressPayload): void {
                 onProgress?.(payload);
                 try {
                     const channel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);

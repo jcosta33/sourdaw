@@ -7,17 +7,19 @@ export type SidechainRoute = {
     gain: number;
 };
 
-export const createSidechainRoute = (
+export function createSidechainRoute(
     sourceTrackId: string,
     targetTrackId: string,
     targetDeviceId: string,
     targetParameterId = 'threshold',
     gain = 1
-): SidechainRoute => ({
-    id: `sidechain-${crypto.randomUUID()}`,
-    sourceTrackId,
-    targetTrackId,
-    targetDeviceId,
-    targetParameterId,
-    gain,
-});
+): SidechainRoute {
+    return {
+        id: `sidechain-${crypto.randomUUID()}`,
+        sourceTrackId,
+        targetTrackId,
+        targetDeviceId,
+        targetParameterId,
+        gain,
+    };
+}

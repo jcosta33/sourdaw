@@ -73,7 +73,7 @@ export const scheduleAutomationOnParam = (
     }
 };
 
-export const scheduleTrackAutomation = (
+export function scheduleTrackAutomation(
     lanes: AutomationLane[],
     trackId: string,
     trackGainNode: GainNode,
@@ -82,7 +82,7 @@ export const scheduleTrackAutomation = (
     durationSeconds: number,
     defaultTempo: number,
     changes: TempoChange[]
-): void => {
+): void {
     const trackLanes = lanes.filter((l) => l.trackId === trackId && !l.clipId);
 
     for (const lane of trackLanes) {

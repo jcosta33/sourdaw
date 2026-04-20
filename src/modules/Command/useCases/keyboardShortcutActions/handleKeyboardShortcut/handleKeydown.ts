@@ -133,7 +133,7 @@ function executeDuplicateTimeRange(startBeat: number, endBeat: number): void {
 }
 
 export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
-    const executeShortcutAction = (action: ShortcutAction): boolean => {
+    function executeShortcutAction(action: ShortcutAction): boolean {
         if (action.type === 'appAction') {
             const { type, payload } = action.action;
 
@@ -430,7 +430,7 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
         return true;
     }
 
-    const handleSimpleKeys = (key: string, desc: KeyDescriptor): boolean => {
+    function handleSimpleKeys(key: string, desc: KeyDescriptor): boolean {
         // Check shortcut store first
         const { definitions, customMappings } = shortcutStore.value ?? {
             definitions: [],

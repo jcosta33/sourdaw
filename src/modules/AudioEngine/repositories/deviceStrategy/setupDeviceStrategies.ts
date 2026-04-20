@@ -19,7 +19,7 @@ deviceRegistry.register('builtin-', async (ctx, device) => createWebAudioDevice(
 
 deviceRegistry.register(isFaustModule, createFaustStrategy);
 
-const isNativeDevice = (type: string) => {
+function isNativeDevice(type: string) {
     return (
         isFermenterDevice(type) ||
         isToasterDevice(type) ||

@@ -58,7 +58,7 @@ export async function commitPitchEditCommand(clipId: string, segments: NoteSegme
             processPitchEditWasm(result.buffer, segments, contour, outputAudioPath);
         }
 
-        const undoFn = () => {
+        function undoFn() {
             const state = trackStore.value;
             if (!state) {
                 return;
@@ -68,9 +68,9 @@ export async function commitPitchEditCommand(clipId: string, segments: NoteSegme
                 clips: t.clips.map((c: any) => (c.id === clipId ? { ...c, fileId: originalFileId } : c)),
             }));
             trackStore.set({ ...state, tracks: newTracks });
-        };
+        }
 
-        const redoFn = () => {
+        function redoFn() {
             const state = trackStore.value;
             if (!state) {
                 return;
@@ -80,7 +80,7 @@ export async function commitPitchEditCommand(clipId: string, segments: NoteSegme
                 clips: t.clips.map((c: any) => (c.id === clipId ? { ...c, fileId: outputAudioPath } : c)),
             }));
             trackStore.set({ ...state, tracks: newTracks });
-        };
+        }
 
         // Apply immediately
         redoFn();

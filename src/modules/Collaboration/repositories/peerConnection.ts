@@ -23,9 +23,9 @@ const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
 const iceServersStore = createStore<RTCIceServer[] | null>({ initialData: null });
 
 /** Override the default ICE servers (for advanced settings / strict zero-server mode). */
-export const setIceServers = (servers: RTCIceServer[] | null): void => {
+export function setIceServers(servers: RTCIceServer[] | null): void {
     iceServersStore.set(servers);
-};
+}
 
 /** Get the current ICE server configuration. */
 const getIceConfig = (): RTCConfiguration => {

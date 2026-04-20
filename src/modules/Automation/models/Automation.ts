@@ -72,17 +72,23 @@ export const createAutomationLane = (
     maxValue,
 });
 
-export const createAutomationObject = (
+export function createAutomationObject(
     laneId: string,
     startBeat: number,
     endBeat: number,
     points: AutomationPoint[] = [],
     name = 'Untitled'
-): AutomationObject => ({
-    id: `auto-obj-${crypto.randomUUID().slice(0, 8)}`,
-    laneId,
-    startBeat,
-    endBeat,
+): AutomationObject {
+    return {
+        id: `auto-obj-${crypto.randomUUID().slice(0, 8)}`,
+        laneId,
+        startBeat,
+        endBeat,
+        points,
+        name,
+    };
+}
+,
     points,
     name,
 });

@@ -47,7 +47,9 @@ export async function audioBufferToWav(
         channels.push(buffer.getChannelData(ch));
     }
 
-    const tpdfDither = (): number => Math.random() - Math.random();
+    function tpdfDither(): number {
+        return Math.random() - Math.random();
+    }
 
     let offset = dataOffset + 8;
     const YIELD_INTERVAL = 32768;

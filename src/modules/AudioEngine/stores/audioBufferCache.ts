@@ -83,8 +83,8 @@ const DB_NAME = 'sourdaw-audio';
 const DB_VERSION = 1;
 const STORE_NAME = 'buffers';
 
-const openDb = (): Promise<IDBDatabase> =>
-    new Promise((resolve, reject) => {
+function openDb(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
         const req = indexedDB.open(DB_NAME, DB_VERSION);
         req.onupgradeneeded = () => {
             const db = req.result;
@@ -95,6 +95,7 @@ const openDb = (): Promise<IDBDatabase> =>
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
     });
+}
 
 type SerializedBuffer = {
     sampleRate: number;

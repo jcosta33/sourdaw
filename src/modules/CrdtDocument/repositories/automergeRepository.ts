@@ -33,12 +33,12 @@ function invokeWorker(msg: Record<string, unknown>): Promise<WorkerResponse> {
     return new Promise((resolve, reject) => {
         const worker = getCrdtWorker();
         const id = crdtWorkerState.nextId++;
-        const cleanup = (): void => {
+        function cleanup(): void {
             worker.removeEventListener('message', handler);
             worker.removeEventListener('error', errorHandler);
             worker.removeEventListener('messageerror', errorHandler);
         };
-        const handler = (e: MessageEvent): void => {
+        function handler(e: MessageEvent): void {
             const data = e.data as WorkerResponse;
             if (data.id !== id) {
                 return;
@@ -52,7 +52,7 @@ function invokeWorker(msg: Record<string, unknown>): Promise<WorkerResponse> {
         };
         // §71.3: if the worker crashes or the message cannot be deserialised,
         // without these listeners the returned Promise would hang forever.
-        const errorHandler = (e: ErrorEvent | MessageEvent): void => {
+        function errorHandler(e: ErrorEvent | MessageEvent): void {
             cleanup();
             const msg = e instanceof ErrorEvent ? e.message : 'crdt worker postMessage failed';
             reject(new Error(`crdtWorker crashed: ${msg}`));

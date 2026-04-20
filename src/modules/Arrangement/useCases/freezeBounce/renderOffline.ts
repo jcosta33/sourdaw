@@ -301,7 +301,9 @@ async function renderWithProgress(
             return reject(new Error('Render aborted'));
         }
 
-        const abortHandler = () => reject(new Error('Render aborted'));
+        function abortHandler() {
+            return reject(new Error('Render aborted'));
+        }
         options?.abortSignal?.addEventListener('abort', abortHandler);
 
         for (let i = CHUNK_SIZE; i < totalFrames; i += CHUNK_SIZE) {

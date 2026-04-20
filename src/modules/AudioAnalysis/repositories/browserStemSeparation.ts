@@ -62,7 +62,7 @@ export const separateStemsBrowser = inject({ logger })(({ logger }) => {
     /**
      * Get or download the model file, using Cache API for persistence.
      */
-    const getModelBuffer = async (): Promise<ArrayBuffer> => {
+    async function getModelBuffer(): Promise<ArrayBuffer> {
         // Try Cache API first
         if ('caches' in window) {
             try {
@@ -102,7 +102,7 @@ export const separateStemsBrowser = inject({ logger })(({ logger }) => {
     /**
      * Create or return a cached ONNX inference session.
      */
-    const getSession = async (): Promise<OrtSession> => {
+    async function getSession(): Promise<OrtSession> {
         if (ortSession.cached) {
             return ortSession.cached;
         }

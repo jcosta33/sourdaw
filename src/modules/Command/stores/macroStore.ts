@@ -11,7 +11,7 @@ export type MacroStoreState = {
     currentRecording: AppAction[];
 };
 
-const loadPersistedMacros = (): Macro[] => {
+function loadPersistedMacros(): Macro[] {
     try {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored) {

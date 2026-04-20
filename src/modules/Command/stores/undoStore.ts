@@ -16,7 +16,9 @@ function loadFromSession(): UndoStoreState {
         if (raw) {
             const parsed = JSON.parse(raw) as UndoStoreState;
             if (Array.isArray(parsed.past) && Array.isArray(parsed.future)) {
-                const ensureKind = (e: UndoEntry): UndoEntry => ({ ...e, kind: e.kind ?? 'action' }) as UndoEntry;
+                function ensureKind(e: UndoEntry): UndoEntry {
+                    return ({ ...e, kind: e.kind ?? 'action' }) as UndoEntry;
+                }
                 return {
                     past: parsed.past.map(ensureKind),
                     future: parsed.future.map(ensureKind),
@@ -51,7 +53,9 @@ undoStore.subscribe((value) => {
             return;
         }
         try {
-            const serializableOnly = (entries: UndoEntry[]) => entries.filter(isActionEntry).slice(-MAX_UNDO_PERSIST);
+            function serializableOnly(entries: UndoEntry[]) {
+                return entries.filter(isActionEntry).slice(-MAX_UNDO_PERSIST);
+            }
             const trimmed: UndoStoreState = {
                 past: serializableOnly(current.past),
                 future: serializableOnly(current.future),

@@ -129,7 +129,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
         let taskIndex = 0;
 
         await new Promise<void>((resolve, reject) => {
-            const next = (): void => {
+            function next(): void {
                 if (isCancelRequested()) {
                     reject(new Error('Export cancelled'));
                     return;

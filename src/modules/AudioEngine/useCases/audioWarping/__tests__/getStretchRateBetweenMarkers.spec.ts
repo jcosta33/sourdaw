@@ -2,12 +2,14 @@ import { describe, it, expect } from 'vitest';
 
 import { getStretchRateBetweenMarkers } from '../getStretchRateBetweenMarkers';
 
-const mk = (sourceSec: number, targetBeat: number) => ({
-    id: 'm',
-    sourceSec,
-    targetBeat,
-    locked: false,
-});
+function mk(sourceSec: number, targetBeat: number) {
+    return {
+        id: 'm',
+        sourceSec,
+        targetBeat,
+        locked: false,
+    };
+}
 
 describe('getStretchRateBetweenMarkers', () => {
     it('should return 1 when source or target duration is non-positive', () => {
