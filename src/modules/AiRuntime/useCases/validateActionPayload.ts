@@ -39,19 +39,34 @@ export type PayloadValidator<ActionType extends RuntimeActionType> = (
 
 // ── Primitive helpers ───────────────────────────────────────────────────
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+function isObj(v: unknown): v is Record<string, unknown> {
+    return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
 
-const isString = (v: unknown): v is string => typeof v === 'string';
-const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
-const isInRange = (v: unknown, min: number, max: number): v is number => isNumber(v) && v >= min && v <= max;
-const isOptional = <Value>(v: unknown, check: (v: unknown) => v is Value): v is Value | undefined =>
-    v === undefined || check(v);
-const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every(isString);
+function isString(v: unknown): v is string {
+    return typeof v === 'string';
+}
+function isNumber(v: unknown): v is number {
+    return typeof v === 'number' && Number.isFinite(v);
+}
+function isInRange(v: unknown, min: number, max: number): v is number {
+    return isNumber(v) && v >= min && v <= max;
+}
+function isOptional<Value>(v: unknown, check: (v: unknown) => v is Value): v is Value | undefined {
+    return v === undefined || check(v);
+}
+function isStringArray(v: unknown): v is string[] {
+    return Array.isArray(v) && v.every(isString);
+}
 
 // ── Validators (destructive / high-risk actions) ─────────────────────────
 
-const hasTrackId = (p: unknown): p is { trackId: string } => isObj(p) && isString(p.trackId);
-const hasClipId = (p: unknown): p is { clipId: string } => isObj(p) && isString(p.clipId);
+function hasTrackId(p: unknown): p is { trackId: string } {
+    return isObj(p) && isString(p.trackId);
+}
+function hasClipId(p: unknown): p is { clipId: string } {
+    return isObj(p) && isString(p.clipId);
+}
 
 const validators = {
     // Track lifecycle

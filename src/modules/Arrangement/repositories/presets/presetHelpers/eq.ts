@@ -1,6 +1,6 @@
 import { type DevicePreset } from '../../../models/SoundPreset';
 
-export const eq = (
+export function eq(
     name: string,
     params: Partial<
         Record<
@@ -14,17 +14,19 @@ export const eq = (
             number
         >
     >
-): DevicePreset => ({
-    type: 'builtin-eq',
-    name,
-    parameterValues: {
-        'eq-low-gain': 0,
-        'eq-low-freq': 100,
-        'eq-mid-gain': 0,
-        'eq-mid-freq': 1000,
-        'eq-mid-q': 1,
-        'eq-high-gain': 0,
-        'eq-high-freq': 8000,
-        ...params,
-    },
-});
+): DevicePreset {
+    return {
+        type: 'builtin-eq',
+        name,
+        parameterValues: {
+            'eq-low-gain': 0,
+            'eq-low-freq': 100,
+            'eq-mid-gain': 0,
+            'eq-mid-freq': 1000,
+            'eq-mid-q': 1,
+            'eq-high-gain': 0,
+            'eq-high-freq': 8000,
+            ...params,
+        },
+    };
+}

@@ -26,7 +26,7 @@ import { getBackendChain } from './backendResolution/getBackendChain';
  * - native: mistral.rs structured tool calling (preferred) or text completion + XML parsing (fallback)
  */
 export const generateToolCalls = inject({ logger })(({ logger }) => {
-    const generateNativeToolCalls = async (systemPrompt: string, userMessage: string): Promise<ToolCallResult[]> => {
+    async function generateNativeToolCalls(systemPrompt: string, userMessage: string): Promise<ToolCallResult[]> {
         // Try structured tool calling first (Tauri only)
         if (isTauri()) {
             try {

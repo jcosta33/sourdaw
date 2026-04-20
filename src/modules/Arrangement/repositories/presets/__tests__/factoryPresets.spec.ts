@@ -8,7 +8,7 @@ import { padPresets } from '../padPresets';
 import { stringsPresets } from '../stringsPresets';
 
 describe('Factory Presets', () => {
-    const checkPresets = (presets: any[]) => {
+    function checkPresets(presets: any[]) {
         expect(presets.length).toBeGreaterThan(0);
         for (const p of presets) {
             expect(p).toHaveProperty('id');

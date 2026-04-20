@@ -11,11 +11,13 @@ export type WarpState = {
     originalTempo: number | null;
 };
 
-export const createWarpMarker = (originalBeat: number, warpedBeat: number): WarpMarker => ({
-    id: `warp-${crypto.randomUUID().slice(0, 8)}`,
-    originalBeat,
-    warpedBeat,
-});
+export function createWarpMarker(originalBeat: number, warpedBeat: number): WarpMarker {
+    return {
+        id: `warp-${crypto.randomUUID().slice(0, 8)}`,
+        originalBeat,
+        warpedBeat,
+    };
+}
 
 export const defaultWarpState: WarpState = {
     enabled: false,
