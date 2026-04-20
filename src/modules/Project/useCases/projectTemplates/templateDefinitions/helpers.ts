@@ -3,7 +3,6 @@ import { addTrack, addDevice } from '#/modules/Arrangement/useCases';
 
 import { demo5_NebulaDrift } from '../../demoProjects/nebulaDrift/createNebulaDriftDemo';
 import { demo1_TheCompleteMix } from '../../demoProjects/resonance/createResonanceDemo';
-import { demo4_NativeShowcase } from '../../demoProjects/synthwave/createSynthwaveDemo';
 import { newProject } from '../../projectPersistence/newProject';
 
 export type TemplateCategory = 'empty' | 'music' | 'podcast' | 'film' | 'demo';
@@ -139,15 +138,6 @@ export const templates: ProjectTemplate[] = [
             'A fully arranged 5-minute ambient/IDM production in D minor with 28 tracks, automation, markers, and detailed MIDI patterns.',
         category: 'demo',
         create: () => demo1_TheCompleteMix(),
-    },
-    {
-        id: 'demo-native-showcase',
-        name: 'Brainfeeder (Native Only)',
-        description:
-            'A 50-track Flying Lotus-style experimental beat showcase using native DSP effects. Only available in the native app.',
-        category: 'demo',
-        platform: 'native',
-        create: () => demo4_NativeShowcase(),
     },
     {
         id: 'demo-nebula-drift',

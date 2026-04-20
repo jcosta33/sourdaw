@@ -29,5 +29,8 @@ export type { AdjustmentEffectType } from './adjustmentLayer';
 export { vcaGroupStore, defaultVcaGroupState } from './vcaGroupStore';
 export type { VcaGroupState } from './vcaGroupStore';
 
+export { grooveStore } from './grooveStore';
+export type { GrooveState, GrooveTemplate } from './grooveStore';
+
 export { gainEnvelopeStore, defaultGainEnvelopeStoreState } from './gainEnvelopeStore';
 export type { GainEnvelopeStoreState, ClipGainEnvelope, GainEnvelopePoint } from './gainEnvelopeStore';
