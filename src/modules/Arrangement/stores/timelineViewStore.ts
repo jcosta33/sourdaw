@@ -58,15 +58,17 @@ export function toggleAutoScroll(): void {
     timelineViewStore.set({ ...state, autoScrollEnabled: !state.autoScrollEnabled });
 }
 
-export function setScrollY(scrollY: number): void {
+export function setScrollY(scrollY: number, viewportHeight = 200): void {
     const state = timelineViewStore.value;
     if (!state) {
         return;
     }
-    // Clamp to prevent scrolling past the last track
+    // Clamp to prevent scrolling past the last track.
+    // viewportHeight is the visible track area height — callers should pass
+    // the actual container height for correct clamping.
     const tracks = trackStore.value?.tracks ?? [];
     const totalHeight = tracks.filter((t) => t.kind !== 'master').reduce((sum, t) => sum + (t.height ?? 64), 0);
-    const maxY = Math.max(0, totalHeight - 200); // Keep at least 200px visible
+    const maxY = Math.max(0, totalHeight - viewportHeight);
     const clamped = Math.max(0, Math.min(maxY, scrollY));
     if (state.scrollY !== clamped) {
         timelineViewStore.set({ ...state, scrollY: clamped });

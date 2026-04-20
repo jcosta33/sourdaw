@@ -40,7 +40,7 @@ export function hitTestClip(canvasX: number, canvasY: number): ClipHitResult | n
     }
 
     for (const clip of track.clips) {
-        if (beat >= clip.startBeat && beat <= clip.endBeat) {
+        if (beat >= clip.startBeat && beat < clip.endBeat) {
             // R-A11: Hit test for individual notes if inline editing is active
             if (clip.isInlineEditing && clip.type === 'midi' && clip.midiNotes.length > 0) {
                 const padding = 2;
@@ -76,7 +76,7 @@ export function hitTestClip(canvasX: number, canvasY: number): ClipHitResult | n
             const ly = trackYOffset + track.height + i * varLaneHeight;
             if (contentY >= ly && contentY <= ly + varLaneHeight) {
                 for (const clip of lane.clips) {
-                    if (beat >= clip.startBeat && beat <= clip.endBeat) {
+                    if (beat >= clip.startBeat && beat < clip.endBeat) {
                         return { clipId: clip.id, trackId: track.id };
                     }
                 }

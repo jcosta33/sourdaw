@@ -16,19 +16,11 @@ export async function analyzeSample(sampleId: string): Promise<void> {
     if (sample.sync.status === 'analyzed') return;
 
     try {
-        // 1. Fetch and decode audio (assuming it's in cache or accessible)
-        let buffer = audioBufferCache.get(sample.id);
-
+        // Only analyze if the audio buffer is actually available in cache.
+        // A silent dummy buffer would produce meaningless analysis results.
+        const buffer = audioBufferCache.get(sample.id);
         if (!buffer) {
-            // Mock buffer for analysis demo if not in cache
-            const ctx = new AudioContext();
-            try {
-                buffer = ctx.createBuffer(1, 44100, 44100);
-            } finally {
-                if (ctx.close) {
-                    await ctx.close();
-                }
-            }
+            return;
         }
 
         // 2. Perform background analysis

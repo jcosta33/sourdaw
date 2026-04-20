@@ -44,11 +44,30 @@ export async function createFaustDevice(
         nodes: [audioNode],
         wamControls: {
             setParam: (name: string, value: number) => {
+                // Resolve bare param names to full Faust addresses via suffix fallback.
+                // Faust expects addresses like '/FM_Synth/algorithm'; UI passes 'algorithm'.
                 if (node && typeof (node as any).setParamValue === 'function') {
-                    try {
-                        (node as any).setParamValue(name, value);
-                    } catch (e) {
-                        logger.warn(`[FaustDevice] Failed to set param ${name} to ${value}:`, e);
+                    if (audioNode instanceof AudioWorkletNode) {
+                        let resolvedName = name;
+                        if (!audioNode.parameters.get(name)) {
+                            for (const [key] of audioNode.parameters) {
+                                if (key.endsWith(`/${name}`)) {
+                                    resolvedName = key;
+                                    break;
+                                }
+                            }
+                        }
+                        try {
+                            (node as any).setParamValue(resolvedName, value);
+                        } catch (e) {
+                            logger.warn(`[FaustDevice] Failed to set param ${resolvedName} to ${value}:`, e);
+                        }
+                    } else {
+                        try {
+                            (node as any).setParamValue(name, value);
+                        } catch (e) {
+                            logger.warn(`[FaustDevice] Failed to set param ${name} to ${value}:`, e);
+                        }
                     }
                 }
             },

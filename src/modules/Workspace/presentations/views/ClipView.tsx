@@ -131,7 +131,7 @@ export const ClipView = (): ReactElement => {
                 ) : selectedClip && audioEditMode === 'pitch' ? (
                     <KneadEditor trackId={selectedTrack.id} clipId={selectedClip.id} />
                 ) : selectedClip ? (
-                    <WaveformEditor clipId={selectedClip.audioBufferId ?? selectedClip.id} />
+                    <WaveformEditor clipId={selectedClip.id} />
                 ) : (
                     <div className="flex flex-1 p-4">
                         <DawEmptyState

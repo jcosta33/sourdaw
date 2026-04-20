@@ -6,7 +6,7 @@ import { useTimelineGestures } from './useTimelineGestures';
 import { useTimelineFileDrop } from './useTimelineFileDrop';
 import { setPlayheadFromClick } from '../../useCases/timelineInteractions/setPlayheadFromClick';
 import { beginClipDrag, type DragState } from '../../useCases/timelineInteractions/beginClipDrag';
-import { clipDragPreviewRef, type ClipPreviewPosition } from '../../stores/clipDragPreviewRef';
+import { clipDragPreviewRef, previewDirtyFlag, type ClipPreviewPosition } from '../../stores/clipDragPreviewRef';
 import { hitTestClip } from '../../useCases/timelineInteractions/hitTestClip/hitTestClip';
 import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
 import { hitTestClipEdge } from '../../useCases/timelineInteractions/hitTestClipEdge';
@@ -236,6 +236,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     }
                 }
                 clipDragPreviewRef.current = { positions: new Map(originals), originals };
+                previewDirtyFlag.value = true;
             }
             setDragState(drag);
             return;
@@ -367,6 +368,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         });
                     }
                 }
+                previewDirtyFlag.value = true;
             }
             return;
         }
@@ -399,6 +401,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 const orig = preview.originals.get(dragState.clipId);
                 if (orig) {
                     preview.positions.set(dragState.clipId, { ...orig, startBeat: newStart });
+                    previewDirtyFlag.value = true;
                 }
             }
             return;
@@ -419,6 +422,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 const orig = preview.originals.get(dragState.clipId);
                 if (orig) {
                     preview.positions.set(dragState.clipId, { ...orig, endBeat: newEnd });
+                    previewDirtyFlag.value = true;
                 }
             }
             return;
@@ -464,6 +468,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         endBeat: snappedBeat + duration,
                     });
                 }
+                previewDirtyFlag.value = true;
             }
         }
     };
@@ -476,6 +481,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             const { clipId, clipType, startX, originalOffset } = slipDragRef.current;
             slipDragRef.current = null;
             clipDragPreviewRef.current = null;
+            previewDirtyFlag.value = true;
             const { x } = getCanvasCoords(e);
             const view = timelineViewStore.value;
             if (view) {
@@ -656,6 +662,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             // Commit preview positions to the store in one batch, then clear the ref.
             const preview = clipDragPreviewRef.current;
             clipDragPreviewRef.current = null;
+            previewDirtyFlag.value = true;
 
             if (preview && preview.positions.size > 0) {
                 const primaryPos = preview.positions.get(dragClipId);

@@ -3,6 +3,7 @@ import { updateTrack } from '../../repositories/track/updateTrack';
 import { computeTrackHash } from '../../services/computeTrackHash';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { renderTrackOffline } from './renderOffline';
+import { getTransportState } from '#/modules/Transport/useCases';
 
 export const activeFreezeTasks = new Map<string, AbortController>();
 
@@ -77,7 +78,7 @@ export async function freezeTrack(trackId: string): Promise<void> {
                     sampleRate: renderedBuffer.sampleRate,
                     bitDepth: 32,
                     channelCount: renderedBuffer.numberOfChannels,
-                    tailLengthSeconds: tailBeats, // Storing as beats for now since that's what we computed
+                    tailLengthSeconds: tailBeats * 60 / (getTransportState()?.tempo ?? 120),
                 },
                 renderedAt: Date.now(),
             },

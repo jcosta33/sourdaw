@@ -529,6 +529,10 @@ export class TrackNode {
         this.strip.postFaderGain.disconnect();
         this.strip.panNode.disconnect();
         this.strip.analyserNode.disconnect();
+        if (this.strip.meterNode) {
+            this.strip.meterNode.port.close();
+            this.strip.meterNode.disconnect();
+        }
         for (const dn of this.strip.deviceNodes) {
             if (dn.dispose) {
                 dn.dispose();
@@ -543,8 +547,17 @@ export class TrackNode {
                 dn.levainControls.destroy();
                 unregisterLevainDevice();
             }
+            if (dn.grandBouleControls) {
+                dn.grandBouleControls.destroy();
+            }
             if (dn.wamControls) {
                 dn.wamControls.destroy?.();
+            }
+            if (dn.nativeDspControls && 'destroy' in dn.nativeDspControls) {
+                (dn.nativeDspControls as { destroy: () => void }).destroy();
+            }
+            if (dn.type === 'proof') {
+                unregisterProofDevice(dn.deviceId);
             }
             for (const n of dn.nodes) {
                 n.disconnect();

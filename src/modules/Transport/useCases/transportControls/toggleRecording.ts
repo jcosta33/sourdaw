@@ -75,7 +75,10 @@ export function toggleRecording(): void {
     }
 
     if (state.punchInEnabled) {
-        updateTransportState({ isRecording: false });
+        // Punch-in: start recording immediately and begin playback.
+        // The punch-in/out points are enforced by the scheduler, which
+        // only writes audio between the in/out markers.
+        beginActualRecording();
         if (!state.isPlaying) {
             startPlayback();
         }

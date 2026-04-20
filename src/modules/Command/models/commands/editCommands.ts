@@ -71,7 +71,7 @@ export const editCommands: CommandEntry[] = [
         label: 'Deselect All',
         description: 'Clear clip selection',
         category: 'Edit',
-        shortcut: '⌘⇧A',
+        shortcut: '⌘⇧D',
         action: () => {
             deselectAllClips();
         },

@@ -10,6 +10,7 @@ import type { SampleCategory, CrumbsMode } from '../models/CrumbsTypes';
 import { loadSampleFromPath } from './loadSample';
 import { switchCrumbsMode } from './setCrumbsMode';
 import { crumbsStore } from '../stores/crumbsStore';
+import { logger } from '#/infra/logger/appLogger';
 
 const AUDIO_EXTENSIONS = new Set(['.wav', '.mp3', '.flac', '.ogg', '.aac', '.aiff', '.aif', '.m4a']);
 
@@ -52,25 +53,28 @@ export async function handleCrumbsFileDrop(instanceId: string, event: DragEvent)
         return;
     }
 
-    if (isTauri()) {
-        let filePath: string | null = null;
+    if (!isTauri()) {
+        logger.warn('[Crumbs] File drop is only supported in the desktop app. Use the sample browser to load audio on web.');
+        return;
+    }
 
-        if ('path' in file) {
-            filePath = (file as File & { path: string }).path;
-        }
+    let filePath: string | null = null;
 
-        if (!filePath) {
-            filePath = file.webkitRelativePath || file.name;
-        }
+    if ('path' in file) {
+        filePath = (file as File & { path: string }).path;
+    }
 
-        if (filePath) {
-            await loadSampleFromPath(instanceId, filePath);
+    if (!filePath) {
+        filePath = file.webkitRelativePath || file.name;
+    }
 
-            const state = crumbsStore.value?.[instanceId];
-            if (state?.activeSample) {
-                const suggestedMode = categoryToMode(state.activeSample.category);
-                await switchCrumbsMode(instanceId, suggestedMode);
-            }
+    if (filePath) {
+        await loadSampleFromPath(instanceId, filePath);
+
+        const state = crumbsStore.value?.[instanceId];
+        if (state?.activeSample) {
+            const suggestedMode = categoryToMode(state.activeSample.category);
+            await switchCrumbsMode(instanceId, suggestedMode);
         }
     }
 }

@@ -6,6 +6,7 @@ import { initTimelineRenderer } from '../../useCases/initTimelineRenderer';
 import { createWebGpuAutomationRenderer, type AutomationRenderer } from '../renderers/createWebGpuAutomationRenderer';
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
+import { previewDirtyFlag } from '../../stores/clipDragPreviewRef';
 import { zoomTimeline, setAutoScroll, timelineViewStore } from '../../stores/timelineViewStore';
 
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
@@ -307,6 +308,11 @@ export const TimelineSurface = (): ReactElement => {
                 const isPlaying = transport?.isPlaying ?? false;
 
                 if (isPlaying) {
+                    dirty = true;
+                }
+
+                if (previewDirtyFlag.value) {
+                    previewDirtyFlag.value = false;
                     dirty = true;
                 }
 

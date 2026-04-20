@@ -2,6 +2,8 @@ import { trackStore } from '../../stores/trackStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { type Clip, type Track } from '../../models/Track';
 import { renderTrackOffline } from './renderOffline';
+import { getTransportState } from '#/modules/Transport/useCases';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 
 export type BounceOptions = {
     includeInserts: boolean;
@@ -33,7 +35,7 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
     // Add tail if requested
     let finalEndBeat = endBeat;
     if (options.tailHandling === 'manual') {
-        const tempo = 120; // TODO: get actual tempo
+        const tempo = getTransportState()?.tempo ?? 120;
         finalEndBeat += (5 * tempo) / 60; // 5 seconds fixed tail
     }
 
@@ -73,6 +75,9 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
         return;
     }
 
+    // Snapshot for undo
+    const tracksBefore = structuredClone(freshState.tracks);
+
     if (options.destination === 'replace') {
         trackStore.set({
             ...freshState,
@@ -108,6 +113,24 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
         tracks.splice(insertIndex, 0, newTrack);
         trackStore.set({ ...freshState, tracks });
     }
+
+    // Register undo for the bounce operation
+    const tracksAfter = structuredClone(trackStore.value?.tracks ?? []);
+    pushUndoEntry(
+        'Bounce Track',
+        () => {
+            const s = trackStore.value;
+            if (s) {
+                trackStore.set({ ...s, tracks: tracksBefore });
+            }
+        },
+        () => {
+            const s = trackStore.value;
+            if (s) {
+                trackStore.set({ ...s, tracks: tracksAfter });
+            }
+        }
+    );
 }
 
 export async function bounceInPlace(trackId: string): Promise<void> {
@@ -188,6 +211,8 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
         return;
     }
 
+    const tracksBefore = structuredClone(freshState.tracks);
+
     trackStore.set({
         ...freshState,
         tracks: freshState.tracks.map((t) => {
@@ -201,4 +226,21 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
             };
         }),
     });
+
+    const tracksAfter = structuredClone(trackStore.value?.tracks ?? []);
+    pushUndoEntry(
+        'Bounce Selection',
+        () => {
+            const s = trackStore.value;
+            if (s) {
+                trackStore.set({ ...s, tracks: tracksBefore });
+            }
+        },
+        () => {
+            const s = trackStore.value;
+            if (s) {
+                trackStore.set({ ...s, tracks: tracksAfter });
+            }
+        }
+    );
 }

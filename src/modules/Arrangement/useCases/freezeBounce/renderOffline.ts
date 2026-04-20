@@ -77,13 +77,14 @@ export async function renderTrackOffline(
         if (t.frozen && t.frozenBufferId) {
             const buffer = audioBufferCache.get(t.frozenBufferId);
             if (buffer) {
-                // If already frozen, just play the whole thing from its intended start
                 const source = offlineCtx.createBufferSource();
                 source.buffer = buffer;
                 source.connect(gainNode);
-                // We assume frozen buffer aligns with its clips' start beat
-                // §12.3 — This logic needs refinement if freeze doesn't match the selection
-                source.start(0); 
+                // The frozen buffer was rendered starting at the track's earliest
+                // clip startBeat. Offset it relative to this render's startBeat.
+                const trackStartBeat = t.clips.length > 0 ? Math.min(...t.clips.map((c) => c.startBeat)) : 0;
+                const offsetSeconds = Math.max(0, ((trackStartBeat - startBeat) / tempo) * 60);
+                source.start(offsetSeconds);
             }
         } else {
             // Schedule individual clips

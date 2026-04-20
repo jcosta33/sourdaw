@@ -2,6 +2,7 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { markerStore } from '../../stores/markerStore';
 import { automationStore } from '#/modules/Automation/stores';
+import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
 import { shiftMidiNotesAfterBeat } from '#/modules/MIDI/useCases';
 
 export function insertTime(atBeat: number, durationBeats: number): void {
@@ -50,6 +51,28 @@ export function insertTime(atBeat: number, durationBeats: number): void {
                     p.beat >= atBeat ? { ...p, beat: p.beat + durationBeats } : p
                 ),
             })),
+        });
+    }
+
+    // Tempo changes at or after the insertion point must shift forward.
+    const tempoState = tempoMapStore.value;
+    if (tempoState) {
+        tempoMapStore.set({
+            ...tempoState,
+            changes: tempoState.changes.map((c) =>
+                c.beat >= atBeat ? { ...c, beat: c.beat + durationBeats } : c
+            ),
+        });
+    }
+
+    // Time signature changes at or after the insertion point must shift forward.
+    const timeSigState = timeSignatureMapStore.value;
+    if (timeSigState) {
+        timeSignatureMapStore.set({
+            ...timeSigState,
+            changes: timeSigState.changes.map((c) =>
+                c.beat >= atBeat ? { ...c, beat: c.beat + durationBeats } : c
+            ),
         });
     }
 
