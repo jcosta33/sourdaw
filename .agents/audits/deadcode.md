@@ -22,9 +22,9 @@ Knip produces a clean, trustworthy report where:
 - `knip.json` — knip configuration
 - `package.json` — dependency declarations and scripts
 - `tsconfig.json` — TypeScript path mapping (`#/*`)
-- `src/app/main.tsx` — Vite application entry point
-- `src/routes/` — TanStack Router route files (currently the only knip entry)
-- `src/components/` — UI components (entirely ignored by knip)
+- `src/app/main.tsx` — Vite application entry point (auto-detected by knip via `index.html`)
+- `src/routes/` — TanStack Router route files
+- `src/components/` — UI components (now analyzed after removing blanket ignore)
 - `src/modules/*/events/index.ts` — module event barrel files
 - `src/modules/*/useCases/` — feature use-case directories
 - `src/modules/*/stores/` — feature stores
@@ -37,74 +37,67 @@ Knip produces a clean, trustworthy report where:
 ### Knip version & invocation
 - **Version:** 6.3.1
 - **Command:** `npx knip --no-exit-code`
-- **Output summary (fresh run, 2026-04-20):**
-  - Unused files: **91**
+- **Output summary (post-fix run, 2026-04-20):**
+  - Unused files: **92**
   - Unused dependencies: **1**
-  - Unused devDependencies: **4**
-  - Unresolved imports: **19**
-  - Unused exports: **86**
+  - Unused devDependencies: **2**
+  - Unlisted dependencies: **2**
+  - Unresolved imports: **10**
+  - Unused exports: **92**
   - Unused exported types: **22**
-  - Configuration hints: **10**
+  - Configuration hints: **1**
 
 ### Configuration (`knip.json`)
 ```json
 {
     "$schema": "https://unpkg.com/knip@latest/schema.json",
-    "entry": ["src/routes/**/*.tsx"],
-    "project": ["src/**/*.{ts,tsx}", "!src/**/*.spec.{ts,tsx}", "!src/**/*.test.{ts,tsx}", "!src/routeTree.gen.ts"],
-    "ignore": [
-        "src/components/**/*.tsx",
-        "src/modules/Levain/repositories/levainPresets.ts",
-        "src/modules/Plugin/models/ProofChamberState.ts",
-        "src/modules/Plugin/stores/chamberStore.ts",
-        "src/modules/Toaster/models/GrooveTemplates.ts",
-        "src/modules/Workspace/presentations/components/Sidebar/SectionHeader.tsx",
-        "src/modules/Workspace/useCases/automationSubLanes.ts",
-        "src/modules/Arrangement/useCases/clipGainEnvelope/getAllClipGainEnvelopes.ts",
-        "src/modules/Arrangement/useCases/clipGainEnvelope/moveGainEnvelopePoint.ts"
+    "entry": [
+        "src/routes/**/*.tsx",
+        "scripts/*.ts",
+        "codemods/*.ts"
     ],
+    "project": [
+        "src/**/*.{ts,tsx}",
+        "!src/**/*.spec.{ts,tsx}",
+        "!src/**/*.test.{ts,tsx}",
+        "!src/routeTree.gen.ts"
+    ],
+    "ignore": [],
     "ignoreExportsUsedInFile": true,
-    "ignoreDependencies": ["@tauri-apps/plugin-fs", "tailwindcss", "@typescript-eslint/eslint-plugin"],
+    "ignoreDependencies": ["tailwindcss"],
     "ignoreBinaries": ["prettier", "wasm-pack"]
 }
 ```
 
 ## Findings
 
-### 1. Knip configuration produces systemic false positives
+> **Validation (2026-04-20, independent re-run):** Output counts and categories above match a fresh `npx knip --no-exit-code`. All 10 unresolved imports reproduce verbatim. Unused deps (`@huggingface/transformers`, `sinon`, `@types/sinon`) and unlisted dep `glob` confirmed by grep. `workletPolyfill` imports confirmed absent from `src/` (commit `c2ddccaa`). Three claims in §3 are inaccurate and are corrected inline below (Control Room, Music Mentor, Adjustment Layer).
 
-#### Missing entry points
-The only declared entry is `src/routes/**/*.tsx`. The actual Vite entry point `src/app/main.tsx` is missing. Consequently, anything imported only from `main.tsx` (or its bootstrap chain) is flagged as unused. Similarly missing:
-- `src/app/main.tsx` — primary application entry.
-- `src/modules/MIDI/workers/controller-scripting.worker.ts` — dynamically loaded Web Worker.
-- `src/modules/AudioEngine/engine/workletInitShared.ts` — dynamically loaded AudioWorklet.
-- `scripts/*.ts` and `codemods/*.ts` — Node/CLI scripts that import project code.
+### 1. Knip configuration — FIXED
 
-#### Tests excluded from the project
-The `project` glob explicitly excludes `**/*.spec.{ts,tsx}` and `**/*.test.{ts,tsx}`. This means **any export consumed only by tests is reported as unused**. This is the single largest source of noise. Examples:
-- `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter` from `src/components/ui/card.tsx` — used exclusively in `src/components/ui/__tests__/card.spec.tsx`.
-- `createUndoEntry`, `generateGroupId`, `isActionEntry` from `src/modules/Command/models/UndoEntry.ts` — used in tests.
-- Most `…Dependencies` helper objects (DI dependency maps) — consumed by unit tests.
+The following issues were identified and resolved:
 
-#### Overbroad `ignore` of components
-`"ignore": ["src/components/**/*.tsx"]` tells knip to **skip the entire directory**. This hides real dead components and also means cross-imports from components into other modules are not traced correctly. The `.tsx` filter does not catch `.ts` utility files inside `src/components/daw/`, which is why `STANDARD_FREQ_MARKS` and `STANDARD_DB_MARKS` from `spectrumMath.ts` are still flagged.
+#### Entry points — FIXED
+Knip auto-detects `src/app/main.tsx` via `index.html` (Vite), so it does not need to be declared. Workers loaded via `new Worker(new URL(...))` and `?worker` imports are automatically traced by knip v6. `scripts/*.ts` and `codemods/*.ts` were added to `entry`.
 
-#### Dynamic imports not resolved
-`@tauri-apps/plugin-fs` is used in production code via dynamic `await import('@tauri-apps/plugin-fs')` (`src/modules/Project/presentations/views/ExportDialog.tsx`, `src/modules/Project/useCases/projectPersistence/fileIO/pickAndImportProjectFile.ts`, etc.). Knip does not trace dynamic imports without configuration, so the dependency appears unused and was manually added to `ignoreDependencies`. This should be fixed with `webpack` or `dynamicImports` configuration rather than ignored.
+#### Tests excluded from the project — INTENTIONAL
+The `project` glob excludes `**/*.spec.{ts,tsx}` and `**/*.test.{ts,tsx}`. **This is deliberate** — test usages are not counted as real usages per project policy. Consequently, exports consumed only by tests are correctly reported as unused. This surfaces dead code such as:
+- `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter` from `src/components/ui/card.tsx`
+- `DialogTrigger`, `DialogClose`, `DropdownMenuGroup`, etc. from other `src/components/ui/` files
+- `createUndoEntry`, `generateGroupId`, `isActionEntry` from `src/modules/Command/models/UndoEntry.ts`
+- Most `…Dependencies` helper objects (DI dependency maps)
 
-#### Stale ignore entries
-Knip's configuration hints explicitly recommend removing **8 files** from `ignore` because they no longer exist or are now legitimately detected as unused:
-- `src/modules/Plugin/models/ProofChamberState.ts`
-- `src/modules/Plugin/stores/chamberStore.ts`
-- `src/modules/Toaster/models/GrooveTemplates.ts`
-- `src/modules/Workspace/presentations/components/Sidebar/SectionHeader.tsx`
-- `src/modules/Workspace/useCases/automationSubLanes.ts` (now a directory, not a file)
-- `src/modules/Arrangement/useCases/clipGainEnvelope/getAllClipGainEnvelopes.ts`
-- `src/modules/Arrangement/useCases/clipGainEnvelope/moveGainEnvelopePoint.ts`
+#### Overbroad `ignore` of components — FIXED
+The blanket `"ignore": ["src/components/**/*.tsx"]` was removed. Knip now fully analyzes `src/components/`, which increased the unused-export count from 86 to 92. These additional findings are legitimate dead code.
 
-Also recommended for removal from `ignoreDependencies`:
-- `@tauri-apps/plugin-fs` — actually used (dynamic imports).
-- `@typescript-eslint/eslint-plugin` — not directly imported in source, but used by ESLint config; removing it from `ignoreDependencies` would flag it again. Legitimate to keep ignored or move to `eslint` plugin config.
+#### Dynamic imports — FIXED
+`@tauri-apps/plugin-fs` is correctly traced by knip (both static and dynamic `import()`). Removed from `ignoreDependencies`.
+
+#### Stale ignore entries — FIXED
+All 8 stale paths were removed from `ignore`. The array is now empty.
+
+#### ESLint plugin dependency — FIXED
+`@typescript-eslint/eslint-plugin` is detected via `eslint.config.mjs`. Removed from `ignoreDependencies`.
 
 ### 2. Legitimate dead code (safe to remove)
 
@@ -135,9 +128,9 @@ These are **real compilation errors** in test files, not knip artifacts:
 #### Unused dependencies
 - `@huggingface/transformers` — listed in `package.json` dependencies but **only mentioned in a code comment** (`src/modules/BrowserAi/workers/tfjsInferenceWorker.ts`). No actual import.
 - `sinon` — not imported anywhere.
-- `ts-morph` — not imported anywhere.
-- `@types/jscodeshift` — not imported anywhere (`jscodeshift` itself is used only as a CLI binary in the `codemod` script).
 - `@types/sinon` — types for unused `sinon`.
+
+**Note:** `ts-morph` and `@types/jscodeshift` are no longer flagged because `codemods/*.ts` was added to `entry`. `ts-morph` is used in `codemods/remove-inject-dependencies.ts`.
 
 ### 3. Unfinished / unwired legitimate features (do not delete)
 
@@ -149,7 +142,7 @@ Several substantial features have fully implemented stores and use-case director
 
 | Feature | Store exists | UseCases exist | Wired? | Notes |
 |---------|-------------|----------------|--------|-------|
-| Control Room | `src/modules/AudioEngine/stores/controlRoom.ts` | `src/modules/AudioEngine/useCases/controlRoom/` | ❌ | Store tested. UseCases for monitor/cue/talkback are complete but not called. |
+| Control Room | `src/modules/AudioEngine/stores/controlRoom.ts` | `src/modules/AudioEngine/useCases/controlRoom/` | Partial | **CORRECTION (2026-04-20):** `toggleMono` and `toggleDim` are wired via `handleToggleControlRoomMono`/`handleToggleControlRoomDim` in `src/modules/Arrangement/handlers/newFeature/`. The remaining useCases (`toggleTalkback`, `setTalkbackLevel`, `createCueMix`, `deleteCueMix`, `addMonitor`, `switchMonitor`, `setCueTrackLevel`, `calibrateMonitor`, `setMonitorVolume`, `setDimLevel`, `getEffectiveVolume`, `toggleMute`, `toggleReference`) are not called outside their own tests. |
 | RAVE (AI timbre transfer) | `src/modules/AudioEngine/stores/rave.ts` | `src/modules/AudioEngine/useCases/rave/` | ❌ | Store tested. UseCases for encode/decode/interpolate are complete. |
 | Elastic Audio | — | `src/modules/AudioEngine/useCases/elasticAudio/` | ❌ | No store. UseCases for transient detection/quantization exist. |
 | Sample Player | — | `src/modules/AudioEngine/useCases/samplePlayer/` | ❌ | No store. UseCases for SFZ playback exist. |
@@ -157,7 +150,7 @@ Several substantial features have fully implemented stores and use-case director
 | Punch Recording | `src/modules/Transport/stores/punchRecordingStore.ts` | `src/modules/Transport/useCases/punchRecording/` | ❌ | Store tested. UseCases for pre/post roll, background capture exist. |
 | Setlist | `src/modules/Transport/stores/setlistStore.ts` | `src/modules/Transport/useCases/setlist/` | ❌ | Store tested. UseCases for item CRUD/reordering exist. |
 | DAWproject import/export | — | `src/modules/Project/useCases/dawProject/` | Partial | `exportDawProject` action and handler exist, but the underlying `parseDawProject.ts` / `exportDawProject.ts` useCases are not called by the handler. |
-| Music Mentor | — | `src/modules/AiRuntime/useCases/musicMentor/` | Partial | `getMentorTips` action/handler exist, but handler does not call `getMentorTip()` from useCases. |
+| Music Mentor | — | `src/modules/AiRuntime/useCases/musicMentor/` | Partial | **CORRECTION (2026-04-20):** `handleGetMentorTips` does call `generateMentorLessons()` from the module's useCases index. What is actually unwired is `queries.ts` in the `musicMentor/` directory — verify whether those query helpers have any consumer outside the `__tests__/queries.spec.ts` file. |
 | Modulation System | — | `src/modules/Plugin/useCases/modulationSystem/` | ❌ | Complete CRUD for modulation routes. No UI wired. |
 | Node View | `src/modules/Plugin/stores/nodeView.ts` | `src/modules/Plugin/useCases/nodeView/` | ❌ | Store and useCases for graph editor exist. |
 | Push Integration | `src/modules/Plugin/stores/push.ts` | `src/modules/Plugin/useCases/pushIntegration/` | ❌ | Ableton Push 2 support. Store and useCases present. |
@@ -171,7 +164,9 @@ These are **intentionally built but not yet shipped features**. Deleting them wo
 All extension useCases (`installExtension`, `toggleExtension`, `executeCommand`, etc.) are flagged as unused. This is correct — the feature is deliberately disabled — but the code should be preserved until the sandboxing issue is resolved.
 
 #### Adjustment Layer system
-`src/modules/Arrangement/useCases/adjustmentLayer/` contains 9 use-case files. They are not imported anywhere. This appears to be an unfinished feature (adjustment regions for non-destructive editing) with no corresponding store or UI.
+`src/modules/Arrangement/useCases/adjustmentLayer/` contains 9 use-case files. This appears to be an unfinished feature (adjustment regions for non-destructive editing).
+
+> **CORRECTION (2026-04-20):** A store exists at `src/modules/Arrangement/stores/adjustmentLayer.ts` (exported via `stores/index.ts`), and `handleCreateAdjustmentLayer` in `src/modules/Arrangement/handlers/batchFeature/` wires `createAdjustmentLayer`. The other 8 useCases (`addAdjustmentRegion`, `removeAdjustmentRegion`, `removeAdjustmentLayer`, `toggleAdjustmentLayer`, `setLayerParameter`, `setLayerMix`, `getLayerCount`, `getActiveLayersAtBeat`) are unwired. Classify this as **Partial**, not fully orphaned.
 
 #### Automation sub-lanes
 `src/modules/Workspace/useCases/automationSubLanes/` (directory with `addAutomationSubLane.ts`, `removeAutomationSubLane.ts`, etc.) has tests but no production consumers.
@@ -184,25 +179,15 @@ All extension useCases (`installExtension`, `toggleExtension`, `executeCommand`,
 
 ## Priorities
 
-1. **Fix broken test imports** (19 unresolved imports). These represent real test failures or stale paths after refactoring.
-2. **Update knip configuration** to add missing entry points and include test files in the project scope. Without this, the report is too noisy to be actionable.
-3. **Remove truly unused dependencies** (`@huggingface/transformers`, `sinon`, `ts-morph`, `@types/sinon`, `@types/jscodeshift`).
+1. **Fix broken test imports** (10 unresolved imports). These represent real test failures or stale paths after refactoring.
+2. **Remove truly unused dependencies** (`@huggingface/transformers`, `sinon`, `@types/sinon`).
+3. **Add `glob` to `package.json`** — it is used by `scripts/generate-view-tests.ts` and `codemods/fix-tests.ts` but not declared.
 4. **Audit orphaned DI helpers** (`…Dependencies.ts` exports). Many are likely safe to delete if the corresponding use-case no longer uses DI injection.
 5. **Document frozen/unfinished features** so future knip runs don't re-investigate the same directories.
 
 ## Open issues
 
-1. **Knip entry points are incomplete.**
-   - Missing `src/app/main.tsx`, workers, worklets, scripts.
-   - **Needed:** Expand `entry` array to cover all static and dynamic entry points.
-
-2. **Test files are excluded from the project scope.**
-   - **Needed:** Remove `!src/**/*.spec.{ts,tsx}` from `project` (or add test files to `entry`) so that test-only exports are not flagged as unused.
-
-3. **`src/components/**/*.tsx` is entirely ignored.**
-   - **Needed:** Remove this blanket ignore. If specific generated files (e.g., shadcn/ui) should be ignored, list them individually or use a more specific glob.
-
-4. **Broken test imports exist in 8+ test files.**
+1. **Broken test imports exist in 8+ test files.**
    - `src/modules/Crumbs/presentations/components/__tests__/PadGrid.spec.tsx` — wrong model path.
    - `src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/__tests__/helpers.spec.ts` — wrong relative depth.
    - `src/modules/Plugin/useCases/__tests__/pluginBrowserActions.spec.ts` — mocks non-existent module.
@@ -210,24 +195,26 @@ All extension useCases (`installExtension`, `toggleExtension`, `executeCommand`,
    - 3 tests referencing `#/utils/Logger/Logger` — logger was moved to `infra/logger`.
    - **Needed:** Fix import paths or delete obsolete tests.
 
-5. **`../wasm/workletPolyfill.js` is imported but does not exist in source.**
-   - Imported from 9 AudioEngine processor files.
-   - **Needed:** Determine if this file is generated by the wasm build (`wasm:dsp`, `wasm:proof-chamber` scripts) or if the import is stale. If generated, add the path to knip `ignore` or resolve alias.
+2. **`../wasm/workletPolyfill.js` is imported but does not exist in source.**
+   - Imported from 9 AudioEngine processor files. Knip no longer reports these as unresolved, but the imports remain in source and may be stale.
+   - **Needed:** Determine if this file is generated by the wasm build or if the import is stale.
 
-6. **`@tauri-apps/plugin-fs` is incorrectly ignored.**
-   - It is actively used via dynamic import. The `ignoreDependencies` entry masks a knip limitation.
-   - **Needed:** Configure knip to resolve dynamic imports, then remove from `ignoreDependencies`.
+3. **`glob` is an unlisted dependency.**
+   - Used in `scripts/generate-view-tests.ts` and `codemods/fix-tests.ts` but not declared in `package.json`.
+   - **Needed:** Add `glob` to `devDependencies` (or `dependencies`).
 
-7. **Stale `ignore` entries in `knip.json`.**
-   - 8 entries flagged by knip itself as removable.
-   - **Needed:** Remove stale paths from `ignore`.
+4. **Unused dependencies remain in `package.json`.**
+   - `@huggingface/transformers` — verified: only mentioned in a code comment, no actual import.
+   - `sinon`, `@types/sinon` — verified: not imported anywhere in the codebase.
+   - **Needed:** Remove them.
 
 ## Open questions
 
 - Are the inspector effect layouts (`src/modules/Workspace/presentations/views/Inspector/layouts/effects/`) intended to be wired soon, or are they abandoned? No store or registry imports them.
-- Is the `workletPolyfill.js` import a build-time requirement, or can it be removed from the processor sources? The processors appear to function as AudioWorklets that may not need the polyfill at runtime.
+- ~~Is the `workletPolyfill.js` import a build-time requirement, or can it be removed from the processor sources?~~ **Resolved:** These imports were removed in commit `c2ddccaa`.
 - Should empty `events/index.ts` stubs be kept as a convention, or should the convention change to omit the file when a module has no events?
 - Are the `…Dependencies.ts` DI helper files still required by the current DI system, or has the project moved to a different injection pattern (e.g., `createHandler` with inline deps)?
+- Why does knip treat files with companion test files (`.spec.ts` in the same directory or `__tests__/*.spec.ts`) as used even when test files are excluded from `project`? This behavior was discovered during adversarial review and cannot be disabled via the Vitest or Vite plugins.
 
 ## Risks
 
@@ -238,30 +225,51 @@ All extension useCases (`installExtension`, `toggleExtension`, `executeCommand`,
 
 ## Suggested approaches
 
-1. **Restructure `knip.json`:**
-   - Add `src/app/main.tsx` to `entry`.
-   - Add `src/**/*.spec.{ts,tsx}` and `src/**/*.test.{ts,tsx}` to `entry` (not `project`) so test-only exports are considered used.
-   - Add worker/worklet entry patterns.
-   - Replace `src/components/**/*.tsx` ignore with specific ignores for generated shadcn files if necessary.
-   - Remove all stale `ignore` entries flagged by knip.
-
-2. **Fix broken imports before trusting knip:**
+1. **Fix broken test imports.**
    - Run `pnpm test:run` to see which tests actually fail.
    - Fix or delete tests with stale imports.
 
-3. **Document frozen features:**
+2. **Clean up `package.json` dependencies.**
+   - Add `glob` to `devDependencies`.
+   - Remove `@huggingface/transformers`, `sinon`, `@types/sinon`.
+
+3. **Document frozen features.**
    - Add a `knip.md` or inline comments in `knip.json` explaining why `src/modules/Extension/useCases/extension/` and other frozen directories are intentionally unwired.
 
-4. **Remove confirmed dead code:**
-   - Delete `@huggingface/transformers`, `sinon`, `ts-morph`, `@types/sinon`, `@types/jscodeshift` from `package.json`.
+4. **Remove confirmed dead code.**
    - Delete orphaned exports like `STANDARD_FREQ_MARKS`, `classifyDso`, `deleteEnvelope` after confirming no dynamic/string-based imports exist.
+
+## Knip config assessment (2026-04-20)
+
+Reviewed `knip.json` against the knip v6 feature set and this project's actual structure. **Verdict: tip-top, with two small optional tightenings.**
+
+What is correct:
+- `entry` covers `src/routes/**/*.tsx`, `scripts/*.ts`, `codemods/*.ts`. The Vite entry (`src/app/main.tsx`) is auto-detected via `index.html`. Workers loaded with `new Worker(new URL(...))` and `?worker` imports are traced by knip v6.
+- `project` excludes spec/test files and `routeTree.gen.ts` — matches the project policy that tests should not create export usages.
+- `ignoreExportsUsedInFile: true` suppresses intra-file false positives.
+- `ignoreDependencies: ["tailwindcss"]` is necessary — tailwindcss is consumed via the vite plugin and CSS, not module imports.
+- `ignoreBinaries: ["prettier", "wasm-pack"]` is correct — `prettier` enters via `eslint-plugin-prettier` at runtime and `wasm-pack` is an external Rust tool.
+- Vite, Vitest, TanStack Router, ESLint, and TypeScript plugins auto-activate via `vite.config.ts`, `eslint.config.mjs`, `tsconfig.json` — nothing to configure manually.
+
+Minor optional improvements (non-blocking):
+- **`entry` could also include `scripts/*.{mjs,cjs}`** (`fix-hoisted.mjs`, `finalize_task.mjs`, `scripts/generate-view-tests.cjs`, etc.) if you want knip to trace their imports. These are one-off maintenance scripts today, so skipping them is defensible — just document the choice.
+- **`ignore` is `[]`**, which is the correct baseline. If the frozen `Extension` system or other deliberately-unwired features grow noisy, consider adding them with comments rather than re-adding blanket `src/components/**` style suppressions.
+- **Companion-test-file heuristic (knip v6.3.1):** knip treats source files with a neighbouring `.spec.ts` as "used" even when tests are excluded from `project`. This is an upstream limitation, not fixable via config. It does hide some real dead code (e.g. `src/components/ui/card.tsx`). Worth pinning in a short `docs/agents/` note so future sessions don't re-discover it.
+
+No changes to `knip.json` are required to address the remaining findings in this audit — the work is all outside the config.
 
 ## Recommendation
 
-**Start with fixing knip configuration and broken test imports.** Do not delete any code in `src/modules/` until the configuration is corrected, because the current false-positive rate is too high to distinguish dead code from unfinished features safely.
+**Knip configuration is now accurate within the limits of the tool.** The config correctly traces dynamic imports, auto-detects Vite entries, and no longer suppresses components or stale paths. However, knip has an **undocumented companion-test-file heuristic** that treats files with corresponding `.spec.ts` tests as used even when tests are excluded from `project`. This means some genuinely unused files (e.g., `src/components/ui/card.tsx`, `src/modules/Arrangement/useCases/clipGainEnvelope/getAllClipGainEnvelopes.ts`) are not flagged. This limitation is intrinsic to knip v6.3.1 and cannot be disabled via configuration.
 
-Next step: create a spec to update `knip.json`, fix the 19 unresolved imports, and re-run knip to establish a clean baseline.
+The remaining work is to fix the 10 broken test imports, add `glob` to `package.json`, remove the 3 confirmed unused dependencies, and decide which of the ~92 flagged files/exports are dead code versus legitimate unfinished features.
 
 ## Resolved
 
 - ~~Stale `knip-results.txt` existed from pre-refactor state~~ — superseded by fresh run on 2026-04-20.
+- ~~Missing entry points (`main.tsx`, workers, scripts, codemods)~~ — fixed. `main.tsx` is auto-detected; scripts/codemods added to `entry`.
+- ~~Overbroad `src/components/**/*.tsx` ignore~~ — removed.
+- ~~Stale `ignore` entries (8 paths)~~ — removed.
+- ~~`@tauri-apps/plugin-fs` incorrectly in `ignoreDependencies`~~ — removed; knip traces dynamic imports correctly.
+- ~~`@typescript-eslint/eslint-plugin` incorrectly in `ignoreDependencies`~~ — removed; knip detects it via `eslint.fast.config.mjs`.
+- ~~`workletPolyfill.js` unresolved imports~~ — superseded by commit `c2ddccaa` which removed all such imports from source.

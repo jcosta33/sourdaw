@@ -2,10 +2,6 @@ import { rdpSimplify } from '#/modules/Arrangement/useCases';
 
 import { automationStore } from '../../stores/automationStore';
 
-export const thinAutomationPointsDependencies = {
-    rdpSimplify,
-} as const;
-
 export function thinAutomationPoints(laneId: string, tolerance = 0.01): void {
     const state = automationStore.value;
     if (!state) {

@@ -4,17 +4,6 @@ import { scheduleNote, startFaustNote, getDrumKitDefByIndex, scheduleDrumKitNote
 
 import { audioEngine } from '../repositories/createWebAudioEngine';
 
-export const playAuditionNoteDependencies = {
-    audioEngine,
-    getTrackById,
-    getDrumKitDefByIndex,
-    scheduleDrumKitNote,
-    trackStore,
-    startFaustNote,
-    getSynthParamsForTrack,
-    scheduleNote,
-} as const;
-
 export function playAuditionNote(trackId: string, pitch: number, velocity: number = 100): () => void {
     const strip = audioEngine.ensureTrackStrip(trackId);
     const now = audioEngine.context.currentTime;

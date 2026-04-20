@@ -4,7 +4,7 @@
 // ── Track ────────────────────────────────────────────────────────────────────
 
 export { addTrack } from './addTrack';
-export { createTrack } from './createTrack';
+export { createTrack, normalizeTrack } from './createTrack';
 export { removeTrack } from './removeTrack';
 export { renameTrack } from './renameTrack';
 export { duplicateTrack } from './duplicateTrack';

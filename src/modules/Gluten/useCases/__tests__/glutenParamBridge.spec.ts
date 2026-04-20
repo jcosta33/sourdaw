@@ -8,27 +8,26 @@ const { mockUpdateDeviceParam, mockPersistDeviceParam, mockGetAllTracks } = vi.h
     mockGetAllTracks: vi.fn(),
 }));
 
-vi.mock('../glutenParamBridge/helpers', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('../glutenParamBridge/helpers')>();
-    const handlers = actual.createFlushHandlers({
-        updateDeviceParam: mockUpdateDeviceParam,
-        persistDeviceParam: mockPersistDeviceParam,
-    });
-    return {
-        ...actual,
-        flushParam: handlers.flushParam,
-        pushParamImmediately: handlers.pushParamImmediately,
-        findDeviceRefGluten: actual.createFindDeviceRef(mockGetAllTracks),
-        paramBatcher: {
-            schedule: (key: string, value: unknown, flush: (k: string, v: unknown) => void) => {
-                flush(key, value);
-            },
-            cancel: (): void => {},
-            cancelAll: (): void => {},
-            pendingSize: 0,
-        },
-    };
-});
+vi.mock('#/modules/AudioEngine/useCases/deviceControls/updateDeviceParam', () => ({
+    updateDeviceParam: mockUpdateDeviceParam,
+}));
+
+vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter/persistDeviceParam', () => ({
+    persistDeviceParam: mockPersistDeviceParam,
+}));
+
+vi.mock('#/modules/Arrangement/useCases/getAllTracks', () => ({
+    getAllTracks: mockGetAllTracks,
+}));
+
+vi.mock('#/utils/DOM/createRafBatcher', () => ({
+    createRafBatcher: () => ({
+        schedule: (key: string, value: unknown, flush: (k: string, v: unknown) => void) => flush(key, value),
+        cancel: (): void => {},
+        cancelAll: (): void => {},
+        pendingSize: 0,
+    }),
+}));
 
 vi.mock('../../stores/glutenStore', () => ({
     setGlutenParam: vi.fn(),

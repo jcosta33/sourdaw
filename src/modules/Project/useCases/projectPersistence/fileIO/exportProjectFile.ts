@@ -17,7 +17,7 @@ import { syncCurrentArrangementToStore } from '../../arrangement/helpers';
 function collectBufferIds(trackState: TrackStoreState | null | undefined): Set<string> {
     const ids = new Set<string>();
     for (const track of trackState?.tracks ?? []) {
-        if (track.freezeState?.frozenBufferId) {
+        if (track.freezeState.frozenBufferId) {
             ids.add(track.freezeState.frozenBufferId);
         }
         for (const clip of track.clips) {

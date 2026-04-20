@@ -65,8 +65,8 @@ type TrackHeaderProps = {
 
 export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactElement => {
     const trackHeight = track.height;
-    const isFreezing = track.freezeState?.status === 'freezing';
-    const isStale = track.freezeState?.status === 'stale';
+    const isFreezing = track.freezeState.status === 'freezing';
+    const isStale = track.freezeState.status === 'stale';
 
     if (track.kind === 'folder') {
         const isDrumMachine = track.devices.some((d) => d.type === 'toaster');
@@ -178,7 +178,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                         <div className="flex flex-col gap-1 w-16 ml-2">
                             <span className="text-[8px] font-bold text-primary animate-pulse">FREEZING</span>
                             <DawMeterBar
-                                value={(track.freezeState?.renderProgress ?? 0) * 100}
+                                value={(track.freezeState.renderProgress ?? 0) * 100}
                                 size="sm"
                                 fillClassName="bg-primary"
                             />

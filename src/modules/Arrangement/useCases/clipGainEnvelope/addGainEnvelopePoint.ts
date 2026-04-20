@@ -4,11 +4,6 @@ import { ensureClipGainEnvelope } from './getClipGainEnvelope';
 
 export type { GainEnvelopePoint };
 
-export const addGainEnvelopePointDeps = {
-    ensureClipGainEnvelope,
-    setEnvelope,
-};
-
 export function addGainEnvelopePoint(clipId: string, beatOffset: number, gainDb: number): GainEnvelopePoint {
     const env = ensureClipGainEnvelope(clipId);
     const point: GainEnvelopePoint = {

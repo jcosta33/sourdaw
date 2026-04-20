@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createTrack } from '../Track';
+import { createTrack, normalizeTrack } from '../Track';
 
 describe('createTrack', () => {
     it('uses a provided id and skips random track ids', () => {
@@ -22,5 +22,43 @@ describe('createTrack', () => {
         expect(t.devices).toHaveLength(1);
         expect(t.devices[0]!.type).toBe('builtin-synth');
         expect(t.devices[0]!.name).toBe('Synth');
+    });
+});
+
+describe('normalizeTrack', () => {
+    it('fills freezeState when missing from persisted data', () => {
+        const t = normalizeTrack({ id: 't1', name: 'Old', kind: 'audio' });
+        expect(t.freezeState).toEqual({ status: 'unfrozen' });
+    });
+
+    it('preserves an existing freezeState', () => {
+        const t = normalizeTrack({
+            id: 't1',
+            name: 'Frozen',
+            kind: 'audio',
+            freezeState: { status: 'frozen', frozenBufferId: 'buf-1' },
+        });
+        expect(t.freezeState.status).toBe('frozen');
+        expect(t.freezeState.frozenBufferId).toBe('buf-1');
+    });
+
+    it('defaults midiFx name from type when absent', () => {
+        const t = normalizeTrack({
+            id: 't1',
+            name: 'MIDI',
+            kind: 'midi',
+            midiFx: [{ id: 'fx1', type: 'arp' } as never],
+        });
+        expect(t.midiFx[0]!.name).toBe('Arp');
+    });
+
+    it('routes non-master tracks to the master bus by default', () => {
+        const t = normalizeTrack({ id: 't1', name: 'A', kind: 'audio' });
+        expect(t.outputId).toBe('master');
+    });
+
+    it('routes master to hardware output by default', () => {
+        const t = normalizeTrack({ id: 't1', name: 'Master', kind: 'master' });
+        expect(t.outputId).toBe('hw_out');
     });
 });

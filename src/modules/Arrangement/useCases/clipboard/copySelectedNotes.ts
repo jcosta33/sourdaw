@@ -2,11 +2,6 @@ import { midiStore } from '#/modules/MIDI/stores';
 
 import { setNoteClipboard } from '../../stores/clipboardStore';
 
-export const copySelectedNotesDependencies = {
-    midiStore,
-    setNoteClipboard,
-};
-
 export function copySelectedNotes(clipId: string, noteIds: string[]): void {
     const midiState = midiStore.value;
     if (!midiState) {

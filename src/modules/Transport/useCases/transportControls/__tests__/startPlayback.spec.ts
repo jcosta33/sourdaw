@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { resumeEngine } from '#/modules/AudioEngine/useCases';
+import { resumeEngine } from '#/modules/AudioEngine/useCases/engineAccess/resumeEngine';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
@@ -16,13 +16,9 @@ vi.mock('../../../repositories/transport/getTransportState', () => ({
 vi.mock('../../../repositories/transport/updateTransportState', () => ({
     updateTransportState: vi.fn(),
 }));
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
-    return {
-        ...actual,
-        resumeEngine: vi.fn(),
-    };
-});
+vi.mock('#/modules/AudioEngine/useCases/engineAccess/resumeEngine', () => ({
+    resumeEngine: vi.fn(),
+}));
 vi.mock('../../playheadScheduler', () => ({
     startPlayheadScheduler: vi.fn(),
 }));

@@ -42,6 +42,7 @@ describe('verifyAudioBufferReferences', () => {
         trackStoreMock.value = {
             tracks: [
                 {
+                    freezeState: { status: 'unfrozen' },
                     clips: [{ type: 'audio', name: 'ok', audioBufferId: 'buf-1' }],
                 },
             ],
@@ -57,6 +58,7 @@ describe('verifyAudioBufferReferences', () => {
         trackStoreMock.value = {
             tracks: [
                 {
+                    freezeState: { status: 'unfrozen' },
                     clips: [{ type: 'audio', name: 'missing-clip', audioBufferId: 'gone' }],
                 },
             ],
@@ -73,6 +75,7 @@ describe('verifyAudioBufferReferences', () => {
         trackStoreMock.value = {
             tracks: [
                 {
+                    freezeState: { status: 'unfrozen' },
                     clips: [
                         { type: 'audio', name: 'a', audioBufferId: '1' },
                         { type: 'audio', name: 'b', audioBufferId: '2' },

@@ -1,11 +1,6 @@
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { ensureTrackStrip } from '#/modules/AudioEngine/useCases';
 
-export const triggerToasterPadDependencies = {
-    getAllTracks,
-    ensureTrackStrip,
-} as const;
-
 export function triggerToasterPad(padIndex: number, velocity: number = 100): void {
     const toasterTrack = getAllTracks().find((t) => t.devices.some((d) => d.type === 'toaster'));
     if (!toasterTrack) {

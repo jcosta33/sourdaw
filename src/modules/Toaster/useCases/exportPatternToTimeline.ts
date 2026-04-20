@@ -4,13 +4,6 @@ import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { toasterStore } from '../stores/toasterStore';
 
-export const exportPatternToTimelineDependencies = {
-    getAllTracks,
-    addMidiNote,
-    addClip,
-    playheadPositionRef,
-} as const;
-
 export function exportPatternToTimeline(): void {
     const state = toasterStore.value;
     if (!state) {

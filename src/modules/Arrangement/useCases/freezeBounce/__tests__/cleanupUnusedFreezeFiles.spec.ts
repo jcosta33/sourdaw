@@ -28,10 +28,10 @@ describe('cleanupUnusedFreezeFiles', () => {
     it('collects active frozen buffer IDs and calls garbageCollectFreezeFiles', async () => {
         trackStore.set({
             tracks: [
-                { id: 't1', freezeState: { frozenBufferId: 'buf-1' } },
-                { id: 't2', freezeState: { frozenBufferId: 'buf-2' } },
-                { id: 't3', freezeState: {} },
-                { id: 't4' },
+                { id: 't1', freezeState: { status: 'frozen', frozenBufferId: 'buf-1' } },
+                { id: 't2', freezeState: { status: 'frozen', frozenBufferId: 'buf-2' } },
+                { id: 't3', freezeState: { status: 'unfrozen' } },
+                { id: 't4', freezeState: { status: 'unfrozen' } },
             ] as any,
             selectedTrackId: null,
         });

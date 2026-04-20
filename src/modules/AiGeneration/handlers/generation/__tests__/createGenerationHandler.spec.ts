@@ -1,27 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import * as arrangement from '#/modules/Arrangement/useCases';
-
 import { createGenerationHandler } from '../createGenerationHandler';
 import * as helpers from '../generationHandlerHelpers';
 
-vi.mock('../generationHandlerHelpers', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('../generationHandlerHelpers')>();
-    return {
-        ...actual,
-        getPlayheadBeat: vi.fn(),
-        resolveOrCreateMidiTrack: vi.fn(),
-    };
-});
+vi.mock('../generationHandlerHelpers', () => ({
+    VALID_DRUM_STYLES: new Set<string>(),
+    VALID_MELODY_STYLES: new Set<string>(),
+    VALID_CHORD_STYLES: new Set<string>(),
+    VALID_SCALES: new Set<string>(),
+    VALID_VOICINGS: new Set<string>(),
+    getPlayheadBeat: vi.fn(),
+    resolveOrCreateMidiTrack: vi.fn(),
+}));
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
-    return {
-        ...actual,
-        addTrack: vi.fn(),
-        getTrackStoreState: vi.fn(),
-    };
-});
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    addTrack: vi.fn(),
+    getTrackStoreState: vi.fn(),
+}));
 
 vi.mock('#/modules/Workspace/useCases', () => ({
     selectClipWithFocus: vi.fn(),

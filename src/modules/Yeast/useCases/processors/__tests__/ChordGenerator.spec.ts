@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
+import { type MidiEvent, type TransportInfo } from '../../../models/MidiEvent';
 import { ChordGenerator } from '../ChordGenerator';
 
 describe('ChordGenerator', () => {

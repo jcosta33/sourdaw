@@ -70,34 +70,19 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public initialize(): Promise<void> {
-        if (this.initPromise) {
-            return this.initPromise;
-        }
-        if (this.fallbackMode) {
-            this.initPromise = Promise.resolve();
-            return this.initPromise;
-        }
-        // Load worklet modules. This does NOT require a user gesture and is
-        // safe to run on app mount; it MUST complete before any TrackNode or
-        // device node is constructed because they synchronously instantiate
-        // AudioWorkletNodes (metering-processor, etc.). Resuming the context
-        // is a separate concern — see resume(), which must run on a gesture.
-        this.initPromise = (async () => {
-            await this.context.audioWorklet.addModule('/audio/worklets/sidechain-compressor-processor.js');
-            await this.context.audioWorklet.addModule('/audio/worklets/native-plugin-host-processor.js');
-            await this.context.audioWorklet.addModule('/audio/worklets/native-plugin-bridge-processor.js');
-            await this.context.audioWorklet.addModule(recordingProcessorUrl);
-            await this.context.audioWorklet.addModule(meteringProcessorUrl);
-            this.workletReady = true;
-        })();
+        this.initPromise ??= this.fallbackMode ? Promise.resolve() : this.loadWorklets();
         return this.initPromise;
     }
 
-    public whenReady(): Promise<void> {
-        // initialize() is idempotent and caches its own promise. Calling it
-        // here ensures whenReady() always returns the same promise whether
-        // initialize() has been kicked off yet or not.
-        return this.initialize();
+    private async loadWorklets(): Promise<void> {
+        await Promise.all([
+            this.context.audioWorklet.addModule('/audio/worklets/sidechain-compressor-processor.js'),
+            this.context.audioWorklet.addModule('/audio/worklets/native-plugin-host-processor.js'),
+            this.context.audioWorklet.addModule('/audio/worklets/native-plugin-bridge-processor.js'),
+            this.context.audioWorklet.addModule(recordingProcessorUrl),
+            this.context.audioWorklet.addModule(meteringProcessorUrl),
+        ]);
+        this.workletReady = true;
     }
 
     public async resume(): Promise<void> {

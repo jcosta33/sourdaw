@@ -48,15 +48,6 @@ export function setEnvelope(clipId: string, envelope: ClipGainEnvelope): void {
     });
 }
 
-export function deleteEnvelope(clipId: string): void {
-    const current = gainEnvelopeStore.value;
-    if (!current || !(clipId in current.envelopes)) {
-        return;
-    }
-    const { [clipId]: _dropped, ...rest } = current.envelopes;
-    gainEnvelopeStore.set({ envelopes: rest });
-}
-
 export function getAllEnvelopes(): ClipGainEnvelope[] {
     const current = gainEnvelopeStore.value;
     if (!current) {

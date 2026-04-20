@@ -12,12 +12,6 @@ export type DragState = {
     mode: 'move' | 'duplicate' | 'stretch' | 'trim-start';
 };
 
-export const beginClipDragDependencies = {
-    hitTestClip,
-    timelineViewStore,
-    trackStore,
-} as const;
-
 export function beginClipDrag(
     canvasX: number,
     canvasY: number,

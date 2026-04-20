@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
-import { getAudioTime } from '#/modules/AudioEngine/useCases';
+import { getAudioTime } from '#/modules/AudioEngine/useCases/engineAccess/getAudioTime';
 
 import { startSequencer, stopSequencer } from '../sequencerPlayback';
 
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+vi.mock('#/modules/AudioEngine/useCases/engineAccess/getAudioTime', () => ({
     getAudioTime: vi.fn(() => 0),
 }));
 

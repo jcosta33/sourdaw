@@ -134,7 +134,13 @@ function createMinimalBaseAudioContext(): {
 
     const createGain = (): GainNode =>
         ({
-            gain: { value: 0, setValueAtTime: (): void => {}, linearRampToValueAtTime: (): void => {} },
+            gain: {
+                value: 0,
+                setValueAtTime: (): void => {},
+                linearRampToValueAtTime: (): void => {},
+                setTargetAtTime: (): void => {},
+                cancelScheduledValues: (): void => {},
+            },
             connect: (dest: AudioNode) => dest,
             disconnect: (): void => {},
         }) as unknown as GainNode;

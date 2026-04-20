@@ -2,11 +2,6 @@ import { trackStore } from '../../stores/trackStore';
 
 import { snapToGrid } from './snapToGrid';
 
-export const snapToGridOrClipsDependencies = {
-    trackStore,
-    snapToGrid,
-} as const;
-
 export function snapToGridOrClips(beat: number, trackId: string, excludeClipId?: string): number {
     const tracks = trackStore.value?.tracks ?? [];
     const track = tracks.find((t) => t.id === trackId);

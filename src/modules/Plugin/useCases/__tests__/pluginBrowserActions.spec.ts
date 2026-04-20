@@ -5,13 +5,7 @@ import { createTrackForPlugin } from '../pluginBrowserActions/createTrackForPlug
 const addTrack = vi.fn().mockReturnValue(null);
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
-    addTrack: (...args: any[]) => addTrack(...args),
-}));
-
-const addExternalDevice = vi.fn();
-vi.mock('#/modules/DeviceBrowser/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/DeviceBrowser/useCases')>()),
-    addExternalDevice: (...args: any[]) => addExternalDevice(...args),
+    addTrack: (input: { name: string; kind: 'audio' | 'midi' | 'group' | 'folder' | 'bus' | 'master' }) => addTrack(input),
 }));
 
 describe('createTrackForPlugin', () => {

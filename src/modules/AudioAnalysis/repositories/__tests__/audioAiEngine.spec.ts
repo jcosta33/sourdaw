@@ -7,7 +7,7 @@ import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 import { generateAudio, separateStems } from '../audioAiEngine';
 import { separateStemsBrowser } from '../browserStemSeparation';
 
-import { type Logger } from '#/utils/Logger/Logger';
+import { type Logger } from '#/infra/logger/types';
 
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(),

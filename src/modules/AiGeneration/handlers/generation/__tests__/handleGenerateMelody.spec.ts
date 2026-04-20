@@ -22,14 +22,10 @@ vi.mock('../generationHandlerHelpers', () => ({
     VALID_VOICINGS: new Set(['close', 'open', 'spread', 'power']),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
-    return {
-        ...actual,
-        addTrack: vi.fn(),
-        getTrackStoreState: vi.fn(),
-    };
-});
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    addTrack: vi.fn(),
+    getTrackStoreState: vi.fn(),
+}));
 
 vi.mock('#/modules/Workspace/useCases', () => ({
     selectClipWithFocus: vi.fn(),

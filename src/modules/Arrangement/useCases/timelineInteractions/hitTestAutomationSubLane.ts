@@ -16,14 +16,6 @@ export type AutomationSubLaneHit = {
 
 const RULER_HEIGHT = 0;
 
-export const hitTestAutomationSubLaneDependencies = {
-    timelineViewStore,
-    trackStore,
-    workspaceStore,
-    automationStore,
-    buildTimelineRenderModel,
-} as const;
-
 export function hitTestAutomationSubLane(canvasX: number, canvasY: number): AutomationSubLaneHit | null {
     const viewState = timelineViewStore.value;
     const trackState = trackStore.value;

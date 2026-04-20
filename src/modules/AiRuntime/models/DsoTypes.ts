@@ -200,13 +200,6 @@ export type CommitClassification = 'auto_apply' | 'preview_required' | 'confirma
 /** Only destructive operations require confirmation. Everything else auto-applies. */
 const CONFIRMATION_REQUIRED_OPS = new Set(['remove_track', 'remove_clip', 'remove_device']);
 
-export function classifyDso(dso: Dso): CommitClassification {
-    if (CONFIRMATION_REQUIRED_OPS.has(dso.op)) {
-        return 'confirmation_required';
-    }
-    return 'auto_apply';
-}
-
 export function classifyEditPlan(plan: EditPlan): CommitClassification {
     if (plan.moderation === 'block') {
         return 'confirmation_required';

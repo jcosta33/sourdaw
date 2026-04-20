@@ -15,14 +15,6 @@ export type InsertPolyphonicMidiNotesResult = {
     trackId: string;
 };
 
-export const insertPolyphonicMidiNotesDependencies = {
-    getTransportState,
-    getAllTracks,
-    addTrack,
-    addClip,
-    batchAddMidiNotes,
-} as const;
-
 export function insertPolyphonicMidiNotes(
     notes: NoteEventTime[],
     sourceClip: SourceClip,

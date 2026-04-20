@@ -209,3 +209,55 @@ export function createTrack(input: { id?: string; name: string; kind: TrackKind;
         followChordTrack: false,
     };
 }
+
+function normalizeMidiFx(fx: Partial<MidiFxDevice> & { id: string; type: MidiFxDevice['type'] }): MidiFxDevice {
+    return {
+        id: fx.id,
+        type: fx.type,
+        name: fx.name || fx.type.charAt(0).toUpperCase() + fx.type.slice(1),
+        bypassed: fx.bypassed ?? false,
+        parameterValues: fx.parameterValues ?? {},
+    };
+}
+
+export function normalizeTrack(track: Partial<Track> & { id: string; name: string; kind: TrackKind }): Track {
+    // Derived deterministically from track.id so re-hydration (CRDT sync) produces the
+    // same alternative id each time. A random UUID here would flip on every remote change.
+    const defaultAltId = `${track.id}-alt-default`;
+    return {
+        id: track.id,
+        name: track.name,
+        kind: track.kind,
+        muted: track.muted ?? false,
+        soloed: track.soloed ?? false,
+        armed: track.armed ?? false,
+        gain: track.gain ?? 0.8,
+        pan: track.pan ?? 0,
+        color: track.color ?? '',
+        clips: track.clips ?? [],
+        devices: track.devices ?? [],
+        sends: track.sends ?? [],
+        midiFx: (track.midiFx ?? []).map(normalizeMidiFx),
+        frozen: track.frozen ?? false,
+        frozenBufferId: track.frozenBufferId,
+        freezeState: track.freezeState ?? { status: 'unfrozen' },
+        parentId: track.parentId ?? null,
+        collapsed: track.collapsed ?? false,
+        inputMonitoring: track.inputMonitoring ?? 'auto',
+        hidden: track.hidden ?? false,
+        disabled: track.disabled ?? false,
+        height: track.height || 80,
+        outputId: track.outputId ?? (track.kind === 'master' ? 'hw_out' : 'master'),
+        automationMode: track.automationMode ?? 'read',
+        groupId: track.groupId ?? null,
+        soloSafe: track.soloSafe ?? track.kind === 'bus',
+        notes: track.notes ?? '',
+        inputId: track.inputId ?? null,
+        activeAlternativeId: track.activeAlternativeId ?? defaultAltId,
+        alternatives: track.alternatives ?? [{ id: defaultAltId, name: 'Alternative 1', clips: [] }],
+        vcaGroupId: track.vcaGroupId ?? null,
+        midiOutputTrackId: track.midiOutputTrackId ?? null,
+        followChordTrack: track.followChordTrack ?? false,
+        showVariationLanes: track.showVariationLanes,
+    };
+}

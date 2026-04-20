@@ -1,10 +1,5 @@
 import { getVcaGroupsState, setVcaGroupsState } from '../../stores/vcaGroupStore';
 
-export const setVcaGainDependencies = {
-    getVcaGroupsState,
-    setVcaGroupsState,
-};
-
 export function setVcaGain(vcaGroupId: string, gain: number): void {
     setVcaGroupsState(
         getVcaGroupsState().map((g) => (g.id === vcaGroupId ? { ...g, gain: Math.max(0, Math.min(2, gain)) } : g))

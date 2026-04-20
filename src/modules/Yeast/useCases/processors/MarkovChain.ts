@@ -33,7 +33,7 @@ export class MarkovChain extends BaseMidiProcessor {
 
     // Map states to MIDI notes (from held notes or scale degrees).
     // Pre-allocated at MAX_STATES; `stateNoteCount` tracks the active length.
-    private readonly stateToNote: number[] = Array.from({ length: MAX_STATES }).fill(0);
+    private readonly stateToNote: number[] = Array.from({ length: MAX_STATES }, () => 0);
     private stateNoteCount = 0;
     private held: number[] = [];
 
@@ -42,7 +42,7 @@ export class MarkovChain extends BaseMidiProcessor {
         // Pre-allocate the full MAX_STATES × MAX_STATES matrix once
         this.probs = [];
         for (let i = 0; i < MAX_STATES; i++) {
-            const row = Array.from({ length: MAX_STATES }).fill(0);
+            const row: number[] = Array.from({ length: MAX_STATES }, () => 0);
             this.probs.push(row);
         }
         this.fillDefaultMatrix(7); // default: 7 notes (one octave scale)

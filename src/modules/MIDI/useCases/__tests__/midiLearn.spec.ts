@@ -11,7 +11,7 @@ import { scaleMidiValue } from '../midiLearn/handleMidiMessage';
 import { startMidiLearn } from '../midiLearn/startMidiLearn';
 import { stopMidiLearn } from '../midiLearn/stopMidiLearn';
 
-import { type Logger } from '#/utils/Logger/Logger';
+import { type Logger } from '#/infra/logger/types';
 
 vi.mock('../../stores/midiLearnStore', () => {
     const midiLearnStore: {

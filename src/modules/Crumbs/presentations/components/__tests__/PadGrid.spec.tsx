@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
-import { type PadConfig } from '../../../models/SamplerTypes';
+import { type PadConfig } from '../../../models/CrumbsTypes';
 import { PadGrid } from '../PadGrid';
 
 function makePad(index: number): PadConfig {

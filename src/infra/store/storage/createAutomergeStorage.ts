@@ -19,6 +19,8 @@ import { type StorageAdapter } from './types';
 type AutomergeStorageOptions<TData> = {
     /** Optional function to strip ephemeral fields before writing to CRDT. */
     toCrdt?: (value: TData) => Partial<TData>;
+    /** Optional function to normalize incoming data on hydrate (e.g. fill missing fields from older schemas). */
+    fromCrdt?: (value: TData) => TData;
 };
 
 /**
@@ -50,6 +52,7 @@ export const createAutomergeStorage = <TData>(
     options?: AutomergeStorageOptions<TData>
 ): StorageAdapter<TData> => {
     const toCrdt = options?.toCrdt;
+    const fromCrdt = options?.fromCrdt;
     let cachedValue: TData | null = null;
     let rafId: number | null = null;
     /**
@@ -139,7 +142,8 @@ export const createAutomergeStorage = <TData>(
                 if (incomingJson === lastHydratedJson) {
                     return false;
                 }
-                const crdtData = JSON.parse(incomingJson) as TData;
+                const rawData = JSON.parse(incomingJson) as TData;
+                const crdtData = fromCrdt ? fromCrdt(rawData) : rawData;
 
                 if (toCrdt && cachedValue !== null && typeof crdtData === 'object' && crdtData !== null) {
                     cachedValue = { ...cachedValue, ...crdtData };

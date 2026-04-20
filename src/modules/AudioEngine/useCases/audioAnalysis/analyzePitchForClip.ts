@@ -4,10 +4,10 @@ import { listen } from '@tauri-apps/api/event';
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getBufferForClip } from '#/modules/Arrangement/useCases';
+// @ts-expect-error — generated wasm-bindgen glue, no type declarations
 import { analyze_pitch_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
 import { kneadStore } from '#/modules/Knead/stores';
 import { isTauri } from '#/utils/tauriBridge';
-// @ts-ignore
 
 export type PitchPoint = {
     time_ms: number;

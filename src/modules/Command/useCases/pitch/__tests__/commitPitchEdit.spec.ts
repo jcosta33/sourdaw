@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 
 import { trackStore } from '#/modules/Arrangement/stores';
-import { getBufferForClip } from '#/modules/Arrangement/useCases';
+import { getBufferForClip } from '#/modules/Arrangement/useCases/audioAnalysis/helpers';
 import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
 import { commit_pitch_edit_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
 import { isTauri } from '#/utils/tauriBridge';
@@ -34,13 +34,9 @@ vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(() => true),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
-    return {
-        ...actual,
-        getBufferForClip: vi.fn(),
-    };
-});
+vi.mock('#/modules/Arrangement/useCases/audioAnalysis/helpers', () => ({
+    getBufferForClip: vi.fn(),
+}));
 
 vi.mock('#/modules/AudioEngine/stores/audioBufferCache', () => ({
     audioBufferCache: {

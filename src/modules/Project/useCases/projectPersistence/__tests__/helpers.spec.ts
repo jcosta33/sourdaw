@@ -27,45 +27,41 @@ vi.mock('#/modules/Command/stores/undoStore', () => ({
     undoStore: { value: { past: [1], future: [2] }, set: mocks.undoStoreSet },
 }));
 
-vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
-    return {
-        ...actual,
-        trackStore: { value: null, set: mocks.trackStoreSet },
-        markerStore: { value: null, set: mocks.markerStoreSet },
-        takeLaneStore: { value: null, set: mocks.takeLaneStoreSet },
-    };
-});
+vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
+    trackStore: { value: null, set: mocks.trackStoreSet },
+}));
 
-vi.mock('#/modules/Transport/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Transport/stores')>();
-    return {
-        ...actual,
-        transportStore: { value: null, set: mocks.transportStoreSet },
-        tempoMapStore: { value: null, set: mocks.tempoMapStoreSet },
-        timeSignatureMapStore: { value: null, set: mocks.timeSignatureMapStoreSet },
-    };
-});
+vi.mock('#/modules/Arrangement/stores/markerStore', () => ({
+    markerStore: { value: null, set: mocks.markerStoreSet },
+}));
+
+vi.mock('#/modules/Arrangement/stores/takeLaneStore', () => ({
+    takeLaneStore: { value: null, set: mocks.takeLaneStoreSet },
+}));
+
+vi.mock('#/modules/Transport/stores/transportStore', () => ({
+    transportStore: { value: null, set: mocks.transportStoreSet },
+}));
+
+vi.mock('#/modules/Transport/stores/tempoMapStore', () => ({
+    tempoMapStore: { value: null, set: mocks.tempoMapStoreSet },
+}));
+
+vi.mock('#/modules/Transport/stores/timeSignatureMapStore', () => ({
+    timeSignatureMapStore: { value: null, set: mocks.timeSignatureMapStoreSet },
+}));
 
 vi.mock('#/modules/Automation/stores/automationStore', () => ({
     automationStore: { value: null, set: mocks.automationStoreSet },
 }));
 
-vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/MIDI/stores')>();
-    return {
-        ...actual,
-        midiStore: { value: null, set: mocks.midiStoreSet },
-    };
-});
+vi.mock('#/modules/MIDI/stores/midiStore', () => ({
+    midiStore: { value: null, set: mocks.midiStoreSet },
+}));
 
-vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Routing/useCases')>();
-    return {
-        ...actual,
-        setSidechainRoutes: mocks.setSidechainRoutes,
-    };
-});
+vi.mock('#/modules/Routing/useCases/sidechain/setSidechainRoutes', () => ({
+    setSidechainRoutes: mocks.setSidechainRoutes,
+}));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
     audioBufferCache: { has: vi.fn(() => false) },
@@ -175,6 +171,7 @@ describe('verifyAudioBufferReferences', () => {
                     sends: [],
                     parentId: null,
                     color: '',
+                    freezeState: { status: 'unfrozen' },
                 },
             ],
             selectedTrackId: null,

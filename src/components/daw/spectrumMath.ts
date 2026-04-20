@@ -46,12 +46,3 @@ export const dbToY = (db: number, height: number, minDb = -60, maxDb = 0): numbe
  * headroom above 0 dB so peaks don't clip to the top edge.
  */
 export const dbToYLiveAnalyser = (db: number, height: number): number => dbToY(db, height, -80, 6);
-
-/**
- * Canonical frequency marks for a log-scale spectrum grid.
- * Standard octave/decade breakpoints used by most DAW spectrum displays.
- */
-export const STANDARD_FREQ_MARKS = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000] as const;
-
-/** Standard dB marks for spectrum display grids (top to bottom, 0 dB at top). */
-export const STANDARD_DB_MARKS = [0, -12, -24, -36, -48, -60] as const;

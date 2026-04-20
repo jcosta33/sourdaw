@@ -109,12 +109,12 @@ type ToasterControls = {
 };
 
 export function scheduleFrozenTrack(
-    track: { id: string; freezeState?: { status: string; frozenBufferId?: string } },
+    track: { id: string; freezeState: { status: string; frozenBufferId?: string } },
     accumulatedPosition: number,
     activeAudioSources: AudioBufferSourceNode[],
     currentTempo: number
 ): boolean {
-    if (track.freezeState?.status !== 'frozen' || !track.freezeState?.frozenBufferId) {
+    if (track.freezeState.status !== 'frozen' || !track.freezeState.frozenBufferId) {
         return false;
     }
 
@@ -180,7 +180,7 @@ export async function scheduleMidiNotes(
             continue;
         }
 
-        if (track.freezeState?.status === 'frozen' && track.freezeState?.frozenBufferId) {
+        if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
             scheduleFrozenTrack(track, accumulatedPosition, activeAudioSources, currentTempo);
             continue;
         }

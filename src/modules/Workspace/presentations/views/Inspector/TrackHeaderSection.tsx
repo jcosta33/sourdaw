@@ -28,8 +28,8 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
     const [editingName, setEditingName] = useState(false);
     const [nameValue, setNameValue] = useState(track.name);
 
-    const isFreezing = track.freezeState?.status === 'freezing';
-    const isStale = track.freezeState?.status === 'stale';
+    const isFreezing = track.freezeState.status === 'freezing';
+    const isStale = track.freezeState.status === 'stale';
 
     if (track.kind === 'master') {
         return null; // Master track name and color are fixed; streamline by hiding editing block.
@@ -89,11 +89,11 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                                             Freezing...
                                         </span>
                                         <span className="text-[10px] text-muted-foreground tabular-nums">
-                                            {Math.round((track.freezeState?.renderProgress ?? 0) * 100)}%
+                                            {Math.round((track.freezeState.renderProgress ?? 0) * 100)}%
                                         </span>
                                     </div>
                                     <DawMeterBar
-                                        value={(track.freezeState?.renderProgress ?? 0) * 100}
+                                        value={(track.freezeState.renderProgress ?? 0) * 100}
                                         size="sm"
                                         fillClassName="bg-primary"
                                     />

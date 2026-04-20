@@ -1,6 +1,8 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 
+import { normalizeTrack } from '../models/Track';
+
 import type { Track, Clip } from '../models/Track';
 
 export type {
@@ -34,6 +36,7 @@ export const defaultTrackState: TrackStoreState = {
 export const trackStore = createStore<TrackStoreState>({
     storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'tracks', {
         toCrdt: ({ tracks }) => ({ tracks }),
+        fromCrdt: (state) => ({ ...state, tracks: state.tracks.map(normalizeTrack) }),
     }),
     initialData: defaultTrackState,
 });

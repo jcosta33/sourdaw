@@ -75,6 +75,7 @@ const mockTrack = {
     soloed: false,
     armed: false,
     frozen: false,
+    freezeState: { status: 'unfrozen' as const },
     soloSafe: false,
     color: '#ff0000',
     inputMonitoring: 'auto',

@@ -122,8 +122,8 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
         );
 
         // Per-band curves + sum
-        const bandMags: number[][] = patch.eqBands.map(() => Array.from({ length: NUM_POINTS }).fill(0));
-        const sumMag = Array.from({ length: NUM_POINTS }).fill(0);
+        const bandMags: number[][] = patch.eqBands.map(() => Array.from({ length: NUM_POINTS }, () => 0));
+        const sumMag: number[] = Array.from({ length: NUM_POINTS }, () => 0);
 
         for (let b = 0; b < patch.eqBands.length; b++) {
             const band = patch.eqBands[b]!;
@@ -162,7 +162,7 @@ export const ProofEqCurve = ({ patch, width, height, onPatchChange, onSendParam 
         ctx.beginPath();
         for (let i = 0; i < NUM_POINTS; i++) {
             const x = freqToX(freqs[i]!, w);
-            const y = gainToY(sumMag[i], h);
+            const y = gainToY(sumMag[i]!, h);
             if (i === 0) {
                 ctx.moveTo(x, y);
             } else {

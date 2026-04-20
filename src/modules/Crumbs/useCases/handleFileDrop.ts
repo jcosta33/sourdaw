@@ -36,13 +36,6 @@ function categoryToMode(category: SampleCategory): CrumbsMode {
     }
 }
 
-export const handleCrumbsFileDropDependencies = {
-    isTauri,
-    loadSampleFromPath,
-    switchCrumbsMode,
-    crumbsStore,
-} as const;
-
 export async function handleCrumbsFileDrop(instanceId: string, event: DragEvent): Promise<void> {
     event.preventDefault();
     event.stopPropagation();

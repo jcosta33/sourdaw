@@ -2,12 +2,6 @@ import { getPreferredRendererBackend, type TimelineRenderer } from '../models/Re
 import { createCanvasRenderer } from '../presentations/renderers/createCanvasRenderer';
 import { createWebGpuRenderer } from '../presentations/renderers/createWebGpuRenderer';
 
-export const initTimelineRendererDependencies = {
-    getPreferredRendererBackend,
-    createWebGpuRenderer,
-    createCanvasRenderer,
-} as const;
-
 export async function initTimelineRenderer(canvas: HTMLCanvasElement): Promise<TimelineRenderer> {
     const backend = getPreferredRendererBackend();
     let renderer: TimelineRenderer | null = null;

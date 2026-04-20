@@ -31,15 +31,13 @@ export function initStalenessDetection(): () => void {
                     continue;
                 }
 
-                // Only evaluate if the track is frozen
-                if (track.freezeState?.status === 'frozen') {
-                    // Fast path: skip deep hash if object references haven't changed
+                if (track.freezeState.status === 'frozen') {
                     if (track.clips !== prevTrack.clips || track.devices !== prevTrack.devices) {
                         const hash = await computeTrackHash(track.clips, track.devices);
                         if (hash !== track.freezeState.sourceContentHash) {
                             updateTrack(track.id, (t) => ({
                                 ...t,
-                                freezeState: { ...(t.freezeState ?? { status: 'unfrozen' }), status: 'stale' },
+                                freezeState: { ...t.freezeState, status: 'stale' },
                             }));
                         }
                     }

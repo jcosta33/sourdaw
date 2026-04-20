@@ -94,7 +94,6 @@ export function toPromptPreset(preset: (typeof PRESET_ACTIONS)[number]): PromptP
 
 export {
     NATIVE_MODEL_INFO,
-    WEBLLM_MODEL_INFO,
     CLOUD_MODEL_INFO,
     WEBLLM_MODELS,
     type ModelInfo,

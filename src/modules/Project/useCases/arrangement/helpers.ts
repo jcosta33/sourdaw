@@ -1,3 +1,4 @@
+import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -21,7 +22,10 @@ export function takeSnapshot(id: string, name: string): ArrangementSnapshot {
 }
 
 export function loadSnapshot(data: ArrangementSnapshot): void {
-    trackStore.set(data.tracks);
+    trackStore.set({
+        ...data.tracks,
+        tracks: data.tracks.tracks.map(normalizeTrack),
+    });
     automationStore.set(data.automation);
     midiStore.set(data.midi);
     if (data.tempoMap) {

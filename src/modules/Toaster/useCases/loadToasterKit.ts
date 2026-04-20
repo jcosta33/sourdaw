@@ -48,11 +48,6 @@ export const TOASTER_ENGINE_MAP: Record<DrumEngineType, number> = {
     sample: 4,
 };
 
-export const getToasterControlsDependencies = {
-    getAllTracks,
-    getTrackStrip,
-} as const;
-
 export function getToasterControls(): {
     setPadParam: (pad: number, name: string, value: number) => void;
     setParam: (name: string, value: number) => void;

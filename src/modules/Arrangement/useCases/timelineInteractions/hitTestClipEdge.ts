@@ -8,12 +8,6 @@ export type ClipEdge = 'left' | 'right' | 'body';
 const RULER_HEIGHT = 0;
 const EDGE_THRESHOLD_PX = 10;
 
-export const hitTestClipEdgeDependencies = {
-    timelineViewStore,
-    buildTimelineRenderModel,
-    getTrackAtY,
-} as const;
-
 export function hitTestClipEdge(
     canvasX: number,
     canvasY: number

@@ -1,19 +1,18 @@
 {
     "$schema": "https://unpkg.com/knip@latest/schema.json",
-    "entry": ["src/routes/**/*.tsx"],
-    "project": ["src/**/*.{ts,tsx}", "!src/**/*.spec.{ts,tsx}", "!src/**/*.test.{ts,tsx}", "!src/routeTree.gen.ts"],
-    "ignore": [
-        "src/components/**/*.tsx",
-        "src/modules/Levain/repositories/levainPresets.ts",
-        "src/modules/Plugin/models/ProofChamberState.ts",
-        "src/modules/Plugin/stores/chamberStore.ts",
-        "src/modules/Toaster/models/GrooveTemplates.ts",
-        "src/modules/Workspace/presentations/components/Sidebar/SectionHeader.tsx",
-        "src/modules/Workspace/useCases/automationSubLanes.ts",
-        "src/modules/Arrangement/useCases/clipGainEnvelope/getAllClipGainEnvelopes.ts",
-        "src/modules/Arrangement/useCases/clipGainEnvelope/moveGainEnvelopePoint.ts"
+    "entry": [
+        "src/routes/**/*.tsx",
+        "scripts/*.ts",
+        "codemods/*.ts"
     ],
+    "project": [
+        "src/**/*.{ts,tsx}",
+        "!src/**/*.spec.{ts,tsx}",
+        "!src/**/*.test.{ts,tsx}",
+        "!src/routeTree.gen.ts"
+    ],
+    "ignore": [],
     "ignoreExportsUsedInFile": true,
-    "ignoreDependencies": ["@tauri-apps/plugin-fs", "tailwindcss", "@typescript-eslint/eslint-plugin"],
+    "ignoreDependencies": ["tailwindcss"],
     "ignoreBinaries": ["prettier", "wasm-pack"]
 }

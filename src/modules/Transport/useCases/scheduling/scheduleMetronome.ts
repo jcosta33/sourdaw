@@ -16,15 +16,6 @@ export function resetMetronomeBeat(position: number): void {
     _lastMetronomeBeat = Math.floor(position) - 1;
 }
 
-export const scheduleMetronomeDependencies = {
-    tempoMapStore,
-    timeSignatureMapStore,
-    getTempoAtBeat,
-    getCurrentTime,
-    scheduleClick,
-    getTimeSignatureAtBeat,
-} as const;
-
 export function scheduleMetronome(
     fromBeat: number,
     toBeat: number,

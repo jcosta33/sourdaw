@@ -1,60 +1,44 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
-import { addTrack } from '#/modules/Arrangement/useCases';
-import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory } from '#/modules/Command/useCases';
-import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
-import { stopPlayback } from '#/modules/Transport/useCases';
+import { addTrack } from '#/modules/Arrangement/useCases/addTrack';
+import { resetAudioGraph } from '#/modules/AudioEngine/useCases/engineAccess/resetAudioGraph';
+import { clearUndoHistory } from '#/modules/Command/useCases/clearUndoHistory';
+import { createCrdtProject } from '#/modules/CrdtDocument/useCases/crdtProjectLifecycle';
+import { startCrdtAutoSave } from '#/modules/CrdtDocument/useCases/startCrdtAutoSave';
+import { stopPlayback } from '#/modules/Transport/useCases/transportControls/stopPlayback';
 
 import { removeProjectJson } from '../../../repositories/project/storageOperations';
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
 import { newProject } from '../newProject';
 
-vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
-    return {
-        ...actual,
-        stopPlayback: vi.fn(),
-    };
-});
+vi.mock('#/modules/Transport/useCases/transportControls/stopPlayback', () => ({
+    stopPlayback: vi.fn(),
+}));
 
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
-    return {
-        ...actual,
-        resetAudioGraph: vi.fn(),
-    };
-});
+vi.mock('#/modules/AudioEngine/useCases/engineAccess/resetAudioGraph', () => ({
+    resetAudioGraph: vi.fn(),
+}));
 
-vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>();
-    return {
-        ...actual,
-        createCrdtProject: vi.fn().mockResolvedValue(undefined),
-        startCrdtAutoSave: vi.fn().mockReturnValue(() => {}),
-    };
-});
+vi.mock('#/modules/CrdtDocument/useCases/crdtProjectLifecycle', () => ({
+    createCrdtProject: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('#/modules/CrdtDocument/useCases/startCrdtAutoSave', () => ({
+    startCrdtAutoSave: vi.fn().mockReturnValue(() => {}),
+}));
 
 vi.mock('../helpers/resetModuleStoresToDefault', () => ({
     resetModuleStoresToDefault: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
-    return {
-        ...actual,
-        addTrack: vi.fn(),
-    };
-});
+vi.mock('#/modules/Arrangement/useCases/addTrack', () => ({
+    addTrack: vi.fn(),
+}));
 
-vi.mock('#/modules/Command/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
-    return {
-        ...actual,
-        clearUndoHistory: vi.fn(),
-    };
-});
+vi.mock('#/modules/Command/useCases/clearUndoHistory', () => ({
+    clearUndoHistory: vi.fn(),
+}));
 
 vi.mock('../../../repositories/project/storageOperations', () => ({
     removeProjectJson: vi.fn(),

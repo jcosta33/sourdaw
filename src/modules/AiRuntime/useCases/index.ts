@@ -7,7 +7,6 @@ export { getMixAnalysisStoreValue } from './aiRuntimeQueries/getMixAnalysisStore
 export { setMixAnalysisStoreValue } from './aiRuntimeQueries/setMixAnalysisStoreValue';
 export {
     NATIVE_MODEL_INFO,
-    WEBLLM_MODEL_INFO,
     CLOUD_MODEL_INFO,
     WEBLLM_MODELS,
     getActiveModelId,

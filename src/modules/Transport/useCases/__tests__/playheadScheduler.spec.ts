@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { startAutomationRecording, stopAutomationRecording } from '#/modules/Automation/useCases';
+import { startAutomationRecording } from '#/modules/Automation/useCases/automationRecording/startAutomationRecording';
+import { stopAutomationRecording } from '#/modules/Automation/useCases/automationRecording/stopAutomationRecording';
 
 import { transportStore } from '../../stores/transportStore';
 import { startPlayheadScheduler, stopPlayheadScheduler } from '../playheadScheduler';
@@ -17,52 +18,41 @@ vi.mock('../../stores/tempoMapStore', () => ({
 vi.mock('../../models/TempoMap', () => ({
     getTempoAtBeat: vi.fn(() => 120),
 }));
-vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
-    const mod = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
-    return {
-        ...mod,
-        trackStore: { value: { tracks: [] } },
-        takeLaneStore: { value: { lanes: [] } },
-    };
-});
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
-    const mod = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
-    return {
-        ...mod,
-        addTakeLane: vi.fn(),
-        addTake: vi.fn(),
-        startRecording: vi.fn(() => []),
-        stopRecording: vi.fn(),
-    };
-});
+vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
+    trackStore: { value: { tracks: [] } },
+}));
+vi.mock('#/modules/Arrangement/stores/takeLaneStore', () => ({
+    takeLaneStore: { value: { lanes: [] } },
+}));
+vi.mock('#/modules/Arrangement/useCases/comping/addTakeLane', () => ({ addTakeLane: vi.fn() }));
+vi.mock('#/modules/Arrangement/useCases/comping/addTake', () => ({ addTake: vi.fn() }));
+vi.mock('#/modules/Arrangement/useCases/recording/startRecording', () => ({ startRecording: vi.fn(() => []) }));
+vi.mock('#/modules/Arrangement/useCases/recording/stopRecording', () => ({ stopRecording: vi.fn() }));
 vi.mock('../evaluateFollowActions', () => ({
     evaluateFollowActions: vi.fn(() => ({ jumpToPosition: null, shouldStop: false })),
 }));
-vi.mock('#/modules/AudioEngine/stores', () => ({
+vi.mock('#/modules/AudioEngine/stores/audioBufferCache', () => ({
     audioBufferCache: { set: vi.fn(), get: vi.fn() },
 }));
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
-    const mod = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
-    return {
-        ...mod,
-        stopAllScheduled: vi.fn(),
-        startAudioRecording: vi.fn(),
-        stopAudioRecording: vi.fn(),
-        getAudioContext: vi.fn(() => ({
-            currentTime: 0,
-            createGain: vi.fn(() => ({
-                gain: {
-                    value: 1,
-                    cancelScheduledValues: vi.fn(),
-                    setValueAtTime: vi.fn(),
-                    linearRampToValueAtTime: vi.fn(),
-                },
-                connect: vi.fn(),
-                disconnect: vi.fn(),
-            })),
+vi.mock('#/modules/AudioEngine/useCases/scheduling/stopAllScheduled', () => ({ stopAllScheduled: vi.fn() }));
+vi.mock('#/modules/AudioEngine/useCases/audioRecorder/startAudioRecording', () => ({ startAudioRecording: vi.fn() }));
+vi.mock('#/modules/AudioEngine/useCases/audioRecorder/stopAudioRecording', () => ({ stopAudioRecording: vi.fn() }));
+vi.mock('#/modules/AudioEngine/useCases/engineAccess/getAudioContext', () => ({
+    getAudioContext: vi.fn(() => ({
+        currentTime: 0,
+        createGain: vi.fn(() => ({
+            gain: {
+                value: 1,
+                cancelScheduledValues: vi.fn(),
+                setValueAtTime: vi.fn(),
+                linearRampToValueAtTime: vi.fn(),
+            },
+            connect: vi.fn(),
+            disconnect: vi.fn(),
         })),
-    };
-});
+    })),
+    audioEngine: {},
+}));
 vi.mock('../scheduling/scheduleMetronome', () => ({
     resetMetronomeBeat: vi.fn(),
     scheduleMetronome: vi.fn(),
@@ -79,14 +69,15 @@ vi.mock('../scheduling/applyAutomation/applyVcaGains', () => ({
 vi.mock('../scheduling/applyAutomation/applyAutomation', () => ({
     applyAutomation: vi.fn(),
 }));
-vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
-    const mod = await importOriginal<typeof import('#/modules/Automation/useCases')>();
-    return {
-        ...mod,
-        startAutomationRecording: vi.fn(),
-        stopAutomationRecording: vi.fn(),
-    };
-});
+vi.mock('#/modules/Automation/useCases/automationRecording/startAutomationRecording', () => ({
+    startAutomationRecording: vi.fn(),
+}));
+vi.mock('#/modules/Automation/useCases/automationRecording/stopAutomationRecording', () => ({
+    stopAutomationRecording: vi.fn(),
+}));
+vi.mock('#/modules/Automation/useCases/modulation/applyModulation', () => ({
+    applyModulation: vi.fn(),
+}));
 
 describe('startPlayheadScheduler', () => {
     beforeEach(() => {

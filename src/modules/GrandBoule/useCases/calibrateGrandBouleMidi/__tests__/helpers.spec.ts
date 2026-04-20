@@ -6,7 +6,7 @@ import { createDefaultGrandBouleConfig } from '../../../models/GrandBouleConfig'
 import { createDefaultMidiCalibration } from '../../../models/GrandBouleMidiCalibration';
 import { createDefaultMorphState } from '../../../models/GrandBouleMorphState';
 import { createNeutralPresetParameters } from '../../../models/GrandBoulePreset';
-import { type GrandBouleState } from '../../stores/grandBouleStore';
+import { type GrandBouleState } from '../../../stores/grandBouleStore';
 import { clamp, updateCalibration } from '../helpers';
 
 // Mock store to satisfy the interface

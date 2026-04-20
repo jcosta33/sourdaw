@@ -31,12 +31,6 @@ export function get16LevelsTarget(): SixteenLevelsSession | null {
     return activeSession;
 }
 
-export const trigger16LevelDependencies = {
-    triggerToasterPad,
-    getFirstToasterDeviceId,
-    setToasterPadParam,
-} as const;
-
 export function trigger16Level(gridIndex: number): void {
     const session = activeSession;
     if (!session) {

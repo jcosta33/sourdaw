@@ -51,7 +51,7 @@ export async function scheduleTrackClips(
     const automationLanes = getAutomationLanes();
     let deviceEntries: DeviceNodeEntry[] = [];
 
-    if (track.freezeState?.status === 'frozen' && track.freezeState?.frozenBufferId) {
+    if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
         const frozenBuf = audioBufferCache.get(track.freezeState.frozenBufferId);
         if (frozenBuf) {
             const source = offlineCtx.createBufferSource();
@@ -85,8 +85,7 @@ export async function scheduleTrackClips(
         changes
     );
 
-    if (track.freezeState?.status === 'frozen' && track.freezeState?.frozenBufferId) {
-        // Skip scheduling individual clips and MIDI since we already scheduled the frozen buffer
+    if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
         return;
     }
 

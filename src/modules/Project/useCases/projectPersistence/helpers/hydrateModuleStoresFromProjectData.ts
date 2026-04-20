@@ -1,3 +1,4 @@
+import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { type AutomationLane } from '#/modules/Automation/models/Automation';
 import { automationStore } from '#/modules/Automation/stores';
@@ -5,20 +6,9 @@ import { automationStore } from '#/modules/Automation/stores';
 import { type ProjectData } from '../../../models/ProjectData';
 
 export function hydrateModuleStoresFromProjectData(data: ProjectData): void {
-    // 1. Tracks & Arrangements
     if (data.arrangement?.tracks) {
         trackStore.set({
-            tracks: data.arrangement.tracks.map((t) => ({
-                ...t,
-                height: t.height || 80,
-                // Ensure name is present in midiFx (runtime MidiFxDevice requires it)
-                midiFx: t.midiFx.map((fx) => ({
-                    ...fx,
-                    name: (fx as any).name || fx.type.charAt(0).toUpperCase() + fx.type.slice(1),
-                })),
-                inputMonitoring: t.inputMonitoring || 'auto',
-                automationMode: t.automationMode || 'read',
-            })) as any,
+            tracks: data.arrangement.tracks.map(normalizeTrack),
             selectedTrackId: null,
         });
     }
