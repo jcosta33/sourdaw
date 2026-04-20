@@ -3,7 +3,6 @@ import { addTrack, addDevice } from '#/modules/Arrangement/useCases';
 
 import { demo5_NebulaDrift } from '../../demoProjects/nebulaDrift/createNebulaDriftDemo';
 import { demo1_TheCompleteMix } from '../../demoProjects/resonance/createResonanceDemo';
-import { demo_SweetDreams } from '../../demoProjects/sweetDreams/createSweetDreamsDemo';
 import { demo4_NativeShowcase } from '../../demoProjects/synthwave/createSynthwaveDemo';
 import { newProject } from '../../projectPersistence/newProject';
 
@@ -140,14 +139,6 @@ export const templates: ProjectTemplate[] = [
             'A fully arranged 5-minute ambient/IDM production in D minor with 28 tracks, automation, markers, and detailed MIDI patterns.',
         category: 'demo',
         create: () => demo1_TheCompleteMix(),
-    },
-    {
-        id: 'demo-sweet-dreams',
-        name: 'Sweet Dreams',
-        description:
-            'An incredible faithful cover of "Sweet Dreams (Are Made of This)" by Eurythmics — showcasing Fermenter synths, Toaster drums, and the full Sourdaw mixing chain.',
-        category: 'demo',
-        create: () => demo_SweetDreams(),
     },
     {
         id: 'demo-native-showcase',
