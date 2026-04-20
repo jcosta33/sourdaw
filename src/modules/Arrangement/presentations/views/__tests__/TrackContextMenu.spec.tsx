@@ -163,8 +163,7 @@ describe('TrackContextMenu', () => {
         );
         const track = screen.getByTestId('track');
         fireEvent.contextMenu(track);
-        expect(screen.getByText('Bounce in Place')).toBeInTheDocument();
-        expect(screen.getByText('Bounce to New Track')).toBeInTheDocument();
+        expect(screen.getByText('Bounce...')).toBeInTheDocument();
     });
 
     it('should render Delete Track menu item', () => {

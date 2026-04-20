@@ -13,6 +13,10 @@
 
 ---
 
+> **PERSONA:** Load `.agents/skills/personas/SKILL.md` and adopt **The Builder** persona.
+
+---
+
 ## Objective
 
 What this session must accomplish. One paragraph maximum. Be specific — vague objectives produce vague outcomes.
@@ -51,7 +55,7 @@ Which modules will be touched and what changes in each.
 - Do not merge, rebase, or push unless explicitly instructed
 - Run `pnpm i` to install dependencies
 - Run `pnpm deps:validate` and `pnpm typecheck` after every batch of changes
-- **Do not read other specs, research, or bug reports** beyond the linked doc(s) provided to you. If context from another spec/research/bug file is needed, ask the user — do not browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are fair game.
+- **Proactively research and read related docs.** If context from another spec, research, or bug file is needed, you are empowered to browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own to confirm your hypotheses and make informed decisions. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are also fair game.
 
 ---
 
@@ -139,6 +143,11 @@ Stop. Act as a senior engineer doing an adversarial review of this implementatio
 ### Completeness
 
 - Is anything left stubbed, TODO'd, or half-implemented? Would the next developer be able to pick this up with zero questions from this task file and Self-review alone?
+  Answer:
+
+### Final Polish
+
+- Did you ask yourself: "What else could I do? How can I make this even better, more stable, or more bug-free?" Do not second-guess every decision, but do not leave the work without this final adversarial pass.
   Answer:
 
 Only when every answer above is written is this task complete.

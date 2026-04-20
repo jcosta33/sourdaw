@@ -33,7 +33,7 @@ All working documents live under `.agents/`. Each subdirectory has a specific ro
 | ------------------- | -------- | ----------------------------------------- |
 | `.agents/audits/`   | Audit    | Durable work product                      |
 | `.agents/specs/`    | Spec     | Durable work product                      |
-| `.agents/research/` | Research | Durable work product (developer-authored) |
+| `.agents/research/` | Research | Durable work product (agent or developer-authored) |
 | `.agents/skills/`   | Skill    | Durable work product                      |
 | `.agents/tasks/`    | Task     | Local execution scaffolding               |
 
@@ -59,7 +59,7 @@ Documentation is proportionate to scope. A trivial bug fix — a single isolated
 
 When the task is non-trivial, skipping should be a deliberate decision, not a default.
 
-**Research ownership:** Research files are written by developers — not by agents. They require domain knowledge, external access, and human judgment about source quality. Agents consume existing research; they do not produce it. If no relevant research exists, that is a gap for a developer to fill, not an invitation to fabricate findings.
+**Research ownership:** Agents are empowered and expected to perform research. If you need to understand an API, fix a complex bug, or evaluate a technical approach, you should aggressively search the codebase and the internet. Agents can and should create new research files in `.agents/research/` to document durable domain knowledge discovered during a session. Do not endlessly ruminate; validate your assumptions with sources.
 
 ---
 

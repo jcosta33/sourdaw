@@ -8,7 +8,7 @@ export type DragState = {
     startBeat: number;
     endBeat: number;
     offsetBeat: number;
-    mode: 'move' | 'stretch' | 'trim-start';
+    mode: 'move' | 'duplicate' | 'stretch' | 'trim-start';
 };
 
 export const beginClipDragDependencies = {
@@ -20,7 +20,7 @@ export const beginClipDragDependencies = {
 export function beginClipDrag(
     canvasX: number,
     canvasY: number,
-    mode: 'move' | 'stretch' | 'trim-start' = 'move'
+    mode: 'move' | 'duplicate' | 'stretch' | 'trim-start' = 'move'
 ): DragState | null {
     const hit = hitTestClip(canvasX, canvasY);
     if (!hit) {

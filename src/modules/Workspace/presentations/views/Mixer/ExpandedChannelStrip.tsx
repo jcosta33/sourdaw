@@ -12,6 +12,7 @@ import { cn } from '#/utils/Styles/cn';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 
 import { DeviceChainSection } from './DeviceChainSection';
+import { MidiFxSection } from './MidiFxSection';
 import { SendsSection } from './SendsSection';
 import { IOSection } from './IOSection';
 import { MixerStripValue } from '../../components/Mixer/MixerStripValue';
@@ -233,6 +234,9 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                           : `L${Math.abs(Math.round(track.pan))}`}
                 </MixerStripValue>
             </div>
+
+            {/* MIDI FX */}
+            <MidiFxSection track={track} />
 
             {/* Devices — contained with scroll */}
             <DeviceChainSection track={track} />

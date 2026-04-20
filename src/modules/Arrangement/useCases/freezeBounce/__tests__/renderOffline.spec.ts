@@ -22,6 +22,18 @@ vi.mock('#/modules/Transport/stores', () => ({
     transportStore: { value: null }
 }));
 
+vi.mock('#/modules/Routing/stores', () => ({
+    sidechainStore: { value: null }
+}));
+
+vi.mock('../../stores/trackStore', () => ({
+    trackStore: { value: null }
+}));
+
+vi.mock('../../services/getUpstreamSubgraph', () => ({
+    getUpstreamSubgraph: () => new Set<string>(),
+}));
+
 describe('renderTrackOffline', () => {
     beforeEach(() => {
         buildDeviceChain.mockReset();

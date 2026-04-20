@@ -5,7 +5,11 @@ export { midiLearnStore } from './midiLearnStore';
 export type { MidiMappingTargetType, MidiMapping, LearningTarget, MidiLearnState } from './midiLearnStore';
 
 export { midiStore } from './midiStore';
+export { hardwareControllerStore } from './hardwareControllerStore';
 export type { MidiStoreState } from './midiStore';
 
 export { chordTrackStore, defaultChordTrackState } from './chordTrackStore';
 export type { ChordTrackState } from './chordTrackStore';
+
+export { stepRecordStore, defaultStepRecordState } from './stepRecordStore';
+export type { StepRecordState } from './stepRecordStore';

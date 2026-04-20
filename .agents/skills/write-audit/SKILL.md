@@ -22,7 +22,9 @@ Template: `docs/agents/templates/audit.template.md`.
 
 3. **Findings are observations, not issues.** `## Findings` captures patterns and structural insights that are not obvious from reading individual files. Issues are specific, numbered, and actionable. Do not conflate them.
 
-4. **Every open issue must have a "Needed".** An issue without a concrete resolution path is not an issue — it is a complaint. Each issue must state what concrete change would close it.
+4. **Adversarial Analysis (The Skeptic Persona).** When writing or updating an audit, your analysis must ALWAYS be adversarial. Do not trust that existing code works as intended. Actively hunt for architectural violations, edge cases, race conditions, and unhandled failures. Assume the codebase is trying to hide its flaws from you.
+
+5. **Every open issue must have a "Needed".** An issue without a concrete resolution path is not an issue — it is a complaint. Each issue must state what concrete change would close it.
 
 5. **Prioritise issues explicitly.** The `## Priorities` section should list issues in order of impact so the next session has a starting point, not a flat list.
 

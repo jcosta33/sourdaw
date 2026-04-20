@@ -68,11 +68,27 @@ export type BuiltinDeviceNode = {
         ready: boolean;
         noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
         noteOff: (note: number, sampleFrame?: number) => void;
+        allNotesOff: () => void;
         handleCc: (cc: number, value: number) => void;
         setParam: (name: string, value: number) => void;
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
     };
+    /** Controls for the Knead pitch processor (blob sync + param updates via MessagePort) */
+    kneadControls?: {
+        ready: boolean;
+        updateState: (clips: Record<string, any>) => void;
+        setParam: (name: string, value: number) => void;
+        setBypass: (bypassed: boolean) => void;
+        destroy: () => void;
+    };
+};
+
+export type MidiFxNode = {
+    id: string;
+    type: 'arp' | 'velocity' | 'probability';
+    bypassed: boolean;
+    parameterValues: Record<string, number>;
 };
 
 export type TrackChannelStrip = {
@@ -85,11 +101,12 @@ export type TrackChannelStrip = {
     /** Post-device mute node — sits after all devices, before pan. Mute/solo targets this. */
     postFaderGain: GainNode;
     panNode: StereoPannerNode;
-    meterNode: AudioWorkletNode;
+    meterNode: AudioWorkletNode | null;
     analyserNode: AnalyserNode;
     muted: boolean;
     soloed: boolean;
     deviceNodes: BuiltinDeviceNode[];
+    midiFxNodes: MidiFxNode[];
     meterBuffer: Float32Array;
     outputId?: string;
 };
@@ -135,6 +152,12 @@ export type AudioEngine = {
     updateDevicePatch(trackId: string, deviceId: string, patch: Record<string, unknown>): void;
     scheduleDeviceParam(trackId: string, deviceId: string, paramId: string, value: number, time: number): void;
     updateDeviceBypass(trackId: string, deviceId: string, bypassed: boolean): void;
+    addMidiFxToStrip(trackId: string, fxId: string, fxType: 'arp' | 'velocity' | 'probability'): void;
+    removeMidiFxFromStrip(trackId: string, fxId: string): void;
+    updateMidiFxParam(trackId: string, fxId: string, paramId: string, value: number): void;
+    updateMidiFxBypass(trackId: string, fxId: string, bypassed: boolean): void;
+    syncKneadState(trackId: string, clips: Record<string, any>): void;
+    registerTuningTable(frequencies: number[]): void;
     ensureBusStrip(busId: string): BusStrip;
     removeBusStrip(busId: string): void;
     setBusGain(busId: string, gain: number): void;
@@ -148,4 +171,12 @@ export type AudioEngine = {
     unwireSidechainRoute(sourceTrackId: string, targetDeviceId: string): void;
     waitForDevices(): Promise<void>;
     setMasterTrackId?(trackId: string): void;
+    setTransportInfo(
+        beat: number, 
+        bpm: number, 
+        playing: boolean, 
+        loopStart?: number, 
+        loopEnd?: number, 
+        isLooping?: boolean
+    ): void;
 };

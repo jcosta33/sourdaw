@@ -4,6 +4,7 @@ import { createFaustStrategy } from './FaustDeviceStrategy';
 import { createNativeDspStrategy } from './NativeDspDeviceStrategy';
 
 import { isFaustModule } from '../faustDeviceFactory';
+import { isKneadDevice } from '../../engine/KneadNode';
 import { isFermenterDevice } from '../../engine/FermenterNode';
 import { isToasterDevice } from '../../engine/ToasterNode';
 import { isLevainDevice } from '../../engine/LevainNode';
@@ -28,7 +29,8 @@ const isNativeDevice = (type: string) => {
         isGrinderDevice(type) ||
         isProofDevice(type) ||
         isProofChamberDevice(type) ||
-        isScoringDevice(type)
+        isScoringDevice(type) ||
+        isKneadDevice(type)
     );
 };
 

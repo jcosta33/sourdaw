@@ -32,7 +32,7 @@ Be specific. Vague objectives produce vague outcomes.
 - Do not merge, rebase, or push unless explicitly instructed
 - Run `pnpm i` to install modules
 - Run `pnpm deps:validate` and `pnpm typecheck` after every change
-- **Do not read other specs, research, or bug reports** beyond the linked doc(s) provided to you. If context from another spec/research/bug file is needed, ask the user — do not browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are fair game.
+- **Proactively research and read related docs.** If context from another spec, research, or bug file is needed, you are empowered to browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own to confirm your hypotheses and make informed decisions. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are also fair game.
 
 ---
 
@@ -128,6 +128,11 @@ Stop. Act as a nitpicky senior engineer reviewing your own work as if you didn't
 ### Completeness
 
 - Is anything left stubbed, TODO'd, or half-finished? Would the next developer be able to continue from this task file and Self-review alone with zero questions?
+  Answer:
+
+### Final Polish
+
+- Did you ask yourself: "What else could I do? How can I make this even better, more stable, or more bug-free?" Do not second-guess every decision, but do not leave the work without this final adversarial pass.
   Answer:
 
 Only when every answer above is written is this task complete.

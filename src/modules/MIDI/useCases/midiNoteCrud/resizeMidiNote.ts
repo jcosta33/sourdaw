@@ -9,7 +9,7 @@ export function resizeMidiNote(clipId: string, noteId: string, newStartBeat?: nu
             return {
                 ...n,
                 startBeat: newStartBeat !== undefined ? newStartBeat : n.startBeat,
-                duration: newDuration !== undefined ? Math.max(0.125, newDuration) : n.duration,
+                duration: newDuration !== undefined ? Math.max(0.0625, newDuration) : n.duration,
             };
         })
     );

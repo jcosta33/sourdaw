@@ -132,7 +132,7 @@ Every acceptance criterion is met. Open questions either have answers recorded o
 
 Research files are not opinion pieces. They synthesise external information and make it usable. They end with specific actionable recommendations or a decision relevant to the task that prompted the research.
 
-**Ownership:** Research is developer-authored. A developer writes research when external domain knowledge needs to be captured before implementation can begin. Agents consume research; they do not produce it by default. If an agent determines that research is needed and none exists, that is a prerequisite gap to surface — not a gap for the agent to fill on its own.
+**Ownership:** Research can be developer-authored or agent-authored. Agents are empowered and expected to perform research when external domain knowledge needs to be captured before implementation can begin. If you need to understand an API, fix a complex bug, or evaluate a technical approach, do not endlessly ruminate or guess; aggressively use your tools to search the codebase and the internet, and document your findings.
 
 **Relationship to other types:** Research is upstream of spec. If research exists for an area, a spec must also exist before implementation begins. The spec translates research findings into specific requirements and acceptance criteria.
 

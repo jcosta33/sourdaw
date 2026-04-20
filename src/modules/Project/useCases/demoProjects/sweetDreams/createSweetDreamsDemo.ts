@@ -19,7 +19,8 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { projectStore } from '../../../stores/projectStore';
 import { transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
-import { automationStore, createAutomationLane } from '#/modules/Automation';
+import { automationStore } from '#/modules/Automation/stores';
+import { createAutomationLane } from '#/modules/Automation/useCases';
 import type { MidiNote } from '../../../models/DemoProjectTypes';
 import { note } from '../demoUtils/note';
 import { applyPreset } from '../demoUtils/applyPreset';
@@ -209,7 +210,7 @@ export async function demo_SweetDreams(): Promise<void> {
     // with adjusted attack for that cutting quality.
     applyPreset(tPad, 'fermenter-oberheim-pad');
     if (tPad.devices[0]) {
-        const pv = (tPad.devices[0] as any).parameterValues;
+        const pv = tPad.devices[0].parameterValues;
         pv.ampAttack = 0.15; // shorter than default pad — "cut off" per Dave Stewart
         pv.filterCutoff = 2200; // slightly darker
         pv.reverbMix = 0.35;
@@ -221,7 +222,7 @@ export async function demo_SweetDreams(): Promise<void> {
     // character. Use the vocal pad preset with shorter attack.
     applyPreset(tLead, 'fermenter-vocal-pad');
     if (tLead.devices[0]) {
-        const pv = (tLead.devices[0] as any).parameterValues;
+        const pv = tLead.devices[0].parameterValues;
         pv.ampAttack = 0.03; // faster attack for melodic articulation
         pv.ampRelease = 0.3;
         pv.portamentoTime = 0.03; // slight legato glide
@@ -234,7 +235,7 @@ export async function demo_SweetDreams(): Promise<void> {
     // played staccato as rhythmic punctuation, much gentler.
     applyPreset(tBrass, 'fermenter-juno-pad');
     if (tBrass.devices[0]) {
-        const pv = (tBrass.devices[0] as any).parameterValues;
+        const pv = tBrass.devices[0].parameterValues;
         pv.ampAttack = 0.01;
         pv.ampDecay = 0.2;
         pv.ampSustain = 0.3;
@@ -1281,5 +1282,11 @@ export async function demo_SweetDreams(): Promise<void> {
         dirty: false,
         loading: false,
         initialized: true,
+        keyRoot: 0,
+        scaleName: 'chromatic',
+        tuning: {
+            name: 'Equal Temperament',
+            frequencies: Array.from({ length: 128 }, (_, i) => 440 * Math.pow(2, (i - 69) / 12)),
+        },
     });
 }

@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { notifyUser } from '#/utils/Notification/notifyUser';
-import { hasSharedArrayBuffer } from '#/utils/capabilities';
+
+
 import { type Device } from '../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../repositories/devices/types';
 import { deviceRegistry, type AudioDeviceStrategy } from '../repositories/deviceStrategy/setupDeviceStrategies';
@@ -65,21 +65,6 @@ export const buildDeviceChain = inject({ logger })(
                     // routine issues (missing assets, stale worklets during HMR, etc.).
                     if (isPluginRequiresIsolationError(error)) {
                         logger.error(error);
-                        // When SharedArrayBuffer is globally unavailable, the
-                        // `CapabilityBanner` at the top of AppShell already
-                        // tells the user — all SAB-backed plugins will fail
-                        // equally, so per-plugin toasts would just spam. The
-                        // per-insert toast remains useful in the rare case
-                        // where SAB is present but some other isolation
-                        // prerequisite is missing.
-                        if (hasSharedArrayBuffer()) {
-                            notifyUser(
-                                `${error.pluginName} could not load: this plugin needs cross-origin isolation. ` +
-                                    'If you hit this in dev, restart the dev server after editing vite.config.ts; ' +
-                                    'otherwise check COOP/COEP headers on the host.',
-                                'error'
-                            );
-                        }
                     } else {
                         logger.warn(`Device ${device.type} failed to load: ${error}`);
                     }

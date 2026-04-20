@@ -34,7 +34,7 @@ describe('generateNativeCompletion', () => {
                 systemPrompt: 'system prompt',
                 userMessage: 'hello',
                 temperature: 0.1,
-                maxTokens: 1024,
+                maxTokens: 2048,
             });
             expect(result).toBe('Tauri response');
         });
@@ -64,7 +64,7 @@ describe('generateNativeCompletion', () => {
                         { role: 'user', content: 'hello' }
                     ],
                     temperature: 0.1,
-                    max_tokens: 1024,
+                    max_tokens: 2048,
                     seed: 0
                 })
             });

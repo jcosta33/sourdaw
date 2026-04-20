@@ -1,5 +1,5 @@
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
-import { getAutomationLanes } from '#/modules/Automation';
+import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { getMidiStoreState } from '#/modules/MIDI/useCases';
 import {
     getDrumKitDefByIndex,
@@ -46,12 +46,15 @@ export async function scheduleTrackClips(
 ): Promise<void> {
     const compensationDelay = getCompensationDelay(track.id);
 
-    if (track.frozen && track.frozenBufferId) {
-        const frozenBuf = audioBufferCache.get(track.frozenBufferId);
+    const automationLanes = getAutomationLanes();
+    let deviceEntries: DeviceNodeEntry[] = [];
+
+    if (track.freezeState?.status === 'frozen' && track.freezeState?.frozenBufferId) {
+        const frozenBuf = audioBufferCache.get(track.freezeState.frozenBufferId);
         if (frozenBuf) {
             const source = offlineCtx.createBufferSource();
             source.buffer = frozenBuf;
-            source.connect(trackInputNode);
+            source.connect(trackGainNode); // Skip trackInputNode to bypass device chain processing, but keep fader/pan
             source.start(0);
         } else {
             onWarning?.(
@@ -59,18 +62,14 @@ export async function scheduleTrackClips(
                     `Try unfreezing and re-freezing the track.`
             );
         }
-        return;
-    }
-
-    const automationLanes = getAutomationLanes();
-    let deviceEntries: DeviceNodeEntry[];
-
-    // Use pre-built device chain if provided (Pass 2 of mixdown), otherwise build it (Stems export).
-    if (deviceEntriesByTrack && deviceEntriesByTrack.has(track.id)) {
-        deviceEntries = deviceEntriesByTrack.get(track.id)!;
     } else {
-        deviceEntries = await buildDeviceChain(offlineCtx, track.devices, trackInputNode, trackPanNode);
-        trackPanNode.connect(destination);
+        // Use pre-built device chain if provided (Pass 2 of mixdown), otherwise build it (Stems export).
+        if (deviceEntriesByTrack && deviceEntriesByTrack.has(track.id)) {
+            deviceEntries = deviceEntriesByTrack.get(track.id)!;
+        } else {
+            deviceEntries = await buildDeviceChain(offlineCtx, track.devices, trackInputNode, trackPanNode);
+            trackPanNode.connect(destination);
+        }
     }
 
     scheduleTrackAutomation(
@@ -83,6 +82,11 @@ export async function scheduleTrackClips(
         defaultTempo,
         changes
     );
+
+    if (track.freezeState?.status === 'frozen' && track.freezeState?.frozenBufferId) {
+        // Skip scheduling individual clips and MIDI since we already scheduled the frozen buffer
+        return;
+    }
 
     const clipsToProcess: { clip: import('#/modules/Arrangement/models/Track').Clip; padIndex: number }[] = [];
     clipsToProcess.push(...resolveClipsWithComping(track.id, track.clips).map((c) => ({ clip: c, padIndex: -1 })));

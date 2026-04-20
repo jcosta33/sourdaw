@@ -100,14 +100,43 @@ type SerializedBuffer = {
     sampleRate: number;
     numberOfChannels: number;
     channelData: Float32Array[];
+    lastAccessed: number;
+    sizeInBytes: number;
 };
 
 function serializeBuffer(buffer: AudioBuffer): SerializedBuffer {
     const channelData: Float32Array[] = [];
+    let sizeInBytes = 0;
     for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
-        channelData.push(new Float32Array(buffer.getChannelData(ch)));
+        const data = new Float32Array(buffer.getChannelData(ch));
+        channelData.push(data);
+        sizeInBytes += data.byteLength;
     }
-    return { sampleRate: buffer.sampleRate, numberOfChannels: buffer.numberOfChannels, channelData };
+    return {
+        sampleRate: buffer.sampleRate,
+        numberOfChannels: buffer.numberOfChannels,
+        channelData,
+        lastAccessed: Date.now(),
+        sizeInBytes,
+    };
+}
+
+async function updateAccessTimeInIdb(id: string): Promise<void> {
+    try {
+        const db = await openDb();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get(id);
+        req.onsuccess = () => {
+            const data = req.result as SerializedBuffer | undefined;
+            if (data) {
+                data.lastAccessed = Date.now();
+                store.put(data, id);
+            }
+        };
+    } catch {
+        // ignore
+    }
 }
 
 async function persistToIdb(id: string, buffer: AudioBuffer): Promise<void> {
@@ -147,7 +176,11 @@ function clearWaveformCachesForId(id: string) {
 
 export const audioBufferCache = {
     get(id: string): AudioBuffer | undefined {
-        return audioCacheGet(id);
+        const buf = audioCacheGet(id);
+        if (buf) {
+            updateAccessTimeInIdb(id);
+        }
+        return buf;
     },
 
     set(id: string, buffer: AudioBuffer): void {
@@ -180,6 +213,7 @@ export const audioBufferCache = {
             return new Float32Array(numBins);
         }
 
+        updateAccessTimeInIdb(id);
         const totalSamples = buffer.length;
         const rawStart = windowOpts?.startSample ?? 0;
         const rawEnd = windowOpts?.endSample ?? totalSamples;
@@ -351,6 +385,7 @@ export const audioBufferCache = {
         for (const id of ids) {
             const buf = cache.get(id);
             if (!buf) {continue;}
+            updateAccessTimeInIdb(id);
             result[id] = {
                 sampleRate: buf.sampleRate,
                 numberOfChannels: buf.numberOfChannels,
@@ -378,6 +413,7 @@ export const audioBufferCache = {
                         req.onerror = () => reject(req.error);
                     });
                     if (!data || (data.channelData[0]?.length ?? 0) === 0) {continue;}
+                    updateAccessTimeInIdb(id);
                     result[id] = {
                         sampleRate: data.sampleRate,
                         numberOfChannels: data.numberOfChannels,
@@ -414,4 +450,96 @@ export const audioBufferCache = {
             }
         }
     },
+
+    async garbageCollectFreezeFiles(activeIds: Set<string>): Promise<void> {
+        // Remove from memory cache
+        for (const key of cache.keys()) {
+            if (key.startsWith('freeze-') && !activeIds.has(key)) {
+                cache.delete(key);
+                clearWaveformCachesForId(key);
+            }
+        }
+
+        // Remove from IndexedDB
+        try {
+            const db = await openDb();
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const req = store.getAllKeys();
+            req.onsuccess = () => {
+                const keys = req.result as string[];
+                for (const key of keys) {
+                    if (key.startsWith('freeze-') && !activeIds.has(key)) {
+                        store.delete(key);
+                    }
+                }
+            };
+        } catch {
+            // Ignore IDB errors
+        }
+    },
+
+    async garbageCollectByAge(maxAgeDays: number): Promise<number> {
+        const threshold = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+        let deletedCount = 0;
+        try {
+            const db = await openDb();
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const req = store.getAll();
+            const keysReq = store.getAllKeys();
+            
+            const [data, keys] = await Promise.all([
+                new Promise<SerializedBuffer[]>((resolve) => (req.onsuccess = () => resolve(req.result))),
+                new Promise<IDBValidKey[]>((resolve) => (keysReq.onsuccess = () => resolve(keysReq.result)))
+            ]);
+
+            for (let i = 0; i < data.length; i++) {
+                const item = data[i]!;
+                const key = keys[i]! as string;
+                if ((item.lastAccessed ?? 0) < threshold) {
+                    store.delete(key);
+                    cache.delete(key);
+                    clearWaveformCachesForId(key);
+                    deletedCount++;
+                }
+            }
+        } catch { /* ignore */ }
+        return deletedCount;
+    },
+
+    async garbageCollectBySize(maxSizeBytes: number): Promise<number> {
+        let deletedCount = 0;
+        try {
+            const db = await openDb();
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const req = store.getAll();
+            const keysReq = store.getAllKeys();
+
+            const [data, keys] = await Promise.all([
+                new Promise<SerializedBuffer[]>((resolve) => (req.onsuccess = () => resolve(req.result))),
+                new Promise<IDBValidKey[]>((resolve) => (keysReq.onsuccess = () => resolve(keysReq.result)))
+            ]);
+
+            // Sort by access time ascending (oldest first)
+            const entries = data.map((item, i) => ({
+                id: keys[i]! as string,
+                lastAccessed: item.lastAccessed ?? 0,
+                size: item.sizeInBytes ?? 0
+            })).sort((a, b) => a.lastAccessed - b.lastAccessed);
+
+            let currentTotal = entries.reduce((acc, e) => acc + e.size, 0);
+            
+            for (const entry of entries) {
+                if (currentTotal <= maxSizeBytes) break;
+                store.delete(entry.id);
+                cache.delete(entry.id);
+                clearWaveformCachesForId(entry.id);
+                currentTotal -= entry.size;
+                deletedCount++;
+            }
+        } catch { /* ignore */ }
+        return deletedCount;
+    }
 };

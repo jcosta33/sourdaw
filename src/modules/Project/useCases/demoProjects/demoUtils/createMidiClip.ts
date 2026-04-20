@@ -1,3 +1,5 @@
+import { type ProjectMidiNote } from '../../../models/ProjectData';
+
 export function createMidiClip(trackId: string, name: string, startBeat: number, endBeat: number, color = '') {
     return {
         id: `clip-${crypto.randomUUID()}`,
@@ -12,5 +14,6 @@ export function createMidiClip(trackId: string, name: string, startBeat: number,
         color,
         locked: false,
         muted: false,
+        notes: [] as ProjectMidiNote[],
     };
 }

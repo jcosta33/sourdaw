@@ -56,6 +56,32 @@ export type ProjectSend = {
     preFader: boolean;
 };
 
+export type ProjectMidiFxDevice = {
+    id: string;
+    name: string;
+    type: 'arp' | 'velocity' | 'probability';
+    bypassed: boolean;
+    parameterValues: Record<string, number>;
+};
+
+export type ProjectFreezeState = {
+    status: 'unfrozen' | 'freezing' | 'frozen' | 'stale' | 'error';
+    freezeId?: string;
+    frozenBufferId?: string;
+    frozenAudioHash?: string;
+    sourceContentHash?: string;
+    deviceChainHash?: string;
+    renderSettings?: {
+        sampleRate: number;
+        bitDepth: number;
+        channelCount: number;
+        tailLengthSeconds: number;
+    };
+    renderProgress?: number;
+    errorMessage?: string;
+    renderedAt?: number;
+};
+
 export type ProjectTrackAlternative = {
     id: string;
     name: string;
@@ -75,8 +101,10 @@ export type ProjectTrack = {
     clips: ProjectClip[];
     devices: ProjectDevice[];
     sends: ProjectSend[];
+    midiFx: ProjectMidiFxDevice[];
     frozen: boolean;
     frozenBufferId?: string;
+    freezeState: ProjectFreezeState;
     parentId: string | null;
     collapsed: boolean;
     inputMonitoring: ProjectInputMonitoring;

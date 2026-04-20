@@ -6,10 +6,10 @@ import { handleImportMidiFile } from '../handleImportMidiFile';
 import { handleExportMidi } from '../handleExportMidi';
 import { handleExportProject } from '../handleExportProject';
 
-import { newProject, saveProject, exportProjectFile, pickFiles } from '#/modules/Project';
+import { newProject, saveProject, exportProjectFile, pickFiles } from '#/modules/Project/useCases';
 import { importAudioFile, importMidiFile, exportMidiClip } from '#/modules/Arrangement/useCases';
 
-vi.mock('#/modules/Project', () => ({
+vi.mock('#/modules/Project/useCases', () => ({
     newProject: vi.fn(),
     saveProject: vi.fn(),
     exportProjectFile: vi.fn(),

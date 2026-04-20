@@ -76,6 +76,15 @@ impl ReleaseTracker {
     pub fn set_config(&mut self, config: ReleaseTriggerInfo) {
         self.config = config;
     }
+
+    /// Forget every in-flight note. Used by `LevainEngine::all_notes_off`
+    /// so a subsequent note-on after transport stop sees a clean slate
+    /// rather than a stale start-time from before the stop.
+    pub fn clear_all(&mut self) {
+        for t in self.note_start_times.iter_mut() {
+            *t = 0;
+        }
+    }
 }
 
 /// Maximum deferred releases (fixed-size to avoid audio-thread allocation).
@@ -105,6 +114,16 @@ impl PedalDeferredRelease {
             self.deferred[self.count] = (note, cc1);
             self.count += 1;
         }
+    }
+
+    /// Drop every deferred note-off without firing their callbacks. Used
+    /// by `LevainEngine::all_notes_off` on transport stop: the voices
+    /// those entries referenced are already being released silently, so
+    /// firing them later (e.g. on the next pedal-up) would run stale
+    /// callbacks and, worse, could wedge the queue at `MAX_DEFERRED` and
+    /// silently drop subsequent legitimate deferred note-offs.
+    pub fn clear(&mut self) {
+        self.count = 0;
     }
 
     /// When pedal is released, iterate deferred notes with staggered timing.

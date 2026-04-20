@@ -9,10 +9,10 @@ export type MidiNote = {
     startBeat: number;
     duration: number;
     velocity: number;
-    probability?: number;
-    pressure?: number;
-    slide?: number;
-    pitchBend?: number;
+    probability: number;
+    pressure: number;
+    slide: number;
+    pitchBend: number;
 };
 
 export type StretchMode = 'off' | 'repitch' | 'timestretch';

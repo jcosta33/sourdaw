@@ -8,6 +8,8 @@
  * Level 5 (Lab):    Euclidean, Markov, mutation, groove template
  */
 import { type ComponentProps, type ReactElement, useState } from 'react';
+
+import { Row, Stack, Grid } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
@@ -55,7 +57,7 @@ const SideCard = ({
         detail={detail}
         titleClassName="text-[var(--color-accent-rose)]/70"
     >
-        {children}
+        <Stack gap={2}>{children}</Stack>
     </DawPluginSectionCard>
 );
 
@@ -136,18 +138,18 @@ const NoteFlowHero = ({ state }: { state: YeastState }): ReactElement => {
     const laneCount = Math.max(3, Math.min(7, state.processors.length + 2));
 
     return (
-        <div className="yeast-window flex flex-col gap-3 p-3">
-            <div className="flex items-center justify-between gap-3">
-                <div>
+        <Stack gap={3} className="yeast-window p-3">
+            <Row justify="between" gap={3}>
+                <Stack>
                     <div className="text-[10px] font-medium text-foreground">Phrase view</div>
                     <div className="text-[9px] text-muted-foreground">
                         A quick motion sketch for whatever the rack is doing right now.
                     </div>
-                </div>
+                </Stack>
                 <YeastLed>{state.processors.length} modules</YeastLed>
-            </div>
+            </Row>
 
-            <div className="space-y-2">
+            <Stack gap={2}>
                 {Array.from({ length: laneCount }, (_, index) => {
                     const width = 24 + ((index * 17 + state.uiLevel * 11) % 68);
                     const offset = (index * 9 + state.uiLevel * 7) % 36;
@@ -164,8 +166,8 @@ const NoteFlowHero = ({ state }: { state: YeastState }): ReactElement => {
                         </div>
                     );
                 })}
-            </div>
-        </div>
+            </Stack>
+        </Stack>
     );
 };
 
@@ -192,105 +194,117 @@ export const YeastPanel = (): ReactElement => {
 
     return (
         <div className="yeast-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
-            <div className="grid h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)_16rem] gap-3">
-                <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
-                    <SideCard title="Rack frame" detail="Levels stay docked here so the instrument keeps one identity.">
-                        <div className="flex flex-col gap-1">
-                            {LEVEL_OPTIONS.map((entry) => {
-                                const active = uiLevel === entry.level;
-                                return (
-                                    <button
-                                        key={entry.label}
-                                        type="button"
-                                        className={`yeast-window flex items-center justify-between px-3 py-2 text-left transition-all ${
-                                            active
-                                                ? 'border-white/18 bg-white/[0.03]'
-                                                : 'hover:border-white/12 hover:bg-white/[0.02]'
-                                        }`}
-                                        onClick={() => setYeastUiLevel(entry.level)}
-                                    >
-                                        <span className="text-[11px] font-medium text-foreground">{entry.label}</span>
-                                        <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/45">
-                                            {entry.detail}
-                                        </span>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </SideCard>
+            <Grid gap={3} className="h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)_16rem]">
+                <aside className="min-h-0 overflow-y-auto pr-1">
+                    <Stack gap={3}>
+                        <SideCard title="Rack frame" detail="Levels stay docked here so the instrument keeps one identity.">
+                            <Stack gap={1}>
+                                {LEVEL_OPTIONS.map((entry) => {
+                                    const active = uiLevel === entry.level;
+                                    return (
+                                        <Row
+                                            key={entry.label}
+                                            as="button"
+                                            justify="between"
+                                            gap={3}
+                                            className={`yeast-window px-3 py-2 text-left transition-all ${
+                                                active
+                                                    ? 'border-white/18 bg-white/[0.03]'
+                                                    : 'hover:border-white/12 hover:bg-white/[0.02]'
+                                            }`}
+                                            onClick={() => setYeastUiLevel(entry.level)}
+                                        >
+                                            <span className="text-[11px] font-medium text-foreground">{entry.label}</span>
+                                            <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/45">
+                                                {entry.detail}
+                                            </span>
+                                        </Row>
+                                    );
+                                })}
+                            </Stack>
+                        </SideCard>
 
-                    <SideCard title="Sprout" detail="Keep a few immediate transforms one tap away.">
-                        <div className="flex flex-wrap gap-1.5">
-                            {PROCESSOR_TYPES.filter((processor) => processor.level <= 2).map((processor) => (
-                                <YeastChip key={processor.type} onClick={() => addYeastProcessor(processor.type)}>
-                                    + {processor.name}
-                                </YeastChip>
-                            ))}
-                        </div>
-                    </SideCard>
+                        <SideCard title="Sprout" detail="Keep a few immediate transforms one tap away.">
+                            <Row wrap gap={1.5}>
+                                {PROCESSOR_TYPES.filter((processor) => processor.level <= 2).map((processor) => (
+                                    <YeastChip key={processor.type} onClick={() => addYeastProcessor(processor.type)}>
+                                        + {processor.name}
+                                    </YeastChip>
+                                ))}
+                            </Row>
+                        </SideCard>
+                    </Stack>
                 </aside>
 
-                <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-1">
-                    <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-2">
-                            <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-peach)]/70">
-                                Note rack
-                            </div>
-                            <div className="text-[16px] font-semibold text-foreground">{levelMeta.title}</div>
-                            <span className="sr-only">{levelMeta.description}</span>
-                        </div>
+                <Stack gap={3} className="min-h-0">
+                    <div className="yeast-window p-3">
+                        <Row justify="between" align="start" gap={3}>
+                            <Stack gap={2}>
+                                <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-peach)]/70">
+                                    Note rack
+                                </div>
+                                <div className="text-[16px] font-semibold text-foreground">{levelMeta.title}</div>
+                                <span className="sr-only">{levelMeta.description}</span>
+                            </Stack>
 
-                        <div className="flex flex-wrap justify-end gap-2">
-                            <MetricTile label="Flow" value={`${state.processors.length}`} detail="Active transforms" />
-                            <MetricTile
-                                label="Deck"
-                                value={LEVEL_OPTIONS[uiLevel - 1]?.label ?? 'Play'}
-                                detail="Current focus"
-                            />
-                            <MetricTile
-                                label="Chord"
-                                value={state.processors.some((processor) => processor.type === 'chord') ? 'On' : 'Off'}
-                                detail="Harmony memory"
-                            />
-                        </div>
+                            <Row wrap justify="end" gap={2}>
+                                <MetricTile
+                                    label="Flow"
+                                    value={`${state.processors.length}`}
+                                    detail="Active transforms"
+                                />
+                                <MetricTile
+                                    label="Deck"
+                                    value={LEVEL_OPTIONS[uiLevel - 1]?.label ?? 'Play'}
+                                    detail="Current focus"
+                                />
+                                <MetricTile
+                                    label="Chord"
+                                    value={state.processors.some((processor) => processor.type === 'chord') ? 'On' : 'Off'}
+                                    detail="Harmony memory"
+                                />
+                            </Row>
+                        </Row>
                     </div>
 
                     <NoteFlowHero state={state} />
 
                     <div className="yeast-window min-h-0 flex-1 overflow-auto p-3">{renderDeck(state)}</div>
-                </section>
+                </Stack>
 
-                <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+                <aside className="min-h-0 overflow-y-auto pr-1">
                     <SideCard title="Rack read" detail="Transforms stay visible even when you are focused on one deck.">
-                        <div className="flex flex-col gap-1.5">
+                        <Stack gap={1.5}>
                             {state.processors.length > 0 ? (
                                 state.processors.map((processor) => (
-                                    <div
+                                    <Row
                                         key={processor.id}
-                                        className="yeast-window flex items-center justify-between px-3 py-2"
+                                        justify="between"
+                                        gap={3}
+                                        className="yeast-window px-3 py-2"
                                     >
-                                        <div>
+                                        <Stack>
                                             <div className="text-[11px] font-medium text-foreground">
                                                 {processor.name}
                                             </div>
                                             <div className="text-[8px] uppercase tracking-[0.18em] text-muted-foreground/45">
                                                 {processor.type}
                                             </div>
-                                        </div>
+                                        </Stack>
                                         <YeastLed className={processor.bypassed ? 'opacity-50' : undefined}>
                                             {processor.bypassed ? 'Bypass' : 'Live'}
                                         </YeastLed>
-                                    </div>
+                                    </Row>
                                 ))
                             ) : (
                                 <div className="yeast-window px-3 py-3 text-[10px] leading-4 text-muted-foreground">
                                     No processors yet. Add one from the sprout shelf and the note lanes will wake up.
                                 </div>
                             )}
-                        </div>
+                        </Stack>
                     </SideCard>
                 </aside>
-            </div>
+            </Grid>
         </div>
     );
 };
@@ -301,7 +315,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
     const hasArp = state.processors.some((p) => p.type === 'arpeggiator');
 
     return (
-        <div className="flex-1 flex items-center justify-center gap-8 px-8">
+        <Row align="center" justify="center" gap={8} className="flex-1 px-8">
             {/* Arp On/Off */}
             <DawPluginToggle
                 pressed={hasArp}
@@ -324,7 +338,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
             </DawPluginToggle>
 
             {/* Mode */}
-            <div className="flex flex-col items-center gap-1">
+            <Stack align="center" gap={1}>
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Mode</span>
                 <DawCompactSelect
                     size="micro"
@@ -344,10 +358,10 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     <option value={5}>Order</option>
                     <option value={6}>Chord</option>
                 </DawCompactSelect>
-            </div>
+            </Stack>
 
             {/* Rate */}
-            <div className="flex flex-col items-center gap-1">
+            <Stack align="center" gap={1}>
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Rate</span>
                 <YeastKnob
                     value={8}
@@ -362,7 +376,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     size="lg"
                 />
                 <span className="text-[8px] text-muted-foreground font-mono">1/8</span>
-            </div>
+            </Stack>
 
             {/* Latch */}
             <YeastChip
@@ -374,7 +388,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
             >
                 Latch
             </YeastChip>
-        </div>
+        </Row>
     );
 };
 
@@ -384,7 +398,7 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
     const arp = state.processors.find((p) => p.type === 'arpeggiator');
 
     return (
-        <div className="flex-1 flex items-start justify-around px-4 py-3">
+        <Row align="start" justify="around" className="flex-1 px-4 py-3">
             <KnobCol
                 label="Gate"
                 value={0.8}
@@ -417,7 +431,7 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
                 max={127}
                 unit=""
             />
-        </div>
+        </Row>
     );
 };
 
@@ -443,14 +457,16 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
     };
 
     return (
-        <div className="flex-1 flex flex-col px-3 py-2 gap-2 overflow-y-auto">
+        <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto">
             {/* Rack chain with expandable params */}
-            <div className="flex flex-col gap-1">
+            <Stack gap={1}>
                 {state.processors.map((proc, i) => (
                     <div key={proc.id} className="rounded bg-surface-base/50 border border-border/20 overflow-hidden">
                         {/* Header row */}
-                        <div
-                            className="flex items-center gap-2 px-2 py-1.5 cursor-pointer"
+                        <Row
+                            align="center"
+                            gap={2}
+                            className="px-2 py-1.5 cursor-pointer"
                             onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}
                         >
                             <span className="text-[7px] text-muted-foreground/50 w-3">{i + 1}</span>
@@ -486,7 +502,7 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
                             >
                                 ✕
                             </button>
-                        </div>
+                        </Row>
 
                         {/* Expanded parameter panel */}
                         {expandedId === proc.id ? (
@@ -500,12 +516,12 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
                         ) : null}
                     </div>
                 ))}
-            </div>
+            </Stack>
 
             {/* Arp pattern editor (when arp is present) */}
             {hasArpPattern ? (
-                <div className="border-t border-border/20 pt-2">
-                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest block mb-1">
+                <Stack gap={1} className="border-t border-border/20 pt-2">
+                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest block">
                         Arp Pattern
                     </span>
                     <StepPatternEditor
@@ -514,18 +530,18 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
                         onStepChange={handleStepChange}
                         onLengthChange={handleLengthChange}
                     />
-                </div>
+                </Stack>
             ) : null}
 
             {/* Add processor */}
-            <div className="flex flex-wrap gap-1 pt-1 border-t border-border/20">
+            <Row wrap gap={1} className="pt-1 border-t border-border/20">
                 {PROCESSOR_TYPES.filter((pt) => pt.level <= 3).map((pt) => (
                     <YeastChip key={pt.type} onClick={() => addYeastProcessor(pt.type)} title={pt.description}>
                         + {pt.name}
                     </YeastChip>
                 ))}
-            </div>
-        </div>
+            </Row>
+        </Stack>
     );
 };
 
@@ -535,21 +551,23 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
     const [expandedId, setExpandedId] = useState<string | null>(null);
 
     return (
-        <div className="flex-1 flex flex-col px-3 py-2 gap-2 overflow-y-auto">
+        <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto">
             {/* Keyboard visualization */}
-            <div>
-                <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest block mb-1">
+            <Stack gap={1}>
+                <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest block">
                     Keyboard
                 </span>
                 <KeyboardSplit width={500} height={32} />
-            </div>
+            </Stack>
 
             {/* Rack chain with params */}
-            <div className="flex flex-col gap-1">
+            <Stack gap={1}>
                 {state.processors.map((proc, i) => (
                     <div key={proc.id} className="rounded bg-surface-base/50 border border-border/20 overflow-hidden">
-                        <div
-                            className="flex items-center gap-2 px-2 py-1.5 cursor-pointer"
+                        <Row
+                            align="center"
+                            gap={2}
+                            className="px-2 py-1.5 cursor-pointer"
                             onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}
                         >
                             <span className="text-[7px] text-muted-foreground/50 w-3">{i + 1}</span>
@@ -585,7 +603,7 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
                             >
                                 ✕
                             </button>
-                        </div>
+                        </Row>
                         {expandedId === proc.id ? (
                             <div className="border-t border-border/10 bg-surface-app/30">
                                 <ProcessorParams
@@ -597,17 +615,17 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
                         ) : null}
                     </div>
                 ))}
-            </div>
+            </Stack>
 
             {/* Add — includes Route-level processors */}
-            <div className="flex flex-wrap gap-1 pt-1 border-t border-border/20">
+            <Row wrap gap={1} className="pt-1 border-t border-border/20">
                 {PROCESSOR_TYPES.filter((pt) => pt.level <= 4).map((pt) => (
                     <YeastChip key={pt.type} onClick={() => addYeastProcessor(pt.type)} title={pt.description}>
                         + {pt.name}
                     </YeastChip>
                 ))}
-            </div>
-        </div>
+            </Row>
+        </Stack>
     );
 };
 
@@ -618,18 +636,20 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
     const [arpPattern, setArpPattern] = useState<ArpStep[]>(() => createDefaultPattern(16));
 
     return (
-        <div className="flex-1 flex min-h-0 overflow-hidden">
+        <Row grow className="min-h-0 overflow-hidden">
             {/* Left: Rack + generative tools */}
-            <div className="flex-1 flex flex-col px-3 py-2 gap-2 overflow-y-auto">
+            <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto">
                 {/* Rack chain with params */}
-                <div className="flex flex-col gap-1">
+                <Stack gap={1}>
                     {state.processors.map((proc, i) => (
                         <div
                             key={proc.id}
                             className="rounded bg-surface-base/50 border border-border/20 overflow-hidden"
                         >
-                            <div
-                                className="flex items-center gap-2 px-2 py-1.5 cursor-pointer"
+                            <Row
+                                align="center"
+                                gap={2}
+                                className="px-2 py-1.5 cursor-pointer"
                                 onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}
                             >
                                 <span className="text-[7px] text-muted-foreground/50 w-3">{i + 1}</span>
@@ -665,7 +685,7 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
                                 >
                                     ✕
                                 </button>
-                            </div>
+                            </Row>
                             {expandedId === proc.id ? (
                                 <div className="border-t border-border/10 bg-surface-app/30">
                                     <ProcessorParams
@@ -677,36 +697,40 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
                             ) : null}
                         </div>
                     ))}
-                </div>
+                </Stack>
 
                 {/* All processors */}
-                <div className="flex flex-wrap gap-1 pt-1 border-t border-border/20">
-                    <span className="w-full text-[7px] text-muted-foreground/50 uppercase tracking-widest mb-0.5">
+                <Stack gap={1} className="pt-1 border-t border-border/20">
+                    <span className="w-full text-[7px] text-muted-foreground/50 uppercase tracking-widest">
                         Generative
                     </span>
-                    {PROCESSOR_TYPES.filter((pt) => pt.level === 5).map((pt) => (
-                        <YeastChip
-                            key={pt.type}
-                            tone="mint"
-                            onClick={() => addYeastProcessor(pt.type)}
-                            title={pt.description}
-                        >
-                            + {pt.name}
-                        </YeastChip>
-                    ))}
-                    <span className="w-full text-[7px] text-muted-foreground/50 uppercase tracking-widest mt-1 mb-0.5">
+                    <Row wrap gap={1}>
+                        {PROCESSOR_TYPES.filter((pt) => pt.level === 5).map((pt) => (
+                            <YeastChip
+                                key={pt.type}
+                                tone="mint"
+                                onClick={() => addYeastProcessor(pt.type)}
+                                title={pt.description}
+                            >
+                                + {pt.name}
+                            </YeastChip>
+                        ))}
+                    </Row>
+                    <span className="w-full text-[7px] text-muted-foreground/50 uppercase tracking-widest mt-1">
                         Standard
                     </span>
-                    {PROCESSOR_TYPES.filter((pt) => pt.level <= 4).map((pt) => (
-                        <YeastChip key={pt.type} onClick={() => addYeastProcessor(pt.type)} title={pt.description}>
-                            + {pt.name}
-                        </YeastChip>
-                    ))}
-                </div>
-            </div>
+                    <Row wrap gap={1}>
+                        {PROCESSOR_TYPES.filter((pt) => pt.level <= 4).map((pt) => (
+                            <YeastChip key={pt.type} onClick={() => addYeastProcessor(pt.type)} title={pt.description}>
+                                + {pt.name}
+                            </YeastChip>
+                        ))}
+                    </Row>
+                </Stack>
+            </Stack>
 
             {/* Right: Pattern editor + keyboard */}
-            <div className="w-[280px] shrink-0 border-l border-border/20 flex flex-col gap-2 p-2 overflow-y-auto">
+            <Stack gap={2} className="w-[280px] shrink-0 border-l border-border/20 p-2 overflow-y-auto">
                 <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest">Pattern Editor</span>
                 <StepPatternEditor
                     steps={arpPattern}
@@ -727,8 +751,8 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
 
                 <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest mt-2">Keyboard</span>
                 <KeyboardSplit width={260} height={28} />
-            </div>
-        </div>
+            </Stack>
+        </Row>
     );
 };
 
@@ -749,12 +773,12 @@ const KnobCol = ({
     max: number;
     unit: string;
 }): ReactElement => (
-    <div className="flex flex-col items-center gap-1">
+    <Stack align="center" gap={1}>
         <span className="text-[8px] text-muted-foreground uppercase tracking-widest">{label}</span>
         <YeastKnob value={value} onChange={onChange} min={min} max={max} step={0.01} defaultValue={value} size="md" />
         <span className="text-[7px] text-muted-foreground font-mono">
             {value.toFixed(unit === '%' ? 0 : 1)}
             {unit}
         </span>
-    </div>
+    </Stack>
 );

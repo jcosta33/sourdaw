@@ -46,3 +46,4 @@ export { pushUndoEntry } from './pushUndoEntry';
 export { commitUndoEntry } from './commitUndoEntry';
 
 export { undo, redo, undoToIndex } from './undoRedo';
+export { commitPitchEditCommand } from './pitch/commitPitchEdit';

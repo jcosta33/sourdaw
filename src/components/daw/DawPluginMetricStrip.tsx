@@ -1,6 +1,6 @@
 import { type HTMLAttributes, type ReactElement } from 'react';
 
-import { cn } from '#/utils/Styles/cn';
+import { Row } from '#/components/layout';
 
 type DawPluginMetricStripProps = HTMLAttributes<HTMLDivElement> & {
     align?: 'start' | 'end';
@@ -12,10 +12,13 @@ export const DawPluginMetricStrip = ({
     children,
     ...props
 }: DawPluginMetricStripProps): ReactElement => (
-    <div
-        className={cn('flex flex-wrap gap-2', align === 'end' ? 'justify-end' : 'justify-start', className)}
+    <Row
+        wrap
+        gap={2}
+        justify={align === 'end' ? 'end' : 'start'}
+        className={className}
         {...props}
     >
         {children}
-    </div>
+    </Row>
 );

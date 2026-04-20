@@ -15,54 +15,59 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
     stopPlayback();
     resetAudioGraph();
 
+    // 1. Hydrate core module stores
     hydrateModuleStoresFromProjectData(data);
+
+    // 2. Hydrate Project Store (Meta & Tuning)
     projectStore.set({
-        name: data.name,
-        createdAt: data.createdAt,
-        updatedAt: data.updatedAt,
+        name: data.meta.name,
+        createdAt: data.meta.createdAt,
+        updatedAt: data.meta.updatedAt,
+        keyRoot: data.meta.keyRoot,
+        scaleName: data.meta.scaleName,
+        tuning: data.meta.tuning,
         dirty: false,
         loading: false,
         initialized: true,
     });
 
-    if (data.arrangements && data.arrangements.length > 0 && data.activeArrangementId) {
-        arrangementStore.set({
-            arrangements: data.arrangements,
-            activeArrangementId: data.activeArrangementId,
-        });
-    } else {
-        arrangementStore.set({
-            arrangements: [
-                {
-                    id: defaultArrangementId,
-                    name: 'Arrangement 1',
-                    tracks: data.tracks,
-                    automation: data.automation,
-                    midi: data.midi,
-                    tempoMap: data.tempoMap,
-                    timeSignatureMap: data.timeSignatureMap,
-                    markers: data.markers,
-                    takeLanes: data.takeLanes,
+    // 3. Hydrate Arrangement Store
+    // Note: The current ProjectData schema is single-arrangement.
+    // We wrap it in a snapshot for the arrangementStore.
+    arrangementStore.set({
+        arrangements: [
+            {
+                id: defaultArrangementId,
+                name: 'Main Arrangement',
+                tracks: { 
+                    tracks: data.arrangement.tracks || [],
+                    selectedTrackId: null 
                 },
-            ],
-            activeArrangementId: defaultArrangementId,
-        });
-    }
+                automation: data.automation || { lanes: [] },
+                midi: { 
+                    notesByClipId: data.arrangement.tracks.reduce((acc, t) => {
+                        t.clips.forEach(c => {
+                            if (c.notes) acc[c.id] = c.notes;
+                        });
+                        return acc;
+                    }, {} as Record<string, any[]>),
+                    ccByClipId: {},
+                    pitchBendByClipId: {}
+                },
+            },
+        ],
+        activeArrangementId: defaultArrangementId,
+    });
 
     const ctx = getAudioContext();
-    if (data.audioBuffers && Object.keys(data.audioBuffers).length > 0) {
-        // Self-contained file: reconstruct buffers from embedded PCM data.
-        // This also writes them to IDB so they persist for future sessions.
-        await audioBufferCache.importBuffers(data.audioBuffers, ctx);
-    } else {
-        // Legacy file (no embedded audio): fall back to the local IDB cache,
-        // but load only the buffer IDs referenced by clips in this project so
-        // we don't mass-load unrelated takes from previous sessions.
-        const referencedIds = (data.tracks?.tracks ?? [])
-            .flatMap((t) => t.clips.map((c) => c.audioBufferId))
-            .filter((id): id is string => Boolean(id));
-        await audioBufferCache.restoreFromIdb(ctx, referencedIds.length > 0 ? referencedIds : undefined);
-    }
+    // Reconstruct audio buffers if they exist in the metadata (future proofing)
+    // or fall back to IDB cache for referenced buffer IDs.
+    const referencedIds = data.arrangement.tracks
+        .flatMap((t) => t.clips.map((c) => c.bufferId))
+        .filter((id): id is string => Boolean(id));
+
+    await audioBufferCache.restoreFromIdb(ctx, referencedIds.length > 0 ? referencedIds : undefined);
+
     if (trackStore.value) {
         trackStore.set({ ...trackStore.value });
     }

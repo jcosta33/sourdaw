@@ -20,15 +20,29 @@ import {
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import {
     addMidiNote,
+    batchAddMidiNotes,
+    getNotesForClip,
     removeMidiNote,
     moveMidiNote,
+    removeNotesByIds,
     resizeMidiNote,
     setNoteVelocity,
+    setNotesForClip,
     stampChord,
-    removeNotesByIds,
+    joinNotes,
+    legatoNotes,
+    splitNoteAtBeat,
+    stepRecordAdvance,
+    stepRecordRetreat,
+    stepRecordStepUp,
+    stepRecordStepDown,
+    stepRecordNoteOn,
+    stepRecordNoteOff,
 } from '#/modules/MIDI/useCases';
+import { stepRecordStore } from '#/modules/MIDI/stores';
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import { playAuditionNote } from '#/modules/AudioEngine/useCases';
+import { getTransportState } from '#/modules/Transport/useCases';
 
 import {
     ROW_HEIGHT,
@@ -40,6 +54,27 @@ import {
 } from '../helpers/pianoRollConstants';
 
 import { type GestureEvent } from '#/utils/DOM/GestureEvent';
+import { quantizeMidiNoteToScale } from '#/utils/Music/MusicalScale';
+
+/**
+ * Build ownership maps from primary + secondary clip notes.
+ * Returns noteToClip (noteId → clipId) and allNotesMap (noteId → MidiNote).
+ */
+function buildNoteOwnershipMaps(
+    notes: MidiNote[],
+    clipId: string,
+    openedClipNotes: Record<string, MidiNote[]> | undefined
+): { noteToClip: Map<string, string>; allNotesMap: Map<string, MidiNote> } {
+    const noteToClip = new Map<string, string>();
+    const allNotesMap = new Map<string, MidiNote>();
+    for (const n of notes) { allNotesMap.set(n.id, n); noteToClip.set(n.id, clipId); }
+    if (openedClipNotes) {
+        for (const [oid, ns] of Object.entries(openedClipNotes)) {
+            for (const n of ns) { allNotesMap.set(n.id, n); noteToClip.set(n.id, oid); }
+        }
+    }
+    return { noteToClip, allNotesMap };
+}
 
 type PianoRollChordType =
     | 'major'
@@ -65,6 +100,10 @@ type InteractionArgs = {
     clipId: string;
     trackId: string;
     notes: MidiNote[];
+    /** A9: notes from all simultaneously-open clips, keyed by clip ID */
+    openedClipNotes?: Record<string, MidiNote[]>;
+    /** A9: which clip receives newly drawn notes */
+    focusedClipId?: string;
     beatWidth: number;
     gridSnap: number;
     scaleType: string;
@@ -82,12 +121,17 @@ type InteractionArgs = {
     setZoom: Dispatch<SetStateAction<number>>;
     setScrollX: Dispatch<SetStateAction<number>>;
     draw: () => void;
+    /** R-A12: when true, note draw and move snaps pitch to nearest scale degree. */
+    constrainToScale: boolean;
+    /** R-A13: when true, hovering a note for 200ms plays a short audition. */
+    notePreviewEnabled: boolean;
     drawPreviewRef: React.RefObject<{ beat: number; pitch: number; duration: number } | null>;
     rubberBandRef: React.RefObject<{ x: number; y: number; w: number; h: number } | null>;
     dragPreviewRef: React.RefObject<{
         noteIds: Set<string>;
         beatDelta: number;
         pitchDelta: number;
+        isDuplicate?: boolean;
         durationOverride?: Map<string, number>;
         beatOverride?: Map<string, { beat: number; duration: number }>;
     } | null>;
@@ -112,6 +156,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         clipId,
         trackId,
         notes,
+        openedClipNotes,
+        focusedClipId,
         beatWidth,
         gridSnap,
         scaleType,
@@ -129,6 +175,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         setZoom,
         setScrollX,
         draw,
+        constrainToScale,
+        notePreviewEnabled,
         drawPreviewRef,
         rubberBandRef,
         dragPreviewRef,
@@ -138,6 +186,10 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     const paintNotesRef = useRef<Set<string>>(new Set());
     const lassoPathRef = useRef<Array<{ x: number; y: number }>>([]);
     const auditionRef = useRef<(() => void) | null>(null);
+    /** R-A13: debounce timer for note-hover audition. */
+    const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    /** R-A13: ID of the note currently under the debounce timer. */
+    const hoverNoteIdRef = useRef<string | null>(null);
     // Default drag in empty area starts a rubber-band selection (DAW
     // convention). A click without drag still stamps a note at the clicked
     // grid cell; we stash the intended pitch/beat here so the mouse-up handler
@@ -186,32 +238,67 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         return Math.round(value / gridSnap) * gridSnap;
     };
 
-    const hitTest = (x: number, y: number): { note: MidiNote; edge: 'body' | 'left' | 'right' } | null => {
+    /**
+     * R-A12: Snap a MIDI pitch to the nearest scale degree when constrainToScale is active.
+     * When constrainToScale is false (or scale is chromatic), returns the pitch unchanged.
+     */
+    const snapToScalePitch = (rawPitch: number): number => {
+        if (!constrainToScale || scaleType === 'chromatic') {
+            return rawPitch;
+        }
+        return quantizeMidiNoteToScale(rawPitch, scaleRoot, scaleType);
+    };
+
+    const hitTest = (x: number, y: number): { note: MidiNote; edge: 'body' | 'left' | 'right'; ownerClipId: string } | null => {
         const visiblePitches = getVisiblePitches(scaleType, scaleRoot, isFolded);
-        for (let i = notes.length - 1; i >= 0; i--) {
-            const note = notes[i]!;
-            const row = visiblePitches.indexOf(note.pitch);
-            if (row === -1) {
-                continue;
+        // O(1) pitch→row lookup instead of indexOf per note
+        const pitchToRow = new Map<number, number>();
+        for (let i = 0; i < visiblePitches.length; i++) {
+            pitchToRow.set(visiblePitches[i]!, i);
+        }
+
+        const testNoteList = (noteList: MidiNote[], ownerClipId: string) => {
+            for (let i = noteList.length - 1; i >= 0; i--) {
+                const note = noteList[i]!;
+                const row = pitchToRow.get(note.pitch) ?? -1;
+                if (row === -1) continue;
+                const nx = note.startBeat * beatWidth;
+                const ny = row * ROW_HEIGHT;
+                const nw = note.duration * beatWidth;
+                if (x >= nx && x <= nx + nw && y >= ny && y <= ny + ROW_HEIGHT) {
+                    if (x <= nx + 8) return { note, edge: 'left' as const, ownerClipId };
+                    if (x >= nx + nw - 8) return { note, edge: 'right' as const, ownerClipId };
+                    return { note, edge: 'body' as const, ownerClipId };
+                }
             }
-            const nx = note.startBeat * beatWidth;
-            const ny = row * ROW_HEIGHT;
-            const nw = note.duration * beatWidth;
-            if (x >= nx && x <= nx + nw && y >= ny && y <= ny + ROW_HEIGHT) {
-                if (x <= nx + 8) {
-                    return { note, edge: 'left' };
-                }
-                if (x >= nx + nw - 8) {
-                    return { note, edge: 'right' };
-                }
-                return { note, edge: 'body' };
+            return null;
+        };
+
+        // Check primary clip first (higher z-order)
+        const primaryHit = testNoteList(notes, clipId);
+        if (primaryHit) return primaryHit;
+
+        // A9: also check notes from secondary open clips
+        if (openedClipNotes) {
+            for (const [openedId, openedNotes] of Object.entries(openedClipNotes)) {
+                if (openedId === clipId) continue;
+                const hit = testNoteList(openedNotes, openedId);
+                if (hit) return hit;
             }
         }
+
         return null;
     };
 
     // ── Mouse handlers ───────────────────────────────────────────────
     const handleMouseDown = (e: MouseEvent<HTMLCanvasElement>): void => {
+        // R-A13: cancel hover preview timer on mousedown
+        if (hoverTimerRef.current !== null) {
+            clearTimeout(hoverTimerRef.current);
+            hoverTimerRef.current = null;
+        }
+        hoverNoteIdRef.current = null;
+
         const canvas = canvasRef.current;
         if (!canvas) {
             return;
@@ -245,6 +332,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 dragRef.current = {
                     mode: 'resize-left',
                     noteId: hit.note.id,
+                    ownerClipId: hit.ownerClipId,
                     startX: x,
                     startY: noteY,
                     origBeat: hit.note.startBeat,
@@ -257,6 +345,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 dragRef.current = {
                     mode: 'resize-right',
                     noteId: hit.note.id,
+                    ownerClipId: hit.ownerClipId,
                     startX: x,
                     startY: noteY,
                     origBeat: hit.note.startBeat,
@@ -268,8 +357,9 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             } else {
                 auditionRef.current = playAuditionNote(trackId, hit.note.pitch, hit.note.velocity);
                 dragRef.current = {
-                    mode: 'move',
+                    mode: e.altKey ? 'duplicate' : 'move',
                     noteId: hit.note.id,
+                    ownerClipId: hit.ownerClipId,
                     startX: x,
                     startY: noteY,
                     origBeat: hit.note.startBeat,
@@ -319,7 +409,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             const row = Math.floor(noteY / ROW_HEIGHT);
             const visiblePitches = getVisiblePitches(scaleType, scaleRoot, isFolded);
             if (row >= 0 && row < visiblePitches.length) {
-                const pitch = visiblePitches[row]!;
+                // R-A12: snap to nearest scale degree when constrainToScale is active
+                const pitch = snapToScalePitch(visiblePitches[row]!);
                 if (pitch >= 0 && pitch < 128) {
                     if (stepInput) {
                         const note = addMidiNote(clipId, pitch, stepBeat, gridSnap, 100);
@@ -398,8 +489,37 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             if (hy >= 0) {
                 const hit = hitTest(hx, hy);
                 setHoverCursor(hit ? (hit.edge === 'body' ? 'grab' : 'ew-resize') : 'crosshair');
+
+                // R-A13: note preview on hover — debounce 200ms, fire playAuditionNote
+                if (notePreviewEnabled && hit?.edge === 'body') {
+                    if (hoverNoteIdRef.current !== hit.note.id) {
+                        // Moved to a different note — clear existing timer and start fresh
+                        if (hoverTimerRef.current !== null) {
+                            clearTimeout(hoverTimerRef.current);
+                        }
+                        hoverNoteIdRef.current = hit.note.id;
+                        hoverTimerRef.current = setTimeout(() => {
+                            hoverTimerRef.current = null;
+                            const stopFn = playAuditionNote(trackId, hit.note.pitch, hit.note.velocity);
+                            // Auto-stop after 500ms to keep audition brief
+                            setTimeout(() => stopFn(), 500);
+                        }, 200);
+                    }
+                } else {
+                    // No note under cursor — clear timer
+                    if (hoverTimerRef.current !== null) {
+                        clearTimeout(hoverTimerRef.current);
+                        hoverTimerRef.current = null;
+                    }
+                    hoverNoteIdRef.current = null;
+                }
             } else {
                 setHoverCursor('crosshair');
+                if (hoverTimerRef.current !== null) {
+                    clearTimeout(hoverTimerRef.current);
+                    hoverTimerRef.current = null;
+                }
+                hoverNoteIdRef.current = null;
             }
             return;
         }
@@ -476,7 +596,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 duration: Math.max(gridSnap, currentBeat - drag.origBeat),
             };
             draw();
-        } else if (drag.mode === 'move') {
+        } else if (drag.mode === 'move' || drag.mode === 'duplicate') {
             const visiblePitches = getVisiblePitches(scaleType, scaleRoot, isFolded);
             const deltaBeat = snap((x - drag.startX) / beatWidth);
             const deltaRow = Math.round((noteY - drag.startY) / ROW_HEIGHT);
@@ -493,7 +613,12 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     : new Set([drag.noteId!]);
             // Update ephemeral drag preview ref and redraw canvas directly —
             // no midiStore mutation during drag (eliminates 60Hz CRDT writes + React re-renders)
-            dragPreviewRef.current = { noteIds: idsToMove, beatDelta: deltaBeat, pitchDelta: deltaPitch };
+            dragPreviewRef.current = {
+                noteIds: idsToMove,
+                beatDelta: deltaBeat,
+                pitchDelta: deltaPitch,
+                isDuplicate: drag.mode === 'duplicate',
+            };
             dragRef.current._prevDeltaBeat = deltaBeat;
             dragRef.current._prevDeltaPitch = deltaPitch;
             draw();
@@ -533,16 +658,25 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             if (meaningfulDrag) {
                 const visiblePitches = getVisiblePitches(scaleType, scaleRoot, isFolded);
                 const hitIds = new Set<string>();
-                for (const note of notes) {
-                    const row = visiblePitches.indexOf(note.pitch);
-                    if (row === -1) {
-                        continue;
+                const testRubberBand = (noteList: MidiNote[]): void => {
+                    for (const note of noteList) {
+                        const row = visiblePitches.indexOf(note.pitch);
+                        if (row === -1) {
+                            continue;
+                        }
+                        const nx = note.startBeat * beatWidth;
+                        const ny = row * ROW_HEIGHT;
+                        const nw = note.duration * beatWidth;
+                        if (nx + nw > rb.x && nx < rb.x + rb.w && ny + ROW_HEIGHT > rb.y && ny < rb.y + rb.h) {
+                            hitIds.add(note.id);
+                        }
                     }
-                    const nx = note.startBeat * beatWidth;
-                    const ny = row * ROW_HEIGHT;
-                    const nw = note.duration * beatWidth;
-                    if (nx + nw > rb!.x && nx < rb!.x + rb!.w && ny + ROW_HEIGHT > rb!.y && ny < rb!.y + rb!.h) {
-                        hitIds.add(note.id);
+                };
+                testRubberBand(notes);
+                if (openedClipNotes) {
+                    for (const [oid, openedNotes] of Object.entries(openedClipNotes)) {
+                        if (oid === clipId) continue;
+                        testRubberBand(openedNotes);
                     }
                 }
                 setSelectedNoteIds(e.shiftKey ? (prev) => new Set([...prev, ...hitIds]) : hitIds);
@@ -571,78 +705,134 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         if (drag.mode === 'draw') {
             const dp = drawPreviewRef.current;
             if (dp) {
-                const note = addMidiNote(clipId, dp.pitch, dp.beat, dp.duration, 100);
+                // A9: new notes go to focusedClipId (or primary clipId if not set)
+                const targetClipId = focusedClipId ?? clipId;
+                const note = addMidiNote(targetClipId, dp.pitch, dp.beat, dp.duration, 100);
                 pushUndoEntry(
                     'Draw MIDI note',
-                    () => removeMidiNote(clipId, note.id),
-                    () => addMidiNote(clipId, dp.pitch, dp.beat, dp.duration, 100)
+                    () => removeMidiNote(targetClipId, note.id),
+                    () => addMidiNote(targetClipId, dp.pitch, dp.beat, dp.duration, 100)
                 );
             }
             drawPreviewRef.current = null;
             draw();
         } else if (drag.mode !== 'none' && drag.noteId) {
+            // A9: use the clip that owns the dragged note (may be different from primary clipId)
+            const noteClipId = drag.ownerClipId ?? clipId;
             const { noteId, origBeat, origDuration, mode } = drag;
             const preview = dragPreviewRef.current;
 
-            if (mode === 'move' && preview && (preview.beatDelta !== 0 || preview.pitchDelta !== 0)) {
+            if (mode === 'duplicate' && preview && (preview.beatDelta !== 0 || preview.pitchDelta !== 0)) {
+                // Alt+drag duplicate: originals stay, copies land at final positions (R-A1)
+                const dupIds = [...preview.noteIds];
+                // A9: map each note to its owning clip
+                const { noteToClip, allNotesMap } = buildNoteOwnershipMaps(notes, clipId, openedClipNotes);
+                // Group source notes by their owning clip
+                const byClip = new Map<string, MidiNote[]>();
+                for (const id of dupIds) {
+                    const n = allNotesMap.get(id);
+                    if (!n) continue;
+                    const cid = noteToClip.get(id) ?? noteClipId;
+                    const arr = byClip.get(cid) ?? [];
+                    arr.push(n);
+                    byClip.set(cid, arr);
+                }
+                const allCopyIds: string[] = [];
+                const copyByClip: Array<{ clipId: string; ids: string[] }> = [];
+                for (const [cid, srcNotes] of byClip) {
+                    const copies = batchAddMidiNotes(
+                        cid,
+                        srcNotes.map((n) => ({
+                            pitch: Math.max(0, Math.min(127, n.pitch + preview.pitchDelta)),
+                            startBeat: Math.max(0, n.startBeat + preview.beatDelta),
+                            duration: n.duration,
+                            velocity: n.velocity,
+                        }))
+                    );
+                    const ids = copies.map((c) => c.id);
+                    allCopyIds.push(...ids);
+                    copyByClip.push({ clipId: cid, ids });
+                }
+                pushUndoEntry(
+                    `Duplicate ${dupIds.length} note${dupIds.length > 1 ? 's' : ''}`,
+                    () => { for (const entry of copyByClip) removeNotesByIds(entry.clipId, entry.ids); },
+                    () => {
+                        for (const [cid, srcNotes] of byClip) {
+                            batchAddMidiNotes(
+                                cid,
+                                srcNotes.map((n) => ({
+                                    pitch: Math.max(0, Math.min(127, n.pitch + preview.pitchDelta)),
+                                    startBeat: Math.max(0, n.startBeat + preview.beatDelta),
+                                    duration: n.duration,
+                                    velocity: n.velocity,
+                                }))
+                            );
+                        }
+                    }
+                );
+                setSelectedNoteIds(new Set(allCopyIds));
+            } else if (mode === 'move' && preview && (preview.beatDelta !== 0 || preview.pitchDelta !== 0)) {
                 const movedIds = [...preview.noteIds];
-                // Commit the final positions — exactly one midiStore.set() per note instead of 60/s
+                // A9: map each note to its owning clip for multi-clip moves
+                const { noteToClip: noteToClip2, allNotesMap: allNotesMap2 } = buildNoteOwnershipMaps(notes, clipId, openedClipNotes);
                 const origPositions = movedIds.map((id) => {
-                    const n = notes.find((nn) => nn.id === id);
-                    return { id, beat: n?.startBeat ?? 0, pitch: n?.pitch ?? 0 };
+                    const n = allNotesMap2.get(id);
+                    return { id, clipId: noteToClip2.get(id) ?? noteClipId, beat: n?.startBeat ?? 0, pitch: n?.pitch ?? 0 };
                 });
                 const newPositions = origPositions.map((p) => ({
                     id: p.id,
+                    clipId: p.clipId,
                     beat: Math.max(0, p.beat + preview.beatDelta),
-                    pitch: Math.max(0, Math.min(127, p.pitch + preview.pitchDelta)),
+                    // R-A12: snap final pitch to scale when constrain is active
+                    pitch: snapToScalePitch(Math.max(0, Math.min(127, p.pitch + preview.pitchDelta))),
                 }));
                 for (const p of newPositions) {
-                    moveMidiNote(clipId, p.id, p.pitch, p.beat);
+                    moveMidiNote(p.clipId, p.id, p.pitch, p.beat);
                 }
                 pushUndoEntry(
                     `Move ${movedIds.length} note${movedIds.length > 1 ? 's' : ''}`,
                     () => {
                         for (const p of origPositions) {
-                            moveMidiNote(clipId, p.id, p.pitch, p.beat);
+                            moveMidiNote(p.clipId, p.id, p.pitch, p.beat);
                         }
                     },
                     () => {
                         for (const p of newPositions) {
-                            moveMidiNote(clipId, p.id, p.pitch, p.beat);
+                            moveMidiNote(p.clipId, p.id, p.pitch, p.beat);
                         }
                     }
                 );
             } else if (mode === 'resize-left' && preview?.beatOverride?.has(noteId)) {
                 const override = preview.beatOverride.get(noteId)!;
-                const note = notes.find((n) => n.id === noteId);
+                const note = notes.find((n) => n.id === noteId) ?? openedClipNotes?.[noteClipId]?.find((n) => n.id === noteId);
                 if (note && (override.beat !== origBeat || override.duration !== origDuration)) {
-                    resizeMidiNote(clipId, noteId, override.beat, override.duration);
+                    resizeMidiNote(noteClipId, noteId, override.beat, override.duration);
                     pushUndoEntry(
                         'Resize MIDI note',
                         () => {
-                            removeMidiNote(clipId, noteId);
-                            addMidiNote(clipId, note.pitch, origBeat, origDuration, note.velocity);
+                            removeMidiNote(noteClipId, noteId);
+                            addMidiNote(noteClipId, note.pitch, origBeat, origDuration, note.velocity);
                         },
                         () => {
-                            removeMidiNote(clipId, noteId);
-                            addMidiNote(clipId, note.pitch, override.beat, override.duration, note.velocity);
+                            removeMidiNote(noteClipId, noteId);
+                            addMidiNote(noteClipId, note.pitch, override.beat, override.duration, note.velocity);
                         }
                     );
                 }
             } else if (mode === 'resize-right' && preview?.durationOverride?.has(noteId)) {
                 const newDuration = preview.durationOverride.get(noteId)!;
-                const note = notes.find((n) => n.id === noteId);
+                const note = notes.find((n) => n.id === noteId) ?? openedClipNotes?.[noteClipId]?.find((n) => n.id === noteId);
                 if (note && newDuration !== origDuration) {
-                    resizeMidiNote(clipId, noteId, undefined, newDuration);
+                    resizeMidiNote(noteClipId, noteId, undefined, newDuration);
                     pushUndoEntry(
                         'Resize MIDI note',
                         () => {
-                            removeMidiNote(clipId, noteId);
-                            addMidiNote(clipId, note.pitch, origBeat, origDuration, note.velocity);
+                            removeMidiNote(noteClipId, noteId);
+                            addMidiNote(noteClipId, note.pitch, origBeat, origDuration, note.velocity);
                         },
                         () => {
-                            removeMidiNote(clipId, noteId);
-                            addMidiNote(clipId, note.pitch, origBeat, newDuration, note.velocity);
+                            removeMidiNote(noteClipId, noteId);
+                            addMidiNote(noteClipId, note.pitch, origBeat, newDuration, note.velocity);
                         }
                     );
                 }
@@ -689,40 +879,49 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             };
 
             const enclosed = new Set<string>();
-            for (const note of notes) {
-                const row = visiblePitches.indexOf(note.pitch);
-                if (row === -1) {
-                    continue;
-                }
-                const nx = note.startBeat * beatWidth;
-                const ny = row * ROW_HEIGHT;
-                const nw = note.duration * beatWidth;
-                const nxMax = nx + nw;
-                const nyMax = ny + ROW_HEIGHT;
+            const testLasso = (noteList: MidiNote[]): void => {
+                for (const note of noteList) {
+                    const row = visiblePitches.indexOf(note.pitch);
+                    if (row === -1) {
+                        continue;
+                    }
+                    const nx = note.startBeat * beatWidth;
+                    const ny = row * ROW_HEIGHT;
+                    const nw = note.duration * beatWidth;
+                    const nxMax = nx + nw;
+                    const nyMax = ny + ROW_HEIGHT;
 
-                if (nxMax < pathMinX || nx > pathMaxX || nyMax < pathMinY || ny > pathMaxY) {
-                    continue;
-                }
+                    if (nxMax < pathMinX || nx > pathMaxX || nyMax < pathMinY || ny > pathMaxY) {
+                        continue;
+                    }
 
-                const samples: Array<[number, number]> = [
-                    [nx, ny],
-                    [nxMax, ny],
-                    [nx, nyMax],
-                    [nxMax, nyMax],
-                    [(nx + nxMax) / 2, (ny + nyMax) / 2],
-                ];
-                let hit = samples.some(([px, py]) => pointInPolygon(px, py));
-                if (!hit) {
-                    for (const point of path) {
-                        if (point.x >= nx && point.x <= nxMax && point.y >= ny && point.y <= nyMax) {
-                            hit = true;
-                            break;
+                    const samples: Array<[number, number]> = [
+                        [nx, ny],
+                        [nxMax, ny],
+                        [nx, nyMax],
+                        [nxMax, nyMax],
+                        [nx + nw / 2, ny + ROW_HEIGHT / 2],
+                    ];
+                    let hit = samples.some(([px, py]) => pointInPolygon(px, py));
+                    if (!hit) {
+                        for (const point of path) {
+                            if (point.x >= nx && point.x <= nxMax && point.y >= ny && point.y <= nyMax) {
+                                hit = true;
+                                break;
+                            }
                         }
                     }
-                }
 
-                if (hit) {
-                    enclosed.add(note.id);
+                    if (hit) {
+                        enclosed.add(note.id);
+                    }
+                }
+            };
+            testLasso(notes);
+            if (openedClipNotes) {
+                for (const [oid, openedNotes] of Object.entries(openedClipNotes)) {
+                    if (oid === clipId) continue;
+                    testLasso(openedNotes);
                 }
             }
             setSelectedNoteIds(enclosed);
@@ -767,11 +966,11 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         const hit = hitTest(x, rawY - RULER_HEIGHT);
         if (hit) {
             const { pitch, startBeat, duration, velocity } = hit.note;
-            removeMidiNote(clipId, hit.note.id);
+            removeMidiNote(hit.ownerClipId, hit.note.id);
             pushUndoEntry(
                 'Delete MIDI note',
-                () => addMidiNote(clipId, pitch, startBeat, duration, velocity),
-                () => removeMidiNote(clipId, hit.note.id)
+                () => addMidiNote(hit.ownerClipId, pitch, startBeat, duration, velocity),
+                () => removeMidiNote(hit.ownerClipId, hit.note.id)
             );
         }
     };
@@ -789,21 +988,33 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
 
     const handleKeyDown = (e: KeyboardEvent<HTMLCanvasElement>): void => {
         if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNoteIds.size > 0) {
-            const deletedNotes = notes.filter((n) => selectedNoteIds.has(n.id)).map((n) => ({ ...n }));
-            for (const id of selectedNoteIds) {
-                removeMidiNote(clipId, id);
+            // A9: group selected notes by owning clip for multi-clip delete
+            const notesWithClip: Array<{ note: MidiNote; ownerClipId: string }> = [];
+            for (const n of notes) {
+                if (selectedNoteIds.has(n.id)) notesWithClip.push({ note: { ...n }, ownerClipId: clipId });
             }
-            if (deletedNotes.length > 0) {
+            if (openedClipNotes) {
+                for (const [oid, ns] of Object.entries(openedClipNotes)) {
+                    if (oid === clipId) continue;
+                    for (const n of ns) {
+                        if (selectedNoteIds.has(n.id)) notesWithClip.push({ note: { ...n }, ownerClipId: oid });
+                    }
+                }
+            }
+            for (const { note, ownerClipId: oid } of notesWithClip) {
+                removeMidiNote(oid, note.id);
+            }
+            if (notesWithClip.length > 0) {
                 pushUndoEntry(
-                    `Delete ${deletedNotes.length} note${deletedNotes.length > 1 ? 's' : ''}`,
+                    `Delete ${notesWithClip.length} note${notesWithClip.length > 1 ? 's' : ''}`,
                     () => {
-                        for (const n of deletedNotes) {
-                            addMidiNote(clipId, n.pitch, n.startBeat, n.duration, n.velocity);
+                        for (const { note: n, ownerClipId: oid } of notesWithClip) {
+                            addMidiNote(oid, n.pitch, n.startBeat, n.duration, n.velocity);
                         }
                     },
                     () => {
-                        for (const n of deletedNotes) {
-                            removeMidiNote(clipId, n.id);
+                        for (const { note: n, ownerClipId: oid } of notesWithClip) {
+                            removeMidiNote(oid, n.id);
                         }
                     }
                 );
@@ -812,35 +1023,205 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         }
         if (e.key === 'a' && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
-            setSelectedNoteIds(new Set(notes.map((n) => n.id)));
+            const allIds = new Set(notes.map((n) => n.id));
+            if (openedClipNotes) {
+                for (const [oid, openedNotes] of Object.entries(openedClipNotes)) {
+                    if (oid === clipId) continue;
+                    for (const n of openedNotes) allIds.add(n.id);
+                }
+            }
+            setSelectedNoteIds(allIds);
+        }
+
+        // ── A2: Ctrl/Cmd+D — Duplicate selection forward ───────────────────
+        if (e.key === 'd' && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+            e.preventDefault();
+            // Prevent global arrangement.duplicateClip shortcut from also firing
+            e.nativeEvent.stopImmediatePropagation();
+            // A9: build targets from both primary and opened clips
+            const targetsWithClip: Array<{ note: MidiNote; ownerClipId: string }> = [];
+            if (selectedNoteIds.size > 0) {
+                for (const n of notes) {
+                    if (selectedNoteIds.has(n.id)) targetsWithClip.push({ note: n, ownerClipId: clipId });
+                }
+                if (openedClipNotes) {
+                    for (const [oid, openedNotes] of Object.entries(openedClipNotes)) {
+                        if (oid === clipId) continue;
+                        for (const n of openedNotes) {
+                            if (selectedNoteIds.has(n.id)) targetsWithClip.push({ note: n, ownerClipId: oid });
+                        }
+                    }
+                }
+            } else {
+                for (const n of notes) targetsWithClip.push({ note: n, ownerClipId: clipId });
+            }
+            if (targetsWithClip.length > 0) {
+                const allTargetNotes = targetsWithClip.map((t) => t.note);
+                const selStart = Math.min(...allTargetNotes.map((n) => n.startBeat));
+                const selEnd = Math.max(...allTargetNotes.map((n) => n.startBeat + n.duration));
+                const span = selEnd - selStart;
+                // Group by clip
+                const byClip = new Map<string, MidiNote[]>();
+                for (const { note, ownerClipId: oid } of targetsWithClip) {
+                    const arr = byClip.get(oid) ?? [];
+                    arr.push(note);
+                    byClip.set(oid, arr);
+                }
+                const allCopyIds: string[] = [];
+                const copyByClip: Array<{ clipId: string; ids: string[] }> = [];
+                for (const [cid, clipNotes] of byClip) {
+                    const copies = batchAddMidiNotes(
+                        cid,
+                        clipNotes.map((n) => ({
+                            pitch: n.pitch,
+                            startBeat: n.startBeat + span,
+                            duration: n.duration,
+                            velocity: n.velocity,
+                        }))
+                    );
+                    const ids = copies.map((c) => c.id);
+                    allCopyIds.push(...ids);
+                    copyByClip.push({ clipId: cid, ids });
+                }
+                pushUndoEntry(
+                    `Duplicate ${targetsWithClip.length} note${targetsWithClip.length > 1 ? 's' : ''} forward`,
+                    () => { for (const entry of copyByClip) removeNotesByIds(entry.clipId, entry.ids); },
+                    () => {
+                        for (const [cid, clipNotes] of byClip) {
+                            batchAddMidiNotes(
+                                cid,
+                                clipNotes.map((n) => ({
+                                    pitch: n.pitch,
+                                    startBeat: n.startBeat + span,
+                                    duration: n.duration,
+                                    velocity: n.velocity,
+                                }))
+                            );
+                        }
+                    }
+                );
+                setSelectedNoteIds(new Set(allCopyIds));
+            }
+        }
+
+        // A9: helper — determine the single owning clip for all selected notes, or null if they span multiple clips
+        const getSingleClipForSelection = (): string | null => {
+            const primaryHasSelected = notes.some((n) => selectedNoteIds.has(n.id));
+            let ownerClip: string | null = primaryHasSelected ? clipId : null;
+            if (openedClipNotes) {
+                for (const [oid, openedNotes] of Object.entries(openedClipNotes)) {
+                    if (oid === clipId) continue;
+                    const hasSelected = openedNotes.some((n) => selectedNoteIds.has(n.id));
+                    if (hasSelected) {
+                        if (ownerClip !== null && ownerClip !== oid) return null; // spans multiple clips
+                        ownerClip = oid;
+                    }
+                }
+            }
+            return ownerClip;
+        };
+
+        // ── A4: L — Legato ─────────────────────────────────────────────────
+        if (e.key === 'l' && !e.metaKey && !e.ctrlKey && !e.shiftKey && !stepInput && selectedNoteIds.size > 0) {
+            const singleClip = getSingleClipForSelection();
+            if (singleClip !== null) {
+                e.preventDefault();
+                const ids = [...selectedNoteIds];
+                const clipNotesArr = singleClip === clipId ? notes : (openedClipNotes?.[singleClip] ?? []);
+                const beforeDurations = clipNotesArr
+                    .filter((n) => ids.includes(n.id))
+                    .map((n) => ({ id: n.id, duration: n.duration }));
+                legatoNotes(singleClip, ids);
+                const postNotes = getNotesForClip(singleClip);
+                const afterDurations = postNotes
+                    .filter((n) => ids.includes(n.id))
+                    .map((n) => ({ id: n.id, duration: n.duration }));
+                pushUndoEntry(
+                    'Legato notes',
+                    () => {
+                        for (const b of beforeDurations) {
+                            resizeMidiNote(singleClip, b.id, undefined, b.duration);
+                        }
+                    },
+                    () => {
+                        for (const a of afterDurations) {
+                            resizeMidiNote(singleClip, a.id, undefined, a.duration);
+                        }
+                    }
+                );
+            }
+        }
+
+        // ── A5: Shift+S — Split at cursor ──────────────────────────────────
+        if (e.key === 'S' && e.shiftKey && !e.metaKey && !e.ctrlKey && selectedNoteIds.size > 0) {
+            const singleClip = getSingleClipForSelection();
+            if (singleClip !== null) {
+                e.preventDefault();
+                e.stopPropagation();
+                const playheadBeat = getTransportState()?.playheadPosition ?? 0;
+                const ids = [...selectedNoteIds];
+                const snapshotBefore = getNotesForClip(singleClip).map((n) => ({ ...n }));
+                splitNoteAtBeat(singleClip, ids, playheadBeat);
+                const snapshotAfter = getNotesForClip(singleClip).map((n) => ({ ...n }));
+                pushUndoEntry(
+                    'Split notes at cursor',
+                    () => setNotesForClip(singleClip, snapshotBefore),
+                    () => setNotesForClip(singleClip, snapshotAfter)
+                );
+                setSelectedNoteIds(new Set());
+            }
+        }
+
+        // ── A6: J — Join adjacent same-pitch notes ─────────────────────────
+        if (e.key === 'j' && !e.metaKey && !e.ctrlKey && !e.shiftKey && !stepInput && selectedNoteIds.size >= 2) {
+            const singleClip = getSingleClipForSelection();
+            if (singleClip !== null) {
+                e.preventDefault();
+                const ids = [...selectedNoteIds];
+                const snapshotBefore = getNotesForClip(singleClip).map((n) => ({ ...n }));
+                joinNotes(singleClip, ids);
+                const snapshotAfter = getNotesForClip(singleClip).map((n) => ({ ...n }));
+                pushUndoEntry(
+                    'Join notes',
+                    () => setNotesForClip(singleClip, snapshotBefore),
+                    () => setNotesForClip(singleClip, snapshotAfter)
+                );
+                setSelectedNoteIds(new Set());
+            }
         }
 
         if (!stepInput && selectedNoteIds.size > 0) {
-            const selectedNotes = notes.filter((n) => selectedNoteIds.has(n.id));
+            // A9: build selected notes from both primary and opened clips, tracking owning clip
+            const selectedWithClip: Array<{ note: MidiNote; ownerClipId: string }> = [];
+            for (const n of notes) {
+                if (selectedNoteIds.has(n.id)) selectedWithClip.push({ note: n, ownerClipId: clipId });
+            }
+            if (openedClipNotes) {
+                for (const [oid, ns] of Object.entries(openedClipNotes)) {
+                    if (oid === clipId) continue;
+                    for (const n of ns) {
+                        if (selectedNoteIds.has(n.id)) selectedWithClip.push({ note: n, ownerClipId: oid });
+                    }
+                }
+            }
             if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
                 e.preventDefault();
                 const delta = e.key === 'ArrowRight' ? gridSnap : -gridSnap;
-                const before = selectedNotes.map((n) => ({ id: n.id, beat: n.startBeat }));
-                for (const n of selectedNotes) {
-                    moveMidiNote(clipId, n.id, n.pitch, Math.max(0, n.startBeat + delta));
+                const before = selectedWithClip.map(({ note: n, ownerClipId: oid }) => ({ id: n.id, clipId: oid, beat: n.startBeat, pitch: n.pitch }));
+                for (const { note: n, ownerClipId: oid } of selectedWithClip) {
+                    moveMidiNote(oid, n.id, n.pitch, Math.max(0, n.startBeat + delta));
                 }
-                const after = selectedNotes.map((n) => ({ id: n.id, beat: Math.max(0, n.startBeat + delta) }));
+                const after = selectedWithClip.map(({ note: n, ownerClipId: oid }) => ({ id: n.id, clipId: oid, beat: Math.max(0, n.startBeat + delta), pitch: n.pitch }));
                 pushUndoEntry(
-                    `Nudge ${selectedNotes.length} note${selectedNotes.length > 1 ? 's' : ''}`,
+                    `Nudge ${selectedWithClip.length} note${selectedWithClip.length > 1 ? 's' : ''}`,
                     () => {
                         for (const b of before) {
-                            const note = notes.find((nn) => nn.id === b.id);
-                            if (note) {
-                                moveMidiNote(clipId, b.id, note.pitch, b.beat);
-                            }
+                            moveMidiNote(b.clipId, b.id, b.pitch, b.beat);
                         }
                     },
                     () => {
                         for (const a of after) {
-                            const note = notes.find((nn) => nn.id === a.id);
-                            if (note) {
-                                moveMidiNote(clipId, a.id, note.pitch, a.beat);
-                            }
+                            moveMidiNote(a.clipId, a.id, a.pitch, a.beat);
                         }
                     }
                 );
@@ -849,26 +1230,21 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 e.preventDefault();
                 const semis = e.shiftKey ? 12 : 1;
                 const delta = e.key === 'ArrowUp' ? semis : -semis;
-                const before = selectedNotes.map((n) => ({ id: n.id, pitch: n.pitch }));
-                for (const n of selectedNotes) {
-                    moveMidiNote(clipId, n.id, Math.max(0, Math.min(127, n.pitch + delta)), n.startBeat);
+                const before = selectedWithClip.map(({ note: n, ownerClipId: oid }) => ({ id: n.id, clipId: oid, pitch: n.pitch, beat: n.startBeat }));
+                const after = selectedWithClip.map(({ note: n, ownerClipId: oid }) => ({ id: n.id, clipId: oid, pitch: Math.max(0, Math.min(127, n.pitch + delta)), beat: n.startBeat }));
+                for (const { note: n, ownerClipId: oid } of selectedWithClip) {
+                    moveMidiNote(oid, n.id, Math.max(0, Math.min(127, n.pitch + delta)), n.startBeat);
                 }
                 pushUndoEntry(
                     `Transpose ${delta > 0 ? '+' : ''}${delta} semitone${Math.abs(delta) !== 1 ? 's' : ''}`,
                     () => {
                         for (const b of before) {
-                            const note = notes.find((nn) => nn.id === b.id);
-                            if (note) {
-                                moveMidiNote(clipId, b.id, b.pitch, note.startBeat);
-                            }
+                            moveMidiNote(b.clipId, b.id, b.pitch, b.beat);
                         }
                     },
                     () => {
-                        for (const b of before) {
-                            const note = notes.find((nn) => nn.id === b.id);
-                            if (note) {
-                                moveMidiNote(clipId, b.id, Math.max(0, Math.min(127, b.pitch + delta)), note.startBeat);
-                            }
+                        for (const a of after) {
+                            moveMidiNote(a.clipId, a.id, a.pitch, a.beat);
                         }
                     }
                 );
@@ -878,12 +1254,28 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         if (stepInput) {
             if (e.key === 'ArrowRight') {
                 e.preventDefault();
-                setStepBeat((prev) => prev + gridSnap);
-            }
-            if (e.key === 'ArrowLeft') {
+                stepRecordAdvance();
+            } else if (e.key === 'ArrowLeft') {
                 e.preventDefault();
-                setStepBeat((prev) => Math.max(0, prev - gridSnap));
+                stepRecordRetreat();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                stepRecordStepUp();
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                stepRecordStepDown();
+            } else if (e.key === ' ' && e.ctrlKey) {
+                const state = stepRecordStore.value;
+                if (state) {
+                    stepRecordNoteOn(state.currentPitch);
+                    stepRecordNoteOff(state.currentPitch);
+                }
+            } else if (e.key === 'Enter') {
+                stepRecordAdvance();
+            } else if (e.key === 'Backspace') {
+                stepRecordRetreat();
             }
+
             const velocityPresets: Record<string, number> = {
                 '1': 18,
                 '2': 36,

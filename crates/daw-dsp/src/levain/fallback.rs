@@ -119,6 +119,14 @@ impl FallbackToneEngine {
         }
     }
 
+    pub fn release_all(&mut self) {
+        for voice in self.voices.iter_mut() {
+            if voice.active && !voice.releasing {
+                voice.release();
+            }
+        }
+    }
+
     /// Render one sample (mono).
     #[inline]
     pub fn tick(&mut self) -> f32 {

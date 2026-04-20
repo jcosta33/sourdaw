@@ -1,7 +1,8 @@
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { markerStore } from '../../stores/markerStore';
-import { automationStore } from '#/modules/Automation';
+import { automationStore } from '#/modules/Automation/stores';
+import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
 import { shiftMidiNotesAfterBeat } from '#/modules/MIDI/useCases';
 
 export function insertTime(atBeat: number, durationBeats: number): void {
@@ -53,6 +54,28 @@ export function insertTime(atBeat: number, durationBeats: number): void {
         });
     }
 
+    // Tempo changes at or after the insertion point must shift forward.
+    const tempoState = tempoMapStore.value;
+    if (tempoState) {
+        tempoMapStore.set({
+            ...tempoState,
+            changes: tempoState.changes.map((c) =>
+                c.beat >= atBeat ? { ...c, beat: c.beat + durationBeats } : c
+            ),
+        });
+    }
+
+    // Time signature changes at or after the insertion point must shift forward.
+    const timeSigState = timeSignatureMapStore.value;
+    if (timeSigState) {
+        timeSignatureMapStore.set({
+            ...timeSigState,
+            changes: timeSigState.changes.map((c) =>
+                c.beat >= atBeat ? { ...c, beat: c.beat + durationBeats } : c
+            ),
+        });
+    }
+
     // MIDI notes and CC/pitch-bend events live in absolute beat coordinates,
     // so they must follow the same global time shift. Without this the clip
     // rectangles move to the right but the notes inside stay put.
@@ -68,7 +91,6 @@ export function duplicateTimeRange(startBeat: number, endBeat: number): void {
         return;
     }
 
-    let nextId = Date.now();
     setTrackState({
         ...state,
         tracks: state.tracks.map((track) => {
@@ -80,7 +102,7 @@ export function duplicateTimeRange(startBeat: number, endBeat: number): void {
             );
             const duplicated = clipsInRange.map((c) => ({
                 ...c,
-                id: `clip-dup-${nextId++}`,
+                id: `clip-dup-${crypto.randomUUID()}`,
                 startBeat: c.startBeat + duration,
                 endBeat: c.endBeat + duration,
             }));

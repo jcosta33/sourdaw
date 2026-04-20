@@ -51,6 +51,14 @@ Never:
 
 A refactor is compliant only if it improves or preserves the _meaning_ of the boundary, not just the path.
 
+### 2.1 The Three Strikes Rule & Strategic Backtracking
+
+If you attempt to fix an architectural violation or compilation error 3 times and fail, **you must stop**. You are on the wrong architectural path. Do not enter a hallucination loop patching broken abstractions. Discard your current approach, reread the module contracts, and formulate a fundamentally different strategy.
+
+### 2.2 Blast Radius Awareness
+
+When fixing violations, do not suffer from tunnel vision. Trace the upstream callers and downstream dependencies of the files you move. Use the TypeScript compiler (`pnpm typecheck`) to exhaustively navigate the blast radius of your changes.
+
 ---
 
 ## 3. Why Compliance Matters

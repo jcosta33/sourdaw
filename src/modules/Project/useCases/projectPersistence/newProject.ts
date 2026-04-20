@@ -53,6 +53,12 @@ export function newProject(name = 'Untitled Project'): void {
         updatedAt: Date.now(),
         dirty: false,
         loading: false,
+        keyRoot: 0,
+        scaleName: 'chromatic',
+        tuning: {
+            name: 'Equal Temperament',
+            frequencies: Array.from({ length: 128 }, (_, i) => 440 * Math.pow(2, (i - 69) / 12)),
+        },
         initialized: true,
     });
     removeProjectJson();

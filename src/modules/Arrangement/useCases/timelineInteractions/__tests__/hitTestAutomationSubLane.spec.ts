@@ -33,7 +33,7 @@ vi.mock('#/modules/Workspace/stores', async (importOriginal) => {
     };
 });
 
-vi.mock('#/modules/Automation', async (importOriginal) => {
+vi.mock('#/modules/Automation/stores', async (importOriginal) => {
     const actual = await importOriginal<any>();
     return {
         ...actual,

@@ -34,7 +34,7 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
     getTransportState: mocks.getTransportState,
 }));
 
-vi.mock('#/modules/Automation', async (importOriginal) => ({
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     recordAutomationValue: mocks.recordAutomationValue,
 }));

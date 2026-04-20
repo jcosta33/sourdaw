@@ -1,4 +1,5 @@
 import { type ReactElement, type ReactNode, useState } from 'react';
+import { Stack, Row, Grid } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { Activity, Flame, Radio, Search, SlidersHorizontal, Sun, Zap } from 'lucide-react';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
@@ -212,18 +213,18 @@ const LensBar = ({
     value: number;
     accentColor: string;
 }): ReactElement => (
-    <div className="space-y-1">
-        <div className="flex items-center justify-between gap-2 text-[9px] text-muted-foreground">
+    <Stack gap={1}>
+        <Row justify="between" gap={2} className="text-[9px] text-muted-foreground">
             <span>{label}</span>
             <span className="font-mono text-[8px] text-foreground/80">{Math.round(value * 100)}%</span>
-        </div>
+        </Row>
         <div className="h-1.5 rounded-full bg-white/6">
             <div
                 className="h-full rounded-full"
                 style={{ width: `${Math.round(value * 100)}%`, backgroundColor: accentColor }}
             />
         </div>
-    </div>
+    </Stack>
 );
 
 const ControlCard = ({
@@ -341,17 +342,17 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         <div className="gluten-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
             <div className="grid h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)_19rem] gap-3">
                 <DawPluginRail className="gluten-window p-3" scrollable={false}>
-                    <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1">
+                    <Row align="start" justify="between" gap={3}>
+                        <Stack gap={1}>
                             <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
                                 Presets
                             </div>
                             <div className="text-[15px] font-semibold text-foreground">Gluten</div>
-                        </div>
+                        </Stack>
                         <DawPluginLed tone="lavender">{filteredPresets.length} ready</DawPluginLed>
-                    </div>
+                    </Row>
 
-                    <label className="gluten-window flex items-center gap-2 px-3 py-2">
+                    <Row as="label" gap={2} className="gluten-window px-3 py-2">
                         <Search className="size-3.5 text-muted-foreground/55" />
                         <input
                             value={search}
@@ -360,9 +361,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             className="min-w-0 flex-1 bg-transparent text-[11px] text-foreground outline-none placeholder:text-muted-foreground/45"
                             aria-label="Search Gluten presets"
                         />
-                    </label>
+                    </Row>
 
-                    <div className="flex flex-wrap gap-1.5">
+                    <Row wrap gap={1.5}>
                         {CATEGORIES.map((entry) => {
                             const active = category === entry;
                             return (
@@ -377,9 +378,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 </DawPluginChip>
                             );
                         })}
-                    </div>
+                    </Row>
 
-                    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
+                    <Stack grow gap={2} className="min-h-0 overflow-y-auto pr-1">
                         {filteredPresets.length > 0 ? (
                             filteredPresets.map((preset) => {
                                 const active = preset.patch.name === patch.name;
@@ -396,21 +397,21 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 );
                             })
                         ) : (
-                            <div className="gluten-window flex flex-1 items-center justify-center px-4 py-6 text-center text-[11px] leading-5 text-muted-foreground">
+                            <Stack grow align="center" justify="center" className="gluten-window px-4 py-6 text-center text-[11px] leading-5 text-muted-foreground">
                                 No preset matches that search yet. Try another category or a looser word.
-                            </div>
+                            </Stack>
                         )}
-                    </div>
+                    </Stack>
                 </DawPluginRail>
 
-                <section className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-1">
-                    <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-2">
+                <Stack gap={3} className="min-h-0 min-w-0 overflow-y-auto pr-1">
+                    <Row align="start" justify="between" gap={3}>
+                        <Stack gap={2}>
                             <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
                                 Dynamics cockpit
                             </div>
                             <div className="text-[16px] font-semibold text-foreground">{patch.name}</div>
-                        </div>
+                        </Stack>
 
                         <DawPluginMetricStrip>
                             <DawPluginMetricTile
@@ -438,18 +439,20 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 detail="Lookahead cost"
                             />
                         </DawPluginMetricStrip>
-                    </div>
+                    </Row>
 
-                    <div className="grid grid-cols-4 gap-2">
+                    <Grid cols={4} gap={2}>
                         {TOPOLOGIES.map((topology) => {
                             const meta = TOPOLOGY_META[topology];
                             const Icon = meta.icon;
                             const active = patch.topology === topology;
                             return (
-                                <button
+                                <Stack
                                     key={topology}
-                                    type="button"
-                                    className={`gluten-window flex flex-col items-start gap-2 px-3 py-2 text-left transition-all ${
+                                    as="button"
+                                    align="start"
+                                    gap={2}
+                                    className={`gluten-window px-3 py-2 text-left transition-all ${
                                         active
                                             ? 'border-white/18 bg-white/[0.035]'
                                             : 'hover:border-white/12 hover:bg-white/[0.02]'
@@ -457,42 +460,42 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     style={active ? { borderColor: meta.color } : undefined}
                                     onClick={() => setGlutenParamWithAudio(deviceId, 'topology', topology)}
                                 >
-                                    <div className="flex w-full items-center justify-between gap-3">
-                                        <div className="flex items-center gap-2">
+                                    <Row justify="between" gap={3} className="w-full">
+                                        <Row gap={2}>
                                             <div
                                                 className="rounded-full border border-white/10 p-1.5"
                                                 style={{ color: meta.color }}
                                             >
                                                 <Icon className="size-3.5" />
                                             </div>
-                                            <div>
+                                            <Stack>
                                                 <div className="text-[10px] font-semibold text-foreground">
                                                     {meta.label}
                                                 </div>
                                                 <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/42">
                                                     {meta.detail}
                                                 </div>
-                                            </div>
-                                        </div>
+                                            </Stack>
+                                        </Row>
                                         {active ? <DawPluginLed tone="lavender">Live</DawPluginLed> : null}
-                                    </div>
-                                </button>
+                                    </Row>
+                                </Stack>
                             );
                         })}
-                    </div>
+                    </Grid>
 
-                    <div className="gluten-window flex min-h-0 shrink-0 flex-col gap-3 p-3">
-                        <div className="flex items-start justify-between gap-3">
-                            <div className="space-y-1">
+                    <Stack gap={3} className="gluten-window min-h-0 shrink-0 p-3">
+                        <Row align="start" justify="between" gap={3}>
+                            <Stack gap={1}>
                                 <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
                                     Quick moves
                                 </div>
                                 <div className="text-[13px] font-semibold text-foreground">
                                     {STYLE_META[patch.style].label}
                                 </div>
-                            </div>
+                            </Stack>
 
-                            <div className="flex flex-wrap justify-end gap-1.5">
+                            <Row wrap justify="end" gap={1.5}>
                                 {STYLES.map((style) => {
                                     const active = patch.style === style;
                                     return (
@@ -507,11 +510,11 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         </DawPluginChip>
                                     );
                                 })}
-                            </div>
-                        </div>
+                            </Row>
+                        </Row>
 
-                        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_3.75rem] gap-3">
-                            <div className="flex min-h-0 flex-col gap-3">
+                        <Grid gap={3} className="min-h-0 flex-1 grid-cols-[minmax(0,1fr)_3.75rem]">
+                            <Stack gap={3} className="min-h-0">
                                 <div className="overflow-x-auto">
                                     <GlutenCurve
                                         threshold={patch.threshold}
@@ -531,7 +534,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 <div className="overflow-x-auto">
                                     <GrHistory grDb={grDb} width={420} height={50} accentColor={accentColor} />
                                 </div>
-                                <div className="grid grid-cols-3 gap-2">
+                                <Grid cols={3} gap={2}>
                                     <DawPluginInsetCard
                                         className="gluten-window"
                                         title="Detector lens"
@@ -603,8 +606,8 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                             />
                                         </DawPluginReadoutList>
                                     </DawPluginInsetCard>
-                                </div>
-                            </div>
+                                </Grid>
+                            </Stack>
 
                             <GrMeter
                                 grDb={grDb}
@@ -614,13 +617,13 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 height={236}
                                 accentColor={accentColor}
                             />
-                        </div>
-                    </div>
-                </section>
+                        </Grid>
+                    </Stack>
+                </Stack>
 
                 <DawPluginRail>
                     <ControlCard title="Clamp" detail="Threshold, ratio, and timing stay front and center.">
-                        <div className="grid grid-cols-3 gap-x-2 gap-y-3">
+                        <Grid cols={3} gapX={2} gapY={3}>
                             <Knob
                                 deviceId={deviceId}
                                 value={patch.threshold}
@@ -686,11 +689,11 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={1}
                                 defaultValue={50}
                             />
-                        </div>
+                        </Grid>
                     </ControlCard>
 
                     <ControlCard title="Finish" detail="Keep the lane honest while you blend and level.">
-                        <div className="grid grid-cols-3 gap-x-2 gap-y-3">
+                        <Grid cols={3} gapX={2} gapY={3}>
                             <Knob
                                 deviceId={deviceId}
                                 value={patch.makeup}
@@ -757,8 +760,8 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 defaultValue={0}
                                 unit="mix"
                             />
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
+                        </Grid>
+                        <Row wrap gap={1.5}>
                             <ToggleChip
                                 label="Auto rel"
                                 active={patch.autoRelease}
@@ -785,14 +788,14 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     setGlutenParamWithAudio(deviceId, 'gainMatchBypass', !patch.gainMatchBypass)
                                 }
                             />
-                        </div>
+                        </Row>
                     </ControlCard>
 
                     <ControlCard
                         title="Detector"
                         detail="Sidechain filters and listen modes live together instead of hiding in the header."
                     >
-                        <div className="grid grid-cols-3 gap-x-2 gap-y-3">
+                        <Grid cols={3} gapX={2} gapY={3}>
                             <Knob
                                 deviceId={deviceId}
                                 value={patch.scHpfFreq}
@@ -857,9 +860,9 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 step={1}
                                 defaultValue={2}
                             />
-                        </div>
-                        <div className="space-y-2">
-                            <div className="flex flex-wrap gap-1.5">
+                        </Grid>
+                        <Stack gap={2}>
+                            <Row wrap gap={1.5}>
                                 <ToggleChip
                                     label="HPF"
                                     active={patch.scHpfEnabled}
@@ -890,8 +893,8 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         setGlutenParamWithAudio(deviceId, 'extSidechain', !patch.extSidechain)
                                     }
                                 />
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
+                            </Row>
+                            <Row wrap gap={1.5}>
                                 {(['rms', 'peak'] as const).map((mode) => {
                                     const active = patch.detection === mode;
                                     return (
@@ -920,8 +923,8 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         </DawPluginChip>
                                     );
                                 })}
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
+                            </Row>
+                            <Row wrap gap={1.5}>
                                 {[0, 1, 2].map((thrust) => {
                                     const labels = ['Thrust off', 'Thrust med', 'Thrust loud'];
                                     const active = patch.thrust === thrust;
@@ -937,81 +940,81 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         </DawPluginChip>
                                     );
                                 })}
-                            </div>
-                        </div>
+                            </Row>
+                        </Stack>
                     </ControlCard>
 
                     <ControlCard title="Character" detail="The last mile changes with the topology you picked.">
                         {patch.topology === 'fet' ? (
-                            <div className="grid grid-cols-3 gap-x-2 gap-y-3">
-                                <Knob
-                                    deviceId={deviceId}
-                                    value={patch.inputGain}
-                                    param="inputGain"
-                                    label="Input"
-                                    min={-12}
-                                    max={24}
-                                    step={0.5}
-                                    defaultValue={0}
-                                    unit="dB"
-                                />
-                                <Knob
-                                    deviceId={deviceId}
-                                    value={patch.outputGain}
-                                    param="outputGain"
-                                    label="Output"
-                                    min={-24}
-                                    max={24}
-                                    step={0.5}
-                                    defaultValue={0}
-                                    unit="dB"
-                                />
-                                <Knob
-                                    deviceId={deviceId}
-                                    value={patch.xfmrDrive}
-                                    param="xfmrDrive"
-                                    label="Xfmr"
-                                    min={0}
-                                    max={3}
-                                    step={0.01}
-                                    defaultValue={1.2}
-                                />
-                                <Knob
-                                    deviceId={deviceId}
-                                    value={patch.jfetK3}
-                                    param="jfetK3"
-                                    label="Odd"
-                                    min={0}
-                                    max={0.5}
-                                    step={0.01}
-                                    defaultValue={0.15}
-                                />
-                                <Knob
-                                    deviceId={deviceId}
-                                    value={patch.xfmrK2}
-                                    param="xfmrK2"
-                                    label="Even"
-                                    min={0}
-                                    max={0.3}
-                                    step={0.01}
-                                    defaultValue={0}
-                                />
-                                <div className="col-span-3">
-                                    <ToggleChip
-                                        label="All buttons"
-                                        active={patch.allButtons}
-                                        accentColor={accentColor}
-                                        onClick={() =>
-                                            setGlutenParamWithAudio(deviceId, 'allButtons', !patch.allButtons)
-                                        }
+                            <Stack gap={3}>
+                                <Grid cols={3} gapX={2} gapY={3}>
+                                    <Knob
+                                        deviceId={deviceId}
+                                        value={patch.inputGain}
+                                        param="inputGain"
+                                        label="Input"
+                                        min={-12}
+                                        max={24}
+                                        step={0.5}
+                                        defaultValue={0}
+                                        unit="dB"
                                     />
-                                </div>
-                            </div>
+                                    <Knob
+                                        deviceId={deviceId}
+                                        value={patch.outputGain}
+                                        param="outputGain"
+                                        label="Output"
+                                        min={-24}
+                                        max={24}
+                                        step={0.5}
+                                        defaultValue={0}
+                                        unit="dB"
+                                    />
+                                    <Knob
+                                        deviceId={deviceId}
+                                        value={patch.xfmrDrive}
+                                        param="xfmrDrive"
+                                        label="Xfmr"
+                                        min={0}
+                                        max={3}
+                                        step={0.01}
+                                        defaultValue={1.2}
+                                    />
+                                    <Knob
+                                        deviceId={deviceId}
+                                        value={patch.jfetK3}
+                                        param="jfetK3"
+                                        label="Odd"
+                                        min={0}
+                                        max={0.5}
+                                        step={0.01}
+                                        defaultValue={0.15}
+                                    />
+                                    <Knob
+                                        deviceId={deviceId}
+                                        value={patch.xfmrK2}
+                                        param="xfmrK2"
+                                        label="Even"
+                                        min={0}
+                                        max={0.3}
+                                        step={0.01}
+                                        defaultValue={0}
+                                    />
+                                </Grid>
+                                <ToggleChip
+                                    label="All buttons"
+                                    active={patch.allButtons}
+                                    accentColor={accentColor}
+                                    onClick={() =>
+                                        setGlutenParamWithAudio(deviceId, 'allButtons', !patch.allButtons)
+                                    }
+                                />
+                            </Stack>
                         ) : null}
 
                         {patch.topology === 'opto' ? (
-                            <div className="space-y-2">
-                                <div className="flex flex-wrap gap-1.5">
+                            <Stack gap={2}>
+                                <Row wrap gap={1.5}>
                                     {[false, true].map((mode, index) => {
                                         const labels = ['Compress', 'Limit'];
                                         const active = patch.limitMode === mode;
@@ -1025,16 +1028,16 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                             />
                                         );
                                     })}
-                                </div>
+                                </Row>
                                 <p className="text-[10px] leading-4 text-muted-foreground">
                                     Limit leans harder on the cell. Compress lets it breathe.
                                 </p>
-                            </div>
+                            </Stack>
                         ) : null}
 
                         {patch.topology === 'diode' ? (
-                            <div className="space-y-2">
-                                <div className="flex flex-wrap gap-1.5">
+                            <Stack gap={2}>
+                                <Row wrap gap={1.5}>
                                     {[1, 2, 3, 4, 5].map((value) => {
                                         const active = patch.recovery === value;
                                         return (
@@ -1047,16 +1050,16 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                             />
                                         );
                                     })}
-                                </div>
+                                </Row>
                                 <p className="text-[10px] leading-4 text-muted-foreground">
                                     Lower values grab harder. Higher values relax into the tail.
                                 </p>
-                            </div>
+                            </Stack>
                         ) : null}
 
                         {patch.topology === 'vca' ? (
-                            <div className="space-y-3">
-                                <div className="grid grid-cols-2 gap-2">
+                            <Stack gap={3}>
+                                <Grid cols={2} gap={2}>
                                     <Knob
                                         deviceId={deviceId}
                                         value={patch.vcaCharacter}
@@ -1077,8 +1080,8 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         step={1}
                                         defaultValue={1}
                                     />
-                                </div>
-                                <div className="flex flex-wrap gap-1.5">
+                                </Grid>
+                                <Row wrap gap={1.5}>
                                     {[false, true].map((mode, index) => {
                                         const labels = ['Feedback', 'Feed forward'];
                                         const active = patch.feedForward === mode;
@@ -1092,13 +1095,13 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                             />
                                         );
                                     })}
-                                </div>
-                            </div>
+                                </Row>
+                            </Stack>
                         ) : null}
                     </ControlCard>
 
                     <ControlCard title="Stage two" detail="Blend a second topology in when the first one needs backup.">
-                        <div className="flex flex-wrap gap-1.5">
+                        <Row wrap gap={1.5}>
                             {stageTwoOptions.map((topology) => {
                                 const active = patch.blendTopology === topology;
                                 return (
@@ -1111,7 +1114,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     />
                                 );
                             })}
-                        </div>
+                        </Row>
                     </ControlCard>
                 </DawPluginRail>
             </div>

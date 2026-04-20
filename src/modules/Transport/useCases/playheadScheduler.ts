@@ -5,13 +5,18 @@ import { getTempoAtBeat } from '../models/TempoMap';
 import { startRecording, stopRecording, addTakeLane, addTake } from '#/modules/Arrangement/useCases';
 import { trackStore, takeLaneStore } from '#/modules/Arrangement/stores';
 import { evaluateFollowActions } from './evaluateFollowActions';
-import { startAutomationRecording, stopAutomationRecording } from '#/modules/Automation';
+import { 
+    startAutomationRecording, 
+    stopAutomationRecording, 
+    applyModulation,
+} from '#/modules/Automation/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     stopAllScheduled,
     startAudioRecording,
     stopAudioRecording,
     getAudioContext,
+    audioEngine,
 } from '#/modules/AudioEngine/useCases';
 import { scheduleMetronome, resetMetronomeBeat } from './scheduling/scheduleMetronome';
 import { scheduleMidiNotes } from './scheduling/scheduleMidiNotes';
@@ -43,9 +48,9 @@ function stopActiveSources(sources: AudioBufferSourceNode[], ctx: BaseAudioConte
 // §28.1 / §107.1 — Coalesce scheduler mutables into a single holder so
 // the active playback session lives behind one handle. Mutation is still
 // only done from within this file; the holder object prevents importers
-// from rebinding any of these via \`export let\`.
+// from rebinding any of these via `export let`.
 const schedulerSession = {
-    timerId: null as ReturnType<typeof setTimeout> | null,
+    worker: null as Worker | null,
     lastTickTime: 0,
     accumulatedPosition: 0,
     lastScheduledBeat: -1,
@@ -146,6 +151,16 @@ export function startPlayheadScheduler(): void {
 
         schedulerSession.accumulatedPosition = newPosition;
         playheadPositionRef.current = newPosition;
+        
+        // Sync to AudioEngine for real-time DSP (SAB-backed)
+        audioEngine.setTransportInfo(
+            newPosition, 
+            currentTempo, 
+            current.isPlaying,
+            current.loopStart,
+            current.loopEnd,
+            current.isLooping
+        );
 
         const hasArmedTracks = trackStore.value?.tracks.some((t) => t.armed) ?? false;
         if (
@@ -218,20 +233,28 @@ export function startPlayheadScheduler(): void {
         );
         applyVcaGains();
         applyAutomation(newPosition);
+        applyModulation(newPosition);
 
         schedulerSession.lastScheduledBeat = scheduleUpTo;
-
-        schedulerSession.timerId = setTimeout(tick, current.scheduleGrainMs ?? grainMs);
     };
 
-    schedulerSession.timerId = setTimeout(tick, grainMs);
+    if (!schedulerSession.worker) {
+        schedulerSession.worker = new Worker(new URL('../workers/schedulerWorker.ts', import.meta.url), { type: 'module' });
+        schedulerSession.worker.onmessage = (e) => {
+            if (e.data?.type === 'tick') {
+                tick();
+            }
+        };
+    }
+    schedulerSession.worker.postMessage({ type: 'start', interval: grainMs });
 }
 
 export function stopPlayheadScheduler(): void {
     stopAutomationRecording();
-    if (schedulerSession.timerId !== null) {
-        clearTimeout(schedulerSession.timerId);
-        schedulerSession.timerId = null;
+    if (schedulerSession.worker) {
+        schedulerSession.worker.postMessage({ type: 'stop' });
+        schedulerSession.worker.terminate();
+        schedulerSession.worker = null;
     }
     if (schedulerSession.punchRecordingActive) {
         stopAudioRecording();

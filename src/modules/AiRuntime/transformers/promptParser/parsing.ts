@@ -136,7 +136,7 @@ export function tryParameterizedPath(normalized: string, context: ProjectContext
     }
 
     if (/^quantize\s+(note\s+)?lengths?|^quantize\s+durations?/i.test(normalized) && selectedClipId) {
-        const gridMatch = normalized.match(/(?:to\s+)?(?:1\/)?(\\d+)/i);
+        const gridMatch = normalized.match(/(?:to\s+)?(?:1\/)?(\d+)/i);
         const gridSize = gridMatch?.[1] ? 1 / parseInt(gridMatch[1], 10) : 0.25;
         return [{ type: 'quantizeNoteLengths', payload: { clipId: selectedClipId, gridSize } }];
     }

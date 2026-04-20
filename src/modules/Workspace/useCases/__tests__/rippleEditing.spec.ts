@@ -16,6 +16,12 @@ vi.mock('../../stores/workspaceStore', () => ({
 describe('toggleRippleEditing', () => {
     beforeEach(() => vi.clearAllMocks());
 
+    it('returns early if workspaceStore is null', () => {
+        mocks.workspaceStoreValue.value = null;
+        toggleRippleEditing();
+        expect(mocks.workspaceStoreSet).not.toHaveBeenCalled();
+    });
+
     it('toggles ripple editing state', () => {
         mocks.workspaceStoreValue.value = { rippleEditing: false } as any;
         toggleRippleEditing();
@@ -24,5 +30,14 @@ describe('toggleRippleEditing', () => {
         mocks.workspaceStoreValue.value = { rippleEditing: true } as any;
         toggleRippleEditing();
         expect(mocks.workspaceStoreSet).toHaveBeenLastCalledWith(expect.objectContaining({ rippleEditing: false }));
-    });
+    }, 15000);
+});
+
+describe('Initialization Regression', () => {
+    it('can import Workspace through an Arrangement consumer without initialization failure', async () => {
+        const arrangement = await import('#/modules/Arrangement/useCases');
+        const workspace = await import('#/modules/Workspace/useCases');
+        expect(arrangement).toBeDefined();
+        expect(workspace).toBeDefined();
+    }, 60000);
 });

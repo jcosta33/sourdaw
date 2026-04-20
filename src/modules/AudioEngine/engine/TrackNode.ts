@@ -5,6 +5,7 @@ import { DEVICE_FACTORIES } from '../useCases/deviceResolvers/helpers';
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
 import { findWasmDescriptor } from './wasmDeviceRegistry';
 import { createNativePluginBridgeNode } from './NativePluginBridgeNode';
+import { hasSharedArrayBuffer } from '#/utils/capabilities';
 import { logger } from '#/infra/logger/appLogger';
 
 export type TrackNodeDeps = {
@@ -14,10 +15,13 @@ export type TrackNodeDeps = {
     getTrackGainNode: (id: string) => GainNode | undefined;
     getSendsForTrack: (tId: string) => SendNode[];
     pendingDevicePromises: Set<Promise<any>>;
+    transportSAB?: SharedArrayBuffer;
 };
 
 export class TrackNode {
     public strip: TrackChannelStrip;
+    /** When SAB is unavailable, getPeakLevel falls back to AnalyserNode time-domain data. */
+    private _analyserFallbackBuffer: Float32Array<ArrayBuffer> | null = null;
     // §88.3 — async plugin loads each resolve with a rebuildChain() call;
     // firing multiple of these in the same microtask produced overlapping
     // disconnect/reconnect sweeps. `_rebuildScheduled` coalesces them so at
@@ -44,20 +48,33 @@ export class TrackNode {
         const panNode = context.createStereoPanner();
         panNode.pan.value = 0;
 
-        const meterSab = new SharedArrayBuffer(4);
-        const meterNode = new AudioWorkletNode(context, 'metering-processor');
-        meterNode.port.postMessage({ type: 'init', sab: meterSab, channels: 2 });
-
         const analyserNode = context.createAnalyser();
         analyserNode.fftSize = 256;
         analyserNode.smoothingTimeConstant = 0.8;
+
+        let meterNode: AudioWorkletNode | null = null;
+        let meterBuffer: Float32Array;
+
+        if (hasSharedArrayBuffer()) {
+            const meterSab = new SharedArrayBuffer(4);
+            meterNode = new AudioWorkletNode(context, 'metering-processor');
+            meterNode.port.postMessage({ type: 'init', sab: meterSab, channels: 2 });
+            meterBuffer = new Float32Array(meterSab);
+        } else {
+            meterBuffer = new Float32Array(1);
+            this._analyserFallbackBuffer = new Float32Array(analyserNode.fftSize);
+        }
 
         gainNode.connect(preFaderTap);
         preFaderTap.connect(faderNode);
         faderNode.connect(postFaderGain);
         postFaderGain.connect(panNode);
-        panNode.connect(meterNode);
-        meterNode.connect(analyserNode);
+        if (meterNode) {
+            panNode.connect(meterNode);
+            meterNode.connect(analyserNode);
+        } else {
+            panNode.connect(analyserNode);
+        }
 
         this.strip = {
             trackId,
@@ -71,10 +88,55 @@ export class TrackNode {
             muted: false,
             soloed: false,
             deviceNodes: [],
-            meterBuffer: new Float32Array(meterSab),
+            midiFxNodes: [],
+            meterBuffer,
         };
 
         this.routeOutput();
+    }
+
+    public addMidiFx(fxId: string, fxType: 'arp' | 'velocity' | 'probability'): void {
+        this.strip.midiFxNodes.push({
+            id: fxId,
+            type: fxType,
+            bypassed: false,
+            parameterValues: {},
+        });
+        
+        // Notify native engine if bridge is active
+        const nativeDevice = this.strip.deviceNodes.find(d => d.type === 'external-plugin');
+        if (nativeDevice?.nativeDspControls) {
+            // TODO: Send command to native bridge
+        }
+    }
+
+    public removeMidiFx(fxId: string): void {
+        this.strip.midiFxNodes = this.strip.midiFxNodes.filter((f) => f.id !== fxId);
+    }
+
+    public updateMidiFxParam(fxId: string, paramId: string, value: number): void {
+        const fx = this.strip.midiFxNodes.find((f) => f.id === fxId);
+        if (fx) {
+            fx.parameterValues[paramId] = value;
+        }
+    }
+
+    public updateMidiFxBypass(fxId: string, bypassed: boolean): void {
+        const fx = this.strip.midiFxNodes.find((f) => f.id === fxId);
+        if (fx) {
+            fx.bypassed = bypassed;
+        }
+    }
+
+    public registerTuningTable(frequencies: number[]): void {
+        for (const dn of this.strip.deviceNodes) {
+            if (dn.kneadControls) {
+                dn.kneadControls.setParam('tuning-table', frequencies as any);
+            }
+            if (dn.fermenterControls) {
+                dn.fermenterControls.setParam('tuning-table', frequencies as any);
+            }
+        }
     }
 
     public setGain(gain: number): void {
@@ -95,6 +157,15 @@ export class TrackNode {
     }
 
     public getPeakLevel(): number {
+        if (this._analyserFallbackBuffer) {
+            this.strip.analyserNode.getFloatTimeDomainData(this._analyserFallbackBuffer);
+            let peak = 0;
+            for (let i = 0; i < this._analyserFallbackBuffer.length; i++) {
+                const abs = Math.abs(this._analyserFallbackBuffer[i]!);
+                if (abs > peak) peak = abs;
+            }
+            return peak;
+        }
         const peak = this.strip.meterBuffer[0]!;
         this.strip.meterBuffer[0] = 0;
         return peak;
@@ -160,7 +231,7 @@ export class TrackNode {
         s.faderNode.disconnect();
         s.postFaderGain.disconnect();
         s.panNode.disconnect();
-        s.meterNode.disconnect();
+        s.meterNode?.disconnect();
         s.analyserNode.disconnect();
 
         for (const dn of s.deviceNodes) {
@@ -195,7 +266,12 @@ export class TrackNode {
         s.preFaderTap.connect(s.faderNode);
         s.faderNode.connect(s.postFaderGain);
         s.postFaderGain.connect(s.panNode);
-        s.panNode.connect(s.analyserNode);
+        if (s.meterNode) {
+            s.panNode.connect(s.meterNode);
+            s.meterNode.connect(s.analyserNode);
+        } else {
+            s.panNode.connect(s.analyserNode);
+        }
 
         this.routeOutput();
         this.reconnectSends();
@@ -285,6 +361,7 @@ export class TrackNode {
                     context: context as AudioContext,
                     deviceId,
                     deviceType,
+                    transportSAB: this.deps.transportSAB,
                     onLoaded: (finalDn) => {
                         const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
                         if (idx !== -1) {
@@ -452,6 +529,10 @@ export class TrackNode {
         this.strip.postFaderGain.disconnect();
         this.strip.panNode.disconnect();
         this.strip.analyserNode.disconnect();
+        if (this.strip.meterNode) {
+            this.strip.meterNode.port.close();
+            this.strip.meterNode.disconnect();
+        }
         for (const dn of this.strip.deviceNodes) {
             if (dn.dispose) {
                 dn.dispose();
@@ -466,8 +547,17 @@ export class TrackNode {
                 dn.levainControls.destroy();
                 unregisterLevainDevice();
             }
+            if (dn.grandBouleControls) {
+                dn.grandBouleControls.destroy();
+            }
             if (dn.wamControls) {
                 dn.wamControls.destroy?.();
+            }
+            if (dn.nativeDspControls && 'destroy' in dn.nativeDspControls) {
+                (dn.nativeDspControls as { destroy: () => void }).destroy();
+            }
+            if (dn.type === 'proof') {
+                unregisterProofDevice(dn.deviceId);
             }
             for (const n of dn.nodes) {
                 n.disconnect();

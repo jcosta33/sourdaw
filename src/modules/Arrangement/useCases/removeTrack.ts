@@ -3,9 +3,10 @@ import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
 import { getTrackById } from '../repositories/track/getTrackById';
 import { eventBus } from '#/app/registerDependencies';
-import { automationStore } from '#/modules/Automation';
+import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { takeLaneStore } from '../stores/takeLaneStore';
+import { getAllSidechainRoutes, removeSidechainRoute } from '#/modules/Routing/useCases';
 
 export const removeTrack = inject({ eventBus })(({ eventBus }) =>
     function removeTrack(trackId: string): void {
@@ -56,6 +57,14 @@ export const removeTrack = inject({ eventBus })(({ eventBus }) =>
             takeLaneStore.set({
                 lanes: takeLane.lanes.filter((l) => l.trackId !== trackId),
             });
+        }
+
+        // Clean up sidechain routes referencing this track
+        const routes = getAllSidechainRoutes();
+        for (const route of routes) {
+            if (route.sourceTrackId === trackId || route.targetTrackId === trackId) {
+                removeSidechainRoute(route.id);
+            }
         }
 
         eventBus.emit('track.removed', { trackId });

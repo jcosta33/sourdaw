@@ -54,7 +54,7 @@ vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(() => ({ lanes: [] })),
 }));
 
-vi.mock('#/modules/Automation/stores/automationStore', () => ({
+vi.mock('#/modules/Automation/useCases/automationStore', () => ({
     automationStore: { value: { lanes: [] } },
 }));
 

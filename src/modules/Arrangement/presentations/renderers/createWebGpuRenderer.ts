@@ -323,6 +323,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
 
                         const clipDuration = clip.endBeat - clip.startBeat;
                         const loopLen = clip.loopEnabled && clip.loopLength ? clip.loopLength : clipDuration;
+                        const midiOffset = clip.midiOffsetBeats ?? 0;
 
                         let loopOffset = 0;
                         let drawnNotes = 0;
@@ -334,24 +335,29 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
 
                                 // note.startBeat is absolute (timeline position).
                                 // Convert to clip-relative, then add loop offset.
-                                const noteRelative = note.startBeat - clip.startBeat;
+                                const noteRelative = (note.startBeat - midiOffset) - clip.startBeat;
                                 const relBeat = noteRelative + loopOffset;
-                                if (relBeat < 0 || relBeat >= clipDuration) {continue;}
+                                const noteEndRelative = relBeat + Math.max(note.duration, 0.125);
+                                if (noteEndRelative <= 0 || relBeat >= clipDuration) {continue;}
 
                                 const nx1 = beatToX(clip.startBeat + relBeat);
-                                const nx2 = beatToX(clip.startBeat + relBeat + Math.max(note.duration, 0.125));
+                                const nx2 = beatToX(clip.startBeat + noteEndRelative);
                                 if (nx2 < cx1 || nx1 > cx2) {
                                     continue;
                                 }
                                 const noteY = clipBottom - 5 * dpr - ((note.pitch - minPitch) / pitchRange) * noteAreaH;
-                                addRect(
-                                    Math.max(nx1, cx1 + 2),
-                                    noteY - dpr,
-                                    Math.min(nx2, cx2 - 2),
-                                    noteY + 2 * dpr,
-                                    '#ffffff',
-                                    alpha * 0.35
-                                );
+                                const finalX1 = Math.max(nx1, cx1 + 2);
+                                const finalX2 = Math.min(nx2, cx2 - 2);
+                                if (finalX1 < finalX2) {
+                                    addRect(
+                                        finalX1,
+                                        noteY - dpr,
+                                        finalX2,
+                                        noteY + 2 * dpr,
+                                        '#ffffff',
+                                        alpha * 0.35
+                                    );
+                                }
                                 drawnNotes++;
                             }
                             if (drawnNotes >= MAX_NOTES_PER_CLIP) {break;}
@@ -366,23 +372,42 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                         if (w >= 4) {
                             // At least 1 rect per pixel, up to max ~2000 bins to balance perf
                             const numBins = Math.min(Math.floor(w * dpr), 2000);
-                            const peaks = audioBufferCache.getWaveformPeaks(clip.audioBufferId, numBins);
+                            
+                            const buffer = audioBufferCache.get(clip.audioBufferId);
+                            if (buffer) {
+                                const offsetBeats = clip.audioOffsetBeats ?? 0;
+                                const stretchRatio = clip.stretchRatio ?? 1;
+                                const clipBeats = clip.endBeat - clip.startBeat;
+                                const secondsPerBeat = 60 / model.tempo;
+                                const sampleRate = buffer.sampleRate;
+                                const startSample = Math.max(0, Math.floor(offsetBeats * secondsPerBeat * sampleRate));
+                                const beatsConsumed = clipBeats / Math.max(stretchRatio, 0.0001);
+                                const endSample = Math.floor(startSample + beatsConsumed * secondsPerBeat * sampleRate);
 
-                            const midY = clipTop + (clipBottom - clipTop) / 2;
-                            const padding = 2 * dpr;
-                            const amplitude = (clipBottom - clipTop - padding * 2) * 0.35;
-                            const binWidth = w / numBins;
+                                const peaks = audioBufferCache.getWaveformPeaks(clip.audioBufferId, numBins, {
+                                    startSample,
+                                    endSample,
+                                });
 
-                            // White with transparency — matches MIDI note style
-                            const wfColor = '#ffffff';
+                                const midY = clipTop + (clipBottom - clipTop) / 2;
+                                const padding = 2 * dpr;
+                                const amplitude = (clipBottom - clipTop - padding * 2) * 0.35;
+                                
+                                // White with transparency — matches MIDI note style
+                                const wfColor = '#ffffff';
 
-                            for (let i = 0; i < numBins; i++) {
-                                const peakHeight = peaks[i]! * amplitude;
-                                if (peakHeight > 0.5) {
-                                    const bx1 = cx1 + i * binWidth;
-                                    const bx2 = bx1 + binWidth;
-                                    // Draw thin vertical rect for this bin's peak
-                                    addRect(bx1, midY - peakHeight, bx2, midY + peakHeight, wfColor, alpha * 0.18);
+                                const binsToDraw = peaks.length;
+                                if (binsToDraw > 0) {
+                                    const drawBinWidth = w / binsToDraw;
+
+                                    for (let i = 0; i < binsToDraw; i++) {
+                                        const peakHeight = (peaks[i] ?? 0) * amplitude;
+                                        if (peakHeight > 0.5) {
+                                            const bx1 = cx1 + i * drawBinWidth;
+                                            const bx2 = bx1 + drawBinWidth;
+                                            addRect(bx1, midY - peakHeight, bx2, midY + peakHeight, wfColor, alpha * 0.18);
+                                        }
+                                    }
                                 }
                             }
                         }

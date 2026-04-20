@@ -7,11 +7,11 @@ import { handleRemoveAutomationPoint } from '../handleRemoveAutomationPoint';
 
 import { setSnapValue } from '../../../useCases/togglePanel/panelToggles/setSnapValue';
 import { setMarkerColor } from '#/modules/Arrangement/useCases';
-import { addAutomationLane, addAutomationPoint, getAutomationStoreState, removeAutomationPoint } from '#/modules/Automation';
+import { addAutomationLane, addAutomationPoint, getAutomationStoreState, removeAutomationPoint } from '#/modules/Automation/useCases';
 
 vi.mock('../../../useCases/togglePanel/panelToggles/setSnapValue', () => ({ setSnapValue: vi.fn() }));
 vi.mock('#/modules/Arrangement/useCases', () => ({ setMarkerColor: vi.fn() }));
-vi.mock('#/modules/Automation', () => ({
+vi.mock('#/modules/Automation/useCases', () => ({
     addAutomationLane: vi.fn(),
     addAutomationPoint: vi.fn(),
     removeAutomationPoint: vi.fn(),

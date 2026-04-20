@@ -6,7 +6,8 @@ import { cn } from '#/utils/Styles/cn';
 import { MidiLearnButton } from '#/modules/Arrangement/presentations/views';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
-import { addAutomationLane, removeAutomationLane, automationStore } from '#/modules/Automation';
+import { automationStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
+import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases';
 import { useStore } from '#/infra/store/useStore';
 import { type Device } from '../../../models/TrackViewTypes';
 
@@ -70,8 +71,28 @@ function formatDisplayValue(value: number, param: DeviceParameter): string {
 
 export const DeviceParameterControl = ({ param, device, trackId }: DeviceParameterControlProps): ReactElement => {
     const autoState = useStore<DeviceAutomationState>(automationStore, { lanes: [] });
+    const modState = useStore(modulationStore, { modulators: [] });
+    const modRtState = useStore(modulationRuntimeStore, { runtimeValues: {} });
+
+    // Aggregated modulation amount for this parameter
+    const modulation = (() => {
+        let total = 0;
+        for (const mod of modState.modulators) {
+            if (!mod.enabled) continue;
+            const val = modRtState.runtimeValues[mod.id] ?? 0;
+            for (const mapping of mod.mappings) {
+                if (mapping.targetTrackId === trackId &&
+                    mapping.targetDeviceId === device.id &&
+                    mapping.targetParamId === param.id) {
+                    total += val * mapping.amount;
+                }
+            }
+        }
+        return Math.max(-1, Math.min(1, total));
+    })();
 
     const laneLookup = buildLaneLookup(autoState.lanes);
+
     const activeLane = laneLookup.get(`${trackId}|${param.id}`);
     const hasAutomation = !!activeLane;
 
@@ -160,6 +181,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                 fineStep={mappedFineStep}
                 defaultValue={mappedDefaultValue}
                 bipolar={!isLog && param.minValue < 0 && param.maxValue > 0}
+                modulations={modulation !== 0 ? [{ amount: modulation, color: 'var(--color-accent-cyan)' }] : undefined}
                 size={
                     param.name.toLowerCase().includes('mix') ||
                     param.name.toLowerCase().includes('dry/wet') ||

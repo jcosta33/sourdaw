@@ -3,8 +3,8 @@ import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { type Logger } from '#/utils/Logger/Logger';
 
-/** Avoid circular import: toasterSubscriber → engineAccess → wasmDeviceRegistry → bootstrap → toasterSubscriber */
-vi.mock('#/app/bootstrap', () => ({
+/** Avoid circular import: toasterSubscriber → engineAccess → wasmDeviceRegistry → registerDependencies → toasterSubscriber */
+vi.mock('#/app/registerDependencies', () => ({
     eventBus: {
         emit: vi.fn().mockResolvedValue(undefined),
         on: vi.fn(),

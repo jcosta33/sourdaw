@@ -12,7 +12,7 @@ import { toggleCollaborationPanel } from '../../useCases/togglePanel/panelToggle
 import { toggleUndoHistory } from '../../useCases/togglePanel/panelToggles/toggleUndoHistory';
 import { useStore } from '#/infra/store/useStore';
 import { llmStatusStore } from '#/modules/AiRuntime/stores';
-import { renderQueueStore } from '#/modules/BrowserAi';
+import { renderQueueStore } from '#/modules/BrowserAi/stores';
 import { History, Users } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';

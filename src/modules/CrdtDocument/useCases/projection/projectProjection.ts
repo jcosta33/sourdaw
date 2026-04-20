@@ -1,8 +1,8 @@
 import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
-import { automationStore } from '#/modules/Automation';
+import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
-import { hydrateKneadFromTrackStore } from '#/modules/Knead';
-import { arrangementStore, projectStore } from '#/modules/Project';
+import { hydrateKneadFromTrackStore } from '#/modules/Knead/useCases';
+import { arrangementStore, projectStore } from '#/modules/Project/stores';
 import { hydrateSidechainRoutes } from '#/modules/Routing/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 

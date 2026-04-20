@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { midiStore } from '#/modules/MIDI/stores/midiStore';
+import { midiStore } from '../../../stores/midiStore';
 
 import { resizeMidiNote } from '../resizeMidiNote';
 
@@ -30,9 +30,9 @@ describe('resizeMidiNote', () => {
         expect(n?.duration).toBe(0.5);
     });
 
-    it('should enforce a minimum duration of 0.125 beats', () => {
+    it('should enforce a minimum duration of 0.0625 beats (64th note, matching addMidiNote)', () => {
         resizeMidiNote('c1', 'n1', undefined, 0.01);
-        expect(midiStore.value?.notesByClipId.c1?.[0]?.duration).toBe(0.125);
+        expect(midiStore.value?.notesByClipId.c1?.[0]?.duration).toBe(0.0625);
     });
 
     it('should not mutate when the clip or store is missing', () => {

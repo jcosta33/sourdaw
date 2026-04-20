@@ -79,7 +79,7 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
     getTransportState: mocks.getTransportState,
     setLoopRegion: mocks.setLoopRegion,
 }));
-vi.mock('#/modules/Automation', async (importOriginal) => ({
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     removeAutomationPoint: mocks.removeAutomationPoint,
     batchAddAutomationPoints: mocks.batchAddAutomationPoints,

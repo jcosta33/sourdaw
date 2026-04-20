@@ -96,6 +96,11 @@ pub fn run() {
             commands::crumbs::detect_smart_loop_points,
             commands::crumbs::arm_recording,
             commands::crumbs::stop_recording,
+            // Pitch Edit
+            commands::pitch_edit::analyze_pitch,
+            commands::pitch_edit::commit_pitch_edit,
+            // Tuning
+            commands::tuning::parse_scl,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())

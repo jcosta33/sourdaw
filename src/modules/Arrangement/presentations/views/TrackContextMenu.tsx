@@ -9,9 +9,10 @@ import { removeTrack } from '../../useCases/removeTrack';
 import { toggleSoloSafe } from '../../useCases/toggleTrackState/toggleSoloSafe';
 import { addClip } from '../../useCases/clip/addClip';
 import { renameTrack } from '../../useCases/renameTrack';
-import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack/freezeTrack';
-import { unfreezeTrack } from '../../useCases/freezeBounce/freezeTrack/unfreezeTrack';
-import { bounceInPlace, bounceToNewTrack } from '../../useCases/freezeBounce/bounceOperations';
+import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack';
+import { unfreezeTrack } from '../../useCases/freezeBounce/unfreezeTrack';
+import { flattenTrack } from '../../useCases/freezeBounce/flattenTrack';
+import { bounceTrack } from '../../useCases/freezeBounce/bounceOperations';
 import { armTrack } from '../../useCases/recording/armTrack';
 import { duplicateTrack } from '../../useCases/duplicateTrack';
 import { importAudioClipToTrack } from '../../useCases/importAudioClipToTrack';
@@ -22,6 +23,8 @@ import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonit
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
+import { BounceOptionsDialog } from '#/modules/Workspace/presentations/views';
+import { type BounceOptions } from '#/modules/Arrangement';
 
 const INPUT_MON_OPTIONS: { value: InputMonitoring; label: string }[] = [
     { value: 'auto', label: 'Auto' },
@@ -40,6 +43,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
     const [position, setPosition] = useState<MenuPosition>(null);
     const [renaming, setRenaming] = useState(false);
     const [renameValue, setRenameValue] = useState('');
+    const [showBounceDialog, setShowBounceDialog] = useState(false);
 
     const handleContextMenu = (e: MouseEvent<HTMLDivElement>) => {
         e.preventDefault();
@@ -81,6 +85,10 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
     const handleImportAudio = async (file: File) => {
         await importAudioClipToTrack(track.id, file);
         close();
+    };
+
+    const handleBounceConfirm = (options: BounceOptions) => {
+        void bounceTrack(track.id, options);
     };
 
     type MenuItem = { label: string; action: () => void; destructive?: boolean };
@@ -127,7 +135,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
               ]
             : []),
         {
-            label: track.frozen ? 'Unfreeze' : 'Freeze',
+            label: track.freezeState?.status === 'stale' ? 'Update Freeze' : track.frozen ? 'Unfreeze' : 'Freeze',
             action: () => {
                 if (track.frozen) {
                     unfreezeTrack(track.id);
@@ -137,17 +145,21 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 close();
             },
         },
+        ...(track.frozen
+            ? [
+                  {
+                      label: 'Flatten Track',
+                      action: () => {
+                          flattenTrack(track.id);
+                          close();
+                      },
+                  },
+              ]
+            : []),
         {
-            label: 'Bounce in Place',
+            label: 'Bounce...',
             action: () => {
-                bounceInPlace(track.id);
-                close();
-            },
-        },
-        {
-            label: 'Bounce to New Track',
-            action: () => {
-                bounceToNewTrack(track.id);
+                setShowBounceDialog(true);
                 close();
             },
         },
@@ -210,6 +222,13 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 }}
             />
             {children}
+
+            <BounceOptionsDialog
+                track={track}
+                open={showBounceDialog}
+                onOpenChange={setShowBounceDialog}
+                onConfirm={handleBounceConfirm}
+            />
 
             {position ? (
                 <DawContextMenuSurface

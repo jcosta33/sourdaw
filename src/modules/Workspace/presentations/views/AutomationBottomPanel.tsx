@@ -4,12 +4,12 @@ import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { useStore } from '#/infra/store/useStore';
+import { automationStore } from '#/modules/Automation/stores';
 import {
-    automationStore,
     addAutomationLane,
     toggleLaneCollapsed,
     removeAutomationLane,
-} from '#/modules/Automation';
+} from '#/modules/Automation/useCases';
 import { trackStore, timelineViewStore, scrollTimeline } from '#/modules/Arrangement/stores';
 import { setAutomationMode } from '#/modules/Arrangement/useCases';
 import { BeatRulerBar, TimelineChromeSurface } from '#/modules/Arrangement/presentations/views';

@@ -52,9 +52,11 @@ describe('streamNativeCompletion', () => {
             mockChannel.onmessage({ event: 'token', data: { text: 'Hi' } });
             expect(onToken).toHaveBeenCalledWith('Hi');
 
+            // Error events are captured synchronously but rethrown after
+            // tauriInvoke resolves, so calling onmessage doesn't throw inline.
             expect(() => {
                 mockChannel.onmessage({ event: 'error', data: { message: 'Boom' } });
-            }).toThrow('Boom');
+            }).not.toThrow();
         });
     });
 

@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { loadSampleFromPath } from '../loadSample';
 
 const mocks = vi.hoisted(() => ({
-    samplerStoreValue: { value: { instanceId: 'inst1' } },
     setLoading: vi.fn(),
     setActiveSample: vi.fn(),
     setWaveformPeaks: vi.fn(),
@@ -10,17 +8,19 @@ const mocks = vi.hoisted(() => ({
     getWaveformPeaks: vi.fn(),
 }));
 
-vi.mock('../../stores/samplerStore', () => ({
-    samplerStore: { get value() { return mocks.samplerStoreValue.value; } },
+vi.mock('../../stores/crumbsStore', () => ({
+    crumbsStore: { value: {} },
     setLoading: mocks.setLoading,
     setActiveSample: mocks.setActiveSample,
     setWaveformPeaks: mocks.setWaveformPeaks,
 }));
 
-vi.mock('../../repositories/samplerBridge', () => ({
+vi.mock('../../repositories/crumbsBridge', () => ({
     loadSample: mocks.loadSample,
     getWaveformPeaks: mocks.getWaveformPeaks,
 }));
+
+import { loadSampleFromPath } from '../loadSample';
 
 describe('loadSampleFromPath', () => {
     beforeEach(() => vi.clearAllMocks());
@@ -38,22 +38,22 @@ describe('loadSampleFromPath', () => {
         });
         mocks.getWaveformPeaks.mockResolvedValue([0.1, 0.5, 0.2]);
 
-        await loadSampleFromPath('/path/to/kick.wav');
+        await loadSampleFromPath('inst1', '/path/to/kick.wav');
 
-        expect(mocks.setLoading).toHaveBeenCalledWith(true);
+        expect(mocks.setLoading).toHaveBeenCalledWith('inst1', true);
         expect(mocks.loadSample).toHaveBeenCalledWith('inst1', '/path/to/kick.wav');
-        expect(mocks.setActiveSample).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mocks.setActiveSample).toHaveBeenCalledWith('inst1', expect.objectContaining({
             sampleId: 's1',
             fileName: 'kick.wav',
         }));
-        expect(mocks.setWaveformPeaks).toHaveBeenCalledWith([0.1, 0.5, 0.2]);
-        expect(mocks.setLoading).toHaveBeenLastCalledWith(false);
+        expect(mocks.setWaveformPeaks).toHaveBeenCalledWith('inst1', [0.1, 0.5, 0.2]);
+        expect(mocks.setLoading).toHaveBeenLastCalledWith('inst1', false);
     });
 
     it('handles errors gracefully', async () => {
         mocks.loadSample.mockRejectedValue(new Error('Load failed'));
-        
-        await expect(loadSampleFromPath('bad.wav')).rejects.toThrow('Load failed');
-        expect(mocks.setLoading).toHaveBeenLastCalledWith(false);
+
+        await expect(loadSampleFromPath('inst1', 'bad.wav')).rejects.toThrow('Load failed');
+        expect(mocks.setLoading).toHaveBeenLastCalledWith('inst1', false);
     });
 });

@@ -17,7 +17,10 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 }));
 
 describe('downloadProjectFile', () => {
-    const projectData = { name: 'Test Project', tracks: [] } as any;
+    const projectData = {
+        meta: { name: 'Test Project' },
+        tracks: [],
+    } as any;
 
     beforeEach(() => {
         vi.clearAllMocks();

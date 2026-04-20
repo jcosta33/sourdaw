@@ -11,6 +11,7 @@
  */
 import { type ReactElement, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { Stack, Row, Grid } from '#/components/layout';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
 import { type DeviceLayoutProps } from './deviceLayoutRegistry';
@@ -130,7 +131,7 @@ const ParamRow = ({
 }): ReactElement => {
     const cols = Math.min(2, params.length); // Max 2 per row in the narrow inspector
     return (
-        <div className={`grid grid-cols-1 @md:grid-cols-${String(cols)} gap-2`}>
+        <Grid gap={2} className={`grid-cols-1 @md:grid-cols-${String(cols)}`}>
             {params.map((param) => (
                 <SurfaceCard
                     key={param.id}
@@ -139,7 +140,7 @@ const ParamRow = ({
                     <DeviceParameterControl param={param} device={device} trackId={trackId} />
                 </SurfaceCard>
             ))}
-        </div>
+        </Grid>
     );
 };
 
@@ -155,11 +156,13 @@ const CollapsibleSection = ({
     const [open, setOpen] = useState(defaultOpen);
 
     return (
-        <div>
-            <DawHeaderBand compact className="mb-2 rounded-sm hover:bg-surface-raised/50">
-                <button
-                    type="button"
-                    className="flex w-full items-center gap-1"
+        <Stack gap={2}>
+            <DawHeaderBand compact className="rounded-sm hover:bg-surface-raised/50">
+                <Row
+                    as="button"
+                    align="center"
+                    gap={1}
+                    className="w-full"
                     onClick={() => setOpen(!open)}
                     aria-expanded={open}
                 >
@@ -169,10 +172,10 @@ const CollapsibleSection = ({
                     <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                         {title}
                     </span>
-                </button>
+                </Row>
             </DawHeaderBand>
             {open ? children : null}
-        </div>
+        </Stack>
     );
 };
 
@@ -183,20 +186,20 @@ export const GenericDeviceLayout = ({ device, trackId, parameters }: DeviceLayou
     // Only instruments with 11+ params get collapsible sections.
     if (parameters.length <= 10) {
         return (
-            <div>
+            <Stack>
                 <SectionHeader title="Parameters" />
                 <ParamRow params={parameters} device={device} trackId={trackId} />
-            </div>
+            </Stack>
         );
     }
 
     return (
-        <div className="space-y-3">
+        <Stack gap={3}>
             {sections.map((section) => (
                 <CollapsibleSection key={section.title} title={section.title} defaultOpen={!section.isAdvanced}>
                     <ParamRow params={section.params} device={device} trackId={trackId} />
                 </CollapsibleSection>
             ))}
-        </div>
+        </Stack>
     );
 };

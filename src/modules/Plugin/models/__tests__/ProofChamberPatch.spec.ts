@@ -5,8 +5,10 @@ import {
     DEFAULT_PARAMS,
     PARAM_MAP,
     SPACE_PRESETS,
-    type AlgorithmType,
-} from '../ProofChamberPatch';
+    type ProofChamberAlgorithm,
+} from '../ProofChamberState';
+
+type AlgorithmType = ProofChamberAlgorithm;
 
 describe('ProofChamberPatch constants', () => {
     it('should map every algorithm type to a distinct index', () => {

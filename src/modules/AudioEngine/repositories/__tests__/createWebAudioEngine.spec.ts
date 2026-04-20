@@ -2,26 +2,34 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 
 // Mock TrackNode and BusNode to avoid deep dependencies
-vi.mock('../engine/TrackNode', () => ({
-    TrackNode: vi.fn().mockImplementation((id) => ({
-        trackId: id,
-        strip: { trackId: id, deviceNodes: [] },
-        dispose: vi.fn(),
-        setGain: vi.fn(),
-        setPan: vi.fn(),
-        setMute: vi.fn(),
-        getPeakLevel: vi.fn().mockReturnValue(0.5),
-    })),
+vi.mock('../../engine/TrackNode', () => ({
+    TrackNode: class {
+        trackId: string;
+        strip: unknown;
+        dispose = vi.fn();
+        setGain = vi.fn();
+        setPan = vi.fn();
+        setMute = vi.fn();
+        getPeakLevel = vi.fn().mockReturnValue(0.5);
+        constructor(id: string) {
+            this.trackId = id;
+            this.strip = { trackId: id, deviceNodes: [] };
+        }
+    },
 }));
 
-vi.mock('../engine/BusNode', () => ({
-    BusNode: vi.fn().mockImplementation((id) => ({
-        busId: id,
-        strip: { busId: id, gainNode: { connect: vi.fn() } },
-        dispose: vi.fn(),
-        setGain: vi.fn(),
-        getPeakLevel: vi.fn().mockReturnValue(0.3),
-    })),
+vi.mock('../../engine/BusNode', () => ({
+    BusNode: class {
+        busId: string;
+        strip: unknown;
+        dispose = vi.fn();
+        setGain = vi.fn();
+        getPeakLevel = vi.fn().mockReturnValue(0.3);
+        constructor(id: string) {
+            this.busId = id;
+            this.strip = { busId: id, gainNode: { connect: vi.fn() } };
+        }
+    },
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({

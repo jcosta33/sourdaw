@@ -16,7 +16,7 @@ vi.mock('#/modules/Arrangement/repositories/track/setTrackState', () => ({
     setTrackState: mocks.setTrackState,
 }));
 
-vi.mock('#/modules/Automation', () => ({
+vi.mock('#/modules/Automation/useCases', () => ({
     shiftClipAutomation: mocks.shiftClipAutomation,
 }));
 

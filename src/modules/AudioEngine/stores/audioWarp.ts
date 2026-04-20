@@ -60,10 +60,8 @@ export const audioWarpStore = createStore<WarpState>({
     },
 });
 
-let warpMarkerId = 1;
-
 export function getNextWarpMarkerId(): string {
-    return `wm-${warpMarkerId++}`;
+    return `wm-${crypto.randomUUID()}`;
 }
 
 export const DEFAULT_WARP_SETTINGS: ClipWarpSettings = {

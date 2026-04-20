@@ -58,7 +58,10 @@ type RendererDeps = {
     selectedNoteIds: Set<string>;
     stepInput: boolean;
     stepBeat: number;
+    stepPitch: number;
     showGhostNotes: boolean;
+    /** A9: additional clip IDs open simultaneously in the piano roll */
+    openedClipIds?: string[];
     /** MIDI state — notesByClipId map */
     midiNotesByClipId: Record<string, MidiNote[]> | null;
     /** Track state — track list */
@@ -101,12 +104,16 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
     stepInputRef.current = deps.stepInput;
     const stepBeatRef = useRef(deps.stepBeat);
     stepBeatRef.current = deps.stepBeat;
+    const stepPitchRef = useRef(deps.stepPitch);
+    stepPitchRef.current = deps.stepPitch;
     const showGhostNotesRef = useRef(deps.showGhostNotes);
     showGhostNotesRef.current = deps.showGhostNotes;
     const clipIdRef = useRef(deps.clipId);
     clipIdRef.current = deps.clipId;
     const trackIdRef = useRef(deps.trackId);
     trackIdRef.current = deps.trackId;
+    const openedClipIdsRef = useRef(deps.openedClipIds ?? []);
+    openedClipIdsRef.current = deps.openedClipIds ?? [];
 
     // ── OffscreenCanvas grid cache ──────────────────────────────────────
     const gridCacheRef = useRef<OffscreenCanvas | null>(null);
@@ -151,6 +158,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
             const tId = trackIdRef.current;
             const si = stepInputRef.current;
             const sb = stepBeatRef.current;
+            const sp = stepPitchRef.current;
             const ghost = showGhostNotesRef.current;
             const selIds = selectedNoteIdsRef.current;
 
@@ -246,15 +254,20 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 // Scale for HiDPI before drawing dynamic layers
                 ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-                // Ghost notes + active notes + overlays
+                // Ghost notes + secondary open clips + active notes + overlays
                 ctx.save();
                 ctx.translate(0, RULER_HEIGHT);
                 if (ghost && tracks) {
                     drawGhostNotes(ctx, pitchToRow, bw, midiState?.notesByClipId ?? null, tracks, tId, cId);
                 }
+                // A9: draw notes from other simultaneously-open clips at 55% opacity
+                const openedIds = openedClipIdsRef.current;
+                if (openedIds.length > 0 && midiState && tracks) {
+                    drawOpenedClipNotes(ctx, pitchToRow, bw, midiState.notesByClipId, tracks, cId, openedIds, selIds);
+                }
                 drawActiveNotes(ctx, pitchToRow, notes, bw, selIds, tracks, tId, cId, deps.dragPreviewRef.current);
                 if (si) {
-                    drawStepCursor(ctx, sb, bw, gs, noteAreaHeight);
+                    drawStepCursor(ctx, pitchToRow, sb, sp, bw, gs, totalWidth, noteAreaHeight);
                 }
                 drawPreview(ctx, pitchToRow, bw, deps.drawPreviewRef.current);
                 drawRubberBand(ctx, deps.rubberBandRef.current);
@@ -487,6 +500,50 @@ function drawGhostNote(
     ctx.stroke();
 }
 
+/**
+ * A9: Draw notes from other clips that are simultaneously open in the piano roll.
+ * These notes are editable (not read-only ghost notes) so they render at higher opacity.
+ */
+function drawOpenedClipNotes(
+    ctx: CanvasRenderingContext2D,
+    pitchToRow: Map<number, number>,
+    beatWidth: number,
+    notesByClipId: Record<string, MidiNote[]>,
+    tracks: Array<{ id: string; kind: string; color: string; clips: Array<{ id: string; type: string; color: string }> }>,
+    primaryClipId: string,
+    openedClipIds: string[],
+    selectedNoteIds: Set<string>
+): void {
+    for (const openedId of openedClipIds) {
+        if (openedId === primaryClipId) continue;
+        const openedNotes = notesByClipId[openedId];
+        if (!openedNotes) continue;
+        // Find the clip color from tracks
+        let clipColor = 'oklch(0.7 0.12 250)'; // default blue-ish
+        for (const track of tracks) {
+            const clip = track.clips.find((c) => c.id === openedId);
+            if (clip) { clipColor = clip.color || track.color; break; }
+        }
+        for (const note of openedNotes) {
+            const row = pitchToRow.get(note.pitch) ?? -1;
+            if (row === -1) continue;
+            const x = note.startBeat * beatWidth;
+            const y = row * ROW_HEIGHT;
+            const w = note.duration * beatWidth;
+            const isSelected = selectedNoteIds.has(note.id);
+            const fillAlpha = isSelected ? 0.75 : 0.5;
+            const strokeAlpha = isSelected ? 0.9 : 0.65;
+            ctx.fillStyle = colorWithAlpha(clipColor, fillAlpha);
+            ctx.beginPath();
+            ctx.roundRect(x + 1, y + 1, Math.max(4, w - 2), ROW_HEIGHT - 2, 2);
+            ctx.fill();
+            ctx.strokeStyle = colorWithAlpha(clipColor, strokeAlpha);
+            ctx.lineWidth = isSelected ? 1 : 0.5;
+            ctx.stroke();
+        }
+    }
+}
+
 type DragPreview = {
     noteIds: Set<string>;
     beatDelta: number;
@@ -576,12 +633,25 @@ function drawActiveNotes(
 
 function drawStepCursor(
     ctx: CanvasRenderingContext2D,
+    pitchToRow: Map<number, number>,
     stepBeat: number,
+    stepPitch: number,
     beatWidth: number,
     gridSnap: number,
+    totalWidth: number,
     noteAreaHeight: number
 ): void {
     const sx = stepBeat * beatWidth;
+    const row = pitchToRow.get(stepPitch) ?? -1;
+
+    // Row highlight
+    if (row !== -1) {
+        const sy = row * ROW_HEIGHT;
+        ctx.fillStyle = 'rgba(160, 90, 120, 0.15)';
+        ctx.fillRect(0, sy, totalWidth, ROW_HEIGHT);
+    }
+
+    // Column highlight
     ctx.strokeStyle = 'rgba(160, 90, 120, 0.6)';
     ctx.lineWidth = 2;
     ctx.setLineDash([4, 3]);
@@ -592,7 +662,7 @@ function drawStepCursor(
     ctx.setLineDash([]);
     ctx.lineWidth = 1;
 
-    ctx.fillStyle = 'rgba(160, 90, 120, 0.06)';
+    ctx.fillStyle = 'rgba(160, 90, 120, 0.08)';
     const stepW = gridSnap * beatWidth;
     ctx.fillRect(sx, 0, stepW, noteAreaHeight);
 }

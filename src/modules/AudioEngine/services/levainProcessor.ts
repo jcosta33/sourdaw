@@ -9,6 +9,7 @@
  *   { type: 'init', wasmBytes: ArrayBuffer }
  *   { type: 'noteOn', note, velocity, sampleFrame? }
  *   { type: 'noteOff', note, sampleFrame? }
+ *   { type: 'allNotesOff' }
  *   { type: 'param', name, value }
  *   { type: 'cc', cc, value }
  *   { type: 'bypass', bypassed }
@@ -115,6 +116,9 @@ class LevainProcessor extends AudioWorkletProcessor {
                 break;
             case 'noteOff':
                 inst.note_off(msg.note);
+                break;
+            case 'allNotesOff':
+                inst.all_notes_off();
                 break;
             case 'param': {
                 const rustName = PARAM_MAP[msg.name] ?? msg.name;

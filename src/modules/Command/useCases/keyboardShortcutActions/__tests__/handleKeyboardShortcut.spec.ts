@@ -17,11 +17,15 @@ vi.mock('#/app/registerDependencies', () => ({
     },
 }));
 
-vi.mock('#/modules/Transport/useCases', () => ({
-    stopPlayback: vi.fn(),
-    toggleMetronome: vi.fn(),
-    seekPlayhead: vi.fn(),
-}));
+vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
+    return {
+        ...actual,
+        stopPlayback: vi.fn(),
+        toggleMetronome: vi.fn(),
+        seekPlayhead: vi.fn(),
+    };
+});
 
 vi.mock('../trackShortcuts/clearSolos', () => ({ clearSolos: vi.fn() }));
 vi.mock('../trackShortcuts/addTrack', () => ({ addTrack: vi.fn() }));
@@ -34,9 +38,14 @@ vi.mock('../workspaceShortcuts/setEditingTool', () => ({ setEditingTool: vi.fn()
 vi.mock('../workspaceShortcuts/zoomToFit', () => ({ zoomToFit: vi.fn() }));
 vi.mock('../workspaceShortcuts/zoomToSelection', () => ({ zoomToSelection: vi.fn() }));
 
-vi.mock('#/modules/Workspace/stores', () => ({
-    workspaceStore: { value: { selectedClipIds: [], selectedClipId: null } },
-}));
+vi.mock('#/modules/Workspace/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Workspace/stores')>();
+    return {
+        ...actual,
+        workspaceStore: { value: { selectedClipIds: [], selectedClipId: null } },
+        toolSwapStore: { value: null, set: vi.fn() },
+    };
+});
 
 vi.mock('#/modules/Workspace/useCases', () => ({
     cycleAutomationVisibility: vi.fn(),
@@ -55,16 +64,23 @@ vi.mock('#/modules/Workspace/useCases', () => ({
     TOOL_SHORTCUTS: {},
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: { value: { selectedTrackId: null, tracks: [] } },
-    zoomTimeline: vi.fn(),
-}));
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
+    return {
+        ...actual,
+        trackStore: { value: { selectedTrackId: null, tracks: [] } },
+    };
+});
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    addClip: vi.fn(),
-    removeClip: vi.fn(),
-    deleteTimeRange: vi.fn(),
-}));
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        addClip: vi.fn(),
+        removeClip: vi.fn(),
+        deleteTimeRange: vi.fn(),
+    };
+});
 
 vi.mock('../../undoRedo', () => ({
     undo: vi.fn(),

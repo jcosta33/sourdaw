@@ -9,8 +9,9 @@
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
 import { logger } from '#/infra/logger/appLogger';
-import { eventBus } from '#/app/bootstrap';
+import { eventBus } from '#/app/registerDependencies';
 
+import { isKneadDevice, createKneadNode, type KneadNodeResult } from './KneadNode';
 import { isFermenterDevice, createFermenterNode, type FermenterNodeResult } from './FermenterNode';
 import { isToasterDevice, createToasterNode, type ToasterNodeResult } from './ToasterNode';
 import { isLevainDevice, createLevainNode, type LevainNodeResult } from './LevainNode';
@@ -40,6 +41,7 @@ export type WasmDeviceCreateDeps = {
     context: AudioContext;
     deviceId: string;
     deviceType: string;
+    transportSAB?: SharedArrayBuffer;
     /** Called with the fully-loaded BuiltinDeviceNode — swap-in + rebuildChain happen here */
     onLoaded: (finalDn: BuiltinDeviceNode) => void;
 };
@@ -160,6 +162,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
             ready: false,
             noteOn: () => {},
             noteOff: () => {},
+            allNotesOff: () => {},
             handleCc: () => {},
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
@@ -183,6 +186,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
                         ready: true,
                         noteOn: result.noteOn,
                         noteOff: result.noteOff,
+                        allNotesOff: result.allNotesOff,
                         handleCc: result.handleCc,
                         setParam: result.setParam,
                         setBypass: result.setBypass,
@@ -528,6 +532,51 @@ const faustDescriptor: WasmDeviceDescriptor = {
     },
 };
 
+const kneadDescriptor: WasmDeviceDescriptor = {
+    matches: isKneadDevice,
+    create({ context, deviceId, deviceType, transportSAB, onLoaded }) {
+        const pendingParams: Array<[string, number]> = [];
+        const placeholder = loadingBypassNode(context, deviceId, deviceType);
+        placeholder.kneadControls = {
+            ready: false,
+            updateState: () => {},
+            setParam: (name, value) => {
+                pendingParams.push([name, value]);
+            },
+            setBypass: () => {},
+            destroy: () => {},
+        };
+        const loadPromise = createKneadNode(context, transportSAB)
+            .then(async (result: KneadNodeResult) => {
+                await result.ready;
+                for (const [name, value] of pendingParams) {
+                    result.setParam(name, value);
+                }
+                onLoaded({
+                    deviceId,
+                    type: deviceType,
+                    nodes: [result.workletNode],
+                    inputNode: result.workletNode,
+                    outputNode: result.workletNode,
+                    kneadControls: {
+                        ready: true,
+                        updateState: result.updateState,
+                        setParam: result.setParam,
+                        setBypass: result.setBypass,
+                        destroy: () => {
+                            try {
+                                result.workletNode.disconnect();
+                            } catch {}
+                            result.workletNode.port.close();
+                        },
+                    },
+                });
+            })
+            .catch((err) => logger.warn(`[WebAudioEngine] Knead failed: ${err}`));
+        return { placeholder, loadPromise };
+    },
+};
+
 // ── Registry ─────────────────────────────────────────────────────────────────
 
 const WASM_DEVICE_DESCRIPTORS: WasmDeviceDescriptor[] = [
@@ -542,6 +591,7 @@ const WASM_DEVICE_DESCRIPTORS: WasmDeviceDescriptor[] = [
     proofDescriptor,
     scoringDescriptor,
     grandBouleDescriptor,
+    kneadDescriptor,
 ];
 
 export function findWasmDescriptor(deviceType: string): WasmDeviceDescriptor | undefined {

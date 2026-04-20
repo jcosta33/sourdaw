@@ -7,7 +7,8 @@
  * reaches this consumer automatically.
  */
 import { useStore } from '#/infra/store/useStore';
-import { projectStore, type ProjectStoreState } from '#/modules/Project';
+import { projectStore } from '#/modules/Project/stores';
+import type { ProjectStoreState } from '#/modules/Project/stores';
 
 const defaultState: ProjectStoreState = {
     name: 'Untitled Project',
@@ -15,6 +16,12 @@ const defaultState: ProjectStoreState = {
     updatedAt: Date.now(),
     dirty: false,
     loading: true,
+    keyRoot: 0,
+    scaleName: 'chromatic',
+    tuning: {
+        name: 'Equal Temperament',
+        frequencies: Array.from({ length: 128 }, (_, i) => 440 * Math.pow(2, (i - 69) / 12)),
+    },
     initialized: false,
 };
 

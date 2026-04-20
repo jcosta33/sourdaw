@@ -5,6 +5,7 @@
  */
 import { type MouseEvent as ReactMouseEvent } from 'react';
 import { type AutomationLane, type AutomationPoint, type AutomationCurveType } from '../../models/AutomationViewTypes';
+import { automationStore } from '#/modules/Automation/stores';
 import {
     addAutomationPoint,
     removeAutomationPoint,
@@ -14,8 +15,7 @@ import {
     paintDrawPoint,
     endDrawSession,
     selectPointsInRange,
-    automationStore,
-} from '#/modules/Automation';
+} from '#/modules/Automation/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { startMouseDrag } from './mouseDrag';
 

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { importMidiFile } from '#/modules/Arrangement/useCases';
-import { saveProject, newProject } from '#/modules/Project';
+import { saveProject, newProject } from '#/modules/Project/useCases';
 import { undo, redo } from '#/modules/Command/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 import { onDialogOpenExport } from '../../useCases/dialogs/onDialogOpenExport';

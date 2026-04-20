@@ -1,6 +1,7 @@
 import { type ReactElement, useState } from 'react';
 import { cn } from '#/utils/Styles/cn';
-import { automationStore, addAutomationLane, toggleLaneCollapsed } from '#/modules/Automation';
+import { automationStore } from '#/modules/Automation/stores';
+import { addAutomationLane, toggleLaneCollapsed } from '#/modules/Automation/useCases';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { AutomationLaneRow } from './AutomationLaneRow';
 import { AutomationAddLaneControl, AutomationModeControl } from './AutomationControls';

@@ -31,7 +31,7 @@ vi.mock('../../../useCases/arrangement/createArrangement', () => ({
     createArrangement: vi.fn(),
 }));
 
-vi.mock('../../../useCases/arrangement/switchArrangement', () => ({
+vi.mock('#/modules/Project/useCases/arrangement/switchArrangement', () => ({
     switchArrangement: vi.fn(),
 }));
 

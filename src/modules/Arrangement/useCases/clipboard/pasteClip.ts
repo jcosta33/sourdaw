@@ -2,7 +2,6 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { createMidiNote } from '#/modules/MIDI/useCases';
 import { addClip } from '../clip/addClip';
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import { clipboardStore } from '../../stores/clipboardStore';
@@ -47,9 +46,10 @@ export function pasteClip(): void {
         }
 
         if (entry.midiNotes && entry.midiNotes.length > 0) {
-            const copiedNotes: MidiNote[] = entry.midiNotes.map((n) =>
-                createMidiNote(n.pitch, n.startBeat, n.duration, n.velocity)
-            );
+            const copiedNotes: MidiNote[] = entry.midiNotes.map((n) => ({
+                ...n,
+                id: `note-${crypto.randomUUID().slice(0, 8)}`,
+            }));
 
             const midiState = midiStore.value;
             if (midiState) {

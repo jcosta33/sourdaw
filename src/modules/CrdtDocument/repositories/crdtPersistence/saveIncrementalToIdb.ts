@@ -11,7 +11,7 @@ export const saveIncrementalToIdb = async (id: DocId, chunk: Uint8Array): Promis
         return;
     }
 
-    const key = `${id}:incremental:${Date.now()}`;
+    const key = `${id}:incremental:${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     return new Promise((resolve, reject) => {
         const tx = database.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);

@@ -16,15 +16,20 @@ import {
     renderKokoroTts,
     renderDiffSingerPhrase,
     downloadModel,
-    capabilityStore,
-    modelRegistryStore,
-    KokoroVoiceSelector,
-    AiRenderClipPreview,
     KOKORO_MODEL_ENTRY,
     NSF_HIFIGAN_VOCODER,
-    type RenderQuality,
-} from '#/modules/BrowserAi';
+} from '#/modules/BrowserAi/useCases';
+import {
+    capabilityStore,
+    modelRegistryStore,
+} from '#/modules/BrowserAi/stores';
+import {
+    KokoroVoiceSelector,
+    AiRenderClipPreview,
+} from '#/modules/BrowserAi/presentations/views';
 import { useStore } from '#/infra/store/useStore';
+
+type RenderQuality = 'low' | 'standard' | 'high' | 'maximum';
 import { tempoMapStore } from '#/modules/Transport/stores';
 import { type Clip } from '../../../models/TrackViewTypes';
 

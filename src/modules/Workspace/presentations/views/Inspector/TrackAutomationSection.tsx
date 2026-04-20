@@ -5,7 +5,8 @@ import { DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuP
 import { Button } from '#/components/ui/button';
 import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import { getBuiltinPlugins } from '#/modules/Arrangement/useCases';
-import { addAutomationLane, toggleAutomationVisibility, removeAutomationLane, automationStore } from '#/modules/Automation';
+import { automationStore } from '#/modules/Automation/stores';
+import { addAutomationLane, toggleAutomationVisibility, removeAutomationLane } from '#/modules/Automation/useCases';
 import { useStore } from '#/infra/store/useStore';
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';

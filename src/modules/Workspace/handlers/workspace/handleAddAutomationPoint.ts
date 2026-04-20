@@ -1,5 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
-import { addAutomationPoint } from '#/modules/Automation';
+import { addAutomationPoint } from '#/modules/Automation/useCases';
 
 export const handleAddAutomationPoint = createHandler<'addAutomationPoint'>({
     execute: (a) => {

@@ -4,7 +4,8 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { projectStore } from '../../../stores/projectStore';
 import { transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
-import { automationStore, createAutomationLane } from '#/modules/Automation';
+import { automationStore } from '#/modules/Automation/stores';
+import { createAutomationLane } from '#/modules/Automation/useCases';
 import type { MidiNote } from '../../../models/DemoProjectTypes';
 import { note } from '../demoUtils/note';
 import { applyPreset } from '../demoUtils/applyPreset';
@@ -1438,5 +1439,11 @@ export async function demo4_NativeShowcase(): Promise<void> {
         dirty: false,
         loading: false,
         initialized: true,
+        keyRoot: 0,
+        scaleName: 'chromatic',
+        tuning: {
+            name: 'Equal Temperament',
+            frequencies: Array.from({ length: 128 }, (_, i) => 440 * Math.pow(2, (i - 69) / 12)),
+        },
     });
 }

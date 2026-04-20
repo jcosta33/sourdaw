@@ -1,4 +1,6 @@
 import { getAllTracks } from '#/modules/Arrangement/useCases';
+import { pushUndoEntry } from '#/modules/Command/useCases';
+import { automationStore } from '../../stores/automationStore';
 import {
     activeRecording,
     pendingPoints,
@@ -9,6 +11,11 @@ import {
 } from './recordingSessionState';
 
 export function stopAutomationRecording(): void {
+    // Snapshot lane state before flushing for undo
+    const laneBefore = automationStore.value
+        ? structuredClone(automationStore.value.lanes)
+        : [];
+
     const tracks = getAllTracks();
 
     for (const [key, session] of activeRecording) {
@@ -26,6 +33,28 @@ export function stopAutomationRecording(): void {
         }
 
         flushPendingPoints(key);
+    }
+
+    const laneAfter = automationStore.value
+        ? structuredClone(automationStore.value.lanes)
+        : [];
+
+    if (JSON.stringify(laneBefore) !== JSON.stringify(laneAfter)) {
+        pushUndoEntry(
+            'Record Automation',
+            () => {
+                const current = automationStore.value;
+                if (current) {
+                    automationStore.set({ lanes: laneBefore });
+                }
+            },
+            () => {
+                const current = automationStore.value;
+                if (current) {
+                    automationStore.set({ lanes: laneAfter });
+                }
+            }
+        );
     }
 
     activeRecording.clear();

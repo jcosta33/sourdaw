@@ -282,15 +282,21 @@ impl RealismEngine {
     }
 
     /// Process one mono sample through the realism stack.
+    ///
+    /// `voices_active` gates the continuous bow/breath noise components so
+    /// an idle instrument doesn't emit a persistent hiss. The release-burst
+    /// contribution from `bow_noise` still fires when an active voice
+    /// triggers it — its envelope is advanced inside `BowNoise::tick`.
     #[inline]
-    pub fn tick(&mut self, mono_in: f32) -> f32 {
+    pub fn tick(&mut self, mono_in: f32, voices_active: bool) -> f32 {
         // Frequency-dependent damping first (acts on the raw bridge signal).
         let damped = self.damping.tick(mono_in);
 
         // Add the air/bow noise BEFORE the body so the body resonances colour
         // them too — this is what makes added noise sit "inside" the
         // instrument instead of on top of it.
-        let with_noise = damped + self.bow_noise.tick() + self.breath.tick();
+        let with_noise =
+            damped + self.bow_noise.tick(voices_active) + self.breath.tick(voices_active);
 
         // Body colouration (parallel parametric bank).
         let bodied = self.body.tick(with_noise);
@@ -350,7 +356,7 @@ mod tests {
             for n in 0..NUM_SAMPLES {
                 let phase = (n as f32) * 220.0 / SAMPLE_RATE;
                 let input = (phase * std::f32::consts::TAU).sin() * 0.3;
-                let out = realism.tick(input);
+                let out = realism.tick(input, true);
                 assert!(out.is_finite(), "instrument {id}: non-finite output at sample {n}");
                 sum_sq += (out as f64) * (out as f64);
             }
@@ -364,7 +370,33 @@ mod tests {
             // Trigger a release burst and process another short window.
             realism.note_off(60);
             for _ in 0..4_800 {
-                let _ = realism.tick(0.0);
+                let _ = realism.tick(0.0, true);
+            }
+        }
+    }
+
+    /// With no active voices and zero input, the realism layer must be
+    /// silent — this is the fix for the "constant white noise floor" bug
+    /// where bow / breath noise generators emitted bandpassed white noise
+    /// unconditionally, audible as soon as a Levain track was loaded.
+    /// Pass-through filters (body / sympathetic / damping) carry no energy
+    /// on zero input so the overall output must be exactly zero.
+    #[test]
+    fn realism_is_silent_when_no_voices_active() {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        const NUM_SAMPLES: usize = 48_000;
+
+        let families = ["violin-1", "flute", "trumpet", "clarinet", "marimba"];
+        for id in families {
+            let mut realism = RealismEngine::new(SAMPLE_RATE);
+            realism.configure_for(id);
+            realism.update_expression(0.8, 1.0);
+            for n in 0..NUM_SAMPLES {
+                let out = realism.tick(0.0, false);
+                assert_eq!(
+                    out, 0.0,
+                    "instrument {id}: emitted {out} at sample {n} with no voices active",
+                );
             }
         }
     }
@@ -426,7 +458,7 @@ mod tests {
         let mut peak_value = 0.0_f32;
         let mut peak_index = 0_usize;
         for n in 0..960 {
-            let v = bow.tick().abs();
+            let v = bow.tick(true).abs();
             if v > peak_value {
                 peak_value = v;
                 peak_index = n;

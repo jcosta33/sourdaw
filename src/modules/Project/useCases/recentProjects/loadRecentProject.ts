@@ -30,10 +30,14 @@ export const loadRecentProject = async function loadRecentProject(key: string): 
         resetAudioGraph();
 
         hydrateModuleStoresFromProjectData(data);
+        
         projectStore.set({
-            name: data.name,
-            createdAt: data.createdAt,
-            updatedAt: data.updatedAt,
+            name: data.meta.name,
+            createdAt: data.meta.createdAt,
+            updatedAt: data.meta.updatedAt,
+            keyRoot: data.meta.keyRoot,
+            scaleName: data.meta.scaleName,
+            tuning: data.meta.tuning,
             dirty: false,
             loading: false,
             initialized: true,

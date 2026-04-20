@@ -18,7 +18,7 @@ import { ProjectName } from './Transport/ProjectName';
 import { PromptBar } from './PromptBar';
 import { ToolSelector } from './ToolSelector';
 import { TempoEditor } from './TempoEditor';
-import { RecentProjectsMenu, ArrangementSelector } from '#/modules/Project';
+import { RecentProjectsMenu, ArrangementSelector } from '#/modules/Project/presentations/views';
 import { toggleRippleEditing } from '../../useCases/rippleEditing';
 
 const getTracks = (state: { tracks: Track[] } | null): Track[] => state?.tracks ?? [];
@@ -36,6 +36,7 @@ export const TransportBar = (): ReactElement => {
         timeDisplayMode,
         rippleEditing,
         virtualKeyboardOpen,
+        dualViewOpen,
         soloMode,
     } = useWorkspaceState();
     const transport = useTransportState();
@@ -89,6 +90,7 @@ export const TransportBar = (): ReactElement => {
                         chatPanelOpen={chatPanelOpen}
                         trackListOpen={trackListOpen}
                         virtualKeyboardOpen={virtualKeyboardOpen}
+                        dualViewOpen={dualViewOpen}
                     />
                 </div>
             </div>

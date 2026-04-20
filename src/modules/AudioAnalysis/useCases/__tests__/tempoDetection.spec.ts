@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('#/modules/AudioEngine', () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioBufferCache: {
         get: vi.fn((id: string) => {
             if (id === 'silent') {

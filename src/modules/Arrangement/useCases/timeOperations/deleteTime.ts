@@ -1,7 +1,8 @@
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { markerStore } from '../../stores/markerStore';
-import { automationStore } from '#/modules/Automation';
+import { automationStore } from '#/modules/Automation/stores';
+import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
 import { type Clip } from '../../models/Track';
 
 export function deleteTime(startBeat: number, endBeat: number): void {
@@ -58,6 +59,28 @@ export function deleteTime(startBeat: number, endBeat: number): void {
                     .filter((p) => p.beat < startBeat || p.beat >= endBeat)
                     .map((p) => (p.beat >= endBeat ? { ...p, beat: p.beat - duration } : p)),
             })),
+        });
+    }
+
+    // Tempo changes inside the deleted range are removed; those after shift back.
+    const tempoState = tempoMapStore.value;
+    if (tempoState) {
+        tempoMapStore.set({
+            ...tempoState,
+            changes: tempoState.changes
+                .filter((c) => c.beat < startBeat || c.beat >= endBeat)
+                .map((c) => (c.beat >= endBeat ? { ...c, beat: c.beat - duration } : c)),
+        });
+    }
+
+    // Time signature changes inside the deleted range are removed; those after shift back.
+    const timeSigState = timeSignatureMapStore.value;
+    if (timeSigState) {
+        timeSignatureMapStore.set({
+            ...timeSigState,
+            changes: timeSigState.changes
+                .filter((c) => c.beat < startBeat || c.beat >= endBeat)
+                .map((c) => (c.beat >= endBeat ? { ...c, beat: c.beat - duration } : c)),
         });
     }
 }

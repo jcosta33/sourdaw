@@ -1,36 +1,39 @@
+// Automation/useCases — public contract surface for cross-module automation access.
 export { addAutomationLane } from './automation/addAutomationLane';
 export { addAutomationPoint } from './automation/addAutomationPoint';
 export { batchAddAutomationPoints } from './automation/batchAddAutomationPoints';
 export { createAutomationLane } from './automation/createAutomationLane';
 export { duplicateClipAutomation } from './automation/duplicateClipAutomation';
-export { getAutomationValueAtBeat } from './automation/getAutomationValueAtBeat';
+export { recordAutomationValue } from './automationRecording/recordAutomationValue';
 export { removeAutomationLane } from './automation/removeAutomationLane';
 export { removeAutomationPoint } from './automation/removeAutomationPoint';
-export { setAutomationPointCurve } from './automation/setAutomationPointCurve';
 export { shiftClipAutomation } from './automation/shiftClipAutomation';
+export { updateAutomationPoint } from './automation/updateAutomationPoint';
+export { setAutomationPointCurve } from './automation/setAutomationPointCurve';
 export { toggleAutomationVisibility } from './automation/toggleAutomationVisibility';
 export { toggleLaneCollapsed } from './automation/toggleLaneCollapsed';
-export { updateAutomationPoint } from './automation/updateAutomationPoint';
-export {
-    beginDrawSession,
-    paintDrawPoint,
-    endDrawSession,
-    isDrawSessionActive,
-} from './automationDrawMode';
-export { getAutomationHandlers } from './getAutomationHandlers';
-export { isRecordingAutomation } from './automationRecording/isRecordingAutomation';
-export { recordAutomationValue } from './automationRecording/recordAutomationValue';
-export { releaseTouchAutomation } from './automationRecording/releaseTouchAutomation';
+
 export { startAutomationRecording } from './automationRecording/startAutomationRecording';
 export { stopAutomationRecording } from './automationRecording/stopAutomationRecording';
+export { releaseTouchAutomation } from './automationRecording/releaseTouchAutomation';
+
+export { beginDrawSession, paintDrawPoint, endDrawSession } from './automationDrawMode';
 export { selectPointsInRange } from './automationSelection/selectPointsInRange';
-export { transformSelectedPoints } from './automationSelection/transformSelectedPoints';
-export { deleteSelectedPoints } from './automationSelection/deleteSelectedPoints';
-export { getSelectionBounds } from './automationSelection/getSelectionBounds';
-export { insertAutomationShape } from './automationShapes';
-export { zoomToUsedRange } from './automationZoom/zoomToUsedRange';
-export { resetYZoom } from './automationZoom/resetYZoom';
-export { adjustYZoom } from './automationZoom/adjustYZoom';
-export { toggleVirginTerritory } from './automationZoom/toggleVirginTerritory';
+
+export { applyModulation } from './modulation/applyModulation';
+export { getModulationForParam } from './modulation/getModulationForParam';
+
 export { getAutomationLanes } from './getAutomationLanes';
 export { getAutomationStoreState } from './getAutomationStoreState';
+export { getAutomationHandlers } from './getAutomationHandlers';
+
+export { insertAutomationShape } from './automationShapes';
+export { deleteSelectedPoints } from './automationSelection/deleteSelectedPoints';
+export { getSelectionBounds } from './automationSelection/getSelectionBounds';
+export { adjustYZoom } from './automationZoom/adjustYZoom';
+export { zoomToUsedRange } from './automationZoom/zoomToUsedRange';
+export { toggleVirginTerritory } from './automationZoom/toggleVirginTerritory';
+
+// Helper for playheadScheduler
+export { getAutomationValueAtBeat } from './automation/getAutomationValueAtBeat';
+export { isRecordingAutomation } from './automationRecording/isRecordingAutomation';

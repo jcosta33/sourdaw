@@ -6,6 +6,7 @@ export type NoteBlob = {
     startTime: number;
     endTime: number;
     pitchCenterCents: number;
+    originalPitchCenterCents: number;
     pitchCurveCents: number[];
     voicedConfidence: number;
     driftPercent: number;
@@ -26,9 +27,23 @@ export type KneadClipState = {
     formantPreserve: boolean;
 };
 
+export type PitchPoint = {
+    time_ms: number;
+    frequency_hz: number;
+    confidence: number;
+    voiced: boolean;
+};
+
+export type PitchContour = {
+    points: PitchPoint[];
+    sample_rate: number;
+    hop_size: number;
+};
+
 export type KneadStoreState = {
     activeClipId: string | null;
     clips: Record<string, KneadClipState>;
+    contours: Record<string, PitchContour>;
     isAnalyzing: boolean;
     analysisProgress: number;
 };
@@ -36,6 +51,7 @@ export type KneadStoreState = {
 export const defaultKneadState: KneadStoreState = {
     activeClipId: null,
     clips: {},
+    contours: {},
     isAnalyzing: false,
     analysisProgress: 0,
 };

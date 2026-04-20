@@ -24,7 +24,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 }));
 
 // Mock Automation
-vi.mock('#/modules/Automation', async (importOriginal) => ({
+vi.mock('#/modules/Automation/stores', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     automationStore: mocks.automationStore,
 }));
@@ -36,7 +36,7 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
 }));
 
 // Mock Project
-vi.mock('#/modules/Project', async (importOriginal) => ({
+vi.mock('#/modules/Project/stores', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     arrangementStore: mocks.arrangementStore,
     projectStore: mocks.projectStore,

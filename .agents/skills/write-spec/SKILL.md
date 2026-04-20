@@ -28,7 +28,7 @@ Template: `docs/agents/templates/01-spec-template.md`.
 
 5. **Critical open questions block implementation.** Mark unresolved questions `[CRITICAL]` if implementation cannot proceed without answering them. Do not start writing code while `[CRITICAL]` items are open. Unblock by asking, not by assuming.
 
-6. **Requirements must be unambiguous.** If a requirement could be satisfied two different ways and both would seem correct, it is not specific enough. Tighten it until only one interpretation is plausible.
+6. **Halt on Ambiguity (No Hallucinated Requirements).** AI agents are prone to confidently inventing requirements when faced with vague instructions. If a requirement could be satisfied two different ways, or if the user's request lacks necessary detail, you MUST halt and ask for clarification. Do not guess. Tighten the spec until only one interpretation is mathematically or behaviorally plausible.
 
 7. **Record design decisions.** When a significant choice is made during spec-writing, record what was considered and why alternatives were rejected. This prevents relitigating the same decision in implementation.
 

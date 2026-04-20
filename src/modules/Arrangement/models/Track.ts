@@ -12,6 +12,24 @@ export type TrackAlternative = {
     clips: Clip[];
 };
 
+export type FreezeState = {
+    status: 'unfrozen' | 'freezing' | 'frozen' | 'stale' | 'error';
+    freezeId?: string; // Unique render identifier
+    frozenBufferId?: string; // Reference to audioBufferCache
+    frozenAudioHash?: string; // SHA-256 of rendered audio
+    sourceContentHash?: string; // Hash of clips + positions + device states
+    deviceChainHash?: string; // Hash of ordered device IDs + states
+    renderSettings?: {
+        sampleRate: number;
+        bitDepth: number; // Always 32 for freeze
+        channelCount: number;
+        tailLengthSeconds: number;
+    };
+    renderProgress?: number; // 0.0-1.0 during freezing
+    errorMessage?: string; // Set when status is 'error'
+    renderedAt?: number; // Unix epoch ms
+};
+
 export type Track = {
     id: string;
     name: string;
@@ -25,8 +43,10 @@ export type Track = {
     clips: Clip[];
     devices: Device[];
     sends: Send[];
+    midiFx: MidiFxDevice[];
     frozen: boolean;
     frozenBufferId?: string;
+    freezeState: FreezeState;
     parentId: string | null;
     collapsed: boolean;
     inputMonitoring: InputMonitoring;
@@ -44,6 +64,16 @@ export type Track = {
     vcaGroupId: string | null;
     midiOutputTrackId: string | null;
     followChordTrack: boolean;
+    /** H3: Toggle for showing alternative lanes in timeline. */
+    showVariationLanes?: boolean;
+};
+
+export type MidiFxDevice = {
+    id: string;
+    name: string;
+    type: 'arp' | 'velocity' | 'probability';
+    bypassed: boolean;
+    parameterValues: Record<string, number>;
 };
 
 export type StretchMode = 'off' | 'repitch' | 'timestretch';
@@ -62,6 +92,7 @@ export type Clip = {
      *  Set on import; used to request the file from peers in a collab session. */
     assetHash?: string;
     audioOffsetBeats?: number;
+    midiOffsetBeats?: number;
     fadeInBeats: number;
     fadeOutBeats: number;
     gain: number;
@@ -75,8 +106,16 @@ export type Clip = {
     followAction?: FollowAction;
     generating?: boolean;
     isGhost?: boolean;
-    /** If set, this clip is a linked instance of another clip. */
+    /** A11: toggle for in-place MIDI editing in arrangement. */
+    isInlineEditing?: boolean;
+    /** If set, this clip is a linked instance of another clip (H1). */
     parentClipId?: string;
+    /** H1: helper flag for linked status. */
+    isLinkedInstance?: boolean;
+    /** For non-destructive scale folding (mapping MIDI from source key to project key). */
+    sourceKeyRoot?: number;
+    /** For non-destructive scale folding. */
+    sourceScaleName?: string;
     /** Which properties are locally overridden on this instance. */
     overrides?: Record<string, boolean>;
     /** Real-time pitch correction state for this clip. */
@@ -134,6 +173,7 @@ export function createTrack(input: { id?: string; name: string; kind: TrackKind;
               ]
             : [];
 
+    const initialAltId = `alt-${crypto.randomUUID().slice(0, 8)}`;
     return {
         id: input.id ?? (input.kind === 'master' ? 'master' : `track-${crypto.randomUUID().slice(0, 8)}`),
         name: input.name,
@@ -147,7 +187,9 @@ export function createTrack(input: { id?: string; name: string; kind: TrackKind;
         clips: [],
         devices: defaultDevices,
         sends: [],
+        midiFx: [],
         frozen: false,
+        freezeState: { status: 'unfrozen' },
         parentId: input.parentId ?? null,
         collapsed: false,
         inputMonitoring: 'auto',
@@ -160,8 +202,8 @@ export function createTrack(input: { id?: string; name: string; kind: TrackKind;
         soloSafe: input.kind === 'bus',
         notes: '',
         inputId: null,
-        activeAlternativeId: 'alt-1',
-        alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+        activeAlternativeId: initialAltId,
+        alternatives: [{ id: initialAltId, name: 'Alternative 1', clips: [] }],
         vcaGroupId: null,
         midiOutputTrackId: null,
         followChordTrack: false,

@@ -36,6 +36,22 @@ Agent sandboxes (isolated worktrees) are managed by `docs/08-agents.md` — the 
 
 ---
 
+## 🧠 Agent Autonomy & Engineering Mindset
+
+You are a proactive, cognizant software engineer. Formulate your own paths to success within the established architecture. To scale autonomous work, you must transition from simple task execution to exhaustive self-validation.
+
+- **Force Empirical Proof (Show, Don't Tell):** Mistrust your own code. Never declare a task complete without empirical verification. Always write a failing test or reproduction script *before* touching application code. Paste actual console output (tests, linters, builds) to prove success.
+- **Blast Radius Awareness:** Trace upstream callers and downstream dependencies before modifying code. Rely on the TypeScript compiler (`pnpm typecheck`) to exhaustively navigate the blast radius.
+- **Behavioral Invariants (Holistic Evaluation):** Evaluate the entire application state. Implement error boundaries, fallback UIs, and graceful degradation. Assume everything that can fail will fail. No "happy path only" coding.
+- **Institutionalize Strategic Backtracking (The Three Strikes Rule):** If you attempt to fix a compilation or test error 3 times and fail, **stop**. Discard your current approach, reread the overarching spec, and formulate a fundamentally different strategy to break hallucination loops.
+- **Proactive Research:** Do not guess. Aggressively use search tools (`grep_search`, `glob`) and internet research to confirm hypotheses.
+- **Incremental Commits:** Commit every major change or logical checkpoint as you work. This creates a clear history that a reviewing Lead Engineer (or human) can easily follow. Do not wait until the very end of the session to make one giant commit.
+- **Ceaseless Examination:** Verify your path delivers on specifications. Pursue intuitions only when backed by extensive research.
+- **Systems Thinking & Architecture First:** Respect Domain-Driven Design (DDD), established boundaries, and module contracts.
+- **User-Centric Perspective:** Evaluate features top-to-bottom. Build coherent, complete, and genuinely useful UX.
+
+---
+
 ## 🚨 MANDATORY REFLEX RULE (THE "SHOCK COLLAR")
 
 When asked to perform cross-module refactoring, move files, or update imports across multiple files:

@@ -10,6 +10,7 @@ export type Take = {
 export type TakeLane = {
     id: string;
     trackId: string;
+    automationLaneId?: string; // F3.1: If set, this lane is for automation comping
     takes: Take[];
     activeCompRegions: CompRegion[];
 };

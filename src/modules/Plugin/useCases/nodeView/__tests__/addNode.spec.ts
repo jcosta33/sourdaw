@@ -26,7 +26,7 @@ describe('addNode', () => {
         expect(n?.height).toBe(60);
         expect(n?.bypassed).toBe(false);
         expect(n?.color).toBe(NODE_COLORS.instrument);
-        expect(n?.id).toMatch(/^node-\d+$/);
+        expect(n?.id).toMatch(/^node-[a-f0-9-]+$/);
     });
 
     it('should not mutate when node view store is null', () => {

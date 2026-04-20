@@ -12,3 +12,5 @@ pub mod plugin_gui;
 pub mod plugins;
 pub mod crumbs;
 pub mod speech;
+pub mod pitch_edit;
+pub mod tuning;

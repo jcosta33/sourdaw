@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { Button } from '#/components/ui/button';
 import { DawHierarchyRow } from '#/components/daw/DawHierarchyRow';
 import { LatchButton } from '#/components/daw/LatchButton';
-import { Circle, ChevronRight, ChevronDown, Folder, Music, AudioLines, Radio, Monitor, Drum } from 'lucide-react';
+import { Circle, ChevronRight, ChevronDown, Folder, Music, AudioLines, Radio, Monitor, Drum, Layers, Snowflake, AlertCircle } from 'lucide-react';
 import { cn } from '#/utils/Styles/cn';
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { muteTrack } from '../../useCases/toggleTrackState/muteTrack';
@@ -11,6 +11,7 @@ import { soloTrackExclusive } from '../../useCases/toggleTrackState/soloTrackExc
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { armTrack } from '../../useCases/recording/armTrack';
 import { toggleFolderCollapse } from '../../useCases/folder/toggleFolderCollapse';
+import { toggleVariationLanes } from '../../useCases/toggleTrackState/toggleVariationLanes';
 import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonitoring';
 
 import { TrackContextMenu } from './TrackContextMenu';
@@ -20,6 +21,7 @@ import { ResizeHandle } from './TrackHeader/ResizeHandle';
 import { InputSelector } from './TrackHeader/InputSelector';
 import { TrackLevelIndicator } from './TrackHeader/TrackLevelIndicator';
 import { LevainLoadingSpinner } from './TrackHeader/LevainLoadingSpinner';
+import { DawMeterBar } from '#/components/daw/DawMeterBar';
 
 const TRACK_KIND_ICON: Record<string, typeof Music> = {
     audio: AudioLines,
@@ -47,6 +49,8 @@ type TrackHeaderProps = {
 
 export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactElement => {
     const trackHeight = track.height;
+    const isFreezing = track.freezeState?.status === 'freezing';
+    const isStale = track.freezeState?.status === 'stale';
 
     if (track.kind === 'folder') {
         const isDrumMachine = track.devices.some((d) => d.type === 'toaster');
@@ -117,7 +121,8 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                 className={cn(
                     'relative flex shrink-0 flex-col border-b border-border-soft cursor-pointer transition-colors duration-fast',
                     track.parentId ? 'border-l-2 border-l-white/5' : '',
-                    isSelected ? 'bg-surface-base' : 'hover:bg-surface-panel'
+                    isSelected ? 'bg-surface-base' : 'hover:bg-surface-panel',
+                    isStale ? 'bg-state-warning/10 border-state-warning/20' : ''
                 )}
                 style={{
                     height: trackHeight,
@@ -153,8 +158,27 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
 
                     <InlineTrackName track={track} />
 
-                    {track.frozen ? (
-                        <span className="text-[10px] text-[var(--color-accent-cyan)] font-medium">FRZ</span>
+                    {isFreezing ? (
+                        <div className="flex flex-col gap-1 w-16 ml-2">
+                            <span className="text-[8px] font-bold text-primary animate-pulse">FREEZING</span>
+                            <DawMeterBar value={(track.freezeState?.renderProgress ?? 0) * 100} size="sm" fillClassName="bg-primary" />
+                        </div>
+                    ) : track.frozen ? (
+                        <div className="flex items-center gap-1 ml-2">
+                            <Snowflake className="size-2.5 text-[var(--color-accent-cyan)]" />
+                            <span className="text-[9px] text-[var(--color-accent-cyan)] font-bold tracking-tight">FROZEN</span>
+                            {isStale && (
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <div className="flex items-center gap-0.5 ml-1 px-1 rounded bg-state-warning/30 border border-state-warning/40">
+                                            <AlertCircle className="size-2.5 text-state-warning" />
+                                            <span className="text-[8px] text-state-warning font-bold">STALE</span>
+                                        </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Track content has changed since freezing. Update required.</TooltipContent>
+                                </Tooltip>
+                            )}
+                        </div>
                     ) : null}
 
                     {track.kind === 'audio' && isSelected ? (
@@ -162,6 +186,27 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                     ) : null}
 
                     <div className="flex items-center gap-1 ml-auto">
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    type="button"
+                                    className={cn(
+                                        'size-5 rounded flex items-center justify-center transition-colors',
+                                        track.showVariationLanes
+                                            ? 'bg-accent-gold/20 text-accent-gold'
+                                            : 'text-muted-foreground hover:text-foreground'
+                                    )}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleVariationLanes(track.id);
+                                    }}
+                                >
+                                    <Layers className="size-3" />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">Variation Lanes (Track Alternatives)</TooltipContent>
+                        </Tooltip>
+
                         {track.kind === 'audio' || track.kind === 'midi' ? (
                             <Tooltip>
                                 <TooltipTrigger asChild>

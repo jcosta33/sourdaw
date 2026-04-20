@@ -1,0 +1,25 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+
+const mocks = vi.hoisted(() => ({
+    updateWorkspaceState: vi.fn(),
+}));
+
+vi.mock('../../../../repositories/workspace', () => ({
+    getWorkspaceState: () => workspaceStore.value,
+    updateWorkspaceState: mocks.updateWorkspaceState,
+}));
+
+import { toggleDualView } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
+
+describe('toggleDualView', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('should toggle dualViewOpen state', () => {
+        workspaceStore.set({ dualViewOpen: false } as any);
+        toggleDualView();
+        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ dualViewOpen: true });
+    });
+});

@@ -7,7 +7,8 @@ import { splitClip } from '../../../useCases/clipEditing/splitClip';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { trackStore } from '../../../stores/trackStore';
 import { timelineViewStore } from '../../../stores/timelineViewStore';
-import { automationStore, addAutomationPoint, addAutomationLane } from '#/modules/Automation';
+import { automationStore } from '#/modules/Automation/stores';
+import { addAutomationPoint, addAutomationLane } from '#/modules/Automation/useCases';
 
 vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestClip', () => ({ hitTestClip: vi.fn() }));
 vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestTrack', () => ({ hitTestTrack: vi.fn() }));
@@ -16,7 +17,7 @@ vi.mock('../../../useCases/clipEditing/splitClip', () => ({ splitClip: vi.fn() }
 vi.mock('../../../useCases/clip/addClip', () => ({ addClip: vi.fn() }));
 vi.mock('../../../useCases/clip/removeClip', () => ({ removeClip: vi.fn() }));
 vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({ selectTrack: vi.fn() }));
-vi.mock('#/modules/Automation', () => ({
+vi.mock('#/modules/Automation/useCases', () => ({
     automationStore: { value: { lanes: [] } },
     addAutomationPoint: vi.fn(),
     addAutomationLane: vi.fn(),
@@ -51,7 +52,7 @@ describe('timelineTools', () => {
 
         it('should call splitClip if a clip is hit', () => {
             vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1' } as any);
-            const track = { id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 8 }] };
+            const track = { id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 8 }], kind: 'audio' };
             vi.mocked(trackStore).value = { tracks: [track as any] };
             
             handleCutTool(10, 10, 4);
@@ -62,7 +63,7 @@ describe('timelineTools', () => {
     describe('handleDrawTool', () => {
         it('should update drawDragRef and select track if track is hit', () => {
             vi.mocked(hitTestTrack).mockReturnValue('t1');
-            const track = { id: 't1', kind: 'audio' };
+            const track = { id: 't1', kind: 'audio', clips: [] };
             vi.mocked(trackStore).value = { tracks: [track as any] };
             const ref = { current: null };
 

@@ -1,5 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
-import { exportProjectFile } from '#/modules/Project';
+import { exportProjectFile } from '#/modules/Project/useCases';
 
 export const handleExportProject = createHandler<'exportProject'>({
     execute: () => {

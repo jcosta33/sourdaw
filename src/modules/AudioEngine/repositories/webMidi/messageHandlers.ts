@@ -17,6 +17,8 @@ import {
     getMidiStoreState,
     handleMidiMessage as applyMidiMappings,
     setMidiStoreState,
+    stepRecordNoteOn,
+    stepRecordNoteOff,
 } from '#/modules/MIDI/useCases';
 import {
     getDrumKitDefByIndex,
@@ -26,8 +28,8 @@ import {
 } from '#/modules/Synth/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 import { getTransportStoreValue } from '#/modules/Transport/useCases';
-import { getCompensationDelay } from '../../useCases/latencyCompensation/compensation/getCompensationDelay';
 import { processRealtimeMidiInput } from '#/modules/Yeast/useCases';
+import { getCompensationDelay } from '../../useCases/latencyCompensation/compensation/getCompensationDelay';
 import { getDrumKitByIndex } from '../../models/factoryDrumKits';
 import { createGrandBouleStore } from '#/modules/GrandBoule/stores';
 import { applyVelocityCurve } from '#/modules/GrandBoule/useCases';
@@ -43,6 +45,7 @@ import {
 import { activeNotes, channelToNote, getMpeEnabled, getTargetTrackId } from './state';
 
 const midiMessageHandlerDependencies = {
+    getCompensationDelay,
     getMidiStoreState,
     setMidiStoreState,
     getTrackStoreState,
@@ -59,6 +62,8 @@ const midiMessageHandlerDependencies = {
     getDrumKitDefByIndex,
     scheduleDrumKitNote,
     processRealtimeMidiInput,
+    stepRecordNoteOn,
+    stepRecordNoteOff,
     eventBus,
 };
 
@@ -105,6 +110,7 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
     }
 
     return function handleNoteOff(_channel: number, note: number): void {
+        deps.stepRecordNoteOff(note);
         const noteData = activeNotes.get(note);
         if (!noteData) {
             return;
@@ -268,6 +274,8 @@ export const handleNoteOn = inject({
             handleNoteOff(channel, note);
             return;
         }
+
+        deps.stepRecordNoteOn(note, velocity);
 
         if (!getTargetTrackId()) {
             logger.warn('[MIDI] No target track set — select a MIDI track first');

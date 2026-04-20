@@ -45,9 +45,12 @@ These apply to non-trivial tasks. They are hard constraints, not suggestions.
 
 ---
 
-## What you cannot do
+## Proactive Research
 
-**You cannot create research files.** Research is developer-owned. It requires external access, domain expertise, and human judgment about source quality. Your job is to read existing research in `.agents/research/` and apply it. If research is needed and none exists, record it as a blocker in the task file and surface it — do not fabricate findings.
+**You are empowered and expected to perform research.** If you need to understand an API, fix a complex bug, or evaluate a technical approach, do not endlessly ruminate or guess. 
+- Use your tools to search the codebase and the internet.
+- Finding sources is crucial for decision making. 
+- You may create new research files in `.agents/research/` if your findings represent durable domain knowledge that should be kept. Do not fabricate findings; back them up with real documentation, codebase reality, or internet sources.
 
 ---
 

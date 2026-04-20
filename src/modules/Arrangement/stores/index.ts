@@ -22,7 +22,7 @@ export {
 export type { TimelineViewState } from './timelineViewStore';
 
 export { trackStore, defaultTrackState } from './trackStore';
-export type { TrackStoreState } from './trackStore';
+export type { TrackStoreState, Track } from './trackStore';
 
 export type { AdjustmentEffectType } from './adjustmentLayer';
 

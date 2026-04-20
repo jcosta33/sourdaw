@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
     midiStoreSet: vi.fn(),
 }));
 
-vi.mock('#/modules/MIDI/stores/midiStore', () => ({
+vi.mock('../../../stores/midiStore', () => ({
     midiStore: {
         get value() {
             return mocks.midiStoreValue.value;

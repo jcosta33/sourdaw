@@ -372,11 +372,27 @@ export function scheduleNoteOffline(
     osc.frequency.setValueAtTime(frequency, startTime);
     osc.detune.value = params.detune;
 
-    // Simplified filter (no envelope modulation)
     const filter = ctx.createBiquadFilter();
     filter.type = params.filterType;
-    const velocityScale = 0.3 + 0.7 * (velocity / 127);
-    filter.frequency.setValueAtTime(Math.min(params.filterCutoff * velocityScale, 20000), startTime);
+    const velSens = params.filterVelocitySensitivity ?? 0;
+    const velocityScale =
+        velSens > 0
+            ? 1 - velSens + velSens * (velocity / 127)
+            : 0.3 + 0.7 * (velocity / 127);
+    const pitchScale = Math.sqrt(frequency / 440);
+    const filterCutoff = Math.min(params.filterCutoff * velocityScale * pitchScale, 20000);
+
+    // Filter envelope: match realtime path
+    if (params.filterEnvAmount > 0) {
+        const filterPeak = Math.min(filterCutoff + params.filterEnvAmount, 20000);
+        filter.frequency.setValueAtTime(filterPeak, startTime);
+        const filterAttackEnd = startTime + params.attack;
+        const filterDecayEnd = filterAttackEnd + params.decay;
+        filter.frequency.setValueAtTime(filterPeak, filterAttackEnd);
+        filter.frequency.exponentialRampToValueAtTime(Math.max(filterCutoff, 20), filterDecayEnd);
+    } else {
+        filter.frequency.setValueAtTime(filterCutoff, startTime);
+    }
     filter.Q.setValueAtTime(params.filterResonance, startTime);
 
     // Amplitude envelope

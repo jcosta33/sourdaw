@@ -163,7 +163,7 @@ describe('TrackHeader', () => {
     it('should show frozen indicator when frozen', () => {
         const frozenTrack = { ...mockTrack, frozen: true };
         renderWithTooltip(<TrackHeader track={frozenTrack} isSelected={false} />);
-        expect(screen.getByText('FRZ')).toBeInTheDocument();
+        expect(screen.getByText('FROZEN')).toBeInTheDocument();
     });
 
     it('should render InputSelector for selected audio track', () => {

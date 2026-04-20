@@ -2,9 +2,19 @@ import { trackStore } from '../../stores/trackStore';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { type Clip, type Track } from '../../models/Track';
 import { renderTrackOffline } from './renderOffline';
+import { getTransportState } from '#/modules/Transport/useCases';
+import { pushUndoEntry } from '#/modules/Command/useCases';
 
+export type BounceOptions = {
+    includeInserts: boolean;
+    includeSends: boolean;
+    includeAutomation: boolean;
+    normalization: 'off' | 'protection' | 'full';
+    tailHandling: 'auto' | 'manual' | 'off';
+    destination: 'new-track' | 'replace';
+};
 
-export async function bounceInPlace(trackId: string): Promise<void> {
+export async function bounceTrack(trackId: string, options: BounceOptions): Promise<void> {
     const state = trackStore.value;
     if (!state) {
         return;
@@ -22,21 +32,34 @@ export async function bounceInPlace(trackId: string): Promise<void> {
         if (c.endBeat > endBeat) { endBeat = c.endBeat; }
     }
 
-    const renderedBuffer = await renderTrackOffline(track, startBeat, endBeat);
-
-    const audioBufferId = renderedBuffer ? `bounce-${trackId}-${Date.now()}` : undefined;
-    if (renderedBuffer && audioBufferId) {
-        audioBufferCache.set(audioBufferId, renderedBuffer);
+    // Add tail if requested
+    let finalEndBeat = endBeat;
+    if (options.tailHandling === 'manual') {
+        const tempo = getTransportState()?.tempo ?? 120;
+        finalEndBeat += (5 * tempo) / 60; // 5 seconds fixed tail
     }
 
+    const renderedBuffer = await renderTrackOffline(track, startBeat, finalEndBeat, {
+        includeInserts: options.includeInserts,
+        includeSends: options.includeSends,
+        includeAutomation: options.includeAutomation,
+        normalization: options.normalization,
+        autoTail: options.tailHandling === 'auto',
+    });
+
+    if (!renderedBuffer) {
+        return;
+    }
+
+    const audioBufferId = `bounce-${trackId}-${Date.now()}`;
+    audioBufferCache.set(audioBufferId, renderedBuffer);
+
     const bouncedClip: Clip = {
-        // §122.1 — UUID instead of module-level counter that reset on HMR
-        // and collided across sequential bounces after a reload.
-        id: `frozen-clip-${crypto.randomUUID()}`,
-        trackId,
+        id: `bounced-clip-${crypto.randomUUID()}`,
+        trackId: options.destination === 'replace' ? trackId : `track-bounce-${crypto.randomUUID()}`,
         name: `${track.name} (bounced)`,
         startBeat,
-        endBeat,
+        endBeat: finalEndBeat,
         type: 'audio',
         audioBufferId,
         fadeInBeats: 0,
@@ -52,115 +75,95 @@ export async function bounceInPlace(trackId: string): Promise<void> {
         return;
     }
 
-    trackStore.set({
-        ...freshState,
-        tracks: freshState.tracks.map((t) => {
-            if (t.id !== trackId) {
-                return t;
+    // Snapshot for undo
+    const tracksBefore = structuredClone(freshState.tracks);
+
+    if (options.destination === 'replace') {
+        trackStore.set({
+            ...freshState,
+            tracks: freshState.tracks.map((t) => {
+                if (t.id !== trackId) {
+                    return t;
+                }
+                return {
+                    ...t,
+                    clips: [bouncedClip],
+                    devices: options.includeInserts ? [] : t.devices,
+                };
+            }),
+        });
+    } else {
+        const altId = `alt-bounce-${crypto.randomUUID().slice(0, 8)}`;
+        const newTrack: Track = {
+            ...track,
+            id: bouncedClip.trackId,
+            name: `${track.name} (bounce)`,
+            kind: 'audio',
+            clips: [bouncedClip],
+            devices: options.includeInserts ? [] : track.devices,
+            sends: options.includeSends ? [] : track.sends,
+            frozen: false,
+            freezeState: { status: 'unfrozen' },
+            alternatives: [{ id: altId, name: 'Bounced', clips: [bouncedClip] }],
+            activeAlternativeId: altId,
+        };
+
+        const insertIndex = freshState.tracks.findIndex((t) => t.id === trackId) + 1;
+        const tracks = [...freshState.tracks];
+        tracks.splice(insertIndex, 0, newTrack);
+        trackStore.set({ ...freshState, tracks });
+    }
+
+    // Register undo for the bounce operation
+    const tracksAfter = structuredClone(trackStore.value?.tracks ?? []);
+    pushUndoEntry(
+        'Bounce Track',
+        () => {
+            const s = trackStore.value;
+            if (s) {
+                trackStore.set({ ...s, tracks: tracksBefore });
             }
-            return {
-                ...t,
-                clips: [bouncedClip],
-                devices: [],
-            };
-        }),
+        },
+        () => {
+            const s = trackStore.value;
+            if (s) {
+                trackStore.set({ ...s, tracks: tracksAfter });
+            }
+        }
+    );
+}
+
+export async function bounceInPlace(trackId: string): Promise<void> {
+    return bounceTrack(trackId, {
+        includeInserts: true,
+        includeSends: false,
+        includeAutomation: true,
+        normalization: 'protection',
+        tailHandling: 'auto',
+        destination: 'replace',
     });
 }
 
 export async function bounceToNewTrack(trackId: string): Promise<void> {
-    const state = trackStore.value;
-    if (!state) {
-        return;
-    }
-
-    const track = state.tracks.find((t) => t.id === trackId);
-    if (!track || track.clips.length === 0) {
-        return;
-    }
-
-    let startBeat = Infinity;
-    let endBeat = -Infinity;
-    for (const c of track.clips) {
-        if (c.startBeat < startBeat) { startBeat = c.startBeat; }
-        if (c.endBeat > endBeat) { endBeat = c.endBeat; }
-    }
-
-    const renderedBuffer = await renderTrackOffline(track, startBeat, endBeat);
-    const audioBufferId = renderedBuffer ? `bounce-new-${trackId}-${Date.now()}` : undefined;
-    if (renderedBuffer && audioBufferId) {
-        audioBufferCache.set(audioBufferId, renderedBuffer);
-    }
-
-    const newTrackId = `track-bounce-${crypto.randomUUID()}`;
-    const bouncedClip: Clip = {
-        id: `bounced-new-${crypto.randomUUID()}`,
-        trackId: newTrackId,
-        name: `${track.name} (bounced)`,
-        startBeat,
-        endBeat,
-        type: 'audio',
-        audioBufferId,
-        fadeInBeats: 0,
-        fadeOutBeats: 0,
-        gain: 1.0,
-        color: '',
-        locked: false,
-        muted: false,
-    };
-
-    const freshState = trackStore.value;
-    if (!freshState) {
-        return;
-    }
-
-    const newTrack: Track = {
-        id: newTrackId,
-        name: `${track.name} (bounce)`,
-        kind: 'audio',
-        muted: false,
-        soloed: false,
-        armed: false,
-        gain: 0.8,
-        pan: 0,
-        color: track.color,
-        clips: [bouncedClip],
-        devices: [],
-        sends: [],
-        frozen: false,
-        parentId: null,
-        collapsed: false,
-        inputMonitoring: 'auto',
-        hidden: false,
-        disabled: false,
-        height: 80,
-        outputId: 'master',
-        automationMode: 'read',
-        groupId: null,
-        soloSafe: false,
-        notes: '',
-        inputId: null,
-        alternatives: [{ id: 'alt-main', name: 'Main', clips: [bouncedClip] }],
-        activeAlternativeId: 'alt-main',
-        vcaGroupId: null,
-        midiOutputTrackId: null,
-        followChordTrack: false,
-    };
-
-    const insertIndex = freshState.tracks.findIndex((t) => t.id === trackId) + 1;
-    const tracks = [...freshState.tracks];
-    tracks.splice(insertIndex, 0, newTrack);
-
-    trackStore.set({ ...freshState, tracks });
+    return bounceTrack(trackId, {
+        includeInserts: true,
+        includeSends: false,
+        includeAutomation: true,
+        normalization: 'protection',
+        tailHandling: 'auto',
+        destination: 'new-track',
+    });
 }
 
 export async function bounceSelection(trackId: string, startBeat: number, endBeat: number): Promise<void> {
+    // Selection bounce uses hardcoded options for now, but could be extended
     const state = trackStore.value;
     if (!state) {
         return;
     }
 
     const track = state.tracks.find((t) => t.id === trackId);
-    if (!track || track.clips.length === 0) {
+    if (!track) {
         return;
     }
 
@@ -180,10 +183,12 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
 
     const renderedBuffer = await renderTrackOffline(virtualTrack, startBeat, endBeat);
 
-    const audioBufferId = renderedBuffer ? `bounce-sel-${trackId}-${Date.now()}` : undefined;
-    if (renderedBuffer && audioBufferId) {
-        audioBufferCache.set(audioBufferId, renderedBuffer);
+    if (!renderedBuffer) {
+        return;
     }
+
+    const audioBufferId = `bounce-sel-${trackId}-${Date.now()}`;
+    audioBufferCache.set(audioBufferId, renderedBuffer);
 
     const bouncedClip: Clip = {
         id: `bounced-sel-${crypto.randomUUID()}`,
@@ -206,6 +211,8 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
         return;
     }
 
+    const tracksBefore = structuredClone(freshState.tracks);
+
     trackStore.set({
         ...freshState,
         tracks: freshState.tracks.map((t) => {
@@ -219,4 +226,21 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
             };
         }),
     });
+
+    const tracksAfter = structuredClone(trackStore.value?.tracks ?? []);
+    pushUndoEntry(
+        'Bounce Selection',
+        () => {
+            const s = trackStore.value;
+            if (s) {
+                trackStore.set({ ...s, tracks: tracksBefore });
+            }
+        },
+        () => {
+            const s = trackStore.value;
+            if (s) {
+                trackStore.set({ ...s, tracks: tracksAfter });
+            }
+        }
+    );
 }

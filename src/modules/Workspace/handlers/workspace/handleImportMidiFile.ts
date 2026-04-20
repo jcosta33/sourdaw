@@ -1,7 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { importMidiFile } from '#/modules/Arrangement/useCases';
-import { pickFiles } from '#/modules/Project';
+import { pickFiles } from '#/modules/Project/useCases';
 
 export const handleImportMidiFile = createHandler<'importMidiFile'>({
     execute: () => {

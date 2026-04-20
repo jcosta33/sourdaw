@@ -51,6 +51,16 @@ export const ClipView = (): ReactElement => {
     const selectedClip =
         selectedTrack.clips.find((c) => c.id === wsState?.selectedClipId) ?? selectedTrack.clips[0] ?? null;
 
+    // A9: collect all selected MIDI clip IDs across all tracks for multi-clip editing
+    const openedClipIds: string[] | undefined = (() => {
+        const ids = wsState?.selectedClipIds ?? [];
+        if (ids.length <= 1) return undefined;
+        const midiClipIds = ids.filter((id) =>
+            tracks.some((t) => t.kind === 'midi' && t.clips.some((c) => c.id === id))
+        );
+        return midiClipIds.length > 1 ? midiClipIds : undefined;
+    })();
+
     const handleSelectClip = (clipId: string): void => {
         selectClip(clipId);
     };
@@ -111,6 +121,7 @@ export const ClipView = (): ReactElement => {
                     <PianoRoll
                         clipId={selectedClip.id}
                         trackId={selectedTrack.id}
+                        openedClipIds={openedClipIds}
                         selectedNoteIds={selectedNoteIds}
                         onSelectedNoteIdsChange={setSelectedNoteIds}
                         onScrollChange={handlePianoRollScroll}
@@ -120,7 +131,7 @@ export const ClipView = (): ReactElement => {
                 ) : selectedClip && audioEditMode === 'pitch' ? (
                     <KneadEditor trackId={selectedTrack.id} clipId={selectedClip.id} />
                 ) : selectedClip ? (
-                    <WaveformEditor clipId={selectedClip.audioBufferId ?? selectedClip.id} />
+                    <WaveformEditor clipId={selectedClip.id} />
                 ) : (
                     <div className="flex flex-1 p-4">
                         <DawEmptyState

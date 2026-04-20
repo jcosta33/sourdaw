@@ -14,6 +14,7 @@ import { trackStore, defaultTrackState } from '../../stores/trackStore';
 import { detectTempo, detectKey } from '#/modules/AudioAnalysis/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { splitClipWithUndo } from '../../useCases/clipEditing/splitClipWithUndo';
+import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
 import { normalizeClip } from '../../useCases/clipEditing/normalizeClip';
 import { reverseClip } from '../../useCases/clipEditing/reverseClip';
 import { lockClip } from '../../useCases/clipEditing/lockClip';
@@ -178,6 +179,12 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
 
     const renderMidiActions = (): ReactElement => (
         <>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => toggleInlineEditing(clipId))}
+            >
+                {clip?.isInlineEditing ? 'Close Inline Editor' : 'Open Inline Editor'}
+            </DawMenuButton>
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => executeAppAction({ type: 'arpeggiate', payload: { clipId } }))}

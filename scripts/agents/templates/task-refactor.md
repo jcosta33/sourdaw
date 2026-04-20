@@ -14,6 +14,8 @@
 ---
 
 > ⚠️ **REFACTOR SESSION** — Run `pnpm deps:validate` after every 10 files. Do not declare done until it passes with zero violations. No codemods. No automated mutations. Every file change is individual and deliberate.
+> 
+> **PERSONA:** Load `.agents/skills/personas/SKILL.md` and adopt **The Janitor** persona.
 
 ---
 
@@ -60,7 +62,7 @@ Every public path you add a compatibility shim to. Do not remove a shim until al
 - **Run `pnpm deps:validate` after every 10 files — mandatory, not optional**
 - No codemods, no automated mutations, no shell loops over files
 - Document every shim contract in the table above before continuing
-- **Do not read other specs, research, or bug reports** beyond the linked doc(s) provided to you. If context from another spec/research/bug file is needed, ask the user — do not browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are fair game.
+- **Proactively research and read related docs.** If context from another spec, research, or bug file is needed, you are empowered to browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own to confirm your hypotheses and make informed decisions. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are also fair game.
 
 ---
 
@@ -143,6 +145,11 @@ Stop. Refactors are high-risk: they touch many files, they drift from intent, an
 ### Primary deliverable and related work
 
 - The refactor plan is the main job. If you fixed or improved something beyond it, note it in **Findings** or **Decisions** so the branch stays reviewable. Do not revert correct work only because it was extra.
+  Answer:
+
+### Final Polish
+
+- Did you ask yourself: "What else could I do? How can I make this even better, more stable, or more bug-free?" Do not second-guess every decision, but do not leave the work without this final adversarial pass.
   Answer:
 
 Only when every answer above is written is this task complete.

@@ -16,6 +16,9 @@ import { persistCrdtProject } from './crdtProjectLifecycle';
 
 const DEBOUNCE_MS = 2_000;
 
+/** Consecutive save failure count — readable by UI to surface warnings. */
+export const autoSaveHealth = { consecutiveFailures: 0 };
+
 export function startCrdtAutoSave(): () => void {
     let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -25,9 +28,23 @@ export function startCrdtAutoSave(): () => void {
         }
         timer = setTimeout(() => {
             timer = null;
-            persistCrdtProject().catch((error) => {
-                logger.warn('[CrdtAutoSave] Incremental persist failed:', error);
-            });
+            persistCrdtProject()
+                .then(() => {
+                    autoSaveHealth.consecutiveFailures = 0;
+                })
+                .catch((error) => {
+                    autoSaveHealth.consecutiveFailures++;
+                    if (autoSaveHealth.consecutiveFailures <= 3) {
+                        logger.warn('[CrdtAutoSave] Incremental persist failed:', error);
+                    } else {
+                        logger.error(
+                            new Error(
+                                `[CrdtAutoSave] Auto-save has failed ${autoSaveHealth.consecutiveFailures} times consecutively. ` +
+                                `Recent edits may not survive a browser restart. Check storage quota. Last error: ${error}`
+                            )
+                        );
+                    }
+                });
         }, DEBOUNCE_MS);
     };
 

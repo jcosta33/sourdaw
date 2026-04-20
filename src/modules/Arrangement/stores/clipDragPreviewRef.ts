@@ -12,6 +12,8 @@ export type ClipPreviewPosition = {
     trackId: string;
     startBeat: number;
     endBeat: number;
+    audioOffsetBeats?: number;
+    midiOffsetBeats?: number;
 };
 
 export type ClipDragPreview = {
@@ -22,3 +24,15 @@ export type ClipDragPreview = {
 };
 
 export const clipDragPreviewRef: { current: ClipDragPreview | null } = { current: null };
+
+/**
+ * Lightweight dirty signal for the preview ref. Set to `true` by
+ * `useTimelineInteractions` whenever `clipDragPreviewRef.current` changes;
+ * read + cleared by the render loop in `TimelineSurface`.
+ *
+ * This exists because the preview ref is a plain object (not a store),
+ * so mutating it doesn't trigger store subscriptions that mark the
+ * canvas dirty.
+ */
+export const previewDirtyFlag = { value: false };
+

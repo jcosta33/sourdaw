@@ -20,7 +20,7 @@ vi.mock('../../../useCases/setTrackState', () => ({
     setTrackState: mocks.setTrackState,
 }));
 
-vi.mock('#/modules/Automation', () => ({
+vi.mock('#/modules/Automation/stores', () => ({
     automationStore: {
         get value() { return mocks.automationStoreValue.value; },
         set: mocks.automationStoreSet,

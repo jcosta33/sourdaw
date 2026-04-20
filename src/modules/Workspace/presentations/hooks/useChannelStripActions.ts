@@ -15,7 +15,7 @@ import {
     createAndAssignVcaGroup,
     removeTrackFromVCA,
 } from '#/modules/Arrangement/useCases';
-import { releaseTouchAutomation } from '#/modules/Automation';
+import { releaseTouchAutomation } from '#/modules/Automation/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 import { type Track } from '../../models/TrackViewTypes';
 

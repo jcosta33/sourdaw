@@ -103,6 +103,10 @@ export const setVirtualKeyboardVelocity = (velocity: number): void => {
     updateWorkspaceState({ virtualKeyboardVelocity: Math.max(1, Math.min(127, velocity)) });
 };
 
+export const setSessionViewWidth = (width: number): void => {
+    updateWorkspaceState({ sessionViewWidth: width });
+};
+
 // ── Group 2: boolean toggles via factory ────────────────────────────────
 // Each of these reads the current state, negates one boolean field,
 // and writes it back. The factory centralises the read-guard logic.
@@ -132,6 +136,7 @@ export const toggleSidebar = createBooleanToggle('sidebarOpen');
 export const toggleTrackList = createBooleanToggle('trackListOpen');
 export const toggleUndoHistory = createBooleanToggle('undoHistoryOpen');
 export const toggleVirtualKeyboard = createBooleanToggle('virtualKeyboardOpen');
+export const toggleDualView = createBooleanToggle('dualViewOpen');
 
 // ── Group 3: stateful transitions ───────────────────────────────────────
 

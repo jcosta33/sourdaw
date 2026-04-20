@@ -14,6 +14,8 @@
 ---
 
 > 🔒 **SPEC WRITING SESSION** — This session produces a spec document, not code. You may NOT modify any source files, configuration files, or dependencies. Output: `.agents/specs/{{slug}}.md`.
+> 
+> **PERSONA:** Load `.agents/skills/personas/SKILL.md` and adopt **The Architect** persona.
 
 ---
 
@@ -82,7 +84,7 @@ If you cannot find any prior art, state that explicitly — "no existing pattern
 - Work only inside this worktree
 - Do not switch branches unless explicitly instructed
 - Do not merge, rebase, or push unless explicitly instructed
-- **Do not read other specs, research, or bug reports** beyond the linked doc(s) provided to you. If context from another spec/research/bug file is needed, ask the user — do not browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are fair game.
+- **Proactively research and read related docs.** If context from another spec, research, or bug file is needed, you are empowered to browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own to confirm your hypotheses and make informed decisions. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are also fair game.
 
 ---
 
@@ -171,6 +173,11 @@ Stop. A spec that ships with gaps, ambiguities, or unresolved questions will cau
 ### Integration with existing patterns
 
 - Did you complete the Pattern survey above? For each major design choice, does it reuse an established helper/primitive/convention, or does it introduce a new one? If new, is the "Deliberate departures" justification defensible? Would a reviewer familiar with the codebase recognize the spec's shape immediately?
+  Answer:
+
+### Final Polish
+
+- Did you ask yourself: "What else could I do? How can I make this even better, more stable, or more bug-free?" Do not second-guess every decision, but do not leave the work without this final adversarial pass.
   Answer:
 
 Only when every answer above is written is this task complete.
