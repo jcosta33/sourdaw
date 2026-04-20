@@ -8,6 +8,27 @@ const mocks = vi.hoisted(() => ({
     generateToolCalls: vi.fn(),
     llmGenerateNotes: vi.fn(),
     info: vi.fn(),
+    addClip: vi.fn(),
+    trackStore: {
+        value: {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        { id: 'c1', startBeat: 4, name: 'Lead', type: 'midi' }
+                    ]
+                }
+            ]
+        }
+    }
+}));
+
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    addClip: mocks.addClip,
+}));
+
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: mocks.trackStore,
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
@@ -52,9 +73,10 @@ describe('handleCompleteMidi', () => {
         expect(mocks.info).toHaveBeenCalledWith(expect.stringContaining('Completed 1 notes'));
     });
 
-    it('generates backward lead-in notes', async () => {
+    it('generates backward lead-in notes on a new prepended clip', async () => {
         mocks.getNotesForClip.mockReturnValue([{ pitch: 60, startBeat: 0, duration: 4 }]);
         mocks.llmGenerateNotes.mockResolvedValue([{ pitch: 58, startBeat: -4, duration: 1, velocity: 80 }]);
+        mocks.addClip.mockReturnValue({ id: 'new-clip-id' });
 
         await handleCompleteMidi.execute({
             type: 'completeMidi',
@@ -68,7 +90,16 @@ describe('handleCompleteMidi', () => {
             'c1'
         );
 
-        expect(mocks.addMidiNote).toHaveBeenCalledWith('c1', 58, -4, 1, 80);
+        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({
+            trackId: 't1',
+            startBeat: 0, // max(0, 4 - 4)
+            endBeat: 4,
+            name: 'Lead (intro)'
+        }));
+        
+        // Note is shifted relative to its minimum startBeat (-4)
+        // Shifted start = -4 - (-4) = 0
+        expect(mocks.addMidiNote).toHaveBeenCalledWith('new-clip-id', 58, 0, 1, 80);
     });
 
     it('provides a description', () => {

@@ -42,7 +42,7 @@ export function applyChordProgressionToTrack(
         clip.id,
         notes.map((note) => ({
             pitch: note.pitch,
-            startBeat: startBeat + note.startBeat,
+            startBeat: note.startBeat,
             duration: Math.max(MIN_NOTE_DURATION, note.duration),
             velocity: note.velocity,
         }))
