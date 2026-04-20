@@ -34,7 +34,7 @@ describe('connectNodes', () => {
         expect(conns[0]?.toNodeId).toBe('nb');
         expect(conns[0]?.fromOutput).toBe(0);
         expect(conns[0]?.toInput).toBe(1);
-        expect(conns[0]?.id).toMatch(/^conn-\d+$/);
+        expect(conns[0]?.id).toMatch(/^conn-[a-f0-9-]+$/);
     });
 
     it('should not add a duplicate connection with the same endpoints', () => {

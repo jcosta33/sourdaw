@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 // Utilities to get repo paths
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
-const AGENTS_BIN = join(REPO_ROOT, 'scripts', 'agents.mjs');
+const AGENTS_BIN = join(REPO_ROOT, 'scripts', 'agents.ts');
 
 function dirname(path) {
     const parts = path.split('/');
@@ -32,20 +32,35 @@ function generateSlug(title) {
 async function run() {
     let args = process.argv.slice(2);
     
+    if (args.length > 0 && args[0] === 'review') {
+        return cmdReview(args.slice(1));
+    }
+    
+    // Otherwise it's the `new` command
+    if (args.length > 0 && args[0] === 'new') {
+        args = args.slice(1);
+    }
+    
     if (args.length === 0 || args[0] === '--help') {
         console.log(`
-Usage: pnpm delegator:new [agent] [title] [file1] [file2] ...
+Usage: 
+  pnpm delegator:new [agent] [title] [file1] [file2] ...
+  pnpm delegator:review <slug>
 
 Launches a "Lead Engineer" agent whose sole purpose is to orchestrate multiple
 worker agents concurrently using git worktrees.
 
-Arguments:
+Arguments (new):
   agent    (Optional) The agent to launch (e.g. claude, gemini, codex). Defaults to claude.
   title    A short title for the delegation session (e.g. "Fix auth and limits")
   files    Paths to specs, audits, or bugs that need to be delegated.
 
+Arguments (review):
+  slug     The slug of the worker sandbox to review (e.g. "feature-auth").
+  
 Example:
   pnpm delegator:new gemini "Fix auth and limits" .agents/specs/auth.md .agents/bugs/rate-limit.md
+  pnpm delegator:review feature-auth
         `);
         process.exit(0);
     }
@@ -63,8 +78,13 @@ Example:
     }
 
     const title = args[0];
-    const taskFiles = args.slice(1).map(f => resolve(process.cwd(), f));
-    
+    const taskFiles = args.slice(1)
+        .filter(f => f !== '--no-launch')
+        .map(f => resolve(process.cwd(), f));
+
+    const noLaunch = args.includes('--no-launch');
+
+
     // Verify all input files exist
     for (const file of taskFiles) {
         if (!existsSync(file)) {
@@ -132,9 +152,13 @@ ${tasks.map(t => `### ${t.id}: ${t.name}
    wait $P1 $P2
    \`\`\`
 
-2. **Adversarial Review (The Skeptic Persona):** Once a worker finishes, you MUST change directories to their isolated worktree or checkout their branch to review their commit. Read the diff, run \`pnpm typecheck\` and \`pnpm deps:validate\` yourself, and verify they wrote tests. Do not trust them blindly.
+2. **Adversarial Review (The Skeptic Persona):** Once a worker finishes, you MUST use the review macro to generate a comprehensive report of their changes:
+   \`\`\`bash
+   pnpm delegator:review <slug>
+   \`\`\`
+   Read the output carefully. It will show the diff, typecheck results, and dependency validation. Do not trust the worker blindly.
 
-4. **Iterate or Merge:** If the worker's branch is flawless, you may merge it. If it fails your review, you must append your feedback to their task file and relaunch them to fix it.
+4. **Iterate or Merge:** If the worker's branch is flawless, you may merge it into YOUR current integration branch (do NOT merge into main). If it fails your review, you must append your feedback to their task file and relaunch them to fix it.
 
 5. **Resuming Incomplete Workers:** If a worker stops before finishing its task (e.g., due to a token limit or crash), do not start over. Write feedback directly into its task file and resume the worker in its existing sandbox using the \`open\` command:
    \`\`\`bash
@@ -172,6 +196,8 @@ ${tasks.map(t => `- [ ] Review ${t.id}`).join('\n')}
 ## Final Review
 
 Stop. Before you consider this delegation complete, did you verify the workers mathematically and behaviorally? Did you run the compiler on their branches?
+
+Once all workers are successfully merged into your integration branch, do NOT merge into main. Instead, write a final summary of what was accomplished and provide clear instructions for the human developer on how to test this integration branch locally before they manually merge it.
 `;
 
     // Write the template somewhere the main launcher can grab it
@@ -184,9 +210,9 @@ Stop. Before you consider this delegation complete, did you verify the workers m
     
     // We pass the temp template directly as a positional arg, the launcher handles it
     const spawnArgs = [AGENTS_BIN, 'new', agent, '--base', 'main', '--spec', tempTemplatePath, title];
-    
-    const child = spawn(process.execPath, spawnArgs, {
-        cwd: REPO_ROOT,
+    if (noLaunch) spawnArgs.push('--no-launch');
+
+    const child = spawn(process.execPath, spawnArgs, {        cwd: REPO_ROOT,
         stdio: 'inherit'
     });
 
@@ -196,6 +222,89 @@ Stop. Before you consider this delegation complete, did you verify the workers m
         }
         process.exit(code);
     });
+}
+
+async function cmdReview(args) {
+    if (args.length === 0) {
+        die("Usage: pnpm delegator:review <slug>");
+    }
+    const slug = args[0];
+    const { findWorktreeForBranch } = await import('./agents/git.ts');
+    const { colors, bold, cyan, green, red, yellow, box, dim } = await import('./agents/colors.ts');
+    
+    // We assume the branch name follows the standard convention
+    // The slug provided is the exact slug. Branch is `agent/<slug>`.
+    const branchName = `agent/${slug}`;
+    const worktreePath = findWorktreeForBranch(branchName, REPO_ROOT);
+    
+    if (!worktreePath) {
+        die(`Worktree for branch ${branchName} not found. Is the sandbox active?`);
+    }
+    
+    console.log(`\n${bold(cyan('┌'))} ${bold(cyan('Adversarial Review Report:'))} ${cyan(slug)}`);
+    console.log(`${cyan('│')} ${cyan('Worktree:')} ${worktreePath}`);
+    console.log(`${cyan('└' + '─'.repeat(50))}\n`);
+    
+    console.log(bold(yellow('1. Diff (main...HEAD):')));
+    const diffResult = spawnSync('git', ['diff', 'main...HEAD', '--stat'], { cwd: worktreePath, encoding: 'utf8' });
+    console.log(diffResult.stdout || dim('(No changes)'));
+    
+    console.log(bold(yellow('2. Typecheck:')));
+    const typecheckResult = spawnSync('pnpm', ['typecheck'], { cwd: worktreePath, encoding: 'utf8' });
+    if (typecheckResult.status === 0) {
+        console.log(green('✓ Typecheck passed.'));
+    } else {
+        console.log(red('✗ Typecheck failed:'));
+        console.log(typecheckResult.stdout);
+    }
+    
+    console.log('\n' + bold(yellow('3. Dependency Validation:')));
+    const depsResult = spawnSync('pnpm', ['deps:validate'], { cwd: worktreePath, encoding: 'utf8' });
+    if (depsResult.status === 0) {
+        console.log(green('✓ Dependencies valid (No architectural violations).'));
+    } else {
+        console.log(red('✗ Dependency validation failed:'));
+        console.log(depsResult.stdout);
+    }
+    
+    console.log('\n' + bold(cyan('Done. Use the results above to formulate your feedback for the worker.')) + '\n');
+}
+
+run().catch(err => {
+    console.error(err);
+    process.exit(1);
+});
+}
+
+run().catch(err => {
+    console.error(err);
+    process.exit(1);
+});
+ole.log(`${cyan('└' + '─'.repeat(50))}\n`);
+    
+    console.log(bold(yellow('1. Diff (main...HEAD):')));
+    const diffResult = spawnSync('git', ['diff', 'main...HEAD', '--stat'], { cwd: worktreePath, encoding: 'utf8' });
+    console.log(diffResult.stdout || dim('(No changes)'));
+    
+    console.log(bold(yellow('2. Typecheck:')));
+    const typecheckResult = spawnSync('pnpm', ['typecheck'], { cwd: worktreePath, encoding: 'utf8' });
+    if (typecheckResult.status === 0) {
+        console.log(green('✓ Typecheck passed.'));
+    } else {
+        console.log(red('✗ Typecheck failed:'));
+        console.log(typecheckResult.stdout);
+    }
+    
+    console.log('\n' + bold(yellow('3. Dependency Validation:')));
+    const depsResult = spawnSync('pnpm', ['deps:validate'], { cwd: worktreePath, encoding: 'utf8' });
+    if (depsResult.status === 0) {
+        console.log(green('✓ Dependencies valid (No architectural violations).'));
+    } else {
+        console.log(red('✗ Dependency validation failed:'));
+        console.log(depsResult.stdout);
+    }
+    
+    console.log('\n' + bold(cyan('Done. Use the results above to formulate your feedback for the worker.')) + '\n');
 }
 
 run().catch(err => {

@@ -165,6 +165,36 @@ module.exports = {
         },
 
         {
+            name: 'no-relative-cross-module-imports',
+            severity: 'error',
+            comment:
+                'Cross-module imports must use the #/modules/ alias and target a barrel. ' +
+                'Relative imports (../../) are only allowed within the same module.',
+            from: {
+                path: MODULE_ROOT,
+            },
+            to: {
+                path: '^src/modules/',
+                pathNot: '^$1$2', // target path must NOT start with the same module root
+                dependencyTypes: ['local'], // only catch relative imports
+            },
+        },
+
+        {
+            name: 'no-internal-barrel-import',
+            severity: 'error',
+            comment:
+                'Internal module files must not import from their own module barrels (index.ts). ' +
+                'Import implementation files directly using relative paths.',
+            from: {
+                path: MODULE_ROOT,
+            },
+            to: {
+                path: '^$1$2/.*/index\\.ts$',
+            },
+        },
+
+        {
             name: 'no-self-barrel-import',
             severity: 'error',
             comment:

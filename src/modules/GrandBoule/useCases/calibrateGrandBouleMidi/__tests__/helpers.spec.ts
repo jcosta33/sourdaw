@@ -8,8 +8,16 @@ import { createDefaultMorphState } from '../../../models/GrandBouleMorphState';
 import { createNeutralPresetParameters } from '../../../models/GrandBoulePreset';
 import { clamp, updateCalibration } from '../helpers';
 
+// Mock store to satisfy the interface
+const mockStore = {
+    value: null as GrandBouleState | null,
+    set(val: GrandBouleState | null) {
+        this.value = val;
+    },
+} as unknown as Store<GrandBouleState>;
+
 function resetGrandBouleStore(): void {
-    input.store.set({
+    mockStore.set({
         config: createDefaultGrandBouleConfig(),
         parameters: createNeutralPresetParameters(),
         pedals: { sustain: 0, unaCorda: false, sostenuto: false },
@@ -43,15 +51,15 @@ describe('calibrateGrandBouleMidi helpers', () => {
         });
 
         it('should merge partial calibration into the store', () => {
-            updateCalibration({ velocityFloor: 0.12 });
-            expect(input.store.value?.midiCalibration.velocityFloor).toBe(0.12);
-            expect(input.store.value?.midiCalibration.velocityCeiling).toBe(1);
+            updateCalibration(mockStore, { velocityFloor: 0.12 });
+            expect(mockStore.value?.midiCalibration.velocityFloor).toBe(0.12);
+            expect(mockStore.value?.midiCalibration.velocityCeiling).toBe(1);
         });
 
         it('should not mutate when grandBouleStore value is null', () => {
-            input.store.set(null);
-            updateCalibration({ velocityFloor: 0.2 });
-            expect(input.store.value).toBeNull();
+            mockStore.set(null);
+            updateCalibration(mockStore, { velocityFloor: 0.2 });
+            expect(mockStore.value).toBeNull();
         });
     });
 });

@@ -15,6 +15,7 @@ Consolidated from the 16-research-document technical reference and `differentiat
 - **Run `pnpm deps:validate`** after every batch of cross-module changes — zero violations required.
 
 For features covered by dedicated specs, see:
+
 - `specs/missing/` — 16 unimplemented feature specs (articulation-maps, atmos, bakery, etc.)
 - `specs/partial/` — audio-generation, drum-machine, workflow-ui
 - `specs/implemented/` — 18 completed specs
@@ -55,6 +56,7 @@ Build the parts that solve real production pain:
 `pasteNotes.ts` and `pasteClip.ts` strip `pressure`, `slide`, and `pitchBend` from copied notes by routing through `createMidiNote()` which only accepts 5 args. The clipboard correctly preserves all fields (via spread in `copySelectedNotes.ts`), but paste discards them.
 
 **Fix in `src/modules/Arrangement/useCases/clipboard/pasteNotes.ts` line 24-25:**
+
 ```typescript
 // BEFORE (drops expression):
 const pastedNotes: MidiNote[] = noteClipboard.notes.map((n) =>
@@ -70,6 +72,7 @@ const pastedNotes: MidiNote[] = noteClipboard.notes.map((n) => ({
 ```
 
 **Same fix in `src/modules/Arrangement/useCases/clipboard/pasteClip.ts` line 50-51:**
+
 ```typescript
 // BEFORE:
 const copiedNotes: MidiNote[] = entry.midiNotes.map((n) =>
@@ -105,6 +108,7 @@ Items have dependencies — build in this order:
 ### Current state
 
 The codebase has foundational pieces:
+
 - **Project-level branching** via Automerge CRDT (`src/modules/CrdtDocument/useCases/crdtBranching/`) — fork, switch, merge, delete branches. UI in `BranchManagerDialog.tsx`. Production-ready.
 - **Track alternatives** (`Track.alternatives[]`, `activeAlternativeId`) with create/switch/delete. UI in `TrackAlternativesSection.tsx`.
 - **Linked clips** (`Clip.parentClipId`, `isLinkedInstance`, `overrides`) for pattern instances.
@@ -134,6 +138,7 @@ A user creates three alternate choruses, auditions them in place, keeps two as a
 The `Clip` type lives in `src/modules/Arrangement/models/Track.ts` (line 74). It already has `parentClipId`, `isLinkedInstance`, and `overrides` fields for the linked-instance pattern (H1). Variants need a different shape — linked instances share content and propagate changes; variants are independent snapshots that diverge.
 
 **Data model** — add to the `Clip` type:
+
 ```
 variantGroupId?: string;    // All variants in a group share this ID
 variantLabel?: string;      // "A", "B", "Original", "AI suggestion #2"
@@ -144,6 +149,7 @@ variantCreatedAt?: number;  // Unix epoch ms
 Clips with the same `variantGroupId` are siblings. The active variant is the one currently on the track timeline; archived variants are stored in `TrackAlternative` (which already exists at line 9: `{ id, name, clips: Clip[] }`). This reuses the existing alternative infrastructure rather than creating a parallel system.
 
 **Use cases** — create in `src/modules/Arrangement/useCases/variants/`:
+
 - `createVariant.ts` — snapshot current clip content (MIDI notes from `midiStore` + clip properties), assign shared `variantGroupId`, store original in alternatives
 - `promoteVariant.ts` — swap an archived variant to the active timeline position, archive the current one
 - `compareVariants.ts` — generate a human-readable diff summary between two variants (note count, pitch range, duration, expression data presence)
@@ -166,6 +172,7 @@ Clips with the same `variantGroupId` are siblings. The active variant is the one
 ### What's missing
 
 No indication of:
+
 - Whether playback is preview or final quality
 - Whether a cached, stale, or freshly rendered result is playing
 - Which engine/backend is active for each track
@@ -195,6 +202,7 @@ The user can always tell whether they're hearing a cached result, a preview, a d
 The StatusBar lives at `src/modules/Workspace/presentations/views/StatusBar.tsx`. It already reads `llmStatusStore` and `renderQueueStore` for AI/render status. The `renderQueueStore` (`src/modules/BrowserAi/stores/renderQueueStore.ts`) already tracks `PhraseRenderStatus` with values: `not-rendered`, `queued`, `preparing`, `rendering-browser`, `rendering-native`, `preview`, `final`, `stale`, `error`. The infrastructure for status is partially there — it just isn't surfaced to the user as runtime transparency.
 
 **Store** — create `src/modules/Workspace/stores/runtimeTransparencyStore.ts`:
+
 ```
 type RuntimeTransparency = {
     runtimeClass: 'browser-wasm' | 'native-rust' | 'hybrid';
@@ -232,14 +240,14 @@ No structured trust mode system. AI operations don't declare their autonomy leve
 
 Every AI action declares its trust mode before execution:
 
-| Mode | Behavior |
-|------|----------|
-| **Suggest only** | Show ghost clips/notes, no session changes |
-| **Create branch** | Results go to a new variant, never touch mainline |
-| **Apply reversible delta** | Modify in place with full undo |
-| **Replace selection** | Overwrite selected content (requires confirmation) |
-| **Destructive commit** | Permanent change (e.g., bounce with AI processing) |
-| **Analyze only** | Read-only inspection, no output artifacts |
+| Mode                       | Behavior                                           |
+| -------------------------- | -------------------------------------------------- |
+| **Suggest only**           | Show ghost clips/notes, no session changes         |
+| **Create branch**          | Results go to a new variant, never touch mainline  |
+| **Apply reversible delta** | Modify in place with full undo                     |
+| **Replace selection**      | Overwrite selected content (requires confirmation) |
+| **Destructive commit**     | Permanent change (e.g., bounce with AI processing) |
+| **Analyze only**           | Read-only inspection, no output artifacts          |
 
 ### UX
 
@@ -255,6 +263,7 @@ No AI-assisted action may silently replace mainline creative material unless the
 ### Implementation guidance
 
 The AI execution pipeline has three independent dispatch paths that all need trust mode enforcement:
+
 - `src/modules/AiRuntime/useCases/sendChatMessage.ts` (~296 LOC) — chat-based AI with its own backend dispatch
 - `src/modules/AiRuntime/useCases/dsoEditor/executeDsoEdit.ts` (~451 LOC) — DSO editor with private `invokeLlm`
 - `src/modules/AiRuntime/useCases/inference.ts` — `generateToolCalls` with separate backend dispatch
@@ -262,11 +271,13 @@ The AI execution pipeline has three independent dispatch paths that all need tru
 Ghost clip infrastructure already exists: `Clip.isGhost` (line 99 of `Track.ts`), `acceptGhostClip.ts` and `dismissGhostClip.ts` in `src/modules/Arrangement/useCases/clip/`, tested in `ghostClips.spec.ts`. The "suggest only" mode maps directly to creating ghost clips.
 
 **Model** — add `src/modules/AiRuntime/models/TrustMode.ts`:
+
 ```
 type TrustMode = 'suggest-only' | 'create-branch' | 'apply-reversible' | 'replace-selection' | 'destructive-commit' | 'analyze-only';
 ```
 
 **Enforcement** — add a `trustMode` field to the existing `RuntimeAction` type (`src/modules/AiRuntime/models/RuntimeAction.ts`). Before the action execution step in each pipeline:
+
 - `suggest-only` → create clips with `isGhost: true`, do not modify `midiStore` or `trackStore`
 - `create-branch` → use `createVariant()` (from the new variants system above), never touch the active timeline clip
 - `apply-reversible` → wrap in undo group (existing `pushUndo` infrastructure)
@@ -312,6 +323,7 @@ A user records a spoken note "make bars 17 to 21 hit harder," attaches it to tha
 ### Implementation guidance
 
 **Module** — create `src/modules/ProjectMemory/` following the DDD pattern:
+
 - `models/MemoryArtifact.ts` — type with `id`, `rawPayload` (audio blob URL or text), `derivedPayload` (transcript text), `linkedScope` (optional `{ trackId?, startBeat?, endBeat? }`), `timestamp`, `tags: string[]`, `artifactType: 'voice-note' | 'text-note' | 'reference-audio' | 'screenshot' | 'bookmark'`
 - `stores/projectMemoryStore.ts` — `Store<{ artifacts: MemoryArtifact[] }>` following the `Store<T>` pattern used throughout the codebase (e.g., `scratchPadStore.ts`)
 - `useCases/captureVoiceNote.ts` — uses `navigator.mediaDevices.getUserMedia()` for recording (same pattern as audio recording in Transport module), stores blob in `audioBufferCache`
@@ -335,6 +347,7 @@ A user records a spoken note "make bars 17 to 21 hit harder," attaches it to tha
 No session mode system exists. The app runs at whatever quality the hardware supports with no adaptive behavior.
 
 Capability detection exists:
+
 - `src/utils/capabilities.ts` — `isTauri()`, `hasSharedArrayBuffer()`, `isCrossOriginIsolated()`
 - `src/utils/platformCapabilities.ts` — native plugins, MIDI, voice commands, file dialogs
 - `src/modules/BrowserAi/repositories/capabilityDetector.ts` — WebGPU tier classification
@@ -343,12 +356,15 @@ Capability detection exists:
 
 A small set of clear session modes that are execution policies, not marketing labels:
 
-| Mode | Behavior |
-|------|----------|
-| **Sketch** | Minimal resources, fast startup, basic synths, no heavy DSP |
-| **Preview** | Standard quality, browser-compatible, lightweight effects |
-| **Production** | Full native DSP, all plugins loaded, highest quality |
-| **Final render** | Offline, maximum quality, no real-time constraints |
+| Mode             | Behavior                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------- |
+| **Sketch**       | Minimal resources, fast startup, basic synths, no heavy DSP                           |
+| **Preview**      | Standard quality, browser-compatible, lightweight effects                             |
+| **Review**       | Playback-biased: all mixing/mastering chains engaged, editing responsiveness deferred |
+| **Production**   | Full native DSP, all plugins loaded, highest quality, editing-biased                  |
+| **Final render** | Offline, maximum quality, no real-time constraints                                    |
+
+`Review` is the listening/approval mode: the user plays the session to judge it, not to edit it. Interactive editing latency can relax in exchange for running every processor (including otherwise-deferred tails, oversampling, and slower AI renderers).
 
 Users can also choose a bias: preserve interactivity, prioritize quality, conserve power, background refine.
 
@@ -365,13 +381,14 @@ A project opened on a lightweight browser runtime stays editable and musically m
 - `SessionConstraints` type: `{ maxPolyphony: number; enableNativePlugins: boolean; renderQuality: RenderQuality; enableHeavyDSP: boolean }`.
 
 **Integration points** (each module checks `sessionMode` and adapts):
-- `BrowserAi` — `RenderQuality` already exists (`low`/`standard`/`high`/`maximum` in `src/modules/BrowserAi/models/RenderProgress.ts`). Map session modes: sketch→low, preview→standard, production→high, final-render→maximum.
+
+- `BrowserAi` — `RenderQuality` already exists (`low`/`standard`/`high`/`maximum` in `src/modules/BrowserAi/models/RenderProgress.ts`). Map session modes: sketch→low, preview→standard, review→high, production→high, final-render→maximum. Review differs from production on the audio-engine side, not the render-quality side (see below).
 - `AudioEngine` — adjust buffer sizes and voice counts. The Rust crates already support configurable buffer sizes via `cpal`.
 - `Arrangement/useCases/freezeBounce/renderOffline.ts` — in final-render mode, use maximum quality settings (highest sample rate, longest reverb tails).
 
-**Persistence** — add `sessionMode?: 'sketch' | 'preview' | 'production' | 'final-render'` to `ProjectData` at `src/modules/Project/models/ProjectData.ts`. Default to auto-detection based on platform capabilities.
+**Persistence** — add `sessionMode?: 'sketch' | 'preview' | 'review' | 'production' | 'final-render'` to `ProjectData` at `src/modules/Project/models/ProjectData.ts`. Default to auto-detection based on platform capabilities.
 
-**UI** — add a mode selector to the transport bar or status bar. Four clear icons/labels. No complex settings — just the mode and an optional bias preference stored in user preferences.
+**UI** — add a mode selector to the transport bar or status bar. Five clear icons/labels. No complex settings — just the mode and an optional bias preference stored in user preferences.
 
 ---
 
@@ -394,6 +411,7 @@ A coherent internal capability model that every feature can query:
 `src/utils/platformCapabilities.ts` already returns a `PlatformCapabilities` object with boolean flags (`hasNativePlugins`, `hasPluginScanning`, `hasMidiInput`, `hasVoiceCommands`, `hasNativeFileDialogs`, `hasMultiTrackRecording`, `isDesktopApp`) and a `DISABLED_REASONS` object with tooltip messages for disabled features. This is the right file to extend.
 
 **Extend** `platformCapabilities.ts`:
+
 - Add a `canRunFeature(featureId: string): { available: boolean; reason?: string; fallback?: string }` function
 - Register feature requirements as a static map: `{ 'native-plugins': { requires: ['isDesktopApp'] }, 'diffsinger-gpu': { requires: ['webgpu-fast'] }, ... }`
 - The `reason` field provides the human-readable explanation ("native plugin hosting unavailable in browser mode")
@@ -412,6 +430,7 @@ See `specs/missing/chrome-first-capability.md` for the full architectural vision
 ### Current state
 
 Expression data exists but is fragmented:
+
 - `MidiNote` has `pressure`, `slide`, `pitchBend` fields (optional)
 - Per-note editing works: `setNotePressure.ts`, `setNotePitchBend.ts`, `setNoteSlide.ts`
 - Seven expression lanes in piano roll: pressure, pitch bend, slide, velocity, CC, note property
@@ -430,27 +449,164 @@ Build a **Performance Editor** layer on top of the fixed paste infrastructure:
 - Visual overlays showing timing heat, dynamic contour, pitch drift, pressure shape
 - When moving material between richer and poorer targets (e.g., MPE synth to basic MIDI), show a **Portability Report**: preserved / approximated / downgraded / unavailable
 
+### Preserved dimensions
+
+The internal model should carry (and the Performance Editor should let the user see/edit) these dimensions per note or per phrase — not as a wall of CC lanes, but as a small set of named axes:
+
+- **Timing feel**: microtiming deviation from grid (per-note)
+- **Dynamic contour**: velocity and pressure envelope across a phrase
+- **Accent profile**: which notes carry emphasis within a phrase
+- **Vibrato behavior**: rate and depth derived from pitchBend oscillation
+- **Pitch drift**: non-vibrato pitchBend envelope (expressive glide)
+- **Onset character**: attack shape (derived from velocity + early pressure)
+- **Sustain character**: mid-note pressure/slide behavior
+- **Release character**: end-of-note pressure taper
+- **Timbral bias**: slide/CC-74 trajectory (brightness bias)
+- **Phrase energy**: aggregate of contour + accent, phrase-scoped
+- **Note role in texture**: melodic / harmonic / rhythmic / ornament (user-assignable, optional)
+
+The first nine are computed from existing `MidiNote.{velocity, pressure, slide, pitchBend}` and note timing — no new per-note fields are required. "Phrase energy" and "note role" are new phrase-scoped metadata (see synchronized views below).
+
+### Synchronized views: note / phrase / lane
+
+Today the piano roll (`src/modules/Workspace/presentations/views/ClipView/PianoRoll.tsx`) is a single canvas rendered by `usePianoRollRenderer.ts`. Expression lanes (`src/modules/Workspace/presentations/views/AutomationLane/{VelocityLane,PressureLane,SlideLane,PitchBendLane}.tsx`) live in a `NotePropertyLane` panel that shows **one lane at a time**, toggled from `PianoRollToolbar.tsx`. There is no phrase concept between the clip and the note.
+
+Add a **view-mode selector** to `PianoRollToolbar.tsx` with three modes:
+
+| Mode       | Layout                                                                                                                                        |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Note**   | Current behavior — single canvas, optional single lane below                                                                                  |
+| **Phrase** | Left sidebar: phrase list (name, color, energy). Main canvas: piano roll with phrase-bounded background bands. Phrase-level drag/select.      |
+| **Lane**   | Main canvas: notes at top (shorter). Below: **all** expression lanes stacked (velocity, pressure, slide, pitchBend, CC). Vertically scrollable. |
+
+All three views share:
+
+- `selectedNoteIds` (existing, from `midiStore`)
+- New `selectedPhraseIds: Set<string>` in `midiStore` (or a sibling `phraseStore`)
+- `beatWidth` / scroll position — synchronized across every lane and the main canvas so horizontal position stays consistent
+
+**Data model — add `Phrase` to the Clip**:
+
+Define in `src/modules/MIDI/models/Phrase.ts`:
+
+```typescript
+type Phrase = {
+    id: string;
+    clipId: string;
+    name: string;                 // user-editable ("verse hook", "lick A")
+    startBeat: number;
+    endBeat: number;
+    color?: string;               // hex, inherits from clip if unset
+    noteIds: string[];            // references MidiNote.id, not copies
+    role?: 'melodic' | 'harmonic' | 'rhythmic' | 'ornament';
+    energyHint?: number;          // 0-1, user-set or auto-computed
+};
+```
+
+Store phrases in `midiStore` alongside notes: `phrasesByClipId: Record<string, Phrase[]>`. Phrases are computed-augmentation on top of notes — deleting a note removes its id from any phrase; deleting a phrase never deletes its notes.
+
+**Lane-view rendering** — reuse the existing lane components (`VelocityLane`, `PressureLane`, `SlideLane`, `PitchBendLane`) as stacked children instead of swapped-in singletons. Each lane already reads from `midiStore` via reference equality and handles its own drag-edit. The lane-view container in `ClipView/` just needs to render them all at once, height-sized by a resizable splitter.
+
+**Phrase-view rendering** — extend `usePianoRollRenderer.ts` to paint phrase background bands before notes (use phrase color at low alpha). Add a separate left sidebar component `PhraseListSidebar.tsx` listing phrases with inline rename/color pick.
+
+**Selection synchronization** — when the user clicks a phrase in the sidebar, select all its `noteIds` in `midiStore`. When the user draws a note inside a phrase's beat range in Note view, optionally add it to that phrase (default: yes, togglable from toolbar).
+
+**Groove extraction already exists** at `src/modules/MIDI/useCases/grooveExtraction/extractGrooveFromClip.ts` and returns a `GrooveTemplate`. Extend with `extractGrooveFromPhrase.ts` (phrase-scoped) and an **"apply feel"** action that transfers timing + velocity profile from one phrase to another. The existing groove store handles templating; no new infrastructure needed.
+
+### Portability mapping — strategies and fallback projections
+
+When expression moves across target boundaries (synth → plugin, MPE-capable → non-MPE, internal → external MIDI out), the user picks a **mapping strategy** and the system applies **fallback projections**. Both must be explicit — no silent downgrade.
+
+**Four strategies** (user-visible, per-track default + per-paste override):
+
+| Strategy                  | Behavior                                                                                                               |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `literal`                 | Only send what the target natively supports. Drop the rest. No approximation.                                          |
+| `expressive-equivalent`   | Approximate unsupported expression using the target's closest equivalent (e.g., per-note pitch → MPE channel pitch bend). |
+| `conservative`            | Only send expression the system is certain the target renders correctly (intersection of declared capability). Safest. |
+| `target-optimized`        | Use the target's native strengths — if the plugin maps CC11 to expression, route pressure → CC11. Best audible result.  |
+
+**Three fallback projections** (applied as building blocks by the strategies):
+
+1. **Per-note pitch → channel allocation** — when the target does not support CLAP note-expression pitch but does support MPE, allocate one channel per active note (standard MPE channel rotation) and emit channel pitch bend. Needs: track-level "max simultaneous notes" hint to avoid exhausting the MPE zone.
+2. **Per-note timbre → automation** — when the target has no per-note modulation, project `pressure` / `slide` to a track-level CC lane (CC11 for pressure, CC74 for slide by default, configurable). Write to the existing automation layer.
+3. **Rich curves → engine-native bundles** — for built-in instruments (Fermenter, GrandBoule) that accept native parameter bundles, pack pressure + slide + pitchBend into a single `MpeParams` object (already declared in `builtinSynth.ts` line 94) instead of splitting into MIDI events.
+
+**Implementation location** — create `src/modules/MIDI/services/portabilityMapper.ts` (the MIDI module owns expression semantics):
+
+```typescript
+export type OutputStrategy = 'literal' | 'expressive-equivalent' | 'conservative' | 'target-optimized';
+
+export type TargetCapabilities = {
+    supportsMpe: boolean;
+    supportsPerNotePitchBend: boolean;
+    supportsPerNotePressure: boolean;
+    supportsPerNoteSlide: boolean;
+    hasCC11Expression: boolean;
+    supportsChannelPressure: boolean;
+    expressionTier: 'basic' | 'extended' | 'full-mpe';   // matches DeviceCapabilities from item 8
+};
+
+export type ProjectedNote = {
+    pitch: number;
+    velocity: number;
+    channel: number;               // MPE channel allocation output
+    startBeat: number;
+    duration: number;
+    projectedCCs?: Array<{ controller: number; value: number; beat: number }>;
+    projectedChannelPressure?: number;
+    projectedPitchBend?: number;
+    mpeChannelHint?: number;
+};
+
+export type PortabilityResult = {
+    projected: ProjectedNote[];
+    report: {
+        preserved: string[];        // e.g., ["velocity", "pitch bend"]
+        approximated: string[];     // e.g., ["pressure → CC11"]
+        dropped: string[];          // e.g., ["slide"]
+    };
+};
+
+export function queryTargetCapabilities(device: Device, clapMetadata?: ClapCapabilityMap): TargetCapabilities;
+
+export function projectExpression(
+    notes: MidiNote[],
+    strategy: OutputStrategy,
+    capabilities: TargetCapabilities,
+): PortabilityResult;
+```
+
+**Integration points** (three places, all existing files):
+
+1. **Clipboard paste** — after the item-0 paste bug fix, `src/modules/Arrangement/useCases/clipboard/pasteNotes.ts` still blindly pastes full expression. Extend it to call `queryTargetCapabilities(targetDevice)` and `projectExpression(notes, strategy, caps)`. The `PortabilityResult.report` feeds the portability-report toast.
+2. **Scheduling dispatch** — `src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts` around line 471 already extracts `mpe` fields but does not yet apply them for worklet synths. Route through `projectExpression` before dispatch so the synth receives strategy-correct values.
+3. **CLAP capability discovery** — `crates/daw-plugin-host/src/clap_wrapper.rs` queries `CLAP_EXT_PARAMS`; also query `CLAP_EXT_NOTE_EXPRESSION` and expose which expression types (pitch, volume, pan, tuning, vibrato, expression, brightness, pressure) the plugin declares. Surface into the frontend as `ClapCapabilityMap` on the device descriptor.
+
+**Per-track override** — add `midiOutputStrategy?: OutputStrategy` to the track model (`src/modules/Arrangement/models/Track.ts`). Default at runtime: `expressive-equivalent`. The per-paste UI override writes the chosen strategy once, then reverts.
+
+**UI** — the portability report appears as a lightweight toast after a paste that triggered any approximation or drop, with an "undo paste" action. The strategy selector lives in the paste context menu (not the main toolbar) and as a track-inspector field.
+
 ### Minimum quality bar
 
-A phrase recorded with rich expression is editable semantically, copied with feel intact, moved to a less expressive target with an honest portability report.
+A phrase recorded with rich expression is editable semantically, copied with feel intact, moved to a less expressive target with an honest portability report showing which projection strategy was applied and what was preserved / approximated / dropped.
 
 ### Implementation guidance
 
 The paste bug fix is item 0 above — do that first. Once expression data survives paste, build these features:
 
 **Expression clipboard modes** — add to `src/modules/Arrangement/useCases/clipboard/`:
+
 - `pasteExpressionOnly.ts` — paste `pressure`, `slide`, `pitchBend`, `velocity` from clipboard notes onto matching notes in the target clip (match by relative position/pitch)
 - `pasteNotesWithoutExpression.ts` — paste notes but reset expression fields to defaults
 
 **Performance overlays** — extend the piano roll renderer at `src/modules/Workspace/presentations/hooks/usePianoRollRenderer.ts` with optional overlays:
+
 - Timing heat: color notes by deviation from grid (green = on grid, orange = early, blue = late)
 - Dynamic contour: thin line connecting velocity values across the phrase
 - These are visualization modes, toggled in the piano roll toolbar
 
-**Portability report** — create `src/modules/MIDI/services/expressionPortability.ts`:
-- Input: source `MidiNote[]` + target device capabilities (from the negotiated semantics feature)
-- Output: `{ preserved: string[]; approximated: string[]; dropped: string[] }` — e.g., `{ preserved: ['velocity', 'pitch bend'], approximated: ['pressure → CC11'], dropped: ['slide'] }`
-- Show as a lightweight toast or inspector panel when pasting across instruments with different capabilities
+**Portability report** — implemented as `PortabilityResult.report` from `src/modules/MIDI/services/portabilityMapper.ts` (see the full mapper spec above). Shown as a lightweight toast after paste, with clickable details: which strategy ran, what was preserved, approximated, dropped — plus an "undo paste" button.
 
 ---
 
@@ -463,6 +619,7 @@ No instrument capability discovery. Devices are treated as parameter sinks. No a
 ### What to build
 
 When loading a compatible device, discover and display:
+
 - Expressive features (MPE, per-note expression, pressure response)
 - Articulation support (keyswitches, CC-based switching)
 - Suggested editor profile (show expression lanes, hide irrelevant controls)
@@ -476,6 +633,7 @@ If discovery works, it materially improves editing. If it fails, degrade gracefu
 Devices are currently defined in the `Clip`/`Track` model at `src/modules/Arrangement/models/Track.ts` (lines 128-136) as `{ id, name, type, bypassed, parameterValues, ... }` — they have no capability metadata.
 
 **Capability type** — add to `src/modules/Arrangement/models/Track.ts` alongside the device type:
+
 ```
 type DeviceCapabilities = {
     supportsMpe?: boolean;
@@ -489,6 +647,7 @@ type DeviceCapabilities = {
 ```
 
 **Static registration** — for built-in instruments, register capabilities in a lookup table (a `services/` file in the Arrangement module):
+
 - Fermenter → `{ supportsMpe: true, expressionTier: 'full-mpe' }`
 - Levain → `{ articulationSwitching: 'keyswitch', expressionTier: 'extended' }`
 - Toaster → `{ drumMap: true, expressionTier: 'basic' }`
@@ -497,6 +656,21 @@ type DeviceCapabilities = {
 **CLAP plugin discovery** — `src-tauri/src/commands/clap_wrapper.rs` can query `CLAP_EXT_NOTE_PORTS` and `CLAP_EXT_PARAMS` to discover note expression support. Emit capabilities back to the frontend via a Tauri command.
 
 **UI adaptation** — the piano roll toolbar at `src/modules/Workspace/presentations/views/ClipView/PianoRollToolbar.tsx` should show/hide expression lane toggles based on the active track's device capabilities. If the device doesn't support pressure, gray out or hide the Pressure lane toggle. If the device is a drum instrument, offer a drum-pad view toggle instead of standard piano roll layout.
+
+### Adopt-detected-semantics flow
+
+Discovery should never silently reconfigure the session. When a device declares capabilities (either from static registration or live CLAP/plugin discovery), show a non-blocking **Adopt Semantics** prompt once per device instance:
+
+> "Fermenter reports full-MPE support with per-note pressure, slide, and pitch-bend. Adopt these editor settings? **[Adopt] [Keep current] [Never for this device]**"
+
+**Adopt** enables the matching expression lanes, sets track MPE on, and switches the piano roll to the recommended lane-view profile. **Keep current** leaves the track unchanged but remembers the device's declared capabilities for portability (portability mapping still uses them — only the UI is untouched). **Never for this device** persists a per-device opt-out in user preferences.
+
+**Implementation**:
+
+- Store the suggestion state in a `deviceSemanticsStore` (`src/modules/Arrangement/stores/`) with shape `{ suggestionsByDeviceInstanceId: Record<string, 'pending' | 'adopted' | 'declined' | 'never'> }`
+- Trigger suggestion on device load (existing `loadDevice.ts` flow in Arrangement useCases) when `DeviceCapabilities` differs from the track's current expression setup
+- Override is always available — a manual "Apply detected semantics" action in the track inspector re-runs the adopt flow on demand
+- If capability discovery fails or returns nothing, silently degrade to generic control with no prompt — match the differentiator's requirement that failed discovery must not confuse the user
 
 ---
 
@@ -519,6 +693,7 @@ Keep it lightweight, local, and optional. Not a formal ontology.
 In-session comments already exist as threaded timeline-pinned notes. The existing marker system (`src/modules/Arrangement/models/Track.ts` — `Marker` type with `beat`, `name`, `color`) provides positional anchoring.
 
 **Extend the Marker type** (or create a sibling `Goal` type in the same model file):
+
 ```
 type TimelineGoal = {
     id: string;
@@ -548,6 +723,7 @@ No decision tracking. `actionHistoryStore.ts` tracks undo history but not the re
 ### What to build
 
 Automatically capture decisions from user actions where possible:
+
 - Why a variant was promoted over alternatives
 - Why an edit was approved
 - Why a mix change was made
@@ -559,6 +735,7 @@ This should be generated passively, not turned into mandatory documentation.
 The undo system at `src/modules/Workspace/stores/actionHistoryStore.ts` already records action descriptions with a 200-entry cap. Decision memory is metadata on top of this.
 
 **Extend action history entries** with an optional `decisionContext` field:
+
 ```
 type DecisionContext = {
     reason?: string;          // auto-generated or user-provided
@@ -569,6 +746,7 @@ type DecisionContext = {
 ```
 
 **Auto-generation triggers** — hook into:
+
 - `acceptGhostClip.ts` → record "accepted AI suggestion for [clip name]"
 - `promoteVariant.ts` (from the variants system) → record "promoted variant [label] over [N] alternatives"
 - Any undo group labeled with an AI action → record "applied AI [action type]"
@@ -588,6 +766,7 @@ MIDI 1.0 only throughout the codebase. `MidiNote` type uses 7-bit velocity (0-12
 ### What to build
 
 Universal MIDI Packet (UMP) as the internal note representation:
+
 - 32-bit resolution for velocity, pressure, pitch bend (4.3 billion steps vs 128)
 - Per-note controllers without MPE channel hacking
 - Property Exchange for automatic hardware detection
@@ -602,6 +781,7 @@ Every incumbent DAW is retrofitting MIDI 2.0 onto MIDI 1.0 internals. Building U
 **This is a long-term architectural preparation, not an immediate build.** The `midir` crate (used in `src-tauri/src/commands/midi.rs`) does not support MIDI 2.0 yet. No Rust crate provides UMP parsing as of April 2026. The GrandBoule piano's `crates/daw-dsp/src/grand_boule/midi2.rs` demonstrates instrument-specific MIDI 2.0 handling but is not a universal transport.
 
 **Phase 1 (now)** — expand the internal note resolution:
+
 - The `MidiNote` type at `src/modules/MIDI/models/MidiNote.ts` uses `velocity: number` stored as 0-127 integer. Keep 7-bit at the storage layer for now but use floating-point (0.0-1.0) at the editing/UI layer, so the transition to 32-bit resolution is a storage change, not a UI rewrite.
 - Same for `pressure`, `slide`, `pitchBend` — store as float internally, convert to 7-bit or 14-bit at output boundaries.
 
@@ -620,6 +800,7 @@ No mastering workspace. Proof exists as a mastering suite plugin but there's no 
 ### What to build
 
 A separate workspace for mastering that:
+
 - Imports finished mixes as tracks
 - Provides per-track and master processing (Proof integration)
 - Target loudness presets for streaming services (Spotify -14 LUFS, Apple Music -16 LUFS, YouTube -14 LUFS)
@@ -633,6 +814,7 @@ The workspace is managed by `src/modules/Workspace/` with mode switching between
 **Workspace mode** — add a `'master'` mode to the workspace view switcher in `src/modules/Workspace/presentations/views/AppShell.tsx`. The mastering page is a distinct layout, not a panel within the arrangement view.
 
 **Mastering page layout:**
+
 - **Track list** (left): imported mix files as mastering tracks (audio-only, no MIDI)
 - **Device chain** (center): Proof instance per track for mastering processing
 - **Metering** (right): LUFS integrated/momentary/short-term, true peak, loudness range — reuse existing `LUFSMeter` and `PhaseCorrelationDisplay` components from `src/modules/Workspace/presentations/components/`
@@ -656,19 +838,20 @@ Export dialog supports WAV/MP3/FLAC with sample rate and bit depth options. Stem
 
 Select delivery targets and auto-generate compliant exports:
 
-| Target | Format | Loudness | Sample Rate | Notes |
-|--------|--------|----------|-------------|-------|
-| Spotify | WAV/FLAC | -14 LUFS | 44.1kHz | 16/24-bit |
-| Apple Music | WAV | -16 LUFS | 44.1-96kHz | Apple Digital Masters |
-| YouTube | WAV | -14 LUFS | 48kHz | Stereo |
-| Podcast | MP3 128kbps | -16 LUFS | 44.1kHz | Mono, ID3 metadata |
-| Game Audio | WAV | varies | 48kHz | Per-asset naming |
+| Target      | Format      | Loudness | Sample Rate | Notes                 |
+| ----------- | ----------- | -------- | ----------- | --------------------- |
+| Spotify     | WAV/FLAC    | -14 LUFS | 44.1kHz     | 16/24-bit             |
+| Apple Music | WAV         | -16 LUFS | 44.1-96kHz  | Apple Digital Masters |
+| YouTube     | WAV         | -14 LUFS | 48kHz       | Stereo                |
+| Podcast     | MP3 128kbps | -16 LUFS | 44.1kHz     | Mono, ID3 metadata    |
+| Game Audio  | WAV         | varies   | 48kHz       | Per-asset naming      |
 
 ### Implementation guidance
 
 The export dialog at `src/modules/Project/presentations/views/ExportDialog.tsx` already supports WAV/MP3/FLAC format selection, sample rate (44.1/48/88.2/96 kHz), and bit depth (16/24/32). LUFS measurement exists in `src/modules/AudioAnalysis/useCases/` (momentary, short-term, integrated). Normalization exists in `src/modules/Arrangement/useCases/clip/normalizeClip.ts` with peak/RMS/LUFS modes.
 
 **Add a delivery presets section** to the export dialog:
+
 - Model: `type DeliveryPreset = { name: string; format: 'wav' | 'mp3' | 'flac'; sampleRate: number; bitDepth: number; channels: 1 | 2; targetLufs: number; normalize: boolean; metadata?: Record<string, string> }`
 - Factory presets as a const array in `src/modules/Project/models/` (see the table in the spec above)
 - UI: a horizontal row of preset buttons above the existing format controls. Selecting a preset auto-fills all fields. User can still override individual settings.
@@ -691,6 +874,7 @@ AI that scores each take segment by pitch accuracy, timing alignment, and tonal 
 ### Implementation guidance
 
 Comping infrastructure is in `src/modules/Arrangement/useCases/`:
+
 - `resolveComping.ts` — resolves active comp regions into `ResolvedClip[]`
 - `groupComping/` — multi-track group comping with crossfade support
 - Take management: `addTake.ts`, `selectTake.ts`, `TakeLane.ts` model
@@ -698,10 +882,11 @@ Comping infrastructure is in `src/modules/Arrangement/useCases/`:
 Pitch detection exists: `crates/daw-dsp/src/crumbs/analysis/pitch.rs` (Rust) and the `pitch-detection` crate. Onset detection exists: `crates/daw-dsp/src/crumbs/analysis/onset.rs`. The Knead module (`src/modules/Knead/`) does pitch analysis for correction — its analysis pipeline is reusable.
 
 **Scoring algorithm** — create `src/modules/Arrangement/useCases/comping/suggestBestComp.ts`:
+
 1. For each take in each take lane, analyze the audio:
-   - Pitch accuracy: use Knead's pitch detection pipeline to compare detected pitch against the expected grid/scale degrees. Score = percentage of frames within ±50 cents of target.
-   - Timing accuracy: use onset detection to find note attacks, compare against grid positions. Score = average deviation in milliseconds.
-   - Energy/clarity: RMS energy profile consistency.
+    - Pitch accuracy: use Knead's pitch detection pipeline to compare detected pitch against the expected grid/scale degrees. Score = percentage of frames within ±50 cents of target.
+    - Timing accuracy: use onset detection to find note attacks, compare against grid positions. Score = average deviation in milliseconds.
+    - Energy/clarity: RMS energy profile consistency.
 2. For each region boundary (e.g., bar boundaries), pick the take with the highest weighted score.
 3. Output the suggested comp as a set of `CompRegion` entries that can be applied via the existing comping system.
 
@@ -759,6 +944,7 @@ Stem export exists (`exportStems.ts`) but renders tracks in isolation, breaking 
 ### What to build
 
 A stem export engine that properly renders inter-track dependencies:
+
 - Sidechain compression relationships maintained during export
 - Send effects rendered with correct wet/dry per stem
 - Bus processing applied correctly
@@ -770,6 +956,7 @@ Stem export is in `src/modules/Arrangement/useCases/freezeBounce/exportStems.ts`
 **The problem**: `exportStems` renders each track in isolation via `renderOffline`. When track B has a sidechain compressor keyed from track A's output, the isolated render of track B has no sidechain input — the compressor receives silence.
 
 **Solution** — modify the stem export pipeline:
+
 1. Before rendering, build a dependency graph from sidechain routes. Query all sidechain relationships from the routing store.
 2. Topologically sort tracks so sidechain sources render before their targets.
 3. When rendering a track that has sidechain inputs, render its sidechain source tracks first (or concurrently if they're independent), then feed the rendered source audio into the sidechain input during the target track's offline render.
@@ -790,6 +977,7 @@ No game audio export support. The existing stem export (`exportStems.ts`) and DA
 ### What to build
 
 Export mode that generates middleware project structures from a DAW session:
+
 - Map arrangement sections/markers to Wwise containers or FMOD events
 - Per-asset naming conventions (e.g., `sfx_footstep_wood_01.wav`) with configurable templates
 - Metadata export (loop points, volume, priority) as Wwise `.wwu` XML or FMOD bank metadata
@@ -816,6 +1004,7 @@ Onset detection exists in `crates/daw-dsp/src/crumbs/analysis/onset.rs` using sp
 ### What to build
 
 A CNN-based onset detector achieving **94%+ accuracy** that handles soft onsets and polyphonic material far better than spectral flux. This feeds:
+
 - Snap-to-transient navigation
 - Audio quantization (elastic audio, which exists at `elasticAudioUseCases.ts`)
 - Beat slicing for the Crumbs/Slicer instruments
@@ -841,8 +1030,9 @@ Audio warping supports 9 algorithms (`audioWarpingUseCases.ts`): elastique Pro/E
 ### What to build
 
 AI that analyzes audio content and auto-selects the optimal warp mode:
+
 - Drums/percussive → Beats/Slice mode
-- Vocals/monophonic → Soloist/Re-Pitch mode  
+- Vocals/monophonic → Soloist/Re-Pitch mode
 - Complex polyphonic → Complex Pro mode
 - Textures/pads → Texture mode
 
@@ -865,6 +1055,7 @@ Offline processing exists via `renderOffline.ts` for freeze/bounce operations. T
 ### What to build
 
 Cubase-style DOP where offline effect operations stack non-destructively:
+
 - Apply a plugin to a region → operation is recorded, not baked
 - Change settings, remove, or reorder operations after the fact
 - Each operation stores its plugin state and affected region
@@ -877,6 +1068,159 @@ Cubase-style DOP where offline effect operations stack non-destructively:
 - The playback scheduler checks for DOP operations and renders them on-the-fly or caches the result
 - UI: show the DOP stack in the clip inspector with reorder handles and enable/disable toggles
 - This is a significant feature — scope it as Phase 2+ work, not an immediate build
+
+---
+
+## 21. Engine visibility, swappability, and A/B comparison
+
+### Current state
+
+Three independent engine systems exist; none of them are visible to the user beyond a read-only badge, and none are swappable mid-session.
+
+1. **LLM backend cascade** — `src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/helpers.ts` resolves `native` → `webllm` → `cloud` → `none` via `resolveBackend()`. `src/modules/Workspace/presentations/views/preferences/AiSection.tsx` shows the active backend as a colored badge (green / cyan / lavender / gray) and lets the user enter an API key, but there is no toggle to switch backends or see the full fallback chain.
+2. **Browser AI render pipelines** — `src/modules/BrowserAi/stores/renderQueueStore.ts` dispatches to `ddsp`, `kokoro`, and `diffsinger` engines. `RenderProvenance` (`src/modules/BrowserAi/models/RenderProgress.ts:44–53`) records `modelId`, `voiceId`, `steps`, `seed`, `renderQuality`, `renderedAt`, and a coarse `tier: 'browser-preview' | 'native-final'`, but **no engine identity string**.
+3. **Audio engine / freeze state** — `FreezeState` (`src/modules/Arrangement/models/Track.ts:15–31`) tracks `sourceContentHash`, `deviceChainHash`, `frozenBufferId`, and `renderSettings`, but **no record of which engine produced the frozen audio**.
+
+Nothing lets the user compare two engines' output on the same phrase.
+
+### What to build
+
+A three-phase rollout of engine visibility → swappability → comparison.
+
+### Phase A: engine identity on every rendered artifact
+
+Add an `engine` field to every render-provenance record so the UI can surface it.
+
+**`RenderProvenance`** (`src/modules/BrowserAi/models/RenderProgress.ts`) — add:
+
+```typescript
+engine: string;            // e.g., "ddsp-browser", "diffsinger-voicebank:en-f01", "native-piano"
+fallbackUsed: boolean;     // true if primary engine was unavailable
+fallbackReason?: string;   // e.g., "WebGPU tier insufficient", "native host not loaded"
+```
+
+**`FreezeState`** (`src/modules/Arrangement/models/Track.ts`) — add the same three fields under a new `renderedBy` sub-object so frozen audio declares which engine produced it.
+
+**`ClipData`** (`src/modules/Arrangement/models/Track.ts`, the `Clip` type around line 74) — add optional `renderedBy?: { engine: string; fallbackUsed: boolean; fallbackReason?: string }` for AI-generated clips. Populated by the use cases that create AI clips (`generateMidiVariations.ts`, `acceptGhostClip.ts`, any `BrowserAi` render result that lands on the timeline).
+
+### Phase B: runtime strip engine segment + swap
+
+Extend the runtime transparency strip (item 2) with an **engine chain segment**:
+
+- Show the active engine per subsystem: `LLM: native` / `AI render: ddsp-browser` / `DSP: native-rust`
+- Click a segment → dropdown listing the full fallback chain, with the reason each tier was chosen or skipped (reads from `resolveBackend()` telemetry)
+- **Swap action**: clicking a non-active tier in the dropdown calls a new `swapEngine(subsystem, target)` use case that reruns `resolveBackend` with a forced override, updates `llmStatusStore` / `capabilityStore`, and triggers re-resolution on the next inference call
+
+**Swap use case** — create `src/modules/AiRuntime/useCases/llmOrchestration/swapBackend.ts`:
+
+```typescript
+export function swapBackend(target: 'native' | 'webllm' | 'cloud' | 'none'): Result<void, BackendError>;
+```
+
+Enforces: swap is allowed only when target is available (checked via existing capability detection); in-flight inference requests abort cleanly; the swap is recorded in `actionHistoryStore` so undo works.
+
+**Context preservation** — engine swap must not disturb the session. Explicit invariants to test:
+
+- MIDI notes (pitch, timing, `velocity`, `pressure`, `slide`, `pitchBend`) unchanged across swap
+- Clip-level metadata (`variantGroupId`, `renderedBy`) unchanged
+- Automation curves and track routing unchanged
+- Frozen audio buffers retained (not re-rendered) — `frozenBufferId` stable
+
+### Phase C: A/B engine comparison (variants-based)
+
+Once Phase A + B land and the variants system (item 1) is in place, engine comparison is a composition, not new infrastructure:
+
+1. User invokes "Re-render with engine X" from a clip's context menu
+2. The re-render lands in a **new variant** (never overwrites mainline), tagged `variantSource: 'ai'` and `renderedBy.engine = 'X'`
+3. Variant panel (item 1 UI) shows engine identity next to each variant — user auditions A vs B in place
+4. Promote or archive as normal
+
+No separate "A/B panel" — comparison reuses the variant compare/audition flow.
+
+### Minimum quality bar
+
+The user can (1) see which engine produced every frozen buffer, AI-generated clip, and LLM response; (2) swap the LLM backend mid-session without losing any MIDI, expression, or audio state; (3) render the same phrase with two engines and audition them in place as variants.
+
+### What this is not
+
+Not an "engine rack" philosophy. The runtime strip shows the **active chain in one line**, not a dashboard. Advanced users get the swap menu; casual users never see it unless they click the segment.
+
+---
+
+## 22. Export-oriented provenance
+
+### Current state
+
+Export pipeline: `src/modules/Project/presentations/views/ExportDialog.tsx` → `src/modules/Project/useCases/exportActions.ts` → `src/modules/AudioEngine/useCases/exportStems.ts` (stems) or offline-render use cases (mixdown). Project file export: `src/modules/Project/useCases/projectPersistence/fileIO/exportProjectFile.ts` bundles metadata and audio buffers into `.sourdaw`.
+
+No exported file carries provenance metadata. Clips and notes have no `sourceOrigin` field. AI action history (`aiActionHistoryStore`) tracks prompts and timestamps but does not link to the clip/note IDs they created.
+
+### What to build
+
+A **silent, export-time provenance report** — not a mainstream UI feature. Used by label legal teams, competition submissions, and rights workflows. Zero UI during normal export.
+
+### Data model
+
+Extend **`Clip`** (`src/modules/Arrangement/models/Track.ts`) and **`MidiNote`** (`src/modules/MIDI/models/MidiNote.ts`) each with one optional field:
+
+```typescript
+sourceOrigin?: 'recorded' | 'imported' | 'ai-generated' | 'sample-library' | 'ai-transformed';
+```
+
+Populated at creation time:
+
+- Recording use cases → `'recorded'`
+- Audio/MIDI import use cases → `'imported'`
+- `acceptGhostClip.ts`, `generateMidiVariations.ts`, any BrowserAi use case that writes a clip → `'ai-generated'`
+- Levain/Toaster sample-library loaders (`autoLoadLevainSamples`, drum-pack import) → `'sample-library'`
+- Destructive AI transforms (bounce with AI processing, see trust mode `destructive-commit` in item 3) → `'ai-transformed'`
+
+When a clip has mixed origin (e.g., recorded notes edited by AI), `sourceOrigin` is the **most recent** origin; the original origin is preserved in variants via the existing variants system (item 1 — the pre-edit state stays in `TrackAlternative`).
+
+### Report generation
+
+Create `src/modules/Project/useCases/exportProvenance.ts`:
+
+```typescript
+export type ProvenanceReport = {
+    exportedAt: number;
+    projectName: string;
+    summary: {
+        recordedDurationSeconds: number;
+        aiGeneratedClips: number;
+        aiTransformedClips: number;
+        sampleLibrarySources: string[];  // deduplicated source identifiers
+        importedAudioFiles: number;
+    };
+    clips: Array<{
+        id: string;
+        name: string;
+        trackId: string;
+        sourceOrigin: string;
+        renderedBy?: { engine: string; fallbackUsed: boolean };  // from item 21
+        generatedBy?: string;  // model or library identifier
+    }>;
+};
+
+export function generateProvenanceReport(project: ProjectData): ProvenanceReport;
+```
+
+Pure function over project data — no side effects, no UI. Walks tracks/clips/notes, aggregates by `sourceOrigin`, returns the shape above.
+
+### Attachment points
+
+1. **Project file** — extend `ProjectData` (`src/modules/Project/models/ProjectData.ts`) with `provenanceReport?: ProvenanceReport`. `exportProjectFile.ts` calls `generateProvenanceReport()` before serialization.
+2. **Audio export (Tauri)** — write sidecar `<filename>.provenance.json` via existing `writeFile` Tauri command. Extend `exportActions.ts` after successful render.
+3. **Audio export (web)** — when exporting as `.zip` (multi-format or stems), include `provenance.json` in the archive. Extend the existing `zipDirectory` logic in `ExportDialog.tsx`.
+4. **ID3 metadata** (optional, podcast-profile only) — the podcast delivery preset (item 13) can embed a compact provenance summary in ID3 `TXXX` frames via the `lofty` Rust crate. Field: `TXXX:SourdawProvenance` = JSON-stringified summary only.
+
+### UI footprint
+
+**Zero** during normal export. One small checkbox in the export dialog: `[ ] Include provenance report` (default: on for project file, off for audio export). Clicking "Learn more" shows a one-paragraph explainer.
+
+### Minimum quality bar
+
+Exporting a project with mixed recorded + AI-generated + sample-library content produces a `provenance.json` that correctly classifies every clip. A compliance reviewer can audit the file without opening the DAW. No user ever sees a provenance UI they did not ask for.
 
 ---
 
@@ -911,10 +1255,12 @@ Sourdaw is on the right path when:
 Testable gates for each feature. A feature is not done until its criteria pass.
 
 ### Quick win
+
 - [ ] **AC-0.1:** Paste a MIDI note with pressure=80, slide=64, pitchBend=8192 set. The pasted note retains all three values.
 - [ ] **AC-0.2:** Paste a clip containing expressive notes. All expression fields survive the paste.
 
 ### Phase 1
+
 - [ ] **AC-1.1:** Create 3 variants of a clip. Audition each in place without duplicating tracks. Promote one. Archived variants remain accessible.
 - [ ] **AC-2.1:** StatusBar shows runtime class (browser/native/hybrid) and fidelity tier. Fallback explanations are visible on click.
 - [ ] **AC-3.1:** AI generation creates a ghost clip (suggest-only mode). Accepting it commits to the timeline. Dismissing it leaves no trace.
@@ -924,16 +1270,29 @@ Testable gates for each feature. A feature is not done until its criteria pass.
 - [ ] **AC-6.1:** Disabled features show a tooltip explaining why ("native plugin hosting unavailable in browser mode").
 
 ### Phase 2
+
 - [ ] **AC-7.1:** Copy an expressive phrase, paste onto a basic-MIDI instrument. A portability report shows which expression was dropped.
+- [ ] **AC-7.2:** Switch the piano roll to Lane view. All five expression lanes (velocity, pressure, slide, pitchBend, CC) render stacked and share horizontal scroll/selection with the note canvas.
+- [ ] **AC-7.3:** Switch to Phrase view, create two phrases in a clip, use "apply feel" to transfer the first phrase's groove onto the second. The second phrase's timing now matches the first's microtiming profile.
+- [ ] **AC-7.4:** Paste with `conservative` strategy onto a plugin with unknown note-expression support. Only velocity and pitch are sent — the report lists `pressure`, `slide`, `pitchBend` as dropped.
+- [ ] **AC-7.5:** Paste with `target-optimized` strategy onto a plugin that declares CC11 expression. `pressure` is routed to CC11 and the report lists it as `approximated: pressure → CC11`.
 - [ ] **AC-8.1:** Loading a Fermenter instance auto-detects MPE support. The piano roll shows pressure/slide lanes. Loading a Toaster hides them and shows drum-pad view.
+- [ ] **AC-8.2:** Loading a new Fermenter triggers the Adopt Semantics prompt. Choosing "Never for this device" suppresses the prompt on subsequent loads of the same device instance.
 
 ### Standalone
+
 - [ ] **AC-14.1:** AI comping scores 3 overlapping takes and suggests a comp. The suggestion is auditionable before committing.
 - [ ] **AC-16.1:** Sidechain-aware stem export of a kick-sidechained bass produces a bass stem with audible pumping intact.
 - [ ] **AC-18.1:** ML transient detector places markers on a drum break with >94% precision vs manually marked ground truth.
 - [ ] **AC-19.1:** Auto-detect correctly classifies a drum loop as "Beats" mode and a vocal as "Soloist" mode.
 - [ ] **AC-20.1:** Apply two DOP operations to a clip. Reorder them. Remove the first. Audio reflects the change without re-rendering from scratch.
+- [ ] **AC-21.1:** Every frozen buffer, AI-generated clip, and LLM response displays its producing engine in the runtime strip on click.
+- [ ] **AC-21.2:** Swap LLM backend from `cloud` to `webllm` mid-session. No MIDI, expression, variant, or frozen-buffer state is lost; the next inference runs on webllm.
+- [ ] **AC-21.3:** Re-render the same clip with engine A, then with engine B. Both results appear as variants on the same clip with distinct `renderedBy.engine` values. Audition switches between them in place.
+- [ ] **AC-22.1:** Export a project containing recorded, AI-generated, and sample-library clips. The `provenance.json` sidecar (or embedded field) classifies every clip correctly, with per-clip `renderedBy` where applicable.
+- [ ] **AC-22.2:** A destructive AI transform on a previously-recorded clip sets `sourceOrigin: 'ai-transformed'` while preserving the pre-transform variant with `sourceOrigin: 'recorded'` in the variant archive.
 
 ### Global
+
 - [ ] **AC-G.1:** `pnpm deps:validate` passes with zero new violations after each feature lands.
 - [ ] **AC-G.2:** All existing tests continue to pass (`npx vitest run`).

@@ -18,7 +18,7 @@ else
   # bash: BASH_SOURCE[0] gives the path of the sourced file
   _AGENTS_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 fi
-_AGENTS_BIN="node $_AGENTS_REPO/scripts/agents.mjs"
+_AGENTS_BIN="node --experimental-strip-types $_AGENTS_REPO/scripts/agents.ts"
 
 # ─── Core ────────────────────────────────────────────────────────────────────
 

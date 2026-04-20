@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * agents.mjs — local multi-agent workspace launcher
+ * agents.ts — local multi-agent workspace launcher
  *
  * Usage:
- *   node scripts/agents.mjs <subcommand> [options]
+ *   node scripts/agents.ts <subcommand> [options]
  *
  * Subcommands: new, open, list, show, task, remove, prune, doctor, path, focus, pick
  */
@@ -12,8 +12,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, accessSync, constan
 import { join, resolve, isAbsolute } from 'path';
 import { spawnSync, spawn } from 'child_process';
 
-import { loadConfig } from './agents/config.mjs';
-import { toSlug, deriveNames, nextDuplicateSlug } from './agents/slug.mjs';
+import { loadConfig } from './agents/config.ts';
+import { toSlug, deriveNames, nextDuplicateSlug } from './agents/slug.ts';
 import {
     getRepoRoot,
     getRepoName,
@@ -28,10 +28,10 @@ import {
     isBranchMergedInto,
     deleteBranch,
     listBranchesByPrefix,
-} from './agents/git.mjs';
-import { createOrUpdateTaskFile } from './agents/template.mjs';
-import { resolveBackend, launch, checkBackend } from './agents/terminal.mjs';
-import { colors, c, red, green, yellow, blue, cyan, dim, bold, success, info, warn as printWarn, error as printError, box } from './agents/colors.mjs';
+} from './agents/git.ts';
+import { createOrUpdateTaskFile } from './agents/template.ts';
+import { resolveBackend, launch, checkBackend } from './agents/terminal.ts';
+import { colors, c, red, green, yellow, blue, cyan, dim, bold, success, info, warn as printWarn, error as printError, box } from './agents/colors.ts';
 
 // ─── Argument parser ─────────────────────────────────────────────────────────
 
@@ -97,7 +97,7 @@ async function loadAdapter(agentName) {
     if (!allowed.includes(agentName)) {
         die(`Unknown agent "${agentName}". Supported: ${allowed.join(', ')}`);
     }
-    return import(`./agents/adapters/${agentName}.mjs`);
+    return import(`./agents/adapters/${agentName}.ts`);
 }
 
 function ensureRuntimeDirs(repoRoot) {

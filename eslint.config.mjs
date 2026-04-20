@@ -12,7 +12,8 @@ import eslintPluginReact from '@eslint-react/eslint-plugin';
 import eslintPluginComments from '@eslint-community/eslint-plugin-eslint-comments/configs';
 import eslintPluginStylistic from '@stylistic/eslint-plugin';
 import { defineConfig } from 'eslint/config';
-import eslintPluginImport from 'eslint-plugin-import';
+import eslintPluginImport, { createNodeResolver } from 'eslint-plugin-import-x';
+import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescript';
 import eslintPluginJsxA11yX from 'eslint-plugin-jsx-a11y-x';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import eslintPluginPromise from 'eslint-plugin-promise';
@@ -436,7 +437,7 @@ export default defineConfig(
         plugins: {
             unicorn: eslintPluginUnicorn,
             '@stylistic': eslintPluginStylistic,
-            import: eslintPluginImport,
+            'import-x': eslintPluginImport,
             '@tanstack/query': eslintPluginQuery,
             sourdaw: sourdawPlugin,
         },
@@ -453,10 +454,7 @@ export default defineConfig(
         },
         settings: {
             react: { version: 'detect' },
-            'import/resolver': {
-                typescript: true,
-                node: true,
-            },
+            'import-x/resolver-next': [createTypeScriptImportResolver(), createNodeResolver()],
         },
     },
 
@@ -510,11 +508,11 @@ export default defineConfig(
             'consistent-return': 'error',
 
             // ── Import hygiene ────────────────────────────────────────────────
-            'import/no-default-export': 'error',
-            'import/first': 'error',
-            'import/newline-after-import': 'error',
-            'import/no-duplicates': 'error',
-            'import/order': [
+            'import-x/no-default-export': 'error',
+            'import-x/first': 'error',
+            'import-x/newline-after-import': 'error',
+            'import-x/no-duplicates': 'error',
+            'import-x/order': [
                 'error',
                 {
                     groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index', 'object', 'type'],

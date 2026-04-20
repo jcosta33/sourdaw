@@ -2,7 +2,7 @@ import { spawnSync } from 'child_process';
 import { writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { cyan, dim, bold, blue, reset } from './colors.mjs';
+import { cyan, dim, bold, blue } from './colors.ts';
 
 /**
  * Resolve the effective terminal backend based on config/flag/platform.
