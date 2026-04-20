@@ -76,12 +76,12 @@ const AUDIO_SYNC_KEYS: readonly (keyof GrinderPatch)[] = [
     'roomAmount',
 ] as const;
 
-function getOptionIndex<T extends readonly string[]>(options: T, value: string): number | null {
-    const index = options.indexOf(value as T[number]);
+function getOptionIndex<Options extends readonly string[]>(options: Options, value: string): number | null {
+    const index = options.indexOf(value as Options[number]);
     return index >= 0 ? index : null;
 }
 
-function toAudioValue<K extends keyof GrinderPatch>(key: K, value: GrinderPatch[K]): number | null {
+function toAudioValue<Key extends keyof GrinderPatch>(key: Key, value: GrinderPatch[Key]): number | null {
     if (typeof value === 'number') {
         return Number.isFinite(value) ? value : null;
     }

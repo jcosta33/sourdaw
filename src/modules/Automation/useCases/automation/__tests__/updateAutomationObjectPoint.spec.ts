@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 import { automationStore } from '../../../stores/automationStore';
 import { updateAutomationObjectPoint } from '../updateAutomationObjectPoint';

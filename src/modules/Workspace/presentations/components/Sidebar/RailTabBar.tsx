@@ -40,7 +40,7 @@ export const RailTabBar = <TId extends string>({
     useEffect(() => {
         const element = scrollRef.current;
         if (!element) {
-            return;
+            return undefined;
         }
 
         const updateScrollState = () => {

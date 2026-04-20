@@ -16,7 +16,7 @@ describe('handleTrimClipEnd', () => {
     });
 
     it('executes trimClipEnd with the provided payload', () => {
-        handleTrimClipEnd.execute({
+        void handleTrimClipEnd.execute({
             type: 'trimClipEnd',
             payload: { clipId: 'c1', newEndBeat: 8 },
         });

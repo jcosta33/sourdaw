@@ -16,7 +16,7 @@ describe('handleSaveTrackTemplate', () => {
     });
 
     it('executes saveTrackAsTemplate', () => {
-        handleSaveTrackTemplate.execute({
+        void handleSaveTrackTemplate.execute({
             type: 'saveTrackTemplate',
             payload: { trackId: 't1', name: 'My Tmpl', category: 'Drums' },
         });

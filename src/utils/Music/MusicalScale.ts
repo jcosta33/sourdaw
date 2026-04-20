@@ -90,7 +90,14 @@ export function quantizeCentsToScale(cents: number, root: number, scaleName: str
     }
 
     const diff = (bestPc - pc) * 100;
-    const actualDiff = Math.abs(diff) <= 600 ? diff : diff > 0 ? diff - 1200 : diff + 1200;
+    let actualDiff: number;
+    if (Math.abs(diff) <= 600) {
+        actualDiff = diff;
+    } else if (diff > 0) {
+        actualDiff = diff - 1200;
+    } else {
+        actualDiff = diff + 1200;
+    }
 
     return cents + actualDiff;
 }
@@ -115,7 +122,14 @@ export function quantizeMidiNoteToScale(note: number, root: number, scaleName: s
     }
 
     const diff = bestPc - pc;
-    const actualDiff = Math.abs(diff) <= 6 ? diff : diff > 0 ? diff - 12 : diff + 12;
+    let actualDiff: number;
+    if (Math.abs(diff) <= 6) {
+        actualDiff = diff;
+    } else if (diff > 0) {
+        actualDiff = diff - 12;
+    } else {
+        actualDiff = diff + 12;
+    }
 
     return Math.max(0, Math.min(127, note + actualDiff));
 }

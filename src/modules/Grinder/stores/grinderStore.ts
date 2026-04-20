@@ -31,7 +31,11 @@ export function getGrinderState(deviceId: string): GrinderState {
     return grinderStore.value?.[deviceId] ?? { ...DEFAULT_GRINDER_STATE, patch: { ...DEFAULT_PATCH } };
 }
 
-export function setGrinderParam<K extends keyof GrinderPatch>(deviceId: string, key: K, value: GrinderPatch[K]): void {
+export function setGrinderParam<Key extends keyof GrinderPatch>(
+    deviceId: string,
+    key: Key,
+    value: GrinderPatch[Key]
+): void {
     const instances = grinderStore.value ?? {};
     const state = instances[deviceId] ?? { ...DEFAULT_GRINDER_STATE, patch: { ...DEFAULT_PATCH } };
     grinderStore.set({ ...instances, [deviceId]: { ...state, patch: { ...state.patch, [key]: value } } });
@@ -94,11 +98,11 @@ export function setGrinderPedalParam(
     });
 }
 
-export function setGrinderMicParam<K extends keyof GrinderMic>(
+export function setGrinderMicParam<Key extends keyof GrinderMic>(
     deviceId: string,
     micIndex: 1 | 2,
-    key: K,
-    value: GrinderMic[K]
+    key: Key,
+    value: GrinderMic[Key]
 ): void {
     const instances = grinderStore.value ?? {};
     const state = instances[deviceId];

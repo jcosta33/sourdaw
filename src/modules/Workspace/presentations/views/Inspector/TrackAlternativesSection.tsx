@@ -27,7 +27,7 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                         size="icon-xs"
                         onClick={() => {
                             const name = `Alt ${track.alternatives.length + 1}`;
-                            executeAppAction({
+                            void executeAppAction({
                                 type: 'createTrackAlternative',
                                 payload: { trackId: track.id, name, duplicateActive: false },
                             });
@@ -47,7 +47,7 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                         selected={alt.id === track.activeAlternativeId}
                         onClick={() => {
                             if (alt.id !== track.activeAlternativeId) {
-                                executeAppAction({
+                                void executeAppAction({
                                     type: 'switchTrackAlternative',
                                     payload: { trackId: track.id, alternativeId: alt.id },
                                 });
@@ -65,7 +65,7 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                                         className="h-6 w-6"
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            executeAppAction({
+                                            void executeAppAction({
                                                 type: 'deleteTrackAlternative',
                                                 payload: { trackId: track.id, alternativeId: alt.id },
                                             });

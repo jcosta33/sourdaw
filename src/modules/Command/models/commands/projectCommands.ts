@@ -11,7 +11,7 @@ export const projectCommands: CommandEntry[] = [
         description: 'Create a new empty project',
         category: 'Project',
         action: () => {
-            newProject();
+            void newProject();
         },
     },
     {
@@ -21,7 +21,7 @@ export const projectCommands: CommandEntry[] = [
         category: 'Project',
         shortcut: '⌘S',
         action: () => {
-            saveProject();
+            void saveProject();
         },
     },
     {
@@ -31,7 +31,7 @@ export const projectCommands: CommandEntry[] = [
         category: 'Project',
         shortcut: '⌘⇧E',
         action: () => {
-            eventBus.emit('dialog.openExport', undefined);
+            void eventBus.emit('dialog.openExport', undefined);
         },
     },
     {

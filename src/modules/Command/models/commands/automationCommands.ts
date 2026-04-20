@@ -13,7 +13,7 @@ export const automationCommands: CommandEntry[] = [
         action: () => {
             const lane = automationStore.value?.lanes[0];
             if (lane) {
-                executeAppAction({ type: 'scaleAutomation', payload: { laneId: lane.id, factor: 1.2 } });
+                void executeAppAction({ type: 'scaleAutomation', payload: { laneId: lane.id, factor: 1.2 } });
             }
         },
     },
@@ -25,7 +25,7 @@ export const automationCommands: CommandEntry[] = [
         action: () => {
             const lane = automationStore.value?.lanes[0];
             if (lane) {
-                executeAppAction({ type: 'invertAutomation', payload: { laneId: lane.id } });
+                void executeAppAction({ type: 'invertAutomation', payload: { laneId: lane.id } });
             }
         },
     },
@@ -37,7 +37,7 @@ export const automationCommands: CommandEntry[] = [
         action: () => {
             const lane = automationStore.value?.lanes[0];
             if (lane) {
-                executeAppAction({ type: 'thinAutomation', payload: { laneId: lane.id } });
+                void executeAppAction({ type: 'thinAutomation', payload: { laneId: lane.id } });
             }
         },
     },

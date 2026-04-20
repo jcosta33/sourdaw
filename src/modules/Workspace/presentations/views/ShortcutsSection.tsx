@@ -130,7 +130,7 @@ export const ShortcutsSection = (): ReactElement => {
 
     useEffect(() => {
         if (!editingId) {
-            return;
+            return undefined;
         }
         const handleKey = (event: KeyboardEvent) => {
             event.preventDefault();

@@ -34,6 +34,8 @@ function evalShape(shape: LfoShape, phase: number, rngState: { v: number }): num
             }
             return rngState.v;
         }
+        default:
+            throw new Error(`Unknown LFO shape: ${shape}`);
     }
 }
 
@@ -134,6 +136,8 @@ export class CCGenerator extends BaseMidiProcessor {
             case 'retrigger':
                 this.retriggerOnNote = value > 0.5;
                 break;
+            default:
+                throw new Error(`Unknown parameter: ${name}`);
         }
     }
 }

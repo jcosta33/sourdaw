@@ -63,9 +63,9 @@ export const PanelToggles = ({
 
     const handleLinkToggle = (): void => {
         if (linkStatus.enabled) {
-            disableLink();
+            void disableLink();
         } else {
-            enableLink().catch(() => {
+            void enableLink().catch(() => {
                 /* graceful no-op if Link not available */
             });
         }

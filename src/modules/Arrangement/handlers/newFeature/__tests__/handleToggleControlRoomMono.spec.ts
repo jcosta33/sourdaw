@@ -16,7 +16,7 @@ describe('handleToggleControlRoomMono', () => {
     });
 
     it('executes toggleMono', () => {
-        handleToggleControlRoomMono.execute({ type: 'toggleControlRoomMono', payload: {} });
+        void handleToggleControlRoomMono.execute({ type: 'toggleControlRoomMono', payload: {} });
         expect(mocks.toggleMono).toHaveBeenCalledTimes(1);
     });
 

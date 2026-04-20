@@ -47,7 +47,7 @@ export function float32ToAudioBuffer(audio: Float32Array, sampleRate = TARGET_SA
     const ctx = new AudioContext({ sampleRate });
     const buffer = ctx.createBuffer(1, audio.length, sampleRate);
     buffer.copyToChannel(new Float32Array(audio), 0);
-    ctx.close();
+    void ctx.close();
     return buffer;
 }
 

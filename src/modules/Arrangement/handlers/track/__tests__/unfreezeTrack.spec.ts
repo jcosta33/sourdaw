@@ -16,7 +16,7 @@ describe('handleUnfreezeTrack', () => {
     });
 
     it('executes unfreezeTrack with the provided payload', () => {
-        handleUnfreezeTrack.execute({
+        void handleUnfreezeTrack.execute({
             type: 'unfreezeTrack',
             payload: { trackId: 't1' },
         });

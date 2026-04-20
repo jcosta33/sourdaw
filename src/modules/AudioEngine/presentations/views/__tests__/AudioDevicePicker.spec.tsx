@@ -38,8 +38,6 @@ vi.mock('../../../useCases/audioDeviceSelection/helpers', () => ({
     audioDeviceStore: {},
 }));
 
-const { useStore } = await import('#/infra/store/useStore');
-
 describe('AudioDevicePicker', () => {
     beforeEach(() => {
         vi.clearAllMocks();

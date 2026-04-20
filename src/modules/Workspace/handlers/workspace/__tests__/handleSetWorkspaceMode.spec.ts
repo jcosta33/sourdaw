@@ -25,8 +25,8 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
 
-import { getAutomationStoreState } from '#/modules/Automation/useCases/getAutomationStoreState';
 import { removeAutomationPoint } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
+import { getAutomationStoreState } from '#/modules/Automation/useCases/getAutomationStoreState';
 import { pickFiles } from '#/modules/Project/repositories/nativeFileDialog/pickFiles';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 

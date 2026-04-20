@@ -47,7 +47,7 @@ export const aiCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'detectTempo', payload: { clipId } });
+                void executeAppAction({ type: 'detectTempo', payload: { clipId } });
             }
         },
     },
@@ -59,7 +59,7 @@ export const aiCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'detectKey', payload: { clipId } });
+                void executeAppAction({ type: 'detectKey', payload: { clipId } });
             }
         },
     },
@@ -71,7 +71,7 @@ export const aiCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'audioToMidi', payload: { clipId } });
+                void executeAppAction({ type: 'audioToMidi', payload: { clipId } });
             }
         },
     },
@@ -83,7 +83,7 @@ export const aiCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'applyGroove', payload: { clipId, grooveId: 'swing-light' } });
+                void executeAppAction({ type: 'applyGroove', payload: { clipId, grooveId: 'swing-light' } });
             }
         },
     },

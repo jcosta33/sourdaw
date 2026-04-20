@@ -33,7 +33,7 @@ describe('handleRenameTrackAlternative', () => {
             ],
         });
 
-        handleRenameTrackAlternative.execute({
+        void handleRenameTrackAlternative.execute({
             type: 'renameTrackAlternative',
             payload: { trackId: 't1', alternativeId: 'alt1', name: 'New' },
         });

@@ -16,7 +16,7 @@ describe('handleAddDevice', () => {
     });
 
     it('executes addDevice with the provided payload', () => {
-        handleAddDevice.execute({
+        void handleAddDevice.execute({
             type: 'addDevice',
             payload: { trackId: 't1', deviceType: 'EQ' },
         });

@@ -2,12 +2,17 @@
 if (typeof TextDecoder === 'undefined') {
     globalThis.TextDecoder = class TextDecoder {
         decode(input) {
-            if (!input) return '';
-            const bytes = input instanceof Uint8Array ? input : new Uint8Array(
-                input instanceof ArrayBuffer ? input : input.buffer,
-                input instanceof ArrayBuffer ? 0 : input.byteOffset,
-                input instanceof ArrayBuffer ? input.byteLength : input.byteLength,
-            );
+            if (!input) {
+                return '';
+            }
+            const bytes =
+                input instanceof Uint8Array
+                    ? input
+                    : new Uint8Array(
+                          input instanceof ArrayBuffer ? input : input.buffer,
+                          input instanceof ArrayBuffer ? 0 : input.byteOffset,
+                          input instanceof ArrayBuffer ? input.byteLength : input.byteLength
+                      );
             let result = '';
             for (let i = 0; i < bytes.length; i++) {
                 result += String.fromCharCode(bytes[i]);
@@ -19,7 +24,9 @@ if (typeof TextDecoder === 'undefined') {
 if (typeof TextEncoder === 'undefined') {
     globalThis.TextEncoder = class TextEncoder {
         encode(input) {
-            if (!input) return new Uint8Array(0);
+            if (!input) {
+                return new Uint8Array(0);
+            }
             const buf = new Uint8Array(input.length);
             for (let i = 0; i < input.length; i++) {
                 buf[i] = input.charCodeAt(i) & 0xff;
@@ -166,7 +173,9 @@ export class BacteriaInstance {
         wasm.bacteriainstance_set_param(this.__wbg_ptr, ptr0, len0, value);
     }
 }
-if (Symbol.dispose) BacteriaInstance.prototype[Symbol.dispose] = BacteriaInstance.prototype.free;
+if (Symbol.dispose) {
+    BacteriaInstance.prototype[Symbol.dispose] = BacteriaInstance.prototype.free;
+}
 
 /**
  * WASM-exported Fermenter instance for AudioWorklet.
@@ -244,7 +253,9 @@ export class FermenterInstance {
         wasm.fermenterinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
     }
 }
-if (Symbol.dispose) FermenterInstance.prototype[Symbol.dispose] = FermenterInstance.prototype.free;
+if (Symbol.dispose) {
+    FermenterInstance.prototype[Symbol.dispose] = FermenterInstance.prototype.free;
+}
 
 /**
  * WASM-exported Gluten instance for AudioWorklet.
@@ -379,7 +390,9 @@ export class GlutenInstance {
         wasm.gluteninstance_set_param(this.__wbg_ptr, ptr0, len0, value);
     }
 }
-if (Symbol.dispose) GlutenInstance.prototype[Symbol.dispose] = GlutenInstance.prototype.free;
+if (Symbol.dispose) {
+    GlutenInstance.prototype[Symbol.dispose] = GlutenInstance.prototype.free;
+}
 
 /**
  * WASM-exported Grand Boule instance for AudioWorklet integration.
@@ -505,7 +518,9 @@ export class GrandBouleInstance {
         wasm.grandbouleinstance_set_una_corda(this.__wbg_ptr, engaged);
     }
 }
-if (Symbol.dispose) GrandBouleInstance.prototype[Symbol.dispose] = GrandBouleInstance.prototype.free;
+if (Symbol.dispose) {
+    GrandBouleInstance.prototype[Symbol.dispose] = GrandBouleInstance.prototype.free;
+}
 
 /**
  * WASM-exported Grinder instance for AudioWorklet.
@@ -639,7 +654,9 @@ export class GrinderInstance {
         wasm.grinderinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
     }
 }
-if (Symbol.dispose) GrinderInstance.prototype[Symbol.dispose] = GrinderInstance.prototype.free;
+if (Symbol.dispose) {
+    GrinderInstance.prototype[Symbol.dispose] = GrinderInstance.prototype.free;
+}
 
 export class KneadInstance {
     __destroy_into_raw() {
@@ -705,7 +722,9 @@ export class KneadInstance {
         return ret >>> 0;
     }
 }
-if (Symbol.dispose) KneadInstance.prototype[Symbol.dispose] = KneadInstance.prototype.free;
+if (Symbol.dispose) {
+    KneadInstance.prototype[Symbol.dispose] = KneadInstance.prototype.free;
+}
 
 /**
  * WASM-exported Levain instance for AudioWorklet.
@@ -768,8 +787,53 @@ export class LevainInstance {
      * @param {number} sustain
      * @param {number} release
      */
-    add_zone(zone_id, sample_id, articulation_id, root_note, lo_key, hi_key, lo_vel, hi_vel, rr_pos, rr_len, mic_id, is_release, loop_mode, loop_start, loop_end, loop_crossfade, gain_db, attack, decay, sustain, release) {
-        wasm.levaininstance_add_zone(this.__wbg_ptr, zone_id, sample_id, articulation_id, root_note, lo_key, hi_key, lo_vel, hi_vel, rr_pos, rr_len, mic_id, is_release, loop_mode, loop_start, loop_end, loop_crossfade, gain_db, attack, decay, sustain, release);
+    add_zone(
+        zone_id,
+        sample_id,
+        articulation_id,
+        root_note,
+        lo_key,
+        hi_key,
+        lo_vel,
+        hi_vel,
+        rr_pos,
+        rr_len,
+        mic_id,
+        is_release,
+        loop_mode,
+        loop_start,
+        loop_end,
+        loop_crossfade,
+        gain_db,
+        attack,
+        decay,
+        sustain,
+        release
+    ) {
+        wasm.levaininstance_add_zone(
+            this.__wbg_ptr,
+            zone_id,
+            sample_id,
+            articulation_id,
+            root_note,
+            lo_key,
+            hi_key,
+            lo_vel,
+            hi_vel,
+            rr_pos,
+            rr_len,
+            mic_id,
+            is_release,
+            loop_mode,
+            loop_start,
+            loop_end,
+            loop_crossfade,
+            gain_db,
+            attack,
+            decay,
+            sustain,
+            release
+        );
     }
     /**
      * Silent all-notes-off. Releases every active voice without firing
@@ -866,7 +930,9 @@ export class LevainInstance {
         wasm.levaininstance_set_param(this.__wbg_ptr, ptr0, len0, value);
     }
 }
-if (Symbol.dispose) LevainInstance.prototype[Symbol.dispose] = LevainInstance.prototype.free;
+if (Symbol.dispose) {
+    LevainInstance.prototype[Symbol.dispose] = LevainInstance.prototype.free;
+}
 
 /**
  * WASM-exported Proof mastering suite instance for AudioWorklet.
@@ -959,7 +1025,7 @@ export class ProofInstance {
      */
     get_module_order() {
         const ret = wasm.proofinstance_get_module_order(this.__wbg_ptr);
-        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        const v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
     }
@@ -1050,7 +1116,9 @@ export class ProofInstance {
         wasm.proofinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
     }
 }
-if (Symbol.dispose) ProofInstance.prototype[Symbol.dispose] = ProofInstance.prototype.free;
+if (Symbol.dispose) {
+    ProofInstance.prototype[Symbol.dispose] = ProofInstance.prototype.free;
+}
 
 /**
  * WASM-exported Toaster instance for AudioWorklet.
@@ -1132,7 +1200,9 @@ export class ToasterInstance {
         wasm.toasterinstance_set_param(this.__wbg_ptr, ptr0, len0, value);
     }
 }
-if (Symbol.dispose) ToasterInstance.prototype[Symbol.dispose] = ToasterInstance.prototype.free;
+if (Symbol.dispose) {
+    ToasterInstance.prototype[Symbol.dispose] = ToasterInstance.prototype.free;
+}
 
 /**
  * @param {Float32Array} samples
@@ -1169,7 +1239,7 @@ export function commit_pitch_edit_wasm(samples, sample_rate, segments_json, cont
     const ptr2 = passStringToWasm0(contour_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len2 = WASM_VECTOR_LEN;
     const ret = wasm.commit_pitch_edit_wasm(ptr0, len0, sample_rate, ptr1, len1, ptr2, len2);
-    var v4 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+    const v4 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
     return v4;
 }
@@ -1177,10 +1247,10 @@ export function commit_pitch_edit_wasm(samples, sample_rate, segments_json, cont
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg___wbindgen_throw_5549492daedad139: function(arg0, arg1) {
+        __wbg___wbindgen_throw_5549492daedad139(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
-        __wbindgen_init_externref_table: function() {
+        __wbindgen_init_externref_table() {
             const table = wasm.__wbindgen_externrefs;
             const offset = table.grow(4);
             table.set(0, undefined);
@@ -1192,37 +1262,46 @@ function __wbg_get_imports() {
     };
     return {
         __proto__: null,
-        "./daw_dsp_bg.js": import0,
+        './daw_dsp_bg.js': import0,
     };
 }
 
-const BacteriaInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_bacteriainstance_free(ptr >>> 0, 1));
-const FermenterInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_fermenterinstance_free(ptr >>> 0, 1));
-const GlutenInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_gluteninstance_free(ptr >>> 0, 1));
-const GrandBouleInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_grandbouleinstance_free(ptr >>> 0, 1));
-const GrinderInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_grinderinstance_free(ptr >>> 0, 1));
-const KneadInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_kneadinstance_free(ptr >>> 0, 1));
-const LevainInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_levaininstance_free(ptr >>> 0, 1));
-const ProofInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_proofinstance_free(ptr >>> 0, 1));
-const ToasterInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_toasterinstance_free(ptr >>> 0, 1));
+const BacteriaInstanceFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_bacteriainstance_free(ptr >>> 0, 1));
+const FermenterInstanceFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_fermenterinstance_free(ptr >>> 0, 1));
+const GlutenInstanceFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_gluteninstance_free(ptr >>> 0, 1));
+const GrandBouleInstanceFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_grandbouleinstance_free(ptr >>> 0, 1));
+const GrinderInstanceFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_grinderinstance_free(ptr >>> 0, 1));
+const KneadInstanceFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_kneadinstance_free(ptr >>> 0, 1));
+const LevainInstanceFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_levaininstance_free(ptr >>> 0, 1));
+const ProofInstanceFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_proofinstance_free(ptr >>> 0, 1));
+const ToasterInstanceFinalization =
+    typeof FinalizationRegistry === 'undefined'
+        ? { register: () => {}, unregister: () => {} }
+        : new FinalizationRegistry((ptr) => wasm.__wbg_toasterinstance_free(ptr >>> 0, 1));
 
 function getArrayF32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
@@ -1266,7 +1345,9 @@ function passStringToWasm0(arg, malloc, realloc) {
     if (realloc === undefined) {
         const buf = cachedTextEncoder.encode(arg);
         const ptr = malloc(buf.length, 1) >>> 0;
-        getUint8ArrayMemory0().subarray(ptr, ptr + buf.length).set(buf);
+        getUint8ArrayMemory0()
+            .subarray(ptr, ptr + buf.length)
+            .set(buf);
         WASM_VECTOR_LEN = buf.length;
         return ptr;
     }
@@ -1280,14 +1361,16 @@ function passStringToWasm0(arg, malloc, realloc) {
 
     for (; offset < len; offset++) {
         const code = arg.charCodeAt(offset);
-        if (code > 0x7F) break;
+        if (code > 0x7f) {
+            break;
+        }
         mem[ptr + offset] = code;
     }
     if (offset !== len) {
         if (offset !== 0) {
             arg = arg.slice(offset);
         }
-        ptr = realloc(ptr, len, len = offset + arg.length * 3, 1) >>> 0;
+        ptr = realloc(ptr, len, (len = offset + arg.length * 3), 1) >>> 0;
         const view = getUint8ArrayMemory0().subarray(ptr + offset, ptr + len);
         const ret = cachedTextEncoder.encodeInto(arg, view);
 
@@ -1321,7 +1404,7 @@ if (!('encodeInto' in cachedTextEncoder)) {
         view.set(buf);
         return {
             read: arg.length,
-            written: buf.length
+            written: buf.length,
         };
     };
 }
@@ -1343,13 +1426,17 @@ async function __wbg_load(module, imports) {
         if (typeof WebAssembly.instantiateStreaming === 'function') {
             try {
                 return await WebAssembly.instantiateStreaming(module, imports);
-            } catch (e) {
+            } catch (error) {
                 const validResponse = module.ok && expectedResponseType(module.type);
 
                 if (validResponse && module.headers.get('Content-Type') !== 'application/wasm') {
-                    console.warn("`WebAssembly.instantiateStreaming` failed because your server does not serve Wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\n", e);
-
-                } else { throw e; }
+                    console.warn(
+                        '`WebAssembly.instantiateStreaming` failed because your server does not serve Wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\n',
+                        error
+                    );
+                } else {
+                    throw error;
+                }
             }
         }
 
@@ -1367,21 +1454,25 @@ async function __wbg_load(module, imports) {
 
     function expectedResponseType(type) {
         switch (type) {
-            case 'basic': case 'cors': case 'default': return true;
+            case 'basic':
+            case 'cors':
+            case 'default':
+                return true;
         }
         return false;
     }
 }
 
 function initSync(module) {
-    if (wasm !== undefined) return wasm;
-
+    if (wasm !== undefined) {
+        return wasm;
+    }
 
     if (module !== undefined) {
         if (Object.getPrototypeOf(module) === Object.prototype) {
-            ({module} = module)
+            ({ module } = module);
         } else {
-            console.warn('using deprecated parameters for `initSync()`; pass a single object instead')
+            console.warn('using deprecated parameters for `initSync()`; pass a single object instead');
         }
     }
 
@@ -1394,14 +1485,15 @@ function initSync(module) {
 }
 
 async function __wbg_init(module_or_path) {
-    if (wasm !== undefined) return wasm;
-
+    if (wasm !== undefined) {
+        return wasm;
+    }
 
     if (module_or_path !== undefined) {
         if (Object.getPrototypeOf(module_or_path) === Object.prototype) {
-            ({module_or_path} = module_or_path)
+            ({ module_or_path } = module_or_path);
         } else {
-            console.warn('using deprecated parameters for the initialization function; pass a single object instead')
+            console.warn('using deprecated parameters for the initialization function; pass a single object instead');
         }
     }
 
@@ -1410,7 +1502,11 @@ async function __wbg_init(module_or_path) {
     }
     const imports = __wbg_get_imports();
 
-    if (typeof module_or_path === 'string' || (typeof Request === 'function' && module_or_path instanceof Request) || (typeof URL === 'function' && module_or_path instanceof URL)) {
+    if (
+        typeof module_or_path === 'string' ||
+        (typeof Request === 'function' && module_or_path instanceof Request) ||
+        (typeof URL === 'function' && module_or_path instanceof URL)
+    ) {
         module_or_path = fetch(module_or_path);
     }
 

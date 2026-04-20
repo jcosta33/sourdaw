@@ -54,7 +54,14 @@ function grColor(gr: number): string {
 }
 
 const MeterBar = ({ value, id }: { value: number; id: string }): ReactElement => {
-    const color = value > 0.9 ? '#C44030' : value > 0.7 ? '#D4A847' : '#4A9ECC';
+    let color: string;
+    if (value > 0.9) {
+        color = '#C44030';
+    } else if (value > 0.7) {
+        color = '#D4A847';
+    } else {
+        color = '#4A9ECC';
+    }
     return (
         <div
             id={id}
@@ -167,7 +174,15 @@ export const CrustMeteringStrip = ({
                         <span
                             className="text-[8px] font-mono ml-1"
                             style={{
-                                color: Math.abs(targetDiff) <= 0.5 ? '#7FC8A0' : targetDiff > 0 ? '#C44030' : '#D4A847',
+                                color: (() => {
+                                    if (Math.abs(targetDiff) <= 0.5) {
+                                        return '#7FC8A0';
+                                    }
+                                    if (targetDiff > 0) {
+                                        return '#C44030';
+                                    }
+                                    return '#D4A847';
+                                })(),
                             }}
                         >
                             ({targetDiff > 0 ? '+' : ''}

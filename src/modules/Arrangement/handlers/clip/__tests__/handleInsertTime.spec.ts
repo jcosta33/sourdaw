@@ -16,7 +16,7 @@ describe('handleInsertTime', () => {
     });
 
     it('executes insertTime with the provided payload', () => {
-        handleInsertTime.execute({
+        void handleInsertTime.execute({
             type: 'insertTime',
             payload: { atBeat: 4, durationBeats: 2 },
         });

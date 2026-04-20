@@ -37,7 +37,7 @@ describe('legatoNotes', () => {
         // Remove b, or select a and c.
         legatoNotes('clip1', ['a', 'c']);
         const notes = midiStore.value?.notesByClipId.clip1;
-        const noteA = notes?.find((n) => n.id === 'a');
+        const _noteA = notes?.find((n) => n.id === 'a');
         // It finds 'b' even if not in selection if b is on same pitch.
         // Wait, the logic finds ANY note in the clip for same-pitch, but fallback only selection.
         // Let's test fallback.

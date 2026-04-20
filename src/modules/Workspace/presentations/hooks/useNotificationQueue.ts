@@ -34,7 +34,7 @@ export function useNotificationQueue(): {
 
     useEffect(() => {
         if (items.length === 0) {
-            return;
+            return undefined;
         }
         const timer = setTimeout(() => {
             setItems((prev) => prev.slice(1));

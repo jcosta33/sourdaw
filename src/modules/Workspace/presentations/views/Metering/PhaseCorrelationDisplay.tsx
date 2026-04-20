@@ -21,11 +21,11 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return undefined;
         }
 
         let rafId = 0;
@@ -94,12 +94,14 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
 
             // Correlation indicator
             const indicatorX = midX + correlation * (midX - 4);
-            const color =
-                correlation > 0.5
-                    ? safeColor // Good mono compatibility
-                    : correlation > 0
-                      ? hotColor // Moderate
-                      : clipColor; // Phase issues
+            let color: string;
+            if (correlation > 0.5) {
+                color = safeColor; // Good mono compatibility
+            } else if (correlation > 0) {
+                color = hotColor; // Moderate
+            } else {
+                color = clipColor; // Phase issues
+            }
 
             // Bar from center to correlation value — with glow
             const barStart = Math.min(midX, indicatorX);

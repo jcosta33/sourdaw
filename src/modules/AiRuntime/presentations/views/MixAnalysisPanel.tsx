@@ -37,11 +37,11 @@ export const MixAnalysisPanel = (): ReactElement | null => {
     }
 
     const handleRefresh = () => {
-        runAppAction({ type: 'analyzeMix' });
+        void runAppAction({ type: 'analyzeMix' });
     };
 
     const handleAutoFix = () => {
-        runAppAction({ type: 'autoFixMix' });
+        void runAppAction({ type: 'autoFixMix' });
     };
 
     return (

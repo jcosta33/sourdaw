@@ -13,8 +13,14 @@ export const zoomToSelection = inject({ eventBus })(
                 return;
             }
 
-            const selectedIds =
-                ws.selectedClipIds.length > 0 ? ws.selectedClipIds : ws.selectedClipId ? [ws.selectedClipId] : [];
+            let selectedIds: string[];
+            if (ws.selectedClipIds.length > 0) {
+                selectedIds = ws.selectedClipIds;
+            } else if (ws.selectedClipId) {
+                selectedIds = [ws.selectedClipId];
+            } else {
+                selectedIds = [];
+            }
 
             if (selectedIds.length === 0) {
                 return;
@@ -39,6 +45,6 @@ export const zoomToSelection = inject({ eventBus })(
                 return;
             }
 
-            eventBus.emit('zoom.toSelection', { startBeat: minStart, endBeat: maxEnd });
+            void eventBus.emit('zoom.toSelection', { startBeat: minStart, endBeat: maxEnd });
         }
 );

@@ -57,7 +57,7 @@ function useContainerWidth(ref: RefObject<HTMLDivElement | null>): number {
     useLayoutEffect(() => {
         const el = ref.current;
         if (!el) {
-            return;
+            return undefined;
         }
         const ro = new ResizeObserver(([entry]) => {
             if (entry) {

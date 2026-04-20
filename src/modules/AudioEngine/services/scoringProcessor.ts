@@ -16,8 +16,6 @@
 
 import { initSync, ScoringInstance } from '../wasm/scoring.js';
 
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-
 class ScoringProcessor extends AudioWorkletProcessor {
     _instance = null; // ScoringInstance (generated wasm-bindgen class)
     _memory = null; // WebAssembly.Memory

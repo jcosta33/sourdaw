@@ -50,7 +50,7 @@ export const levainStore = createStore<LevainState>({
 // Engine sync is handled exclusively in useCases/levainParamBridge.ts.
 // ---------------------------------------------------------------------------
 
-export function setLevainParam<K extends keyof LevainPatch>(key: K, value: LevainPatch[K]): void {
+export function setLevainParam<Key extends keyof LevainPatch>(key: Key, value: LevainPatch[Key]): void {
     const state = levainStore.value;
     if (state) {
         levainStore.set({

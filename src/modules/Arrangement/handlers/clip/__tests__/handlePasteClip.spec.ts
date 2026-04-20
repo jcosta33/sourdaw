@@ -16,7 +16,7 @@ describe('handlePasteClip', () => {
     });
 
     it('executes pasteClip', () => {
-        handlePasteClip.execute({ type: 'pasteClip', payload: {} });
+        void handlePasteClip.execute({ type: 'pasteClip', payload: {} });
         expect(mocks.pasteClip).toHaveBeenCalledTimes(1);
     });
 

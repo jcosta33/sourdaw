@@ -1,14 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import {
-    ALGORITHM_MAP,
-    DEFAULT_PARAMS,
-    PARAM_MAP,
-    SPACE_PRESETS,
-    type ProofChamberAlgorithm,
-} from '../ProofChamberState';
-
-type AlgorithmType = ProofChamberAlgorithm;
+import { ALGORITHM_MAP, DEFAULT_PARAMS, PARAM_MAP, SPACE_PRESETS } from '../ProofChamberState';
 
 describe('ProofChamberPatch constants', () => {
     it('should map every algorithm type to a distinct index', () => {

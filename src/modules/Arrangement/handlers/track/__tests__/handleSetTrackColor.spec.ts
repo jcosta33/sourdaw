@@ -22,7 +22,7 @@ describe('handleSetTrackColor', () => {
 
     describe('execute', () => {
         it('calls setTrackColor', () => {
-            handleSetTrackColor.execute({
+            void handleSetTrackColor.execute({
                 type: 'setTrackColor',
                 payload: { trackId: 't1', color: '#ff0000' },
             });

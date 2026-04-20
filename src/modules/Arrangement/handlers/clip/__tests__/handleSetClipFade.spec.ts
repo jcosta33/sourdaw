@@ -16,7 +16,7 @@ describe('handleSetClipFade', () => {
     });
 
     it('executes setClipFade with the provided payload', () => {
-        handleSetClipFade.execute({
+        void handleSetClipFade.execute({
             type: 'setClipFade',
             payload: { clipId: 'c1', fadeInBeats: 1, fadeOutBeats: 2 },
         });

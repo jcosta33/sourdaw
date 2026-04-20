@@ -1,14 +1,14 @@
 import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../devices/types';
 
-export interface AudioDeviceStrategy {
+export type AudioDeviceStrategy = {
     readonly node: OfflineDeviceNode;
     setParam(name: string, value: number): void;
     setBypass?(bypassed: boolean): void;
     noteOn?(noteOrPad: number, velocity: number, midiNote?: number, sampleFrame?: number): void;
     noteOff?(noteOrPad: number, sampleFrame?: number): void;
     destroy?(): void;
-}
+};
 
 export type DeviceCreator = (
     ctx: BaseAudioContext,

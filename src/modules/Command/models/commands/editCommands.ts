@@ -14,7 +14,7 @@ export const editCommands: CommandEntry[] = [
         category: 'Edit',
         shortcut: '⌘Z',
         action: () => {
-            undo();
+            void undo();
         },
     },
     {
@@ -24,7 +24,7 @@ export const editCommands: CommandEntry[] = [
         category: 'Edit',
         shortcut: '⌘⇧Z',
         action: () => {
-            redo();
+            void redo();
         },
     },
     {

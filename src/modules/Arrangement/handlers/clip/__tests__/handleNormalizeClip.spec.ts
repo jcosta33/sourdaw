@@ -16,7 +16,7 @@ describe('handleNormalizeClip', () => {
     });
 
     it('executes normalizeClip with the provided payload', () => {
-        handleNormalizeClip.execute({
+        void handleNormalizeClip.execute({
             type: 'normalizeClip',
             payload: { clipId: 'c1', mode: 'lufs', targetDb: -14 },
         });

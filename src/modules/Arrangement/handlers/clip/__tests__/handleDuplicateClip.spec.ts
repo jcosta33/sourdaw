@@ -16,7 +16,7 @@ describe('handleDuplicateClip', () => {
     });
 
     it('executes duplicateClip with the provided payload', () => {
-        handleDuplicateClip.execute({
+        void handleDuplicateClip.execute({
             type: 'duplicateClip',
             payload: { clipId: 'c1' },
         });

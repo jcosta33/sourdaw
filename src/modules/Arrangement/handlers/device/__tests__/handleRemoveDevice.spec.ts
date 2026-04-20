@@ -16,7 +16,7 @@ describe('handleRemoveDevice', () => {
     });
 
     it('executes removeDevice with the provided payload', () => {
-        handleRemoveDevice.execute({
+        void handleRemoveDevice.execute({
             type: 'removeDevice',
             payload: { deviceId: 'd1' },
         });

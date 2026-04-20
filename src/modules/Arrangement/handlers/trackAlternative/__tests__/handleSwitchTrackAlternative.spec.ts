@@ -36,7 +36,7 @@ describe('handleSwitchTrackAlternative', () => {
             ],
         });
 
-        handleSwitchTrackAlternative.execute({
+        void handleSwitchTrackAlternative.execute({
             type: 'switchTrackAlternative',
             payload: { trackId: 't1', alternativeId: 'alt2' },
         });
@@ -55,7 +55,7 @@ describe('handleSwitchTrackAlternative', () => {
             tracks: [{ id: 't1', activeAlternativeId: 'alt1', alternatives: [{ id: 'alt1' }] }],
         });
 
-        handleSwitchTrackAlternative.execute({
+        void handleSwitchTrackAlternative.execute({
             type: 'switchTrackAlternative',
             payload: { trackId: 't1', alternativeId: 'alt1' },
         });

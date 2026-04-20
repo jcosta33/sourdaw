@@ -116,7 +116,7 @@ export const CollaborationPanel = (): ReactElement | null => {
     };
 
     const handleCopyInvite = () => {
-        navigator.clipboard.writeText(inviteString);
+        void navigator.clipboard.writeText(inviteString);
         setCopiedInvite(true);
         if (copiedInviteTimerRef.current !== null) {
             clearTimeout(copiedInviteTimerRef.current);
@@ -128,7 +128,7 @@ export const CollaborationPanel = (): ReactElement | null => {
     };
 
     const handleCopyAnswer = () => {
-        navigator.clipboard.writeText(joinAnswer);
+        void navigator.clipboard.writeText(joinAnswer);
         setCopiedAnswer(true);
         if (copiedAnswerTimerRef.current !== null) {
             clearTimeout(copiedAnswerTimerRef.current);

@@ -27,7 +27,7 @@ vi.mock('../TrackLevelSection', () => ({
 vi.mock('../TrackDevicesSection', () => ({
     TrackDevicesSection: ({
         track,
-        onSelectDevice,
+        onSelectDevice: _onSelectDevice,
     }: {
         track: { name: string };
         onSelectDevice: (id: string) => void;
@@ -51,7 +51,7 @@ vi.mock('../TrackVcaSection', () => ({
 }));
 
 vi.mock('../TrackMidiOutputSection', () => ({
-    TrackMidiOutputSection: ({ track, allTracks }: { track: { name: string }; allTracks: unknown[] }) => (
+    TrackMidiOutputSection: ({ track, allTracks: _allTracks }: { track: { name: string }; allTracks: unknown[] }) => (
         <div data-testid="track-midi-output-section">MIDI Output: {track.name}</div>
     ),
 }));
@@ -69,9 +69,13 @@ vi.mock('../TrackLatencySection', () => ({
 }));
 
 vi.mock('../TrackClipsSection', () => ({
-    TrackClipsSection: ({ track, onSelectClip }: { track: { name: string }; onSelectClip: (id: string) => void }) => (
-        <div data-testid="track-clips-section">Clips: {track.name}</div>
-    ),
+    TrackClipsSection: ({
+        track,
+        onSelectClip: _onSelectClip,
+    }: {
+        track: { name: string };
+        onSelectClip: (id: string) => void;
+    }) => <div data-testid="track-clips-section">Clips: {track.name}</div>,
 }));
 
 vi.mock('../TakesSection', () => ({

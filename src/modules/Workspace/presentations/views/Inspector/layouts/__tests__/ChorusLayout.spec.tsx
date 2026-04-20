@@ -1,7 +1,4 @@
-import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-
-import type { DeviceLayoutProps } from '../../deviceLayoutRegistry';
 
 // Mock external dependencies
 const mockRegisterDeviceLayout = vi.fn();
@@ -31,66 +28,6 @@ vi.mock('../../DeviceParameterControl', () => ({
 }));
 
 describe('ChorusLayout', () => {
-    const mockDevice = {
-        id: 'device-1',
-        name: 'Chorus',
-        type: 'builtin-chorus',
-        bypassed: false,
-        parameterValues: {
-            'chorus-rate': 1.5,
-            'chorus-depth': 5,
-            'chorus-mix': 0.5,
-        },
-    };
-
-    const mockParameters = [
-        {
-            id: 'chorus-rate',
-            name: 'Rate',
-            type: 'float',
-            value: 1.5,
-            defaultValue: 1.5,
-            minValue: 0,
-            maxValue: 20,
-            unit: 'Hz',
-            automatable: true,
-            hasAutomation: false,
-            deviceId: 'device-1',
-        },
-        {
-            id: 'chorus-depth',
-            name: 'Depth',
-            type: 'float',
-            value: 5,
-            defaultValue: 5,
-            minValue: 0,
-            maxValue: 100,
-            unit: '%',
-            automatable: true,
-            hasAutomation: false,
-            deviceId: 'device-1',
-        },
-        {
-            id: 'chorus-mix',
-            name: 'Mix',
-            type: 'float',
-            value: 0.5,
-            defaultValue: 0.5,
-            minValue: 0,
-            maxValue: 1,
-            unit: '',
-            automatable: true,
-            hasAutomation: false,
-            deviceId: 'device-1',
-        },
-    ];
-
-    const mockProps: DeviceLayoutProps = {
-        device: mockDevice,
-        trackId: 'track-1',
-        parameters: mockParameters,
-    };
-
     it('should register layout for chorus, phaser, and flanger', async () => {
         await import('../ChorusLayout');
         expect(mockRegisterDeviceLayout).toHaveBeenCalled();

@@ -129,7 +129,7 @@ export const viewCommands: CommandEntry[] = [
         action: () => {
             const t = transportStore.value;
             if (t) {
-                executeAppAction({ type: 'deleteTime', payload: { startBeat: t.loopStart, endBeat: t.loopEnd } });
+                void executeAppAction({ type: 'deleteTime', payload: { startBeat: t.loopStart, endBeat: t.loopEnd } });
             }
         },
     },
@@ -141,7 +141,7 @@ export const viewCommands: CommandEntry[] = [
         action: () => {
             const t = transportStore.value;
             if (t) {
-                executeAppAction({
+                void executeAppAction({
                     type: 'insertTime',
                     payload: { atBeat: playheadPositionRef.current, durationBeats: 4 },
                 });
@@ -156,7 +156,7 @@ export const viewCommands: CommandEntry[] = [
         action: () => {
             const t = transportStore.value;
             if (t) {
-                executeAppAction({
+                void executeAppAction({
                     type: 'duplicateTimeRange',
                     payload: { startBeat: t.loopStart, endBeat: t.loopEnd },
                 });
@@ -171,7 +171,7 @@ export const viewCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'stripSilence', payload: { clipId } });
+                void executeAppAction({ type: 'stripSilence', payload: { clipId } });
             }
         },
     },

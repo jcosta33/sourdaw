@@ -5,6 +5,6 @@ import { inject } from '#/infra/di/inject';
 export const showAutomationPanel = inject({ eventBus })(
     ({ eventBus }) =>
         function showAutomationPanel(): void {
-            eventBus.emit('panel.showAutomation', undefined);
+            void eventBus.emit('panel.showAutomation', undefined);
         }
 );

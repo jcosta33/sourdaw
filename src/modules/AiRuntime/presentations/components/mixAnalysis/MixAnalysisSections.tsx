@@ -44,6 +44,8 @@ export const severityIcon = (severity: MixIssue['severity']): ReactElement => {
             return <AlertTriangle className="size-3 shrink-0 text-[var(--color-state-warning)]" />;
         case 'info':
             return <Info className="size-3 shrink-0 text-[var(--color-accent-cyan)]" />;
+        default:
+            return <Info className="size-3 shrink-0 text-[var(--color-accent-cyan)]" />;
     }
 };
 

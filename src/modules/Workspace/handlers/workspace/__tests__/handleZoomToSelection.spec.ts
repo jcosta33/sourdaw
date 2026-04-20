@@ -14,7 +14,7 @@ describe('handleZoomToSelection', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('delegates to zoomToSelection use case', () => {
-        handleZoomToSelection.execute({
+        void handleZoomToSelection.execute({
             type: 'zoomToSelection',
             payload: {},
         });

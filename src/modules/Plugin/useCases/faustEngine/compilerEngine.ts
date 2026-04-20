@@ -68,7 +68,14 @@ async function getCompiler(): Promise<IFaustCompiler> {
                 compilerState.ready = true;
                 return compiler;
             } catch (error) {
-                const msg = isAppError(error) ? error.message : error instanceof Error ? error.message : String(error);
+                let msg: string;
+                if (isAppError(error)) {
+                    msg = error.message;
+                } else if (error instanceof Error) {
+                    msg = error.message;
+                } else {
+                    msg = String(error);
+                }
                 compilerState.error = msg;
                 logger.warn(`[Faust] Compiler initialization failed: ${msg}`);
                 // Re-throw so callers know compilation is impossible
@@ -155,7 +162,14 @@ export async function compileFaustDSP(moduleId: string): Promise<boolean> {
             modules.set(moduleId, mod);
             return true;
         } catch (error) {
-            const msg = isAppError(error) ? error.message : error instanceof Error ? error.message : String(error);
+            let msg: string;
+            if (isAppError(error)) {
+                msg = error.message;
+            } else if (error instanceof Error) {
+                msg = error.message;
+            } else {
+                msg = String(error);
+            }
             logger.warn(`[Faust] Compilation failed for "${mod.name}": ${msg}`);
             return false;
         } finally {
@@ -227,7 +241,14 @@ export async function createFaustNode(
 
         return node;
     } catch (error) {
-        const msg = isAppError(error) ? error.message : error instanceof Error ? error.message : String(error);
+        let msg: string;
+        if (isAppError(error)) {
+            msg = error.message;
+        } else if (error instanceof Error) {
+            msg = error.message;
+        } else {
+            msg = String(error);
+        }
 
         // If the error is "already registered", it means we collided despite the cache
         // or faustwasm's internal state is out of sync. We can try to recover by

@@ -16,7 +16,7 @@ describe('handleSetAutomationMode', () => {
     });
 
     it('executes setAutomationMode with the provided payload', () => {
-        handleSetAutomationMode.execute({
+        void handleSetAutomationMode.execute({
             type: 'setAutomationMode',
             payload: { trackId: 't1', mode: 'write' },
         });

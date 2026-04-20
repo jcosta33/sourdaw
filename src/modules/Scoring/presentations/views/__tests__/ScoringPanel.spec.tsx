@@ -5,7 +5,7 @@ import { ScoringPanel } from '../ScoringPanel';
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => {
+    useStore: vi.fn((_store, _defaultValue) => {
         // Return a mock state for scoringStore
         return {
             'device-123': {
@@ -24,7 +24,7 @@ vi.mock('#/infra/store/useStore', () => ({
 
 vi.mock('../../../stores/scoringStore', () => ({
     scoringStore: { name: 'scoringStore' },
-    getScoringState: vi.fn((deviceId) => ({
+    getScoringState: vi.fn((_deviceId) => ({
         noteName: 'A',
         octave: 4,
         cents: 0,

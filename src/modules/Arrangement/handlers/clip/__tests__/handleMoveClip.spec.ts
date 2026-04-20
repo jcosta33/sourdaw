@@ -9,7 +9,7 @@ vi.mock('../../../useCases/clip/moveClip', () => ({
 
 describe('clipHandlers', () => {
     it('handleMoveClip forwards to moveClip use case', () => {
-        handleMoveClip.execute({
+        void handleMoveClip.execute({
             type: 'moveClip',
             payload: { clipId: 'c1', trackId: 't1', startBeat: 4 },
         } as any);

@@ -16,7 +16,7 @@ describe('handleCreateFolder', () => {
     });
 
     it('executes createFolder with the provided payload', () => {
-        handleCreateFolder.execute({
+        void handleCreateFolder.execute({
             type: 'createFolder',
             payload: { name: 'Drums' },
         });

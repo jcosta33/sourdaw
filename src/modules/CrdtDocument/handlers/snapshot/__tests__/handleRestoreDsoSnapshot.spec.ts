@@ -12,7 +12,7 @@ describe('handleRestoreDsoSnapshot', () => {
 
     it('should delegate to restoreSnapshot', () => {
         const bundle = new Map();
-        handleRestoreDsoSnapshot.execute({ type: 'restoreDsoSnapshot', payload: { bundle } });
+        void handleRestoreDsoSnapshot.execute({ type: 'restoreDsoSnapshot', payload: { bundle } });
         expect(restoreSnapshot).toHaveBeenCalledWith(bundle);
     });
 });

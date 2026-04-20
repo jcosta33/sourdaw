@@ -4,10 +4,10 @@ import { updateProofPatch } from '../../stores/proofStore';
 import { bridges } from './helpers';
 
 /** Set a patch parameter and send to audio engine. */
-export function setProofParamWithPatch<K extends keyof ProofPatch>(
+export function setProofParamWithPatch<Key extends keyof ProofPatch>(
     deviceId: string,
-    key: K,
-    value: ProofPatch[K]
+    key: Key,
+    value: ProofPatch[Key]
 ): void {
     updateProofPatch(deviceId, { [key]: value });
 

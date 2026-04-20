@@ -65,7 +65,16 @@ function formatDisplayValue(value: number, param: DeviceParameter): string {
     }
     const range = param.maxValue - param.minValue;
     // For large ranges (>10), show 1 decimal. For small ranges, show 2-3 decimals.
-    const decimals = range >= 100 ? 0 : range >= 10 ? 1 : range >= 1 ? 2 : 3;
+    let decimals: number;
+    if (range >= 100) {
+        decimals = 0;
+    } else if (range >= 10) {
+        decimals = 1;
+    } else if (range >= 1) {
+        decimals = 2;
+    } else {
+        decimals = 3;
+    }
     return value.toFixed(decimals);
 }
 

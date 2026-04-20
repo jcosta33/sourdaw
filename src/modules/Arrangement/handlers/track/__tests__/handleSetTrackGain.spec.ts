@@ -22,7 +22,7 @@ describe('handleSetTrackGain', () => {
 
     describe('execute', () => {
         it('calls setTrackGain', () => {
-            handleSetTrackGain.execute({
+            void handleSetTrackGain.execute({
                 type: 'setTrackGain',
                 payload: { trackId: 't1', gain: 0.5 },
             });

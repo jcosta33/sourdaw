@@ -1,5 +1,5 @@
-import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { markerStore, trackStore } from '#/modules/Arrangement/stores';
+import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { type AutomationLane } from '#/modules/Automation/models/Automation';
 import { automationStore } from '#/modules/Automation/stores';
 

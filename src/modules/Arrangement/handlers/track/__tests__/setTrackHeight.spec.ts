@@ -16,7 +16,7 @@ describe('handleSetTrackHeight', () => {
     });
 
     it('executes setTrackHeight with the provided payload', () => {
-        handleSetTrackHeight.execute({
+        void handleSetTrackHeight.execute({
             type: 'setTrackHeight',
             payload: { trackId: 't1', height: 150 },
         });

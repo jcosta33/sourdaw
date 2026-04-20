@@ -42,7 +42,7 @@ describe('handleGenerateMelody', () => {
     });
 
     it('executes generation with validated payload and defaults', () => {
-        handleGenerateMelody.execute({
+        void handleGenerateMelody.execute({
             type: 'generateMelody',
             payload: {
                 style: 'arpeggiated',
@@ -60,7 +60,7 @@ describe('handleGenerateMelody', () => {
     });
 
     it('falls back to default style, scale, and key for invalid inputs', () => {
-        handleGenerateMelody.execute({
+        void handleGenerateMelody.execute({
             type: 'generateMelody',
             payload: {
                 style: 'invalid-style' as any,
@@ -80,7 +80,7 @@ describe('handleGenerateMelody', () => {
     it('bails if track cannot be resolved or created', () => {
         mocks.resolveOrCreateMidiTrack.mockReturnValue(null);
 
-        handleGenerateMelody.execute({
+        void handleGenerateMelody.execute({
             type: 'generateMelody',
             payload: { style: 'simple', scale: 'major', key: 0, bars: 1 },
         });

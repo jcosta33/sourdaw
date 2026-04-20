@@ -28,7 +28,7 @@ describe('DawSectionDivider', () => {
     });
 
     it('should merge className on the root', () => {
-        const { container } = render(<DawSectionDivider label="L" className="root-extra" data-testid="div" />);
+        render(<DawSectionDivider label="L" className="root-extra" data-testid="div" />);
         expect(screen.getByTestId('div')).toHaveClass('root-extra', 'flex', 'items-center');
     });
 

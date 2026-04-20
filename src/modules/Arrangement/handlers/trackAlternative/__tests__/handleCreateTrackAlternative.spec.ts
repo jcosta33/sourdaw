@@ -32,7 +32,7 @@ describe('handleCreateTrackAlternative', () => {
     });
 
     it('creates a new empty alternative and switches to it', () => {
-        handleCreateTrackAlternative.execute({
+        void handleCreateTrackAlternative.execute({
             type: 'createTrackAlternative',
             payload: { trackId: 't1', name: 'New Alt', duplicateActive: false },
         });
@@ -51,7 +51,7 @@ describe('handleCreateTrackAlternative', () => {
     });
 
     it('creates a new duplicated alternative and switches to it', () => {
-        handleCreateTrackAlternative.execute({
+        void handleCreateTrackAlternative.execute({
             type: 'createTrackAlternative',
             payload: { trackId: 't1', name: 'Dupe', duplicateActive: true },
         });

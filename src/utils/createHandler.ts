@@ -9,14 +9,14 @@ import {
  * Typical shape: `execute: (action) => myUseCase(…unpack action.payload…)`, plus `describe` / `undoable`.
  * Do **not** call from `get<Module>Handlers` — that file only merges maps.
  */
-export function createHandler<K extends AppAction['type']>(config: {
+export function createHandler<ActionType extends AppAction['type']>(config: {
     undoable: boolean;
-    execute: (action: Extract<AppAction, { type: K }>) => void | Promise<void>;
-    describe: (action: Extract<AppAction, { type: K }>) => HandlerDescribeResult;
-}): ActionHandler<Extract<AppAction, { type: K }>> {
+    execute: (action: Extract<AppAction, { type: ActionType }>) => void | Promise<void>;
+    describe: (action: Extract<AppAction, { type: ActionType }>) => HandlerDescribeResult;
+}): ActionHandler<Extract<AppAction, { type: ActionType }>> {
     return {
         undoable: config.undoable,
-        execute: config.execute as ActionHandler<Extract<AppAction, { type: K }>>['execute'],
-        describe: config.describe as ActionHandler<Extract<AppAction, { type: K }>>['describe'],
+        execute: config.execute as ActionHandler<Extract<AppAction, { type: ActionType }>>['execute'],
+        describe: config.describe as ActionHandler<Extract<AppAction, { type: ActionType }>>['describe'],
     };
 }

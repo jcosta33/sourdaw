@@ -437,7 +437,15 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             <DawPluginMetricTile
                                 className="gluten-window min-w-[90px]"
                                 label="Phase"
-                                value={phaseCorr > 0.99 ? 'Mono' : phaseCorr < -0.99 ? 'OOP' : phaseCorr.toFixed(2)}
+                                value={(() => {
+                                    if (phaseCorr > 0.99) {
+                                        return 'Mono';
+                                    }
+                                    if (phaseCorr < -0.99) {
+                                        return 'OOP';
+                                    }
+                                    return phaseCorr.toFixed(2);
+                                })()}
                                 detail="Stereo correlation"
                             />
                             <DawPluginMetricTile

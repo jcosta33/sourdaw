@@ -85,7 +85,7 @@ describe('nativeFileDialog', () => {
             };
             vi.spyOn(document, 'createElement').mockReturnValue(mockInput as any);
 
-            const promise = pickFiles();
+            void pickFiles();
             expect(mockInput.click).toHaveBeenCalled();
         });
     });

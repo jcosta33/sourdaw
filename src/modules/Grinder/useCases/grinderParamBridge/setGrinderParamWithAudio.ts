@@ -30,38 +30,38 @@ const BOOLEAN_PATCH_KEYS: ReadonlySet<keyof GrinderPatch> = new Set([
     'limiterEnabled',
 ]);
 
-function getIndexedValue<T extends readonly string[]>(options: T, raw: number): T[number] {
+function getIndexedValue<Options extends readonly string[]>(options: Options, raw: number): Options[number] {
     const rounded = Math.round(raw);
     const safeIndex = Number.isFinite(rounded) ? Math.max(0, Math.min(options.length - 1, rounded)) : 0;
-    return (options[safeIndex] ?? options[0]) as T[number];
+    return (options[safeIndex] ?? options[0]) as Options[number];
 }
 
-function toPatchValue<K extends keyof GrinderPatch>(key: K, value: number): GrinderPatch[K] {
+function toPatchValue<Key extends keyof GrinderPatch>(key: Key, value: number): GrinderPatch[Key] {
     if (BOOLEAN_PATCH_KEYS.has(key)) {
-        return (value > 0.5) as GrinderPatch[K];
+        return (value > 0.5) as GrinderPatch[Key];
     }
 
     switch (key) {
         case 'engineMode':
-            return getIndexedValue(ENGINE_MODES, value) as GrinderPatch[K];
+            return getIndexedValue(ENGINE_MODES, value) as GrinderPatch[Key];
         case 'ampModel':
-            return getIndexedValue(AMP_MODELS, value) as GrinderPatch[K];
+            return getIndexedValue(AMP_MODELS, value) as GrinderPatch[Key];
         case 'inputMode':
-            return getIndexedValue(INPUT_MODES, value) as GrinderPatch[K];
+            return getIndexedValue(INPUT_MODES, value) as GrinderPatch[Key];
         case 'toneStackType':
-            return getIndexedValue(TONE_STACK_TYPES, value) as GrinderPatch[K];
+            return getIndexedValue(TONE_STACK_TYPES, value) as GrinderPatch[Key];
         case 'powerTubeType':
-            return getIndexedValue(POWER_TUBE_TYPES, value) as GrinderPatch[K];
+            return getIndexedValue(POWER_TUBE_TYPES, value) as GrinderPatch[Key];
         case 'rectifierType':
-            return getIndexedValue(RECTIFIER_TYPES, value) as GrinderPatch[K];
+            return getIndexedValue(RECTIFIER_TYPES, value) as GrinderPatch[Key];
         case 'neuralPlacement':
-            return getIndexedValue(NEURAL_PLACEMENTS, value) as GrinderPatch[K];
+            return getIndexedValue(NEURAL_PLACEMENTS, value) as GrinderPatch[Key];
         case 'neuralTier':
-            return getIndexedValue(NEURAL_TIERS, value) as GrinderPatch[K];
+            return getIndexedValue(NEURAL_TIERS, value) as GrinderPatch[Key];
         case 'routingMode':
-            return getIndexedValue(ROUTING_MODES, value) as GrinderPatch[K];
+            return getIndexedValue(ROUTING_MODES, value) as GrinderPatch[Key];
         default:
-            return value as GrinderPatch[K];
+            return value as GrinderPatch[Key];
     }
 }
 
@@ -72,9 +72,9 @@ export const setGrinderParamWithAudio = inject(grinderParamBridgeDependencies)((
 }) => {
     const findDeviceRef = createFindDeviceRef(getAllTracksFn);
     const flushParam = createFlushParam(updateDeviceParamFn, persistDeviceParamFn);
-    return function setGrinderParamWithAudio<K extends keyof GrinderPatch>(
+    return function setGrinderParamWithAudio<Key extends keyof GrinderPatch>(
         deviceId: string,
-        key: K,
+        key: Key,
         value: number
     ): void {
         const patchValue = toPatchValue(key, value);

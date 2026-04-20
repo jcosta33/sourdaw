@@ -16,7 +16,7 @@ describe('handleCrossfadeClips', () => {
     });
 
     it('executes crossfadeClips with the provided payload', () => {
-        handleCrossfadeClips.execute({
+        void handleCrossfadeClips.execute({
             type: 'crossfadeClips',
             payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 0.5 },
         });

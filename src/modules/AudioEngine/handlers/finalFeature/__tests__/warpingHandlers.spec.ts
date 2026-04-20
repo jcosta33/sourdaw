@@ -26,17 +26,20 @@ describe('Warping Handlers', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('handleEnableWarping delegates to use case', () => {
-        handleEnableWarping.execute({ type: 'enableWarping', payload: { clipId: 'c1' } });
+        void handleEnableWarping.execute({ type: 'enableWarping', payload: { clipId: 'c1' } });
         expect(mocks.enableWarping).toHaveBeenCalledWith('c1');
     });
 
     it('handleSetWarpAlgorithm delegates to use case', () => {
-        handleSetWarpAlgorithm.execute({ type: 'setWarpAlgorithm', payload: { clipId: 'c1', algorithm: 'complex' } });
+        void handleSetWarpAlgorithm.execute({
+            type: 'setWarpAlgorithm',
+            payload: { clipId: 'c1', algorithm: 'complex' },
+        });
         expect(mocks.setWarpAlgorithm).toHaveBeenCalledWith('c1', 'complex');
     });
 
     it('handleSetWarpPitchShift delegates to use case', () => {
-        handleSetWarpPitchShift.execute({ type: 'setWarpPitchShift', payload: { clipId: 'c1', semitones: 12 } });
+        void handleSetWarpPitchShift.execute({ type: 'setWarpPitchShift', payload: { clipId: 'c1', semitones: 12 } });
         expect(mocks.setPitchShift).toHaveBeenCalledWith('c1', 12);
     });
 });

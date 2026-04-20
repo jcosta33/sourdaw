@@ -127,7 +127,18 @@ export const PianoRollToolbar = ({
                 onClick={() => onGridSnapChange(v)}
                 className="text-[9px] w-6 h-5"
             >
-                {v === 1 ? '1' : v === 0.5 ? '1/2' : v === 0.25 ? '1/4' : '1/8'}
+                {(() => {
+                    if (v === 1) {
+                        return '1';
+                    }
+                    if (v === 0.5) {
+                        return '1/2';
+                    }
+                    if (v === 0.25) {
+                        return '1/4';
+                    }
+                    return '1/8';
+                })()}
             </Button>
         ))}
 

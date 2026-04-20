@@ -9,12 +9,14 @@ export function copySelectedClip(): void {
     if (!workspace) {
         return;
     }
-    const ids =
-        workspace.selectedClipIds.length > 0
-            ? workspace.selectedClipIds
-            : workspace.selectedClipId
-              ? [workspace.selectedClipId]
-              : [];
+    let ids: string[];
+    if (workspace.selectedClipIds.length > 0) {
+        ids = workspace.selectedClipIds;
+    } else if (workspace.selectedClipId) {
+        ids = [workspace.selectedClipId];
+    } else {
+        ids = [];
+    }
     if (ids.length === 0) {
         return;
     }

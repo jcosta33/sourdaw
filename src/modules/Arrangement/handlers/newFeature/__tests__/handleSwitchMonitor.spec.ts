@@ -16,7 +16,7 @@ describe('handleSwitchMonitor', () => {
     });
 
     it('executes switchMonitor with the provided payload', () => {
-        handleSwitchMonitor.execute({
+        void handleSwitchMonitor.execute({
             type: 'switchMonitor',
             payload: { monitorId: 'mon-1' },
         });

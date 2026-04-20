@@ -22,11 +22,15 @@ export const NotificationToast = (): ReactElement | null => {
         <div
             className={cn(
                 'fixed bottom-16 left-4 z-50 w-80 rounded-lg border p-3 shadow-xl animate-in slide-in-from-left-5',
-                latest.level === 'error'
-                    ? 'border-[var(--color-state-danger)]/40 bg-[var(--color-state-danger)]/10'
-                    : latest.level === 'warning'
-                      ? 'border-[var(--color-state-warning)]/40 bg-[var(--color-state-warning)]/10'
-                      : 'border-border bg-surface-raised'
+                (() => {
+                    if (latest.level === 'error') {
+                        return 'border-[var(--color-state-danger)]/40 bg-[var(--color-state-danger)]/10';
+                    }
+                    if (latest.level === 'warning') {
+                        return 'border-[var(--color-state-warning)]/40 bg-[var(--color-state-warning)]/10';
+                    }
+                    return 'border-border bg-surface-raised';
+                })()
             )}
             role="alert"
             aria-live="assertive"

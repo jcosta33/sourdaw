@@ -85,7 +85,15 @@ export class ScaleQuantizer extends BaseMidiProcessor {
                     if (dist < bestDist) {
                         bestDist = dist;
                         const diff = scalePc - pc;
-                        bestNote = note + (Math.abs(diff) <= 6 ? diff : diff > 0 ? diff - 12 : diff + 12);
+                        let octaveDiff: number;
+                        if (Math.abs(diff) <= 6) {
+                            octaveDiff = diff;
+                        } else if (diff > 0) {
+                            octaveDiff = diff - 12;
+                        } else {
+                            octaveDiff = diff + 12;
+                        }
+                        bestNote = note + octaveDiff;
                     }
                 }
                 return bestNote;
@@ -106,6 +114,8 @@ export class ScaleQuantizer extends BaseMidiProcessor {
                 }
                 return note;
             }
+            default:
+                throw new Error(`Unknown remap mode: ${this.remapMode}`);
         }
     }
 

@@ -50,20 +50,26 @@ export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement =
 
     const { noteName, octave, cents, confidence, active, mode, a4Reference, frequency } = state;
     const absoluteCents = Math.abs(cents);
-    const toneColor = !active
-        ? 'text-white/28'
-        : absoluteCents <= 2
-          ? 'text-emerald-400'
-          : absoluteCents <= 10
-            ? 'text-yellow-400'
-            : 'text-red-400';
-    const centerGlow = !active
-        ? 'rgba(255,255,255,0.06)'
-        : absoluteCents <= 2
-          ? 'rgba(52,220,160,0.18)'
-          : absoluteCents <= 10
-            ? 'rgba(255,210,30,0.16)'
-            : 'rgba(255,100,100,0.14)';
+    let toneColor: string;
+    if (!active) {
+        toneColor = 'text-white/28';
+    } else if (absoluteCents <= 2) {
+        toneColor = 'text-emerald-400';
+    } else if (absoluteCents <= 10) {
+        toneColor = 'text-yellow-400';
+    } else {
+        toneColor = 'text-red-400';
+    }
+    let centerGlow: string;
+    if (!active) {
+        centerGlow = 'rgba(255,255,255,0.06)';
+    } else if (absoluteCents <= 2) {
+        centerGlow = 'rgba(52,220,160,0.18)';
+    } else if (absoluteCents <= 10) {
+        centerGlow = 'rgba(255,210,30,0.16)';
+    } else {
+        centerGlow = 'rgba(255,100,100,0.14)';
+    }
 
     return (
         <div className="scoring-faceplate flex h-full min-h-0 gap-3 overflow-hidden p-3">
@@ -184,13 +190,17 @@ export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 </div>
 
                                 <div className="min-h-0">
-                                    {mode === 'needle' ? (
-                                        <NeedleDisplay cents={cents} active={active} confidence={confidence} />
-                                    ) : mode === 'strobe' ? (
-                                        <StrobeDisplay cents={cents} active={active} />
-                                    ) : (
-                                        <PolyDisplay />
-                                    )}
+                                    {(() => {
+                                        if (mode === 'needle') {
+                                            return (
+                                                <NeedleDisplay cents={cents} active={active} confidence={confidence} />
+                                            );
+                                        }
+                                        if (mode === 'strobe') {
+                                            return <StrobeDisplay cents={cents} active={active} />;
+                                        }
+                                        return <PolyDisplay />;
+                                    })()}
                                 </div>
 
                                 <div className="flex flex-col items-center gap-1">
@@ -383,11 +393,11 @@ const StrobeDisplay = ({ cents, active }: { cents: number; active: boolean }): R
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return undefined;
         }
 
         // Handle high-DPI displays
@@ -497,11 +507,11 @@ const HistoryGraph = ({ cents, active }: { cents: number; active: boolean }): Re
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return undefined;
         }
 
         // Handle high-DPI displays

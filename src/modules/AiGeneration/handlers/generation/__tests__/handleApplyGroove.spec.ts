@@ -16,7 +16,7 @@ describe('handleApplyGroove', () => {
     });
 
     it('executes applyGrooveByGrooveId with the correct payload', () => {
-        handleApplyGroove.execute({
+        void handleApplyGroove.execute({
             type: 'applyGroove',
             payload: { clipId: 'c1', grooveId: 'g1', amount: 0.5 },
         });
@@ -25,7 +25,7 @@ describe('handleApplyGroove', () => {
     });
 
     it('defaults amount to 1 if not provided', () => {
-        handleApplyGroove.execute({
+        void handleApplyGroove.execute({
             type: 'applyGroove',
             payload: { clipId: 'c1', grooveId: 'g1' },
         });

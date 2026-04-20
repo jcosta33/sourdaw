@@ -8,8 +8,8 @@ type ColsValue = 1 | 2 | 3 | 4 | 5 | 6;
 type GapValue = 0 | 0.5 | 1 | 1.5 | 2 | 2.5 | 3 | 4 | 6 | 8;
 type FlowValue = 'row' | 'col';
 
-type GridProps<T extends GridElement = 'div'> = Omit<ComponentPropsWithoutRef<T>, 'as'> & {
-    as?: T;
+type GridProps<Element extends GridElement = 'div'> = Omit<ComponentPropsWithoutRef<Element>, 'as'> & {
+    as?: Element;
     cols?: ColsValue;
     gap?: GapValue;
     gapX?: GapValue;
@@ -71,7 +71,7 @@ const FLOW_CLASS_NAMES: Record<FlowValue, string> = {
     col: 'grid-flow-col',
 };
 
-export const Grid = <T extends GridElement = 'div'>({
+export const Grid = <Element extends GridElement = 'div'>({
     as,
     cols = 1,
     gap,
@@ -81,7 +81,7 @@ export const Grid = <T extends GridElement = 'div'>({
     className,
     children,
     ...props
-}: GridProps<T>): ReactElement => {
+}: GridProps<Element>): ReactElement => {
     const Component = as ?? 'div';
     return (
         <Component

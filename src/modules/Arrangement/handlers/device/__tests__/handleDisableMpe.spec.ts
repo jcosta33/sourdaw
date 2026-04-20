@@ -16,7 +16,7 @@ describe('handleDisableMpe', () => {
     });
 
     it('executes setMpeEnabled(false)', () => {
-        handleDisableMpe.execute({ type: 'disableMpe', payload: {} });
+        void handleDisableMpe.execute({ type: 'disableMpe', payload: {} });
 
         expect(mocks.setMpeEnabled).toHaveBeenCalledWith(false);
     });

@@ -1,7 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import type { DeviceLayoutProps } from '../../deviceLayoutRegistry';
-
 // Mock external dependencies
 const { mockRegisterDeviceLayout } = vi.hoisted(() => ({
     mockRegisterDeviceLayout: vi.fn(),
@@ -36,85 +34,6 @@ vi.mock('../../DeviceParameterControl', () => ({
 }));
 
 describe('EQLayout', () => {
-    const mockDevice = {
-        id: 'device-1',
-        name: 'EQ',
-        type: 'builtin-eq',
-        bypassed: false,
-        parameterValues: {
-            'eq-low-gain': 0,
-            'eq-low-freq': 100,
-            'eq-low-q': 1,
-            'eq-mid-gain': 0,
-            'eq-mid-freq': 1000,
-            'eq-mid-q': 1,
-            'eq-high-gain': 0,
-            'eq-high-freq': 8000,
-            'eq-high-q': 1,
-        },
-    };
-
-    const mockParameters = [
-        {
-            id: 'eq-low-gain',
-            name: 'Low Gain',
-            type: 'float',
-            value: 0,
-            defaultValue: 0,
-            minValue: -12,
-            maxValue: 12,
-            unit: 'dB',
-            automatable: true,
-            hasAutomation: false,
-            deviceId: 'device-1',
-        },
-        {
-            id: 'eq-low-freq',
-            name: 'Low Freq',
-            type: 'float',
-            value: 100,
-            defaultValue: 100,
-            minValue: 20,
-            maxValue: 500,
-            unit: 'Hz',
-            automatable: true,
-            hasAutomation: false,
-            deviceId: 'device-1',
-        },
-        {
-            id: 'eq-mid-gain',
-            name: 'Mid Gain',
-            type: 'float',
-            value: 0,
-            defaultValue: 0,
-            minValue: -12,
-            maxValue: 12,
-            unit: 'dB',
-            automatable: true,
-            hasAutomation: false,
-            deviceId: 'device-1',
-        },
-        {
-            id: 'eq-high-gain',
-            name: 'High Gain',
-            type: 'float',
-            value: 0,
-            defaultValue: 0,
-            minValue: -12,
-            maxValue: 12,
-            unit: 'dB',
-            automatable: true,
-            hasAutomation: false,
-            deviceId: 'device-1',
-        },
-    ];
-
-    const mockProps: DeviceLayoutProps = {
-        device: mockDevice,
-        trackId: 'track-1',
-        parameters: mockParameters,
-    };
-
     it('should register layout for builtin-eq', async () => {
         await import('../EQLayout');
         expect(mockRegisterDeviceLayout).toHaveBeenCalledWith('builtin-eq', expect.any(Function));

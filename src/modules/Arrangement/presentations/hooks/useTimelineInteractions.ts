@@ -5,8 +5,6 @@ import { collaborationStore } from '#/modules/Collaboration/stores';
 import { broadcastPresence } from '#/modules/Collaboration/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-
-import { moveClip } from '../../useCases/clip/moveClip';
 import { moveMidiNote } from '#/modules/MIDI/useCases';
 import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport/useCases';
 import { workspaceStore, preferencesStore } from '#/modules/Workspace/stores';
@@ -17,22 +15,23 @@ import {
     setClipSelection,
     selectClip,
     setWorkspaceMode,
-    setMarqueeSelection, getWorkspaceState 
+    setMarqueeSelection,
+    getWorkspaceState,
 } from '#/modules/Workspace/useCases';
-import { duplicateClipCore } from '../../useCases/clip/duplicateClipCore';
-
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
 import { clipDragPreviewRef, previewDirtyFlag, type ClipPreviewPosition } from '../../stores/clipDragPreviewRef';
 import { timelineViewStore, zoomTimeline } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
-import { trimClipEnd } from '../../useCases/clipEditing/trimClipEnd';
+import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
+import { acceptGhostClip } from '../../useCases/clip/acceptGhostClip';
+import { addClip } from '../../useCases/clip/addClip';
+import { duplicateClipCore } from '../../useCases/clip/duplicateClipCore';
+import { moveClip } from '../../useCases/clip/moveClip';
+import { removeClip } from '../../useCases/clip/removeClip';
 import { slipClipContent } from '../../useCases/clipEditing/slipClipContent';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
-import { acceptGhostClip } from '../../useCases/clip/acceptGhostClip';
-import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
-import { addClip } from '../../useCases/clip/addClip';
-import { removeClip } from '../../useCases/clip/removeClip';
+import { trimClipEnd } from '../../useCases/clipEditing/trimClipEnd';
 import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { planRippleInsert } from '../../useCases/rippleInsert/planRippleInsert';

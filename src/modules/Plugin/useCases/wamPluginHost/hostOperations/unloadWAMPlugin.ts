@@ -9,7 +9,7 @@ export function unloadWAMPlugin(instanceId: string): void {
         if ('destroy' in instance.audioNode && typeof (instance.audioNode as any).destroy === 'function') {
             try {
                 (instance.audioNode as any).destroy();
-            } catch (error) {}
+            } catch {}
         }
         instances.delete(instanceId);
     }

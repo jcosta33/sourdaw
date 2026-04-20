@@ -20,7 +20,7 @@ export const AiChangeToast = (): ReactElement | null => {
 
     useEffect(() => {
         if (changes.length === 0) {
-            return;
+            return undefined;
         }
         const timer = setTimeout(() => {
             setChanges((prev) => prev.slice(1));

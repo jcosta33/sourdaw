@@ -5,6 +5,6 @@ import { inject } from '#/infra/di/inject';
 export const showProofPanel = inject({ eventBus })(
     ({ eventBus }) =>
         function showProofPanel(deviceId: string | null): void {
-            eventBus.emit('panel.showProof', { deviceId });
+            void eventBus.emit('panel.showProof', { deviceId });
         }
 );

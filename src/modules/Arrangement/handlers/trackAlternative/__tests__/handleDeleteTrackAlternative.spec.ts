@@ -34,7 +34,7 @@ describe('handleDeleteTrackAlternative', () => {
             ],
         });
 
-        handleDeleteTrackAlternative.execute({
+        void handleDeleteTrackAlternative.execute({
             type: 'deleteTrackAlternative',
             payload: { trackId: 't1', alternativeId: 'alt2' },
         });
@@ -60,7 +60,7 @@ describe('handleDeleteTrackAlternative', () => {
             ],
         });
 
-        handleDeleteTrackAlternative.execute({
+        void handleDeleteTrackAlternative.execute({
             type: 'deleteTrackAlternative',
             payload: { trackId: 't1', alternativeId: 'alt1' },
         });
@@ -77,7 +77,7 @@ describe('handleDeleteTrackAlternative', () => {
             tracks: [{ id: 't1', alternatives: [{ id: 'alt1' }] }],
         });
 
-        handleDeleteTrackAlternative.execute({
+        void handleDeleteTrackAlternative.execute({
             type: 'deleteTrackAlternative',
             payload: { trackId: 't1', alternativeId: 'alt1' },
         });

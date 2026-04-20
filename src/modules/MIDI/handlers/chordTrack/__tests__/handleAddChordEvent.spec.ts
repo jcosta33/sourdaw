@@ -14,7 +14,7 @@ describe('handleAddChordEvent', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('delegates to addChordEvent with sanitized payload', () => {
-        handleAddChordEvent.execute({
+        void handleAddChordEvent.execute({
             type: 'addChordEvent',
             payload: { beat: 4, root: 0, quality: 'minor', duration: 8 },
         });
@@ -23,7 +23,7 @@ describe('handleAddChordEvent', () => {
     });
 
     it('falls back to default quality if invalid', () => {
-        handleAddChordEvent.execute({
+        void handleAddChordEvent.execute({
             type: 'addChordEvent',
             payload: { beat: 0, root: 2, quality: 'garbage' as any },
         });

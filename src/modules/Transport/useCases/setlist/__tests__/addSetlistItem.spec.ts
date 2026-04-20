@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { SETLIST_ITEM_COLORS } from '../../../repositories/setlistItemIdCounter';
 import { type SetlistState } from '../../../stores/setlistStore';
 import { addSetlistItem } from '../addSetlistItem';
 

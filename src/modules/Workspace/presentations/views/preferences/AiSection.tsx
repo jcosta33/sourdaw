@@ -35,23 +35,31 @@ export const AiSection = (): ReactElement => {
                         )}
                     >
                         <DawStatusDot
-                            tone={
-                                backend === 'native'
-                                    ? 'success'
-                                    : backend === 'webllm'
-                                      ? 'cyan'
-                                      : backend === 'cloud'
-                                        ? 'primary'
-                                        : 'muted'
-                            }
+                            tone={(() => {
+                                if (backend === 'native') {
+                                    return 'success';
+                                }
+                                if (backend === 'webllm') {
+                                    return 'cyan';
+                                }
+                                if (backend === 'cloud') {
+                                    return 'primary';
+                                }
+                                return 'muted';
+                            })()}
                         />
-                        {backend === 'native'
-                            ? 'Native (in-process)'
-                            : backend === 'cloud'
-                              ? 'Cloud (Claude)'
-                              : backend === 'webllm'
-                                ? 'Browser (WebLLM)'
-                                : 'None'}
+                        {(() => {
+                            if (backend === 'native') {
+                                return 'Native (in-process)';
+                            }
+                            if (backend === 'cloud') {
+                                return 'Cloud (Claude)';
+                            }
+                            if (backend === 'webllm') {
+                                return 'Browser (WebLLM)';
+                            }
+                            return 'None';
+                        })()}
                     </span>
                 </div>
             </FieldGroup>

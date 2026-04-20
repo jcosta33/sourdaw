@@ -23,7 +23,7 @@ describe('handleGenerateAllTransitions', () => {
     it('executes generateAllTransitionFills and notifies success if fills are generated', () => {
         mocks.generateAllTransitionFills.mockReturnValue([{}, {}]);
 
-        handleGenerateAllTransitions.execute({ type: 'generateAllTransitions', payload: {} });
+        void handleGenerateAllTransitions.execute({ type: 'generateAllTransitions', payload: {} });
 
         expect(mocks.generateAllTransitionFills).toHaveBeenCalledTimes(1);
         expect(mocks.notifyUser).toHaveBeenCalledWith('Generated 2 transition fills across arrangement', 'success');
@@ -32,7 +32,7 @@ describe('handleGenerateAllTransitions', () => {
     it('notifies warning if no fills are generated', () => {
         mocks.generateAllTransitionFills.mockReturnValue([]);
 
-        handleGenerateAllTransitions.execute({ type: 'generateAllTransitions', payload: {} });
+        void handleGenerateAllTransitions.execute({ type: 'generateAllTransitions', payload: {} });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith('No section boundaries found — add sections first', 'warning');
     });

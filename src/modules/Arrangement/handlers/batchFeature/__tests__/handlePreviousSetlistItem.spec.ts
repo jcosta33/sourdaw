@@ -16,7 +16,7 @@ describe('handlePreviousSetlistItem', () => {
     });
 
     it('executes previousItem from Transport module', () => {
-        handlePreviousSetlistItem.execute({ type: 'previousSetlistItem', payload: {} });
+        void handlePreviousSetlistItem.execute({ type: 'previousSetlistItem', payload: {} });
         expect(mocks.previousItem).toHaveBeenCalledTimes(1);
     });
 

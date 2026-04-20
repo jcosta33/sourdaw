@@ -14,7 +14,7 @@ describe('handleMuteClip', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('delegates to muteClip use case', () => {
-        handleMuteClip.execute({
+        void handleMuteClip.execute({
             type: 'muteClip',
             payload: { clipId: 'c1', muted: true },
         });

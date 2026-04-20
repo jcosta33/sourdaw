@@ -1,5 +1,5 @@
-import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { markerStore, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';

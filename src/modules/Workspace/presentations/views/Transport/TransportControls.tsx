@@ -54,14 +54,31 @@ export const TransportControls = ({
     countInBars,
 }: TransportControlsProps): ReactElement => {
     const cycleCountInBars = (): void => {
-        const next = countInBars >= 4 ? 1 : countInBars >= 2 ? 4 : countInBars >= 1 ? 2 : 1;
+        let next: number;
+        if (countInBars >= 4) {
+            next = 1;
+        } else if (countInBars >= 2) {
+            next = 4;
+        } else if (countInBars >= 1) {
+            next = 2;
+        } else {
+            next = 1;
+        }
         setCountInBars(next);
     };
 
     return (
         <DawTransportCluster tone="well" role="group" aria-label="Playback controls">
             <span className="sr-only" aria-live="polite" role="status">
-                {isRecording ? 'Recording' : isPlaying ? 'Playing' : 'Stopped'}
+                {(() => {
+                    if (isRecording) {
+                        return 'Recording';
+                    }
+                    if (isPlaying) {
+                        return 'Playing';
+                    }
+                    return 'Stopped';
+                })()}
             </span>
             <Tooltip>
                 <TooltipTrigger asChild>
@@ -109,7 +126,16 @@ export const TransportControls = ({
                     </LatchButton>
                 </TooltipTrigger>
                 <TooltipContent>
-                    {isRecording ? 'Stop Recording' : anyTrackArmed ? 'Record (tracks armed)' : 'Record'} (R)
+                    {(() => {
+                        if (isRecording) {
+                            return 'Stop Recording';
+                        }
+                        if (anyTrackArmed) {
+                            return 'Record (tracks armed)';
+                        }
+                        return 'Record';
+                    })()}{' '}
+                    (R)
                 </TooltipContent>
             </Tooltip>
             <LED on={isAudioRecording} variant="red" size="sm" />

@@ -42,7 +42,7 @@ describe('handleGenerateDrumPattern', () => {
     });
 
     it('executes generation with validated payload and defaults', () => {
-        handleGenerateDrumPattern.execute({
+        void handleGenerateDrumPattern.execute({
             type: 'generateDrumPattern',
             payload: {
                 style: 'house',
@@ -55,7 +55,7 @@ describe('handleGenerateDrumPattern', () => {
     });
 
     it('falls back to default style for invalid inputs', () => {
-        handleGenerateDrumPattern.execute({
+        void handleGenerateDrumPattern.execute({
             type: 'generateDrumPattern',
             payload: {
                 style: 'invalid-style' as any,
@@ -70,7 +70,7 @@ describe('handleGenerateDrumPattern', () => {
     it('bails if track cannot be resolved or created', () => {
         mocks.resolveOrCreateMidiTrack.mockReturnValue(null);
 
-        handleGenerateDrumPattern.execute({
+        void handleGenerateDrumPattern.execute({
             type: 'generateDrumPattern',
             payload: { style: 'rock', bars: 1, density: 0.5 },
         });

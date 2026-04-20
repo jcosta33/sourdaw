@@ -4,7 +4,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useStore } from '#/infra/store/useStore';
 import { togglePlayback } from '#/modules/Transport/useCases/transportControls/togglePlayback';
 
-import { useTransportState } from '../../hooks/useTransportState';
 import { TransportBar } from '../TransportBar';
 
 // Mock hooks

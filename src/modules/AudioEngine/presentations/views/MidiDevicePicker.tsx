@@ -28,7 +28,7 @@ export const MidiDevicePicker = (): ReactElement => {
         if (!state.isSupported) {
             return;
         }
-        initWebMidi().then(() => {
+        void initWebMidi().then(() => {
             setInitialised(true);
         });
     }, [state.isSupported]);
@@ -44,7 +44,7 @@ export const MidiDevicePicker = (): ReactElement => {
     }
 
     const handleRefresh = () => {
-        initWebMidi();
+        void initWebMidi();
     };
 
     const handleChange = (deviceId: string) => {

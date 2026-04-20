@@ -5,7 +5,8 @@ import { createTrackForPlugin } from '../pluginBrowserActions/createTrackForPlug
 const addTrack = vi.fn().mockReturnValue(null);
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
-    addTrack: (input: { name: string; kind: 'audio' | 'midi' | 'group' | 'folder' | 'bus' | 'master' }) => addTrack(input),
+    addTrack: (input: { name: string; kind: 'audio' | 'midi' | 'group' | 'folder' | 'bus' | 'master' }) =>
+        addTrack(input),
 }));
 
 describe('createTrackForPlugin', () => {

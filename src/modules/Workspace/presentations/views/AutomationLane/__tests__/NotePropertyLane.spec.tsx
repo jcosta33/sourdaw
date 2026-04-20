@@ -20,7 +20,7 @@ vi.mock('#/utils/UI/resolveToken', () => ({
 }));
 
 vi.mock('../../../helpers/oklchColor', () => ({
-    colorWithAlpha: vi.fn((color: string, alpha: number) => color),
+    colorWithAlpha: vi.fn((color: string, _alpha: number) => color),
     brightenColor: vi.fn((color: string) => color),
 }));
 

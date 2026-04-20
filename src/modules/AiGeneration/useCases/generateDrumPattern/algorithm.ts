@@ -449,6 +449,8 @@ function buildPatternForBar(style: DrumPatternStyle): ProbabilityMap[] {
                     velocityRange: 20,
                 },
             ];
+        default:
+            throw new Error(`Unknown drum pattern style: ${style}`);
     }
 }
 

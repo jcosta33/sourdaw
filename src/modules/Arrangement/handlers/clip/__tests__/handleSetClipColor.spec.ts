@@ -14,7 +14,7 @@ describe('handleSetClipColor', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('delegates to setClipColor use case', () => {
-        handleSetClipColor.execute({
+        void handleSetClipColor.execute({
             type: 'setClipColor',
             payload: { clipId: 'c1', color: '#ff0000' },
         });

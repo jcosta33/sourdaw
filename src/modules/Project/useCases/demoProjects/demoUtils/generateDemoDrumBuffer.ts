@@ -52,17 +52,25 @@ export async function generateDemoDrumBuffer(
                 continue;
             }
 
-            const isKick =
-                style === 'kick'
-                    ? pos === 0 || pos === 2
-                    : style === '4onFloor'
-                      ? pos === 0 || pos === 2
-                      : style === 'electro'
-                        ? pos === 0 || pos === 2.5
-                        : false;
+            let isKick: boolean;
+            if (style === 'kick') {
+                isKick = pos === 0 || pos === 2;
+            } else if (style === '4onFloor') {
+                isKick = pos === 0 || pos === 2;
+            } else if (style === 'electro') {
+                isKick = pos === 0 || pos === 2.5;
+            } else {
+                isKick = false;
+            }
 
-            const isSnare =
-                style === 'snare' ? pos === 1 || pos === 3 : style === 'electro' ? pos === 1 || pos === 3 : false;
+            let isSnare: boolean;
+            if (style === 'snare') {
+                isSnare = pos === 1 || pos === 3;
+            } else if (style === 'electro') {
+                isSnare = pos === 1 || pos === 3;
+            } else {
+                isSnare = false;
+            }
 
             const isHat =
                 (style === 'hat' || style === '4onFloor') &&

@@ -10,7 +10,7 @@ export const handleKeyup = inject({ eventBus })(
     ({ eventBus }) =>
         function handleKeyup(key: string): void {
             if (key === 'v') {
-                eventBus.emit('voice.toggle', { active: false });
+                void eventBus.emit('voice.toggle', { active: false });
             }
 
             // R-A3: Quick-swap tool (hold beyond 300ms = temporary swap)

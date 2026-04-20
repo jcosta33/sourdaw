@@ -46,18 +46,20 @@ export const FilterSection = ({
     onKeytrackChange,
 }: FilterSectionProps): ReactElement => {
     const isSvf = model === 0;
-    const description =
-        model === 1
-            ? '24dB Moog — Self-oscillating warmth'
-            : model === 2
-              ? '24dB Diode — Asymmetric acid squelch'
-              : model === 3
-                ? 'Vowel morph — Cutoff sweeps A→E→I→O→U'
-                : model === 4
-                  ? 'MS-20 — HP→LP cascade, gritty'
-                  : model === 5
-                    ? 'SEM 12dB — Creamy LP→Notch→HP morph'
-                    : 'Clean SVF — LP/HP/BP/Notch';
+    let description: string;
+    if (model === 1) {
+        description = '24dB Moog — Self-oscillating warmth';
+    } else if (model === 2) {
+        description = '24dB Diode — Asymmetric acid squelch';
+    } else if (model === 3) {
+        description = 'Vowel morph — Cutoff sweeps A→E→I→O→U';
+    } else if (model === 4) {
+        description = 'MS-20 — HP→LP cascade, gritty';
+    } else if (model === 5) {
+        description = 'SEM 12dB — Creamy LP→Notch→HP morph';
+    } else {
+        description = 'Clean SVF — LP/HP/BP/Notch';
+    }
 
     return (
         <div className="space-y-2 w-full">

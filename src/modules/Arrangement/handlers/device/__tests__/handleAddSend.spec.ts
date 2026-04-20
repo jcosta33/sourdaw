@@ -16,7 +16,7 @@ describe('handleAddSend', () => {
     });
 
     it('executes setSend with the provided payload', () => {
-        handleAddSend.execute({
+        void handleAddSend.execute({
             type: 'addSend',
             payload: { trackId: 't1', busId: 'bus-1', level: 0.5 },
         });

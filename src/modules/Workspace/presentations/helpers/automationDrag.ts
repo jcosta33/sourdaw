@@ -22,7 +22,7 @@ import { type AutomationLane, type AutomationPoint, type AutomationCurveType } f
 
 import { startMouseDrag } from './mouseDrag';
 
-type SetStateFn<T> = (updater: T | ((prev: T) => T)) => void;
+type SetStateFn<State> = (updater: State | ((prev: State) => State)) => void;
 
 type CoordFns = {
     getRect: () => DOMRect | undefined;

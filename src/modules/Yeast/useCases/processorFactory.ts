@@ -91,5 +91,7 @@ export function createProcessor(type: ProcessorType, id?: string): MidiProcessor
             return new MarkovChain(id);
         case 'mutation':
             return new MutationEngine(id);
+        default:
+            throw new Error(`Unknown processor type: ${type}`);
     }
 }

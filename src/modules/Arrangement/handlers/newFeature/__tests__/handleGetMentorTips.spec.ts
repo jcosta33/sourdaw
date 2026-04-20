@@ -26,7 +26,7 @@ describe('handleGetMentorTips', () => {
             { title: 'Comp', observation: 'Too dynamic', advice: 'Squash it' },
         ]);
 
-        handleGetMentorTips.execute({ type: 'getMentorTips', payload: {} });
+        void handleGetMentorTips.execute({ type: 'getMentorTips', payload: {} });
 
         expect(mocks.generateMentorLessons).toHaveBeenCalledTimes(1);
         expect(mocks.notifyUser).toHaveBeenCalledWith('🎓 EQ: Too muddy — Cut lows');
@@ -35,7 +35,7 @@ describe('handleGetMentorTips', () => {
     it('notifies success if there are no tips', () => {
         mocks.generateMentorLessons.mockReturnValue([]);
 
-        handleGetMentorTips.execute({ type: 'getMentorTips', payload: {} });
+        void handleGetMentorTips.execute({ type: 'getMentorTips', payload: {} });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith('No mentor tips at this time — looking good!', 'success');
     });

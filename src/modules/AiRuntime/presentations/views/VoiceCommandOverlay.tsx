@@ -49,17 +49,22 @@ export const VoiceCommandOverlay = (): ReactElement | null => {
                     )}
                 </button>
                 <div className="max-w-sm min-w-32">
-                    {voice.transcribing ? (
-                        <p className="text-xs text-muted-foreground animate-pulse">Transcribing...</p>
-                    ) : voice.errorText ? (
-                        <p className="text-xs text-[var(--color-state-warning)]">{voice.errorText}</p>
-                    ) : displayText ? (
-                        <p className="text-xs text-foreground truncate">{displayText}</p>
-                    ) : (
-                        <p className="text-xs text-muted-foreground animate-pulse">
-                            {voice.voiceMode === 'whisper' ? 'Recording...' : 'Listening...'}
-                        </p>
-                    )}
+                    {(() => {
+                        if (voice.transcribing) {
+                            return <p className="text-xs text-muted-foreground animate-pulse">Transcribing...</p>;
+                        }
+                        if (voice.errorText) {
+                            return <p className="text-xs text-[var(--color-state-warning)]">{voice.errorText}</p>;
+                        }
+                        if (displayText) {
+                            return <p className="text-xs text-foreground truncate">{displayText}</p>;
+                        }
+                        return (
+                            <p className="text-xs text-muted-foreground animate-pulse">
+                                {voice.voiceMode === 'whisper' ? 'Recording...' : 'Listening...'}
+                            </p>
+                        );
+                    })()}
                 </div>
                 {!voice.errorText ? (
                     <DawInlineHint className="whitespace-nowrap bg-transparent px-0 py-0 text-muted-foreground/60">

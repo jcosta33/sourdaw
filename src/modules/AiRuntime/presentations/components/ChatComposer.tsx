@@ -82,13 +82,15 @@ export const ChatComposer = ({
                 value={inputValue}
                 onChange={(event) => onChange(event.target.value)}
                 onKeyDown={onKeyDown}
-                placeholder={
-                    isGenerating
-                        ? 'AI is thinking...'
-                        : chatMode === 'prompt'
-                          ? 'Type a command to execute or generate...'
-                          : 'Send a message... (Shift+Enter for newline)'
-                }
+                placeholder={(() => {
+                    if (isGenerating) {
+                        return 'AI is thinking...';
+                    }
+                    if (chatMode === 'prompt') {
+                        return 'Type a command to execute or generate...';
+                    }
+                    return 'Send a message... (Shift+Enter for newline)';
+                })()}
                 className="max-h-32 min-h-[44px] w-full flex-1 resize-none bg-transparent p-3 text-xs text-foreground placeholder:text-muted-foreground scrollbar-thin scrollbar-thumb-white/10 focus:outline-none"
                 disabled={isGenerating || !isLlmAvailable}
                 rows={1}
@@ -100,11 +102,15 @@ export const ChatComposer = ({
                     onClick={isGenerating ? onStop : onSend}
                     className={cn(
                         'h-7 w-7 rounded-[6px] transition-all',
-                        isGenerating
-                            ? 'border border-destructive/30 bg-destructive/20 text-destructive hover:bg-destructive/30'
-                            : inputValue.trim()
-                              ? 'bg-[var(--color-accent-lavender)] text-white shadow-md shadow-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]'
-                              : 'bg-transparent text-muted-foreground hover:bg-white/5'
+                        (() => {
+                            if (isGenerating) {
+                                return 'border border-destructive/30 bg-destructive/20 text-destructive hover:bg-destructive/30';
+                            }
+                            if (inputValue.trim()) {
+                                return 'bg-[var(--color-accent-lavender)] text-white shadow-md shadow-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]';
+                            }
+                            return 'bg-transparent text-muted-foreground hover:bg-white/5';
+                        })()
                     )}
                     title={isGenerating ? 'Stop Generation' : undefined}
                 >

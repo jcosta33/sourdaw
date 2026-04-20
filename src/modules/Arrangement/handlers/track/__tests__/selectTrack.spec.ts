@@ -16,7 +16,7 @@ describe('handleSelectTrack', () => {
     });
 
     it('executes selectTrack with the provided payload', () => {
-        handleSelectTrack.execute({
+        void handleSelectTrack.execute({
             type: 'selectTrack',
             payload: { trackId: 't1' },
         });

@@ -22,7 +22,7 @@ describe('handleSetTrackPan', () => {
 
     describe('execute', () => {
         it('calls setTrackPan', () => {
-            handleSetTrackPan.execute({
+            void handleSetTrackPan.execute({
                 type: 'setTrackPan',
                 payload: { trackId: 't1', pan: -0.5 },
             });

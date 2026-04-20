@@ -23,7 +23,7 @@ import { preferencesStore } from '../../stores/preferencesStore';
 
 export const useAppInitialization = (): void => {
     useEffect(() => {
-        (async () => {
+        void (async () => {
             try {
                 await initializeAudioEngine();
                 const transport = getTransportState();
@@ -37,8 +37,8 @@ export const useAppInitialization = (): void => {
                     getAudioContext(),
                     referencedIds.length > 0 ? referencedIds : undefined
                 );
-                verifyAudioBufferReferences();
-                initWebMidi();
+                void verifyAudioBufferReferences();
+                void initWebMidi();
                 registerProModulationEffects();
                 registerProSynthInstruments();
 
@@ -62,7 +62,7 @@ export const useAppInitialization = (): void => {
     useEffect(() => {
         const onGesture = (): void => {
             void resumeEngine();
-            requestMicPermission();
+            void requestMicPermission();
         };
         window.addEventListener('click', onGesture, { once: true });
         window.addEventListener('keydown', onGesture, { once: true });
@@ -73,7 +73,7 @@ export const useAppInitialization = (): void => {
     }, []);
 
     useEffect(() => {
-        restoreLibrary();
+        void restoreLibrary();
     }, []);
 
     useEffect(() => {

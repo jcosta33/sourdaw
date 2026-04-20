@@ -16,7 +16,7 @@ describe('handleCreateAdjustmentLayer', () => {
     });
 
     it('executes createAdjustmentLayer with name and effectType', () => {
-        handleCreateAdjustmentLayer.execute({
+        void handleCreateAdjustmentLayer.execute({
             type: 'createAdjustmentLayer',
             payload: { name: 'Master EQ', effectType: 'EQ' },
         });

@@ -16,7 +16,7 @@ describe('handleDisableTrack', () => {
     });
 
     it('executes disableTrack with the provided payload', () => {
-        handleDisableTrack.execute({
+        void handleDisableTrack.execute({
             type: 'disableTrack',
             payload: { trackId: 't1', disabled: true },
         });

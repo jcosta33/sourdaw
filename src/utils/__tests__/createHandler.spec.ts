@@ -15,7 +15,7 @@ describe('createHandler', () => {
         expect(handler.undoable).toBe(true);
 
         const action = { type: 'setTempo' as const, payload: { bpm: 120 } };
-        handler.execute(action);
+        void handler.execute(action);
         expect(execute).toHaveBeenCalledTimes(1);
         expect(execute).toHaveBeenCalledWith(action);
 

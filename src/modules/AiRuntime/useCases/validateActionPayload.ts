@@ -29,10 +29,13 @@
  */
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
 
-type Extract2<U, T> = U extends { type: T } ? U : never;
-type PayloadOf<T extends RuntimeActionType> = Extract2<RuntimeAction, T> extends { payload: infer P } ? P : undefined;
+type Extract2<ActionUnion, TypeString> = ActionUnion extends { type: TypeString } ? ActionUnion : never;
+type PayloadOf<ActionType extends RuntimeActionType> =
+    Extract2<RuntimeAction, ActionType> extends { payload: infer P } ? P : undefined;
 
-export type PayloadValidator<T extends RuntimeActionType> = (payload: unknown) => payload is PayloadOf<T>;
+export type PayloadValidator<ActionType extends RuntimeActionType> = (
+    payload: unknown
+) => payload is PayloadOf<ActionType>;
 
 // ── Primitive helpers ───────────────────────────────────────────────────
 
@@ -41,7 +44,8 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const isString = (v: unknown): v is string => typeof v === 'string';
 const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isInRange = (v: unknown, min: number, max: number): v is number => isNumber(v) && v >= min && v <= max;
-const isOptional = <T>(v: unknown, check: (v: unknown) => v is T): v is T | undefined => v === undefined || check(v);
+const isOptional = <Value>(v: unknown, check: (v: unknown) => v is Value): v is Value | undefined =>
+    v === undefined || check(v);
 const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every(isString);
 
 // ── Validators (destructive / high-risk actions) ─────────────────────────
@@ -360,10 +364,10 @@ const validators = {
     // Node view
     toggleNodeView: 'unchecked',
 } as const satisfies {
-    [K in RuntimeActionType]: PayloadValidator<K> | 'unchecked';
+    [ActionType in RuntimeActionType]: PayloadValidator<ActionType> | 'unchecked';
 };
 
 // Export as Record for runtime lookup.
 export const PAYLOAD_VALIDATORS: {
-    [K in RuntimeActionType]: PayloadValidator<K> | 'unchecked';
+    [ActionType in RuntimeActionType]: PayloadValidator<ActionType> | 'unchecked';
 } = validators;

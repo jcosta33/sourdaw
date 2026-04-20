@@ -15,7 +15,7 @@ export const InputSelector = ({ trackId, inputId }: InputSelectorProps): ReactEl
     const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
 
     useEffect(() => {
-        getAudioDevices().then((d) => setDevices(d.filter((dev) => dev.kind === 'audioinput')));
+        void getAudioDevices().then((d) => setDevices(d.filter((dev) => dev.kind === 'audioinput')));
     }, []);
 
     if (devices.length === 0) {

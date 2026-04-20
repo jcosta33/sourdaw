@@ -25,7 +25,7 @@ describe('handleLoadPreset', () => {
     it('bails if preset cannot be found', () => {
         mocks.getUserPresets.mockReturnValue([]);
 
-        handleLoadPreset.execute({ type: 'loadPreset', payload: { presetId: 'p1' } });
+        void handleLoadPreset.execute({ type: 'loadPreset', payload: { presetId: 'p1' } });
 
         expect(mocks.loadPresetToTrack).not.toHaveBeenCalled();
         expect(mocks.createTrackFromPreset).not.toHaveBeenCalled();
@@ -35,7 +35,7 @@ describe('handleLoadPreset', () => {
         const preset = { id: 'p1', name: 'Cool Synth' };
         mocks.getUserPresets.mockReturnValue([preset]);
 
-        handleLoadPreset.execute({ type: 'loadPreset', payload: { presetId: 'p1', trackId: 't1' } });
+        void handleLoadPreset.execute({ type: 'loadPreset', payload: { presetId: 'p1', trackId: 't1' } });
 
         expect(mocks.loadPresetToTrack).toHaveBeenCalledWith('t1', preset);
         expect(mocks.createTrackFromPreset).not.toHaveBeenCalled();
@@ -45,7 +45,7 @@ describe('handleLoadPreset', () => {
         const preset = { id: 'p1', name: 'Cool Synth' };
         mocks.getUserPresets.mockReturnValue([preset]);
 
-        handleLoadPreset.execute({ type: 'loadPreset', payload: { presetId: 'p1' } });
+        void handleLoadPreset.execute({ type: 'loadPreset', payload: { presetId: 'p1' } });
 
         expect(mocks.createTrackFromPreset).toHaveBeenCalledWith(preset);
         expect(mocks.loadPresetToTrack).not.toHaveBeenCalled();
