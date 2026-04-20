@@ -4,13 +4,15 @@ import { type ToolSchema } from '../../models/tools/types';
 import { selectToolsForPrompt } from '../toolSelector';
 
 describe('toolSelector', () => {
-    const createMockSchema = (name: string): ToolSchema => ({
-        type: 'function',
-        function: {
-            name,
-            description: '',
-        },
-    });
+    function createMockSchema(name: string): ToolSchema {
+        return {
+            type: 'function',
+            function: {
+                name,
+                description: '',
+            },
+        };
+    }
 
     // Create a pool of "all tools" combining core tools, keyword tools, and some random ones
     const allTools: ToolSchema[] = [

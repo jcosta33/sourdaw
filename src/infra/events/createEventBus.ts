@@ -4,24 +4,24 @@ import { createSubscriptionRegistry } from './internal/createSubscriptionRegistr
 
 import type { EventBus, EventMap } from './types';
 
-export const createEventBus = <TEvents extends EventMap>(): EventBus<TEvents> => {
+export function createEventBus<TEvents extends EventMap>(): EventBus<TEvents> {
     const registry = createSubscriptionRegistry<TEvents>();
     let pendingCount = 0;
     let idleWaiters: Array<() => void> = [];
 
-    const waitForIdle = (): Promise<void> => {
+    function waitForIdle(): Promise<void> {
         if (pendingCount === 0) {
             return Promise.resolve();
         }
         const { promise, resolve } = Promise.withResolvers<void>();
         idleWaiters.push(resolve);
         return promise;
-    };
+    }
 
-    const emit = async <TEventName extends keyof TEvents & string>(
+    async function emit<TEventName extends keyof TEvents & string>(
         event: TEventName,
         payload: TEvents[TEventName]
-    ): Promise<void> => {
+    ): Promise<void> {
         const snapshot = registry.getSnapshot(event);
         if (snapshot.eventHandlers.length === 0 && snapshot.anyHandlers.length === 0) {
             return;

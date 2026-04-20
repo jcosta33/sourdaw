@@ -1,20 +1,24 @@
 import { vi } from 'vitest';
 
-const createAudioParam = () => ({
-    value: 0,
-    setValueAtTime: vi.fn(),
-    setTargetAtTime: vi.fn(),
-    linearRampToValueAtTime: vi.fn(),
-    cancelScheduledValues: vi.fn(),
-});
+function createAudioParam() {
+    return {
+        value: 0,
+        setValueAtTime: vi.fn(),
+        setTargetAtTime: vi.fn(),
+        linearRampToValueAtTime: vi.fn(),
+        cancelScheduledValues: vi.fn(),
+    };
+}
 
-const createNode = (extra: Record<string, unknown> = {}) => ({
-    connect: vi.fn(function (this: unknown, target: unknown) {
-        return target;
-    }),
-    disconnect: vi.fn(),
-    ...extra,
-});
+function createNode(extra: Record<string, unknown> = {}) {
+    return {
+        connect: vi.fn(function (this: unknown, target: unknown) {
+            return target;
+        }),
+        disconnect: vi.fn(),
+        ...extra,
+    };
+}
 
 export function createMockAudioContext() {
     const destination = createNode();

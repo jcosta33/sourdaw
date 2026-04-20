@@ -285,7 +285,7 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
     // Keep track of dynamically created tracks during this resolve pass
     const mockTracks: { id: string; name: string }[] = [];
 
-    const findTrackId = (nameOrId: string): string | null => {
+    function findTrackId(nameOrId: string): string | null {
         if (state.tracks.some((t) => t.id === nameOrId)) {
             return nameOrId;
         }
@@ -298,17 +298,17 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
             match = bestMatch(nameOrId, mockTracks, (t) => t.name) as any;
         }
         return match?.id ?? null;
-    };
+    }
 
-    const findClipId = (nameOrId: string): string | null => {
+    function findClipId(nameOrId: string): string | null {
         if (allClips.some((c) => c.id === nameOrId)) {
             return nameOrId;
         }
         const match = bestMatch(nameOrId, allClips, (c) => c.name);
         return match?.id ?? null;
-    };
+    }
 
-    const findDeviceId = (nameOrId: string): string | null => {
+    function findDeviceId(nameOrId: string): string | null {
         if (nameOrId === 'latest') {
             return 'latest';
         }
@@ -317,7 +317,7 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
         }
         const match = bestMatch(nameOrId, allDevices, (d) => d.type);
         return match?.id ?? null;
-    };
+    }
 
     let i = 0;
     while (i < dsos.length) {

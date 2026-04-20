@@ -305,12 +305,12 @@ async function commitDsos(
 async function invokeLlm(backend: string, system: string, user: string, chatMsgId: string): Promise<string> {
     let tokenCount = 0;
 
-    const onProgress = (): void => {
+    function onProgress(): void {
         tokenCount++;
         if (tokenCount % 15 === 0) {
             updateChatMessage(chatMsgId, { content: `Planning... (${tokenCount} tokens)` });
         }
-    };
+    }
 
     // Native (Tauri + mistral.rs): use schema-constrained generation
     if (backend === 'native' && isNativeEngineReady() && isTauri()) {

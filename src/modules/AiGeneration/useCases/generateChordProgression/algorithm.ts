@@ -125,11 +125,12 @@ function getQualitiesForStyle(scale: 'major' | 'minor', style: ChordProgressionS
     return scale === 'major' ? MAJOR_DEGREE_QUALITIES : MINOR_DEGREE_QUALITIES;
 }
 
-const getScaleIntervals = (scale: 'major' | 'minor'): readonly number[] =>
-    scale === 'major' ? MAJOR_SCALE_INTERVALS : MINOR_SCALE_INTERVALS;
+function getScaleIntervals(scale: 'major' | 'minor'): readonly number[] {
+    return scale === 'major' ? MAJOR_SCALE_INTERVALS : MINOR_SCALE_INTERVALS;
+}
 
-const clampMidi = (n: number): number => Math.max(0, Math.min(127, n));
-const clampVelocity = (v: number): number => Math.max(1, Math.min(127, Math.round(v)));
+function clampMidi(n: number): number { return Math.max(0, Math.min(127, n)); }
+function clampVelocity(v: number): number { return Math.max(1, Math.min(127, Math.round(v))); }
 
 function applyVoicing(intervals: readonly number[], rootMidi: number, voicing: ChordVoicing): number[] {
     switch (voicing) {

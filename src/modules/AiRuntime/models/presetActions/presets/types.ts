@@ -40,26 +40,26 @@ export type PresetCategory =
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-export const trackAction = (
+export function trackAction(
     type: RuntimeAction['type'],
     payloadFn: (trackId: string) => Record<string, unknown>
-): PresetAction['buildAction'] => {
+): PresetAction['buildAction'] {
     return (ctx) => {
         if (!ctx.selectedTrackId) {
             return null;
         }
         return { type, payload: payloadFn(ctx.selectedTrackId) } as RuntimeAction;
     };
-};
+}
 
-export const clipAction = (
+export function clipAction(
     type: RuntimeAction['type'],
     payloadFn: (clipId: string) => Record<string, unknown>
-): PresetAction['buildAction'] => {
+): PresetAction['buildAction'] {
     return (ctx) => {
         if (!ctx.selectedClipId) {
             return null;
         }
         return { type, payload: payloadFn(ctx.selectedClipId) } as RuntimeAction;
     };
-};
+}

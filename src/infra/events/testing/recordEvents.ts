@@ -5,7 +5,7 @@ export type RecordedEvent<TEvents extends EventMap> = {
     payload: TEvents[keyof TEvents];
 };
 
-export const recordEvents = <TEvents extends EventMap>(bus: EventBus<TEvents>) => {
+export function recordEvents<TEvents extends EventMap>(bus: EventBus<TEvents>) {
     const entries: RecordedEvent<TEvents>[] = [];
     const stop = bus.onAny((event, payload) => {
         entries.push({ event, payload });

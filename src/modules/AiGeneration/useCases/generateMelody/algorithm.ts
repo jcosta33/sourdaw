@@ -219,7 +219,7 @@ function pickNextNote(scaleNotes: number[], currentIndex: number, style: MelodyS
     }
 }
 
-const clampVelocity = (v: number): number => Math.max(1, Math.min(127, Math.round(v)));
+function clampVelocity(v: number): number { return Math.max(1, Math.min(127, Math.round(v))); }
 
 function velocityForStyle(style: MelodyStyle, beatPosition: number, rng: () => number): number {
     const isDownbeat = beatPosition % 1 === 0;

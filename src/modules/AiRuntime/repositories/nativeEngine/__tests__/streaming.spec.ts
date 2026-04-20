@@ -92,7 +92,7 @@ describe('streamNativeCompletion', () => {
             });
 
             const tokens: string[] = [];
-            const onToken = (t: string) => tokens.push(t);
+            function onToken(t: string) { tokens.push(t); }
 
             await streamNativeCompletion([{ role: 'user', content: 'hi' }], onToken);
 
