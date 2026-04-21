@@ -18,7 +18,7 @@ type SetGrandBouleAttackBiteInput = {
     store: Store<GrandBouleState>;
 };
 
-export const setGrandBouleAttackBite = (input: SetGrandBouleAttackBiteInput): void => {
+export function setGrandBouleAttackBite(input: SetGrandBouleAttackBiteInput): void {
     const state = input.store.value;
     if (state === null) {
         return;
@@ -29,4 +29,4 @@ export const setGrandBouleAttackBite = (input: SetGrandBouleAttackBiteInput): vo
         config: { ...state.config, attackBite: clamped },
     });
     input.engine.setParam({ name: 'attack_bite', value: clamped });
-};
+}

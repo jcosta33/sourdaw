@@ -14,9 +14,9 @@ type LoadGrandBouleAttackClipInput = {
     samples: Float32Array;
 };
 
-export const loadGrandBouleAttackClip = (input: LoadGrandBouleAttackClipInput): void => {
+export function loadGrandBouleAttackClip(input: LoadGrandBouleAttackClipInput): void {
     if (input.key < 1 || input.key > 88) {
         return;
     }
     input.engine.loadAttackClip({ key: input.key, samples: input.samples });
-};
+}
