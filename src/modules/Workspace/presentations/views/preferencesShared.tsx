@@ -68,7 +68,7 @@ export const VoiceKeyEditor = ({
 
     useEffect(() => {
         if (!listening) {
-            return;
+            return undefined;
         }
         const handler = (e: KeyboardEvent) => {
             e.preventDefault();

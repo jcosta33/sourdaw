@@ -397,6 +397,7 @@ export class Arpeggiator extends BaseMidiProcessor {
                 return [byPitch[this.stepIndex % byPitch.length]!];
             }
         }
+        return [];
     }
 
     private reflectedIndex(step: number, len: number): number {
@@ -426,6 +427,7 @@ export class Arpeggiator extends BaseMidiProcessor {
                 return 40 + (this.rngState % 88); // 40-127
             }
         }
+        return inputVel;
     }
 
     private killActiveNotes(output: MidiEvent[], now: number): void {

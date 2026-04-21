@@ -63,4 +63,5 @@ export function rateToBeats(rate: RateValue): number {
         case 'triplet':
             return base * (2.0 / 3.0);
     }
+    return base;
 }

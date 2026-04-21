@@ -78,7 +78,7 @@ export const PlayheadDisplay = ({ tempo, numerator, timeDisplayMode }: PlayheadD
         updateOnce();
 
         if (!isPlaying) {
-            return;
+            return undefined;
         }
         const loop = (): void => {
             updateOnce();
