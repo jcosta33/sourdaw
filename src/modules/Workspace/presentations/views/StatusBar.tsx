@@ -20,6 +20,8 @@ import { useSelectionLabel } from '../hooks/useSelectionLabel';
 import { useStatusBarMetrics } from '../hooks/useStatusBarMetrics';
 import { useUndoState } from '../hooks/useUndoState';
 
+import { MidiStatusBadge } from './MidiStatusBadge';
+
 type StatusBarLlmState =
     | { state: 'idle' }
     | { state: 'loading'; progress: number; text: string }
@@ -179,6 +181,7 @@ export const StatusBar = (): ReactElement => {
                     {undoState.lastAction ? (
                         <span className="text-[10px] text-muted-foreground/60">Last: {undoState.lastAction.label}</span>
                     ) : null}
+                    <MidiStatusBadge />
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button

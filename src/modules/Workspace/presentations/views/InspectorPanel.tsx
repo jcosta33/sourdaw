@@ -51,6 +51,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
                 minWidth: isDeviceView ? 300 : 200,
             }}
             aria-label="Inspector panel"
+            data-onboarding="inspector"
         >
             <DawHeaderBand
                 className="rounded-none px-3 py-2"

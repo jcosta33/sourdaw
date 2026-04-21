@@ -11,7 +11,7 @@ import { pushActionHistoryEntry } from '#/modules/CrdtDocument/stores';
 import { setSemanticContext, clearSemanticContext, getDsoSnapshotHandlers } from '#/modules/CrdtDocument/useCases';
 import { getChordTrackHandlers, getMidiRoutingHandlers, getPatternInstanceHandlers } from '#/modules/MIDI';
 import { getPluginHostHandlers } from '#/modules/Plugin';
-import { getSongStructureHandlers, getVersionControlHandlers } from '#/modules/Project';
+import { getDawProjectHandlers, getSongStructureHandlers, getVersionControlHandlers } from '#/modules/Project';
 import { getTransportHandlers } from '#/modules/Transport';
 import { getWorkspaceHandlers, getScratchPadHandlers } from '#/modules/Workspace';
 
@@ -76,6 +76,7 @@ function getHandlerRegistry(): Record<string, ActionHandler<any>> {
             getUndoTreeHandlers(),
             getSongStructureHandlers(),
             getVersionControlHandlers(),
+            getDawProjectHandlers(),
             getFinalFeatureHandlers(),
             getDsoSnapshotHandlers()
         );

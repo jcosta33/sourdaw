@@ -30,13 +30,15 @@ Be specific. Vague objectives produce vague outcomes.
 - Work only inside this worktree
 - Do not switch branches unless explicitly instructed
 - Do not merge, rebase, or push unless explicitly instructed
-- Run `pnpm i` to install modules
-- Run `pnpm deps:validate` and `pnpm typecheck` after every change
+- Run `{{cmdInstall}}` to install modules
+- Run `pnpm agents:validate` after every change
 - **Proactively research and read related docs.** If context from another spec, research, or bug file is needed, you are empowered to browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own to confirm your hypotheses and make informed decisions. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are also fair game.
 
 ---
 
 ## Plan
+
+<plan>
 
 Step-by-step plan before implementation starts.
 Update this if the plan changes.
@@ -44,6 +46,8 @@ Update this if the plan changes.
 1.
 2.
 3.
+
+</plan>
 
 ---
 
@@ -95,6 +99,8 @@ Concrete starting points for the next session if this one ends incomplete.
 
 ## Self-review
 
+<self_review>
+
 Stop. Act as a nitpicky senior engineer reviewing your own work as if you didn't write it. You are looking for a reason to reject it. Read every change adversarially.
 
 > **Hard gate.** The task is not complete until every question below has a written answer directly beneath it. An unanswered question is a skipped check. Incomplete Self-review is an invalid session output. If you cannot point to a specific file/line/requirement for a finding, do not pad the list.
@@ -102,8 +108,7 @@ Stop. Act as a nitpicky senior engineer reviewing your own work as if you didn't
 ### Verification outputs (paste actual command output — do not paraphrase)
 
 - `git status` →
-- `pnpm deps:validate` (last line):
-- `pnpm typecheck` (last line):
+- `pnpm agents:validate` (last 2 lines):
 
 ### Correctness
 
@@ -112,7 +117,7 @@ Stop. Act as a nitpicky senior engineer reviewing your own work as if you didn't
 
 ### Architecture
 
-- Zero `pnpm deps:validate` violations? (see pasted output above) Does `pnpm typecheck` pass?
+- Zero validation errors? (see pasted output above) Does `{{cmdTypecheck}}` pass?
   Answer:
 
 ### Conventions
@@ -136,3 +141,5 @@ Stop. Act as a nitpicky senior engineer reviewing your own work as if you didn't
   Answer:
 
 Only when every answer above is written is this task complete.
+
+</self_review>

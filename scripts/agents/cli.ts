@@ -104,8 +104,9 @@ export function fzfSelect(items, { prompt = '> ', preview = '', multi = false } 
 /**
  * Simple synchronous readline polyfill for prompting strings.
  */
-export function promptInput(promptText, defaultVal = '') {
-    const rl = require('readline').createInterface({
+export async function promptInput(promptText, defaultVal = '') {
+    const readline = await import('readline');
+    const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
     });

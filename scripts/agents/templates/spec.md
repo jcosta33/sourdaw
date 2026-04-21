@@ -51,8 +51,12 @@ What the user or system experiences — behavior described from the outside in.
 
 ## Acceptance criteria
 
+<acceptance_criteria>
+
 - [ ] Criterion — verifiable, specific
-- [ ] `pnpm deps:validate` passes with zero violations
+- [ ] `{{cmdValidateDeps}}` passes with zero violations
+
+</acceptance_criteria>
 
 ---
 

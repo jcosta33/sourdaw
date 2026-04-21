@@ -1,12 +1,18 @@
 import { spawnSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Utilities to get repo paths
+import { parseArgs, fzfSelect, findMarkdownFiles, promptInput } from './agents/cli.ts';
+import { toSlug } from './agents/slug.ts';
+import { findWorktreeForBranch, getRepoRoot, worktreeCreate } from './agents/git.ts';
+import { loadConfig } from './agents/config.ts';
+import { resolveBackend, checkBackend, launch } from './agents/terminal.ts';
+import { colors, bold, cyan, green, red, yellow, box, dim } from './agents/colors.ts';
+import { createOrUpdateTaskFile } from './agents/template.ts';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(__dirname, '..');
-const AGENTS_BIN = join(REPO_ROOT, 'scripts', 'agents.ts');
+const REPO_ROOT = getRepoRoot();
 
 function dirname(path) {
     const parts = path.split('/');
@@ -19,32 +25,26 @@ function die(msg) {
     process.exit(1);
 }
 
-function generateSlug(title) {
-    return title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '')
-        .substring(0, 50);
-}
-
-// ─── Main Orchestrator Logic ─────────────────────────────────────────────────
+const KNOWN_AGENTS = ['claude', 'gemini', 'codex', 'kimi', 'opencode'];
 
 async function run() {
     let args = process.argv.slice(2);
+    if (args[0] === '--') args = args.slice(1);
     
     if (args.length > 0 && args[0] === 'review') {
         return cmdReview(args.slice(1));
     }
     
-    // Otherwise it's the `new` command
     if (args.length > 0 && args[0] === 'new') {
         args = args.slice(1);
     }
     
-    if (args.length === 0 || args[0] === '--help') {
+    const { flags, positional } = parseArgs(args);
+    
+    if (flags.has('help') || (positional.length === 0 && args.includes('--help'))) {
         console.log(`
 Usage: 
-  pnpm delegator:new [agent] [title] [file1] [file2] ...
+  pnpm delegator:new [agent] <"Title"> [file1] [file2] ...
   pnpm delegator:review <slug>
 
 Launches a "Lead Engineer" agent whose sole purpose is to orchestrate multiple
@@ -58,6 +58,11 @@ Arguments (new):
 Arguments (review):
   slug     The slug of the worker sandbox to review (e.g. "feature-auth").
   
+Flags:
+  --agent <name>        Override agent
+  --terminal <backend>  Override terminal
+  --no-launch           Skip launching terminal
+  
 Example:
   pnpm delegator:new gemini "Fix auth and limits" .agents/specs/auth.md .agents/bugs/rate-limit.md
   pnpm delegator:review feature-auth
@@ -65,53 +70,109 @@ Example:
         process.exit(0);
     }
 
-    const KNOWN_AGENTS = ['claude', 'gemini', 'codex', 'kimi', 'opencode'];
-    let agent = 'claude';
+    let agent = flags.get('agent') || 'claude';
+    let titlePositional = positional;
     
-    if (KNOWN_AGENTS.includes(args[0])) {
-        agent = args[0];
-        args = args.slice(1);
+    if (titlePositional.length > 0 && KNOWN_AGENTS.includes(titlePositional[0])) {
+        agent = titlePositional[0];
+        titlePositional = titlePositional.slice(1);
     }
 
-    if (args.length === 0) {
-        die("Missing title. Run with --help for usage.");
+    let title = '';
+    let taskFiles = [];
+
+    // If we have positionals left, first is title, rest are files
+    if (titlePositional.length > 0) {
+        title = titlePositional[0];
+        taskFiles = titlePositional.slice(1).map(f => resolve(process.cwd(), f));
     }
 
-    const title = args[0];
-    const taskFiles = args.slice(1)
-        .filter(f => f !== '--no-launch')
-        .map(f => resolve(process.cwd(), f));
+    // Interactive Wizard
+    if (!title || taskFiles.length === 0) {
+        const hasFzf = spawnSync('which', ['fzf'], { encoding: 'utf8' }).status === 0;
+        if (!hasFzf) {
+            die('Interactive mode requires fzf. Install fzf or provide title and files as arguments.');
+        }
+        
+        if (!title) {
+            title = await promptInput('Delegation Title: ', '');
+            if (!title) process.exit(0);
+        }
 
-    const noLaunch = args.includes('--no-launch');
+        if (taskFiles.length === 0) {
+            const agentDirs = ['.agents/specs', '.agents/audits', '.agents/bugs', '.agents/research'];
+            let allFiles = [];
+            for (const dir of agentDirs) {
+                const absDir = join(REPO_ROOT, dir);
+                if (existsSync(absDir)) {
+                    const files = findMarkdownFiles(absDir);
+                    allFiles.push(...files.map(f => join(dir, f)));
+                }
+            }
+            
+            if (allFiles.length === 0) {
+                die('No markdown files found in .agents/ (specs, audits, bugs, research).');
+            }
+            
+            console.log(`\n${cyan('Select tasks to delegate')} (Tab to multi-select, Enter to confirm):`);
+            const selectedFiles = fzfSelect(allFiles, { 
+                prompt: 'tasks> ', 
+                multi: true,
+                preview: `cat "{}" 2>/dev/null || echo ""`
+            });
+            
+            if (!selectedFiles || selectedFiles.length === 0) {
+                console.log('No tasks selected. Exiting.');
+                process.exit(0);
+            }
+            
+            taskFiles = selectedFiles.map(f => resolve(REPO_ROOT, f));
+            
+            // Allow selecting agent interactively if not passed
+            if (!flags.get('agent') && !positional.some(p => KNOWN_AGENTS.includes(p))) {
+                 const selectedAgent = fzfSelect(KNOWN_AGENTS, { prompt: 'agent> ' });
+                 if (selectedAgent) agent = selectedAgent;
+            }
+        }
+    }
 
-
-    // Verify all input files exist
     for (const file of taskFiles) {
         if (!existsSync(file)) {
             die(`Input file not found: ${file}`);
         }
     }
 
-    // Infer task type based on file path
     function inferType(filePath) {
         if (filePath.includes('.agents/research/')) return 'spec';
         if (filePath.includes('.agents/audits/')) return 'refactor';
         if (filePath.includes('.agents/specs/')) return 'feature';
         if (filePath.includes('.agents/bugs/')) return 'fix';
-        return 'feature'; // Default fallback
+        return 'feature';
     }
 
     const tasks = taskFiles.map((file, i) => {
         const type = inferType(file);
         const name = file.split('/').pop().replace('.md', '');
-        return { file, type, name, id: `Task ${i + 1}` };
+        return { file: file.replace(REPO_ROOT + '/', ''), type, name, id: `Task ${i + 1}` };
     });
 
-    const slug = `delegator-${generateSlug(title)}`;
+    const slug = `delegator-${toSlug(title, 40)}`;
+    const branchName = `agent/${slug}`;
+    const worktreeAbs = resolve(REPO_ROOT, `../webdaw--${slug}`);
     
-    console.log(`\x1b[34m[Delegator]\x1b[0m Preparing Lead Engineer session: ${slug} (${agent})`);
+    console.log(`\n\x1b[34m[Delegator]\x1b[0m Preparing Lead Engineer session: ${cyan(slug)} (${agent})`);
 
-    // Create the delegation task file template
+    const existingWT = findWorktreeForBranch(branchName, REPO_ROOT);
+    if (!existingWT && !existsSync(worktreeAbs)) {
+         console.log(dim(`Creating integration worktree at ${worktreeAbs}...`));
+         worktreeCreate(worktreeAbs, branchName, 'main', REPO_ROOT);
+    } else if (existingWT) {
+         console.log(dim(`Worktree already exists at ${existingWT}`));
+    }
+
+    const taskFileAbs = join(worktreeAbs, `.agents/tasks/${slug}.md`);
+    mkdirSync(join(worktreeAbs, '.agents/tasks'), { recursive: true });
+
     const templateContent = `# ${title}
 
 ## Metadata
@@ -124,7 +185,7 @@ Example:
 
 ## Objective
 
-You are the Lead Engineer. You have been handed multiple tasks to complete.
+You are the Lead Engineer. You have been assigned multiple tasks to complete.
 Your job is NOT to write the code yourself. Your job is to intelligently delegate these tasks to a team of worker agents running in parallel, and then rigorously review their work before merging.
 
 ## Assigned Tasks
@@ -152,18 +213,15 @@ ${tasks.map(t => `### ${t.id}: ${t.name}
    wait $P1 $P2
    \`\`\`
 
-2. **Adversarial Review (The Skeptic Persona):** Once a worker finishes, you MUST use the review macro to generate a comprehensive report of their changes:
+2. **Adversarial Review (The Skeptic Persona):** Once a worker finishes, you MUST use the review macro with the \`--feedback\` flag to generate a comprehensive report of their changes and automatically append it to their task file:
    \`\`\`bash
-   pnpm delegator:review <slug>
+   pnpm delegator:review <worker-slug> --feedback
    \`\`\`
    Read the output carefully. It will show the diff, typecheck results, and dependency validation. Do not trust the worker blindly.
 
-4. **Iterate or Merge:** If the worker's branch is flawless, you may merge it into YOUR current integration branch (do NOT merge into main). If it fails your review, you must append your feedback to their task file and relaunch them to fix it.
-
-5. **Resuming Incomplete Workers:** If a worker stops before finishing its task (e.g., due to a token limit or crash), do not start over. Write feedback directly into its task file and resume the worker in its existing sandbox using the \`open\` command:
+3. **Iterate or Merge:** If the worker's branch is flawless, you may merge it into YOUR current integration branch (\`${branchName}\`). If it fails your review, the feedback was already appended to their task file by the review command. You just need to relaunch them to fix it:
    \`\`\`bash
-   echo "## Lead Engineer Feedback: You stopped early. Please finish the API integration." >> ../sourdaw--<slug>/.agents/tasks/<slug>.md
-   pnpm agents:open <slug> --terminal current --agent-args='-p "Read the feedback at the bottom of your task file and continue your work. Commit and exit 0 when done."' &
+   pnpm agents:open <worker-slug> --terminal current --agent-args='-p "Read the new feedback at the bottom of your task file and fix the issues. Commit and exit 0 when done."' &
    \`\`\`
 
 ---
@@ -195,44 +253,51 @@ ${tasks.map(t => `- [ ] Review ${t.id}`).join('\n')}
 
 ## Final Review
 
-Stop. Before you consider this delegation complete, did you verify the workers mathematically and behaviorally? Did you run the compiler on their branches?
+Stop. Before you consider this delegation complete, did you verify the workers mathematically and behaviorally? Did you run the compiler on their merged branches in this integration worktree?
 
-Once all workers are successfully merged into your integration branch, do NOT merge into main. Instead, write a final summary of what was accomplished and provide clear instructions for the human developer on how to test this integration branch locally before they manually merge it.
-`;
+Once all workers are successfully merged into your integration branch (\`${branchName}\`), write a final summary of what was accomplished and provide clear instructions for the human developer on how to test this integration branch locally before they manually merge it into main.`;
 
-    // Write the template somewhere the main launcher can grab it
-    const tempTemplatePath = join(REPO_ROOT, '.agents', 'tmp-delegator.md');
-    mkdirSync(join(REPO_ROOT, '.agents'), { recursive: true });
-    writeFileSync(tempTemplatePath, templateContent);
+    writeFileSync(taskFileAbs, templateContent, 'utf8');
 
-    // Call the main agents script to spin up the environment for the delegator
-    console.log(`\x1b[34m[Delegator]\x1b[0m Launching central agent...`);
+    if (flags.has('no-launch')) {
+         console.log(green(`\n✓ Sandbox created: ${slug}`));
+         return;
+    }
+
+    const config = loadConfig(REPO_ROOT);
+    const terminal = flags.get('terminal') || config.defaultTerminal;
+    const backend = resolveBackend(terminal);
     
-    // We pass the temp template directly as a positional arg, the launcher handles it
-    const spawnArgs = [AGENTS_BIN, 'new', agent, '--base', 'main', '--spec', tempTemplatePath, title];
-    if (noLaunch) spawnArgs.push('--no-launch');
-
-    const child = spawn(process.execPath, spawnArgs, {        cwd: REPO_ROOT,
-        stdio: 'inherit'
+    const backendCheck = checkBackend(backend);
+    if (!backendCheck.ok) {
+        die(`Terminal backend "${backend}" not available: ${backendCheck.reason}`);
+    }
+    
+    const adapter = await import(`./agents/adapters/${agent}.ts`);
+    const agentArgs = adapter.buildArgs(slug, [], {
+        taskFile: `.agents/tasks/${slug}.md`,
+        branch: branchName,
+        worktreePath: worktreeAbs,
     });
-
-    child.on('close', (code) => {
-        if (existsSync(tempTemplatePath)) {
-            try { readFileSync(tempTemplatePath); unlinkSync(tempTemplatePath); } catch (e) {}
-        }
-        process.exit(code);
+    
+    console.log(dim(`Launching Lead Engineer in ${backend}...`));
+    launch(backend, worktreeAbs, adapter.command, agentArgs, {
+        title: `Lead: ${title}`,
+        slug,
+        branch: branchName,
+        taskFile: `.agents/tasks/${slug}.md`,
+        agent,
     });
 }
 
 async function cmdReview(args) {
-    if (args.length === 0) {
-        die("Usage: pnpm delegator:review <slug>");
+    const { flags, positional } = parseArgs(args);
+    if (positional.length === 0) {
+        die("Usage: pnpm delegator:review <slug> [--feedback]");
     }
-    const slug = args[0];
-    const { findWorktreeForBranch } = await import('./agents/git.ts');
-    const { colors, bold, cyan, green, red, yellow, box, dim } = await import('./agents/colors.ts');
+    const slug = positional[0];
+    const isFeedback = flags.has('feedback');
     
-    // We assume the branch name follows the standard convention
     // The slug provided is the exact slug. Branch is `agent/<slug>`.
     const branchName = `agent/${slug}`;
     const worktreePath = findWorktreeForBranch(branchName, REPO_ROOT);
@@ -241,33 +306,83 @@ async function cmdReview(args) {
         die(`Worktree for branch ${branchName} not found. Is the sandbox active?`);
     }
     
+    const config = loadConfig(REPO_ROOT);
+    const cmds = config.commands || {};
+    const cmdTypecheckStr = cmds.typecheck || 'pnpm typecheck';
+    const cmdValidateDepsStr = cmds.validateDeps || 'pnpm deps:validate';
+    
+    const [tcCmd, ...tcArgs] = cmdTypecheckStr.split(' ');
+    const [depsCmd, ...depsArgs] = cmdValidateDepsStr.split(' ');
+    
+    // Try to determine the base branch from the task file
+    let baseBranch = 'main';
+    const taskFileAbs = join(worktreePath, `.agents/tasks/${slug}.md`);
+    if (existsSync(taskFileAbs)) {
+        const taskFileContent = readFileSync(taskFileAbs, 'utf8');
+        const baseMatch = taskFileContent.match(/-\s+Base:\s+([^\r\n]+)/);
+        if (baseMatch && baseMatch[1]) {
+            baseBranch = baseMatch[1].trim();
+        }
+    }
+    
+    let report = `\n## Delegator Review (${new Date().toISOString()})\n\n`;
+    
     console.log(`\n${bold(cyan('┌'))} ${bold(cyan('Adversarial Review Report:'))} ${cyan(slug)}`);
     console.log(`${cyan('│')} ${cyan('Worktree:')} ${worktreePath}`);
+    console.log(`${cyan('│')} ${cyan('Base Branch:')} ${baseBranch}`);
     console.log(`${cyan('└' + '─'.repeat(50))}\n`);
     
-    console.log(bold(yellow('1. Diff (main...HEAD):')));
-    const diffResult = spawnSync('git', ['diff', 'main...HEAD', '--stat'], { cwd: worktreePath, encoding: 'utf8' });
-    console.log(diffResult.stdout || dim('(No changes)'));
+    console.log(bold(yellow(`1. Diff (${baseBranch}...HEAD):`)));
+    const diffResult = spawnSync('git', ['diff', `${baseBranch}...HEAD`, '--stat'], { cwd: worktreePath, encoding: 'utf8' });
+    const diffOut = diffResult.stdout || '(No changes)\n';
+    console.log(diffOut || dim('(No changes)'));
+    report += `### Diff (${baseBranch}...HEAD)\n\`\`\`text\n${diffOut.trim()}\n\`\`\`\n\n`;
     
-    console.log(bold(yellow('2. Typecheck:')));
-    const typecheckResult = spawnSync('pnpm', ['typecheck'], { cwd: worktreePath, encoding: 'utf8' });
+    console.log(bold(yellow(`2. Typecheck (${cmdTypecheckStr}):`)));
+    const typecheckResult = spawnSync(tcCmd, tcArgs, { cwd: worktreePath, encoding: 'utf8' });
+    let tcStatus = 'Failed';
     if (typecheckResult.status === 0) {
         console.log(green('✓ Typecheck passed.'));
+        tcStatus = 'Passed';
     } else {
         console.log(red('✗ Typecheck failed:'));
         console.log(typecheckResult.stdout);
     }
     
-    console.log('\n' + bold(yellow('3. Dependency Validation:')));
-    const depsResult = spawnSync('pnpm', ['deps:validate'], { cwd: worktreePath, encoding: 'utf8' });
+    // Truncate overly long compiler errors for the LLM
+    let tcOut = typecheckResult.stdout || '';
+    if (tcOut.split('\\n').length > 50) {
+        tcOut = tcOut.split('\\n').slice(0, 50).join('\\n') + '\\n... (truncated for brevity)';
+    }
+    report += `### Typecheck: ${tcStatus}\n\`\`\`text\n${tcOut.trim()}\n\`\`\`\n\n`;
+    
+    console.log('\n' + bold(yellow(`3. Dependency Validation (${cmdValidateDepsStr}):`)));
+    const depsResult = spawnSync(depsCmd, depsArgs, { cwd: worktreePath, encoding: 'utf8' });
+    let depsStatus = 'Failed';
     if (depsResult.status === 0) {
         console.log(green('✓ Dependencies valid (No architectural violations).'));
+        depsStatus = 'Passed';
     } else {
         console.log(red('✗ Dependency validation failed:'));
         console.log(depsResult.stdout);
     }
     
-    console.log('\n' + bold(cyan('Done. Use the results above to formulate your feedback for the worker.')) + '\n');
+    let depsOut = depsResult.stdout || '';
+    if (depsOut.split('\\n').length > 50) {
+        depsOut = depsOut.split('\\n').slice(0, 50).join('\\n') + '\\n... (truncated for brevity)';
+    }
+    report += `### Dependency Validation: ${depsStatus}\n\`\`\`text\n${depsOut.trim()}\n\`\`\`\n\n`;
+    
+    if (isFeedback) {
+        if (existsSync(taskFileAbs)) {
+            appendFileSync(taskFileAbs, report, 'utf8');
+            console.log('\n' + bold(green(`✓ Review automatically appended to worker's task file.`)));
+        } else {
+            console.log('\n' + bold(red(`✗ Cannot append feedback: Task file not found at ${taskFileAbs}`)));
+        }
+    } else {
+        console.log('\n' + bold(cyan('Done. Use the results above to formulate your feedback for the worker.')) + '\n');
+    }
 }
 
 run().catch(err => {

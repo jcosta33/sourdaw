@@ -1,9 +1,15 @@
-import { trackStore } from '#/modules/Arrangement/stores';
-import { addTrack, addDevice } from '#/modules/Arrangement/useCases';
-
 import { demo5_NebulaDrift } from '../../demoProjects/nebulaDrift/createNebulaDriftDemo';
 import { demo1_TheCompleteMix } from '../../demoProjects/resonance/createResonanceDemo';
 import { newProject } from '../../projectPersistence/newProject';
+import { createAmbientTemplate } from '../templateFiles/ambient';
+import { createCinematicTemplate } from '../templateFiles/cinematic';
+import { createEdmTemplate } from '../templateFiles/edm';
+import { createHipHopTrapTemplate } from '../templateFiles/hipHopTrap';
+import { createLofiTemplate } from '../templateFiles/lofi';
+import { createPodcastTemplate } from '../templateFiles/podcast';
+import { createPopSongTemplate } from '../templateFiles/popSong';
+import { createRockBandTemplate } from '../templateFiles/rockBand';
+import { createSingerSongwriterTemplate } from '../templateFiles/singerSongwriter';
 
 export type TemplateCategory = 'empty' | 'music' | 'podcast' | 'film' | 'demo';
 
@@ -14,47 +20,6 @@ export type ProjectTemplate = {
     category: TemplateCategory;
     platform?: 'web' | 'native';
     create: () => void | Promise<void>;
-};
-
-export function attachSynthDevice(trackId: string): void {
-    const state = trackStore.value;
-    if (!state) {
-        return;
-    }
-
-    const device = {
-        // §122.1 — UUID instead of module-level counter that reset on HMR.
-        id: `device-synth-${crypto.randomUUID()}`,
-        name: 'Synth',
-        type: 'synth',
-        bypassed: false,
-        parameterValues: {},
-    };
-
-    trackStore.set({
-        ...state,
-        tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, devices: [...t.devices, device] } : t)),
-    });
-}
-
-export const addTrackWithDevices = (
-    name: string,
-    kind: 'audio' | 'midi',
-    devices: string[],
-    options?: { withSynth?: boolean }
-): void => {
-    const track = addTrack({ name, kind });
-    if (!track) {
-        return;
-    }
-
-    if (options?.withSynth) {
-        attachSynthDevice(track.id);
-    }
-
-    for (const deviceType of devices) {
-        addDevice(track.id, deviceType);
-    }
 };
 
 export const templates: ProjectTemplate[] = [
@@ -68,68 +33,76 @@ export const templates: ProjectTemplate[] = [
         },
     },
     {
-        id: 'basic-band',
-        name: 'Basic Band',
-        description: 'Drums, bass, guitar, and vocals with EQ on each track.',
+        id: 'pop-song',
+        name: 'Pop Song',
+        description:
+            '100 BPM C major. Drums folder, bass with kick sidechain, rhythm layer, vocal stack with Knead pitch correction, warm pad, plate/hall/tape-delay sends, drum and vocal buses, and a pop-tuned master chain.',
         category: 'music',
-        create: () => {
-            newProject('Basic Band');
-            addTrackWithDevices('Drums', 'audio', ['EQ']);
-            addTrackWithDevices('Bass', 'midi', ['EQ'], { withSynth: true });
-            addTrackWithDevices('Guitar', 'audio', ['EQ']);
-            addTrackWithDevices('Vocals', 'audio', ['EQ']);
-        },
+        create: () => createPopSongTemplate(),
     },
     {
-        id: 'electronic',
-        name: 'Electronic',
-        description: 'Drums, synth lead, synth pad, and bass — ready for electronic production.',
+        id: 'hiphop-trap',
+        name: 'Hip-Hop / Trap',
+        description:
+            '140 BPM F minor. Trap drum folder, 808 sub with heavy kick ducking, Rhodes/flute/pad melodies, lead + ad-lib + hook vocals through a broadcast vocal bus, plate/hall/tape-delay sends, and a trap-glue master chain.',
         category: 'music',
-        create: () => {
-            newProject('Electronic');
-            addTrackWithDevices('Drums', 'audio', ['Compressor']);
-            addTrackWithDevices('Synth Lead', 'midi', ['EQ'], { withSynth: true });
-            addTrackWithDevices('Synth Pad', 'midi', ['EQ'], { withSynth: true });
-            addTrackWithDevices('Bass', 'midi', ['Compressor'], { withSynth: true });
-        },
+        create: () => createHipHopTrapTemplate(),
+    },
+    {
+        id: 'edm',
+        name: 'EDM',
+        description:
+            '128 BPM C minor, 128-beat arrangement with Intro/Build/Drop markers. Classic Kick→Bass and Kick→Pad sidechain, supersaw/pluck/Yeast-arp leads, fermenter atmos pad, parallel comp + plate/hall/delay sends, gluten + brickwall + proof master.',
+        category: 'music',
+        create: () => createEdmTemplate(),
+    },
+    {
+        id: 'rock-band',
+        name: 'Rock Band',
+        description:
+            '120 BPM E minor. Kick/snare/hat/overheads/tom drum folder into NY-comp drum bus, Grinder amp sims on panned rhythm + lead guitars through a room-IR guitar bus, vocal stack, plate/hall/tape sends, bacteria + gluten + brickwall master.',
+        category: 'music',
+        create: () => createRockBandTemplate(),
+    },
+    {
+        id: 'lofi',
+        name: 'Lo-fi',
+        description:
+            '80 BPM D Dorian with heavy MPC-60 swing. Lo-fi drum kit + vinyl crackle, sub bass, Rhodes/pluck/pad melodic folder, tape-hiss + wobble textures, spring reverb + tape delay + vinyl (bitcrush) bus, bitcrusher-warm master.',
+        category: 'music',
+        create: () => createLofiTemplate(),
+    },
+    {
+        id: 'cinematic',
+        name: 'Cinematic',
+        description:
+            '90 BPM D minor, 96 beats with a 6/8 bridge at beat 48 and tempo rall. at the coda. Levain strings/cello, brass lead + French horn, flute/clarinet winds, Grand Boule piano, timpani + percussion, hall/plate/delay sends, cinematic master.',
+        category: 'film',
+        create: () => createCinematicTemplate(),
     },
     {
         id: 'podcast',
         name: 'Podcast',
-        description: 'Host, guest, and music bed tracks with compressor and EQ.',
+        description:
+            'Three mic tracks (host + 2 guests) with de-esser, broadcast EQ and compressor, into a voice bus with limiter. Host mic sidechain-ducks the music bus (intro/outro/sting). No reverb on voice. Gluten + limiter master targeting -16 LUFS.',
         category: 'podcast',
-        create: () => {
-            newProject('Podcast');
-            addTrackWithDevices('Host', 'audio', ['Compressor', 'EQ']);
-            addTrackWithDevices('Guest', 'audio', ['Compressor', 'EQ']);
-            addTrackWithDevices('Music Bed', 'audio', ['Compressor', 'EQ']);
-        },
-    },
-    {
-        id: 'film-score',
-        name: 'Film Score',
-        description: 'Strings, brass, woodwinds, percussion, and dialog for scoring to picture.',
-        category: 'film',
-        create: () => {
-            newProject('Film Score');
-            addTrackWithDevices('Strings', 'midi', ['Reverb'], { withSynth: true });
-            addTrackWithDevices('Brass', 'midi', ['Reverb'], { withSynth: true });
-            addTrackWithDevices('Woodwinds', 'midi', ['Reverb'], { withSynth: true });
-            addTrackWithDevices('Percussion', 'audio', ['EQ']);
-            addTrackWithDevices('Dialog', 'audio', ['Compressor', 'EQ']);
-        },
+        create: () => createPodcastTemplate(),
     },
     {
         id: 'singer-songwriter',
         name: 'Singer-Songwriter',
-        description: 'Acoustic guitar, vocals, and piano — simple and intimate.',
+        description:
+            '90 BPM G major. Lead + harmony vocal stack with Knead, acoustic guitar, Grand Boule piano, sub bass, plate short/long + slap delay sends, gentle gluten + proof-warm master.',
         category: 'music',
-        create: () => {
-            newProject('Singer-Songwriter');
-            addTrackWithDevices('Acoustic Guitar', 'audio', ['EQ']);
-            addTrackWithDevices('Vocals', 'audio', ['Compressor', 'EQ']);
-            addTrackWithDevices('Piano', 'midi', ['Reverb'], { withSynth: true });
-        },
+        create: () => createSingerSongwriterTemplate(),
+    },
+    {
+        id: 'ambient',
+        name: 'Ambient',
+        description:
+            '60 BPM C Lydian, 128 beats. Three Fermenter drones, Levain + FM shimmer pads, DX bell / Grand Boule piano / Crumbs granular melodic layer, tape-hiss texture, 8-second Cathedral reverb + tape delay + spring sends.',
+        category: 'music',
+        create: () => createAmbientTemplate(),
     },
     {
         id: 'demo-complete',
