@@ -197,7 +197,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         const nextParams = { ...DEFAULT_PARAMS, ...preset, space, algorithm: algorithm ?? 'plate' };
 
         updateChamberEngine(deviceId, () => nextParams);
-        executeAppAction({
+        void executeAppAction({
             type: 'setDeviceParameter',
             payload: { deviceId, paramId: 'algorithm', value: ALGORITHM_MAP[nextParams.algorithm] ?? 0 },
         });
@@ -276,7 +276,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                             ...prev,
                                             algorithm: algorithm.id,
                                         }));
-                                        executeAppAction({
+                                        void executeAppAction({
                                             type: 'setDeviceParameter',
                                             payload: {
                                                 deviceId,

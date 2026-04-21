@@ -133,7 +133,7 @@ export function startPlayheadScheduler(): void {
         const jumpToPosition = rawJumpToPosition;
 
         if (shouldStop) {
-            import('./transportControls/stopPlayback').then(({ stopPlayback }) => stopPlayback());
+            void import('./transportControls/stopPlayback').then(({ stopPlayback }) => stopPlayback());
             return;
         }
 

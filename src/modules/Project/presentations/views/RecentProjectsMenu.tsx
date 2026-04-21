@@ -130,7 +130,7 @@ export const RecentProjectsMenu = (): ReactElement => {
 
     const handleLoad = (entry: RecentProjectEntry) => {
         void saveProject();
-        loadRecentProject(entry.key);
+        void loadRecentProject(entry.key);
         setOpen(false);
     };
 
