@@ -20,7 +20,7 @@ export type ImportDecision = 'merge' | 'branch' | 'separate';
  * - `branch`: related but diverged — import as a branch
  * - `separate`: unrelated project — open separately
  */
-export const detectImportDecision = (bundle: DocumentBundle): ImportDecision => {
+export function detectImportDecision(bundle: DocumentBundle): ImportDecision {
     const incomingRootBytes = bundle.get(DOC_PREFIX_ROOT);
     if (!incomingRootBytes) {
         return 'separate';
