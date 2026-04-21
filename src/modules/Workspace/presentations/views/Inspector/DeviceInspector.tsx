@@ -33,7 +33,7 @@ function deriveParamsFromValues(device: Device): DeviceParameter[] {
         const numVal = typeof value === 'number' ? value : 0;
         // Heuristic ranges based on parameter name patterns
         let min = 0;
-        let max = 1;
+        let max: number;
         let unit = '';
         if (/gain|volume|level|mix|output|master/i.test(id)) {
             max = 1;

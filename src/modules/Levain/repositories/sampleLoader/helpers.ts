@@ -76,7 +76,7 @@ export async function fetchAndDecode(url: string): Promise<{
             } catch (error) {
                 reject(error);
             }
-            return null;
+            return;
         });
     });
 }

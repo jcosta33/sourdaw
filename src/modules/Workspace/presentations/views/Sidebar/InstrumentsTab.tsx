@@ -360,7 +360,7 @@ export const InstrumentsTab = ({
 
     // ── Route: category preset list ─────────────────────────────────────
     if (!isCategoryRoot && currentCategorySlug !== null) {
-        let renderPresets: SoundPreset[] = [];
+        let renderPresets: SoundPreset[];
         if (currentCategorySlug === 'user') {
             renderPresets = filteredUser;
         } else {

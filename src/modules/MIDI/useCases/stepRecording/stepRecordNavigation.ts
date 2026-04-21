@@ -37,7 +37,7 @@ export function stepRecordStepUp(): void {
     const pattern = SCALE_PATTERNS[project.scaleName] ?? SCALE_PATTERNS.chromatic!;
     const root = project.keyRoot;
 
-    let nextPitch = state.currentPitch;
+    let nextPitch: number;
     if (pattern.length > 0 && pattern.length < 12) {
         // Simple diatonic step
         const currentPc = (((state.currentPitch - root) % 12) + 12) % 12;
@@ -71,7 +71,7 @@ export function stepRecordStepDown(): void {
     const pattern = SCALE_PATTERNS[project.scaleName] ?? SCALE_PATTERNS.chromatic!;
     const root = project.keyRoot;
 
-    let nextPitch = state.currentPitch;
+    let nextPitch: number;
     if (pattern.length > 0 && pattern.length < 12) {
         const currentPc = (((state.currentPitch - root) % 12) + 12) % 12;
         let degree = pattern.indexOf(currentPc);

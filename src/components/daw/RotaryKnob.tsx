@@ -158,7 +158,7 @@ export const RotaryKnob = ({
         const deltaY = startY.current - event.clientY;
         const sweepPx = 150;
 
-        let raw = 0;
+        let raw: number;
         if (scale === 'log' && min > 0) {
             const startNorm = (Math.log(startValue.current) - Math.log(min)) / (Math.log(max) - Math.log(min));
             let sensitivityNorm = 1 / sweepPx;

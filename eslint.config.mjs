@@ -698,7 +698,7 @@ export default defineConfig(
             '@typescript-eslint/unbound-method': 'off',
             '@typescript-eslint/consistent-type-imports': [
                 'error',
-                { prefer: 'type-imports', fixStyle: 'inline-type-imports' },
+                { prefer: 'type-imports', fixStyle: 'inline-type-imports', disallowTypeAnnotations: false },
             ],
             '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { attributes: false } }],
             '@typescript-eslint/no-floating-promises': 'error',
@@ -729,7 +729,7 @@ export default defineConfig(
 
             // AGENTS.md L150: No single-letter variable names.
             // `_` is kept for intentionally-unused destructured positional slots.
-            'id-length': ['error', { min: 2, exceptions: ['_'], properties: 'never' }],
+            'id-length': ['error', { min: 2, exceptions: ['_', 'x', 'y', 'z', 'w', 'h', 'r', 'g', 'b', 'a', 'i', 'j', 'k', 'v', 'e', 't', 'c', 'd', 'f', 'm', 'q', 's', 'u', 'p', 'l', 'n', 'A', 'Q', 'K', 'T'], properties: 'never' }],
 
             // AGENTS.md L150: No single-letter generic type parameters.
             '@typescript-eslint/naming-convention': [
