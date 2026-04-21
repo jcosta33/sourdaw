@@ -225,11 +225,11 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     />
                 </div>
                 <MixerStripValue size="sm">
-                    {track.pan === 0
-                        ? 'C'
-                        : track.pan > 0
-                          ? `R${Math.round(track.pan)}`
-                          : `L${Math.abs(Math.round(track.pan))}`}
+                    {(() => {
+                        if (track.pan === 0) return 'C';
+                        if (track.pan > 0) return `R${Math.round(track.pan)}`;
+                        return `L${Math.abs(Math.round(track.pan))}`;
+                    })()}
                 </MixerStripValue>
             </div>
             {/* MIDI FX */}

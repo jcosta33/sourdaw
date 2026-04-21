@@ -226,50 +226,61 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                                         scrollerClassName="gap-1"
                                         buttonClassName="min-w-[88px]"
                                     />
-                                    {libSubTab === 'folders' ? (
-                                        <div className="px-1 flex-1 min-h-0">
-                                            <LibraryBrowser preview={preview} selectedTrackId={selectedTrackId} />
-                                        </div>
-                                    ) : libSubTab === 'mine' ? (
-                                        <div className="px-2">
-                                            <div className="flex items-center justify-between pb-1">
-                                                <span className="text-[9px] text-muted-foreground">
-                                                    {filteredSamples.length} samples
-                                                </span>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="xs"
-                                                    className="h-5 gap-1 text-[10px]"
-                                                    onClick={() => fileInputRef.current?.click()}
-                                                >
-                                                    <Upload className="size-3" aria-hidden="true" />
-                                                    Import
-                                                </Button>
-                                                <input
-                                                    ref={fileInputRef}
-                                                    type="file"
-                                                    accept="audio/*,.wav,.mp3,.ogg,.flac,.aac,.m4a,.aiff,.aif"
-                                                    multiple
-                                                    className="hidden"
-                                                    onChange={(event) => {
-                                                        void handleFileImport(event.target.files);
-                                                        event.target.value = '';
-                                                    }}
-                                                />
+                                    {(() => {
+                                        if (libSubTab === 'folders') {
+                                            return (
+                                                <div className="px-1 flex-1 min-h-0">
+                                                    <LibraryBrowser
+                                                        preview={preview}
+                                                        selectedTrackId={selectedTrackId}
+                                                    />
+                                                </div>
+                                            );
+                                        }
+                                        if (libSubTab === 'mine') {
+                                            return (
+                                                <div className="px-2">
+                                                    <div className="flex items-center justify-between pb-1">
+                                                        <span className="text-[9px] text-muted-foreground">
+                                                            {filteredSamples.length} samples
+                                                        </span>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="xs"
+                                                            className="h-5 gap-1 text-[10px]"
+                                                            onClick={() => fileInputRef.current?.click()}
+                                                        >
+                                                            <Upload className="size-3" aria-hidden="true" />
+                                                            Import
+                                                        </Button>
+                                                        <input
+                                                            ref={fileInputRef}
+                                                            type="file"
+                                                            accept="audio/*,.wav,.mp3,.ogg,.flac,.aac,.m4a,.aiff,.aif"
+                                                            multiple
+                                                            className="hidden"
+                                                            onChange={(event) => {
+                                                                void handleFileImport(event.target.files);
+                                                                event.target.value = '';
+                                                            }}
+                                                        />
+                                                    </div>
+                                                    <SamplesTab
+                                                        samples={filteredSamples}
+                                                        favorites={favorites}
+                                                        onToggleFavorite={toggleFavorite}
+                                                        selectedTrackId={selectedTrackId}
+                                                        preview={preview}
+                                                    />
+                                                </div>
+                                            );
+                                        }
+                                        return (
+                                            <div className="px-2">
+                                                <OnlineSampleBrowser preview={preview} />
                                             </div>
-                                            <SamplesTab
-                                                samples={filteredSamples}
-                                                favorites={favorites}
-                                                onToggleFavorite={toggleFavorite}
-                                                selectedTrackId={selectedTrackId}
-                                                preview={preview}
-                                            />
-                                        </div>
-                                    ) : (
-                                        <div className="px-2">
-                                            <OnlineSampleBrowser preview={preview} />
-                                        </div>
-                                    )}
+                                        );
+                                    })()}
                                 </>
                             );
                         } else {

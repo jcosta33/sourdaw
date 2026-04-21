@@ -566,25 +566,36 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                     onPointerUp={handlePointerUp}
                 />
             </div>
-            {!hasKnead ? (
-                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-surface-base/80 backdrop-blur-sm">
-                    <Mic className="size-8 text-muted-foreground/50 mb-3" />
-                    <p className="text-sm font-medium mb-1">Pitch Correction Disabled</p>
-                    <p className="text-xs text-muted-foreground mb-4 max-w-xs text-center">
-                        Enable Knead on this track to analyze and edit the pitch of this audio clip in real-time.
-                    </p>
-                    <Button onClick={() => addDevice(trackId, 'Knead')} variant="default" size="sm">
-                        Enable Pitch Editor
-                    </Button>
-                </div>
-            ) : !kneadState || kneadState.blobs.length === 0 ? (
-                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-surface-base/80 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="flex flex-col items-center gap-2 mb-4">
-                        <div className="size-8 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
-                        <p className="text-xs text-muted-foreground font-medium">Analyzing pitch tracking data...</p>
-                    </div>
-                </div>
-            ) : null}
+            {(() => {
+                if (!hasKnead) {
+                    return (
+                        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-surface-base/80 backdrop-blur-sm">
+                            <Mic className="size-8 text-muted-foreground/50 mb-3" />
+                            <p className="text-sm font-medium mb-1">Pitch Correction Disabled</p>
+                            <p className="text-xs text-muted-foreground mb-4 max-w-xs text-center">
+                                Enable Knead on this track to analyze and edit the pitch of this audio clip in
+                                real-time.
+                            </p>
+                            <Button onClick={() => addDevice(trackId, 'Knead')} variant="default" size="sm">
+                                Enable Pitch Editor
+                            </Button>
+                        </div>
+                    );
+                }
+                if (!kneadState || kneadState.blobs.length === 0) {
+                    return (
+                        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-surface-base/80 backdrop-blur-sm animate-in fade-in duration-300">
+                            <div className="flex flex-col items-center gap-2 mb-4">
+                                <div className="size-8 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
+                                <p className="text-xs text-muted-foreground font-medium">
+                                    Analyzing pitch tracking data...
+                                </p>
+                            </div>
+                        </div>
+                    );
+                }
+                return null;
+            })()}
         </div>
     );
 };

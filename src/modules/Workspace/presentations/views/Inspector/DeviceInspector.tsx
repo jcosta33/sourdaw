@@ -106,16 +106,19 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                 }
             />
             {/* ── Registry-based layout ── */}
-            {LayoutComponent ? (
-                <LayoutComponent device={device} trackId={trackId} parameters={parameters} />
-            ) : parameters.length > 0 ? (
-                /* ── Smart generic fallback: auto-grouped with collapsible sections ── */
-                <GenericDeviceLayout device={device} trackId={trackId} parameters={parameters} />
-            ) : (
-                <div className="px-1">
-                    <MetaText>No parameters available for this device.</MetaText>
-                </div>
-            )}
+            {(() => {
+                if (LayoutComponent) {
+                    return <LayoutComponent device={device} trackId={trackId} parameters={parameters} />;
+                }
+                if (parameters.length > 0) {
+                    return <GenericDeviceLayout device={device} trackId={trackId} parameters={parameters} />;
+                }
+                return (
+                    <div className="px-1">
+                        <MetaText>No parameters available for this device.</MetaText>
+                    </div>
+                );
+            })()}
         </div>
     );
 };

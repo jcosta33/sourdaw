@@ -156,21 +156,25 @@ export const PromptBar = (): ReactElement => {
                 onSubmit={prompt.handleSubmit}
                 className="daw-readout-well flex items-center gap-1.5 rounded-sm px-2 py-0.5"
             >
-                {prompt.isProcessing ? (
-                    <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        type="button"
-                        aria-label="Cancel AI processing"
-                        onClick={prompt.cancelProcessing}
-                    >
-                        <X className="size-3 text-destructive-foreground" />
-                    </Button>
-                ) : prompt.willUseLlm ? (
-                    <Brain className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
-                ) : (
-                    <Zap className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                )}
+                {(() => {
+                    if (prompt.isProcessing) {
+                        return (
+                            <Button
+                                size="icon-xs"
+                                variant="ghost"
+                                type="button"
+                                aria-label="Cancel AI processing"
+                                onClick={prompt.cancelProcessing}
+                            >
+                                <X className="size-3 text-destructive-foreground" />
+                            </Button>
+                        );
+                    }
+                    if (prompt.willUseLlm) {
+                        return <Brain className="size-3.5 shrink-0 text-primary" aria-hidden="true" />;
+                    }
+                    return <Zap className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />;
+                })()}
                 {prompt.selectionTags.map((tag) => (
                     <SelectionTagChip key={tag.id} tag={tag} onRemove={() => prompt.dismissTag(tag.id)} />
                 ))}
