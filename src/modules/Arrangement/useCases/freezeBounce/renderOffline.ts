@@ -314,12 +314,16 @@ async function renderWithProgress(
                 .suspend(time)
                 .then(() => {
                     if (options?.abortSignal?.aborted) {
-                        return;
+                        return null;
                     }
                     void options?.onProgress?.(index / totalFrames);
                     void offlineCtx.resume();
+                    return null;
                 })
-                .catch(reject);
+                .catch((error) => {
+                    reject(error);
+                    return null;
+                });
         }
 
         offlineCtx
@@ -330,10 +334,12 @@ async function renderWithProgress(
                     options?.onProgress?.(1.0);
                     resolve(buffer);
                 }
+                return null;
             })
             .catch((error) => {
                 options?.abortSignal?.removeEventListener('abort', abortHandler);
                 reject(error);
+                return null;
             });
     });
 }

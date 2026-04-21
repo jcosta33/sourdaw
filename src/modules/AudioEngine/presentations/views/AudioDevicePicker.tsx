@@ -29,6 +29,7 @@ export const AudioDevicePicker = (): ReactElement => {
         void getAudioDevices().then((result) => {
             setDevices(result);
             setLoading(false);
+            return null;
         });
     };
 

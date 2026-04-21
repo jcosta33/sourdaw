@@ -341,8 +341,12 @@ export class TrackNode {
                         this.strip.deviceNodes[idx] = bridgeDn;
                         this.scheduleRebuildChain();
                     }
+                    return null;
                 })
-                .catch((error) => logger.warn(`[WebAudioEngine] Native plugin bridge failed: ${error}`));
+                .catch((error) => {
+                    logger.warn(`[WebAudioEngine] Native plugin bridge failed: ${error}`);
+                    return null;
+                });
             pendingDevicePromises.add(loadPromise);
             void loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
         } else {

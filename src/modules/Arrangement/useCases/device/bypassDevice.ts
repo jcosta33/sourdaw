@@ -10,9 +10,11 @@ export function bypassDevice(deviceId: string, bypassed: boolean): void {
                 import('#/modules/AudioEngine/useCases')
                     .then(({ updateDeviceBypass }) => {
                         updateDeviceBypass(track.id, deviceId, bypassed);
+                        return null;
                     })
                     .catch(() => {
                         // Engine bypass forwarding is best-effort
+                        return null;
                     });
                 break;
             }

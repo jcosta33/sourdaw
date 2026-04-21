@@ -102,8 +102,12 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
+                return null;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Fermenter failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] Fermenter failed: ${error}`);
+                return null;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -147,8 +151,12 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                     },
                 });
                 void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                return null;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Toaster failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] Toaster failed: ${error}`);
+                return null;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -202,8 +210,12 @@ const levainDescriptor: WasmDeviceDescriptor = {
                     result.workletNode.port
                 );
                 setEngineReady(true);
+                return null;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Levain failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] Levain failed: ${error}`);
+                return null;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -233,8 +245,12 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
                     outputNode: result.workletNode,
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
+                return null;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Dutch Oven failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] Dutch Oven failed: ${error}`);
+                return null;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -274,8 +290,12 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                     outputNode: result.workletNode,
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
+                return null;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Gluten failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] Gluten failed: ${error}`);
+                return null;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -308,8 +328,12 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                     outputNode: result.workletNode,
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
+                return null;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Bacteria failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] Bacteria failed: ${error}`);
+                return null;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -359,8 +383,12 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                     outputNode: result.workletNode,
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
+                return null;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Grinder failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] Grinder failed: ${error}`);
+                return null;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -399,8 +427,12 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 void syncFullPatch(deviceId);
+                return null;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Proof failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] Proof failed: ${error}`);
+                return null;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -433,8 +465,12 @@ const scoringDescriptor: WasmDeviceDescriptor = {
                     outputNode: result.workletNode,
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
+                return null;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Scoring failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] Scoring failed: ${error}`);
+                return null;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -490,8 +526,12 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                     },
                 });
                 void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                return null;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Grand Boule failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] Grand Boule failed: ${error}`);
+                return null;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -509,7 +549,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
         const loadPromise = createFaustDeviceNode(context, deviceType)
             .then((result) => {
                 if (!result) {
-                    return;
+                    return null;
                 }
                 const controls = result.wamControls;
                 for (const { name, value, time } of pendingParams) {
@@ -528,8 +568,12 @@ const faustDescriptor: WasmDeviceDescriptor = {
                     wamControls: controls,
                 });
                 void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                return null;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Faust failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] Faust failed: ${error}`);
+                return null;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -573,8 +617,12 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                         },
                     },
                 });
+                return null;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Knead failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] Knead failed: ${error}`);
+                return null;
+            });
         return { placeholder, loadPromise };
     },
 };
