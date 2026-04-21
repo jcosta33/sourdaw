@@ -25,32 +25,38 @@ export type MidiPitchBend = {
     channel: number;
 };
 
-export const createMidiNote = (
+export function createMidiNote(
     pitch: number,
     startBeat: number,
     duration: number,
     velocity = 100,
     probability = 100
-): MidiNote => ({
-    id: `note-${crypto.randomUUID().slice(0, 8)}`,
-    pitch,
-    startBeat,
-    duration,
-    velocity,
-    probability,
-});
+): MidiNote {
+    return {
+        id: `note-${crypto.randomUUID().slice(0, 8)}`,
+        pitch,
+        startBeat,
+        duration,
+        velocity,
+        probability,
+    };
+}
 
-export const createMidiCC = (controller: number, value: number, beat: number, channel = 0): MidiCC => ({
-    id: `cc-${crypto.randomUUID().slice(0, 8)}`,
-    controller,
-    value,
-    beat,
-    channel,
-});
+export function createMidiCC(controller: number, value: number, beat: number, channel = 0): MidiCC {
+    return {
+        id: `cc-${crypto.randomUUID().slice(0, 8)}`,
+        controller,
+        value,
+        beat,
+        channel,
+    };
+}
 
-export const createMidiPitchBend = (value: number, beat: number, channel = 0): MidiPitchBend => ({
-    id: `pb-${crypto.randomUUID().slice(0, 8)}`,
-    value,
-    beat,
-    channel,
-});
+export function createMidiPitchBend(value: number, beat: number, channel = 0): MidiPitchBend {
+    return {
+        id: `pb-${crypto.randomUUID().slice(0, 8)}`,
+        value,
+        beat,
+        channel,
+    };
+}

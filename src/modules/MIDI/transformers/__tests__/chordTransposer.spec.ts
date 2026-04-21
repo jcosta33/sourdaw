@@ -2,13 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import { transposeForChordTrack, transposeNoteToChord } from '../chordTransposer';
 
-const chord = (root: number, quality: 'major' | 'minor' | '7') => ({
-    id: 'c',
-    beat: 0,
-    root,
-    quality,
-    duration: 4,
-});
+function chord(root: number, quality: 'major' | 'minor' | '7') {
+    return {
+        id: 'c',
+        beat: 0,
+        root,
+        quality,
+        duration: 4,
+    };
+}
 
 describe('transposeForChordTrack', () => {
     it('should return the pitch unchanged when reference or target is missing', () => {

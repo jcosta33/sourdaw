@@ -9,7 +9,7 @@ export type ChordTrackState = {
 
 export const defaultChordTrackState: ChordTrackState = { enabled: false, events: [] };
 
-const loadFromStorage = (): ChordTrackState => {
+function loadFromStorage(): ChordTrackState {
     try {
         const stored = localStorage.getItem('sourdaw_chord_track');
         if (stored) {
@@ -19,7 +19,7 @@ const loadFromStorage = (): ChordTrackState => {
         // Fallback
     }
     return defaultChordTrackState;
-};
+}
 
 export const chordTrackStore = createStore<ChordTrackState>({
     initialData: loadFromStorage(),

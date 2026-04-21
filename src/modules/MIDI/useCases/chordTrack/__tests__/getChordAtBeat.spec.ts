@@ -5,13 +5,15 @@ import { getChordAtBeat } from '../getChordAtBeat';
 
 const CHORD_STORAGE_KEY = 'sourdaw_chord_track';
 
-const ev = (id: string, beat: number, duration: number) => ({
-    id,
-    beat,
-    root: 0,
-    quality: 'major' as const,
-    duration,
-});
+function ev(id: string, beat: number, duration: number) {
+    return {
+        id,
+        beat,
+        root: 0,
+        quality: 'major' as const,
+        duration,
+    };
+}
 
 describe('getChordAtBeat', () => {
     beforeEach(() => {
