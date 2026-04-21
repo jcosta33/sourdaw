@@ -84,6 +84,13 @@ export const CrumbsControls = ({
     onPanChange,
     onStackChange,
 }: CrumbsControlsProps): ReactElement => {
+    let panReadout = 'C';
+    if (pan < 0) {
+        panReadout = `L${Math.abs(Math.round(pan * 100))}`;
+    } else if (pan > 0) {
+        panReadout = `R${Math.round(pan * 100)}`;
+    }
+
     return (
         <div className="flex flex-col gap-4">
             {/* Mode switcher */}
@@ -218,15 +225,7 @@ export const CrumbsControls = ({
                         max={1}
                         step={0.01}
                         defaultValue={0}
-                        readout={(() => {
-                            if (pan === 0) {
-                                return 'C';
-                            }
-                            if (pan < 0) {
-                                return `L${Math.abs(Math.round(pan * 100))}`;
-                            }
-                            return `R${Math.round(pan * 100)}`;
-                        })()}
+                        readout={panReadout}
                     />
                 </div>
             </div>

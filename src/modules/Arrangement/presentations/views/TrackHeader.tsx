@@ -131,6 +131,43 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
         );
     }
 
+    const KindIcon = TRACK_KIND_ICON[track.kind];
+    const kindIconContent = KindIcon ? (
+        <KindIcon className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+    ) : null;
+
+    let freezeStateContent = null;
+    if (isFreezing) {
+        freezeStateContent = (
+            <div className="flex flex-col gap-1 w-16 ml-2">
+                <span className="text-[8px] font-bold text-primary animate-pulse">FREEZING</span>
+                <DawMeterBar
+                    value={(track.freezeState.renderProgress ?? 0) * 100}
+                    size="sm"
+                    fillClassName="bg-primary"
+                />
+            </div>
+        );
+    } else if (track.frozen) {
+        freezeStateContent = (
+            <div className="flex items-center gap-1 ml-2">
+                <Snowflake className="size-2.5 text-[var(--color-accent-cyan)]" />
+                <span className="text-[9px] text-[var(--color-accent-cyan)] font-bold tracking-tight">FROZEN</span>
+                {isStale && (
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <div className="flex items-center gap-0.5 ml-1 px-1 rounded bg-state-warning/30 border border-state-warning/40">
+                                <AlertCircle className="size-2.5 text-state-warning" />
+                                <span className="text-[8px] text-state-warning font-bold">STALE</span>
+                            </div>
+                        </TooltipTrigger>
+                        <TooltipContent>Track content has changed since freezing. Update required.</TooltipContent>
+                    </Tooltip>
+                )}
+            </div>
+        );
+    }
+
     return (
         <TrackContextMenu track={track}>
             <div
@@ -163,57 +200,13 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
 
                     <TrackLevelIndicator trackId={track.id} height={Math.min(trackHeight - 8, 24)} />
 
-                    {(() => {
-                        const KindIcon = TRACK_KIND_ICON[track.kind];
-                        return KindIcon ? (
-                            <KindIcon className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
-                        ) : null;
-                    })()}
+                    {kindIconContent}
 
                     <LevainLoadingSpinner track={track} />
 
                     <InlineTrackName track={track} />
 
-                    {(() => {
-                        if (isFreezing) {
-                            return (
-                                <div className="flex flex-col gap-1 w-16 ml-2">
-                                    <span className="text-[8px] font-bold text-primary animate-pulse">FREEZING</span>
-                                    <DawMeterBar
-                                        value={(track.freezeState.renderProgress ?? 0) * 100}
-                                        size="sm"
-                                        fillClassName="bg-primary"
-                                    />
-                                </div>
-                            );
-                        }
-                        if (track.frozen) {
-                            return (
-                                <div className="flex items-center gap-1 ml-2">
-                                    <Snowflake className="size-2.5 text-[var(--color-accent-cyan)]" />
-                                    <span className="text-[9px] text-[var(--color-accent-cyan)] font-bold tracking-tight">
-                                        FROZEN
-                                    </span>
-                                    {isStale && (
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <div className="flex items-center gap-0.5 ml-1 px-1 rounded bg-state-warning/30 border border-state-warning/40">
-                                                    <AlertCircle className="size-2.5 text-state-warning" />
-                                                    <span className="text-[8px] text-state-warning font-bold">
-                                                        STALE
-                                                    </span>
-                                                </div>
-                                            </TooltipTrigger>
-                                            <TooltipContent>
-                                                Track content has changed since freezing. Update required.
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    )}
-                                </div>
-                            );
-                        }
-                        return null;
-                    })()}
+                    {freezeStateContent}
 
                     {track.kind === 'audio' && isSelected ? (
                         <InputSelector trackId={track.id} inputId={track.inputId} />

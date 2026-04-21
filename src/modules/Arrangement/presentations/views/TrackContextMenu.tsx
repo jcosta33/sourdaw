@@ -46,6 +46,10 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
     const [renaming, setRenaming] = useState(false);
     const [renameValue, setRenameValue] = useState('');
     const [showBounceDialog, setShowBounceDialog] = useState(false);
+    const [showColorPicker, setShowColorPicker] = useState(false);
+    const [showInputMon, setShowInputMon] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const midiInputRef = useRef<HTMLInputElement>(null);
 
     const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
         event.preventDefault();
@@ -79,11 +83,6 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
         close();
     };
 
-    const [showColorPicker, setShowColorPicker] = useState(false);
-    const [showInputMon, setShowInputMon] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const midiInputRef = useRef<HTMLInputElement>(null);
-
     const handleImportAudio = async (file: File) => {
         await importAudioClipToTrack(track.id, file);
         close();
@@ -92,6 +91,13 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
     const handleBounceConfirm = (options: BounceOptions) => {
         void bounceTrack(track.id, options);
     };
+
+    let freezeLabel = 'Freeze';
+    if (track.freezeState.status === 'stale') {
+        freezeLabel = 'Update Freeze';
+    } else if (track.frozen) {
+        freezeLabel = 'Unfreeze';
+    }
 
     type MenuItem = { label: string; action: () => void; destructive?: boolean };
     const actions: (MenuItem | { label: '---' })[] = [
@@ -137,15 +143,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
               ]
             : []),
         {
-            label: (() => {
-                if (track.freezeState.status === 'stale') {
-                    return 'Update Freeze';
-                }
-                if (track.frozen) {
-                    return 'Unfreeze';
-                }
-                return 'Freeze';
-            })(),
+            label: freezeLabel,
             action: () => {
                 if (track.frozen) {
                     void unfreezeTrack(track.id);
@@ -202,6 +200,94 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
         },
     ];
 
+    let menuInnerContent;
+    if (renaming) {
+        menuInnerContent = (
+            <DawMenuInlineEditor
+                label="Rename Track"
+                value={renameValue}
+                onChange={setRenameValue}
+                onSubmit={handleRenameCommit}
+                onCancel={close}
+            />
+        );
+    } else if (showColorPicker) {
+        menuInnerContent = (
+            <div className="p-2">
+                <DawMenuMutedRow className="mb-1.5 px-0 py-0">Track Color</DawMenuMutedRow>
+                <div className="grid grid-cols-5 gap-1">
+                    {TRACK_COLOR_PRESETS.map((color) => (
+                        <DawSwatchButton
+                            key={color}
+                            color={color}
+                            active={track.color === color}
+                            className={cn('size-5 transition-transform hover:scale-110')}
+                            onClick={() => {
+                                setTrackColor(track.id, color);
+                                close();
+                            }}
+                            aria-label={`Set color`}
+                        />
+                    ))}
+                </div>
+            </div>
+        );
+    } else if (showInputMon) {
+        menuInnerContent = (
+            <div className="p-1">
+                <DawMenuMutedRow className="mb-1 px-2 py-0">Input Monitoring</DawMenuMutedRow>
+                {INPUT_MON_OPTIONS.map((opt) => (
+                    <DawMenuButton
+                        key={opt.value}
+                        role="menuitem"
+                        className={cn(track.inputMonitoring === opt.value && 'bg-accent/50')}
+                        active={track.inputMonitoring === opt.value}
+                        onClick={() => {
+                            setInputMonitoring(track.id, opt.value);
+                            close();
+                        }}
+                    >
+                        {opt.label}
+                    </DawMenuButton>
+                ))}
+            </div>
+        );
+    } else {
+        menuInnerContent = actions.map((item, index) =>
+            item.label === '---' ? (
+                <DawMenuSeparator key={index} className="border-border/50" />
+            ) : (
+                <DawMenuButton
+                    key={index}
+                    role="menuitem"
+                    tone={'destructive' in item && item.destructive ? 'danger' : 'default'}
+                    onClick={(item as MenuItem).action}
+                >
+                    {item.label}
+                </DawMenuButton>
+            )
+        );
+    }
+
+    let contextMenuContent = null;
+    if (position) {
+        contextMenuContent = (
+            <DawContextMenuSurface
+                ref={menuRef}
+                x={position.x}
+                y={position.y}
+                xClampOffset={220}
+                yClampOffset={300}
+                backdrop
+                onClose={close}
+                className="min-w-[200px] animate-in fade-in zoom-in-95"
+                role="menu"
+            >
+                {menuInnerContent}
+            </DawContextMenuSurface>
+        );
+    }
+
     return (
         <div onContextMenu={handleContextMenu}>
             <input
@@ -238,111 +324,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 onOpenChange={setShowBounceDialog}
                 onConfirm={handleBounceConfirm}
             />
-            {(() => {
-                if (position) {
-                    return (
-                        <DawContextMenuSurface
-                            ref={menuRef}
-                            x={position.x}
-                            y={position.y}
-                            xClampOffset={220}
-                            yClampOffset={300}
-                            backdrop
-                            onClose={close}
-                            className="min-w-[200px] animate-in fade-in zoom-in-95"
-                            role="menu"
-                        >
-                            {(() => {
-                                if (renaming) {
-                                    return (
-                                        <DawMenuInlineEditor
-                                            label="Rename Track"
-                                            value={renameValue}
-                                            onChange={setRenameValue}
-                                            onSubmit={handleRenameCommit}
-                                            onCancel={close}
-                                        />
-                                    );
-                                } else {
-                                    if (showColorPicker) {
-                                        return (
-                                            <div className="p-2">
-                                                <DawMenuMutedRow className="mb-1.5 px-0 py-0">
-                                                    Track Color
-                                                </DawMenuMutedRow>
-                                                <div className="grid grid-cols-5 gap-1">
-                                                    {TRACK_COLOR_PRESETS.map((color) => (
-                                                        <DawSwatchButton
-                                                            key={color}
-                                                            color={color}
-                                                            active={track.color === color}
-                                                            className={cn(
-                                                                'size-5 transition-transform hover:scale-110'
-                                                            )}
-                                                            onClick={() => {
-                                                                setTrackColor(track.id, color);
-                                                                close();
-                                                            }}
-                                                            aria-label={`Set color`}
-                                                        />
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        );
-                                    } else {
-                                        if (showInputMon) {
-                                            return (
-                                                <div className="p-1">
-                                                    <DawMenuMutedRow className="mb-1 px-2 py-0">
-                                                        Input Monitoring
-                                                    </DawMenuMutedRow>
-                                                    {INPUT_MON_OPTIONS.map((opt) => (
-                                                        <DawMenuButton
-                                                            key={opt.value}
-                                                            role="menuitem"
-                                                            className={cn(
-                                                                track.inputMonitoring === opt.value && 'bg-accent/50'
-                                                            )}
-                                                            active={track.inputMonitoring === opt.value}
-                                                            onClick={() => {
-                                                                setInputMonitoring(track.id, opt.value);
-                                                                close();
-                                                            }}
-                                                        >
-                                                            {opt.label}
-                                                        </DawMenuButton>
-                                                    ))}
-                                                </div>
-                                            );
-                                        } else {
-                                            return actions.map((item, index) =>
-                                                item.label === '---' ? (
-                                                    <DawMenuSeparator key={index} className="border-border/50" />
-                                                ) : (
-                                                    <DawMenuButton
-                                                        key={index}
-                                                        role="menuitem"
-                                                        tone={
-                                                            'destructive' in item && item.destructive
-                                                                ? 'danger'
-                                                                : 'default'
-                                                        }
-                                                        onClick={(item as MenuItem).action}
-                                                    >
-                                                        {item.label}
-                                                    </DawMenuButton>
-                                                )
-                                            );
-                                        }
-                                    }
-                                }
-                            })()}
-                        </DawContextMenuSurface>
-                    );
-                } else {
-                    return null;
-                }
-            })()}
+            {contextMenuContent}
         </div>
     );
 };

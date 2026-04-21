@@ -67,6 +67,13 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
         return '#5B8FC4';
     })();
 
+    let valueColor = '#E8E6E0';
+    if (value > 12) {
+        valueColor = '#C44030';
+    } else if (value > 6) {
+        valueColor = '#D4A847';
+    }
+
     return (
         <div
             className="flex flex-col items-center px-1.5 py-2 gap-1 select-none shrink-0"
@@ -155,17 +162,7 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
             {/* Numeric readout */}
             <span
                 className="text-[9px] font-mono tabular-nums font-semibold"
-                style={{
-                    color: (() => {
-                        if (value > 12) {
-                            return '#C44030';
-                        }
-                        if (value > 6) {
-                            return '#D4A847';
-                        }
-                        return '#E8E6E0';
-                    })(),
-                }}
+                style={{ color: valueColor }}
                 aria-hidden="true"
             >
                 {value > 0 ? '+' : ''}

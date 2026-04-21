@@ -23,6 +23,21 @@ export const VoiceCommandOverlay = (): ReactElement | null => {
 
     const displayText = voice.errorText || voice.finalText + (voice.interimText ? ` ${voice.interimText}` : '');
 
+    let statusText: ReactElement;
+    if (voice.transcribing) {
+        statusText = <p className="text-xs text-muted-foreground animate-pulse">Transcribing...</p>;
+    } else if (voice.errorText) {
+        statusText = <p className="text-xs text-[var(--color-state-warning)]">{voice.errorText}</p>;
+    } else if (displayText) {
+        statusText = <p className="text-xs text-foreground truncate">{displayText}</p>;
+    } else {
+        statusText = (
+            <p className="text-xs text-muted-foreground animate-pulse">
+                {voice.voiceMode === 'whisper' ? 'Recording...' : 'Listening...'}
+            </p>
+        );
+    }
+
     return (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
             <div
@@ -48,24 +63,7 @@ export const VoiceCommandOverlay = (): ReactElement | null => {
                         <MicOff className="size-4 text-muted-foreground" />
                     )}
                 </button>
-                <div className="max-w-sm min-w-32">
-                    {(() => {
-                        if (voice.transcribing) {
-                            return <p className="text-xs text-muted-foreground animate-pulse">Transcribing...</p>;
-                        }
-                        if (voice.errorText) {
-                            return <p className="text-xs text-[var(--color-state-warning)]">{voice.errorText}</p>;
-                        }
-                        if (displayText) {
-                            return <p className="text-xs text-foreground truncate">{displayText}</p>;
-                        }
-                        return (
-                            <p className="text-xs text-muted-foreground animate-pulse">
-                                {voice.voiceMode === 'whisper' ? 'Recording...' : 'Listening...'}
-                            </p>
-                        );
-                    })()}
-                </div>
+                <div className="max-w-sm min-w-32">{statusText}</div>
                 {!voice.errorText ? (
                     <DawInlineHint className="whitespace-nowrap bg-transparent px-0 py-0 text-muted-foreground/60">
                         tap mic to stop
