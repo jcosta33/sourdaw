@@ -15,7 +15,7 @@ import { FORMAT_VERSION, SDAW_MAGIC } from './helpers';
  *     4B Automerge binary length (little-endian)
  *     N  Automerge save() bytes
  */
-export const encodeSdawFile = (bundle: DocumentBundle): Uint8Array => {
+export function encodeSdawFile(bundle: DocumentBundle): Uint8Array {
     const encoder = new TextEncoder();
     const chunks: Uint8Array[] = [];
 
@@ -63,4 +63,4 @@ export const encodeSdawFile = (bundle: DocumentBundle): Uint8Array => {
     }
 
     return result;
-};
+}

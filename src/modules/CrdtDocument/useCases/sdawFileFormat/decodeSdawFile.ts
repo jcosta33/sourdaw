@@ -6,7 +6,7 @@ import { FORMAT_VERSION, SDAW_MAGIC } from './helpers';
 /**
  * Decode an .sdaw binary into a document bundle.
  */
-export const decodeSdawFile = (bytes: Uint8Array): DocumentBundle => {
+export function decodeSdawFile(bytes: Uint8Array): DocumentBundle {
     const decoder = new TextDecoder();
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     let offset = 0;
@@ -67,4 +67,4 @@ export const decodeSdawFile = (bytes: Uint8Array): DocumentBundle => {
     }
 
     return bundle;
-};
+}
