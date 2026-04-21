@@ -196,8 +196,10 @@ const ActionItem = ({ entry }: { entry: ActionHistoryEntryView }): ReactElement 
             title={entry.label}
             subtitle={formatTimeAgo(entry.timestamp)}
             endSlot={(() => {
-                if (entry.reverted) return <span className="text-[8px] italic text-muted-foreground">undone</span>;
-                if (revertable)
+                if (entry.reverted) {
+                    return <span className="text-[8px] italic text-muted-foreground">undone</span>;
+                }
+                if (revertable) {
                     return (
                         <Button
                             variant="ghost"
@@ -208,6 +210,7 @@ const ActionItem = ({ entry }: { entry: ActionHistoryEntryView }): ReactElement 
                             <Undo2 className="size-3 text-muted-foreground/50" />
                         </Button>
                     );
+                }
                 return null;
             })()}
         />

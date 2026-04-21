@@ -220,8 +220,12 @@ export const MidiCalibrationPanel = ({
                         step={r.velocityCurveExponent.step}
                         defaultValue={r.velocityCurveExponent.default}
                         readout={(() => {
-                            if (midiCalibration.velocityCurveExponent < 0.95) return 'soft';
-                            if (midiCalibration.velocityCurveExponent > 1.05) return 'hard';
+                            if (midiCalibration.velocityCurveExponent < 0.95) {
+                                return 'soft';
+                            }
+                            if (midiCalibration.velocityCurveExponent > 1.05) {
+                                return 'hard';
+                            }
                             return 'linear';
                         })()}
                     />

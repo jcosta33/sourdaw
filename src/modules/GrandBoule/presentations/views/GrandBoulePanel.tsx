@@ -543,8 +543,12 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             step={0.05}
                             defaultValue={1.0}
                             readout={(() => {
-                                if (parameters.velocityCurve < 0.95) return 'soft';
-                                if (parameters.velocityCurve > 1.05) return 'hard';
+                                if (parameters.velocityCurve < 0.95) {
+                                    return 'soft';
+                                }
+                                if (parameters.velocityCurve > 1.05) {
+                                    return 'hard';
+                                }
                                 return 'linear';
                             })()}
                         />
@@ -580,8 +584,12 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             step={0.01}
                             defaultValue={1.0}
                             readout={(() => {
-                                if (lidPosition < 0.3) return 'closed';
-                                if (lidPosition < 0.7) return 'half';
+                                if (lidPosition < 0.3) {
+                                    return 'closed';
+                                }
+                                if (lidPosition < 0.7) {
+                                    return 'half';
+                                }
                                 return 'full';
                             })()}
                         />

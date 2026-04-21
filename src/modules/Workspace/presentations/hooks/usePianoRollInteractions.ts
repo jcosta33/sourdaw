@@ -510,8 +510,12 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 const hit = hitTest(hx, hy);
                 setHoverCursor(
                     (() => {
-                        if (!hit) return 'crosshair';
-                        if (hit.edge === 'body') return 'grab';
+                        if (!hit) {
+                            return 'crosshair';
+                        }
+                        if (hit.edge === 'body') {
+                            return 'grab';
+                        }
                         return 'ew-resize';
                     })()
                 );

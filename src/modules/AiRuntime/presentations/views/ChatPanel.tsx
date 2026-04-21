@@ -181,17 +181,24 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                                     >
                                         <div className="flex items-center gap-1.5 mb-1 opacity-70">
                                             {(() => {
-                                                if (msg.isDsoAction) return <Zap className="size-3 text-emerald-400" />;
-                                                if (msg.role === 'assistant')
+                                                if (msg.isDsoAction) {
+                                                    return <Zap className="size-3 text-emerald-400" />;
+                                                }
+                                                if (msg.role === 'assistant') {
                                                     return (
                                                         <Bot className="size-3 text-[var(--color-accent-lavender)]" />
                                                     );
+                                                }
                                                 return <User className="size-3" />;
                                             })()}
                                             <span className="text-[10px] font-medium tracking-wide">
                                                 {(() => {
-                                                    if (msg.isDsoAction) return 'Action';
-                                                    if (msg.role === 'assistant') return 'Assistant';
+                                                    if (msg.isDsoAction) {
+                                                        return 'Action';
+                                                    }
+                                                    if (msg.role === 'assistant') {
+                                                        return 'Assistant';
+                                                    }
                                                     return 'You';
                                                 })()}
                                             </span>
@@ -207,10 +214,12 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                                             className={cn(
                                                 'text-xs px-3 py-2.5 rounded-lg max-w-[92%] leading-relaxed',
                                                 (() => {
-                                                    if (msg.role === 'user')
+                                                    if (msg.role === 'user') {
                                                         return 'bg-primary text-primary-foreground rounded-tr-sm';
-                                                    if (msg.isDsoAction)
+                                                    }
+                                                    if (msg.isDsoAction) {
                                                         return 'bg-emerald-500/10 text-foreground border border-emerald-500/20 rounded-tl-sm w-full';
+                                                    }
                                                     return 'bg-surface-raised text-foreground border border-border/50 rounded-tl-sm w-full';
                                                 })(),
                                                 msg.error &&

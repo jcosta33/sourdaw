@@ -22,8 +22,12 @@ export const PROOF_PRESETS: readonly ProofPreset[] = [
         limCeiling: -1.0,
         eqBands: DEFAULT_PATCH.eqBands.map((b, i) =>
             (() => {
-                if (i === 1) return { ...b, gain: 1.5 };
-                if (i === 6) return { ...b, gain: 1.0 };
+                if (i === 1) {
+                    return { ...b, gain: 1.5 };
+                }
+                if (i === 6) {
+                    return { ...b, gain: 1.0 };
+                }
                 return b;
             })()
         ),
@@ -56,8 +60,12 @@ export const PROOF_PRESETS: readonly ProofPreset[] = [
     preset('warm', 'Warm Master', 'style', {
         eqBands: DEFAULT_PATCH.eqBands.map((b, i) =>
             (() => {
-                if (i === 1) return { ...b, gain: 2.0 };
-                if (i === 6) return { ...b, gain: 1.5 };
+                if (i === 1) {
+                    return { ...b, gain: 2.0 };
+                }
+                if (i === 6) {
+                    return { ...b, gain: 1.5 };
+                }
                 return b;
             })()
         ),
@@ -101,8 +109,12 @@ export const PROOF_PRESETS: readonly ProofPreset[] = [
         limCeiling: -0.5,
         eqBands: DEFAULT_PATCH.eqBands.map((b, i) =>
             (() => {
-                if (i === 1) return { ...b, gain: 3.0 };
-                if (i === 4) return { ...b, gain: 2.0 };
+                if (i === 1) {
+                    return { ...b, gain: 3.0 };
+                }
+                if (i === 4) {
+                    return { ...b, gain: 2.0 };
+                }
                 return b;
             })()
         ),
@@ -111,8 +123,12 @@ export const PROOF_PRESETS: readonly ProofPreset[] = [
     preset('hiphop', 'Hip-Hop / R&B', 'genre', {
         eqBands: DEFAULT_PATCH.eqBands.map((b, i) =>
             (() => {
-                if (i === 1) return { ...b, gain: 3.5 };
-                if (i === 4) return { ...b, gain: 1.5 };
+                if (i === 1) {
+                    return { ...b, gain: 3.5 };
+                }
+                if (i === 4) {
+                    return { ...b, gain: 1.5 };
+                }
                 return b;
             })()
         ),

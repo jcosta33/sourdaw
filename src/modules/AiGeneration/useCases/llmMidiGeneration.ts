@@ -126,8 +126,12 @@ function fallbackToPatternMatch(promptText: string): MidiGenerationNote[] {
 
 function buildUserMessage(prompt: string, numNotes: number, creativity: number): string {
     const creativityDesc = (() => {
-        if (creativity < 0.3) return 'very predictable and conventional';
-        if (creativity < 0.6) return 'balanced between conventional and creative';
+        if (creativity < 0.3) {
+            return 'very predictable and conventional';
+        }
+        if (creativity < 0.6) {
+            return 'balanced between conventional and creative';
+        }
         return 'creative, experimental, and surprising';
     })();
 

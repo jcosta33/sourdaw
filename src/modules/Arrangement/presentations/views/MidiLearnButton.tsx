@@ -55,8 +55,12 @@ export const MidiLearnButton = ({ targetType, trackId, deviceId, paramId }: Midi
     };
 
     const label = (() => {
-        if (isLearningThis) return 'Listening for MIDI CC…';
-        if (existingMapping) return `MIDI CC ${existingMapping.cc} (ch ${existingMapping.channel + 1})`;
+        if (isLearningThis) {
+            return 'Listening for MIDI CC…';
+        }
+        if (existingMapping) {
+            return `MIDI CC ${existingMapping.cc} (ch ${existingMapping.channel + 1})`;
+        }
         return 'MIDI Learn';
     })();
 

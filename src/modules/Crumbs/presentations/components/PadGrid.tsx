@@ -78,14 +78,22 @@ export const PadGrid = ({
                         type="button"
                         draggable={onReorderPad !== undefined}
                         className={`relative flex aspect-square flex-col items-center justify-center rounded-xl border transition-all ${(() => {
-                            if (isDragTarget) return 'border-white/40 bg-white/[0.1]';
-                            if (isSelected) return 'border-white/25 bg-white/[0.06]';
+                            if (isDragTarget) {
+                                return 'border-white/40 bg-white/[0.1]';
+                            }
+                            if (isSelected) {
+                                return 'border-white/25 bg-white/[0.06]';
+                            }
                             return 'border-white/8 bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.04]';
                         })()}`}
                         style={{
                             boxShadow: (() => {
-                                if (isFlashing) return `0 0 20px ${pad.color}88, inset 0 0 12px ${pad.color}44`;
-                                if (isSelected) return `0 0 12px ${pad.color}33`;
+                                if (isFlashing) {
+                                    return `0 0 20px ${pad.color}88, inset 0 0 12px ${pad.color}44`;
+                                }
+                                if (isSelected) {
+                                    return `0 0 12px ${pad.color}33`;
+                                }
                                 return undefined;
                             })(),
                         }}

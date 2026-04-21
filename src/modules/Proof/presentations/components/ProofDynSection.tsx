@@ -30,14 +30,20 @@ export const ProofDynSection = ({ patch, dynGr, onPatchChange, onSendParam }: Pr
         const bands = patch.dynBands.map((b, i) => (i === idx ? { ...b, [key]: value } : b));
         onPatchChange({ dynBands: bands });
         const paramName = (() => {
-            if (key === 'autoMakeup') return 'auto_makeup';
-            if (key === 'bypassed') return 'bypass';
+            if (key === 'autoMakeup') {
+                return 'auto_makeup';
+            }
+            if (key === 'bypassed') {
+                return 'bypass';
+            }
             return key;
         })();
         onSendParam(
             `dyn_band${idx}_${paramName}`,
             (() => {
-                if (typeof value === 'boolean') return value ? 1 : 0;
+                if (typeof value === 'boolean') {
+                    return value ? 1 : 0;
+                }
                 return value;
             })()
         );

@@ -255,8 +255,12 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
     // Label for the Variations button — "Streaming… N chars" during cloud streaming
     // (tokens arrive incrementally), plain "Generating…" for native/webllm (one shot).
     const variationsButtonLabel = (() => {
-        if (!isGeneratingVariations) return 'Generate';
-        if (variationTokenCount > 0) return `Streaming… ${String(variationTokenCount)} chars`;
+        if (!isGeneratingVariations) {
+            return 'Generate';
+        }
+        if (variationTokenCount > 0) {
+            return `Streaming… ${String(variationTokenCount)} chars`;
+        }
         return 'Generating…';
     })();
 

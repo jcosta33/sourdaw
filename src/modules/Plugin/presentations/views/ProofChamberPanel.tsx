@@ -185,7 +185,9 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
             return;
         }
         const numericValue = (() => {
-            if (typeof value === 'boolean') return value ? 1 : 0;
+            if (typeof value === 'boolean') {
+                return value ? 1 : 0;
+            }
             return value;
         })();
         void executeAppAction({
@@ -366,8 +368,12 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                 <div className="text-[9px] uppercase tracking-[0.24em] text-white/44">Tail view</div>
                                 <ChamberLed>
                                     {(() => {
-                                        if (showDecayEq) return 'EQ overlay';
-                                        if (showFlow) return 'Flow open';
+                                        if (showDecayEq) {
+                                            return 'EQ overlay';
+                                        }
+                                        if (showFlow) {
+                                            return 'Flow open';
+                                        }
                                         return 'Live tail';
                                     })()}
                                 </ChamberLed>

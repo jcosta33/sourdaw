@@ -277,8 +277,12 @@ export async function sendChatMessage(userText: string): Promise<void> {
         updateChatMessage(assistantMsgId, { isStreaming: false, content: cleanContent, reasoning });
     } catch (error) {
         const errorMessage = (() => {
-            if (isAppError(error)) return error.message;
-            if (error instanceof Error) return error.message;
+            if (isAppError(error)) {
+                return error.message;
+            }
+            if (error instanceof Error) {
+                return error.message;
+            }
             return 'An unknown error occurred during generation.';
         })();
         if (errorMessage === 'AbortedByUser' || errorMessage.includes('AbortError')) {

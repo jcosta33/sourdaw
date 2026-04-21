@@ -672,8 +672,12 @@ export async function demo4_NativeShowcase(): Promise<void> {
             [0, 1, 2.25, 3.5], // pattern 3
         ][
             (() => {
-                if (sec.name === 'Fog') return 0;
-                if (sec.name === 'Dust') return 2;
+                if (sec.name === 'Fog') {
+                    return 0;
+                }
+                if (sec.name === 'Dust') {
+                    return 2;
+                }
                 return patIdx;
             })()
         ]!;
@@ -717,13 +721,21 @@ export async function demo4_NativeShowcase(): Promise<void> {
         if (param % 0.25 === 0) {
             const swing = state % 2 === 1 ? 0.03 : 0;
             const accent = (() => {
-                if (param % 1 === 0) return 70;
-                if (param % 0.5 === 0) return 50;
+                if (param % 1 === 0) {
+                    return 70;
+                }
+                if (param % 0.5 === 0) {
+                    return 50;
+                }
                 return 30;
             })();
             const secVel = (() => {
-                if (sec.name === 'Fog') return 0.5;
-                if (sec.name === 'Dust') return 0.4;
+                if (sec.name === 'Fog') {
+                    return 0.5;
+                }
+                if (sec.name === 'Dust') {
+                    return 0.4;
+                }
                 return 1;
             })();
             const value = Math.round(accent * secVel);

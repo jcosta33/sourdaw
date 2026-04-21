@@ -147,14 +147,22 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                                                         aria-pressed={track.frozen || isStale}
                                                     >
                                                         {(() => {
-                                                            if (isStale) return <RefreshCw className="size-3" />;
-                                                            if (track.frozen) return <Zap className="size-3" />;
+                                                            if (isStale) {
+                                                                return <RefreshCw className="size-3" />;
+                                                            }
+                                                            if (track.frozen) {
+                                                                return <Zap className="size-3" />;
+                                                            }
                                                             return <Snowflake className="size-3" />;
                                                         })()}
                                                         <span className="text-[10px] font-medium">
                                                             {(() => {
-                                                                if (isStale) return 'Update Freeze';
-                                                                if (track.frozen) return 'Unfreeze';
+                                                                if (isStale) {
+                                                                    return 'Update Freeze';
+                                                                }
+                                                                if (track.frozen) {
+                                                                    return 'Unfreeze';
+                                                                }
                                                                 return 'Freeze';
                                                             })()}
                                                         </span>

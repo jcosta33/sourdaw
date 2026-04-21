@@ -50,8 +50,12 @@ const loadExportSettings = (): {
             const parsed = JSON.parse(stored);
             return {
                 formats: (() => {
-                    if (Array.isArray(parsed.formats)) return parsed.formats;
-                    if (parsed.format) return [parsed.format];
+                    if (Array.isArray(parsed.formats)) {
+                        return parsed.formats;
+                    }
+                    if (parsed.format) {
+                        return [parsed.format];
+                    }
                     return ['wav'];
                 })(),
                 sampleRate: parsed.sampleRate ?? 44100,

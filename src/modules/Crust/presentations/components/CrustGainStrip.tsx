@@ -58,8 +58,12 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
 
     const n = norm(value);
     const fillColor = (() => {
-        if (n > 0.66) return '#C44030';
-        if (n > 0.33) return '#D4A847';
+        if (n > 0.66) {
+            return '#C44030';
+        }
+        if (n > 0.33) {
+            return '#D4A847';
+        }
         return '#5B8FC4';
     })();
 
@@ -153,8 +157,12 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
                 className="text-[9px] font-mono tabular-nums font-semibold"
                 style={{
                     color: (() => {
-                        if (value > 12) return '#C44030';
-                        if (value > 6) return '#D4A847';
+                        if (value > 12) {
+                            return '#C44030';
+                        }
+                        if (value > 6) {
+                            return '#D4A847';
+                        }
                         return '#E8E6E0';
                     })(),
                 }}

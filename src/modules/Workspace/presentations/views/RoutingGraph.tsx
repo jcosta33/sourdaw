@@ -137,14 +137,22 @@ const ConnectionLine = ({
     highlighted: boolean;
 }): ReactElement => {
     const strokeColor = (() => {
-        if (variant === 'sidechain') return resolveToken('--color-state-record', '#c45040');
-        if (highlighted) return resolveToken('--color-text-primary', '#eaeaea');
+        if (variant === 'sidechain') {
+            return resolveToken('--color-state-record', '#c45040');
+        }
+        if (highlighted) {
+            return resolveToken('--color-text-primary', '#eaeaea');
+        }
         return resolveToken('--color-text-tertiary', '#737373');
     })();
 
     const dashArray = (() => {
-        if (variant === 'output') return undefined;
-        if (variant === 'send') return '4 3';
+        if (variant === 'output') {
+            return undefined;
+        }
+        if (variant === 'send') {
+            return '4 3';
+        }
         return '2 3';
     })();
 

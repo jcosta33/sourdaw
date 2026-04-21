@@ -66,8 +66,12 @@ export const drawClip = (
     const clipY = trackY + padding;
     const clipH = trackHeight - padding * 2;
     const baseAlpha = (() => {
-        if (isGhost) return 0.35;
-        if (isMuted) return 0.35;
+        if (isGhost) {
+            return 0.35;
+        }
+        if (isMuted) {
+            return 0.35;
+        }
         return 1;
     })();
     const bodyAlpha = baseAlpha * (isSelected ? 0.85 : 0.55);
@@ -94,8 +98,12 @@ export const drawClip = (
     ctx.fill();
 
     ctx.globalAlpha = (() => {
-        if (isGhost) return 0.6;
-        if (isMuted) return 0.35;
+        if (isGhost) {
+            return 0.6;
+        }
+        if (isMuted) {
+            return 0.35;
+        }
         return 1;
     })();
 

@@ -466,8 +466,12 @@ export const AutomationLaneRow = ({
                     const isHovered = hoveredBeat === point.beat;
                     const isSelected = selectedSet.has(point.beat);
                     const nodeSize = (() => {
-                        if (isDragging) return 6;
-                        if (isHovered || isSelected) return 5;
+                        if (isDragging) {
+                            return 6;
+                        }
+                        if (isHovered || isSelected) {
+                            return 5;
+                        }
                         return 4;
                     })();
 
@@ -514,8 +518,12 @@ export const AutomationLaneRow = ({
                                 pointerEvents="none"
                                 style={{
                                     filter: (() => {
-                                        if (isDragging) return `drop-shadow(0 0 8px ${curveColor})`;
-                                        if (isHovered || isSelected) return `drop-shadow(0 0 4px ${curveColor})`;
+                                        if (isDragging) {
+                                            return `drop-shadow(0 0 8px ${curveColor})`;
+                                        }
+                                        if (isHovered || isSelected) {
+                                            return `drop-shadow(0 0 4px ${curveColor})`;
+                                        }
                                         return `drop-shadow(0 0 2px ${curveColor})`;
                                     })(),
                                 }}

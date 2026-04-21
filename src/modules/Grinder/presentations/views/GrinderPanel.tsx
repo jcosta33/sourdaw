@@ -316,8 +316,12 @@ function ToneResponseStage({ deviceId, patch }: { deviceId: string; patch: Grind
                 </div>
                 <DawPluginLed tone="amber">
                     {(() => {
-                        if (patch.bright) return 'Bright';
-                        if (patch.fat) return 'Fat';
+                        if (patch.bright) {
+                            return 'Bright';
+                        }
+                        if (patch.fat) {
+                            return 'Fat';
+                        }
                         return 'Classic';
                     })()}
                 </DawPluginLed>
@@ -1438,8 +1442,12 @@ function ControlDeck({
                 <div className="text-xl font-semibold text-white/90">{patch.name}</div>
                 <div className="text-sm text-white/46">
                     {(() => {
-                        if (patch.engineMode === 'circuit') return 'Circuit first';
-                        if (patch.engineMode === 'capture') return 'Capture loaded';
+                        if (patch.engineMode === 'circuit') {
+                            return 'Circuit first';
+                        }
+                        if (patch.engineMode === 'capture') {
+                            return 'Capture loaded';
+                        }
                         return 'Hybrid loaded';
                     })()}
                 </div>
@@ -1516,8 +1524,12 @@ function HeroStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                     <div>
                         Engine:{' '}
                         {(() => {
-                            if (patch.engineMode === 'capture') return 'Capture';
-                            if (patch.engineMode === 'hybrid') return 'Hybrid';
+                            if (patch.engineMode === 'capture') {
+                                return 'Capture';
+                            }
+                            if (patch.engineMode === 'hybrid') {
+                                return 'Hybrid';
+                            }
                             return 'Circuit';
                         })()}
                         .

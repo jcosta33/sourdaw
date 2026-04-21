@@ -871,8 +871,12 @@ const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string })
                                 Your master at {formatLufs(state.integratedLufs)}LUFS will be turned down by{' '}
                                 {delta.toFixed(1)} dB on
                                 {(() => {
-                                    if (patch.target === 'streaming') return ' Spotify, Apple Music, and YouTube';
-                                    if (patch.target === 'broadcast') return ' broadcast television';
+                                    if (patch.target === 'streaming') {
+                                        return ' Spotify, Apple Music, and YouTube';
+                                    }
+                                    if (patch.target === 'broadcast') {
+                                        return ' broadcast television';
+                                    }
                                     return ` ${patch.target}`;
                                 })()}
                                 . Consider targeting {targetLufs}LUFS.

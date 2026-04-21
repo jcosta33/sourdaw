@@ -25,7 +25,9 @@ export const ProofExciterSection = ({ patch, onPatchChange, onSendParam }: Props
         onSendParam(
             `exc_band${idx}_${key}`,
             (() => {
-                if (typeof value === 'boolean') return value ? 1 : 0;
+                if (typeof value === 'boolean') {
+                    return value ? 1 : 0;
+                }
                 return value;
             })()
         );

@@ -239,8 +239,12 @@ function levenshtein(alpha: string, b: string): number {
     const node = b.length;
     const dp: number[][] = Array.from({ length: message + 1 }, (_, index) =>
         Array.from({ length: node + 1 }, (_, jIndex) => {
-            if (index === 0) return jIndex;
-            if (jIndex === 0) return index;
+            if (index === 0) {
+                return jIndex;
+            }
+            if (jIndex === 0) {
+                return index;
+            }
             return 0;
         })
     );

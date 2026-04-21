@@ -58,8 +58,12 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                             <span className="text-[10px] font-mono text-muted-foreground">
                                 {(() => {
                                     const param = track.pan;
-                                    if (param === 0) return 'C';
-                                    if (param > 0) return `R${param}`;
+                                    if (param === 0) {
+                                        return 'C';
+                                    }
+                                    if (param > 0) {
+                                        return `R${param}`;
+                                    }
                                     return `L${Math.abs(param)}`;
                                 })()}
                             </span>

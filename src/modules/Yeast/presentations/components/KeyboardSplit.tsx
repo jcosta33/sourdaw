@@ -87,13 +87,21 @@ export const KeyboardSplit = ({
                             width: whiteKeyWidth - 1,
                             height,
                             background: (() => {
-                                if (sounding) return 'var(--color-accent-peach)';
-                                if (held) return 'var(--color-accent-lavender)';
+                                if (sounding) {
+                                    return 'var(--color-accent-peach)';
+                                }
+                                if (held) {
+                                    return 'var(--color-accent-lavender)';
+                                }
                                 return '#1a1a1a';
                             })(),
                             opacity: (() => {
-                                if (sounding) return 0.9;
-                                if (held) return 0.7;
+                                if (sounding) {
+                                    return 0.9;
+                                }
+                                if (held) {
+                                    return 0.7;
+                                }
                                 return 1;
                             })(),
                             borderRadius: '0 0 2px 2px',
@@ -116,8 +124,12 @@ export const KeyboardSplit = ({
                             width: whiteKeyWidth * 0.6,
                             height: height * 0.6,
                             background: (() => {
-                                if (sounding) return 'var(--color-accent-peach)';
-                                if (held) return 'var(--color-accent-lavender)';
+                                if (sounding) {
+                                    return 'var(--color-accent-peach)';
+                                }
+                                if (held) {
+                                    return 'var(--color-accent-lavender)';
+                                }
                                 return '#0e0e0e';
                             })(),
                             borderRadius: '0 0 2px 2px',

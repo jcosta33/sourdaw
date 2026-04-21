@@ -438,8 +438,12 @@ export async function demo_SweetDreams(): Promise<void> {
             (cycleStart >= S.finalChorus && cycleStart < S.outro);
         const isIntro = cycleStart < S.verse1;
         const velMult = (() => {
-            if (isChorus) return 1.05;
-            if (isIntro) return 0.85;
+            if (isChorus) {
+                return 1.05;
+            }
+            if (isIntro) {
+                return 0.85;
+            }
             return 1.0;
         })();
 

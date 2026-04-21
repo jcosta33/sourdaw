@@ -70,9 +70,15 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                                 {/* Fill */}
                                 <div
                                     className={`absolute bottom-0 left-0 right-0 rounded-sm transition-all ${(() => {
-                                        if (!step.active) return 'bg-muted-foreground/10';
-                                        if (step.stepType === 'rest') return 'bg-muted-foreground/20';
-                                        if (step.stepType === 'tie') return 'bg-[var(--color-accent-cyan)]/50';
+                                        if (!step.active) {
+                                            return 'bg-muted-foreground/10';
+                                        }
+                                        if (step.stepType === 'rest') {
+                                            return 'bg-muted-foreground/20';
+                                        }
+                                        if (step.stepType === 'tie') {
+                                            return 'bg-[var(--color-accent-cyan)]/50';
+                                        }
                                         return 'bg-[var(--color-accent-peach)]';
                                     })()}`}
                                     style={{

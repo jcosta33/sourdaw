@@ -101,8 +101,12 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
         // Detect which part was clicked: edge (resize) or body (move)
         const edge = detectEdge(event, section);
         const mode: DragMode = (() => {
-            if (edge === 'left') return 'resize-left';
-            if (edge === 'right') return 'resize-right';
+            if (edge === 'left') {
+                return 'resize-left';
+            }
+            if (edge === 'right') {
+                return 'resize-right';
+            }
             return 'move';
         })();
 

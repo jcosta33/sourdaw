@@ -219,8 +219,12 @@ export const CrumbsControls = ({
                         step={0.01}
                         defaultValue={0}
                         readout={(() => {
-                            if (pan === 0) return 'C';
-                            if (pan < 0) return `L${Math.abs(Math.round(pan * 100))}`;
+                            if (pan === 0) {
+                                return 'C';
+                            }
+                            if (pan < 0) {
+                                return `L${Math.abs(Math.round(pan * 100))}`;
+                            }
                             return `R${Math.round(pan * 100)}`;
                         })()}
                     />

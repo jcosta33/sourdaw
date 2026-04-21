@@ -102,8 +102,12 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
                 );
 
                 const modelId = (() => {
-                    if (backend === 'native') return 'native';
-                    if (backend === 'cloud') return 'claude';
+                    if (backend === 'native') {
+                        return 'native';
+                    }
+                    if (backend === 'cloud') {
+                        return 'claude';
+                    }
                     return WEBLLM_MODEL_ID;
                 })();
                 llmStatusStore.set({ state: 'ready', modelId });

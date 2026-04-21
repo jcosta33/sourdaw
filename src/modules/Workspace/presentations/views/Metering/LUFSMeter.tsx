@@ -129,8 +129,12 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
             const barW = 10;
             const momY = lufsToY(mom);
             ctx.fillStyle = (() => {
-                if (mom > -3) return meterClip;
-                if (mom > -14) return meterHot;
+                if (mom > -3) {
+                    return meterClip;
+                }
+                if (mom > -14) {
+                    return meterHot;
+                }
                 return meterSafe;
             })();
             ctx.fillRect(2, momY, barW, height - momY);
@@ -138,8 +142,12 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
             // Short-term bar
             const stY = lufsToY(st);
             ctx.fillStyle = (() => {
-                if (st > -3) return `${meterClip}99`;
-                if (st > -14) return `${meterHot}99`;
+                if (st > -3) {
+                    return `${meterClip}99`;
+                }
+                if (st > -14) {
+                    return `${meterHot}99`;
+                }
                 return `${meterSafe}99`;
             })();
             ctx.fillRect(14, stY, barW, height - stY);

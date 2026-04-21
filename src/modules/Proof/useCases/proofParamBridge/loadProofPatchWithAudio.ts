@@ -95,8 +95,12 @@ export function syncFullPatch(deviceId: string): void {
     bridge.setParam(
         'dither_mode',
         (() => {
-            if (patch.ditherMode === 'off') return 0;
-            if (patch.ditherMode === 'tpdf') return 1;
+            if (patch.ditherMode === 'off') {
+                return 0;
+            }
+            if (patch.ditherMode === 'tpdf') {
+                return 1;
+            }
             return 2;
         })()
     );

@@ -66,8 +66,12 @@ export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7
         updateTask(taskId, {
             status: 'error',
             error: (() => {
-                if (isAppError(error)) return error.message;
-                if (error instanceof Error) return error.message;
+                if (isAppError(error)) {
+                    return error.message;
+                }
+                if (error instanceof Error) {
+                    return error.message;
+                }
                 return 'Denoise failed';
             })(),
         });

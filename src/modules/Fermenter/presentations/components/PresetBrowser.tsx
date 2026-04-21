@@ -109,8 +109,12 @@ export const PresetBrowser = ({
                             category === cat.id ? 'text-white' : 'text-muted-foreground/60 hover:text-foreground'
                         }`}
                         style={(() => {
-                            if (category === cat.id && cat.color) return { backgroundColor: cat.color };
-                            if (category === cat.id) return { backgroundColor: 'var(--color-accent-lavender)' };
+                            if (category === cat.id && cat.color) {
+                                return { backgroundColor: cat.color };
+                            }
+                            if (category === cat.id) {
+                                return { backgroundColor: 'var(--color-accent-lavender)' };
+                            }
                             return undefined;
                         })()}
                         onClick={() => {
