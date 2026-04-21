@@ -79,17 +79,20 @@ export const BUILTIN_PIANO_MODELS = [
     },
 ] as const satisfies readonly GrandBoulePianoModel[];
 
-export const createDefaultMorphState = (): GrandBouleMorphState => ({
-    modelA: 'steinway-d',
-    modelB: 'yamaha-cfx',
-    morphPosition: 0.0,
-    layerBalance: 0.0,
-    enabled: false,
-});
+export function createDefaultMorphState(): GrandBouleMorphState {
+    return {
+        modelA: 'steinway-d',
+        modelB: 'yamaha-cfx',
+        morphPosition: 0.0,
+        layerBalance: 0.0,
+        enabled: false,
+    };
+}
 
 /**
  * Look up a built-in piano model by ID. Returns `undefined` when the ID
  * does not match any known model.
  */
-export const findPianoModelById = (id: string): GrandBoulePianoModel | undefined =>
-    BUILTIN_PIANO_MODELS.find((m) => m.id === id);
+export function findPianoModelById(id: string): GrandBoulePianoModel | undefined {
+    return BUILTIN_PIANO_MODELS.find((m) => m.id === id);
+}

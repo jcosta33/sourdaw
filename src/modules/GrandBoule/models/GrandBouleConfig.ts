@@ -37,14 +37,16 @@ export type GrandBouleConfig = {
     attackBite: number;
 };
 
-export const createDefaultGrandBouleConfig = (): GrandBouleConfig => ({
-    masterGain: 0.7,
-    voiceCount: 32,
-    polyphonyTier: 'wasm',
-    activePresetId: null,
-    soundboardSend: 0.6,
-    sympatheticSend: 0.25,
-    sampledAttackEnabled: false,
-    stretchAmount: 1.0,
-    attackBite: 1.0,
-});
+export function createDefaultGrandBouleConfig(): GrandBouleConfig {
+    return {
+        masterGain: 0.7,
+        voiceCount: 32,
+        polyphonyTier: 'wasm',
+        activePresetId: null,
+        soundboardSend: 0.6,
+        sympatheticSend: 0.25,
+        sampledAttackEnabled: false,
+        stretchAmount: 1.0,
+        attackBite: 1.0,
+    };
+}

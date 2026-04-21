@@ -26,9 +26,11 @@ export type GrandBoulePreset = {
     parameters: GrandBoulePresetParameters;
 };
 
-export const createNeutralPresetParameters = (): GrandBoulePresetParameters => ({
-    hammerHardness: 0.0,
-    velocityCurve: 1.0,
-    stereoWidth: 0.6,
-    toneTilt: 0.0,
-});
+export function createNeutralPresetParameters(): GrandBoulePresetParameters {
+    return {
+        hammerHardness: 0.0,
+        velocityCurve: 1.0,
+        stereoWidth: 0.6,
+        toneTilt: 0.0,
+    };
+}
