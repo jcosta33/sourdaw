@@ -344,7 +344,7 @@ export const handleNoteOn = inject({
                         if (gbDev) {
                             const dn = strip.deviceNodes.find((d) => d.type === 'grand-boule');
                             dn?.grandBouleControls?.noteOn(evtNote, evtVel / 127);
-                            deps.eventBus.emit('midi.noteOn', { midiNote: evtNote, velocity: evtVel / 127 });
+                            void deps.eventBus.emit('midi.noteOn', { midiNote: evtNote, velocity: evtVel / 127 });
                             continue;
                         }
                         const lDev = instrumentTrack?.devices.find((d) => d.type === 'levain');
@@ -369,7 +369,7 @@ export const handleNoteOn = inject({
                         if (gbDev2) {
                             const dn = strip.deviceNodes.find((d) => d.type === 'grand-boule');
                             dn?.grandBouleControls?.noteOff(evtNote);
-                            deps.eventBus.emit('midi.noteOff', { deviceId: gbDev2.id, midiNote: evtNote });
+                            void deps.eventBus.emit('midi.noteOff', { deviceId: gbDev2.id, midiNote: evtNote });
                             continue;
                         }
                         const lDev = instrumentTrack?.devices.find((d) => d.type === 'levain');
@@ -424,7 +424,7 @@ export const handleNoteOn = inject({
                     const finalVelocity = calibration ? applyVelocityCurve(velocity, calibration) : velocity / 127;
                     dn.grandBouleControls.noteOn(note, finalVelocity);
                     noteData.grandBouleDeviceId = grandBouleDev.id;
-                    deps.eventBus.emit('midi.noteOn', {
+                    void deps.eventBus.emit('midi.noteOn', {
                         deviceId: grandBouleDev.id,
                         midiNote: note,
                         velocity: finalVelocity,
@@ -540,21 +540,21 @@ export const handleCC = inject(midiMessageHandlerDependencies)(
                 if (dn?.grandBouleControls?.ready) {
                     if (cc === 64) {
                         dn.grandBouleControls.setSustain(value / 127);
-                        deps.eventBus.emit('midi.pedalCc', {
+                        void deps.eventBus.emit('midi.pedalCc', {
                             deviceId: grandBouleDevice.id,
                             cc: 64,
                             value: value / 127,
                         });
                     } else if (cc === 66) {
                         dn.grandBouleControls.setSostenuto(value >= 64);
-                        deps.eventBus.emit('midi.pedalCc', {
+                        void deps.eventBus.emit('midi.pedalCc', {
                             deviceId: grandBouleDevice.id,
                             cc: 66,
                             value: value >= 64,
                         });
                     } else if (cc === 67) {
                         dn.grandBouleControls.setUnaCorda(value >= 64);
-                        deps.eventBus.emit('midi.pedalCc', {
+                        void deps.eventBus.emit('midi.pedalCc', {
                             deviceId: grandBouleDevice.id,
                             cc: 67,
                             value: value >= 64,

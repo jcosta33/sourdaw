@@ -74,7 +74,7 @@ function startPolling(): void {
         }
         await drain();
         pollTimer = setTimeout(() => {
-            tick();
+            void tick();
         }, POLL_MS);
     };
     void tick();

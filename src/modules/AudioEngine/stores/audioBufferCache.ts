@@ -214,7 +214,7 @@ export const audioBufferCache = {
             return new Float32Array(numBins);
         }
 
-        updateAccessTimeInIdb(id);
+        void updateAccessTimeInIdb(id);
         const totalSamples = buffer.length;
         const rawStart = windowOpts?.startSample ?? 0;
         const rawEnd = windowOpts?.endSample ?? totalSamples;
@@ -384,7 +384,7 @@ export const audioBufferCache = {
             if (!buf) {
                 continue;
             }
-            updateAccessTimeInIdb(id);
+            void updateAccessTimeInIdb(id);
             result[id] = {
                 sampleRate: buf.sampleRate,
                 numberOfChannels: buf.numberOfChannels,
@@ -414,7 +414,7 @@ export const audioBufferCache = {
                     if (!data || (data.channelData[0]?.length ?? 0) === 0) {
                         continue;
                     }
-                    updateAccessTimeInIdb(id);
+                    void updateAccessTimeInIdb(id);
                     result[id] = {
                         sampleRate: data.sampleRate,
                         numberOfChannels: data.numberOfChannels,
@@ -449,7 +449,7 @@ export const audioBufferCache = {
                 }
                 clearWaveformCachesForId(id);
                 audioCacheSet(id, buffer);
-                persistToIdb(id, buffer);
+                void persistToIdb(id, buffer);
             } catch {
                 // Skip any malformed entry
             }
