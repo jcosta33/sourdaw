@@ -195,20 +195,21 @@ const ActionItem = ({ entry }: { entry: ActionHistoryEntryView }): ReactElement 
             startSlot={<User className="size-3 text-muted-foreground/50" />}
             title={entry.label}
             subtitle={formatTimeAgo(entry.timestamp)}
-            endSlot={
-                entry.reverted ? (
-                    <span className="text-[8px] italic text-muted-foreground">undone</span>
-                ) : revertable ? (
-                    <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => void revertAction(entry.id)}
-                        title="Revert this change"
-                    >
-                        <Undo2 className="size-3 text-muted-foreground/50" />
-                    </Button>
-                ) : null
-            }
+            endSlot={(() => {
+                if (entry.reverted) return <span className="text-[8px] italic text-muted-foreground">undone</span>;
+                if (revertable)
+                    return (
+                        <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => void revertAction(entry.id)}
+                            title="Revert this change"
+                        >
+                            <Undo2 className="size-3 text-muted-foreground/50" />
+                        </Button>
+                    );
+                return null;
+            })()}
         />
     );
 };

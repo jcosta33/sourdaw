@@ -163,11 +163,11 @@ export const BeatRulerBar = (): React.ReactElement => {
 
             // Bar number label — brighter at 4-bar boundaries, clearer text
             if (bar % labelEvery === 0 && bar >= 0) {
-                ctx.fillStyle = is8BarBoundary
-                    ? 'rgba(224, 224, 224, 0.7)'
-                    : is4BarBoundary
-                      ? 'rgba(224, 224, 224, 0.55)'
-                      : 'rgba(224, 224, 224, 0.35)';
+                ctx.fillStyle = (() => {
+                    if (is8BarBoundary) return 'rgba(224, 224, 224, 0.7)';
+                    if (is4BarBoundary) return 'rgba(224, 224, 224, 0.55)';
+                    return 'rgba(224, 224, 224, 0.35)';
+                })();
                 ctx.fillText(String(bar + 1), barX + 3, 11);
             }
 

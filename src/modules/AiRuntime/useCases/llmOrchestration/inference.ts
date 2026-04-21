@@ -101,7 +101,11 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
                     `[AI Engine] (${backend}) ${String(results.length)} tool call(s): ${results.map((r) => r.name).join(', ')}`
                 );
 
-                const modelId = backend === 'native' ? 'native' : backend === 'cloud' ? 'claude' : WEBLLM_MODEL_ID;
+                const modelId = (() => {
+                    if (backend === 'native') return 'native';
+                    if (backend === 'cloud') return 'claude';
+                    return WEBLLM_MODEL_ID;
+                })();
                 llmStatusStore.set({ state: 'ready', modelId });
                 return results;
             } catch (error) {

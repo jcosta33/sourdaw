@@ -125,12 +125,11 @@ function fallbackToPatternMatch(promptText: string): MidiGenerationNote[] {
 // ── Helpers ──
 
 function buildUserMessage(prompt: string, numNotes: number, creativity: number): string {
-    const creativityDesc =
-        creativity < 0.3
-            ? 'very predictable and conventional'
-            : creativity < 0.6
-              ? 'balanced between conventional and creative'
-              : 'creative, experimental, and surprising';
+    const creativityDesc = (() => {
+        if (creativity < 0.3) return 'very predictable and conventional';
+        if (creativity < 0.6) return 'balanced between conventional and creative';
+        return 'creative, experimental, and surprising';
+    })();
 
     return `Generate a MIDI pattern based on this description: "${prompt}"
 - Target approximately ${String(numNotes)} notes

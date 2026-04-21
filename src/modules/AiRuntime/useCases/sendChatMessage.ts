@@ -276,11 +276,11 @@ export async function sendChatMessage(userText: string): Promise<void> {
         const { reasoning, content: cleanContent } = extractThinkBlock(fullContent);
         updateChatMessage(assistantMsgId, { isStreaming: false, content: cleanContent, reasoning });
     } catch (error) {
-        const errorMessage = isAppError(error)
-            ? error.message
-            : error instanceof Error
-              ? error.message
-              : 'An unknown error occurred during generation.';
+        const errorMessage = (() => {
+            if (isAppError(error)) return error.message;
+            if (error instanceof Error) return error.message;
+            return 'An unknown error occurred during generation.';
+        })();
         if (errorMessage === 'AbortedByUser' || errorMessage.includes('AbortError')) {
             // Clean abort, leave generated partial content intact and strip parsing blocks
             const parsed = extractThinkBlock(fullContent);

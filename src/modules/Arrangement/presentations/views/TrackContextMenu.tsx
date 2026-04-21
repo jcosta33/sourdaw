@@ -137,7 +137,11 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
               ]
             : []),
         {
-            label: track.freezeState.status === 'stale' ? 'Update Freeze' : track.frozen ? 'Unfreeze' : 'Freeze',
+            label: (() => {
+                if (track.freezeState.status === 'stale') return 'Update Freeze';
+                if (track.frozen) return 'Unfreeze';
+                return 'Freeze';
+            })(),
             action: () => {
                 if (track.frozen) {
                     void unfreezeTrack(track.id);
