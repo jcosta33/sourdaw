@@ -26,10 +26,10 @@ function Slider({
     thumbClassName?: string;
 }) {
     const computeValues = (): number[] => {
-        if (value != null) {
+        if (value !== null && value !== undefined) {
             return Array.isArray(value) ? value : [value];
         }
-        if (defaultValue != null) {
+        if (defaultValue !== null && defaultValue !== undefined) {
             return Array.isArray(defaultValue) ? defaultValue : [defaultValue];
         }
         // No value provided — single thumb at midpoint

@@ -88,7 +88,3 @@ export function createAutomationObject(
         name,
     };
 }
-,
-    points,
-    name,
-});

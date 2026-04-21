@@ -1,5 +1,5 @@
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
-import { registerBuiltinPlugins, initWAMEnvironment, registerBuiltinFaustDSP } from '#/modules/Plugin/useCases';
+import { initWAMEnvironment, registerBuiltinFaustDSP } from '#/modules/Plugin/useCases';
 
 import { audioEngine } from '../repositories/createWebAudioEngine';
 

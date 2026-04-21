@@ -265,7 +265,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                                 aria-label={`Open editor for ${device.name}`}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    openPluginGui(device.externalInstanceId!);
+                                                    void openPluginGui(device.externalInstanceId!);
                                                 }}
                                             >
                                                 <LayoutGrid className="size-3 text-primary" />

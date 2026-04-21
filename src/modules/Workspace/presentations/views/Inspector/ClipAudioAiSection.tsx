@@ -176,7 +176,7 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                         className="flex-1 h-6 text-[10px] text-[var(--color-accent-lavender)] hover:bg-[var(--color-accent-lavender)]/20"
                         onClick={() => {
                             notifyUser('Separating stems… this may take a moment');
-                            handleStemSeparationPreview(clip.id);
+                            void handleStemSeparationPreview(clip.id);
                         }}
                     >
                         Separate Stems

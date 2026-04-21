@@ -77,8 +77,8 @@ export const Fader = ({
 
     const normalized = Math.max(0, Math.min(1, (value - min) / (max - min)));
 
-    const clampAndSnap = (v: number) => {
-        let clamped = Math.max(min, Math.min(max, v));
+    const clampAndSnap = (value1: number) => {
+        let clamped = Math.max(min, Math.min(max, value1));
         if (bipolar && Math.abs(clamped - defaultValue) < (max - min) * 0.05) {
             clamped = defaultValue;
         }

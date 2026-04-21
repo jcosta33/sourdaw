@@ -138,7 +138,7 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
 
         function fire(): void {
             triggerToasterPad(track.padIndex, vel);
-            if (step.soundLock && pad && toasterDeviceId) {
+            if (step?.soundLock && pad && toasterDeviceId) {
                 const defaultIdx = TOASTER_ENGINE_MAP[pad.engineType] ?? 0;
                 setPadEngineImmediate(toasterDeviceId, track.padIndex, defaultIdx);
             }

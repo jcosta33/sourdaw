@@ -109,7 +109,7 @@ export const DelayTaps = ({
             }
 
             const tapTime = time * tap;
-            const x = pad + (tapTime / totalDuration) * plotW;
+            const xPos = pad + (tapTime / totalDuration) * plotW;
             const barH = amplitude * plotH;
 
             // Gradient per tap: brighter at top
@@ -122,13 +122,13 @@ export const DelayTaps = ({
             );
             grad.addColorStop(1, `${accentCyan}10`);
             ctx.fillStyle = grad;
-            ctx.fillRect(x - barWidth / 2, pad + plotH - barH, barWidth, barH);
+            ctx.fillRect(xPos - barWidth / 2, pad + plotH - barH, barWidth, barH);
 
             // Top highlight
             ctx.fillStyle = `${accentCyan}${Math.round(amplitude * 180)
                 .toString(16)
                 .padStart(2, '0')}`;
-            ctx.fillRect(x - barWidth / 2, pad + plotH - barH, barWidth, 1);
+            ctx.fillRect(xPos - barWidth / 2, pad + plotH - barH, barWidth, 1);
         }
 
         // Connecting decay envelope line — glow
@@ -140,9 +140,9 @@ export const DelayTaps = ({
                 break;
             }
             const tapTime = time * tap;
-            const x = pad + (tapTime / totalDuration) * plotW;
-            const y = pad + plotH - amplitude * plotH;
-            ctx.lineTo(x, y);
+            const xPos = pad + (tapTime / totalDuration) * plotW;
+            const yPos = pad + plotH - amplitude * plotH;
+            ctx.lineTo(xPos, yPos);
         }
         ctx.strokeStyle = `${accentCyan}20`;
         ctx.lineWidth = 4;
@@ -157,9 +157,9 @@ export const DelayTaps = ({
                 break;
             }
             const tapTime = time * tap;
-            const x = pad + (tapTime / totalDuration) * plotW;
-            const y = pad + plotH - amplitude * plotH;
-            ctx.lineTo(x, y);
+            const xPos = pad + (tapTime / totalDuration) * plotW;
+            const yPos = pad + plotH - amplitude * plotH;
+            ctx.lineTo(xPos, yPos);
         }
         ctx.strokeStyle = `${accentCyan}50`;
         ctx.lineWidth = 1;
@@ -182,7 +182,7 @@ export const DelayTaps = ({
         }
     }, [time, feedback, mix, width, height, isInteractive]);
 
-    const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
         if (!onParamChange) {
             return;
         }
@@ -191,8 +191,8 @@ export const DelayTaps = ({
             return;
         }
         const rect = canvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
+        const mx = event.clientX - rect.left;
+        const my = event.clientY - rect.top;
 
         // Determine drag target: near first tap X = time, near envelope line = feedback
         const distToTap = Math.abs(mx - firstTapXRef.current);
@@ -209,11 +209,11 @@ export const DelayTaps = ({
         }
 
         isDragging.current = true;
-        canvas.setPointerCapture(e.pointerId);
+        canvas.setPointerCapture(event.pointerId);
         canvas.style.cursor = 'grabbing';
     };
 
-    const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
         if (!onParamChange || !isDragging.current || !dragTarget.current) {
             return;
         }
@@ -228,13 +228,13 @@ export const DelayTaps = ({
 
         if (dragTarget.current === 'time') {
             // Map horizontal position to delay time (1-2000ms)
-            const mx = e.clientX - rect.left;
+            const mx = event.clientX - rect.left;
             const xRatio = Math.max(0, Math.min(1, (mx - pad) / plotW));
             const newTime = 1 + xRatio * (2000 - 1);
             onParamChange('delay-time', newTime);
         } else {
             // Map vertical position to feedback (0-0.95)
-            const my = e.clientY - rect.top;
+            const my = event.clientY - rect.top;
             const bottomY = pad + plotH;
             const topY = pad;
             const yRatio = 1 - (my - topY) / (bottomY - topY);
@@ -243,7 +243,7 @@ export const DelayTaps = ({
         }
     };
 
-    const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
         if (!onParamChange) {
             return;
         }
@@ -253,7 +253,7 @@ export const DelayTaps = ({
         }
         isDragging.current = false;
         dragTarget.current = null;
-        canvas.releasePointerCapture(e.pointerId);
+        canvas.releasePointerCapture(event.pointerId);
         canvas.style.cursor = 'grab';
     };
 

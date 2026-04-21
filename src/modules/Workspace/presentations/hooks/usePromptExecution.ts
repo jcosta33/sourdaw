@@ -376,7 +376,7 @@ export const usePromptExecution = (): PromptExecutionState => {
 
     const handleLoadModel = (modelId?: string): void => {
         if (isLlmAvailable()) {
-            initEngine(modelId);
+            void initEngine(modelId);
         }
     };
 

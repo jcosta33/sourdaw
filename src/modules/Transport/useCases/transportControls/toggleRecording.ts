@@ -118,5 +118,3 @@ export function toggleRecording(): void {
         startPlayback();
     }
 }
- }
-}

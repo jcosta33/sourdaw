@@ -810,5 +810,3 @@ async function decompressInvite(raw: string): Promise<string> {
     const result = await readAllChunks(stream.readable);
     return new TextDecoder().decode(result);
 }
-ecoder().decode(result);
-}

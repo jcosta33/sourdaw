@@ -528,5 +528,3 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
         return handleSimpleKeys(key, desc);
     };
 });
-   };
-});

@@ -254,7 +254,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                                             multiple
                                             className="hidden"
                                             onChange={(e) => {
-                                                handleFileImport(e.target.files);
+                                                void handleFileImport(e.target.files);
                                                 e.target.value = '';
                                             }}
                                         />

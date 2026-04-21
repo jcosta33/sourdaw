@@ -95,8 +95,8 @@ export const ADSREnvelope = ({
         // Grid lines
         ctx.strokeStyle = 'rgba(255,255,255,0.05)';
         ctx.lineWidth = 0.5;
-        for (let i = 0; i <= 4; i++) {
-            const y = pad + (plotH / 4) * i;
+        for (let index = 0; index <= 4; index++) {
+            const y = pad + (plotH / 4) * index;
             ctx.beginPath();
             ctx.moveTo(pad, y);
             ctx.lineTo(width - pad, y);
@@ -183,7 +183,7 @@ export const ADSREnvelope = ({
         }
     }, [attack, decay, sustain, release, color, width, height, isInteractive]);
 
-    const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
         if (!onParamChange) {
             return;
         }
@@ -192,8 +192,8 @@ export const ADSREnvelope = ({
             return;
         }
         const rect = canvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
+        const mx = event.clientX - rect.left;
+        const my = event.clientY - rect.top;
 
         // Find closest breakpoint within hit radius
         const hitRadius = 16;
@@ -215,11 +215,11 @@ export const ADSREnvelope = ({
 
         isDragging.current = true;
         activeBreakpoint.current = closest;
-        canvas.setPointerCapture(e.pointerId);
+        canvas.setPointerCapture(event.pointerId);
         canvas.style.cursor = 'grabbing';
     };
 
-    const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
         if (!onParamChange || !isDragging.current || !activeBreakpoint.current) {
             return;
         }
@@ -231,8 +231,8 @@ export const ADSREnvelope = ({
         const pad = 6;
         const plotW = width - pad * 2;
         const plotH = height - pad * 2;
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
+        const mx = event.clientX - rect.left;
+        const my = event.clientY - rect.top;
 
         const bp = activeBreakpoint.current;
 
@@ -263,7 +263,7 @@ export const ADSREnvelope = ({
         }
     };
 
-    const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
         if (!onParamChange) {
             return;
         }
@@ -273,7 +273,7 @@ export const ADSREnvelope = ({
         }
         isDragging.current = false;
         activeBreakpoint.current = null;
-        canvas.releasePointerCapture(e.pointerId);
+        canvas.releasePointerCapture(event.pointerId);
         canvas.style.cursor = 'grab';
     };
 

@@ -191,21 +191,21 @@ export const InstrumentsTab = ({
         const trackId = createTrackFromPreset(preset);
         const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
         const device = track?.devices.find((d) => d.type === 'fermenter');
-        eventBus.emit('panel.showFermenter', { deviceId: device?.id ?? null });
+        void eventBus.emit('panel.showFermenter', { deviceId: device?.id ?? null });
     };
 
     const handleAddToasterTrack = () => {
         const trackId = createDrumTrackStack();
         const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
         const device = track?.devices.find((d) => d.type === 'toaster');
-        eventBus.emit('panel.showToaster', { deviceId: device?.id ?? null });
+        void eventBus.emit('panel.showToaster', { deviceId: device?.id ?? null });
     };
 
     const handleAddGrandBouleTrack = () => {
         const trackId = createGrandBouleTrack();
         const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
         const device = track?.devices.find((d) => d.type === 'grand-boule');
-        eventBus.emit('panel.showGrandBoule', { deviceId: device?.id ?? null });
+        void eventBus.emit('panel.showGrandBoule', { deviceId: device?.id ?? null });
     };
 
     const handleAddLevainTrack = () => {
@@ -221,7 +221,7 @@ export const InstrumentsTab = ({
             isFactory: true,
         };
         createTrackFromPreset(preset);
-        eventBus.emit('panel.showLevain', { deviceId: null });
+        void eventBus.emit('panel.showLevain', { deviceId: null });
     };
 
     const handleAddCrumbsTrack = () => {
@@ -239,7 +239,7 @@ export const InstrumentsTab = ({
         const trackId = createTrackFromPreset(preset);
         const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
         const device = track?.devices.find((d) => d.type === 'builtin-sampler');
-        eventBus.emit('panel.showCrumbs', { deviceId: device?.id ?? null });
+        void eventBus.emit('panel.showCrumbs', { deviceId: device?.id ?? null });
     };
 
     userPresetsVersion;

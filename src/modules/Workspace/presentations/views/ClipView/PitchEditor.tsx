@@ -211,7 +211,7 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
         if (!contour || shifts.length === 0) {
             return;
         }
-        commitPitchEditCommand(clipId, shifts, contour);
+        void commitPitchEditCommand(clipId, shifts, contour);
     };
 
     return (

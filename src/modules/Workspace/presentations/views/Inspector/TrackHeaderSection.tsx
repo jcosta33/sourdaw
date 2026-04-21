@@ -133,9 +133,9 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                                         )}
                                         onClick={() => {
                                             if (track.frozen || isStale) {
-                                                unfreezeTrack(track.id);
+                                                void unfreezeTrack(track.id);
                                             } else {
-                                                freezeTrack(track.id);
+                                                void freezeTrack(track.id);
                                             }
                                         }}
                                         aria-pressed={track.frozen || isStale}

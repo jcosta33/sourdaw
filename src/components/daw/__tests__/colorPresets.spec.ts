@@ -5,15 +5,15 @@ import { CLIP_COLOR_PRESETS, TRACK_COLOR_PRESETS } from '../colorPresets';
 describe('colorPresets', () => {
     it('should export TRACK_COLOR_PRESETS as 12 oklch strings', () => {
         expect(TRACK_COLOR_PRESETS).toHaveLength(12);
-        for (const c of TRACK_COLOR_PRESETS) {
-            expect(c).toMatch(/^oklch\(/);
+        for (const context of TRACK_COLOR_PRESETS) {
+            expect(context).toMatch(/^oklch\(/);
         }
     });
 
     it('should export CLIP_COLOR_PRESETS as 8 oklch strings', () => {
         expect(CLIP_COLOR_PRESETS).toHaveLength(8);
-        for (const c of CLIP_COLOR_PRESETS) {
-            expect(c).toMatch(/^oklch\(/);
+        for (const context of CLIP_COLOR_PRESETS) {
+            expect(context).toMatch(/^oklch\(/);
         }
     });
 
