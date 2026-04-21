@@ -1,29 +1,115 @@
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { executeAppAction } from '../../useCases/executeAppAction';
 import { getSelectedClipId } from '../../useCases/selectionHelpers/getSelectedClipId';
 import { type CommandEntry } from '../CommandEntry';
+
+const requireMidiClip = (fn: (clipId: string) => void): (() => void) => {
+    return () => {
+        const clipId = getSelectedClipId();
+        if (!clipId) {
+            notifyUser('Select a MIDI clip first', 'error');
+            return;
+        }
+        fn(clipId);
+    };
+};
 
 /** AI / generation commands — generate patterns, detect tempo/key, audio-to-MIDI, apply groove, structure detection, RAVE models. */
 export const aiCommands: CommandEntry[] = [
     {
         id: 'generate-drums',
-        label: 'Generate Drum Pattern',
+        label: 'AI: Generate Drum Pattern',
         description: 'Create an algorithmic drum pattern on a MIDI track',
         category: 'AI',
         action: { type: 'generateDrumPattern', payload: { style: 'rock' } },
     },
     {
+        id: 'generate-drums-house',
+        label: 'AI: Generate Drums (House)',
+        description: 'House-style drum pattern on a MIDI track',
+        category: 'AI',
+        action: { type: 'generateDrumPattern', payload: { style: 'house' } },
+    },
+    {
+        id: 'generate-drums-hiphop',
+        label: 'AI: Generate Drums (Hip-Hop)',
+        description: 'Hip-hop drum pattern on a MIDI track',
+        category: 'AI',
+        action: { type: 'generateDrumPattern', payload: { style: 'hiphop' } },
+    },
+    {
         id: 'generate-melody',
-        label: 'Generate Melody',
+        label: 'AI: Generate Melody',
         description: 'Create an algorithmic melody on a MIDI track',
         category: 'AI',
         action: { type: 'generateMelody', payload: { style: 'simple' } },
     },
     {
+        id: 'generate-melody-jazz',
+        label: 'AI: Generate Melody (Jazz)',
+        description: 'Jazz-style melody on a MIDI track',
+        category: 'AI',
+        action: { type: 'generateMelody', payload: { style: 'jazz' } },
+    },
+    {
         id: 'generate-chords',
-        label: 'Generate Chords',
+        label: 'AI: Generate Chord Progression',
         description: 'Create a chord progression on a MIDI track',
         category: 'AI',
         action: { type: 'generateChordProgression', payload: { style: 'pop' } },
+    },
+    {
+        id: 'generate-chords-jazz',
+        label: 'AI: Generate Chords (Jazz)',
+        description: 'Jazz chord progression on a MIDI track',
+        category: 'AI',
+        action: { type: 'generateChordProgression', payload: { style: 'jazz' } },
+    },
+    {
+        id: 'generate-bassline',
+        label: 'AI: Generate Bassline',
+        description: 'Create a bassline that follows the selected MIDI clip harmonically',
+        category: 'AI',
+        action: requireMidiClip((clipId) => {
+            executeAppAction({ type: 'generateBassline', payload: { clipId, style: 'root-fifth' } });
+        }),
+    },
+    {
+        id: 'complete-midi',
+        label: 'AI: Complete MIDI (continue clip)',
+        description: 'Extend the selected MIDI clip forward with AI-generated notes',
+        category: 'AI',
+        action: requireMidiClip((clipId) => {
+            executeAppAction({ type: 'completeMidi', payload: { clipId, bars: 4 } });
+        }),
+    },
+    {
+        id: 'variation-midi',
+        label: 'AI: Create MIDI Variation',
+        description: 'Create a variation of the selected MIDI clip on the same track',
+        category: 'AI',
+        action: requireMidiClip((clipId) => {
+            executeAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.3 } });
+        }),
+    },
+    {
+        id: 'variation-midi-subtle',
+        label: 'AI: Create Subtle MIDI Variation',
+        description: 'Gentle variation (10% divergence) of the selected MIDI clip',
+        category: 'AI',
+        action: requireMidiClip((clipId) => {
+            executeAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.1 } });
+        }),
+    },
+    {
+        id: 'variation-midi-wild',
+        label: 'AI: Create Wild MIDI Variation',
+        description: 'Major variation (60% divergence) of the selected MIDI clip',
+        category: 'AI',
+        action: requireMidiClip((clipId) => {
+            executeAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.6 } });
+        }),
     },
     {
         id: 'analyze-mix',
