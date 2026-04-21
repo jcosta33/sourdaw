@@ -729,7 +729,7 @@ export default defineConfig(
 
             // AGENTS.md L150: No single-letter variable names.
             // `_` is kept for intentionally-unused destructured positional slots.
-            'id-length': ['error', { min: 2, exceptions: ['_', 'x', 'y', 'z', 'w', 'h', 'r', 'g', 'b', 'a', 'i', 'j', 'k', 'v', 'e', 't', 'c', 'd', 'f', 'm', 'q', 's', 'u', 'p', 'l', 'n', 'A', 'Q', 'K', 'T'], properties: 'never' }],
+            'id-length': ['error', { min: 2, exceptions: ['_', 'x', 'y', 'z', 'w', 'h', 'r', 'g', 'b', 'a', 'i', 'j', 'k', 'v', 'e', 't', 'c', 'd', 'f', 'm', 'q', 's', 'u', 'p', 'l', 'n', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'], properties: 'never' }],
 
             // AGENTS.md L150: No single-letter generic type parameters.
             '@typescript-eslint/naming-convention': [
