@@ -607,7 +607,11 @@ export async function demo5_NebulaDrift(): Promise<void> {
         // Wider velocity range for chaos
         const vel = 42 + ((state * 17) % 20) + (b >= S.peak && b < S.breakdown ? 18 : 0);
         // Varying durations: some very short, some long and ringing
-        const dur = state % 5 === 0 ? 6.0 : state % 5 === 3 ? 1.2 : 3.6;
+        const dur = (() => {
+            if (state % 5 === 0) return 6.0;
+            if (state % 5 === 3) return 1.2;
+            return 3.6;
+        })();
         wildN.push(hum(wildP[state % wildP.length]!, b, dur, Math.min(98, vel), state));
     }
 
@@ -639,7 +643,11 @@ export async function demo5_NebulaDrift(): Promise<void> {
             px++;
             continue;
         }
-        const baseVel = b >= S.peak && b < S.breakdown ? 85 : b >= S.build1 ? 70 : 55;
+        const baseVel = (() => {
+            if (b >= S.peak && b < S.breakdown) return 85;
+            if (b >= S.build1) return 70;
+            return 55;
+        })();
         const vel = baseVel + ((px * 11) % 9) - 4;
         const dur = px % 3 === 0 ? 2.2 : 1.1; // alternating long/short
         pluckN.push(hum(pluckA[px % pluckA.length]!, b, dur, Math.max(40, Math.min(100, vel)), px));
@@ -773,11 +781,19 @@ export async function demo5_NebulaDrift(): Promise<void> {
         if (!inBreak) {
             const pi = mx % phrase.length;
             // Velocity: wide dynamic range, louder at peak
-            const baseVel = bm >= S.peak && bm < S.breakdown ? 88 : bm >= S.build1 ? 76 : 65;
+            const baseVel = (() => {
+                if (bm >= S.peak && bm < S.breakdown) return 88;
+                if (bm >= S.build1) return 76;
+                return 65;
+            })();
             const velVar = ((mx * 17) % 11) - 5; // -5 to +5
             const vel = Math.max(40, Math.min(100, baseVel + velVar));
             // Duration varies: some long, some short for articulation
-            const dur = pi % 3 === 0 ? 4.2 : pi % 3 === 1 ? 2.4 : 3.5;
+            const dur = (() => {
+                if (pi % 3 === 0) return 4.2;
+                if (pi % 3 === 1) return 2.4;
+                return 3.5;
+            })();
             // Rests: skip every 7th note for breathing room
             if (mx % 7 !== 6) {
                 leadMoogN.push(hum(phrase[pi]!, bm, dur, vel, mx + 100));
@@ -809,7 +825,11 @@ export async function demo5_NebulaDrift(): Promise<void> {
         const baseVel = b >= S.peak && b < S.breakdown ? 82 : 65;
         const vel = pi === 0 ? baseVel + 12 : baseVel + ((sy * 13) % 7) - 3;
         // Longer notes for legato feel
-        const dur = pi % 4 === 0 ? 3.8 : pi % 4 === 2 ? 1.6 : 2.8;
+        const dur = (() => {
+            if (pi % 4 === 0) return 3.8;
+            if (pi % 4 === 2) return 1.6;
+            return 2.8;
+        })();
         leadSyncN.push(hum(phrase[pi]!, b, dur, Math.max(40, Math.min(100, vel)), sy + 200));
         sy++;
     }
@@ -822,7 +842,11 @@ export async function demo5_NebulaDrift(): Promise<void> {
         const step = Math.floor(b / 2) % 8;
         const root = bassRoots[step] ?? A2;
         // Vary duration more: longer sustained notes and short staccato
-        const dur = bi % 4 === 0 ? 3.2 : bi % 4 === 2 ? 0.8 : 1.6;
+        const dur = (() => {
+            if (bi % 4 === 0) return 3.2;
+            if (bi % 4 === 2) return 0.8;
+            return 1.6;
+        })();
         // More varied velocity (40-95 range)
         const baseVel = b >= S.peak && b < S.breakdown ? 85 : 68;
         const vel = bi % 4 === 0 ? baseVel + 8 : baseVel - 10 + ((bi * 7) % 11);

@@ -77,19 +77,17 @@ export const PadGrid = ({
                         key={pad.id}
                         type="button"
                         draggable={onReorderPad !== undefined}
-                        className={`relative flex aspect-square flex-col items-center justify-center rounded-xl border transition-all ${
-                            isDragTarget
-                                ? 'border-white/40 bg-white/[0.1]'
-                                : isSelected
-                                  ? 'border-white/25 bg-white/[0.06]'
-                                  : 'border-white/8 bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.04]'
-                        }`}
+                        className={`relative flex aspect-square flex-col items-center justify-center rounded-xl border transition-all ${(() => {
+                            if (isDragTarget) return 'border-white/40 bg-white/[0.1]';
+                            if (isSelected) return 'border-white/25 bg-white/[0.06]';
+                            return 'border-white/8 bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.04]';
+                        })()}`}
                         style={{
-                            boxShadow: isFlashing
-                                ? `0 0 20px ${pad.color}88, inset 0 0 12px ${pad.color}44`
-                                : isSelected
-                                  ? `0 0 12px ${pad.color}33`
-                                  : undefined,
+                            boxShadow: (() => {
+                                if (isFlashing) return `0 0 20px ${pad.color}88, inset 0 0 12px ${pad.color}44`;
+                                if (isSelected) return `0 0 12px ${pad.color}33`;
+                                return undefined;
+                            })(),
                         }}
                         onClick={() => onSelectPad(index)}
                         onMouseDown={(e) => {

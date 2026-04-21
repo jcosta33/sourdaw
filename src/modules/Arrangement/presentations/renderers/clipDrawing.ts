@@ -65,7 +65,11 @@ export const drawClip = (
     // Clip body fill with subtle vertical gradient for dimensionality
     const clipY = trackY + padding;
     const clipH = trackHeight - padding * 2;
-    const baseAlpha = isGhost ? 0.35 : isMuted ? 0.35 : 1;
+    const baseAlpha = (() => {
+        if (isGhost) return 0.35;
+        if (isMuted) return 0.35;
+        return 1;
+    })();
     const bodyAlpha = baseAlpha * (isSelected ? 0.85 : 0.55);
 
     // Create a gradient that darkens slightly toward the bottom for depth
@@ -89,7 +93,11 @@ export const drawClip = (
     ctx.roundRect(x, clipY, w, clipH, 3);
     ctx.fill();
 
-    ctx.globalAlpha = isGhost ? 0.6 : isMuted ? 0.35 : 1;
+    ctx.globalAlpha = (() => {
+        if (isGhost) return 0.6;
+        if (isMuted) return 0.35;
+        return 1;
+    })();
 
     // Top-edge highlight for dimensional "lit from above" effect
     if (!isGhost && !isMuted && w > 8) {

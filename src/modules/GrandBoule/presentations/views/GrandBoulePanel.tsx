@@ -542,13 +542,11 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             max={2}
                             step={0.05}
                             defaultValue={1.0}
-                            readout={
-                                parameters.velocityCurve < 0.95
-                                    ? 'soft'
-                                    : parameters.velocityCurve > 1.05
-                                      ? 'hard'
-                                      : 'linear'
-                            }
+                            readout={(() => {
+                                if (parameters.velocityCurve < 0.95) return 'soft';
+                                if (parameters.velocityCurve > 1.05) return 'hard';
+                                return 'linear';
+                            })()}
                         />
                     </SectionCard>
 
@@ -581,7 +579,11 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             max={1}
                             step={0.01}
                             defaultValue={1.0}
-                            readout={lidPosition < 0.3 ? 'closed' : lidPosition < 0.7 ? 'half' : 'full'}
+                            readout={(() => {
+                                if (lidPosition < 0.3) return 'closed';
+                                if (lidPosition < 0.7) return 'half';
+                                return 'full';
+                            })()}
                         />
                     </SectionCard>
                 </aside>
