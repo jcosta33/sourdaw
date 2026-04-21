@@ -6,7 +6,7 @@ import { type GrandBoulePreset } from '../models/GrandBoulePreset';
 
 import { listBuiltinGrandBoulePresets } from './grandBoulePresetCatalog';
 
-export const findBuiltinGrandBoulePreset = (presetId: string): GrandBoulePreset | null => {
+export function findBuiltinGrandBoulePreset(presetId: string): GrandBoulePreset | null {
     const match = listBuiltinGrandBoulePresets().find((preset) => preset.id === presetId);
     return match ?? null;
-};
+}
