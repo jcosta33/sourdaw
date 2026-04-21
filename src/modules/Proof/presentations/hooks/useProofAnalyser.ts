@@ -31,7 +31,7 @@ export function useProofAnalyser(): {
     useEffect(() => {
         const masterAnalyser = getMasterAnalyser();
         if (!masterAnalyser?.context) {
-            return;
+            return undefined;
         }
 
         // Create high-resolution analyser
@@ -45,7 +45,7 @@ export function useProofAnalyser(): {
             masterAnalyser.connect(analyser);
         } catch {
             // May fail if context is not running
-            return;
+            return undefined;
         }
 
         analyserRef.current = analyser;

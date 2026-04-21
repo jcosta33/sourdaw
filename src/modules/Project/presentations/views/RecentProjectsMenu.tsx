@@ -67,7 +67,7 @@ export const RecentProjectsMenu = (): ReactElement => {
 
     useEffect(() => {
         if (!open) {
-            return;
+            return undefined;
         }
 
         const handleClickOutside = (e: MouseEvent) => {

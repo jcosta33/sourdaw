@@ -28,7 +28,7 @@ export const ArrangementSelector = (): ReactElement | null => {
     useEffect(() => {
         if (!open) {
             setEditingId(null);
-            return;
+            return undefined;
         }
 
         const handleClickOutside = (e: MouseEvent) => {
