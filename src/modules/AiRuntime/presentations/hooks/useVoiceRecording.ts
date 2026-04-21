@@ -207,7 +207,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
                 showError('Microphone access denied. Allow mic in browser settings.');
                 if (isTauriAvailable()) {
                     modeRef.current = 'whisper';
-                    startWhisperRecording();
+                    void startWhisperRecording();
                 }
                 return;
             }
@@ -267,13 +267,13 @@ export const useVoiceRecording = (): VoiceRecordingState => {
         if (mode === 'browser') {
             const started = startBrowserRecognition();
             if (!started && isTauriAvailable()) {
-                startWhisperRecording();
+                void startWhisperRecording();
             }
             return;
         }
 
         if (mode === 'whisper') {
-            startWhisperRecording();
+            void startWhisperRecording();
             return;
         }
 
