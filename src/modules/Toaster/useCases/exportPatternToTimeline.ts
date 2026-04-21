@@ -4,8 +4,8 @@ import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { toasterStore } from '../stores/toasterStore';
 
-export function exportPatternToTimeline(): void {
-    const state = toasterStore.value;
+export function exportPatternToTimeline(deviceId: string): void {
+    const state = toasterStore.value?.[deviceId];
     if (!state) {
         return;
     }
@@ -16,7 +16,7 @@ export function exportPatternToTimeline(): void {
     }
 
     const tracks = getAllTracks();
-    const parentTrack = tracks.find((t) => t.devices.some((d) => d.type === 'toaster'));
+    const parentTrack = tracks.find((t) => t.devices.some((d) => d.id === deviceId));
     if (!parentTrack) {
         return;
     }

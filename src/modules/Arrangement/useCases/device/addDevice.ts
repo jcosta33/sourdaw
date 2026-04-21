@@ -1,5 +1,6 @@
 import { addDeviceToStrip, updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { compileFaustDSP } from '#/modules/Plugin/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -13,6 +14,11 @@ function nextDeviceIdStr(): string {
 export function addDevice(trackId: string, deviceType: string): Device | null {
     const state = getTrackState();
     if (!state) {
+        return null;
+    }
+
+    if (deviceType.toLowerCase() === 'crust') {
+        notifyUser('PluginNotImplementedError: Crust is not fully implemented', 'error');
         return null;
     }
 

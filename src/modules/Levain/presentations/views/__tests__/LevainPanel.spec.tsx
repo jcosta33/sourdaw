@@ -134,17 +134,17 @@ describe('LevainPanel', () => {
     });
 
     it('should render without crashing', () => {
-        render(<LevainPanel />);
+        render(<LevainPanel deviceId="test-device" />);
         expect(screen.getByText(/Levain/i)).toBeInTheDocument();
     });
 
     it('should render instrument list', () => {
-        render(<LevainPanel />);
+        render(<LevainPanel deviceId="test-device" />);
         expect(screen.getByPlaceholderText(/Find a section/i)).toBeInTheDocument();
     });
 
     it('should render family filter chips', () => {
-        render(<LevainPanel />);
+        render(<LevainPanel deviceId="test-device" />);
         expect(screen.getByText('All')).toBeInTheDocument();
         const chips = screen.getAllByTestId('daw-plugin-chip');
         expect(chips.some((c) => c.textContent === 'Strings')).toBe(true);
@@ -152,47 +152,47 @@ describe('LevainPanel', () => {
     });
 
     it('should render section cards', () => {
-        render(<LevainPanel />);
+        render(<LevainPanel deviceId="test-device" />);
         expect(screen.getAllByTestId('section-card').length).toBeGreaterThan(0);
     });
 
     it('should render articulation list', () => {
-        render(<LevainPanel />);
+        render(<LevainPanel deviceId="test-device" />);
         expect(screen.getByTestId('articulation-list')).toBeInTheDocument();
     });
 
     it('should render expression panel', () => {
-        render(<LevainPanel />);
+        render(<LevainPanel deviceId="test-device" />);
         expect(screen.getByTestId('expression-panel')).toBeInTheDocument();
     });
 
     it('should render humanize panel', () => {
-        render(<LevainPanel />);
+        render(<LevainPanel deviceId="test-device" />);
         expect(screen.getByTestId('humanize-panel')).toBeInTheDocument();
     });
 
     it('should render legato tuning', () => {
-        render(<LevainPanel />);
+        render(<LevainPanel deviceId="test-device" />);
         expect(screen.getByTestId('legato-tuning')).toBeInTheDocument();
     });
 
     it('should render mic blend slider', () => {
-        render(<LevainPanel />);
+        render(<LevainPanel deviceId="test-device" />);
         expect(screen.getByTestId('mic-blend-slider')).toBeInTheDocument();
     });
 
     it('should render macro strip', () => {
-        render(<LevainPanel />);
+        render(<LevainPanel deviceId="test-device" />);
         expect(screen.getByTestId('macro-strip')).toBeInTheDocument();
     });
 
     it('should render master gain knob', () => {
-        render(<LevainPanel />);
+        render(<LevainPanel deviceId="test-device" />);
         expect(screen.getAllByTestId('rotary-knob').length).toBeGreaterThan(0);
     });
 
     it('should display engine status', () => {
-        render(<LevainPanel />);
+        render(<LevainPanel deviceId="test-device" />);
         const leds = screen.getAllByTestId('daw-plugin-led');
         expect(leds.some((l) => l.textContent === 'Ready')).toBe(true);
     });

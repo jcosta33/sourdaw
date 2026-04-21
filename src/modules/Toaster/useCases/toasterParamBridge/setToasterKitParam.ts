@@ -23,7 +23,7 @@ export function setToasterKitParam<K extends keyof typeof KIT_PARAM_MAP>(
     key: K,
     value: ToasterKit[K]
 ): void {
-    updateKit({ [key]: value } as Partial<ToasterKit>);
+    updateKit(deviceId, { [key]: value } as Partial<ToasterKit>);
 
     const ref = findDeviceRef(deviceId);
     if (!ref) {

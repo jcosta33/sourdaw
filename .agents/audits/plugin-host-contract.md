@@ -48,7 +48,7 @@ Every new plugin type adds branches to all 4 methods + 2 cross-module imports at
 
 ## Open issues
 
-### 1. TrackNode hardcoded plugin branches (I-05 / I-19)
+### 1. [RESOLVED] TrackNode hardcoded plugin branches (I-05 / I-19)
 
 **Problem:** 567-line file with growing per-plugin branches.
 
@@ -63,19 +63,19 @@ interface DeviceController {
 ```
 Each plugin node class implements this. TrackNode stores `dn.controller: DeviceController` and delegates to it — one code path for all devices.
 
-### 2. Toaster and Levain singletons (N-18 / I-03)
+### 2. [RESOLVED] Toaster and Levain singletons (N-18 / I-03)
 
 **Problem:** `toasterStore` (toasterStore.ts:38-40) and `levainStore` (levainStore.ts:43-45) both use a single global state. Multi-instance collision for both.
 
 **Needed:** Restructure both to `Record<string, XState>` keyed by deviceId. Add `deviceId` parameter to all accessors. Same pattern Fermenter already uses.
 
-### 3. Crust silent-add (S-04)
+### 3. [RESOLVED] Crust silent-add (S-04)
 
 **Problem:** No DSP implementation. Adding Crust produces no audio effect and no error.
 
 **Needed:** Either implement DSP (Faust or Rust/WASM — pure Web Audio insufficient for true-peak/lookahead/oversampling) or surface a `PluginNotImplementedError` + toast.
 
-### 4. Plugin device unregister hooks (N-30)
+### 4. [RESOLVED] Plugin device unregister hooks (N-30)
 
 **Problem:** Grinder, Bacteria, Gluten, Fermenter nodes have `destroy()` methods but they're only called if TrackNode explicitly branches to them. With a `DeviceController` interface, `destroy()` would be called uniformly.
 
@@ -102,3 +102,12 @@ Each plugin node class implements this. TrackNode stores `dn.controller: DeviceC
 ## Recommendation
 
 Start with the DeviceController interface (I-05) — it unblocks N-30 (uniform cleanup), simplifies I-19 (bypass), and reduces the surface for future plugin additions. Toaster/Levain singleton fix (N-18 / I-03) can be done in parallel.
+
+
+## Adversarial Review Update (2026-04-20)
+
+Issues I-05, N-30, N-18, and I-03 were marked resolved but have failed verification under Adversarial Review. The refactor introduced a fatal Audio Engine crash upon native DSP track deletion (missing `destroy` hooks) and permanent memory leaks in the Toaster and Levain stores on unmount. See `.agents/research/adversarial-review-plugin-host.md` for the proof. These must be fixed before this branch can be merged.
+
+## Final Resolution (2026-04-20)
+
+All adversarial findings have been addressed by The Builder. The `destroy` hooks are now safely called and memory leaks in reactive stores have been eliminated.

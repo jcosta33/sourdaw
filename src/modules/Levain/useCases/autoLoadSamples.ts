@@ -18,7 +18,7 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
  * construction regardless of which instrument the user had actually selected;
  * those samples would then race the patch-driven reload in `registerLevainDevice`.
  */
-export async function autoLoadLevainSamples(nodePort: MessagePort, instrumentId: string): Promise<void> {
+export async function autoLoadLevainSamples(deviceId: string, nodePort: MessagePort, instrumentId: string): Promise<void> {
     let manifestBase = `/samples/levain/${instrumentId}`;
 
     // In Tauri desktop, we bypass the embedded frontend cache
@@ -38,17 +38,17 @@ export async function autoLoadLevainSamples(nodePort: MessagePort, instrumentId:
 
     const manifestUrl = `${manifestBase}/manifest.json`;
 
-    setSampleLoadProgress(0.01); // trigger UI loading state
+    setSampleLoadProgress(deviceId, 0.01); // trigger UI loading state
 
     try {
         await loadInstrumentFromManifest(manifestUrl, manifestBase, nodePort, WEB_LOD, (progress) => {
-            setSampleLoadProgress(progress);
+            setSampleLoadProgress(deviceId, progress);
         });
     } catch (error) {
         logger.warn(`[Levain] Failed to load samples for ${instrumentId}:`, error);
         // Fallback sine tone will continue to work
     } finally {
-        setSampleLoadProgress(1.0);
-        setTimeout(() => setSampleLoadProgress(null), 300); // clear after short delay
+        setSampleLoadProgress(deviceId, 1.0);
+        setTimeout(() => setSampleLoadProgress(deviceId, null), 300); // clear after short delay
     }
 }

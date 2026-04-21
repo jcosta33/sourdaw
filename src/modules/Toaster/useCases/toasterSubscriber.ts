@@ -24,8 +24,9 @@ export const initToasterSubscribers = inject({ eventBus, logger })(
 
                 logger.info('Hydrating newly loaded Toaster WASM engine with store state');
 
-                const kit = toasterStore.value?.kit;
                 const deviceId = payload.deviceId;
+                const state = toasterStore.value?.[deviceId];
+                const kit = state?.kit;
 
                 if (!kit) {
                     return;

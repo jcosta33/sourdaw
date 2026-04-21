@@ -1,5 +1,5 @@
 import { levainBridge } from './levainBridge';
 
-export const setMacroWithAudio = (index: number, value: number): void => {
-    levainBridge().setMacroWithAudio(index, value);
+export const setMacroWithAudio = (deviceId: string, index: number, value: number): void => {
+    levainBridge().setMacroWithAudio(deviceId, index, value);
 };

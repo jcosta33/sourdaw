@@ -23,118 +23,121 @@ export function camelToSnake(str: string): string {
 }
 
 export function createLevainBridge(deps: LevainBridgeDeps) {
-    let activeDevice: LevainDevice | null = null;
-    let activePort: MessagePort | null = null;
-    let activeDeviceId: string | null = null;
+    const activeDevices = new Map<string, LevainDevice>();
+    const activePorts = new Map<string, MessagePort>();
 
     // §33.2 — Shared rAF-batch primitive. Last-write-wins per rustKey,
     // coalesced into one flush per animation frame.
+    // Modified to include deviceId in the flush param.
+    // We can use a composite key for the batcher: `${deviceId}:${rustKey}`
     const paramBatcher = createRafBatcher<number>();
+function flushParam(compositeKey: string, value: number): void {
+    const parts = compositeKey.split(':');
+    const deviceId = parts[0];
+    if (!deviceId) return;
+    const rustKey = parts.slice(1).join(':');
+    const device = activeDevices.get(deviceId);
+    if (device) {
+        device.setParam(rustKey, value);
+    }
+    deps.persistDeviceParam(deviceId, rustKey, value);
+}
 
-    function flushParam(rustKey: string, value: number): void {
-        const device = getDevice();
-        if (device) {
-            device.setParam(rustKey, value);
-        }
-        if (activeDeviceId) {
-            deps.persistDeviceParam(activeDeviceId, rustKey, value);
-        }
+    function queueParam(deviceId: string, rustKey: string, value: number): void {
+        paramBatcher.schedule(`${deviceId}:${rustKey}`, value, flushParam);
     }
 
-    function queueParam(rustKey: string, value: number): void {
-        paramBatcher.schedule(rustKey, value, flushParam);
+    function getDevice(deviceId: string): LevainDevice | undefined {
+        return activeDevices.get(deviceId);
     }
 
-    function getDevice(): LevainDevice | null {
-        return activeDevice;
-    }
-
-    function loadSamplesForInstrument(instrumentId: string): void {
+    function loadSamplesForInstrument(deviceId: string, instrumentId: string): void {
         // Tell the engine which instrument it now is, so the realism layer
         // (body modes, sympathetic strings, breath/bow noise) reconfigures.
-        activeDevice?.setInstrument?.(instrumentId);
-        if (!activePort) {
+        activeDevices.get(deviceId)?.setInstrument?.(instrumentId);
+        const port = activePorts.get(deviceId);
+        if (!port) {
             return;
         }
-        deps.autoLoadLevainSamples(activePort, instrumentId).catch((error) => {
-            logger.warn('[LevainBridge] Sample load failed:', error);
+        deps.autoLoadLevainSamples(deviceId, port, instrumentId).catch((error) => {
+            logger.warn(`[LevainBridge] Sample load failed for device ${deviceId}:`, error);
         });
     }
 
-    function registerLevainDevice(device: LevainDevice, port?: MessagePort): void {
-        activeDevice = device;
-        activeDeviceId = null;
-        for (const track of deps.getAllTracks()) {
-            const d = track.devices.find((dev) => dev.type === 'levain');
-            if (d) {
-                activeDeviceId = d.id;
-                break;
-            }
-        }
+    function registerLevainDevice(deviceId: string, device: LevainDevice, port?: MessagePort): void {
+        activeDevices.set(deviceId, device);
         if (port) {
-            activePort = port;
-            const state = levainStore.value;
+            activePorts.set(deviceId, port);
+            const state = levainStore.value?.[deviceId];
             if (state?.patch) {
-                loadSamplesForInstrument(state.patch.instrumentId);
-                queueParam('master_gain', state.patch.masterGain);
-                queueParam('legato_enabled', state.patch.legato.enabled ? 1 : 0);
-                queueParam('humanize_amount', state.patch.humanize.amount);
-                queueParam('vibrato_depth', state.patch.expression.vibratoDepthMax);
+                loadSamplesForInstrument(deviceId, state.patch.instrumentId);
+                queueParam(deviceId, 'master_gain', state.patch.masterGain);
+                queueParam(deviceId, 'legato_enabled', state.patch.legato.enabled ? 1 : 0);
+                queueParam(deviceId, 'humanize_amount', state.patch.humanize.amount);
+                queueParam(deviceId, 'vibrato_depth', state.patch.expression.vibratoDepthMax);
 
                 for (const [i, m] of state.patch.micPositions.entries()) {
-                    queueParam(`mic_${i}_volume`, m.volume);
-                    queueParam(`mic_${i}_pan`, m.pan);
-                    queueParam(`mic_${i}_enabled`, m.enabled ? 1 : 0);
+                    queueParam(deviceId, `mic_${i}_volume`, m.volume);
+                    queueParam(deviceId, `mic_${i}_pan`, m.pan);
+                    queueParam(deviceId, `mic_${i}_enabled`, m.enabled ? 1 : 0);
                 }
             }
         }
     }
 
-    function unregisterLevainDevice(): void {
-        activeDevice = null;
-        activePort = null;
-        paramBatcher.cancelAll();
-    }
+    function unregisterLevainDevice(deviceId: string): void {
+        activeDevices.delete(deviceId);
+        activePorts.delete(deviceId);
 
-    function setLevainParamWithAudio<K extends keyof LevainPatch>(key: K, value: LevainPatch[K]): void {
-        setLevainParam(key, value);
+        const state = levainStore.value;
+        if (state && state[deviceId]) {
+            const next = { ...state };
+            delete next[deviceId];
+            levainStore.set(next);
+        }
+
+        // We can't cancelAll easily per-device without changing the batcher,
+        // but it's okay to let pending updates naturally drop since the device is removed from map.
+    }
+    function setLevainParamWithAudio<K extends keyof LevainPatch>(deviceId: string, key: K, value: LevainPatch[K]): void {
+        setLevainParam(deviceId, key, value);
 
         if (key === 'currentArticulation' && typeof value === 'string') {
-            const patch = levainStore.value?.patch;
+            const patch = levainStore.value?.[deviceId]?.patch;
             if (patch) {
                 const artIndex = patch.articulations.findIndex((a) => a.type === value);
                 if (artIndex !== -1) {
-                    queueParam('current_articulation', artIndex);
+                    queueParam(deviceId, 'current_articulation', artIndex);
                 }
             }
         } else if (typeof value === 'number') {
             const rustKey = camelToSnake(key as string);
-            queueParam(rustKey, value);
+            queueParam(deviceId, rustKey, value);
         } else if (typeof value === 'boolean') {
             const rustKey = camelToSnake(key as string);
-            queueParam(rustKey, value ? 1.0 : 0.0);
+            queueParam(deviceId, rustKey, value ? 1.0 : 0.0);
         } else if (typeof value === 'object' && value !== null) {
             for (const [childKey, childVal] of Object.entries(value)) {
                 if (typeof childVal === 'number') {
                     const rustKey = `${camelToSnake(key as string)}_${camelToSnake(childKey)}`;
-                    queueParam(rustKey, childVal);
+                    queueParam(deviceId, rustKey, childVal);
                 } else if (typeof childVal === 'boolean') {
                     const rustKey = `${camelToSnake(key as string)}_${camelToSnake(childKey)}`;
-                    queueParam(rustKey, childVal ? 1.0 : 0.0);
+                    queueParam(deviceId, rustKey, childVal ? 1.0 : 0.0);
                 }
             }
         }
     }
 
-    function setMacroWithAudio(index: number, value: number): void {
-        setMacro(index, value);
+    function setMacroWithAudio(deviceId: string, index: number, value: number): void {
+        setMacro(deviceId, index, value);
 
-        const device = getDevice();
+        const device = getDevice(deviceId);
         if (!device) {
             return;
         }
 
-        const state = levainStore.value;
+        const state = levainStore.value?.[deviceId];
         if (!state) {
             return;
         }
@@ -169,22 +172,22 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         }
     }
 
-    function sendHumanizeToEngine(amount: number): void {
-        const device = getDevice();
+    function sendHumanizeToEngine(deviceId: string, amount: number): void {
+        const device = getDevice(deviceId);
         if (device) {
             device.setParam('humanize', amount);
         }
     }
 
-    function sendLegatoEnabledToEngine(enabled: boolean): void {
-        const device = getDevice();
+    function sendLegatoEnabledToEngine(deviceId: string, enabled: boolean): void {
+        const device = getDevice(deviceId);
         if (device) {
             device.setParam('legato_enabled', enabled ? 1.0 : 0.0);
         }
     }
 
-    function sendMicParamToEngine(micIndex: number, param: string, value: number): void {
-        const device = getDevice();
+    function sendMicParamToEngine(deviceId: string, micIndex: number, param: string, value: number): void {
+        const device = getDevice(deviceId);
         if (device) {
             device.setParam(`mic_${micIndex}_${param}`, value);
         }

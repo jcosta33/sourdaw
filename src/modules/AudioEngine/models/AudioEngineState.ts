@@ -7,6 +7,29 @@ export type AudioEngineState = {
     baseLatency: number;
 };
 
+export interface DeviceController {
+    ready?: boolean;
+    setParam(name: string, value: number, sampleFrame?: number): void;
+    scheduleParam?(name: string, value: number, time: number): void;
+    setPatch?(patch: Record<string, unknown>): void;
+    setBypass(bypassed: boolean): void;
+    destroy?(): void;
+    
+    // Optional device-specific methods (Shims/Extensions)
+    noteOn?(note: number, velocity: number, sampleFrame?: number): void;
+    noteOff?(note: number, sampleFrame?: number): void;
+    allNotesOff?(): void;
+    handleCc?(cc: number, value: number): void;
+    setPadParam?(pad: number, name: string, value: number): void;
+    setSustain?(position: number): void;
+    setUnaCorda?(engaged: boolean): void;
+    setSostenuto?(engaged: boolean): void;
+    noteOnMidi2?(midiNote: number, velocity16bit: number, pitchOffsetQ24: number): void;
+    setTemperament?(index: number): void;
+    loadAttackClip?(key: number, samples: Float32Array): void;
+    updateState?(clips: Record<string, any>): void;
+}
+
 export type BuiltinDeviceNode = {
     deviceId: string;
     type: string;
@@ -16,6 +39,8 @@ export type BuiltinDeviceNode = {
     bypassed?: boolean;
     /** Stop oscillators and release resources when the device is removed. */
     dispose?: () => void;
+    /** Unified controller for all device types */
+    controller?: DeviceController;
     /** Controls for native Rust/WASM DSP devices (param updates via MessagePort) */
     nativeDspControls?: {
         setParam: (name: string, value: number) => void;

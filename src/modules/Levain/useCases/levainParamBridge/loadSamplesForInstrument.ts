@@ -1,5 +1,5 @@
 import { levainBridge } from './levainBridge';
 
-export const loadSamplesForInstrument = (instrumentId: string): void => {
-    levainBridge().loadSamplesForInstrument(instrumentId);
+export const loadSamplesForInstrument = (deviceId: string, instrumentId: string): void => {
+    levainBridge().loadSamplesForInstrument(deviceId, instrumentId);
 };
