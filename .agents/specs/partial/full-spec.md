@@ -473,10 +473,10 @@ Today the piano roll (`src/modules/Workspace/presentations/views/ClipView/PianoR
 
 Add a **view-mode selector** to `PianoRollToolbar.tsx` with three modes:
 
-| Mode       | Layout                                                                                                                                        |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Note**   | Current behavior — single canvas, optional single lane below                                                                                  |
-| **Phrase** | Left sidebar: phrase list (name, color, energy). Main canvas: piano roll with phrase-bounded background bands. Phrase-level drag/select.      |
+| Mode       | Layout                                                                                                                                          |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Note**   | Current behavior — single canvas, optional single lane below                                                                                    |
+| **Phrase** | Left sidebar: phrase list (name, color, energy). Main canvas: piano roll with phrase-bounded background bands. Phrase-level drag/select.        |
 | **Lane**   | Main canvas: notes at top (shorter). Below: **all** expression lanes stacked (velocity, pressure, slide, pitchBend, CC). Vertically scrollable. |
 
 All three views share:
@@ -493,13 +493,13 @@ Define in `src/modules/MIDI/models/Phrase.ts`:
 type Phrase = {
     id: string;
     clipId: string;
-    name: string;                 // user-editable ("verse hook", "lick A")
+    name: string; // user-editable ("verse hook", "lick A")
     startBeat: number;
     endBeat: number;
-    color?: string;               // hex, inherits from clip if unset
-    noteIds: string[];            // references MidiNote.id, not copies
+    color?: string; // hex, inherits from clip if unset
+    noteIds: string[]; // references MidiNote.id, not copies
     role?: 'melodic' | 'harmonic' | 'rhythmic' | 'ornament';
-    energyHint?: number;          // 0-1, user-set or auto-computed
+    energyHint?: number; // 0-1, user-set or auto-computed
 };
 ```
 
@@ -519,12 +519,12 @@ When expression moves across target boundaries (synth → plugin, MPE-capable �
 
 **Four strategies** (user-visible, per-track default + per-paste override):
 
-| Strategy                  | Behavior                                                                                                               |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `literal`                 | Only send what the target natively supports. Drop the rest. No approximation.                                          |
-| `expressive-equivalent`   | Approximate unsupported expression using the target's closest equivalent (e.g., per-note pitch → MPE channel pitch bend). |
-| `conservative`            | Only send expression the system is certain the target renders correctly (intersection of declared capability). Safest. |
-| `target-optimized`        | Use the target's native strengths — if the plugin maps CC11 to expression, route pressure → CC11. Best audible result.  |
+| Strategy                | Behavior                                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `literal`               | Only send what the target natively supports. Drop the rest. No approximation.                                             |
+| `expressive-equivalent` | Approximate unsupported expression using the target's closest equivalent (e.g., per-note pitch → MPE channel pitch bend). |
+| `conservative`          | Only send expression the system is certain the target renders correctly (intersection of declared capability). Safest.    |
+| `target-optimized`      | Use the target's native strengths — if the plugin maps CC11 to expression, route pressure → CC11. Best audible result.    |
 
 **Three fallback projections** (applied as building blocks by the strategies):
 
@@ -544,13 +544,13 @@ export type TargetCapabilities = {
     supportsPerNoteSlide: boolean;
     hasCC11Expression: boolean;
     supportsChannelPressure: boolean;
-    expressionTier: 'basic' | 'extended' | 'full-mpe';   // matches DeviceCapabilities from item 8
+    expressionTier: 'basic' | 'extended' | 'full-mpe'; // matches DeviceCapabilities from item 8
 };
 
 export type ProjectedNote = {
     pitch: number;
     velocity: number;
-    channel: number;               // MPE channel allocation output
+    channel: number; // MPE channel allocation output
     startBeat: number;
     duration: number;
     projectedCCs?: Array<{ controller: number; value: number; beat: number }>;
@@ -562,9 +562,9 @@ export type ProjectedNote = {
 export type PortabilityResult = {
     projected: ProjectedNote[];
     report: {
-        preserved: string[];        // e.g., ["velocity", "pitch bend"]
-        approximated: string[];     // e.g., ["pressure → CC11"]
-        dropped: string[];          // e.g., ["slide"]
+        preserved: string[]; // e.g., ["velocity", "pitch bend"]
+        approximated: string[]; // e.g., ["pressure → CC11"]
+        dropped: string[]; // e.g., ["slide"]
     };
 };
 
@@ -573,7 +573,7 @@ export function queryTargetCapabilities(device: Device, clapMetadata?: ClapCapab
 export function projectExpression(
     notes: MidiNote[],
     strategy: OutputStrategy,
-    capabilities: TargetCapabilities,
+    capabilities: TargetCapabilities
 ): PortabilityResult;
 ```
 
@@ -1189,7 +1189,7 @@ export type ProvenanceReport = {
         recordedDurationSeconds: number;
         aiGeneratedClips: number;
         aiTransformedClips: number;
-        sampleLibrarySources: string[];  // deduplicated source identifiers
+        sampleLibrarySources: string[]; // deduplicated source identifiers
         importedAudioFiles: number;
     };
     clips: Array<{
@@ -1197,8 +1197,8 @@ export type ProvenanceReport = {
         name: string;
         trackId: string;
         sourceOrigin: string;
-        renderedBy?: { engine: string; fallbackUsed: boolean };  // from item 21
-        generatedBy?: string;  // model or library identifier
+        renderedBy?: { engine: string; fallbackUsed: boolean }; // from item 21
+        generatedBy?: string; // model or library identifier
     }>;
 };
 

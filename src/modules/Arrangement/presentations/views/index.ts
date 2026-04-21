@@ -7,5 +7,6 @@ export { MarkerLane } from './MarkerLane';
 export { MidiLearnButton } from './MidiLearnButton';
 export { TimelineChromeSurface } from './TimelineChromeSurface';
 export { TimelineMinimap } from './TimelineMinimap';
+export { TakeLanesView } from './TakeLanesView';
 export { TimelineSurface } from './TimelineSurface';
 export { TrackListView } from './TrackListView';
