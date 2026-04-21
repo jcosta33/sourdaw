@@ -184,7 +184,10 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         if (!rustKey) {
             return;
         }
-        const numericValue = typeof value === 'boolean' ? (value ? 1 : 0) : value;
+        const numericValue = (() => {
+            if (typeof value === 'boolean') return value ? 1 : 0;
+            return value;
+        })();
         void executeAppAction({
             type: 'setDeviceParameter',
             payload: { deviceId, paramId: rustKey, value: numericValue },
@@ -362,7 +365,11 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                             <div className="flex items-center justify-between px-3 py-2">
                                 <div className="text-[9px] uppercase tracking-[0.24em] text-white/44">Tail view</div>
                                 <ChamberLed>
-                                    {showDecayEq ? 'EQ overlay' : showFlow ? 'Flow open' : 'Live tail'}
+                                    {(() => {
+                                        if (showDecayEq) return 'EQ overlay';
+                                        if (showFlow) return 'Flow open';
+                                        return 'Live tail';
+                                    })()}
                                 </ChamberLed>
                             </div>
                             <div className="relative min-h-0 flex-1 border-t border-white/6">

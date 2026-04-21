@@ -465,7 +465,11 @@ export const AutomationLaneRow = ({
                     const isDragging = dragPointBeat === point.beat;
                     const isHovered = hoveredBeat === point.beat;
                     const isSelected = selectedSet.has(point.beat);
-                    const nodeSize = isDragging ? 6 : isHovered || isSelected ? 5 : 4;
+                    const nodeSize = (() => {
+                        if (isDragging) return 6;
+                        if (isHovered || isSelected) return 5;
+                        return 4;
+                    })();
 
                     return (
                         <g key={`pt-${String(ptIdx)}-${point.beat}`} data-auto-point="true">
@@ -509,11 +513,11 @@ export const AutomationLaneRow = ({
                                 strokeWidth={isDragging || isSelected ? 2 : 1.5}
                                 pointerEvents="none"
                                 style={{
-                                    filter: isDragging
-                                        ? `drop-shadow(0 0 8px ${curveColor})`
-                                        : isHovered || isSelected
-                                          ? `drop-shadow(0 0 4px ${curveColor})`
-                                          : `drop-shadow(0 0 2px ${curveColor})`,
+                                    filter: (() => {
+                                        if (isDragging) return `drop-shadow(0 0 8px ${curveColor})`;
+                                        if (isHovered || isSelected) return `drop-shadow(0 0 4px ${curveColor})`;
+                                        return `drop-shadow(0 0 2px ${curveColor})`;
+                                    })(),
                                 }}
                             />
                             {point.curve !== 'linear' && !isDragging ? (

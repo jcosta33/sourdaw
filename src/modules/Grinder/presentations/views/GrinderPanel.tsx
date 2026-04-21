@@ -1437,11 +1437,11 @@ function ControlDeck({
                 </div>
                 <div className="text-xl font-semibold text-white/90">{patch.name}</div>
                 <div className="text-sm text-white/46">
-                    {patch.engineMode === 'circuit'
-                        ? 'Circuit first'
-                        : patch.engineMode === 'capture'
-                          ? 'Capture loaded'
-                          : 'Hybrid loaded'}
+                    {(() => {
+                        if (patch.engineMode === 'circuit') return 'Circuit first';
+                        if (patch.engineMode === 'capture') return 'Capture loaded';
+                        return 'Hybrid loaded';
+                    })()}
                 </div>
             </div>
             <div className="grinder-window flex min-w-[200px] flex-col gap-2 px-3 py-3">
@@ -1515,11 +1515,11 @@ function HeroStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                 <div className="space-y-2.5 text-[13px] text-white/56">
                     <div>
                         Engine:{' '}
-                        {patch.engineMode === 'capture'
-                            ? 'Capture'
-                            : patch.engineMode === 'hybrid'
-                              ? 'Hybrid'
-                              : 'Circuit'}
+                        {(() => {
+                            if (patch.engineMode === 'capture') return 'Capture';
+                            if (patch.engineMode === 'hybrid') return 'Hybrid';
+                            return 'Circuit';
+                        })()}
                         .
                     </div>
                     <div>

@@ -720,47 +720,55 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 </DawDialogBody>
 
                 <DawDialogFooter tone="warm" align="end" className="px-6">
-                    {exporting ? (
-                        <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={handleCancel}
-                            className="border border-red-900/50 bg-red-950 text-red-400 hover:bg-red-900 hover:text-red-200"
-                        >
-                            <X className="mr-1 size-3.5" />
-                            Turn off Oven
-                        </Button>
-                    ) : progress === 100 ? (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={onClose}
-                            className="border-green-900/50 text-green-400 hover:bg-green-950/30 hover:text-green-300"
-                        >
-                            <CheckCircle2 className="mr-1 size-3.5" />
-                            Close Bakery
-                        </Button>
-                    ) : (
-                        <>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={onClose}
-                                className="text-stone-400 hover:text-stone-200"
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                size="sm"
-                                onClick={handleExport}
-                                disabled={formats.size === 0 || isExportActive()}
-                                className="border-t border-orange-400/30 bg-orange-600 font-medium text-white shadow-[0_0_15px_rgba(234,88,12,0.3)] transition-all hover:bg-orange-500 hover:shadow-[0_0_20px_rgba(249,115,22,0.5)]"
-                            >
-                                <Flame className="mr-1.5 size-3.5 opacity-80" />
-                                Start Baking
-                            </Button>
-                        </>
-                    )}
+                    {(() => {
+                        if (exporting) {
+                            return (
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={handleCancel}
+                                    className="border border-red-900/50 bg-red-950 text-red-400 hover:bg-red-900 hover:text-red-200"
+                                >
+                                    <X className="mr-1 size-3.5" />
+                                    Turn off Oven
+                                </Button>
+                            );
+                        }
+                        if (progress === 100) {
+                            return (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={onClose}
+                                    className="border-green-900/50 text-green-400 hover:bg-green-950/30 hover:text-green-300"
+                                >
+                                    <CheckCircle2 className="mr-1 size-3.5" />
+                                    Close Bakery
+                                </Button>
+                            );
+                        }
+                        return (
+                            <>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={onClose}
+                                    className="text-stone-400 hover:text-stone-200"
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    onClick={handleExport}
+                                    disabled={formats.size === 0 || isExportActive()}
+                                    className="border-t border-orange-400/30 bg-orange-600 font-medium text-white shadow-[0_0_15px_rgba(234,88,12,0.3)] transition-all hover:bg-orange-500 hover:shadow-[0_0_20px_rgba(249,115,22,0.5)]"
+                                >
+                                    <Flame className="mr-1.5 size-3.5 opacity-80" />
+                                    Start Baking
+                                </Button>
+                            </>
+                        );
+                    })()}
                 </DawDialogFooter>
             </DialogContent>
         </Dialog>

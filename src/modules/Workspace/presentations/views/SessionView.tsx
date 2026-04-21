@@ -142,11 +142,12 @@ export const SessionView = (): ReactElement => {
                                                         key={sceneIndex}
                                                         className={cn(
                                                             'flex h-10 cursor-pointer items-center justify-center border-b border-border-hairline transition-colors',
-                                                            clipId
-                                                                ? isActive
-                                                                    ? 'bg-[var(--color-state-play)]/20 shadow-[inset_0_0_8px_color-mix(in_oklch,var(--color-state-play)_10%,transparent)]'
-                                                                    : 'bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)] hover:bg-surface-raised'
-                                                                : 'hover:bg-white/[0.03]'
+                                                            (() => {
+                                                                if (!clipId) return 'hover:bg-white/[0.03]';
+                                                                if (isActive)
+                                                                    return 'bg-[var(--color-state-play)]/20 shadow-[inset_0_0_8px_color-mix(in_oklch,var(--color-state-play)_10%,transparent)]';
+                                                                return 'bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)] hover:bg-surface-raised';
+                                                            })()
                                                         )}
                                                         onClick={() => {
                                                             if (clipId) {
@@ -171,11 +172,12 @@ export const SessionView = (): ReactElement => {
                                                                                     : 'bg-muted/30 text-muted-foreground'
                                                                             )}
                                                                             style={{
-                                                                                backgroundColor: isActive
-                                                                                    ? undefined
-                                                                                    : track.color
-                                                                                      ? `${track.color}20`
-                                                                                      : undefined,
+                                                                                backgroundColor: (() => {
+                                                                                    if (isActive) return undefined;
+                                                                                    if (track.color)
+                                                                                        return `${track.color}20`;
+                                                                                    return undefined;
+                                                                                })(),
                                                                             }}
                                                                         >
                                                                             Clip
