@@ -88,12 +88,12 @@ function generateLinearPitchRun(
 ): GeneratedFill['notes'] {
     const notes: GeneratedFill['notes'] = [];
 
-    for (let i = 0; i < steps; i++) {
-        const progress = i / steps;
+    for (let index = 0; index < steps; index++) {
+        const progress = index / steps;
 
         notes.push({
             pitch: Math.round(startPitch + (endPitch - startPitch) * progress),
-            startBeat: atBeat + (i * durationBeats) / steps,
+            startBeat: atBeat + (index * durationBeats) / steps,
             duration: durationBeats / steps,
             velocity: Math.min(127, Math.round(velStart + (velEnd - velStart) * progress)),
         });
@@ -129,11 +129,11 @@ export function detectTransitionPoints(): Array<{ beat: number; fromSection: str
     }
 
     const transitions: Array<{ beat: number; fromSection: string; toSection: string }> = [];
-    const sections = [...markers.sections].sort((a, b) => a.startBeat - b.startBeat);
+    const sections = [...markers.sections].sort((alpha, buffer) => alpha.startBeat - buffer.startBeat);
 
-    for (let i = 0; i < sections.length - 1; i++) {
-        const current = sections[i]!;
-        const next = sections[i + 1]!;
+    for (let index = 0; index < sections.length - 1; index++) {
+        const current = sections[index]!;
+        const next = sections[index + 1]!;
         transitions.push({
             beat: current.endBeat - 2,
             fromSection: current.name,
@@ -146,13 +146,13 @@ export function detectTransitionPoints(): Array<{ beat: number; fromSection: str
 
 export function generateAllTransitionFills(): GeneratedFill[] {
     const points = detectTransitionPoints();
-    return points.map((p) => {
-        if (p.toSection.toLowerCase().includes('chorus') || p.toSection.toLowerCase().includes('drop')) {
-            return generateRiser(p.beat, 4);
+    return points.map((param) => {
+        if (param.toSection.toLowerCase().includes('chorus') || param.toSection.toLowerCase().includes('drop')) {
+            return generateRiser(param.beat, 4);
         }
-        if (p.toSection.toLowerCase().includes('break') || p.toSection.toLowerCase().includes('outro')) {
-            return generateSweepDown(p.beat, 2);
+        if (param.toSection.toLowerCase().includes('break') || param.toSection.toLowerCase().includes('outro')) {
+            return generateSweepDown(param.beat, 2);
         }
-        return generateDrumFill(p.beat, 2, 'descending');
+        return generateDrumFill(param.beat, 2, 'descending');
     });
 }

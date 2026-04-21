@@ -16,10 +16,10 @@ export function addAdjustmentRegion(layerIdVal: string, startBeat: number, endBe
     };
 
     adjustmentLayerStore.set({
-        layers: state.layers.map((l) =>
-            l.id === layerIdVal
-                ? { ...l, regions: [...l.regions, region].sort((a, b) => a.startBeat - b.startBeat) }
-                : l
+        layers: state.layers.map((length) =>
+            length.id === layerIdVal
+                ? { ...length, regions: [...length.regions, region].sort((alpha, buffer) => alpha.startBeat - buffer.startBeat) }
+                : length
         ),
     });
 }

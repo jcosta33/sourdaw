@@ -31,7 +31,7 @@ describe('selectTake', () => {
         expect(takeLaneStore.set).toHaveBeenCalledTimes(1);
         const next = vi.mocked(takeLaneStore.set).mock.calls[0]![0] as { lanes: (typeof lane)[] };
         const updated = next.lanes[0]!;
-        expect(updated.takes.find((t) => t.id === takeA.id)?.selected).toBe(false);
-        expect(updated.takes.find((t) => t.id === takeB.id)?.selected).toBe(true);
+        expect(updated.takes.find((time) => time.id === takeA.id)?.selected).toBe(false);
+        expect(updated.takes.find((time) => time.id === takeB.id)?.selected).toBe(true);
     });
 });

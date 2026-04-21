@@ -27,8 +27,8 @@ export function saveTrackAsTemplate(trackId: string, name: string, category?: st
         category: category ?? 'User',
         createdAt: Date.now(),
         trackKind: track.kind,
-        devices: track.devices.map((d) => ({ ...d })),
-        sends: track.sends.map((s) => ({ ...s })),
+        devices: track.devices.map((data) => ({ ...data })),
+        sends: track.sends.map((state) => ({ ...state })),
         gain: track.gain,
         pan: track.pan,
         color: track.color,
@@ -45,7 +45,7 @@ export function saveTrackAsTemplate(trackId: string, name: string, category?: st
 
 export function loadTrackTemplate(templateId: string): void {
     const templates = ensureCache(loadTrackTemplates);
-    const template = templates.find((t) => t.id === templateId);
+    const template = templates.find((time) => time.id === templateId);
     if (!template) {
         return;
     }
@@ -53,8 +53,8 @@ export function loadTrackTemplate(templateId: string): void {
     const track = createTrack({ name: template.name, kind: template.trackKind });
     const applied = {
         ...track,
-        devices: template.devices.map((d) => ({ ...d, id: `dev-${crypto.randomUUID().slice(0, 8)}` })),
-        sends: template.sends.map((s) => ({ ...s })),
+        devices: template.devices.map((data) => ({ ...data, id: `dev-${crypto.randomUUID().slice(0, 8)}` })),
+        sends: template.sends.map((state1) => ({ ...state1 })),
         gain: template.gain,
         pan: template.pan,
         color: template.color,
@@ -76,7 +76,7 @@ export function getTrackTemplates(): readonly TrackTemplate[] {
 
 export function deleteTrackTemplate(templateId: string): void {
     const templates = ensureCache(loadTrackTemplates);
-    const filtered = templates.filter((t) => t.id !== templateId);
+    const filtered = templates.filter((time) => time.id !== templateId);
     saveTrackTemplates(filtered);
     templateCache = filtered;
 }

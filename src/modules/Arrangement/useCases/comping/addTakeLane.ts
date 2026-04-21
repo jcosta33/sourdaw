@@ -7,7 +7,7 @@ export function addTakeLane(trackId: string): void {
         return;
     }
 
-    const exists = state.lanes.some((l) => l.trackId === trackId);
+    const exists = state.lanes.some((length) => length.trackId === trackId);
     if (exists) {
         return;
     }

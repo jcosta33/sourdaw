@@ -6,6 +6,6 @@ export const handleArmTrack = createHandler<'armTrack'>({
     execute: (action) => {
         armTrack(action.payload.trackId, action.payload.armed);
     },
-    describe: (a) => ({ label: a.payload.armed ? 'Arm track' : 'Disarm track' }),
+    describe: (alpha) => ({ label: alpha.payload.armed ? 'Arm track' : 'Disarm track' }),
     undoable: true,
 });

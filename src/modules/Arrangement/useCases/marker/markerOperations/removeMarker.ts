@@ -5,5 +5,5 @@ export function removeMarker(markerId: string): void {
     if (!state) {
         return;
     }
-    markerStore.set({ ...state, markers: state.markers.filter((m) => m.id !== markerId) });
+    markerStore.set({ ...state, markers: state.markers.filter((message) => message.id !== markerId) });
 }

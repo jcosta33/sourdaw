@@ -10,7 +10,7 @@ import { maybeRecordAutomation, syncToasterPadParam } from './helpers';
 
 export function setTrackPan(trackId: string, pan: number): void {
     const clamped = Math.max(-50, Math.min(50, pan));
-    updateTrack(trackId, (t) => ({ ...t, pan: clamped }));
+    updateTrack(trackId, (time) => ({ ...time, pan: clamped }));
     engineSetTrackPan(trackId, clamped);
     syncToasterPadParam(trackId, 'pan', clamped / 50, { updateDeviceParam, getAllTracks });
     maybeRecordAutomation({ getTransportState, getTrackById, recordAutomationValue }, trackId, 'pan', clamped);

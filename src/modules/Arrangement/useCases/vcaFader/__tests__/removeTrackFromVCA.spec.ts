@@ -5,7 +5,7 @@ import * as subject from '../removeTrackFromVCA';
 describe('removeTrackFromVCA', () => {
     it('should export removeTrackFromVCA', () => {
         expect(subject.removeTrackFromVCA).toBeDefined();
-        const t = typeof subject.removeTrackFromVCA;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.removeTrackFromVCA;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

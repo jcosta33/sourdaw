@@ -5,7 +5,7 @@ import * as subject from '../detectTempo';
 describe('detectTempo', () => {
     it('should export detectTempo', () => {
         expect(subject.detectTempo).toBeDefined();
-        const t = typeof subject.detectTempo;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.detectTempo;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

@@ -8,8 +8,8 @@ export default function transform(fileInfo: FileInfo, api: API, options: Options
   const renameMap: Record<string, string> = {
     i: 'index', j: 'jIndex', k: 'kIndex', e: 'event', v: 'value',
     t: 'time', n: 'node', p: 'param',
-    b: 'buffer', a: 'alpha', c: 'context', d: 'data', f: 'freq',
-    g: 'gain', l: 'length', m: 'message', o: 'output',
+    a: 'alpha', c: 'context', d: 'data', f: 'freq',
+    l: 'length', m: 'message', o: 'output',
     q: 'query', s: 'state', u: 'user'
   };
 

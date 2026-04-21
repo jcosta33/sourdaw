@@ -96,29 +96,29 @@ export const TrackListView = ({
         setScrollY(el.scrollTop);
     };
 
-    const collapsedFolders = new Set(tracks.filter((t) => t.kind === 'folder' && t.collapsed).map((t) => t.id));
-    const visibleTracks = tracks.filter((t) => {
-        if (t.kind === 'master') {
+    const collapsedFolders = new Set(tracks.filter((time) => time.kind === 'folder' && time.collapsed).map((time) => time.id));
+    const visibleTracks = tracks.filter((time) => {
+        if (time.kind === 'master') {
             return false;
         }
-        if (!t.parentId) {
+        if (!time.parentId) {
             return true;
         }
-        return !collapsedFolders.has(t.parentId);
+        return !collapsedFolders.has(time.parentId);
     });
 
     const handleDragStart = (trackId: string) => {
         dragTrackIdRef.current = trackId;
     };
 
-    const handleDragOver = (e: DragEvent<HTMLDivElement>, index: number) => {
-        e.preventDefault();
+    const handleDragOver = (event: DragEvent<HTMLDivElement>, index: number) => {
+        event.preventDefault();
         setDragOverIndex(index);
     };
 
     const handleDrop = (index: number) => {
         if (dragTrackIdRef.current) {
-            const globalIndex = tracks.findIndex((t) => t.id === visibleTracks[index]?.id);
+            const globalIndex = tracks.findIndex((time) => time.id === visibleTracks[index]?.id);
             if (globalIndex >= 0) {
                 reorderTrack(dragTrackIdRef.current, globalIndex);
             }
@@ -132,30 +132,30 @@ export const TrackListView = ({
         setDragOverIndex(null);
     };
 
-    const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-        const currentIndex = visibleTracks.findIndex((t) => t.id === selectedTrackId);
+    const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+        const currentIndex = visibleTracks.findIndex((time) => time.id === selectedTrackId);
 
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
             if (currentIndex < visibleTracks.length - 1) {
                 selectTrack(visibleTracks[currentIndex + 1]!.id);
             } else if (currentIndex === -1 && visibleTracks.length > 0) {
                 selectTrack(visibleTracks[0]!.id);
             }
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
             if (currentIndex > 0) {
                 selectTrack(visibleTracks[currentIndex - 1]!.id);
             } else if (currentIndex === -1 && visibleTracks.length > 0) {
                 selectTrack(visibleTracks[visibleTracks.length - 1]!.id);
             }
-        } else if (e.key === 'Enter' && selectedTrackId) {
-            e.preventDefault();
+        } else if (event.key === 'Enter' && selectedTrackId) {
+            event.preventDefault();
             setWorkspaceMode('clip');
-        } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        } else if (event.key === 'Delete' || event.key === 'Backspace') {
             if (selectedTrackId) {
-                e.preventDefault();
-                const track = visibleTracks.find((t) => t.id === selectedTrackId);
+                event.preventDefault();
+                const track = visibleTracks.find((time) => time.id === selectedTrackId);
                 if (track) {
                     void (async () => {
                         const ok = await confirmUser({
@@ -181,7 +181,7 @@ export const TrackListView = ({
                 actions={
                     <div
                         className="relative z-20 ml-auto flex items-center gap-0.5 opacity-80 transition-opacity group-hover:opacity-100"
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(event) => event.stopPropagation()}
                     >
                         <Tooltip>
                             <TooltipTrigger asChild>
@@ -224,7 +224,7 @@ export const TrackListView = ({
                                     size="icon-xs"
                                     aria-label="Add folder"
                                     onClick={() =>
-                                        createFolder(`Folder ${tracks.filter((t) => t.kind === 'folder').length + 1}`)
+                                        createFolder(`Folder ${tracks.filter((time) => time.kind === 'folder').length + 1}`)
                                     }
                                 >
                                     <FolderPlus className="size-3" aria-hidden="true" />
@@ -238,7 +238,6 @@ export const TrackListView = ({
             >
                 <MiniMasterSpectrum />
             </DawHeaderBand>
-
             <div
                 ref={scrollRef}
                 className="flex-1 overflow-y-auto overflow-x-hidden"
@@ -254,18 +253,18 @@ export const TrackListView = ({
                                 tabIndex={track.id === selectedTrackId ? 0 : -1}
                                 aria-selected={track.id === selectedTrackId}
                                 draggable
-                                onDragStart={(e) => {
-                                    e.dataTransfer.setData('text/plain', track.id);
-                                    e.dataTransfer.effectAllowed = 'move';
+                                onDragStart={(event) => {
+                                    event.dataTransfer.setData('text/plain', track.id);
+                                    event.dataTransfer.effectAllowed = 'move';
                                     handleDragStart(track.id);
                                 }}
-                                onDragOver={(e) => {
-                                    e.preventDefault();
-                                    e.dataTransfer.dropEffect = 'move';
-                                    handleDragOver(e, index);
+                                onDragOver={(event) => {
+                                    event.preventDefault();
+                                    event.dataTransfer.dropEffect = 'move';
+                                    handleDragOver(event, index);
                                 }}
-                                onDrop={(e) => {
-                                    e.preventDefault();
+                                onDrop={(event) => {
+                                    event.preventDefault();
                                     handleDrop(index);
                                 }}
                                 onDragEnd={handleDragEnd}

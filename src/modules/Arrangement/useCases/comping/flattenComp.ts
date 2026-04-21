@@ -7,6 +7,6 @@ export function flattenComp(trackId: string): void {
     }
 
     takeLaneStore.set({
-        lanes: state.lanes.filter((l) => l.trackId !== trackId),
+        lanes: state.lanes.filter((length) => length.trackId !== trackId),
     });
 }

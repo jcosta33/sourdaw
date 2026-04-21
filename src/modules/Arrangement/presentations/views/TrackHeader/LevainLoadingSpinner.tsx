@@ -24,7 +24,7 @@ const defaultLevainState: LevainState = {
 
 export const LevainLoadingSpinner = ({ track }: Props): ReactElement | null => {
     // Only bother checking if this track actually has a levain device
-    const isLevainTrack = track.devices.some((d: any) => d.type === 'levain');
+    const isLevainTrack = track.devices.some((data: any) => data.type === 'levain');
 
     // We only subscribe if it's a levain track to avoid unnecessary re-renders on pure audio tracks
     const levainState = useStore(levainStore, defaultLevainState);

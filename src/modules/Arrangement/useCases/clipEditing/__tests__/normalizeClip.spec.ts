@@ -5,7 +5,7 @@ import * as subject from '../normalizeClip';
 describe('normalizeClip', () => {
     it('should export normalizeClip', () => {
         expect(subject.normalizeClip).toBeDefined();
-        const t = typeof subject.normalizeClip;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.normalizeClip;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

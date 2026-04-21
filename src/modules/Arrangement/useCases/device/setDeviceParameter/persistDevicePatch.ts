@@ -6,25 +6,25 @@ export function persistDevicePatch(deviceId: string, patch: Record<string, unkno
     if (!state) {
         return;
     }
-    const track = state.tracks.find((t) => t.devices.some((d) => d.id === deviceId));
+    const track = state.tracks.find((time) => time.devices.some((data) => data.id === deviceId));
     if (!track) {
         return;
     }
-    updateTrack(track.id, (t) => ({
-        ...t,
-        devices: t.devices.map((d) => {
-            if (d.id !== deviceId) {
-                return d;
+    updateTrack(track.id, (time) => ({
+        ...time,
+        devices: time.devices.map((data) => {
+            if (data.id !== deviceId) {
+                return data;
             }
 
-            const parameterValues = { ...d.parameterValues };
+            const parameterValues = { ...data.parameterValues };
             for (const [key, value] of Object.entries(patch)) {
                 if (typeof value === 'number' && Number.isFinite(value)) {
                     parameterValues[key] = value;
                 }
             }
 
-            return { ...d, parameterValues };
+            return { ...data, parameterValues };
         }),
     }));
 }

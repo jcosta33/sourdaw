@@ -6,11 +6,11 @@ export function moveGainEnvelopePoint(clipId: string, pointId: string, beatOffse
         return;
     }
     const nextPoints = env.points
-        .map((p) =>
-            p.id === pointId
-                ? { ...p, beatOffset: Math.max(0, beatOffset), gainDb: Math.max(-60, Math.min(12, gainDb)) }
-                : p
+        .map((param) =>
+            param.id === pointId
+                ? { ...param, beatOffset: Math.max(0, beatOffset), gainDb: Math.max(-60, Math.min(12, gainDb)) }
+                : param
         )
-        .sort((a, b) => a.beatOffset - b.beatOffset);
+        .sort((alpha, buffer) => alpha.beatOffset - buffer.beatOffset);
     setEnvelope(clipId, { ...env, points: nextPoints });
 }

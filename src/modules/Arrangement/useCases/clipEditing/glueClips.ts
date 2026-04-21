@@ -13,7 +13,7 @@ export function glueClips(clipIds: string[]): void {
     }
 
     // Guard: reject selections that span multiple tracks
-    const tracksWithMatchingClips = state.tracks.filter((t) => t.clips.some((c) => clipIds.includes(c.id)));
+    const tracksWithMatchingClips = state.tracks.filter((time) => time.clips.some((context) => clipIds.includes(context.id)));
     if (tracksWithMatchingClips.length > 1) {
         logger.warn('glueClips: clips span multiple tracks — gluing is only supported within a single track');
         return;
@@ -23,18 +23,18 @@ export function glueClips(clipIds: string[]): void {
     if (!firstTrack) {
         return;
     }
-    const clips = firstTrack.clips.filter((c) => clipIds.includes(c.id));
+    const clips = firstTrack.clips.filter((context) => clipIds.includes(context.id));
     if (clips.length < 2) {
         return;
     }
     let startBeat = Infinity;
     let endBeat = -Infinity;
-    for (const c of clips) {
-        if (c.startBeat < startBeat) {
-            startBeat = c.startBeat;
+    for (const context of clips) {
+        if (context.startBeat < startBeat) {
+            startBeat = context.startBeat;
         }
-        if (c.endBeat > endBeat) {
-            endBeat = c.endBeat;
+        if (context.endBeat > endBeat) {
+            endBeat = context.endBeat;
         }
     }
     const gluedId = getNextClipId();
@@ -52,9 +52,9 @@ export function glueClips(clipIds: string[]): void {
         locked: false,
         muted: false,
     };
-    updateTrack(firstTrack.id, (t) => ({
-        ...t,
-        clips: [...t.clips.filter((c) => !clipIds.includes(c.id)), glued],
+    updateTrack(firstTrack.id, (time) => ({
+        ...time,
+        clips: [...time.clips.filter((context) => !clipIds.includes(context.id)), glued],
     }));
 
     // Merge MIDI data from source clips into the glued clip

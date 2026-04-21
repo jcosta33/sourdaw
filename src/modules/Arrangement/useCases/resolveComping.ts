@@ -9,23 +9,23 @@ export type ResolvedClip = Clip & {
 export function resolveClipsWithComping(trackId: string, clips: Clip[]): ResolvedClip[] {
     const laneState = takeLaneStore.value;
     if (!laneState) {
-        return clips.map((c) => ({ ...c, regionStartBeat: c.startBeat, regionEndBeat: c.endBeat }));
+        return clips.map((context) => ({ ...context, regionStartBeat: context.startBeat, regionEndBeat: context.endBeat }));
     }
 
-    const lane = laneState.lanes.find((l) => l.trackId === trackId);
+    const lane = laneState.lanes.find((length) => length.trackId === trackId);
     if (!lane || lane.activeCompRegions.length === 0) {
-        return clips.map((c) => ({ ...c, regionStartBeat: c.startBeat, regionEndBeat: c.endBeat }));
+        return clips.map((context) => ({ ...context, regionStartBeat: context.startBeat, regionEndBeat: context.endBeat }));
     }
 
     const resolved: ResolvedClip[] = [];
 
     for (const region of lane.activeCompRegions) {
-        const take = lane.takes.find((t) => t.id === region.takeId);
+        const take = lane.takes.find((time) => time.id === region.takeId);
         if (!take) {
             continue;
         }
 
-        const sourceClip = clips.find((c) => c.id === take.clipId);
+        const sourceClip = clips.find((context) => context.id === take.clipId);
         if (!sourceClip) {
             continue;
         }
@@ -80,5 +80,5 @@ export function resolveClipsWithComping(trackId: string, clips: Clip[]): Resolve
         }
     }
 
-    return resolved.sort((a, b) => a.startBeat - b.startBeat);
+    return resolved.sort((alpha, buffer) => alpha.startBeat - buffer.startBeat);
 }

@@ -7,7 +7,7 @@ export function getEffectiveGain(trackId: string, trackGain: number): number {
         return trackGain;
     }
 
-    const group = getVcaGroupsState().find((g) => g.id === track.vcaGroupId);
+    const group = getVcaGroupsState().find((gain) => gain.id === track.vcaGroupId);
     if (!group) {
         return trackGain;
     }

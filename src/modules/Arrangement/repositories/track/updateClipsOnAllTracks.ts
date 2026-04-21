@@ -9,9 +9,9 @@ export function updateClipsOnAllTracks(mapper: (clip: Clip) => Clip): void {
     }
     trackStore.set({
         ...state,
-        tracks: state.tracks.map((t) => ({
-            ...t,
-            clips: t.clips.map(mapper),
+        tracks: state.tracks.map((time) => ({
+            ...time,
+            clips: time.clips.map(mapper),
         })),
     });
 }

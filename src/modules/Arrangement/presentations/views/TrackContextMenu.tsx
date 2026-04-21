@@ -47,9 +47,9 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
     const [renameValue, setRenameValue] = useState('');
     const [showBounceDialog, setShowBounceDialog] = useState(false);
 
-    const handleContextMenu = (e: MouseEvent<HTMLDivElement>) => {
-        e.preventDefault();
-        setPosition({ x: e.clientX, y: e.clientY });
+    const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        setPosition({ x: event.clientX, y: event.clientY });
     };
 
     const close = () => {
@@ -201,12 +201,12 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 type="file"
                 accept="audio/*"
                 className="hidden"
-                onChange={(e) => {
-                    const file = e.target.files?.[0];
+                onChange={(event) => {
+                    const file = event.target.files?.[0];
                     if (file) {
                         void handleImportAudio(file);
                     }
-                    e.target.value = '';
+                    event.target.value = '';
                 }}
             />
             <input
@@ -214,24 +214,22 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 type="file"
                 accept=".mid,.midi"
                 className="hidden"
-                onChange={(e) => {
-                    const file = e.target.files?.[0];
+                onChange={(event) => {
+                    const file = event.target.files?.[0];
                     if (file) {
                         void importMidiFile(file);
                     }
-                    e.target.value = '';
+                    event.target.value = '';
                     close();
                 }}
             />
             {children}
-
             <BounceOptionsDialog
                 track={track}
                 open={showBounceDialog}
                 onOpenChange={setShowBounceDialog}
                 onConfirm={handleBounceConfirm}
             />
-
             {position ? (
                 <DawContextMenuSurface
                     ref={menuRef}
@@ -290,12 +288,12 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                             ))}
                         </div>
                     ) : (
-                        actions.map((item, i) =>
+                        actions.map((item, index) =>
                             item.label === '---' ? (
-                                <DawMenuSeparator key={i} className="border-border/50" />
+                                <DawMenuSeparator key={index} className="border-border/50" />
                             ) : (
                                 <DawMenuButton
-                                    key={i}
+                                    key={index}
                                     role="menuitem"
                                     tone={'destructive' in item && item.destructive ? 'danger' : 'default'}
                                     onClick={(item as MenuItem).action}

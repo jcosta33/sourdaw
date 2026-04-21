@@ -13,8 +13,8 @@ export function moveClip(clipId: string, targetTrackId: string, startBeat: numbe
 
     let movedClip: Clip | undefined;
     let oldStartBeat: number | undefined;
-    const tracksWithoutClip = state.tracks.map((t) => {
-        const clip = t.clips.find((c) => c.id === clipId);
+    const tracksWithoutClip = state.tracks.map((time) => {
+        const clip = time.clips.find((context) => context.id === clipId);
         if (clip) {
             oldStartBeat = clip.startBeat;
             movedClip = {
@@ -24,7 +24,7 @@ export function moveClip(clipId: string, targetTrackId: string, startBeat: numbe
                 endBeat: startBeat + (clip.endBeat - clip.startBeat),
             };
         }
-        return { ...t, clips: t.clips.filter((c) => c.id !== clipId) };
+        return { ...time, clips: time.clips.filter((context) => context.id !== clipId) };
     });
 
     if (!movedClip || oldStartBeat === undefined) {
@@ -33,7 +33,7 @@ export function moveClip(clipId: string, targetTrackId: string, startBeat: numbe
 
     setTrackState({
         ...state,
-        tracks: tracksWithoutClip.map((t) => (t.id === targetTrackId ? { ...t, clips: [...t.clips, movedClip!] } : t)),
+        tracks: tracksWithoutClip.map((time) => (time.id === targetTrackId ? { ...time, clips: [...time.clips, movedClip!] } : time)),
     });
 
     // Automation: shift from the original drag start (preview doesn't shift automation)

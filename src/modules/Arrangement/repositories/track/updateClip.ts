@@ -19,12 +19,12 @@ export function updateClip(clipId: string, updater: (clip: Clip) => Clip): void 
     // Locate the containing track + clip index without cloning.
     let trackIdx = -1;
     let clipIdx = -1;
-    for (let i = 0; i < state.tracks.length; i++) {
-        const t = state.tracks[i]!;
-        const j = t.clips.findIndex((c) => c.id === clipId);
-        if (j !== -1) {
-            trackIdx = i;
-            clipIdx = j;
+    for (let index = 0; index < state.tracks.length; index++) {
+        const time = state.tracks[index]!;
+        const jIndex = time.clips.findIndex((context) => context.id === clipId);
+        if (jIndex !== -1) {
+            trackIdx = index;
+            clipIdx = jIndex;
             break;
         }
     }

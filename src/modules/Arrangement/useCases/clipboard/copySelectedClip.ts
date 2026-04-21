@@ -31,7 +31,7 @@ export function copySelectedClip(): void {
         const midiNotes = found.clip.type === 'midi' ? midiState?.notesByClipId[found.clip.id] : undefined;
         entries.push({
             clip: { ...found.clip },
-            midiNotes: midiNotes ? midiNotes.map((n) => ({ ...n })) : undefined,
+            midiNotes: midiNotes ? midiNotes.map((node) => ({ ...node })) : undefined,
             sourceTrackId: found.trackId,
         });
     }

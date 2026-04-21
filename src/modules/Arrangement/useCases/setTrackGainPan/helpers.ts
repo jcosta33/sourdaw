@@ -15,21 +15,21 @@ export type ToasterSyncDeps = {
 
 export function syncToasterPadParam(trackId: string, paramName: string, value: number, deps: ToasterSyncDeps): void {
     const tracks = deps.getAllTracks();
-    const track = tracks.find((t) => t.id === trackId);
+    const track = tracks.find((time) => time.id === trackId);
     if (!track?.parentId) {
         return;
     }
 
-    const parent = tracks.find((t) => t.id === track.parentId);
+    const parent = tracks.find((time) => time.id === track.parentId);
     if (!parent) {
         return;
     }
 
-    const toasterDevice = parent.devices.find((d) => d.type === 'toaster');
+    const toasterDevice = parent.devices.find((data) => data.type === 'toaster');
 
     if (toasterDevice) {
-        const children = tracks.filter((t) => t.parentId === parent.id);
-        const padIndex = children.findIndex((t) => t.id === trackId);
+        const children = tracks.filter((time) => time.parentId === parent.id);
+        const padIndex = children.findIndex((time) => time.id === trackId);
         if (padIndex !== -1) {
             deps.updateDeviceParam(parent.id, toasterDevice.id, `pad_${padIndex}_${paramName}`, value);
         }

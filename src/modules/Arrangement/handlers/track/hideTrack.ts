@@ -6,6 +6,6 @@ export const handleHideTrack = createHandler<'hideTrack'>({
     execute: (action) => {
         hideTrack(action.payload.trackId, action.payload.hidden);
     },
-    describe: (a) => ({ label: a.payload.hidden ? 'Hide track' : 'Show track' }),
+    describe: (alpha) => ({ label: alpha.payload.hidden ? 'Hide track' : 'Show track' }),
     undoable: true,
 });

@@ -10,7 +10,7 @@ vi.mock('../../../stores/adjustmentLayer', () => ({
         get value() {
             return mockValue;
         },
-        set: (v: any) => mockSet(v),
+        set: (value: any) => mockSet(value),
     },
 }));
 

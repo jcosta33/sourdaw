@@ -4,13 +4,13 @@ import { createTake, createTakeLane } from '../TakeLane';
 
 describe('createTake', () => {
     it('creates an unselected take with beat range', () => {
-        const a = createTake('clip-1', 'T1', 0, 4);
-        const b = createTake('clip-1', 'T2', 4, 8);
-        expect(a.clipId).toBe('clip-1');
-        expect(a.name).toBe('T1');
-        expect(a.selected).toBe(false);
-        expect(a.id).toMatch(/^take-[a-f0-9]{8}$/i);
-        expect(b.id).not.toBe(a.id);
+        const alpha = createTake('clip-1', 'T1', 0, 4);
+        const buffer = createTake('clip-1', 'T2', 4, 8);
+        expect(alpha.clipId).toBe('clip-1');
+        expect(alpha.name).toBe('T1');
+        expect(alpha.selected).toBe(false);
+        expect(alpha.id).toMatch(/^take-[a-f0-9]{8}$/i);
+        expect(buffer.id).not.toBe(alpha.id);
     });
 });
 

@@ -5,5 +5,5 @@ export function setSectionColor(sectionId: string, color: string): void {
     if (!state) {
         return;
     }
-    markerStore.set({ ...state, sections: state.sections.map((s) => (s.id === sectionId ? { ...s, color } : s)) });
+    markerStore.set({ ...state, sections: state.sections.map((state1) => (state1.id === sectionId ? { ...state1, color } : state1)) });
 }

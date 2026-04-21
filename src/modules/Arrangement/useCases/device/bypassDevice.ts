@@ -5,7 +5,7 @@ export function bypassDevice(deviceId: string, bypassed: boolean): void {
     const state = getTrackState();
     if (state) {
         for (const track of state.tracks) {
-            if (track.devices.some((d) => d.id === deviceId)) {
+            if (track.devices.some((data) => data.id === deviceId)) {
                 // Forward bypass to live engine for native DSP devices
                 import('#/modules/AudioEngine/useCases')
                     .then(({ updateDeviceBypass }) => {
@@ -19,8 +19,8 @@ export function bypassDevice(deviceId: string, bypassed: boolean): void {
         }
     }
 
-    mapAllTracks((t) => ({
-        ...t,
-        devices: t.devices.map((d) => (d.id === deviceId ? { ...d, bypassed } : d)),
+    mapAllTracks((time) => ({
+        ...time,
+        devices: time.devices.map((data) => (data.id === deviceId ? { ...data, bypassed } : data)),
     }));
 }

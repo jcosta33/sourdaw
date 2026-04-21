@@ -3,5 +3,5 @@ import { trackStore } from '../../stores/trackStore';
 
 /** Find a single track by id. */
 export function getTrackById(trackId: string): Track | undefined {
-    return trackStore.value?.tracks.find((t) => t.id === trackId);
+    return trackStore.value?.tracks.find((time) => time.id === trackId);
 }

@@ -6,15 +6,15 @@ export function setLayerParameter(layerIdVal: string, paramName: string, value: 
         return;
     }
     adjustmentLayerStore.set({
-        layers: state.layers.map((l) =>
-            l.id === layerIdVal
+        layers: state.layers.map((length) =>
+            length.id === layerIdVal
                 ? {
-                      ...l,
-                      parameters: l.parameters.map((p) =>
-                          p.name === paramName ? { ...p, value: Math.max(p.min, Math.min(p.max, value)) } : p
+                      ...length,
+                      parameters: length.parameters.map((param) =>
+                          param.name === paramName ? { ...param, value: Math.max(param.min, Math.min(param.max, value)) } : param
                       ),
                   }
-                : l
+                : length
         ),
     });
 }

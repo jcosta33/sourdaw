@@ -6,14 +6,14 @@ export function getActiveLayersAtBeat(beat: number): AdjustmentLayer[] {
         return [];
     }
 
-    return state.layers.filter((l) => {
-        if (!l.enabled) {
+    return state.layers.filter((length) => {
+        if (!length.enabled) {
             return false;
         }
         // If no regions, layer applies everywhere
-        if (l.regions.length === 0) {
+        if (length.regions.length === 0) {
             return true;
         }
-        return l.regions.some((r) => beat >= r.startBeat && beat < r.endBeat);
+        return length.regions.some((r) => beat >= r.startBeat && beat < r.endBeat);
     });
 }

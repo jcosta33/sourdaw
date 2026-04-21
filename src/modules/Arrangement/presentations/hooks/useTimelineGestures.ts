@@ -21,31 +21,31 @@ export const useTimelineGestures = (canvasRef: RefObject<HTMLCanvasElement | nul
 
         let lastScale = 1;
 
-        const onGestureStart = (e: Event): void => {
-            e.preventDefault();
+        const onGestureStart = (event: Event): void => {
+            event.preventDefault();
             lastScale = 1;
         };
 
-        const onGestureChange = (e: Event): void => {
-            e.preventDefault();
-            const ge = e as GestureEvent;
+        const onGestureChange = (event: Event): void => {
+            event.preventDefault();
+            const ge = event as GestureEvent;
             const delta = ge.scale - lastScale;
             lastScale = ge.scale;
             zoomTimeline(delta * 2);
         };
 
-        const onGestureEnd = (e: Event): void => {
-            e.preventDefault();
+        const onGestureEnd = (event: Event): void => {
+            event.preventDefault();
         };
 
-        const onWheel = (e: WheelEvent): void => {
-            e.preventDefault();
-            if (e.ctrlKey || e.metaKey) {
-                const isPinch = Math.abs(e.deltaY) < 10;
-                const zoomFactor = isPinch ? -e.deltaY * 0.02 : -e.deltaY * 0.005;
+        const onWheel = (event: WheelEvent): void => {
+            event.preventDefault();
+            if (event.ctrlKey || event.metaKey) {
+                const isPinch = Math.abs(event.deltaY) < 10;
+                const zoomFactor = isPinch ? -event.deltaY * 0.02 : -event.deltaY * 0.005;
                 zoomTimeline(zoomFactor);
-            } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-                scrollTimeline(e.deltaX || e.deltaY);
+            } else if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+                scrollTimeline(event.deltaX || event.deltaY);
                 const transport = transportStore.value;
                 if (transport?.isPlaying) {
                     setAutoScroll(false);
@@ -53,10 +53,10 @@ export const useTimelineGestures = (canvasRef: RefObject<HTMLCanvasElement | nul
             } else {
                 const currentY = timelineViewStore.value?.scrollY ?? 0;
                 const trackState = trackStore.value;
-                const totalTrackHeight = (trackState?.tracks ?? []).reduce((sum, t) => sum + (t.height ?? 64), 0);
+                const totalTrackHeight = (trackState?.tracks ?? []).reduce((sum, time) => sum + (time.height ?? 64), 0);
                 const viewHeight = canvas.clientHeight;
                 const maxY = Math.max(0, totalTrackHeight - viewHeight);
-                setScrollY(Math.min(maxY, Math.max(0, currentY + e.deltaY)));
+                setScrollY(Math.min(maxY, Math.max(0, currentY + event.deltaY)));
             }
         };
 

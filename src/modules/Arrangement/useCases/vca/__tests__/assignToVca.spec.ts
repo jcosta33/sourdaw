@@ -5,7 +5,7 @@ import * as subject from '../assignToVca';
 describe('assignToVca', () => {
     it('should export assignToVca', () => {
         expect(subject.assignToVca).toBeDefined();
-        const t = typeof subject.assignToVca;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.assignToVca;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

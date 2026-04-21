@@ -8,7 +8,7 @@ export function reorderTrack(trackId: string, newIndex: number): void {
     }
 
     const tracks = [...state.tracks];
-    const currentIndex = tracks.findIndex((t) => t.id === trackId);
+    const currentIndex = tracks.findIndex((time) => time.id === trackId);
     if (currentIndex < 0) {
         return;
     }

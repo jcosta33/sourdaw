@@ -12,10 +12,10 @@ export function replaceClipAudioBuffer(clipId: string, newBufferId: string): voi
 
     trackStore.set({
         ...state,
-        tracks: state.tracks.map((t) => ({
-            ...t,
-            clips: t.clips.map((c) =>
-                c.id === clipId || c.audioBufferId === clipId ? { ...c, audioBufferId: newBufferId } : c
+        tracks: state.tracks.map((time) => ({
+            ...time,
+            clips: time.clips.map((context) =>
+                context.id === clipId || context.audioBufferId === clipId ? { ...context, audioBufferId: newBufferId } : context
             ),
         })),
     });

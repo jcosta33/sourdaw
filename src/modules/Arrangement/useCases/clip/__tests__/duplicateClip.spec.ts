@@ -5,7 +5,7 @@ import * as subject from '../duplicateClip';
 describe('duplicateClip', () => {
     it('should export duplicateClip', () => {
         expect(subject.duplicateClip).toBeDefined();
-        const t = typeof subject.duplicateClip;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.duplicateClip;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

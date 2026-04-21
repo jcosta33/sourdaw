@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn(),
     setTrackState: vi.fn(),
     getNextClipId: vi.fn(() => 'new-clip-id'),
-    snapSplitBeatToZeroCrossing: vi.fn((c, b) => b),
+    snapSplitBeatToZeroCrossing: vi.fn((context, buffer) => buffer),
 }));
 
 vi.mock('#/modules/Arrangement/repositories/track/getTrackState', () => ({

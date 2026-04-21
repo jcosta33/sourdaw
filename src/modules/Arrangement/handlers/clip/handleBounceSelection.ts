@@ -3,8 +3,8 @@ import { createHandler } from '#/utils/createHandler';
 import { bounceSelection } from '../../useCases/freezeBounce/bounceOperations';
 
 export const handleBounceSelection = createHandler<'bounceSelection'>({
-    execute: (a) => {
-        void bounceSelection(a.payload.trackId, a.payload.startBeat, a.payload.endBeat);
+    execute: (alpha) => {
+        void bounceSelection(alpha.payload.trackId, alpha.payload.startBeat, alpha.payload.endBeat);
     },
     describe: () => ({ label: 'Bounce selection to audio' }),
     undoable: true,

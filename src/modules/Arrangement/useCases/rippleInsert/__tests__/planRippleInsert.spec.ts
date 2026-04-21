@@ -40,7 +40,7 @@ describe('planRippleInsert', () => {
 
         const plan = planRippleInsert({ trackId: 't1', insertBeat: 2, insertDuration: 1 });
         expect(plan?.shiftedClips.length).toBe(2);
-        expect(plan?.shiftedClips.map((s) => s.clipId)).toEqual(['c2', 'c3']);
+        expect(plan?.shiftedClips.map((state) => state.clipId)).toEqual(['c2', 'c3']);
     });
 
     it('should return empty shifted clips if insertion point is at end', () => {

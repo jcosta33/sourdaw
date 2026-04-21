@@ -5,14 +5,14 @@ import { updateClip } from '../../repositories/track/updateClip';
 
 export function nudgeClip(clipId: string, beats: number): void {
     let appliedDelta = 0;
-    updateClip(clipId, (c) => {
-        if (c.locked) {
-            return c;
+    updateClip(clipId, (context) => {
+        if (context.locked) {
+            return context;
         }
-        const newStart = Math.max(0, c.startBeat + beats);
-        const duration = c.endBeat - c.startBeat;
-        appliedDelta = newStart - c.startBeat;
-        return { ...c, startBeat: newStart, endBeat: newStart + duration };
+        const newStart = Math.max(0, context.startBeat + beats);
+        const duration = context.endBeat - context.startBeat;
+        appliedDelta = newStart - context.startBeat;
+        return { ...context, startBeat: newStart, endBeat: newStart + duration };
     });
 
     // Notes and automation are indexed per clip with absolute beat positions —

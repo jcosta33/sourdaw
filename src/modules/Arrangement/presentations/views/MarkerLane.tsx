@@ -63,8 +63,8 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
         if (contextMenu.kind === 'none') {
             return undefined;
         }
-        const handleClick = (e: globalThis.MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        const handleClick = (event: globalThis.MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
                 setContextMenu({ kind: 'none' });
             }
         };
@@ -74,14 +74,14 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
 
     // Compute final beat on mouseup by reading the last mousemove position
     // We use a ref-based approach for the final commit to avoid stale closure
-    const handleMarkerDragStartStable = (e: MouseEvent, marker: Marker) => {
-        if (e.button !== 0) {
+    const handleMarkerDragStartStable = (event: MouseEvent, marker: Marker) => {
+        if (event.button !== 0) {
             return;
         }
-        e.preventDefault();
-        e.stopPropagation();
+        event.preventDefault();
+        event.stopPropagation();
 
-        const startX = e.clientX;
+        const startX = event.clientX;
         const originalBeat = marker.beat;
         let lastBeat = originalBeat;
 
@@ -112,25 +112,25 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
         window.addEventListener('mouseup', handleMouseUp);
     };
 
-    const handleLaneContextMenu = (e: MouseEvent<HTMLDivElement>) => {
+    const handleLaneContextMenu = (event: MouseEvent<HTMLDivElement>) => {
         if (dragRef.current) {
             return;
         }
-        e.preventDefault();
-        const rect = e.currentTarget.getBoundingClientRect();
-        const localX = e.clientX - rect.left;
+        event.preventDefault();
+        const rect = event.currentTarget.getBoundingClientRect();
+        const localX = event.clientX - rect.left;
         const clickBeat = (localX + scrollX) / pixelsPerBeat;
 
         // Find if clicked near an existing marker (within ~10 pixels)
-        const hitMarker = markers.find((m) => {
-            const mx = m.beat * pixelsPerBeat - scrollX;
+        const hitMarker = markers.find((message) => {
+            const mx = message.beat * pixelsPerBeat - scrollX;
             return Math.abs(localX - mx) < 10;
         });
 
         if (hitMarker) {
-            setContextMenu({ kind: 'marker', x: e.clientX, y: e.clientY, marker: hitMarker });
+            setContextMenu({ kind: 'marker', x: event.clientX, y: event.clientY, marker: hitMarker });
         } else {
-            setContextMenu({ kind: 'empty', x: e.clientX, y: e.clientY, beat: clickBeat });
+            setContextMenu({ kind: 'empty', x: event.clientX, y: event.clientY, beat: clickBeat });
         }
     };
 
@@ -207,12 +207,12 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                         <div
                             className="flex flex-col h-full w-[2px] cursor-ew-resize hover:w-[4px] hover:-ml-[1px] transition-all"
                             style={{ backgroundColor: marker.color }}
-                            onMouseDown={(e) => handleMarkerDragStartStable(e, marker)}
+                            onMouseDown={(event) => handleMarkerDragStartStable(event, marker)}
                         />
                         <div
                             className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 cursor-grab active:cursor-grabbing hover:bg-white/10"
                             style={{ backgroundColor: `${marker.color}33`, color: marker.color }}
-                            onMouseDown={(e) => handleMarkerDragStartStable(e, marker)}
+                            onMouseDown={(event) => handleMarkerDragStartStable(event, marker)}
                         >
                             <Flag className="size-2.5" />
                             {isEditing ? (
@@ -221,13 +221,13 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                                     size="micro"
                                     className="h-3 min-w-[60px] border-0 bg-transparent px-0 text-[9px] font-medium text-current shadow-none focus-visible:ring-0"
                                     value={editing.name}
-                                    onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                                    onChange={(event) => setEditing({ ...editing, name: event.target.value })}
                                     onBlur={commitRename}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
+                                    onKeyDown={(event) => {
+                                        if (event.key === 'Enter') {
                                             commitRename();
                                         }
-                                        if (e.key === 'Escape') {
+                                        if (event.key === 'Escape') {
                                             setEditing(null);
                                         }
                                     }}
@@ -239,7 +239,6 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                     </div>
                 );
             })}
-
             {contextMenu.kind !== 'none' ? (
                 <div
                     ref={menuRef}
@@ -259,15 +258,15 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                             <DawMenuButton onClick={handleStartRename}>Rename Marker</DawMenuButton>
                             <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
                             <div className="flex gap-1 px-2 pb-1">
-                                {MARKER_COLORS.map((c) => (
+                                {MARKER_COLORS.map((context) => (
                                     <DawSwatchButton
-                                        key={c}
-                                        color={c}
+                                        key={context}
+                                        color={context}
                                         onClick={() => {
-                                            setMarkerColor(contextMenu.marker.id, c);
+                                            setMarkerColor(contextMenu.marker.id, context);
                                             setContextMenu({ kind: 'none' });
                                         }}
-                                        aria-label={`Set color ${c}`}
+                                        aria-label={`Set color ${context}`}
                                     />
                                 ))}
                             </div>

@@ -35,21 +35,21 @@ export const handleCutTool = (x: number, y: number, beat: number): boolean => {
     if (!hit) {
         return true; // consumed, no clip hit
     }
-    const origClip = trackStore.value?.tracks.flatMap((t) => t.clips).find((c) => c.id === hit.clipId);
+    const origClip = trackStore.value?.tracks.flatMap((time) => time.clips).find((context) => context.id === hit.clipId);
     if (origClip) {
         const savedClip = { ...origClip };
         splitClip(hit.clipId, beat);
         const newClips =
             trackStore.value?.tracks
-                .flatMap((t) => t.clips)
+                .flatMap((time) => time.clips)
                 .filter(
-                    (c) =>
-                        c.id !== hit.clipId &&
-                        (c.startBeat === savedClip.startBeat || c.startBeat === beat) &&
-                        c.endBeat <= savedClip.endBeat &&
-                        c.startBeat >= savedClip.startBeat
+                    (context) =>
+                        context.id !== hit.clipId &&
+                        (context.startBeat === savedClip.startBeat || context.startBeat === beat) &&
+                        context.endBeat <= savedClip.endBeat &&
+                        context.startBeat >= savedClip.startBeat
                 ) ?? [];
-        const newClipIds = newClips.map((c) => c.id);
+        const newClipIds = newClips.map((context) => context.id);
         pushUndoEntry(
             'Split clip',
             () => {
@@ -87,7 +87,7 @@ export const handleDrawTool = (x: number, y: number, beat: number, drawDragRef: 
 
     if (hit?.clipId && !hit.noteId) {
         const trackState = trackStore.value;
-        const clip = trackState?.tracks.flatMap((t) => t.clips).find((c) => c.id === hit.clipId);
+        const clip = trackState?.tracks.flatMap((time) => time.clips).find((context) => context.id === hit.clipId);
         if (clip?.isInlineEditing && clip.type === 'midi') {
             // Draw a new note inside the inline clip
             const pitch = hit.pitch ?? 60;
@@ -98,7 +98,7 @@ export const handleDrawTool = (x: number, y: number, beat: number, drawDragRef: 
     }
 
     if (trackId) {
-        const track = trackStore.value?.tracks.find((t) => t.id === trackId);
+        const track = trackStore.value?.tracks.find((time) => time.id === trackId);
         const clipType = track?.kind === 'midi' ? 'midi' : 'audio';
         drawDragRef.current = { trackId, startBeat: Math.floor(beat), clipType };
         selectTrack(trackId);
@@ -135,10 +135,10 @@ export const handleAutomationTool = (
     const value = trackHit ? valueAtTrackY(contentY, trackHit.offset, trackHit.height) : 0.5;
 
     // Ensure a gain lane exists on this track
-    let lane = automationStore.value?.lanes.find((l) => l.trackId === trackId && l.parameterId === 'gain');
+    let lane = automationStore.value?.lanes.find((length) => length.trackId === trackId && length.parameterId === 'gain');
     if (!lane) {
         addAutomationLane(trackId, 'gain', 'Gain');
-        lane = automationStore.value?.lanes.find((l) => l.trackId === trackId && l.parameterId === 'gain');
+        lane = automationStore.value?.lanes.find((length) => length.trackId === trackId && length.parameterId === 'gain');
     }
     if (lane) {
         const point: AutomationPoint = { beat, value, curve: 'linear', tension: 0 };

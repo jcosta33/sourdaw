@@ -8,18 +8,18 @@ export function setCompRegion(trackId: string, region: CompRegion): void {
     }
 
     takeLaneStore.set({
-        lanes: state.lanes.map((l) => {
-            if (l.trackId !== trackId) {
-                return l;
+        lanes: state.lanes.map((length) => {
+            if (length.trackId !== trackId) {
+                return length;
             }
 
-            const filtered = l.activeCompRegions.filter(
+            const filtered = length.activeCompRegions.filter(
                 (r) => r.endBeat <= region.startBeat || r.startBeat >= region.endBeat
             );
 
             return {
-                ...l,
-                activeCompRegions: [...filtered, region].sort((a, b) => a.startBeat - b.startBeat),
+                ...length,
+                activeCompRegions: [...filtered, region].sort((alpha, buffer) => alpha.startBeat - buffer.startBeat),
             };
         }),
     });

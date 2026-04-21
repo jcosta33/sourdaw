@@ -21,8 +21,8 @@ function currentPlatformKey(): string {
 
 function isPresetCompatible(preset: SoundPreset): boolean {
     const isNative = currentPlatformKey() === 'native';
-    return preset.devices.every((d) => {
-        const descriptor = BUILTIN_PLUGINS.find((p) => p.id === d.type);
+    return preset.devices.every((data) => {
+        const descriptor = BUILTIN_PLUGINS.find((param) => param.id === data.type);
         if (!descriptor) {
             return true; // unknown device types (e.g. faust-*) pass through
         }

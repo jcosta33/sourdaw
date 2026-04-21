@@ -14,16 +14,16 @@ const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.6
 const MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
 function pearsonCorrelation(x: number[], y: number[]): number {
-    const n = x.length;
-    const meanX = x.reduce((s, v) => s + v, 0) / n;
-    const meanY = y.reduce((s, v) => s + v, 0) / n;
+    const node = x.length;
+    const meanX = x.reduce((state, value) => state + value, 0) / node;
+    const meanY = y.reduce((state, value) => state + value, 0) / node;
 
     let num = 0;
     let denX = 0;
     let denY = 0;
-    for (let i = 0; i < n; i++) {
-        const dx = (x[i] ?? 0) - meanX;
-        const dy = (y[i] ?? 0) - meanY;
+    for (let index = 0; index < node; index++) {
+        const dx = (x[index] ?? 0) - meanX;
+        const dy = (y[index] ?? 0) - meanY;
         num += dx * dy;
         denX += dx * dx;
         denY += dy * dy;
@@ -34,10 +34,10 @@ function pearsonCorrelation(x: number[], y: number[]): number {
 }
 
 function rotateArray(arr: number[], offset: number): number[] {
-    const n = arr.length;
+    const node = arr.length;
     const result: number[] = [];
-    for (let i = 0; i < n; i++) {
-        result.push(arr[(i + offset) % n] ?? 0);
+    for (let index = 0; index < node; index++) {
+        result.push(arr[(index + offset) % node] ?? 0);
     }
     return result;
 }

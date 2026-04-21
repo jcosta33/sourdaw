@@ -26,7 +26,7 @@ export function initStalenessDetection(): () => void {
 
         try {
             for (const track of state.tracks) {
-                const prevTrack = previous.tracks.find((t) => t.id === track.id);
+                const prevTrack = previous.tracks.find((time) => time.id === track.id);
                 if (!prevTrack) {
                     continue;
                 }
@@ -35,9 +35,9 @@ export function initStalenessDetection(): () => void {
                     if (track.clips !== prevTrack.clips || track.devices !== prevTrack.devices) {
                         const hash = await computeTrackHash(track.clips, track.devices);
                         if (hash !== track.freezeState.sourceContentHash) {
-                            updateTrack(track.id, (t) => ({
-                                ...t,
-                                freezeState: { ...t.freezeState, status: 'stale' },
+                            updateTrack(track.id, (time) => ({
+                                ...time,
+                                freezeState: { ...time.freezeState, status: 'stale' },
                             }));
                         }
                     }

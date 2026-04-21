@@ -146,16 +146,16 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         const viewportStartBeat = scrollX / pixelsPerBeat;
 
         const collapsedFolders = new Set(
-            (trackState?.tracks ?? []).filter((t) => t.kind === 'folder' && t.collapsed).map((t) => t.id)
+            (trackState?.tracks ?? []).filter((time) => time.kind === 'folder' && time.collapsed).map((time) => time.id)
         );
-        const visibleTracks = (trackState?.tracks ?? []).filter((t) => {
-            if (t.kind === 'master') {
+        const visibleTracks = (trackState?.tracks ?? []).filter((time) => {
+            if (time.kind === 'master') {
                 return false;
             }
-            if (!t.parentId) {
+            if (!time.parentId) {
                 return true;
             }
-            return !collapsedFolders.has(t.parentId);
+            return !collapsedFolders.has(time.parentId);
         });
 
         const mappedTracks: TrackRenderModel[] = visibleTracks.map((track, index) => {
@@ -171,11 +171,11 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                     color: clip.color || track.color,
                     type: clip.type,
                     muted: clip.muted,
-                    midiNotes: notes.map((n) => ({
-                        id: n.id,
-                        pitch: n.pitch,
-                        startBeat: n.startBeat,
-                        duration: n.duration,
+                    midiNotes: notes.map((node) => ({
+                        id: node.id,
+                        pitch: node.pitch,
+                        startBeat: node.startBeat,
+                        duration: node.duration,
                     })),
                     audioBufferId: clip.audioBufferId,
                     loopEnabled: clip.loopEnabled,
@@ -193,7 +193,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
             });
 
             // E1: Add ghost clips for this track
-            const ghosts = (trackState?.ghostClips ?? []).filter((g) => g.trackId === track.id);
+            const ghosts = (trackState?.ghostClips ?? []).filter((gain) => gain.trackId === track.id);
             for (const ghost of ghosts) {
                 mappedClips.push({
                     id: ghost.id,
@@ -203,11 +203,11 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                     color: ghost.color || '#3b82f6',
                     type: ghost.type,
                     muted: ghost.muted,
-                    midiNotes: (midiState?.notesByClipId[ghost.id] ?? []).map((n) => ({
-                        id: n.id,
-                        pitch: n.pitch,
-                        startBeat: n.startBeat,
-                        duration: n.duration,
+                    midiNotes: (midiState?.notesByClipId[ghost.id] ?? []).map((node) => ({
+                        id: node.id,
+                        pitch: node.pitch,
+                        startBeat: node.startBeat,
+                        duration: node.duration,
                     })),
                     audioBufferId: ghost.audioBufferId,
                     loopEnabled: ghost.loopEnabled,
@@ -246,11 +246,11 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                                   color: clip.color || track.color,
                                   type: clip.type,
                                   muted: clip.muted,
-                                  midiNotes: notes.map((n) => ({
-                                      id: n.id,
-                                      pitch: n.pitch,
-                                      startBeat: n.startBeat,
-                                      duration: n.duration,
+                                  midiNotes: notes.map((node) => ({
+                                      id: node.id,
+                                      pitch: node.pitch,
+                                      startBeat: node.startBeat,
+                                      duration: node.duration,
                                   })),
                                   audioBufferId: clip.audioBufferId,
                                   loopEnabled: clip.loopEnabled,

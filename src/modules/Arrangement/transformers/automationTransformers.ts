@@ -38,11 +38,11 @@ export function rdpSimplify(points: AutomationPoint[], tolerance: number): Autom
     const first = points[0]!;
     const last = points[points.length - 1]!;
 
-    for (let i = 1; i < points.length - 1; i++) {
-        const dist = perpendicularDistance(points[i]!, first, last);
+    for (let index = 1; index < points.length - 1; index++) {
+        const dist = perpendicularDistance(points[index]!, first, last);
         if (dist > maxDist) {
             maxDist = dist;
-            maxIdx = i;
+            maxIdx = index;
         }
     }
 
@@ -61,13 +61,13 @@ export function rdpSimplify(points: AutomationPoint[], tolerance: number): Autom
  * tension = 0: linear
  * tension > 0: exponential (slow start, fast end)
  */
-function applyTension(t: number, tension: number): number {
+function applyTension(time: number, tension: number): number {
     if (Math.abs(tension) < 0.01) {
-        return t;
+        return time;
     }
     // Use power curve with tension mapping
     const power = 2 ** (tension * 3); // Maps -1..+1 to 0.125..8
-    return t ** power;
+    return time ** power;
 }
 
 /**
@@ -89,24 +89,24 @@ export function interpolateAutomationValue(
         return p1.value;
     }
 
-    const t = (beat - p1.beat) / (p2.beat - p1.beat);
+    const time = (beat - p1.beat) / (p2.beat - p1.beat);
 
     if (p1.curve === 'stairs') {
         const steps = p1.stairSteps ?? 4;
-        const steppedT = Math.floor(t * steps) / steps;
+        const steppedT = Math.floor(time * steps) / steps;
         return p1.value + (p2.value - p1.value) * steppedT;
     }
 
     if (p1.curve === 'exponential') {
         const tension = p1.tension ?? 0;
-        const expT = applyTension(t, tension);
+        const expT = applyTension(time, tension);
         return p1.value + (p2.value - p1.value) * expT;
     }
 
     if (p1.curve === 's-curve') {
         const tension = p1.tension ?? 0.5;
-        const st = t * t * (3 - 2 * t); // Hermite basis
-        const curved = t + (st - t) * Math.abs(tension);
+        const st = time * time * (3 - 2 * time); // Hermite basis
+        const curved = time + (st - time) * Math.abs(tension);
         return p1.value + (p2.value - p1.value) * curved;
     }
 
@@ -117,18 +117,18 @@ export function interpolateAutomationValue(
         const v2 = p2.value;
         const v3 = nextPoint?.value ?? p2.value;
 
-        const t2 = t * t;
-        const t3 = t2 * t;
+        const t2 = time * time;
+        const t3 = t2 * time;
 
         // Catmull-Rom coefficients
         const result =
-            0.5 * (2 * v1 + (-v0 + v2) * t + (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 + (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
+            0.5 * (2 * v1 + (-v0 + v2) * time + (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 + (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
 
         return result;
     }
 
     // Linear
-    return p1.value + (p2.value - p1.value) * t;
+    return p1.value + (p2.value - p1.value) * time;
 }
 
 /**
@@ -192,8 +192,8 @@ export function generateShapePoints(
             // 8 random points
             const count = 8;
             const pts: AutomationPoint[] = [];
-            for (let i = 0; i <= count; i++) {
-                pts.push(pt(startBeat + (i / count) * duration, Math.random()));
+            for (let index = 0; index <= count; index++) {
+                pts.push(pt(startBeat + (index / count) * duration, Math.random()));
             }
             return pts;
         }
@@ -215,18 +215,18 @@ export function getAutomationRegions(
         return [];
     }
 
-    const sorted = [...points].sort((a, b) => a.beat - b.beat);
+    const sorted = [...points].sort((alpha, buffer) => alpha.beat - buffer.beat);
     const regions: { startBeat: number; endBeat: number }[] = [];
     let regionStart = sorted[0]!.beat;
     let regionEnd = sorted[0]!.beat;
 
-    for (let i = 1; i < sorted.length; i++) {
-        const p = sorted[i]!;
-        if (p.beat - regionEnd > maxGap) {
+    for (let index = 1; index < sorted.length; index++) {
+        const param = sorted[index]!;
+        if (param.beat - regionEnd > maxGap) {
             regions.push({ startBeat: regionStart, endBeat: regionEnd });
-            regionStart = p.beat;
+            regionStart = param.beat;
         }
-        regionEnd = p.beat;
+        regionEnd = param.beat;
     }
 
     regions.push({ startBeat: regionStart, endBeat: regionEnd });

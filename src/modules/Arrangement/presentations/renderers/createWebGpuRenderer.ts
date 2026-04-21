@@ -60,8 +60,8 @@ function colorToRgba(color: string, alpha = 1): [number, number, number, number]
         const lb = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3;
         // Linear → sRGB gamma, clamped to [0,1]
         const gamma = (x: number): number => {
-            const v = x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055;
-            return Math.max(0, Math.min(1, v));
+            const value = x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055;
+            return Math.max(0, Math.min(1, value));
         };
         return [gamma(lr), gamma(lg), gamma(lb), alpha];
     }
@@ -70,14 +70,14 @@ function colorToRgba(color: string, alpha = 1): [number, number, number, number]
     const clean = color.replace('#', '');
     if (clean.length === 3) {
         const r = parseInt(clean[0]! + clean[0]!, 16) / 255;
-        const g = parseInt(clean[1]! + clean[1]!, 16) / 255;
-        const b = parseInt(clean[2]! + clean[2]!, 16) / 255;
-        return [r, g, b, alpha];
+        const gain = parseInt(clean[1]! + clean[1]!, 16) / 255;
+        const buffer = parseInt(clean[2]! + clean[2]!, 16) / 255;
+        return [r, gain, buffer, alpha];
     }
     const r = parseInt(clean.slice(0, 2), 16) / 255;
-    const g = parseInt(clean.slice(2, 4), 16) / 255;
-    const b = parseInt(clean.slice(4, 6), 16) / 255;
-    return [isNaN(r) ? 0.4 : r, isNaN(g) ? 0.4 : g, isNaN(b) ? 0.4 : b, alpha];
+    const gain = parseInt(clean.slice(2, 4), 16) / 255;
+    const buffer = parseInt(clean.slice(4, 6), 16) / 255;
+    return [isNaN(r) ? 0.4 : r, isNaN(gain) ? 0.4 : gain, isNaN(buffer) ? 0.4 : buffer, alpha];
 }
 
 // ─── Geometry helper ──────────────────────────────────────────────────────────
@@ -93,9 +93,9 @@ function pushRect(
     x2: number,
     y2: number,
     r: number,
-    g: number,
-    b: number,
-    a: number,
+    gain: number,
+    buffer: number,
+    alpha: number,
     w: number,
     h: number
 ): number {
@@ -111,39 +111,39 @@ function pushRect(
         nx1,
         ny1,
         r,
-        g,
-        b,
-        a,
+        gain,
+        buffer,
+        alpha,
         nx2,
         ny1,
         r,
-        g,
-        b,
-        a,
+        gain,
+        buffer,
+        alpha,
         nx1,
         ny2,
         r,
-        g,
-        b,
-        a,
+        gain,
+        buffer,
+        alpha,
         nx2,
         ny1,
         r,
-        g,
-        b,
-        a,
+        gain,
+        buffer,
+        alpha,
         nx2,
         ny2,
         r,
-        g,
-        b,
-        a,
+        gain,
+        buffer,
+        alpha,
         nx1,
         ny2,
         r,
-        g,
-        b,
-        a,
+        gain,
+        buffer,
+        alpha,
     ];
     buf.set(verts, offset);
     return offset + FLOATS_PER_RECT;
@@ -248,8 +248,8 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                 if (rectCount >= MAX_RECTS) {
                     return;
                 }
-                const [r, g, b] = colorToRgba(color, alpha);
-                offset = pushRect(cpuBuf, offset, x1, y1, x2, y2, r, g, b, alpha, w, h);
+                const [r, gain, buffer1] = colorToRgba(color, alpha);
+                offset = pushRect(cpuBuf, offset, x1, y1, x2, y2, r, gain, buffer1, alpha, w, h);
                 rectCount++;
             }
 
@@ -311,12 +311,12 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                         // large spreads.
                         let minPitch = clip.midiNotes[0]!.pitch;
                         let maxPitch = minPitch;
-                        for (let i = 1; i < clip.midiNotes.length; i++) {
-                            const p = clip.midiNotes[i]!.pitch;
-                            if (p < minPitch) {
-                                minPitch = p;
-                            } else if (p > maxPitch) {
-                                maxPitch = p;
+                        for (let index = 1; index < clip.midiNotes.length; index++) {
+                            const param = clip.midiNotes[index]!.pitch;
+                            if (param < minPitch) {
+                                minPitch = param;
+                            } else if (param > maxPitch) {
+                                maxPitch = param;
                             }
                         }
                         const pitchRange = Math.max(maxPitch - minPitch, 12);
@@ -402,10 +402,10 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                                 if (binsToDraw > 0) {
                                     const drawBinWidth = w / binsToDraw;
 
-                                    for (let i = 0; i < binsToDraw; i++) {
-                                        const peakHeight = (peaks[i] ?? 0) * amplitude;
+                                    for (let index = 0; index < binsToDraw; index++) {
+                                        const peakHeight = (peaks[index] ?? 0) * amplitude;
                                         if (peakHeight > 0.5) {
-                                            const bx1 = cx1 + i * drawBinWidth;
+                                            const bx1 = cx1 + index * drawBinWidth;
                                             const bx2 = bx1 + drawBinWidth;
                                             addRect(
                                                 bx1,

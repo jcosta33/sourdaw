@@ -5,7 +5,7 @@ import * as subject from '../importMidiFile';
 describe('importMidiFile', () => {
     it('should export importMidiFile', () => {
         expect(subject.importMidiFile).toBeDefined();
-        const t = typeof subject.importMidiFile;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.importMidiFile;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

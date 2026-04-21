@@ -5,7 +5,7 @@ import * as subject from '../removeScratchPadSection';
 describe('removeScratchPadSection', () => {
     it('should export removeScratchPadSection', () => {
         expect(subject.removeScratchPadSection).toBeDefined();
-        const t = typeof subject.removeScratchPadSection;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.removeScratchPadSection;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

@@ -97,23 +97,23 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
     useTimelineGestures(canvasRef);
 
-    const getCanvasCoords = (e: MouseEvent<HTMLCanvasElement>): { x: number; y: number } => {
+    const getCanvasCoords = (event: MouseEvent<HTMLCanvasElement>): { x: number; y: number } => {
         const rect = canvasRef.current?.getBoundingClientRect();
         if (!rect) {
             return { x: 0, y: 0 };
         }
-        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
     };
 
     const getBeatFromX = (x: number): number => canvasXToBeat(x);
 
     const { handleFileDrop, isDragOver, setIsDragOver, isImporting } = useTimelineFileDrop({
-        getCanvasCoords: (e: DragEvent<HTMLDivElement>): { x: number; y: number } => {
+        getCanvasCoords: (event: DragEvent<HTMLDivElement>): { x: number; y: number } => {
             const rect = canvasRef.current?.getBoundingClientRect();
             if (!rect) {
                 return { x: 0, y: 0 };
             }
-            return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+            return { x: event.clientX - rect.left, y: event.clientY - rect.top };
         },
         getBeatFromX,
     });
@@ -123,11 +123,11 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
     // ── Mouse Down ────────────────────────────────────────────────────────────
 
-    const handleMouseDown = (e: MouseEvent<HTMLCanvasElement>) => {
-        if (e.button !== 0) {
+    const handleMouseDown = (event: MouseEvent<HTMLCanvasElement>) => {
+        if (event.button !== 0) {
             return;
         }
-        const { x, y } = getCanvasCoords(e);
+        const { x, y } = getCanvasCoords(event);
         const beat = getBeatFromX(x);
         const tool = getActiveTool();
 
@@ -152,12 +152,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         }
 
         // ── Ctrl/Cmd+Shift+drag: slip edit clip content (A10) ──
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
+        if ((event.ctrlKey || event.metaKey) && event.shiftKey) {
             const slipHit = hitTestClip(x, y);
             if (slipHit) {
                 const state = trackStore.value;
-                const track = state?.tracks.find((t) => t.id === slipHit.trackId);
-                const clip = track?.clips.find((c) => c.id === slipHit.clipId);
+                const track = state?.tracks.find((time) => time.id === slipHit.trackId);
+                const clip = track?.clips.find((context) => context.id === slipHit.clipId);
                 if (clip) {
                     slipDragRef.current = {
                         clipId: clip.id,
@@ -177,7 +177,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             // R-A11: If hitting a note in an inline clip, start note drag instead of clip drag
             if (clipHit.noteId) {
                 const notes = midiStore.value?.notesByClipId[clipHit.clipId] ?? [];
-                const note = notes.find((n) => n.id === clipHit.noteId);
+                const note = notes.find((node) => node.id === clipHit.noteId);
                 if (note) {
                     noteDragRef.current = {
                         clipId: clipHit.clipId,
@@ -195,13 +195,13 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
             // Ghost clip click: accept it immediately (R-E1.2)
             const state = trackStore.value;
-            const clipForHit = state?.tracks.flatMap((t) => t.clips).find((c) => c.id === clipHit.clipId);
+            const clipForHit = state?.tracks.flatMap((time) => time.clips).find((context) => context.id === clipHit.clipId);
             if (clipForHit?.isGhost) {
                 acceptGhostClip(clipHit.clipId);
                 return;
             }
             selectTrack(clipHit.trackId);
-            if (e.shiftKey || e.metaKey) {
+            if (event.shiftKey || event.metaKey) {
                 toggleClipInSelection(clipHit.clipId);
             } else {
                 selectClipWithFocus(clipHit.clipId);
@@ -214,7 +214,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             dragMode = edgeHit.edge === 'left' ? 'trim-start' : 'stretch';
         }
         // Alt+drag on a clip: duplicate instead of move (R-B1)
-        if (e.altKey && clipHit && dragMode === 'move') {
+        if (event.altKey && clipHit && dragMode === 'move') {
             dragMode = 'duplicate';
         }
 
@@ -227,11 +227,11 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             const state = trackStore.value;
             if (state) {
                 const originals = new Map<string, ClipPreviewPosition>();
-                for (const t of state.tracks) {
-                    for (const clip of t.clips) {
+                for (const time of state.tracks) {
+                    for (const clip of time.clips) {
                         if (allIds.includes(clip.id)) {
                             originals.set(clip.id, {
-                                trackId: t.id,
+                                trackId: time.id,
                                 startBeat: clip.startBeat,
                                 endBeat: clip.endBeat,
                             });
@@ -255,8 +255,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
     // ── Mouse Move ────────────────────────────────────────────────────────────
 
-    const handleMouseMove = (e: MouseEvent<HTMLCanvasElement>) => {
-        const { x, y } = getCanvasCoords(e);
+    const handleMouseMove = (event: MouseEvent<HTMLCanvasElement>) => {
+        const { x, y } = getCanvasCoords(event);
 
         if (noteDragRef.current) {
             const drag = noteDragRef.current;
@@ -343,8 +343,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 // Update ephemeral preview
                 if (!clipDragPreviewRef.current) {
                     const state = trackStore.value;
-                    const track = state?.tracks.find((t) => t.clips.some((c) => c.id === clipId));
-                    const clip = track?.clips.find((c) => c.id === clipId);
+                    const track = state?.tracks.find((time) => time.clips.some((context) => context.id === clipId));
+                    const clip = track?.clips.find((context) => context.id === clipId);
                     if (track && clip) {
                         const pos = {
                             trackId: track.id,
@@ -414,7 +414,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
             if (preferencesStore.value?.snapToZeroCrossing) {
                 const state = trackStore.value;
-                const clip = state?.tracks.flatMap((t) => t.clips).find((c) => c.id === dragState.clipId);
+                const clip = state?.tracks.flatMap((time) => time.clips).find((context) => context.id === dragState.clipId);
                 if (clip && clip.type === 'audio') {
                     newEnd = snapToZeroCrossing(clip, newEnd);
                 }
@@ -478,14 +478,14 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
     // ── Mouse Up ──────────────────────────────────────────────────────────────
 
-    const handleMouseUp = (e: MouseEvent<HTMLCanvasElement>) => {
+    const handleMouseUp = (event: MouseEvent<HTMLCanvasElement>) => {
         noteDragRef.current = null;
         if (slipDragRef.current) {
             const { clipId, clipType, startX, originalOffset } = slipDragRef.current;
             slipDragRef.current = null;
             clipDragPreviewRef.current = null;
             previewDirtyFlag.value = true;
-            const { x } = getCanvasCoords(e);
+            const { x } = getCanvasCoords(event);
             const view = timelineViewStore.value;
             if (view) {
                 const deltaBeats = (x - startX) / view.pixelsPerBeat;
@@ -510,12 +510,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         if (autoDragRef.current) {
             const { laneId, points: drawnPoints } = autoDragRef.current;
             if (drawnPoints.length > 0) {
-                const savedPoints = drawnPoints.map((p) => ({ ...p }));
+                const savedPoints = drawnPoints.map((param) => ({ ...param }));
                 pushUndoEntry(
                     `Draw ${savedPoints.length} automation point${savedPoints.length > 1 ? 's' : ''}`,
                     () => {
-                        for (const p of savedPoints) {
-                            removeAutomationPoint(laneId, p.beat);
+                        for (const param of savedPoints) {
+                            removeAutomationPoint(laneId, param.beat);
                         }
                     },
                     () => {
@@ -528,21 +528,21 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         }
 
         if (drawDragRef.current) {
-            const { x } = getCanvasCoords(e);
+            const { x } = getCanvasCoords(event);
             const endBeat = Math.ceil(getBeatFromX(x));
             const { startBeat, trackId: drawTrackId, clipType: drawClipType } = drawDragRef.current;
-            const s = Math.min(startBeat, endBeat);
-            const length = Math.max(1, Math.max(startBeat, endBeat) - s);
+            const state1 = Math.min(startBeat, endBeat);
+            const length = Math.max(1, Math.max(startBeat, endBeat) - state1);
 
             const rippleEnabled = getWorkspaceState()?.rippleEditing ?? false;
             if (rippleEnabled) {
                 // Ripple insert: compute plan BEFORE adding the clip so it doesn't include the new clip
-                const ripplePlan = planRippleInsert({ trackId: drawTrackId, insertBeat: s, insertDuration: length });
+                const ripplePlan = planRippleInsert({ trackId: drawTrackId, insertBeat: state1, insertDuration: length });
                 const clip = addClip({
                     trackId: drawTrackId,
-                    startBeat: s,
-                    endBeat: s + length,
-                    name: `Clip ${s}`,
+                    startBeat: state1,
+                    endBeat: state1 + length,
+                    name: `Clip ${state1}`,
                     type: drawClipType,
                 });
                 if (clip) {
@@ -559,9 +559,9 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                             () => {
                                 const redrawn = addClip({
                                     trackId: drawTrackId,
-                                    startBeat: s,
-                                    endBeat: s + length,
-                                    name: `Clip ${s}`,
+                                    startBeat: state1,
+                                    endBeat: state1 + length,
+                                    name: `Clip ${state1}`,
                                     type: drawClipType,
                                 });
                                 if (redrawn) {
@@ -577,9 +577,9 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                             () =>
                                 addClip({
                                     trackId: drawTrackId,
-                                    startBeat: s,
-                                    endBeat: s + length,
-                                    name: `Clip ${s}`,
+                                    startBeat: state1,
+                                    endBeat: state1 + length,
+                                    name: `Clip ${state1}`,
                                     type: drawClipType,
                                 })
                         );
@@ -588,9 +588,9 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             } else {
                 const clip = addClip({
                     trackId: drawTrackId,
-                    startBeat: s,
-                    endBeat: s + length,
-                    name: `Clip ${s}`,
+                    startBeat: state1,
+                    endBeat: state1 + length,
+                    name: `Clip ${state1}`,
                     type: drawClipType,
                 });
                 if (clip) {
@@ -601,9 +601,9 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         () =>
                             addClip({
                                 trackId: drawTrackId,
-                                startBeat: s,
-                                endBeat: s + length,
-                                name: `Clip ${s}`,
+                                startBeat: state1,
+                                endBeat: state1 + length,
+                                name: `Clip ${state1}`,
                                 type: drawClipType,
                             })
                     );
@@ -686,9 +686,9 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         // Track created clip for undo — duplicateClipCore adds to the track
                         const state = trackStore.value;
                         if (state) {
-                            for (const t of state.tracks) {
-                                if (t.id === pos.trackId) {
-                                    const created = t.clips.at(-1);
+                            for (const time of state.tracks) {
+                                if (time.id === pos.trackId) {
+                                    const created = time.clips.at(-1);
                                     if (created && created.id !== clipId) {
                                         copiedIds.push(created.id);
                                     }
@@ -722,8 +722,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         if (rippleEnabled && orig && orig.trackId === pos.trackId) {
                             const state = trackStore.value;
                             if (state) {
-                                const track = state.tracks.find((t) => t.id === pos.trackId);
-                                const clip = track?.clips.find((c) => c.id === clipId);
+                                const track = state.tracks.find((time) => time.id === pos.trackId);
+                                const clip = track?.clips.find((context) => context.id === clipId);
                                 if (clip) {
                                     const duration = clip.endBeat - clip.startBeat;
                                     ripplePlan = planRippleMove({
@@ -769,20 +769,20 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                                                 ...savedPlan.gapClosedClips,
                                                 ...savedPlan.destinationOpenedClips,
                                             ];
-                                            const shiftMap = new Map(allShifted.map((s) => [s.clipId, s]));
-                                            const updatedTracks = state2.tracks.map((t) => {
-                                                if (t.id !== origTrackId) {
-                                                    return t;
+                                            const shiftMap = new Map(allShifted.map((state1) => [state1.clipId, state1]));
+                                            const updatedTracks = state2.tracks.map((time) => {
+                                                if (time.id !== origTrackId) {
+                                                    return time;
                                                 }
                                                 return {
-                                                    ...t,
-                                                    clips: t.clips.map((c) => {
-                                                        const orig2 = shiftMap.get(c.id);
+                                                    ...time,
+                                                    clips: time.clips.map((context) => {
+                                                        const orig2 = shiftMap.get(context.id);
                                                         if (!orig2) {
-                                                            return c;
+                                                            return context;
                                                         }
                                                         return {
-                                                            ...c,
+                                                            ...context,
                                                             startBeat: orig2.origStartBeat,
                                                             endBeat: orig2.origEndBeat,
                                                         };
@@ -795,8 +795,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                                     () => {
                                         const state2 = trackStore.value;
                                         if (state2) {
-                                            const track2 = state2.tracks.find((t) => t.id === newTrackId);
-                                            const clip2 = track2?.clips.find((c) => c.id === dragClipId);
+                                            const track2 = state2.tracks.find((time) => time.id === newTrackId);
+                                            const clip2 = track2?.clips.find((context) => context.id === dragClipId);
                                             const dur = clip2 ? clip2.endBeat - clip2.startBeat : savedDuration;
                                             const redoPlan = planRippleMove({
                                                 trackId: newTrackId,
@@ -860,12 +860,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
     // ── Double Click ──────────────────────────────────────────────────────────
 
-    const handleDoubleClick = (e: MouseEvent<HTMLCanvasElement>) => {
-        const { x, y } = getCanvasCoords(e);
+    const handleDoubleClick = (event: MouseEvent<HTMLCanvasElement>) => {
+        const { x, y } = getCanvasCoords(event);
         const hit = hitTestClip(x, y);
         if (hit) {
-            const track = trackStore.value?.tracks.find((t) => t.id === hit.trackId);
-            const clip = track?.clips.find((c) => c.id === hit.clipId);
+            const track = trackStore.value?.tracks.find((time) => time.id === hit.trackId);
+            const clip = track?.clips.find((context) => context.id === hit.clipId);
 
             if (clip?.type === 'midi') {
                 // R-A11: Toggle inline editing on double click
@@ -881,17 +881,17 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
     // ── Context Menu ──────────────────────────────────────────────────────────
 
-    const handleContextMenu = (e: MouseEvent<HTMLCanvasElement>) => {
-        e.preventDefault();
-        const { x, y } = getCanvasCoords(e);
+    const handleContextMenu = (event: MouseEvent<HTMLCanvasElement>) => {
+        event.preventDefault();
+        const { x, y } = getCanvasCoords(event);
         const hit = hitTestClip(x, y);
         if (hit) {
             selectTrack(hit.trackId);
             selectClip(hit.clipId);
             setContextMenu({
                 kind: 'clip',
-                x: e.clientX,
-                y: e.clientY,
+                x: event.clientX,
+                y: event.clientY,
                 clipId: hit.clipId,
                 trackId: hit.trackId,
                 splitBeat: getBeatFromX(x),
@@ -899,8 +899,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         } else {
             setContextMenu({
                 kind: 'empty',
-                x: e.clientX,
-                y: e.clientY,
+                x: event.clientX,
+                y: event.clientY,
                 trackId: hitTestTrack(y),
                 beat: Math.floor(getBeatFromX(x)),
             });
@@ -909,14 +909,14 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
     // ── Pointer (pinch-zoom) ──────────────────────────────────────────────────
 
-    const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        pointersRef.current.set(e.pointerId, e.nativeEvent);
+    const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+        pointersRef.current.set(event.pointerId, event.nativeEvent);
     };
 
-    const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
         if (pointersRef.current.size === 2) {
-            const prev = pointersRef.current.get(e.pointerId);
-            pointersRef.current.set(e.pointerId, e.nativeEvent);
+            const prev = pointersRef.current.get(event.pointerId);
+            pointersRef.current.set(event.pointerId, event.nativeEvent);
             if (!prev) {
                 return;
             }
@@ -924,7 +924,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             if (!p1 || !p2) {
                 return;
             }
-            const prevOther = [...pointersRef.current.entries()].find(([id]) => id !== e.pointerId)?.[1];
+            const prevOther = [...pointersRef.current.entries()].find(([id]) => id !== event.pointerId)?.[1];
             if (!prevOther) {
                 return;
             }
@@ -935,12 +935,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 zoomTimeline(delta > 0 ? 2 : -2);
             }
         } else {
-            pointersRef.current.set(e.pointerId, e.nativeEvent);
+            pointersRef.current.set(event.pointerId, event.nativeEvent);
         }
     };
 
-    const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-        pointersRef.current.delete(e.pointerId);
+    const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
+        pointersRef.current.delete(event.pointerId);
     };
 
     // ── Cursor ────────────────────────────────────────────────────────────────

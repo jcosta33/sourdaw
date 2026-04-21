@@ -11,9 +11,9 @@ import { updateTrack } from '../../useCases/updateTrack';
  * `undoable: false` — invoked only by undo machinery; must not create new undo entries.
  */
 export const handleRestoreClip = createHandler<'restoreClip'>({
-    execute: (a) => {
+    execute: (alpha) => {
         const { clipId, trackId, clipSnapshot, ripplePlan, midiNotesSnapshot, midiCcSnapshot, midiPitchBendSnapshot } =
-            a.payload;
+            alpha.payload;
 
         if (ripplePlan) {
             undoRippleDelete({
@@ -22,7 +22,7 @@ export const handleRestoreClip = createHandler<'restoreClip'>({
                 shiftedClips: ripplePlan.shiftedClips as never,
             });
         } else {
-            updateTrack(trackId, (t) => ({ ...t, clips: [...t.clips, clipSnapshot as never] }));
+            updateTrack(trackId, (time) => ({ ...time, clips: [...time.clips, clipSnapshot as never] }));
         }
 
         const midi = midiStore.value;

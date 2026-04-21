@@ -96,16 +96,16 @@ export const TimelineSurface = (): ReactElement => {
         let top = 0;
         let bottom = 0;
 
-        for (let i = 0; i <= bottomTrackIdx; i++) {
-            const track = currentTrackStore.tracks[i];
+        for (let index = 0; index <= bottomTrackIdx; index++) {
+            const track = currentTrackStore.tracks[index];
             if (!track) {
                 continue;
             }
 
-            if (i === topTrackIdx) {
+            if (index === topTrackIdx) {
                 top = trackYOffset;
             }
-            if (i === bottomTrackIdx) {
+            if (index === bottomTrackIdx) {
                 bottom = trackYOffset + TRACK_HEIGHT_VALUES.normal; // Note: Assumes normal height for now, but model.tracks has actual height
             }
 
@@ -235,21 +235,21 @@ export const TimelineSurface = (): ReactElement => {
 
         let lastScale = 1;
 
-        const onGestureStart = (e: Event) => {
-            e.preventDefault();
+        const onGestureStart = (event: Event) => {
+            event.preventDefault();
             lastScale = 1;
         };
 
-        const onGestureChange = (e: Event) => {
-            e.preventDefault();
-            const ge = e as GestureEvent;
+        const onGestureChange = (event: Event) => {
+            event.preventDefault();
+            const ge = event as GestureEvent;
             const delta = ge.scale - lastScale;
             lastScale = ge.scale;
             zoomTimeline(delta * 2);
         };
 
-        const onGestureEnd = (e: Event) => {
-            e.preventDefault();
+        const onGestureEnd = (event: Event) => {
+            event.preventDefault();
         };
 
         canvas.addEventListener('gesturestart', onGestureStart, { passive: false });
@@ -351,23 +351,23 @@ export const TimelineSurface = (): ReactElement => {
                         const autoState = automationStore.value;
                         if (view && autoState) {
                             const lanes = autoState.lanes
-                                .filter((l) => l.visible && !l.collapsed)
-                                .map((l) => {
+                                .filter((length) => length.visible && !length.collapsed)
+                                .map((length) => {
                                     let y = -view.scrollY;
-                                    for (const t of model.tracks) {
-                                        if (t.id === l.trackId) {
+                                    for (const time of model.tracks) {
+                                        if (time.id === length.trackId) {
                                             break;
                                         }
-                                        y += t.height;
+                                        y += time.height;
                                     }
                                     return {
-                                        points: l.points,
-                                        ghostPoints: l.ghostPoints,
+                                        points: length.points,
+                                        ghostPoints: length.ghostPoints,
                                         y,
                                         height: 64, // Default height approximation
-                                        color: l.color || '#a78bfa',
-                                        minValue: l.minValue,
-                                        maxValue: l.maxValue,
+                                        color: length.color || '#a78bfa',
+                                        minValue: length.minValue,
+                                        maxValue: length.maxValue,
                                     };
                                 });
                             autoRendererRef.current.render({
@@ -426,13 +426,13 @@ export const TimelineSurface = (): ReactElement => {
         <div
             ref={containerRef}
             className="relative flex-1 overflow-hidden"
-            onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'copy';
+            onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'copy';
                 setIsDragOver(true);
             }}
-            onDragLeave={(e) => {
-                if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget as Node)) {
+            onDragLeave={(event) => {
+                if (event.currentTarget === event.target || !event.currentTarget.contains(event.relatedTarget as Node)) {
                     setIsDragOver(false);
                 }
             }}
@@ -459,9 +459,9 @@ export const TimelineSurface = (): ReactElement => {
                 aria-label="Timeline editor surface"
                 aria-description="Arrangement timeline showing tracks, clips, and playhead position. Scroll to pan, Ctrl+scroll to zoom. Click to set playhead. Click clips to select. Double-click clip to edit."
                 tabIndex={0}
-                onMouseDown={(e) => {
+                onMouseDown={(event) => {
                     closeContextMenu();
-                    handleMouseDown(e);
+                    handleMouseDown(event);
                 }}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
@@ -474,7 +474,6 @@ export const TimelineSurface = (): ReactElement => {
                 onPointerCancel={handlePointerCancel}
             />
             <canvas ref={autoCanvasRef} className="absolute inset-0 pointer-events-none" aria-hidden="true" />
-
             <PresenceOverlay
                 beatToX={(beat) => {
                     const view = timelineViewStore.value;
@@ -501,7 +500,6 @@ export const TimelineSurface = (): ReactElement => {
                 }}
                 trackHeight={TRACK_HEIGHT_VALUES.normal}
             />
-
             {rubberBand ? (
                 <div
                     className="absolute border border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/10 pointer-events-none z-10"
@@ -513,14 +511,12 @@ export const TimelineSurface = (): ReactElement => {
                     }}
                 />
             ) : null}
-
             {marqueeStyle ? (
                 <div
                     className="absolute border border-primary/60 bg-primary/10 pointer-events-none z-10"
                     style={marqueeStyle}
                 />
             ) : null}
-
             {contextMenu?.kind === 'clip' ? (
                 <ClipContextMenu
                     x={contextMenu.x}

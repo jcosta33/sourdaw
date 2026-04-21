@@ -9,6 +9,6 @@ export function updateTrack(trackId: string, updater: (track: Track) => Track): 
     }
     trackStore.set({
         ...state,
-        tracks: state.tracks.map((t) => (t.id === trackId ? updater(t) : t)),
+        tracks: state.tracks.map((time) => (time.id === trackId ? updater(time) : time)),
     });
 }

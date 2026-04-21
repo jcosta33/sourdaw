@@ -7,7 +7,7 @@ import { type Clip, type Device } from '../models/Track';
  * Conforms to R3: Content Hash Computation.
  */
 export async function computeTrackHash(clips: Clip[], devices: Device[]): Promise<string> {
-    const sortedClips = [...clips].sort((a, b) => a.startBeat - b.startBeat || a.id.localeCompare(b.id));
+    const sortedClips = [...clips].sort((alpha, buffer) => alpha.startBeat - buffer.startBeat || alpha.id.localeCompare(buffer.id));
     const clipStrings = sortedClips.map((clip) => {
         const duration = clip.endBeat - clip.startBeat;
         return `${clip.id}:${clip.startBeat}:${duration}:${clip.assetHash ?? ''}:${clip.gain}`;
@@ -15,8 +15,8 @@ export async function computeTrackHash(clips: Clip[], devices: Device[]): Promis
 
     const deviceStrings = devices.map((device) => {
         const sortedParams = Object.entries(device.parameterValues)
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([k, v]) => `${k}=${v}`)
+            .sort(([alpha], [buffer]) => alpha.localeCompare(buffer))
+            .map(([kIndex, value]) => `${kIndex}=${value}`)
             .join(',');
         return `${device.id}:${device.type}:${sortedParams}:${device.bypassed}`;
     });
@@ -27,5 +27,5 @@ export async function computeTrackHash(clips: Clip[], devices: Device[]): Promis
     const data = encoder.encode(contentString);
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+    return hashArray.map((buffer) => buffer.toString(16).padStart(2, '0')).join('');
 }

@@ -113,7 +113,7 @@ export async function createWebGpuAutomationRenderer(canvas: HTMLCanvasElement):
         let vIdx = 0;
         const { viewportStartBeat, pixelsPerBeat, width, height } = model;
 
-        function addRect(x1: number, y1: number, x2: number, y2: number, r: number, g: number, b: number, a: number) {
+        function addRect(x1: number, y1: number, x2: number, y2: number, r: number, g: number, b: number, alpha: number) {
             if (vIdx + 36 >= MAX_VERTICES * 6) {
                 return;
             }
@@ -128,37 +128,37 @@ export async function createWebGpuAutomationRenderer(canvas: HTMLCanvasElement):
                 r,
                 g,
                 b,
-                a,
+                alpha,
                 nx2,
                 ny1,
                 r,
                 g,
                 b,
-                a,
+                alpha,
                 nx1,
                 ny2,
                 r,
                 g,
                 b,
-                a,
+                alpha,
                 nx2,
                 ny1,
                 r,
                 g,
                 b,
-                a,
+                alpha,
                 nx2,
                 ny2,
                 r,
                 g,
                 b,
-                a,
+                alpha,
                 nx1,
                 ny2,
                 r,
                 g,
                 b,
-                a,
+                alpha,
             ];
             cpuBuf.set(verts, vIdx);
             vIdx += 36;
@@ -169,9 +169,9 @@ export async function createWebGpuAutomationRenderer(canvas: HTMLCanvasElement):
 
             // Draw ghost points (faded)
             if (lane.ghostPoints && lane.ghostPoints.length >= 2) {
-                for (let i = 0; i < lane.ghostPoints.length - 1; i++) {
-                    const p1 = lane.ghostPoints[i]!;
-                    const p2 = lane.ghostPoints[i + 1]!;
+                for (let index = 0; index < lane.ghostPoints.length - 1; index++) {
+                    const p1 = lane.ghostPoints[index]!;
+                    const p2 = lane.ghostPoints[index + 1]!;
                     const x1 = (p1.beat - viewportStartBeat) * pixelsPerBeat;
                     const x2 = (p2.beat - viewportStartBeat) * pixelsPerBeat;
                     if (x2 < 0 || x1 > width) {
@@ -189,9 +189,9 @@ export async function createWebGpuAutomationRenderer(canvas: HTMLCanvasElement):
                 continue;
             }
 
-            for (let i = 0; i < lane.points.length - 1; i++) {
-                const p1 = lane.points[i]!;
-                const p2 = lane.points[i + 1]!;
+            for (let index = 0; index < lane.points.length - 1; index++) {
+                const p1 = lane.points[index]!;
+                const p2 = lane.points[index + 1]!;
 
                 const x1 = (p1.beat - viewportStartBeat) * pixelsPerBeat;
                 const x2 = (p2.beat - viewportStartBeat) * pixelsPerBeat;

@@ -10,7 +10,7 @@ vi.mock('../../../stores/groupComping', () => ({
         get value() {
             return mockValue;
         },
-        set: (v: any) => mockSet(v),
+        set: (value: any) => mockSet(value),
     },
     getNextGroupId: () => 'grp-test',
     getNextTakeSetId: () => 'ts-1',

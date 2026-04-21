@@ -27,7 +27,7 @@ export function addExternalDevice(trackId: string, pluginId: string, pluginName:
         externalInstanceId: instanceId,
     };
 
-    updateTrack(trackId, (t) => ({ ...t, devices: [...t.devices, device] }));
+    updateTrack(trackId, (time) => ({ ...time, devices: [...time.devices, device] }));
 
     addDeviceToStrip(trackId, device.id, 'external-plugin', instanceId);
     void loadPlugin(pluginId, instanceId);

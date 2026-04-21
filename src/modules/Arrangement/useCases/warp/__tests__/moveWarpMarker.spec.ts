@@ -5,7 +5,7 @@ import * as subject from '../moveWarpMarker';
 describe('moveWarpMarker', () => {
     it('should export moveWarpMarker', () => {
         expect(subject.moveWarpMarker).toBeDefined();
-        const t = typeof subject.moveWarpMarker;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.moveWarpMarker;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

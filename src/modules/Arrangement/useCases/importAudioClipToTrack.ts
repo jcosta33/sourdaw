@@ -27,7 +27,7 @@ export async function importAudioClipToTrack(trackId: string, file: File): Promi
     const transport = getTransportState();
     const tempo = transport?.tempo ?? 120;
     const durationBeats = Math.ceil((buffer.duration / 60) * tempo);
-    const lastClipEnd = Math.max(0, ...track.clips.map((c) => c.endBeat));
+    const lastClipEnd = Math.max(0, ...track.clips.map((context) => context.endBeat));
     const name = file.name.replace(/\.[^.]+$/, '');
 
     addClip({

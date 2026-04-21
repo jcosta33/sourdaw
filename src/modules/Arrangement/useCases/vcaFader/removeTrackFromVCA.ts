@@ -9,6 +9,6 @@ export function removeTrackFromVCA(trackId: string): void {
 
     setTrackState({
         ...state,
-        tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, vcaGroupId: null } : t)),
+        tracks: state.tracks.map((time) => (time.id === trackId ? { ...time, vcaGroupId: null } : time)),
     });
 }

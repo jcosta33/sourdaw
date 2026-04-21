@@ -18,7 +18,7 @@ export function addClip(input: {
         return null;
     }
 
-    const track = state.tracks.find((t) => t.id === input.trackId);
+    const track = state.tracks.find((time) => time.id === input.trackId);
     const inferredType = input.type ?? (track?.kind === 'midi' ? 'midi' : 'audio');
 
     const clip: Clip = {
@@ -39,7 +39,7 @@ export function addClip(input: {
         isGhost: input.isGhost,
     };
 
-    updateTrack(input.trackId, (t) => ({ ...t, clips: [...t.clips, clip] }));
+    updateTrack(input.trackId, (time) => ({ ...time, clips: [...time.clips, clip] }));
 
     return clip;
 }

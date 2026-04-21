@@ -7,12 +7,12 @@ export const handleSetTrackColor = createHandler<'setTrackColor'>({
     execute: (action) => {
         setTrackColor(action.payload.trackId, action.payload.color);
     },
-    describe: (a) => {
-        const prev = getTrackStoreState()?.tracks.find((t) => t.id === a.payload.trackId);
+    describe: (alpha) => {
+        const prev = getTrackStoreState()?.tracks.find((time) => time.id === alpha.payload.trackId);
         return {
             label: 'Set track color',
             inverseAction: prev
-                ? { type: 'setTrackColor', payload: { trackId: a.payload.trackId, color: prev.color } }
+                ? { type: 'setTrackColor', payload: { trackId: alpha.payload.trackId, color: prev.color } }
                 : null,
         };
     },

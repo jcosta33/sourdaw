@@ -25,7 +25,7 @@ describe('setVcaGain', () => {
 
         expect(mockSetVcaGroupsState).toHaveBeenCalledTimes(1);
         const next = mockSetVcaGroupsState.mock.calls[0]![0] as { id: string; gain: number }[];
-        expect(next.find((g) => g.id === 'g1')!.gain).toBe(2);
-        expect(next.find((g) => g.id === 'g2')!.gain).toBe(0.5);
+        expect(next.find((gain) => gain.id === 'g1')!.gain).toBe(2);
+        expect(next.find((gain) => gain.id === 'g2')!.gain).toBe(0.5);
     });
 });

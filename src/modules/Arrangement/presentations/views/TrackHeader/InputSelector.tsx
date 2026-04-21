@@ -15,7 +15,7 @@ export const InputSelector = ({ trackId, inputId }: InputSelectorProps): ReactEl
     const [devices, setDevices] = useState<AudioDeviceInfo[]>([]);
 
     useEffect(() => {
-        void getAudioDevices().then((d) => setDevices(d.filter((dev) => dev.kind === 'audioinput')));
+        void getAudioDevices().then((data) => setDevices(data.filter((dev) => dev.kind === 'audioinput')));
     }, []);
 
     if (devices.length === 0) {
@@ -29,17 +29,17 @@ export const InputSelector = ({ trackId, inputId }: InputSelectorProps): ReactEl
                     size="micro"
                     className="h-4 max-w-16 truncate px-0.5 text-muted-foreground"
                     value={inputId ?? ''}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => {
-                        e.stopPropagation();
-                        setTrackInput(trackId, e.target.value || null);
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => {
+                        event.stopPropagation();
+                        setTrackInput(trackId, event.target.value || null);
                     }}
                     aria-label="Audio input device"
                 >
                     <option value="">Default</option>
-                    {devices.map((d) => (
-                        <option key={d.id} value={d.id}>
-                            {d.label}
+                    {devices.map((data) => (
+                        <option key={data.id} value={data.id}>
+                            {data.label}
                         </option>
                     ))}
                 </DawCompactSelect>

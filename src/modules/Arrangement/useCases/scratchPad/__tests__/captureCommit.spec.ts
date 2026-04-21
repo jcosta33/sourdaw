@@ -10,7 +10,7 @@ vi.mock('../../../stores/markerStore', () => ({
         get value() {
             return mockMarkerValue;
         },
-        set: (v: any) => mockMarkerSet(v),
+        set: (value: any) => mockMarkerSet(value),
     },
 }));
 
@@ -21,7 +21,7 @@ vi.mock('../../../stores/scratchPadStore', () => ({
         get value() {
             return mockScratchPadValue;
         },
-        set: (v: any) => mockScratchPadSet(v),
+        set: (value: any) => mockScratchPadSet(value),
     },
 }));
 

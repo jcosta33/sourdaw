@@ -259,16 +259,16 @@ export const BeatRulerBar = (): React.ReactElement => {
         return x / pixelsPerBeat + scrollX / pixelsPerBeat;
     };
 
-    const handleMouseDown = (e: MouseEvent<HTMLDivElement>) => {
-        if (e.button !== 0) {
+    const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+        if (event.button !== 0) {
             return;
         }
-        const beat = getBeat(e.clientX);
+        const beat = getBeat(event.clientX);
 
         // Always seek playhead on click
         seekPlayhead(beat);
 
-        if (e.shiftKey) {
+        if (event.shiftKey) {
             // Shift+drag: set/extend loop region (R-B5 predecessor behavior)
             loopDragRef.current = { startBeat: beat };
         } else {
@@ -277,16 +277,16 @@ export const BeatRulerBar = (): React.ReactElement => {
         }
     };
 
-    const handleMouseMove = (e: MouseEvent<HTMLDivElement>) => {
+    const handleMouseMove = (event: MouseEvent<HTMLDivElement>) => {
         // Only process if mouse button is held
-        if (e.buttons !== 1) {
+        if (event.buttons !== 1) {
             loopDragRef.current = null;
             loopPreviewRef.current = null;
             scrubDragRef.current = false;
             return;
         }
 
-        const beat = getBeat(e.clientX);
+        const beat = getBeat(event.clientX);
 
         if (scrubDragRef.current) {
             // R-B6: scrub — continuously seek the playhead to follow the cursor

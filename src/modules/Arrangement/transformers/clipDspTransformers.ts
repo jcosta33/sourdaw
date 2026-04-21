@@ -39,8 +39,8 @@ export function computeNormalizationScale(
         let totalSamples = 0;
         for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
             const data = buffer.getChannelData(ch);
-            for (let i = 0; i < data.length; i++) {
-                sumSq += data[i]! * data[i]!;
+            for (let index = 0; index < data.length; index++) {
+                sumSq += data[index]! * data[index]!;
             }
             totalSamples += data.length;
         }
@@ -67,8 +67,8 @@ export function computeNormalizationScale(
         for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
             const data = buffer.getChannelData(ch);
             let lpPrev = 0;
-            for (let i = 0; i < data.length; i++) {
-                const sample = data[i]!;
+            for (let index = 0; index < data.length; index++) {
+                const sample = data[index]!;
                 lpPrev = lpPrev + alpha * (sample - lpPrev);
                 const hp = sample - lpPrev;
                 const weighted = lpPrev + hp * boostLinear;
@@ -89,8 +89,8 @@ export function computeNormalizationScale(
     let peak = 0;
     for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
         const data = buffer.getChannelData(ch);
-        for (let i = 0; i < data.length; i++) {
-            const abs = Math.abs(data[i]!);
+        for (let index = 0; index < data.length; index++) {
+            const abs = Math.abs(data[index]!);
             if (abs > peak) {
                 peak = abs;
             }

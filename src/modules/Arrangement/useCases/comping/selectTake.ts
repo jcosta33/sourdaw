@@ -7,16 +7,16 @@ export function selectTake(trackId: string, takeId: string): void {
     }
 
     takeLaneStore.set({
-        lanes: state.lanes.map((l) =>
-            l.trackId === trackId
+        lanes: state.lanes.map((length) =>
+            length.trackId === trackId
                 ? {
-                      ...l,
-                      takes: l.takes.map((t) => ({
-                          ...t,
-                          selected: t.id === takeId,
+                      ...length,
+                      takes: length.takes.map((time) => ({
+                          ...time,
+                          selected: time.id === takeId,
                       })),
                   }
-                : l
+                : length
         ),
     });
 }

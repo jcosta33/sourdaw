@@ -9,7 +9,7 @@ vi.mock('../../repositories/track/updateClip', () => ({
 
 describe('updateClip', () => {
     it('should forward clip id and updater to repo', () => {
-        const updater = vi.fn((c: { id: string; name: string }) => ({ ...c, name: 'X' }));
+        const updater = vi.fn((context: { id: string; name: string }) => ({ ...context, name: 'X' }));
         updateClip('c1', updater as any);
 
         expect(repoUpdateClip).toHaveBeenCalledWith('c1', updater);

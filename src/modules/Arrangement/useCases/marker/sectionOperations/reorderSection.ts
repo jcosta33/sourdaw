@@ -6,7 +6,7 @@ export function reorderSection(sectionId: string, direction: 'left' | 'right'): 
         return;
     }
     const sections = [...state.sections];
-    const index = sections.findIndex((s) => s.id === sectionId);
+    const index = sections.findIndex((state1) => state1.id === sectionId);
     if (index < 0) {
         return;
     }

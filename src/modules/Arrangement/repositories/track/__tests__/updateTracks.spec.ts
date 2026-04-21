@@ -7,8 +7,8 @@ vi.mock('../../../stores/trackStore', () => {
             get value() {
                 return internal.value;
             },
-            set: vi.fn((v) => {
-                internal.value = v;
+            set: vi.fn((value) => {
+                internal.value = value;
             }),
             update: vi.fn((cb) => {
                 internal.value = cb(internal.value);
@@ -32,8 +32,8 @@ describe('updateTracks', () => {
         trackStore.set({ tracks, selectedTrackId: null });
 
         updateTracks(
-            (t) => t.id === 't1',
-            (t) => ({ ...t, muted: true })
+            (time) => time.id === 't1',
+            (time) => ({ ...time, muted: true })
         );
 
         expect(trackStore.value!.tracks[0].muted).toBe(true);

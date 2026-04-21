@@ -11,7 +11,7 @@ export function removeDevice(deviceId: string): void {
     }
 
     for (const track of state.tracks) {
-        const device = track.devices.find((d) => d.id === deviceId);
+        const device = track.devices.find((data) => data.id === deviceId);
         if (device) {
             removeDeviceFromStrip(track.id, deviceId);
             if (device.type === 'external-plugin' && device.externalInstanceId) {
@@ -21,5 +21,5 @@ export function removeDevice(deviceId: string): void {
         }
     }
 
-    mapAllTracks((t) => ({ ...t, devices: t.devices.filter((d) => d.id !== deviceId) }));
+    mapAllTracks((time) => ({ ...time, devices: time.devices.filter((data) => data.id !== deviceId) }));
 }

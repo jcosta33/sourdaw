@@ -5,7 +5,7 @@ import * as subject from '../renameScratchPadSection';
 describe('renameScratchPadSection', () => {
     it('should export renameScratchPadSection', () => {
         expect(subject.renameScratchPadSection).toBeDefined();
-        const t = typeof subject.renameScratchPadSection;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.renameScratchPadSection;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

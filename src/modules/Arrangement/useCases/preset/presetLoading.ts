@@ -59,7 +59,7 @@ export const loadPresetToTrack = inject({ logger })(({ logger }) => {
             bypassed: false,
             parameterValues: { ...dp.parameterValues },
         };
-        updateTrack(trackId, (t) => ({ ...t, devices: [...t.devices, device] }));
+        updateTrack(trackId, (time) => ({ ...time, devices: [...time.devices, device] }));
 
         if (dp.type.startsWith('faust-')) {
             Promise.resolve()
@@ -79,11 +79,11 @@ export const loadPresetToTrack = inject({ logger })(({ logger }) => {
     return function loadPresetToTrack(trackId: string, preset: SoundPreset): void {
         const track = getTrackById(trackId);
         if (track) {
-            const deviceIds = track.devices.map((d) => d.id);
+            const deviceIds = track.devices.map((data) => data.id);
             for (const deviceId of deviceIds) {
                 removeDeviceFromStrip(trackId, deviceId);
             }
-            updateTrack(trackId, (t) => ({ ...t, devices: [] }));
+            updateTrack(trackId, (time) => ({ ...time, devices: [] }));
         }
 
         for (const dp of preset.devices) {

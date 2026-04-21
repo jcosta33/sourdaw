@@ -6,6 +6,6 @@ export const handleCreateFolder = createHandler<'createFolder'>({
     execute: (action) => {
         createFolder(action.payload.name);
     },
-    describe: (a) => ({ label: `Create folder "${a.payload.name}"` }),
+    describe: (alpha) => ({ label: `Create folder "${alpha.payload.name}"` }),
     undoable: true,
 });

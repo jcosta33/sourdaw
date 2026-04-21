@@ -11,7 +11,7 @@ import { takeLaneStore } from '../stores/takeLaneStore';
 
 export const removeTrack = inject({ eventBus })(
     ({ eventBus }) =>
-        function removeTrack(trackId: string): void {
+        (function removeTrack(trackId: string): void {
             const state = getTrackState();
             if (!state) {
                 return;
@@ -23,11 +23,11 @@ export const removeTrack = inject({ eventBus })(
             }
 
             // Collect clip IDs from this track for MIDI/automation cleanup
-            const clipIds = new Set(track.clips.map((c) => c.id));
+            const clipIds = new Set(track.clips.map((context) => context.id));
 
             setTrackState({
                 ...state,
-                tracks: state.tracks.filter((t) => t.id !== trackId),
+                tracks: state.tracks.filter((time) => time.id !== trackId),
                 selectedTrackId: state.selectedTrackId === trackId ? null : state.selectedTrackId,
             });
 
@@ -35,7 +35,7 @@ export const removeTrack = inject({ eventBus })(
             const autoState = automationStore.value;
             if (autoState) {
                 automationStore.set({
-                    lanes: autoState.lanes.filter((l) => l.trackId !== trackId),
+                    lanes: autoState.lanes.filter((length) => length.trackId !== trackId),
                 });
             }
 
@@ -57,7 +57,7 @@ export const removeTrack = inject({ eventBus })(
             const takeLane = takeLaneStore.value;
             if (takeLane) {
                 takeLaneStore.set({
-                    lanes: takeLane.lanes.filter((l) => l.trackId !== trackId),
+                    lanes: takeLane.lanes.filter((length) => length.trackId !== trackId),
                 });
             }
 
@@ -70,5 +70,5 @@ export const removeTrack = inject({ eventBus })(
             }
 
             void eventBus.emit('track.removed', { trackId });
-        }
+        })
 );

@@ -5,7 +5,7 @@ import * as subject from '../deleteMixerSnapshot';
 describe('deleteMixerSnapshot', () => {
     it('should export deleteMixerSnapshot', () => {
         expect(subject.deleteMixerSnapshot).toBeDefined();
-        const t = typeof subject.deleteMixerSnapshot;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.deleteMixerSnapshot;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

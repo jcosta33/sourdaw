@@ -4,7 +4,7 @@ import { updateTrack } from '../../repositories/track/updateTrack';
 import { applySoloLogic } from '../../services/applySoloLogic';
 
 export function muteTrack(trackId: string, muted: boolean): void {
-    updateTrack(trackId, (t) => ({ ...t, muted }));
+    updateTrack(trackId, (time) => ({ ...time, muted }));
     engineSetTrackMute(trackId, muted);
     applySoloLogic();
 }

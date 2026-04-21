@@ -5,7 +5,7 @@ import * as subject from '../persistDeviceParam';
 describe('persistDeviceParam', () => {
     it('should export persistDeviceParam', () => {
         expect(subject.persistDeviceParam).toBeDefined();
-        const t = typeof subject.persistDeviceParam;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.persistDeviceParam;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

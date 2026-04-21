@@ -79,9 +79,9 @@ export const TimelineMinimap = (): ReactElement => {
         if (trackCount > 0) {
             const laneOffset = (MINIMAP_HEIGHT - trackCount * clampedLaneHeight) / 2;
 
-            for (let i = 0; i < tracks.length; i++) {
-                const track = tracks[i]!;
-                const y = laneOffset + i * clampedLaneHeight;
+            for (let index = 0; index < tracks.length; index++) {
+                const track = tracks[index]!;
+                const y = laneOffset + index * clampedLaneHeight;
 
                 for (const clip of track.clips) {
                     const x = clip.startBeat * beatsToPixels;
@@ -173,11 +173,11 @@ export const TimelineMinimap = (): ReactElement => {
         return { canvasWidth, totalBeats, beatsToPixels, viewportWidthPx, viewportStartPx };
     };
 
-    const handleMouseDown = (e: MouseEvent<HTMLDivElement>) => {
-        if (e.button !== 0) {
+    const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+        if (event.button !== 0) {
             return;
         }
-        e.preventDefault();
+        event.preventDefault();
 
         const metrics = getMinimapMetrics();
         if (!metrics) {
@@ -185,7 +185,7 @@ export const TimelineMinimap = (): ReactElement => {
         }
 
         const rect = containerRef.current!.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
+        const clickX = event.clientX - rect.left;
         const { viewportStartPx, viewportWidthPx, beatsToPixels } = metrics;
 
         // Capture absolute scroll at drag start

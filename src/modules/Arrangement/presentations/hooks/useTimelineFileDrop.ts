@@ -36,17 +36,17 @@ export const useTimelineFileDrop = ({
     const [isDragOver, setIsDragOver] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
 
-    const handleFileDrop = async (e: DragEvent<HTMLDivElement>): Promise<void> => {
-        e.preventDefault();
+    const handleFileDrop = async (event: DragEvent<HTMLDivElement>): Promise<void> => {
+        event.preventDefault();
         setIsDragOver(false);
 
-        const { x, y } = getCanvasCoords(e);
+        const { x, y } = getCanvasCoords(event);
         const trackHit = hitTestTrack(y);
         const beat = Math.max(0, Math.floor(getBeatFromX(x)));
 
         // AI-rendered audio clips already have their AudioBuffer cached — just create
         // a clip pointing at the bufferId. No file decoding needed.
-        const aiRenderData = e.dataTransfer.getData('application/x-sourdaw-ai-render');
+        const aiRenderData = event.dataTransfer.getData('application/x-sourdaw-ai-render');
         if (aiRenderData) {
             try {
                 const render = JSON.parse(aiRenderData) as {
@@ -55,7 +55,7 @@ export const useTimelineFileDrop = ({
                     durationSeconds: number;
                 };
                 let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
-                const targetTrack = targetTrackId ? trackStore.value?.tracks.find((t) => t.id === targetTrackId) : null;
+                const targetTrack = targetTrackId ? trackStore.value?.tracks.find((time) => time.id === targetTrackId) : null;
                 if (!targetTrackId || !targetTrack || targetTrack.kind !== 'audio') {
                     const newTrack = addTrack({ name: render.name, kind: 'audio' });
                     if (!newTrack) {
@@ -79,7 +79,7 @@ export const useTimelineFileDrop = ({
             return;
         }
 
-        const sampleData = e.dataTransfer.getData('application/x-sourdaw-sample');
+        const sampleData = event.dataTransfer.getData('application/x-sourdaw-sample');
         if (sampleData) {
             setIsImporting(true);
             try {
@@ -93,7 +93,7 @@ export const useTimelineFileDrop = ({
 
                 let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
                 const sampleTargetTrack = targetTrackId
-                    ? trackStore.value?.tracks.find((t) => t.id === targetTrackId)
+                    ? trackStore.value?.tracks.find((time) => time.id === targetTrackId)
                     : null;
                 if (!targetTrackId || !sampleTargetTrack || sampleTargetTrack.kind !== 'audio') {
                     const newTrack = addTrack({ name: sample.name, kind: 'audio' });
@@ -177,7 +177,7 @@ export const useTimelineFileDrop = ({
             return;
         }
 
-        const pluginData = e.dataTransfer.getData('application/x-sourdaw-plugin');
+        const pluginData = event.dataTransfer.getData('application/x-sourdaw-plugin');
         if (pluginData) {
             try {
                 const plugin = JSON.parse(pluginData) as { name: string; id: string };
@@ -191,7 +191,7 @@ export const useTimelineFileDrop = ({
             return;
         }
 
-        const files = Array.from(e.dataTransfer.files);
+        const files = Array.from(event.dataTransfer.files);
         if (files.length === 0) {
             return;
         }
@@ -226,7 +226,7 @@ export const useTimelineFileDrop = ({
 
                     let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
                     const targetTrack = targetTrackId
-                        ? trackStore.value?.tracks.find((t) => t.id === targetTrackId)
+                        ? trackStore.value?.tracks.find((time) => time.id === targetTrackId)
                         : null;
                     if (!targetTrackId || !targetTrack || targetTrack.kind !== 'audio') {
                         const newTrack = addTrack({ name: file.name.replace(/\.[^.]+$/, ''), kind: 'audio' });

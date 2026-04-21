@@ -76,9 +76,9 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
 
     useContextMenuDismiss(menuRef, () => setContextMenu({ kind: 'none' }));
 
-    const detectEdge = (e: MouseEvent, section: ArrangementSection): 'left' | 'right' | null => {
-        const parentRect = (e.currentTarget.parentElement ?? e.currentTarget).getBoundingClientRect();
-        const localX = e.clientX - parentRect.left;
+    const detectEdge = (event: MouseEvent, section: ArrangementSection): 'left' | 'right' | null => {
+        const parentRect = (event.currentTarget.parentElement ?? event.currentTarget).getBoundingClientRect();
+        const localX = event.clientX - parentRect.left;
         const sectionLeftPx = section.startBeat * pixelsPerBeat - scrollX;
         const sectionRightPx = section.endBeat * pixelsPerBeat - scrollX;
 
@@ -91,18 +91,18 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
         return null;
     };
 
-    const handleSectionMouseDown = (e: MouseEvent, section: ArrangementSection) => {
-        if (e.button !== 0 || editing) {
+    const handleSectionMouseDown = (event: MouseEvent, section: ArrangementSection) => {
+        if (event.button !== 0 || editing) {
             return;
         }
-        e.preventDefault();
-        e.stopPropagation();
+        event.preventDefault();
+        event.stopPropagation();
 
         // Detect which part was clicked: edge (resize) or body (move)
-        const edge = detectEdge(e, section);
+        const edge = detectEdge(event, section);
         const mode: DragMode = edge === 'left' ? 'resize-left' : edge === 'right' ? 'resize-right' : 'move';
 
-        const startX = e.clientX;
+        const startX = event.clientX;
         const origStart = section.startBeat;
         const origEnd = section.endBeat;
         let lastStart = origStart;
@@ -159,11 +159,11 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
         window.addEventListener('mouseup', handleMouseUp);
     };
 
-    const handleSectionMouseMove = (e: MouseEvent, section: ArrangementSection) => {
+    const handleSectionMouseMove = (event: MouseEvent, section: ArrangementSection) => {
         if (dragRef.current) {
             return;
         }
-        const edge = detectEdge(e, section);
+        const edge = detectEdge(event, section);
         if (edge) {
             setHoverEdge({ sectionId: section.id, edge });
         } else if (hoverEdge?.sectionId === section.id) {
@@ -177,25 +177,25 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
         }
     };
 
-    const handleBarContextMenu = (e: MouseEvent<HTMLDivElement>) => {
+    const handleBarContextMenu = (event: MouseEvent<HTMLDivElement>) => {
         if (dragRef.current) {
             return;
         }
-        e.preventDefault();
-        const rect = e.currentTarget.getBoundingClientRect();
-        const localX = e.clientX - rect.left;
+        event.preventDefault();
+        const rect = event.currentTarget.getBoundingClientRect();
+        const localX = event.clientX - rect.left;
         const beat = (localX + scrollX) / pixelsPerBeat;
 
-        const hitSection = sections.find((s) => {
-            const sx = s.startBeat * pixelsPerBeat - scrollX;
-            const sw = (s.endBeat - s.startBeat) * pixelsPerBeat;
+        const hitSection = sections.find((state) => {
+            const sx = state.startBeat * pixelsPerBeat - scrollX;
+            const sw = (state.endBeat - state.startBeat) * pixelsPerBeat;
             return localX >= sx && localX <= sx + sw;
         });
 
         if (hitSection) {
-            setContextMenu({ kind: 'section', x: e.clientX, y: e.clientY, section: hitSection });
+            setContextMenu({ kind: 'section', x: event.clientX, y: event.clientY, section: hitSection });
         } else {
-            setContextMenu({ kind: 'empty', x: e.clientX, y: e.clientY, beat });
+            setContextMenu({ kind: 'empty', x: event.clientX, y: event.clientY, beat });
         }
     };
 
@@ -263,7 +263,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
             role="region"
             aria-label="Arrangement sections"
         >
-            {sections.map((section, i) => {
+            {sections.map((section, index) => {
                 const isDragging = dragPreview?.sectionId === section.id;
                 const displayStart = isDragging ? dragPreview.startBeat : section.startBeat;
                 const displayEnd = isDragging ? dragPreview.endBeat : section.endBeat;
@@ -274,7 +274,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                     return null;
                 }
 
-                const color = getSectionColor(section, i);
+                const color = getSectionColor(section, index);
                 const isEditing = editing?.sectionId === section.id;
 
                 return (
@@ -293,8 +293,8 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                             transition: isDragging ? 'none' : undefined,
                         }}
                         title={section.name}
-                        onMouseDown={(e) => handleSectionMouseDown(e, section)}
-                        onMouseMove={(e) => handleSectionMouseMove(e, section)}
+                        onMouseDown={(event) => handleSectionMouseDown(event, section)}
+                        onMouseMove={(event) => handleSectionMouseMove(event, section)}
                         onMouseLeave={() => handleSectionMouseLeave(section)}
                         onDoubleClick={() => {
                             setEditing({ sectionId: section.id, name: section.name });
@@ -305,21 +305,20 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                             className="absolute left-0 top-0 bottom-0 w-[3px] hover:bg-white/20 transition-colors"
                             style={{ cursor: 'col-resize' }}
                         />
-
                         {isEditing ? (
                             <DawCompactInput
                                 ref={inputRef}
                                 size="micro"
                                 className="h-full w-full border-0 bg-transparent px-1.5 text-[10px] font-medium text-white shadow-none focus-visible:ring-0"
                                 value={editing.name}
-                                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                                onChange={(event) => setEditing({ ...editing, name: event.target.value })}
                                 onBlur={commitRename}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
+                                onMouseDown={(event) => event.stopPropagation()}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
                                         commitRename();
                                     }
-                                    if (e.key === 'Escape') {
+                                    if (event.key === 'Escape') {
                                         setEditing(null);
                                     }
                                 }}
@@ -329,7 +328,6 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                                 {section.name}
                             </span>
                         )}
-
                         {/* Right resize handle visual */}
                         <div
                             className="absolute right-0 top-0 bottom-0 w-[3px] hover:bg-white/20 transition-colors"
@@ -338,13 +336,11 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                     </div>
                 );
             })}
-
             {sections.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                     <DawInlineHint>Right-click to add arrangement sections</DawInlineHint>
                 </div>
             ) : null}
-
             {contextMenu.kind !== 'none' ? (
                 <div
                     ref={menuRef}
@@ -362,15 +358,15 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                             <DawMenuButton onClick={handleStartRename}>Rename</DawMenuButton>
                             <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
                             <div className="flex gap-1 px-2 pb-1">
-                                {SECTION_COLORS.map((c) => (
+                                {SECTION_COLORS.map((context) => (
                                     <DawSwatchButton
-                                        key={c}
-                                        color={c}
+                                        key={context}
+                                        color={context}
                                         onClick={() => {
-                                            setSectionColor(contextMenu.section.id, c);
+                                            setSectionColor(contextMenu.section.id, context);
                                             setContextMenu({ kind: 'none' });
                                         }}
-                                        aria-label={`Set color ${c}`}
+                                        aria-label={`Set color ${context}`}
                                     />
                                 ))}
                             </div>

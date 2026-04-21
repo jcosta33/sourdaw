@@ -25,26 +25,26 @@ function cleanupMidiData(clipId: string): void {
 }
 
 export const handleRemoveClip = createHandler<'removeClip'>({
-    execute: (a) => {
+    execute: (alpha) => {
         const state = getTrackStoreState();
         let trackId: string | null = null;
         if (state) {
             for (const track of state.tracks) {
-                if (track.clips.some((c) => c.id === a.payload.clipId)) {
+                if (track.clips.some((context) => context.id === alpha.payload.clipId)) {
                     trackId = track.id;
                     break;
                 }
             }
         }
         if (!trackId) {
-            removeClip(a.payload.clipId);
-            cleanupMidiData(a.payload.clipId);
+            removeClip(alpha.payload.clipId);
+            cleanupMidiData(alpha.payload.clipId);
             return;
         }
-        const rippleResult = rippleDeleteClips({ trackId, clipIds: [a.payload.clipId] });
+        const rippleResult = rippleDeleteClips({ trackId, clipIds: [alpha.payload.clipId] });
         if (!rippleResult) {
-            removeClip(a.payload.clipId);
-            cleanupMidiData(a.payload.clipId);
+            removeClip(alpha.payload.clipId);
+            cleanupMidiData(alpha.payload.clipId);
             return;
         }
         // Batch MIDI cleanup for all removed clips in a single store write
@@ -67,13 +67,13 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             }
         }
     },
-    describe: (a) => {
+    describe: (alpha) => {
         const state = getTrackStoreState();
         let clipSnapshot: MinimalClipShape | null = null;
         let trackId: string | null = null;
         if (state) {
             for (const track of state.tracks) {
-                const clip = track.clips.find((c) => c.id === a.payload.clipId);
+                const clip = track.clips.find((context) => context.id === alpha.payload.clipId);
                 if (clip) {
                     clipSnapshot = structuredClone(clip);
                     trackId = track.id;
@@ -85,7 +85,7 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             return { label: 'Remove clip' };
         }
 
-        const plan = planRippleDelete({ trackId, clipIds: [a.payload.clipId] });
+        const plan = planRippleDelete({ trackId, clipIds: [alpha.payload.clipId] });
         const ripplePlan = plan
             ? {
                   removedClips: structuredClone(plan.removedClips) as readonly MinimalClipShape[],
@@ -94,16 +94,16 @@ export const handleRemoveClip = createHandler<'removeClip'>({
             : null;
 
         const midiState = midiStore.value;
-        const notes = midiState?.notesByClipId[a.payload.clipId];
-        const cc = midiState?.ccByClipId[a.payload.clipId];
-        const pb = midiState?.pitchBendByClipId[a.payload.clipId];
+        const notes = midiState?.notesByClipId[alpha.payload.clipId];
+        const cc = midiState?.ccByClipId[alpha.payload.clipId];
+        const pb = midiState?.pitchBendByClipId[alpha.payload.clipId];
 
         return {
             label: 'Remove clip',
             inverseAction: {
                 type: 'restoreClip',
                 payload: {
-                    clipId: a.payload.clipId,
+                    clipId: alpha.payload.clipId,
                     trackId,
                     clipSnapshot,
                     ripplePlan,

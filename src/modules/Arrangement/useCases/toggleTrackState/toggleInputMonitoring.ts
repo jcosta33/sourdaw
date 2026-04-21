@@ -9,7 +9,7 @@ export function toggleInputMonitoring(trackId: string): void {
         return;
     }
     const newValue = track.inputMonitoring === 'on' ? 'off' : 'on';
-    updateTrack(trackId, (t) => ({ ...t, inputMonitoring: newValue }));
+    updateTrack(trackId, (time) => ({ ...time, inputMonitoring: newValue }));
 
     if (newValue === 'on') {
         void startInputMonitoring(trackId);

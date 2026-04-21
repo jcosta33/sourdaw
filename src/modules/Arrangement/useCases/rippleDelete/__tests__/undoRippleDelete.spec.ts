@@ -37,11 +37,11 @@ describe('undoRippleDelete', () => {
         expect(track.clips).toHaveLength(2);
 
         // c3 shifted back to 10
-        const c3 = track.clips.find((c: any) => c.id === 'c3');
+        const c3 = track.clips.find((context: any) => context.id === 'c3');
         expect(c3).toMatchObject({ startBeat: 10, endBeat: 14 });
 
         // c2 restored
-        const c2 = track.clips.find((c: any) => c.id === 'c2');
+        const c2 = track.clips.find((context: any) => context.id === 'c2');
         expect(c2).toMatchObject({ id: 'c2', startBeat: 4, endBeat: 8 });
     });
 });

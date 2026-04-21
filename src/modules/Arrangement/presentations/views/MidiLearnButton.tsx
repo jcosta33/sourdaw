@@ -25,10 +25,8 @@ const defaultMidiLearnState: MidiLearnState = {
     learningTarget: null,
 };
 
-const isTargetMatch = (a: LearningTarget, b: LearningTarget): boolean => {
-    return (
-        a.targetType === b.targetType && a.trackId === b.trackId && a.deviceId === b.deviceId && a.paramId === b.paramId
-    );
+const isTargetMatch = (alpha: LearningTarget, buffer: LearningTarget): boolean => {
+    return (alpha.targetType === buffer.targetType && alpha.trackId === buffer.trackId && alpha.deviceId === buffer.deviceId && alpha.paramId === buffer.paramId);
 };
 
 export const MidiLearnButton = ({ targetType, trackId, deviceId, paramId }: MidiLearnButtonProps): ReactElement => {
@@ -41,8 +39,8 @@ export const MidiLearnButton = ({ targetType, trackId, deviceId, paramId }: Midi
 
     const existingMapping = findMappingForTarget(target);
 
-    const handleClick = (e: MouseEvent): void => {
-        e.stopPropagation();
+    const handleClick = (event: MouseEvent): void => {
+        event.stopPropagation();
 
         if (isLearningThis) {
             stopMidiLearn();

@@ -8,8 +8,8 @@ export const handleGetLatencyReport = createHandler<'getLatencyReport'>({
         const maxMs = report.maxLatencyMs.toFixed(1);
         const baseMs = report.contextBaseLatencyMs.toFixed(1);
         const trackLines = report.tracks
-            .filter((t) => t.deviceLatencyMs > 0)
-            .map((t) => `${t.trackId}: ${t.totalLatencyMs.toFixed(1)}ms`)
+            .filter((time) => time.deviceLatencyMs > 0)
+            .map((time) => `${time.trackId}: ${time.totalLatencyMs.toFixed(1)}ms`)
             .join(', ');
         const detail = trackLines
             ? `Max: ${maxMs}ms, Base: ${baseMs}ms — ${trackLines}`

@@ -14,7 +14,7 @@ export function fitClipToBeats(clipId: string, targetBeats: number): void {
     }
 
     for (const track of state.tracks) {
-        const clip = track.clips.find((c) => c.id === clipId);
+        const clip = track.clips.find((context) => context.id === clipId);
         if (!clip) {
             continue;
         }
@@ -24,11 +24,11 @@ export function fitClipToBeats(clipId: string, targetBeats: number): void {
         const baseDuration = currentDuration * previousRatio;
         const newRatio = clampRatio(baseDuration / targetBeats);
 
-        updateClip(clipId, (c) => ({
-            ...c,
+        updateClip(clipId, (context) => ({
+            ...context,
             stretchRatio: newRatio,
-            stretchMode: c.stretchMode === 'off' ? ('repitch' as const) : c.stretchMode,
-            endBeat: c.startBeat + targetBeats,
+            stretchMode: context.stretchMode === 'off' ? ('repitch' as const) : context.stretchMode,
+            endBeat: context.startBeat + targetBeats,
         }));
         return;
     }

@@ -52,7 +52,7 @@ export function hitTestAutomationSubLane(canvasX: number, canvasY: number): Auto
 
                     const autoState = automationStore.value;
                     const lane = autoState?.lanes.find(
-                        (l) => l.trackId === track.id && l.parameterId === paramIds[subLaneIndex]
+                        (length) => length.trackId === track.id && length.parameterId === paramIds[subLaneIndex]
                     );
 
                     if (lane) {

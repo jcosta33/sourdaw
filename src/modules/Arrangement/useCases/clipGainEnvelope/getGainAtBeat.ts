@@ -16,12 +16,12 @@ export function getGainAtBeat(clipId: string, beatOffset: number): number {
         return points[points.length - 1]!.gainDb;
     }
 
-    for (let i = 0; i < points.length - 1; i++) {
-        const a = points[i]!;
-        const b = points[i + 1]!;
-        if (beatOffset >= a.beatOffset && beatOffset <= b.beatOffset) {
-            const t = (beatOffset - a.beatOffset) / (b.beatOffset - a.beatOffset);
-            return a.gainDb + t * (b.gainDb - a.gainDb);
+    for (let index = 0; index < points.length - 1; index++) {
+        const alpha = points[index]!;
+        const buffer = points[index + 1]!;
+        if (beatOffset >= alpha.beatOffset && beatOffset <= buffer.beatOffset) {
+            const time = (beatOffset - alpha.beatOffset) / (buffer.beatOffset - alpha.beatOffset);
+            return alpha.gainDb + time * (buffer.gainDb - alpha.gainDb);
         }
     }
 

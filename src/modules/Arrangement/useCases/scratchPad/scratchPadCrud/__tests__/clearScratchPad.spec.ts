@@ -5,7 +5,7 @@ import * as subject from '../clearScratchPad';
 describe('clearScratchPad', () => {
     it('should export clearScratchPad', () => {
         expect(subject.clearScratchPad).toBeDefined();
-        const t = typeof subject.clearScratchPad;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.clearScratchPad;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

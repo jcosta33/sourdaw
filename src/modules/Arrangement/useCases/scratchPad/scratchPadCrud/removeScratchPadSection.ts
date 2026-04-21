@@ -5,6 +5,6 @@ export function removeScratchPadSection(sectionId: string): void {
     if (!state) {
         return;
     }
-    const remaining = state.sections.filter((s) => s.id !== sectionId).map((s, i) => ({ ...s, order: i }));
+    const remaining = state.sections.filter((state1) => state1.id !== sectionId).map((state1, index) => ({ ...state1, order: index }));
     scratchPadStore.set({ sections: remaining });
 }

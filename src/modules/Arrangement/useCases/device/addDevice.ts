@@ -18,7 +18,7 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
 
     // Search by name first, then by ID — callers may pass either
     const plugin = getPlatformPlugins().find(
-        (p) => p.name.toLowerCase() === deviceType.toLowerCase() || p.id === deviceType
+        (param1) => param1.name.toLowerCase() === deviceType.toLowerCase() || param1.id === deviceType
     );
     const parameterValues: Record<string, number> = {};
     if (plugin) {
@@ -35,7 +35,7 @@ export function addDevice(trackId: string, deviceType: string): Device | null {
         parameterValues,
     };
 
-    updateTrack(trackId, (t) => ({ ...t, devices: [...t.devices, device] }));
+    updateTrack(trackId, (time) => ({ ...time, devices: [...time.devices, device] }));
 
     if (plugin) {
         if (plugin.id.startsWith('faust-')) {

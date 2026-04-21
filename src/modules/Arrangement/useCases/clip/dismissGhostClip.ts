@@ -10,12 +10,12 @@ export function dismissGhostClip(clipId: string): void {
         return;
     }
 
-    const ghost = (state.ghostClips ?? []).find((c) => c.id === clipId);
+    const ghost = (state.ghostClips ?? []).find((context) => context.id === clipId);
     if (!ghost) {
         // Fallback for pre-existing ghost-flag implementation
-        for (const t of state.tracks) {
-            if (t.clips.some((c) => c.id === clipId)) {
-                updateTrack(t.id, (track) => ({
+        for (const time of state.tracks) {
+            if (time.clips.some((context) => context.id === clipId)) {
+                updateTrack(time.id, (track) => ({
                     ...track,
                     clips: track.clips.filter((x) => x.id !== clipId),
                 }));
@@ -26,6 +26,6 @@ export function dismissGhostClip(clipId: string): void {
 
     trackStore.set({
         ...state,
-        ghostClips: (state.ghostClips ?? []).filter((c) => c.id !== clipId),
+        ghostClips: (state.ghostClips ?? []).filter((context) => context.id !== clipId),
     });
 }

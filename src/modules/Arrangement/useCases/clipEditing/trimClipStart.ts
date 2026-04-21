@@ -1,16 +1,16 @@
 import { updateClip } from '../../repositories/track/updateClip';
 
 export function trimClipStart(clipId: string, newStartBeat: number): void {
-    updateClip(clipId, (c) => {
-        if (newStartBeat < c.endBeat) {
+    updateClip(clipId, (context) => {
+        if (newStartBeat < context.endBeat) {
             const startBeat = Math.max(0, newStartBeat);
-            const delta = startBeat - c.startBeat;
+            const delta = startBeat - context.startBeat;
             return {
-                ...c,
+                ...context,
                 startBeat,
-                audioOffsetBeats: (c.audioOffsetBeats ?? 0) + delta,
+                audioOffsetBeats: (context.audioOffsetBeats ?? 0) + delta,
             };
         }
-        return c;
+        return context;
     });
 }

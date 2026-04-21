@@ -21,7 +21,7 @@ export function createAlternativeClips(originalClipId: string, variationsData: V
     let originalClip: Clip | null = null;
 
     for (const track of state.tracks) {
-        const clip = track.clips.find((c) => c.id === originalClipId);
+        const clip = track.clips.find((context) => context.id === originalClipId);
         if (clip) {
             targetTrack = track;
             originalClip = clip;
@@ -40,13 +40,13 @@ export function createAlternativeClips(originalClipId: string, variationsData: V
     for (const [index, variation] of variationsData.entries()) {
         const newClipId = `clip-var-${crypto.randomUUID().slice(0, 8)}`;
 
-        const globalNotes = variation.map((n) => ({
+        const globalNotes = variation.map((node) => ({
             id: `note-${crypto.randomUUID().slice(0, 8)}`,
             // Clamp MIDI values to valid ranges; guard against NaN/Infinity from LLM output
-            pitch: clamp(Math.round(isFinite(n.pitch) ? n.pitch : 60), 0, 127),
-            startBeat: currentStart + Math.max(0, isFinite(n.startBeat) ? n.startBeat : 0),
-            duration: Math.max(0.0625, isFinite(n.duration) ? n.duration : 0.5),
-            velocity: clamp(Math.round(isFinite(n.velocity) ? n.velocity : 80), 1, 127),
+            pitch: clamp(Math.round(isFinite(node.pitch) ? node.pitch : 60), 0, 127),
+            startBeat: currentStart + Math.max(0, isFinite(node.startBeat) ? node.startBeat : 0),
+            duration: Math.max(0.0625, isFinite(node.duration) ? node.duration : 0.5),
+            velocity: clamp(Math.round(isFinite(node.velocity) ? node.velocity : 80), 1, 127),
             probability: 100,
         }));
 
@@ -64,8 +64,8 @@ export function createAlternativeClips(originalClipId: string, variationsData: V
         currentStart += clipDuration;
     }
 
-    updateTrack(targetTrack.id, (t) => ({
-        ...t,
-        clips: [...t.clips, ...newClips],
+    updateTrack(targetTrack.id, (time) => ({
+        ...time,
+        clips: [...time.clips, ...newClips],
     }));
 }

@@ -35,8 +35,8 @@ export function beginClipDrag(
     const viewportStartBeat = viewState.scrollX / viewState.pixelsPerBeat;
     const beat = canvasX / viewState.pixelsPerBeat + viewportStartBeat;
 
-    const track = trackState.tracks.find((t) => t.id === hit.trackId);
-    const clip = track?.clips.find((c) => c.id === hit.clipId);
+    const track = trackState.tracks.find((time) => time.id === hit.trackId);
+    const clip = track?.clips.find((context) => context.id === hit.clipId);
     if (!clip) {
         return null;
     }

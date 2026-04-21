@@ -5,7 +5,7 @@ import * as subject from '../commitScratchPadToArrangement';
 describe('commitScratchPadToArrangement', () => {
     it('should export commitScratchPadToArrangement', () => {
         expect(subject.commitScratchPadToArrangement).toBeDefined();
-        const t = typeof subject.commitScratchPadToArrangement;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.commitScratchPadToArrangement;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

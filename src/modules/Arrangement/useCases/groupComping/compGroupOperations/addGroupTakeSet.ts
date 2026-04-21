@@ -7,21 +7,21 @@ export function addGroupTakeSet(grpId: string, name: string): void {
     }
     groupCompingStore.set({
         ...state,
-        groups: state.groups.map((g) => {
-            if (g.id !== grpId) {
-                return g;
+        groups: state.groups.map((gain) => {
+            if (gain.id !== grpId) {
+                return gain;
             }
             const ts: CompTakeSet = {
                 id: getNextTakeSetId(),
                 name,
-                pass: g.takeSets.length + 1,
-                color: GROUP_COLORS[g.takeSets.length % GROUP_COLORS.length]!,
+                pass: gain.takeSets.length + 1,
+                color: GROUP_COLORS[gain.takeSets.length % GROUP_COLORS.length]!,
                 recordedAt: new Date().toISOString(),
             };
             return {
-                ...g,
-                takeSets: [...g.takeSets, ts],
-                activeTakeSetId: g.activeTakeSetId ?? ts.id,
+                ...gain,
+                takeSets: [...gain.takeSets, ts],
+                activeTakeSetId: gain.activeTakeSetId ?? ts.id,
             };
         }),
     });
