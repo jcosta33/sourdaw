@@ -2,6 +2,9 @@ import { type LevainPatch } from '../../models/LevainPatch';
 
 import { levainBridge } from './levainBridge';
 
-export const setLevainParamWithAudio = <K extends keyof LevainPatch>(key: K, value: LevainPatch[K]): void => {
+export function setLevainParamWithAudio<PatchKey extends keyof LevainPatch>(
+    key: PatchKey,
+    value: LevainPatch[PatchKey]
+): void {
     levainBridge().setLevainParamWithAudio(key, value);
-};
+}
