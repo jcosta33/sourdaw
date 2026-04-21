@@ -31,7 +31,7 @@ export const UndoHistoryPanel = (): ReactElement | null => {
     const close = closeUndoHistory;
 
     const handleClick = (index: number) => {
-        undoToIndex(index);
+        void undoToIndex(index);
     };
 
     const pastCount = state.past.length;

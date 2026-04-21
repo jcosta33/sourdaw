@@ -92,7 +92,7 @@ export function toggleRecording(): void {
         const countInBeats = state.countInBars * beatsPerBar;
         const countInDurationSec = countInBeats / (state.tempo / 60);
 
-        resumeEngine();
+        void resumeEngine();
         ensureTrackStrips();
 
         const ctx = getAudioContext();
@@ -117,4 +117,6 @@ export function toggleRecording(): void {
     if (!state.isPlaying) {
         startPlayback();
     }
+}
+ }
 }

@@ -15,7 +15,7 @@ describe('handleHumanizeNotes', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('delegates to humanizeNotes MIDI use case', () => {
-        handleHumanizeNotes.execute({
+        void handleHumanizeNotes.execute({
             type: 'humanizeNotes',
             payload: { clipId: 'c1', amount: 0.1 },
         });

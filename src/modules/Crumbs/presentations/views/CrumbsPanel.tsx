@@ -223,7 +223,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         className="rounded-md bg-white/[0.06] px-3 py-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-white/[0.1]"
                                         onClick={() => {
                                             setIsRecording(true);
-                                            armCrumbsRecording(deviceId, 0.01, pads.selectedPadIndex, 60);
+                                            void armCrumbsRecording(deviceId, 0.01, pads.selectedPadIndex, 60);
                                         }}
                                     >
                                         Arm
@@ -233,7 +233,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         className="rounded-md bg-white/[0.06] px-3 py-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-white/[0.1]"
                                         onClick={() => {
                                             setIsRecording(false);
-                                            stopCrumbsRecording(deviceId);
+                                            void stopCrumbsRecording(deviceId);
                                         }}
                                     >
                                         Stop

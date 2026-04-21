@@ -107,7 +107,7 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
                             className="h-7 flex-1 text-xs"
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
-                                    handleCreate();
+                                    void handleCreate();
                                 }
                             }}
                         />

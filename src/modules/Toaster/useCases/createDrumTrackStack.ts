@@ -60,7 +60,7 @@ export const createDrumTrackStack = inject({ eventBus })(
             });
 
             // Wire the Toaster device into the audio engine
-            addDeviceToStrip(parent.id, toasterId, 'toaster');
+            void addDeviceToStrip(parent.id, toasterId, 'toaster');
 
             eventBus.emit('track.added', { trackId: parent.id, name: parent.name, kind: parent.kind });
 

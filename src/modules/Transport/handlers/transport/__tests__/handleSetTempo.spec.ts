@@ -21,7 +21,7 @@ describe('transport handlers', () => {
     });
 
     it('handleSetTempo forwards bpm to setTempo', () => {
-        handleSetTempo.execute({ type: 'setTempo', payload: { bpm: 120 } });
+        void handleSetTempo.execute({ type: 'setTempo', payload: { bpm: 120 } });
 
         expect(setTempo).toHaveBeenCalledWith(120);
     });

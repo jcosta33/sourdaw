@@ -14,7 +14,7 @@ describe('handleRemoveChordEvent', () => {
     });
 
     it('forwards event id', () => {
-        handleRemoveChordEvent.execute({ type: 'removeChordEvent', payload: { eventId: 'e1' } });
+        void handleRemoveChordEvent.execute({ type: 'removeChordEvent', payload: { eventId: 'e1' } });
 
         expect(removeChordEvent).toHaveBeenCalledWith('e1');
     });

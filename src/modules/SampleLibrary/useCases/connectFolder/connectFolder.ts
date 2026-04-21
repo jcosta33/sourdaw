@@ -65,7 +65,7 @@ async function connectFolderTauri(): Promise<string | null> {
         addLibraryRoot(root);
 
         // Start scanning in background
-        scanTauriDirectory(root);
+        void scanTauriDirectory(root);
 
         return id;
     } catch {

@@ -248,7 +248,7 @@ export function startPlayheadScheduler(): void {
         });
         schedulerSession.worker.onmessage = (e) => {
             if (e.data?.type === 'tick') {
-                tick();
+                void tick();
             }
         };
     }

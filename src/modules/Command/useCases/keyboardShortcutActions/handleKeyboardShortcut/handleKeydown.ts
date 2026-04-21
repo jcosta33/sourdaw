@@ -445,7 +445,7 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
 
         switch (key) {
             case 'L':
-                eventBus.emit('zoom.scrollToPlayhead', undefined);
+                void eventBus.emit('zoom.scrollToPlayhead', undefined);
                 return false;
             case 'Home':
                 seekPlayhead(0);
@@ -527,4 +527,6 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
 
         return handleSimpleKeys(key, desc);
     };
+});
+   };
 });

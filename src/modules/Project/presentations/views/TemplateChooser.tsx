@@ -337,7 +337,7 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
         const template = templates.find((t) => t.id === templateId);
         setLoadingName(template?.name ?? 'Project');
         setIsLoading(true);
-        saveProject();
+        void saveProject();
 
         setTimeout(() => {
             (async () => {

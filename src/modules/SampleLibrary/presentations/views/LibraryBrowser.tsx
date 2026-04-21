@@ -436,7 +436,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                     if (preview.playingId === sample.id) {
                                         preview.stop();
                                     } else {
-                                        playSample(sample);
+                                        void playSample(sample);
                                     }
                                 }}
                             />

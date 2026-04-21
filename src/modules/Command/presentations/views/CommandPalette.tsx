@@ -37,7 +37,7 @@ export const CommandPalette = (): ReactElement | null => {
         if (typeof entry.action === 'function') {
             entry.action();
         } else {
-            executeAppAction(entry.action);
+            void executeAppAction(entry.action);
         }
     };
 
