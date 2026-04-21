@@ -3,7 +3,7 @@ import { type DocumentBundle } from '../../models/CrdtDocumentTypes';
 import { invokeCommand } from './helpers';
 
 /** Load CRDT documents from a native .sdaw file. */
-export const nativeLoadBundle = async (path: string): Promise<DocumentBundle | null> => {
+export async function nativeLoadBundle(path: string): Promise<DocumentBundle | null> {
     const result = await invokeCommand('collab_load_bundle', { path });
     if (!result || typeof result !== 'object') {
         return null;
@@ -14,4 +14,4 @@ export const nativeLoadBundle = async (path: string): Promise<DocumentBundle | n
         bundle.set(id, new Uint8Array(bytes));
     }
     return bundle;
-};
+}

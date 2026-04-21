@@ -28,16 +28,16 @@ export const actionHistoryStore = createStore<ActionHistoryState>({
     initialData: { entries: [] },
 });
 
-export const pushActionHistoryEntry = (entry: ActionHistoryEntry): void => {
+export function pushActionHistoryEntry(entry: ActionHistoryEntry): void {
     const state = actionHistoryStore.value;
     if (!state) {
         return;
     }
     const entries = [...state.entries, entry].slice(-MAX_HISTORY);
     actionHistoryStore.set({ entries });
-};
+}
 
-export const markEntryReverted = (entryId: string): void => {
+export function markEntryReverted(entryId: string): void {
     const state = actionHistoryStore.value;
     if (!state) {
         return;
@@ -45,8 +45,8 @@ export const markEntryReverted = (entryId: string): void => {
     actionHistoryStore.set({
         entries: state.entries.map((e) => (e.id === entryId ? { ...e, reverted: true } : e)),
     });
-};
+}
 
-export const clearActionHistory = (): void => {
+export function clearActionHistory(): void {
     actionHistoryStore.set({ entries: [] });
-};
+}
