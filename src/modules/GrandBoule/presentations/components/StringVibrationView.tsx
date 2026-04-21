@@ -100,11 +100,11 @@ export const StringVibrationView = ({ activeNotes, className }: StringVibrationV
         const container = containerRef.current;
         const canvas = canvasRef.current;
         if (container === null || canvas === null) {
-            return;
+            return undefined;
         }
         const ctx = canvas.getContext('2d');
         if (ctx === null) {
-            return;
+            return undefined;
         }
 
         // Match canvas internal resolution to its CSS layout size.

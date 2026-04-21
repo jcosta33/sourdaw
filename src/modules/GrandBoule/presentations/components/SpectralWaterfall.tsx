@@ -77,7 +77,7 @@ export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProp
         const container = containerRef.current;
         const canvas = canvasRef.current;
         if (container === null || canvas === null) {
-            return;
+            return undefined;
         }
 
         // Resize canvas to match CSS layout.
@@ -96,7 +96,7 @@ export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProp
 
         const ctx = canvas.getContext('2d');
         if (ctx === null) {
-            return;
+            return undefined;
         }
 
         const offscreenCanvas = document.createElement('canvas');
@@ -104,7 +104,7 @@ export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProp
         offscreenCanvas.height = HISTORY_FRAMES;
         const offscreenCtx = offscreenCanvas.getContext('2d');
         if (offscreenCtx === null) {
-            return;
+            return undefined;
         }
         const imgData = offscreenCtx.createImageData(DISPLAY_COLS, HISTORY_FRAMES);
 

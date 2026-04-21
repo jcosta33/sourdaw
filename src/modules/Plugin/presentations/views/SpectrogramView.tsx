@@ -7,11 +7,11 @@ export const SpectrogramView = ({ isMocking = false }: { isMocking?: boolean }):
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return undefined;
         }
 
         let animationId: number;
