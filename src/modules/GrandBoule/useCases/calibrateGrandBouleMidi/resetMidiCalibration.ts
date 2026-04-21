@@ -5,7 +5,7 @@ import { type GrandBouleState } from '../../stores/grandBouleStore';
 
 // --- Bulk operations --------------------------------------------------------
 
-export const resetMidiCalibration = (input: { store: Store<GrandBouleState> }): void => {
+export function resetMidiCalibration(input: { store: Store<GrandBouleState> }): void {
     const state = input.store.value;
     if (state === null) {
         return;
@@ -14,4 +14,4 @@ export const resetMidiCalibration = (input: { store: Store<GrandBouleState> }): 
         ...state,
         midiCalibration: createDefaultMidiCalibration(),
     });
-};
+}
