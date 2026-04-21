@@ -184,7 +184,12 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         if (!rustKey) {
             return;
         }
-        const numericValue = typeof value === 'boolean' ? (value ? 1 : 0) : value;
+        let numericValue: number;
+        if (typeof value === 'boolean') {
+            numericValue = value ? 1 : 0;
+        } else {
+            numericValue = value;
+        }
         void executeAppAction({
             type: 'setDeviceParameter',
             payload: { deviceId, paramId: rustKey, value: numericValue },

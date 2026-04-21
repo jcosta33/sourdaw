@@ -1,5 +1,0 @@
-src/modules/Arrangement/useCases/__tests__/getAllTracks.spec.ts
-src/modules/Arrangement/useCases/__tests__/getPlatformPlugins.spec.ts
-src/modules/Arrangement/useCases/__tests__/getPluginById.spec.ts
-src/modules/Arrangement/useCases/__tests__/getTrackStoreState.spec.ts
-src/modules/Arrangement/useCases/__tests__/resolveComping.spec.ts
