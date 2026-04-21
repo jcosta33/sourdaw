@@ -5,7 +5,7 @@ import * as subject from '../createSweetDreamsDemo';
 describe('createSweetDreamsDemo', () => {
     it('should export demo_SweetDreams', () => {
         expect(subject.demo_SweetDreams).toBeDefined();
-        const t = typeof subject.demo_SweetDreams;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.demo_SweetDreams;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

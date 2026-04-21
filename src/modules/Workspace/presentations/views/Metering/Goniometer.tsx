@@ -97,16 +97,16 @@ export const Goniometer = ({
             ctx.globalAlpha = 0.7;
 
             const halfLen = Math.floor(data.length / 2);
-            for (let i = 0; i < halfLen; i++) {
-                const L = data[i * 2] ?? 0;
-                const R = data[i * 2 + 1] ?? 0;
+            for (let index = 0; index < halfLen; index++) {
+                const L = data[index * 2] ?? 0;
+                const R = data[index * 2 + 1] ?? 0;
 
                 // Rotate 45°: M = (L+R)/√2, S = (L-R)/√2
-                const m = (L + R) * 0.7071;
-                const s = (L - R) * 0.7071;
+                const message = (L + R) * 0.7071;
+                const state = (L - R) * 0.7071;
 
-                const px = cx + s * scale;
-                const py = cy - m * scale;
+                const px = cx + state * scale;
+                const py = cy - message * scale;
 
                 ctx.fillRect(px, py, 1.5, 1.5);
             }

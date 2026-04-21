@@ -246,9 +246,9 @@ export const PianoRoll = ({
                 scaleType={scaleName}
                 onScaleTypeChange={(type) => projectStore.set({ ...projectStore.value!, scaleName: type })}
                 isFolded={isFolded}
-                onToggleFolded={() => setIsFolded((p) => !p)}
+                onToggleFolded={() => setIsFolded((param) => !param)}
                 constrainToScale={constrainToScale}
-                onToggleConstrainToScale={() => setConstrainToScale((p: boolean) => !p)}
+                onToggleConstrainToScale={() => setConstrainToScale((param: boolean) => !param)}
                 stepInput={stepRecord?.active ?? false}
                 onToggleStepInput={() => {
                     const state = stepRecordStore.value;
@@ -263,33 +263,32 @@ export const PianoRoll = ({
                     });
                 }}
                 showGhostNotes={showGhostNotes}
-                onToggleGhostNotes={() => setShowGhostNotes((p) => !p)}
+                onToggleGhostNotes={() => setShowGhostNotes((param) => !param)}
                 chordMode={chordMode}
-                onToggleChordMode={() => setChordMode((p) => !p)}
+                onToggleChordMode={() => setChordMode((param) => !param)}
                 chordType={chordType}
                 onChordTypeChange={setChordType}
                 paintMode={paintMode}
-                onTogglePaintMode={() => setPaintMode((p) => !p)}
+                onTogglePaintMode={() => setPaintMode((param) => !param)}
                 lassoMode={lassoMode}
-                onToggleLassoMode={() => setLassoMode((p) => !p)}
+                onToggleLassoMode={() => setLassoMode((param) => !param)}
                 notePreviewEnabled={notePreviewEnabled}
-                onToggleNotePreview={() => setNotePreviewEnabled((p: boolean) => !p)}
+                onToggleNotePreview={() => setNotePreviewEnabled((param: boolean) => !param)}
                 zoom={zoom}
                 onZoomChange={setZoom}
                 openedClips={openedClipIds?.map((id) => ({ id, name: id }))}
                 focusedClipId={focusedClipId}
                 onFocusedClipIdChange={setFocusedClipId}
                 showExpressionView={showExpressionView}
-                onToggleExpressionView={() => setShowExpressionView((p) => !p)}
+                onToggleExpressionView={() => setShowExpressionView((param) => !param)}
                 activeExpressionLane={activeExpressionLane}
                 onActiveExpressionLaneChange={setActiveExpressionLane}
             />
-
             <div className="flex flex-1 flex-col overflow-hidden">
                 <div
                     className="flex flex-1 overflow-auto"
-                    onScroll={(e) => {
-                        const sl = (e.target as HTMLElement).scrollLeft;
+                    onScroll={(event) => {
+                        const sl = (event.target as HTMLElement).scrollLeft;
                         setScrollX(sl);
                         onScrollChange?.(sl);
                     }}
@@ -353,18 +352,18 @@ export const PianoRoll = ({
                                 selectedNoteIds={selectedNoteIds}
                                 beatWidth={beatWidth}
                                 contentWidth={GRID_BEATS * beatWidth}
-                                getValue={(n) => {
+                                getValue={(node) => {
                                     if (activeExpressionLane === 'velocity') {
-                                        return n.velocity ?? 100;
+                                        return node.velocity ?? 100;
                                     }
                                     if (activeExpressionLane === 'pressure') {
-                                        return n.pressure ?? 0;
+                                        return node.pressure ?? 0;
                                     }
                                     if (activeExpressionLane === 'slide') {
-                                        return n.slide ?? 0;
+                                        return node.slide ?? 0;
                                     }
                                     if (activeExpressionLane === 'pitchBend') {
-                                        return (((n.pitchBend ?? 0) + 8192) / 16383) * 127;
+                                        return (((node.pitchBend ?? 0) + 8192) / 16383) * 127;
                                     } // Scale to 0-127
                                     return 0;
                                 }}
@@ -389,7 +388,6 @@ export const PianoRoll = ({
                     </div>
                 ) : null}
             </div>
-
             {ctxMenu ? (
                 <PianoRollContextMenu
                     menu={ctxMenu}
@@ -397,7 +395,7 @@ export const PianoRoll = ({
                     notes={notes}
                     selectedNoteIds={selectedNoteIds}
                     onClose={() => setCtxMenu(null)}
-                    onSelectAll={() => setSelectedNoteIds(new Set(notes.map((n) => n.id)))}
+                    onSelectAll={() => setSelectedNoteIds(new Set(notes.map((node) => node.id)))}
                     onClearSelection={() => setSelectedNoteIds(new Set())}
                 />
             ) : null}

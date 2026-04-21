@@ -19,7 +19,7 @@ export function stopAutomationRecording(): void {
     const tracks = getAllTracks();
 
     for (const [key, session] of activeRecording) {
-        const track = tracks.find((t) => t.id === session.trackId);
+        const track = tracks.find((time) => time.id === session.trackId);
 
         if (track?.automationMode === 'latch' && session.lastValue !== null) {
             const points = pendingPoints.get(key);

@@ -20,7 +20,6 @@ export const AiSection = (): ReactElement => {
     return (
         <>
             <SectionTitle icon={<Sparkles className="size-4" />} title="AI" />
-
             <FieldGroup label="Active Backend">
                 <div className="flex items-center gap-2">
                     <span
@@ -63,9 +62,7 @@ export const AiSection = (): ReactElement => {
                     </span>
                 </div>
             </FieldGroup>
-
             <Separator />
-
             <FieldGroup label="Cloud AI (Anthropic API)">
                 <p className="text-[10px] text-muted-foreground mb-2 leading-relaxed">
                     Enter your Anthropic API key to enable cloud AI features. Uses Claude Sonnet for the highest quality
@@ -76,7 +73,7 @@ export const AiSection = (): ReactElement => {
                         <Input
                             type={showKey ? 'text' : 'password'}
                             value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
+                            onChange={(event) => setApiKey(event.target.value)}
                             placeholder="sk-ant-api03-..."
                             className="h-8 text-xs font-mono pr-8"
                             aria-label="Anthropic API key"
@@ -128,9 +125,7 @@ export const AiSection = (): ReactElement => {
                     ) : null}
                 </div>
             </FieldGroup>
-
             <Separator />
-
             <FieldGroup label="Browser AI">
                 <p className="text-[10px] text-muted-foreground leading-relaxed mb-2">
                     Instrument synthesis (DDSP), vocal previews (Kokoro TTS), and singing voice synthesis (DiffSinger) —
@@ -140,17 +135,13 @@ export const AiSection = (): ReactElement => {
                     <CapabilityReportPanel />
                 </div>
             </FieldGroup>
-
             <Separator />
-
             <FieldGroup label="AI Model Manager">
                 <div className="border border-border/30 rounded overflow-hidden max-h-[400px] overflow-y-auto">
                     <ModelManagerPanel />
                 </div>
             </FieldGroup>
-
             <Separator />
-
             <FieldGroup label="Audio Analysis">
                 <p className="text-[10px] text-muted-foreground leading-relaxed">
                     Audio analysis features (pitch detection, spectral analysis, polyphonic audio-to-MIDI) run entirely

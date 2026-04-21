@@ -47,8 +47,8 @@ const DropdownPanel = ({ children, onClose }: { children: React.ReactNode; onClo
     const ref = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        const handleClick = (e: MouseEvent) => {
-            if (ref.current && !ref.current.contains(e.target as Node)) {
+        const handleClick = (event: MouseEvent) => {
+            if (ref.current && !ref.current.contains(event.target as Node)) {
                 onClose();
             }
         };
@@ -94,7 +94,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
     } else if (backend === 'cloud') {
         modelInfo = CLOUD_MODEL_INFO;
     } else {
-        modelInfo = WEBLLM_MODELS.find((m) => m.id === selectedModelId) ?? WEBLLM_MODELS[1]!;
+        modelInfo = WEBLLM_MODELS.find((message) => message.id === selectedModelId) ?? WEBLLM_MODELS[1]!;
     }
 
     if (!isLlmAvailable()) {
@@ -123,7 +123,6 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                     <Sparkles className="size-2.5" aria-hidden="true" />
                     Load AI
                 </Button>
-
                 {showPanel ? (
                     <DropdownPanel onClose={() => setShowPanel(false)}>
                         <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
@@ -188,7 +187,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                     if (backend === 'cloud') {
                                         return 'Connect Cloud AI';
                                     }
-                                    return `Load ${WEBLLM_MODELS.find((m) => m.id === selectedModelId)?.displayName ?? 'Model'}`;
+                                    return `Load ${WEBLLM_MODELS.find((message) => message.id === selectedModelId)?.displayName ?? 'Model'}`;
                                 })()}
                             </Button>
                         </div>

@@ -19,7 +19,7 @@ export function removeNotesByIds(clipId: string, noteIds: string[]): void {
         ...state,
         notesByClipId: {
             ...state.notesByClipId,
-            [clipId]: existing.filter((n) => !idSet.has(n.id)),
+            [clipId]: existing.filter((node) => !idSet.has(node.id)),
         },
     });
 }

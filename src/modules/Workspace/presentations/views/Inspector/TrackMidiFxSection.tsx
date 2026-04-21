@@ -64,7 +64,6 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                     </div>
                 }
             />
-
             <div className="space-y-2">
                 {midiFx.map((fx: any) => (
                     <ChoiceCard key={fx.id} className={cn('flex flex-col gap-2 p-2', fx.bypassed ? 'opacity-50' : '')}>
@@ -103,7 +102,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                             value={fx.parameterValues.rate || 0.25}
                                             min={0.125}
                                             max={1.0}
-                                            onChange={(v) => handleParamChange(fx.id, 'rate', v)}
+                                            onChange={(value) => handleParamChange(fx.id, 'rate', value)}
                                         />
                                         <MixerStripValue size="sm">Rate</MixerStripValue>
                                     </div>
@@ -111,7 +110,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                         <select
                                             className="bg-surface-base text-[10px] rounded border border-border/50 px-1 outline-none"
                                             value={fx.parameterValues.mode || 0}
-                                            onChange={(e) => handleParamChange(fx.id, 'mode', parseInt(e.target.value))}
+                                            onChange={(event) => handleParamChange(fx.id, 'mode', parseInt(event.target.value))}
                                         >
                                             <option value={0}>Up</option>
                                             <option value={1}>Down</option>
@@ -130,7 +129,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                             value={fx.parameterValues.scale || 1.0}
                                             min={0.1}
                                             max={2.0}
-                                            onChange={(v) => handleParamChange(fx.id, 'scale', v)}
+                                            onChange={(value) => handleParamChange(fx.id, 'scale', value)}
                                         />
                                         <MixerStripValue size="sm">Scale</MixerStripValue>
                                     </div>
@@ -140,7 +139,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                             value={fx.parameterValues.offset || 0}
                                             min={-64}
                                             max={64}
-                                            onChange={(v) => handleParamChange(fx.id, 'offset', v)}
+                                            onChange={(value) => handleParamChange(fx.id, 'offset', value)}
                                         />
                                         <MixerStripValue size="sm">Offset</MixerStripValue>
                                     </div>
@@ -153,7 +152,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                         value={fx.parameterValues.seed || 12345}
                                         min={1}
                                         max={65535}
-                                        onChange={(v) => handleParamChange(fx.id, 'seed', v)}
+                                        onChange={(value) => handleParamChange(fx.id, 'seed', value)}
                                     />
                                     <MixerStripValue size="sm">Seed</MixerStripValue>
                                 </div>

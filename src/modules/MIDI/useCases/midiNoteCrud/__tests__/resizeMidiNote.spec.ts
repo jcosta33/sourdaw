@@ -26,9 +26,9 @@ describe('resizeMidiNote', () => {
 
     it('should update start and duration when provided', () => {
         resizeMidiNote('c1', 'n1', 2, 0.5);
-        const n = midiStore.value?.notesByClipId.c1?.[0];
-        expect(n?.startBeat).toBe(2);
-        expect(n?.duration).toBe(0.5);
+        const node = midiStore.value?.notesByClipId.c1?.[0];
+        expect(node?.startBeat).toBe(2);
+        expect(node?.duration).toBe(0.5);
     });
 
     it('should enforce a minimum duration of 0.0625 beats (64th note, matching addMidiNote)', () => {

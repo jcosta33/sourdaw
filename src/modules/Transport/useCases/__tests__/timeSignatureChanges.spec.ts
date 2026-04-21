@@ -44,7 +44,7 @@ describe('timeSignatureChanges', () => {
         mockStore.value = { changes: [{ id: 'a', beat: 16, numerator: 4, denominator: 4 }] };
         addTimeSignatureChange(8, 3, 4);
         const result = setMock.mock.calls[0]![0]!;
-        expect(result.changes.map((c) => c.beat)).toEqual([8, 16]);
+        expect(result.changes.map((context) => context.beat)).toEqual([8, 16]);
     });
 
     it('addTimeSignatureChange replaces an entry at the same beat', () => {
@@ -64,7 +64,7 @@ describe('timeSignatureChanges', () => {
             ],
         };
         removeTimeSignatureChange(0);
-        expect(setMock.mock.calls[0]![0]!.changes.map((c) => c.beat)).toEqual([8]);
+        expect(setMock.mock.calls[0]![0]!.changes.map((context) => context.beat)).toEqual([8]);
     });
 
     it('getTimeSignatureChanges returns the current changes (or empty)', () => {

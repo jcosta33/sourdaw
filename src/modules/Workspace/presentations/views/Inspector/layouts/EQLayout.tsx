@@ -14,23 +14,23 @@ import { SectionHeader } from '../SectionHeader';
 
 type P = DeviceLayoutProps['parameters'][number];
 const Param = ({
-    p,
+    param,
     device,
     trackId,
 }: {
-    p: P;
+    param: P;
     device: DeviceLayoutProps['device'];
     trackId: string;
 }): ReactElement => (
     <SurfaceCard className="rounded-md bg-surface-base p-2 w-full">
-        <DeviceParameterControl param={p} device={device} trackId={trackId} />
+        <DeviceParameterControl param={param} device={device} trackId={trackId} />
     </SurfaceCard>
 );
 
 const EQLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {
     const pv = device.parameterValues;
-    const change = (id: string, v: number): void => {
-        setDeviceParameter(device.id, id, v);
+    const change = (id: string, value: number): void => {
+        setDeviceParameter(device.id, id, value);
     };
 
     return (
@@ -52,35 +52,32 @@ const EQLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElem
                     onParamChange={change}
                 />
             </div>
-
             <SectionHeader title="Low Band" />
             <div className="grid grid-cols-2 gap-2">
-                {filterParams(parameters, ['eq-low-gain', 'eq-low-freq']).map((p) => (
-                    <Param key={p.id} p={p} device={device} trackId={trackId} />
+                {filterParams(parameters, ['eq-low-gain', 'eq-low-freq']).map((param) => (
+                    <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
             </div>
-            {filterParams(parameters, ['eq-low-q']).map((p) => (
-                <Param key={p.id} p={p} device={device} trackId={trackId} />
+            {filterParams(parameters, ['eq-low-q']).map((param) => (
+                <Param key={param.id} param={param} device={device} trackId={trackId} />
             ))}
-
             <SectionHeader title="Mid Band" />
             <div className="grid grid-cols-2 gap-2">
-                {filterParams(parameters, ['eq-mid-gain', 'eq-mid-freq']).map((p) => (
-                    <Param key={p.id} p={p} device={device} trackId={trackId} />
+                {filterParams(parameters, ['eq-mid-gain', 'eq-mid-freq']).map((param) => (
+                    <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
             </div>
-            {filterParams(parameters, ['eq-mid-q']).map((p) => (
-                <Param key={p.id} p={p} device={device} trackId={trackId} />
+            {filterParams(parameters, ['eq-mid-q']).map((param) => (
+                <Param key={param.id} param={param} device={device} trackId={trackId} />
             ))}
-
             <SectionHeader title="High Band" />
             <div className="grid grid-cols-2 gap-2">
-                {filterParams(parameters, ['eq-high-gain', 'eq-high-freq']).map((p) => (
-                    <Param key={p.id} p={p} device={device} trackId={trackId} />
+                {filterParams(parameters, ['eq-high-gain', 'eq-high-freq']).map((param) => (
+                    <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
             </div>
-            {filterParams(parameters, ['eq-high-q']).map((p) => (
-                <Param key={p.id} p={p} device={device} trackId={trackId} />
+            {filterParams(parameters, ['eq-high-q']).map((param) => (
+                <Param key={param.id} param={param} device={device} trackId={trackId} />
             ))}
         </div>
     );

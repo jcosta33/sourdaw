@@ -3,9 +3,9 @@ import { createHandler } from '#/utils/createHandler';
 import { seekPlayhead } from '../../useCases/transportControls/seekPlayhead';
 
 export const handleSeekPlayhead = createHandler<'seekPlayhead'>({
-    execute: (a) => {
-        seekPlayhead(a.payload.beat);
+    execute: (alpha) => {
+        seekPlayhead(alpha.payload.beat);
     },
-    describe: (a) => ({ label: `Seek to beat ${a.payload.beat}` }),
+    describe: (alpha) => ({ label: `Seek to beat ${alpha.payload.beat}` }),
     undoable: false,
 });

@@ -44,6 +44,6 @@ describe('addChordEvent', () => {
         expect(created!.duration).toBe(2);
 
         const call = mocks.set.mock.calls[0]![0] as { events: Array<{ beat: number }> };
-        expect(call.events.map((e) => e.beat)).toEqual([2, 8]);
+        expect(call.events.map((event) => event.beat)).toEqual([2, 8]);
     });
 });

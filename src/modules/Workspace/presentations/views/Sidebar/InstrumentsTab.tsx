@@ -121,19 +121,16 @@ export const InstrumentsTab = ({
         if (!query) {
             return true;
         }
-        return (
-            preset.name.toLowerCase().includes(query) ||
-            preset.category.toLowerCase().includes(query) ||
-            preset.tags.some((t) => t.toLowerCase().includes(query))
-        );
+        return (preset.name.toLowerCase().includes(query) ||
+        preset.category.toLowerCase().includes(query) || preset.tags.some((time) => time.toLowerCase().includes(query)));
     };
 
     // Filter out presets that belong to custom-UI instruments or effects categories
-    const isSoundPreset = (p: SoundPreset): boolean =>
-        !p.devices.some((d) => CUSTOM_UI_DEVICE_TYPES.has(d.type)) && !EFFECTS_CATEGORIES.has(p.category);
+    const isSoundPreset = (param: SoundPreset): boolean =>
+        !param.devices.some((data) => CUSTOM_UI_DEVICE_TYPES.has(data.type)) && !EFFECTS_CATEGORIES.has(param.category);
 
-    const soundPresets = factoryPresets.filter((p) => isSoundPreset(p) && matchesSearch(p));
-    const filteredUser = userPresets.filter((p) => matchesSearch(p));
+    const soundPresets = factoryPresets.filter((param) => isSoundPreset(param) && matchesSearch(param));
+    const filteredUser = userPresets.filter((param) => matchesSearch(param));
 
     const handlePresetClick = (preset: SoundPreset) => {
         // Load onto the selected track if it's a compatible kind, else create new
@@ -156,20 +153,20 @@ export const InstrumentsTab = ({
             name: saveFormName.trim(),
             category: saveFormCategory,
             trackKind: selectedTrack.kind === 'midi' ? 'midi' : 'audio',
-            devices: selectedTrack.devices.map((d) => ({
-                type: d.type,
-                name: d.name,
-                parameterValues: d.parameterValues,
+            devices: selectedTrack.devices.map((data) => ({
+                type: data.type,
+                name: data.name,
+                parameterValues: data.parameterValues,
             })),
         });
         setSaveFormName('');
         setShowSaveForm(false);
-        setUserPresetsVersion((v) => v + 1);
+        setUserPresetsVersion((value) => value + 1);
     };
 
     const handleDeleteUserPreset = (presetId: string) => {
         deleteUserPreset(presetId);
-        setUserPresetsVersion((v) => v + 1);
+        setUserPresetsVersion((value) => value + 1);
     };
 
     const handleAddBlankMidiTrack = () => {
@@ -189,22 +186,22 @@ export const InstrumentsTab = ({
             isFactory: true,
         };
         const trackId = createTrackFromPreset(preset);
-        const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
-        const device = track?.devices.find((d) => d.type === 'fermenter');
+        const track = trackId ? getAllTracks().find((time) => time.id === trackId) : null;
+        const device = track?.devices.find((data) => data.type === 'fermenter');
         void eventBus.emit('panel.showFermenter', { deviceId: device?.id ?? null });
     };
 
     const handleAddToasterTrack = () => {
         const trackId = createDrumTrackStack();
-        const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
-        const device = track?.devices.find((d) => d.type === 'toaster');
+        const track = trackId ? getAllTracks().find((time) => time.id === trackId) : null;
+        const device = track?.devices.find((data) => data.type === 'toaster');
         void eventBus.emit('panel.showToaster', { deviceId: device?.id ?? null });
     };
 
     const handleAddGrandBouleTrack = () => {
         const trackId = createGrandBouleTrack();
-        const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
-        const device = track?.devices.find((d) => d.type === 'grand-boule');
+        const track = trackId ? getAllTracks().find((time) => time.id === trackId) : null;
+        const device = track?.devices.find((data) => data.type === 'grand-boule');
         void eventBus.emit('panel.showGrandBoule', { deviceId: device?.id ?? null });
     };
 
@@ -237,8 +234,8 @@ export const InstrumentsTab = ({
             isFactory: true,
         };
         const trackId = createTrackFromPreset(preset);
-        const track = trackId ? getAllTracks().find((t) => t.id === trackId) : null;
-        const device = track?.devices.find((d) => d.type === 'builtin-sampler');
+        const track = trackId ? getAllTracks().find((time) => time.id === trackId) : null;
+        const device = track?.devices.find((data) => data.type === 'builtin-sampler');
         void eventBus.emit('panel.showCrumbs', { deviceId: device?.id ?? null });
     };
 
@@ -364,7 +361,7 @@ export const InstrumentsTab = ({
         if (currentCategorySlug === 'user') {
             renderPresets = filteredUser;
         } else {
-            renderPresets = soundPresets.filter((p) => p.category === currentCategorySlug);
+            renderPresets = soundPresets.filter((param) => param.category === currentCategorySlug);
         }
 
         return (
@@ -379,9 +376,9 @@ export const InstrumentsTab = ({
                             favorites={favorites}
                             onToggleFavorite={onToggleFavorite}
                             onClick={() => handlePresetClick(preset)}
-                            onContextMenu={(e) => {
+                            onContextMenu={(event) => {
                                 if (currentCategorySlug === 'user') {
-                                    e.preventDefault();
+                                    event.preventDefault();
                                     handleDeleteUserPreset(preset.id);
                                 }
                             }}
@@ -398,7 +395,7 @@ export const InstrumentsTab = ({
 
     // ── Route: root instrument browser ──────────────────────────────────
     const categoriesWithPresets = PRESET_CATEGORIES.filter(
-        (cat) => !EFFECTS_CATEGORIES.has(cat) && soundPresets.some((p) => p.category === cat)
+        (cat) => !EFFECTS_CATEGORIES.has(cat) && soundPresets.some((param) => param.category === cat)
     );
 
     return (
@@ -452,7 +449,6 @@ export const InstrumentsTab = ({
                     theme={GRAND_BOULE_THEME}
                 />
             </div>
-
             <DawSectionDivider
                 label="Standard grain"
                 className="mb-1 px-1"
@@ -470,7 +466,7 @@ export const InstrumentsTab = ({
                     <div key={group.label} className="mb-2">
                         <div className="flex flex-col gap-1.5">
                             {groupCats.map((cat) => {
-                                const presetsInCat = soundPresets.filter((p) => p.category === cat);
+                                const presetsInCat = soundPresets.filter((param) => param.category === cat);
                                 const CatIcon = CATEGORY_ICONS[cat] ?? Folder;
                                 const catColor = CATEGORY_COLORS[cat] ?? '';
                                 const subtitle = CATEGORY_SUBTITLES[cat] ?? '';
@@ -489,7 +485,7 @@ export const InstrumentsTab = ({
                                                 id: `instruments-${cat}`,
                                                 title: catLabel,
                                                 icon: CatIcon,
-                                                iconColor: catColor.split(' ').find((c) => c.startsWith('text-')),
+                                                iconColor: catColor.split(' ').find((context) => context.startsWith('text-')),
                                             })
                                         }
                                     />
@@ -499,7 +495,6 @@ export const InstrumentsTab = ({
                     </div>
                 );
             })}
-
             {/* My Presets & Save */}
             <DawSectionDivider
                 label="User Library"
@@ -541,7 +536,6 @@ export const InstrumentsTab = ({
                     </>
                 ) : null}
             </div>
-
             {/* Save form (inline) */}
             {showSaveForm && selectedTrack ? (
                 <div className="space-y-1.5 px-2 py-2 rounded-md bg-gradient-to-br from-surface-raised to-surface-base border border-border/40 shadow-sm animate-in fade-in duration-100 mb-2">
@@ -550,10 +544,10 @@ export const InstrumentsTab = ({
                             type="text"
                             placeholder="Preset name…"
                             value={saveFormName}
-                            onChange={(e) => setSaveFormName(e.target.value)}
+                            onChange={(event) => setSaveFormName(event.target.value)}
                             className="h-7 text-xs flex-1 bg-surface-default border-border/50 focus-visible:border-border/80"
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
                                     handleSavePreset();
                                 }
                             }}
@@ -575,7 +569,7 @@ export const InstrumentsTab = ({
                     <div className="flex items-center gap-1.5 mt-1">
                         <DawCompactSelect
                             value={saveFormCategory}
-                            onChange={(e) => setSaveFormCategory(e.target.value as SoundPresetCategory)}
+                            onChange={(event) => setSaveFormCategory(event.target.value as SoundPresetCategory)}
                             tone="inset"
                             className="flex-1 px-1 text-[11px] h-7 bg-surface-default"
                         >
@@ -597,7 +591,6 @@ export const InstrumentsTab = ({
                     </div>
                 </div>
             ) : null}
-
             {/* Blank track shortcut */}
             <div className="border-t border-border/20 pt-2 mt-1">
                 <DawPickerRow

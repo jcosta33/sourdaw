@@ -66,8 +66,8 @@ export const PianoRollContextMenu = ({
             const seed = clipNotes
                 .slice(-8)
                 .map(
-                    (n) =>
-                        [Math.floor(n.pitch), n.velocity, n.startBeat, n.duration] as [number, number, number, number]
+                    (node) =>
+                        [Math.floor(node.pitch), node.velocity, node.startBeat, node.duration] as [number, number, number, number]
                 );
             const res = await generateMidiAI(seed, 16);
             if (res?.notes) {
@@ -100,7 +100,7 @@ export const PianoRollContextMenu = ({
                 shortcut="⌘X"
                 disabled={selectedNoteIds.size === 0}
                 onClick={act(() => {
-                    const cutNotes = notes.filter((n) => selectedNoteIds.has(n.id)).map((n) => ({ ...n }));
+                    const cutNotes = notes.filter((node) => selectedNoteIds.has(node.id)).map((node) => ({ ...node }));
                     copySelectedNotes(clipId, [...selectedNoteIds]);
                     for (const id of selectedNoteIds) {
                         removeMidiNote(clipId, id);
@@ -109,13 +109,13 @@ export const PianoRollContextMenu = ({
                         pushUndoEntry(
                             `Cut ${cutNotes.length} note${cutNotes.length > 1 ? 's' : ''}`,
                             () => {
-                                for (const n of cutNotes) {
-                                    addMidiNote(clipId, n.pitch, n.startBeat, n.duration, n.velocity);
+                                for (const node of cutNotes) {
+                                    addMidiNote(clipId, node.pitch, node.startBeat, node.duration, node.velocity);
                                 }
                             },
                             () => {
-                                for (const n of cutNotes) {
-                                    removeMidiNote(clipId, n.id);
+                                for (const node of cutNotes) {
+                                    removeMidiNote(clipId, node.id);
                                 }
                             }
                         );
@@ -128,7 +128,6 @@ export const PianoRollContextMenu = ({
             <DawMenuButton role="menuitem" shortcut="⌘V" onClick={act(() => pasteNotes(clipId, menu.beat))}>
                 Paste
             </DawMenuButton>
-
             {/* Quantize */}
             <DawMenuSeparator className="border-border/50" />
             <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
@@ -141,19 +140,19 @@ export const PianoRollContextMenu = ({
                         key={g}
                         className={pillBtnClass}
                         onClick={act(() => {
-                            const before = getNotesForClip(clipId).map((n) => ({ ...n }));
+                            const before = getNotesForClip(clipId).map((node) => ({ ...node }));
                             quantizeNotes(clipId, g);
-                            const after = getNotesForClip(clipId).map((n) => ({ ...n }));
+                            const after = getNotesForClip(clipId).map((node) => ({ ...node }));
                             pushUndoEntry(
                                 `Quantize notes (${g === 1 ? '1/1' : g === 0.5 ? '1/2' : g === 0.25 ? '1/4' : '1/8'})`,
                                 () => {
-                                    for (const n of before) {
-                                        moveMidiNote(clipId, n.id, n.pitch, n.startBeat);
+                                    for (const node of before) {
+                                        moveMidiNote(clipId, node.id, node.pitch, node.startBeat);
                                     }
                                 },
                                 () => {
-                                    for (const n of after) {
-                                        moveMidiNote(clipId, n.id, n.pitch, n.startBeat);
+                                    for (const node of after) {
+                                        moveMidiNote(clipId, node.id, node.pitch, node.startBeat);
                                     }
                                 }
                             );
@@ -163,7 +162,6 @@ export const PianoRollContextMenu = ({
                     </button>
                 ))}
             </div>
-
             {/* Transpose */}
             <DawMenuSeparator className="border-border/50" />
             <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
@@ -188,7 +186,6 @@ export const PianoRollContextMenu = ({
                     </button>
                 ))}
             </div>
-
             {/* Scale */}
             <DawMenuSeparator className="border-border/50" />
             <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
@@ -197,19 +194,19 @@ export const PianoRollContextMenu = ({
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    const before = getNotesForClip(clipId).map((n) => ({ ...n }));
+                    const before = getNotesForClip(clipId).map((node) => ({ ...node }));
                     snapClipToScale(clipId);
-                    const after = getNotesForClip(clipId).map((n) => ({ ...n }));
+                    const after = getNotesForClip(clipId).map((node) => ({ ...node }));
                     pushUndoEntry(
                         'Snap notes to scale',
                         () => {
-                            for (const n of before) {
-                                moveMidiNote(clipId, n.id, n.pitch, n.startBeat);
+                            for (const node of before) {
+                                moveMidiNote(clipId, node.id, node.pitch, node.startBeat);
                             }
                         },
                         () => {
-                            for (const n of after) {
-                                moveMidiNote(clipId, n.id, n.pitch, n.startBeat);
+                            for (const node of after) {
+                                moveMidiNote(clipId, node.id, node.pitch, node.startBeat);
                             }
                         }
                     );
@@ -217,7 +214,6 @@ export const PianoRollContextMenu = ({
             >
                 Snap to Scale
             </DawMenuButton>
-
             {/* Humanize */}
             <DawMenuSeparator className="border-border/50" />
             {(
@@ -230,39 +226,39 @@ export const PianoRollContextMenu = ({
                     key={label}
                     role="menuitem"
                     onClick={act(() => {
-                        const before = getNotesForClip(clipId).map((n) => ({
-                            id: n.id,
-                            startBeat: n.startBeat,
-                            velocity: n.velocity,
+                        const before = getNotesForClip(clipId).map((node) => ({
+                            id: node.id,
+                            startBeat: node.startBeat,
+                            velocity: node.velocity,
                         }));
                         humanizeNotes(clipId, amount);
-                        const after = getNotesForClip(clipId).map((n) => ({
-                            id: n.id,
-                            startBeat: n.startBeat,
-                            velocity: n.velocity,
+                        const after = getNotesForClip(clipId).map((node) => ({
+                            id: node.id,
+                            startBeat: node.startBeat,
+                            velocity: node.velocity,
                         }));
                         pushUndoEntry(
                             `Humanize (${label})`,
                             () => {
-                                for (const n of before) {
+                                for (const node of before) {
                                     moveMidiNote(
                                         clipId,
-                                        n.id,
-                                        notes.find((o) => o.id === n.id)?.pitch ?? 60,
-                                        n.startBeat
+                                        node.id,
+                                        notes.find((output) => output.id === node.id)?.pitch ?? 60,
+                                        node.startBeat
                                     );
-                                    setNoteVelocity(clipId, n.id, n.velocity);
+                                    setNoteVelocity(clipId, node.id, node.velocity);
                                 }
                             },
                             () => {
-                                for (const n of after) {
+                                for (const node of after) {
                                     moveMidiNote(
                                         clipId,
-                                        n.id,
-                                        notes.find((o) => o.id === n.id)?.pitch ?? 60,
-                                        n.startBeat
+                                        node.id,
+                                        notes.find((output) => output.id === node.id)?.pitch ?? 60,
+                                        node.startBeat
                                     );
-                                    setNoteVelocity(clipId, n.id, n.velocity);
+                                    setNoteVelocity(clipId, node.id, node.velocity);
                                 }
                             }
                         );
@@ -271,7 +267,6 @@ export const PianoRollContextMenu = ({
                     Humanize ({label})
                 </DawMenuButton>
             ))}
-
             {/* Strum */}
             <DawMenuSeparator className="border-border/50" />
             <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
@@ -300,7 +295,6 @@ export const PianoRollContextMenu = ({
                     </button>
                 ))}
             </div>
-
             {/* AI */}
             <DawMenuSeparator className="border-border/50" />
             <DawMenuButton
@@ -315,7 +309,6 @@ export const PianoRollContextMenu = ({
             >
                 AI Auto-Complete
             </DawMenuButton>
-
             {/* Groove */}
             <DawMenuSeparator className="border-border/50" />
             <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
@@ -355,7 +348,6 @@ export const PianoRollContextMenu = ({
             >
                 Apply Groove (50%)
             </DawMenuButton>
-
             {/* Delete */}
             <DawMenuSeparator className="border-border/50" />
             <DawMenuButton
@@ -364,7 +356,7 @@ export const PianoRollContextMenu = ({
                 shortcut="⌫"
                 disabled={selectedNoteIds.size === 0}
                 onClick={act(() => {
-                    const deletedNotes = notes.filter((n) => selectedNoteIds.has(n.id)).map((n) => ({ ...n }));
+                    const deletedNotes = notes.filter((node) => selectedNoteIds.has(node.id)).map((node) => ({ ...node }));
                     for (const id of selectedNoteIds) {
                         removeMidiNote(clipId, id);
                     }
@@ -372,13 +364,13 @@ export const PianoRollContextMenu = ({
                         pushUndoEntry(
                             `Delete ${deletedNotes.length} note${deletedNotes.length > 1 ? 's' : ''}`,
                             () => {
-                                for (const n of deletedNotes) {
-                                    addMidiNote(clipId, n.pitch, n.startBeat, n.duration, n.velocity);
+                                for (const node of deletedNotes) {
+                                    addMidiNote(clipId, node.pitch, node.startBeat, node.duration, node.velocity);
                                 }
                             },
                             () => {
-                                for (const n of deletedNotes) {
-                                    removeMidiNote(clipId, n.id);
+                                for (const node of deletedNotes) {
+                                    removeMidiNote(clipId, node.id);
                                 }
                             }
                         );

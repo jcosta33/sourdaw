@@ -208,7 +208,7 @@ export const trackCommands: CommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                const track = trackStore.value?.tracks.find((t) => t.id === id);
+                const track = trackStore.value?.tracks.find((time) => time.id === id);
                 if (track?.groupId) {
                     void executeAppAction({ type: 'ungroupTracks', payload: { groupId: track.groupId } });
                 }

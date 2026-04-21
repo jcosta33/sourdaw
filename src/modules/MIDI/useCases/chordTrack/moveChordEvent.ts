@@ -7,8 +7,8 @@ export function moveChordEvent(eventId: string, newBeat: number): void {
     }
 
     const events = state.events
-        .map((e) => (e.id === eventId ? { ...e, beat: Math.max(0, newBeat) } : e))
-        .sort((a, b) => a.beat - b.beat);
+        .map((event) => (event.id === eventId ? { ...event, beat: Math.max(0, newBeat) } : event))
+        .sort((alpha, b) => alpha.beat - b.beat);
 
     chordTrackStore.set({ ...state, events });
 }

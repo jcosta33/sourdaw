@@ -119,22 +119,22 @@ export const PianoRollToolbar = ({
 }: PianoRollToolbarProps): ReactElement => (
     <DawControlStrip>
         <span className="text-[10px] text-muted-foreground">Snap:</span>
-        {[1, 0.5, 0.25, 0.125].map((v) => (
+        {[1, 0.5, 0.25, 0.125].map((value) => (
             <Button
-                key={v}
-                variant={gridSnap === v ? 'secondary' : 'ghost'}
+                key={value}
+                variant={gridSnap === value ? 'secondary' : 'ghost'}
                 size="icon-xs"
-                onClick={() => onGridSnapChange(v)}
+                onClick={() => onGridSnapChange(value)}
                 className="text-[9px] w-6 h-5"
             >
                 {(() => {
-                    if (v === 1) {
+                    if (value === 1) {
                         return '1';
                     }
-                    if (v === 0.5) {
+                    if (value === 0.5) {
                         return '1/2';
                     }
-                    if (v === 0.25) {
+                    if (value === 0.25) {
                         return '1/4';
                     }
                     return '1/8';
@@ -147,19 +147,19 @@ export const PianoRollToolbar = ({
         <span className="text-[10px] text-muted-foreground">Scale:</span>
         <DawCompactSelect
             value={scaleRoot}
-            onChange={(e) => onScaleRootChange(Number(e.target.value))}
+            onChange={(event) => onScaleRootChange(Number(event.target.value))}
             size="micro"
             aria-label="Scale root note"
         >
-            {SCALE_ROOT_LABELS.map((label, i) => (
-                <option key={label} value={i}>
+            {SCALE_ROOT_LABELS.map((label, index) => (
+                <option key={label} value={index}>
                     {label}
                 </option>
             ))}
         </DawCompactSelect>
         <DawCompactSelect
             value={scaleType}
-            onChange={(e) => onScaleTypeChange(e.target.value)}
+            onChange={(event) => onScaleTypeChange(event.target.value)}
             size="micro"
             aria-label="Scale type"
         >
@@ -261,7 +261,7 @@ export const PianoRollToolbar = ({
         {chordMode ? (
             <DawCompactSelect
                 value={chordType}
-                onChange={(e) => onChordTypeChange(e.target.value as PianoRollChordType)}
+                onChange={(event) => onChordTypeChange(event.target.value as PianoRollChordType)}
                 size="micro"
                 aria-label="Chord type"
             >
@@ -320,8 +320,8 @@ export const PianoRollToolbar = ({
         {showExpressionView && activeExpressionLane !== undefined && onActiveExpressionLaneChange !== undefined ? (
             <DawCompactSelect
                 value={activeExpressionLane}
-                onChange={(e) =>
-                    onActiveExpressionLaneChange(e.target.value as 'velocity' | 'pressure' | 'slide' | 'pitchBend')
+                onChange={(event) =>
+                    onActiveExpressionLaneChange(event.target.value as 'velocity' | 'pressure' | 'slide' | 'pitchBend')
                 }
                 size="micro"
                 aria-label="Active expression lane"
@@ -339,7 +339,7 @@ export const PianoRollToolbar = ({
                 <span className="text-[10px] text-muted-foreground">Edit:</span>
                 <DawCompactSelect
                     value={focusedClipId}
-                    onChange={(e) => onFocusedClipIdChange(e.target.value)}
+                    onChange={(event) => onFocusedClipIdChange(event.target.value)}
                     size="micro"
                     aria-label="Focused clip for note input"
                 >
@@ -356,9 +356,9 @@ export const PianoRollToolbar = ({
         <span className="text-[10px] text-muted-foreground">Zoom:</span>
         <Slider
             value={[zoom * 100]}
-            onValueChange={([v]) => {
-                if (v !== undefined) {
-                    onZoomChange(v / 100);
+            onValueChange={([value]) => {
+                if (value !== undefined) {
+                    onZoomChange(value / 100);
                 }
             }}
             min={25}

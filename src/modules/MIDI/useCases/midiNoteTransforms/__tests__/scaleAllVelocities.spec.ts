@@ -26,9 +26,9 @@ describe('scaleAllVelocities', () => {
 
     it('should multiply velocities by factor and clamp to 1–127', () => {
         scaleAllVelocities('clip1', 0.5);
-        expect(midiStore.value?.notesByClipId.clip1?.map((n) => n.velocity)).toEqual([40, 20]);
+        expect(midiStore.value?.notesByClipId.clip1?.map((node) => node.velocity)).toEqual([40, 20]);
         scaleAllVelocities('clip1', 10);
-        expect(midiStore.value?.notesByClipId.clip1?.every((n) => n.velocity === 127)).toBe(true);
+        expect(midiStore.value?.notesByClipId.clip1?.every((node) => node.velocity === 127)).toBe(true);
     });
 
     it('should not mutate when the clip is empty or store is null', () => {

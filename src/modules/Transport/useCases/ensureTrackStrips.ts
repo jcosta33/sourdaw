@@ -22,7 +22,7 @@ export function ensureTrackStrips(): void {
     if (!tracks) {
         return;
     }
-    const busTracks = tracks.filter((t) => t.kind === 'bus');
+    const busTracks = tracks.filter((time) => time.kind === 'bus');
     for (const bus of busTracks) {
         ensureBusStrip(bus.id);
         setBusGain(bus.id, bus.gain);
@@ -59,7 +59,7 @@ export function ensureTrackStrips(): void {
 
     // Apply solo state: if any track is soloed, mute all non-soloed tracks.
     // This ensures solo set before pressing play takes effect immediately.
-    const anySoloed = tracks.some((t) => t.soloed && t.kind !== 'folder');
+    const anySoloed = tracks.some((time) => time.soloed && time.kind !== 'folder');
     if (anySoloed) {
         for (const track of tracks) {
             if (track.kind === 'folder' || track.kind === 'master') {

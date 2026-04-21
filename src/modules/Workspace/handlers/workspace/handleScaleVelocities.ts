@@ -3,14 +3,14 @@ import { scaleVelocities } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 export const handleScaleVelocities = createHandler<'scaleVelocities'>({
-    execute: (a) => {
+    execute: (alpha) => {
         scaleVelocities(
-            a.payload.clipId,
-            a.payload.curve as VelocityCurve,
-            a.payload.minVelocity,
-            a.payload.maxVelocity
+            alpha.payload.clipId,
+            alpha.payload.curve as VelocityCurve,
+            alpha.payload.minVelocity,
+            alpha.payload.maxVelocity
         );
     },
-    describe: (a) => ({ label: `Scale velocities (${a.payload.curve})` }),
+    describe: (alpha) => ({ label: `Scale velocities (${alpha.payload.curve})` }),
     undoable: true,
 });

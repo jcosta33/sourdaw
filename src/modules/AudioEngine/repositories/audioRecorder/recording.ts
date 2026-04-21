@@ -73,8 +73,8 @@ export async function requestMicPermission(): Promise<boolean> {
                 autoGainControl: false,
             },
         });
-        for (const t of stream.getTracks()) {
-            t.stop();
+        for (const time of stream.getTracks()) {
+            time.stop();
         }
         audioRecordingStore.set({ ...audioRecordingStore.value!, micPermissionGranted: true });
         return true;
@@ -86,7 +86,7 @@ export async function requestMicPermission(): Promise<boolean> {
 
 export const startAudioRecording = inject({ logger })(
     ({ logger }) =>
-        async function startAudioRecording(
+        (async function startAudioRecording(
             trackId: string,
             onComplete: (buffer: AudioBuffer) => void,
             inputId?: string | null
@@ -158,8 +158,8 @@ export const startAudioRecording = inject({ logger })(
                     }
                 };
 
-                recordingSession.recordingWorker.onerror = (e): void => {
-                    logger.error(new Error('Recording worker crashed', { cause: e }));
+                recordingSession.recordingWorker.onerror = (event): void => {
+                    logger.error(new Error('Recording worker crashed', { cause: event }));
                     cleanupNodes();
                     audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: false });
                 };
@@ -172,7 +172,7 @@ export const startAudioRecording = inject({ logger })(
                 cleanupNodes();
                 return false;
             }
-        }
+        })
 );
 
 export function stopAudioRecording(): void {
@@ -225,8 +225,8 @@ function cleanupNodes(): void {
         recordingSession.sourceNode = null;
     }
     if (recordingSession.mediaStream) {
-        for (const t of recordingSession.mediaStream.getTracks()) {
-            t.stop();
+        for (const time of recordingSession.mediaStream.getTracks()) {
+            time.stop();
         }
         recordingSession.mediaStream = null;
     }

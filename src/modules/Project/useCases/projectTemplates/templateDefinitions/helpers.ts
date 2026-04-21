@@ -35,7 +35,7 @@ export function attachSynthDevice(trackId: string): void {
 
     trackStore.set({
         ...state,
-        tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, devices: [...t.devices, device] } : t)),
+        tracks: state.tracks.map((time) => (time.id === trackId ? { ...time, devices: [...time.devices, device] } : time)),
     });
 }
 

@@ -102,7 +102,7 @@ function renderLoop(): void {
     const maxBlocksPerTick = Math.ceil(TARGET_AHEAD / BLOCK_SIZE) + 1;
     let buffered = 0;
 
-    for (let i = 0; i < maxBlocksPerTick; i++) {
+    for (let index = 0; index < maxBlocksPerTick; index++) {
         const writeHead = Atomics.load(controlInts, WRITE_HEAD_IDX);
         const readHead = Atomics.load(controlInts, READ_HEAD_IDX);
         buffered = (writeHead - readHead) | 0;

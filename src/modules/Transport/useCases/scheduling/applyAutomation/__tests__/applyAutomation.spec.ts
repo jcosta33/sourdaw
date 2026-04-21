@@ -5,7 +5,7 @@ import * as subject from '../applyAutomation';
 describe('applyAutomation', () => {
     it('should export applyAutomation', () => {
         expect(subject.applyAutomation).toBeDefined();
-        const t = typeof subject.applyAutomation;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.applyAutomation;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

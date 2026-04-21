@@ -7,7 +7,7 @@ import { handlePadRelease } from '../handlePadRelease';
 describe('handlePadRelease', () => {
     beforeEach(() => {
         const state = pushStore.value!;
-        const pads = state.pads.map((p) => (p.index === 2 ? { ...p, velocity: 100 } : p));
+        const pads = state.pads.map((param) => (param.index === 2 ? { ...param, velocity: 100 } : param));
         pushStore.set({ ...state, pads });
     });
 

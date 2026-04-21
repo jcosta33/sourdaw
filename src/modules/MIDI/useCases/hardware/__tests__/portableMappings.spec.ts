@@ -45,7 +45,7 @@ describe('portableMappings', () => {
         ];
         importHardwareMappings('p1', JSON.stringify(newMappings));
 
-        const profile = hardwareControllerStore.value?.profiles.find((p) => p.id === 'p1');
+        const profile = hardwareControllerStore.value?.profiles.find((param) => param.id === 'p1');
         expect(profile?.mappings[0]?.id).toBe('m2');
     });
 });

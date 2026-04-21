@@ -41,15 +41,15 @@ export const CommandPalette = (): ReactElement | null => {
         }
     };
 
-    const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            setSelectedIndex((i) => Math.min(i + 1, results.length - 1));
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            setSelectedIndex((i) => Math.max(i - 1, 0));
-        } else if (e.key === 'Enter' && results[selectedIndex]) {
-            e.preventDefault();
+    const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            setSelectedIndex((index) => Math.min(index + 1, results.length - 1));
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            setSelectedIndex((index) => Math.max(index - 1, 0));
+        } else if (event.key === 'Enter' && results[selectedIndex]) {
+            event.preventDefault();
             execute(results[selectedIndex]);
         }
     };
@@ -70,7 +70,7 @@ export const CommandPalette = (): ReactElement | null => {
                     <Input
                         ref={inputRef}
                         value={query}
-                        onChange={(e) => setQuery(e.target.value)}
+                        onChange={(event) => setQuery(event.target.value)}
                         onKeyDown={handleKeyDown}
                         placeholder="Type a command..."
                         className="h-12 border-0 bg-transparent shadow-none focus-visible:ring-0 text-base"
@@ -79,20 +79,20 @@ export const CommandPalette = (): ReactElement | null => {
                 </div>
 
                 <div className="max-h-72 overflow-y-auto bg-surface-base py-1" role="listbox">
-                    {results.map((cmd, i) => (
+                    {results.map((cmd, index) => (
                         <button
                             type="button"
                             key={cmd.id}
                             role="option"
-                            aria-selected={i === selectedIndex}
+                            aria-selected={index === selectedIndex}
                             className={cn(
                                 'flex w-full items-center justify-between px-4 py-3 text-left text-sm transition-colors border-l-2',
-                                i === selectedIndex
+                                index === selectedIndex
                                     ? 'bg-accent/80 border-primary shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]'
                                     : 'border-transparent text-muted-foreground hover:bg-surface-overlay/50'
                             )}
                             onClick={() => execute(cmd)}
-                            onMouseEnter={() => setSelectedIndex(i)}
+                            onMouseEnter={() => setSelectedIndex(index)}
                         >
                             <div>
                                 <span className="text-foreground">{cmd.label}</span>

@@ -2,7 +2,7 @@ import { getTrackStoreState, groupTracks, renameTrack, setTrackColor } from '#/m
 import { createHandler } from '#/utils/createHandler';
 
 export const handleAutoOrganizeProject = createHandler<'autoOrganizeProject'>({
-    execute: async (a) => {
+    execute: async (alpha) => {
         const trackState = getTrackStoreState();
         if (!trackState) {
             return;
@@ -10,7 +10,7 @@ export const handleAutoOrganizeProject = createHandler<'autoOrganizeProject'>({
 
         const folderGroups = new Map<string, string[]>();
 
-        for (const update of a.payload.tracks) {
+        for (const update of alpha.payload.tracks) {
             if (update.newName) {
                 renameTrack(update.trackId, update.newName);
             }

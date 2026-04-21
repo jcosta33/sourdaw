@@ -5,17 +5,17 @@ import * as subject from '../helpers';
 describe('helpers', () => {
     it('should export loadSnapshot', () => {
         expect(subject.loadSnapshot).toBeDefined();
-        const t = typeof subject.loadSnapshot;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.loadSnapshot;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export syncCurrentArrangementToStore', () => {
         expect(subject.syncCurrentArrangementToStore).toBeDefined();
-        const t = typeof subject.syncCurrentArrangementToStore;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.syncCurrentArrangementToStore;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export takeSnapshot', () => {
         expect(subject.takeSnapshot).toBeDefined();
-        const t = typeof subject.takeSnapshot;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.takeSnapshot;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

@@ -22,8 +22,8 @@ class ProofProcessor extends AudioWorkletProcessor {
 
     constructor() {
         super();
-        this.port.onmessage = (e) => {
-            const msg = e.data;
+        this.port.onmessage = (event) => {
+            const msg = event.data;
             try {
                 if (msg.type === 'init') {
                     if (this._ready) {
@@ -59,8 +59,8 @@ class ProofProcessor extends AudioWorkletProcessor {
                 inst.set_param(msg.name, msg.value);
                 break;
             case 'reorder': {
-                const o = msg.order;
-                inst.reorder(o[0], o[1], o[2], o[3], o[4]);
+                const output = msg.order;
+                inst.reorder(output[0], output[1], output[2], output[3], output[4]);
                 break;
             }
             case 'reset_integrated':

@@ -33,7 +33,7 @@ describe('disconnectNodes', () => {
 
     it('should remove only the connection with the given id', () => {
         disconnectNodes('drop-me');
-        const ids = nodeViewStore.value?.connections.map((c) => c.id) ?? [];
+        const ids = nodeViewStore.value?.connections.map((context) => context.id) ?? [];
         expect(ids).toEqual(['keep-me']);
     });
 

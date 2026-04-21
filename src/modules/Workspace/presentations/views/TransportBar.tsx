@@ -48,8 +48,8 @@ export const TransportBar = (): ReactElement => {
     const project = useProjectState();
 
     const tracks = getTracks(useStore(trackStore, { tracks: [], selectedTrackId: null }));
-    const anyTrackArmed = tracks.some((t) => t.armed);
-    const anyMidiTrackArmed = tracks.some((t) => t.armed && t.kind === 'midi');
+    const anyTrackArmed = tracks.some((time) => time.armed);
+    const anyMidiTrackArmed = tracks.some((time) => time.armed && time.kind === 'midi');
 
     const isRecording = transport.isRecording;
 

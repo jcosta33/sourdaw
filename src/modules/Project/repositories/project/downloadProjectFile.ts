@@ -57,14 +57,14 @@ export async function downloadProjectFile(data: ProjectData): Promise<void> {
 
     // Fallback: anchor download
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
+    const alpha = document.createElement('a');
+    alpha.href = url;
+    alpha.download = filename;
+    alpha.style.display = 'none';
+    document.body.appendChild(alpha);
+    alpha.click();
     setTimeout(() => {
-        document.body.removeChild(a);
+        document.body.removeChild(alpha);
         URL.revokeObjectURL(url);
     }, 1000);
 }

@@ -18,12 +18,12 @@ type CancelRenderInput = {
 
 export const cancelRender = inject({ logger })(
     ({ logger }) =>
-        function cancelRender({ phraseId, requestId }: CancelRenderInput): void {
+        (function cancelRender({ phraseId, requestId }: CancelRenderInput): void {
             logger.info(`[BrowserAi] Cancelling render: phrase=${phraseId}`);
 
             // Determine which worker is running this render and terminate it.
             // Termination rejects all in-flight promises and allows respawn on next use.
-            const entry = renderQueueStore.value?.entries.find((e) => e.phraseId === phraseId);
+            const entry = renderQueueStore.value?.entries.find((event) => event.phraseId === phraseId);
             if (entry?.pipeline === 'ddsp') {
                 inferenceWorkerBridge.terminateTfjsWorker();
             } else {
@@ -34,5 +34,5 @@ export const cancelRender = inject({ logger })(
             cancelQueuedRender(phraseId);
             clearActiveRender(requestId);
             updateRenderStatus(phraseId, 'not-rendered');
-        }
+        })
 );

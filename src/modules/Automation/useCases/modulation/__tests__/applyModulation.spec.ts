@@ -80,7 +80,7 @@ describe('applyModulation', () => {
         const state = modulationStore.value!;
         modulationStore.set({
             ...state,
-            modulators: state.modulators.map((m) => ({ ...m, enabled: false })),
+            modulators: state.modulators.map((message) => ({ ...message, enabled: false })),
         });
 
         applyModulation(1);

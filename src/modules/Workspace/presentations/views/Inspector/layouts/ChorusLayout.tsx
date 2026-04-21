@@ -11,16 +11,16 @@ import { SectionHeader } from '../SectionHeader';
 
 type P = DeviceLayoutProps['parameters'][number];
 const Param = ({
-    p,
+    param,
     device,
     trackId,
 }: {
-    p: P;
+    param: P;
     device: DeviceLayoutProps['device'];
     trackId: string;
 }): ReactElement => (
     <SurfaceCard className="rounded-md bg-surface-base p-2 w-full">
-        <DeviceParameterControl param={p} device={device} trackId={trackId} />
+        <DeviceParameterControl param={param} device={device} trackId={trackId} />
     </SurfaceCard>
 );
 
@@ -35,27 +35,25 @@ const ChorusLayout = ({ device, trackId, parameters }: DeviceLayoutProps): React
             <div className="flex justify-center">
                 <ModulationLFO rate={rate} depth={depth} shape="sine" width={240} height={50} />
             </div>
-
             <SectionHeader title="Controls" />
             {/* Show all params in pairs of 2 */}
             {(() => {
-                const all = parameters.filter((p) => p.id !== 'phaser-stages');
+                const all = parameters.filter((param) => param.id !== 'phaser-stages');
                 const pairs: P[][] = [];
-                for (let i = 0; i < all.length; i += 2) {
-                    pairs.push(all.slice(i, i + 2));
+                for (let index = 0; index < all.length; index += 2) {
+                    pairs.push(all.slice(index, index + 2));
                 }
                 return pairs.map((pair, idx) => (
                     <div key={idx} className="grid grid-cols-2 gap-2">
-                        {pair.map((p) => (
-                            <Param key={p.id} p={p} device={device} trackId={trackId} />
+                        {pair.map((param) => (
+                            <Param key={param.id} param={param} device={device} trackId={trackId} />
                         ))}
                     </div>
                 ));
             })()}
-
             {/* Phaser stages (int, non-automatable) shown separately */}
-            {filterParams(parameters, ['phaser-stages']).map((p) => (
-                <Param key={p.id} p={p} device={device} trackId={trackId} />
+            {filterParams(parameters, ['phaser-stages']).map((param) => (
+                <Param key={param.id} param={param} device={device} trackId={trackId} />
             ))}
         </div>
     );

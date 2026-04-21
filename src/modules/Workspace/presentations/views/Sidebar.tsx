@@ -153,17 +153,17 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
 
     const allSamples = [...SAMPLE_LIBRARY, ...userSamples];
     const filteredSamples = allSamples.filter(
-        (s) =>
+        (state) =>
             !searchQuery.trim() ||
-            s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            s.category.toLowerCase().includes(searchQuery.toLowerCase())
+            state.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            state.category.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     const filteredPlugins = getPlatformPlugins().filter(
-        (p) => !searchQuery.trim() || p.name.toLowerCase().includes(searchQuery.toLowerCase())
+        (param) => !searchQuery.trim() || param.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    const selectedTrack = selectedTrackId ? (tracks.find((t) => t.id === selectedTrackId) ?? null) : null;
+    const selectedTrack = selectedTrackId ? (tracks.find((time) => time.id === selectedTrackId) ?? null) : null;
 
     return (
         <aside
@@ -177,8 +177,8 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                     type="search"
                     placeholder="Search library..."
                     value={searchQuery}
-                    onChange={(e) => {
-                        setSearchQuery(e.target.value);
+                    onChange={(event) => {
+                        setSearchQuery(event.target.value);
                     }}
                     className="h-7 border-0 bg-transparent text-xs shadow-none focus-visible:ring-0 px-1"
                     aria-label="Search browser"
@@ -187,7 +187,6 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                     <X className="size-3.5" />
                 </Button>
             </div>
-
             <RailTabBar
                 activeId={activeTab}
                 items={TAB_ITEMS.map(({ id, label, Icon }) => ({ id, label, icon: Icon }))}
@@ -195,7 +194,6 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                 className="border-b border-border/20 bg-surface-base/80"
                 scrollerClassName="w-full px-1 py-1.5"
             />
-
             {currentStack.length > 1 ? (
                 <RailBackBar
                     title={currentRoute.title}
@@ -204,7 +202,6 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                     iconColor={currentRoute.iconColor}
                 />
             ) : null}
-
             <ScrollArea className="flex-1">
                 <div
                     id={`browser-panel-${currentRoute.id}`}
@@ -253,9 +250,9 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                                             accept="audio/*,.wav,.mp3,.ogg,.flac,.aac,.m4a,.aiff,.aif"
                                             multiple
                                             className="hidden"
-                                            onChange={(e) => {
-                                                void handleFileImport(e.target.files);
-                                                e.target.value = '';
+                                            onChange={(event) => {
+                                                void handleFileImport(event.target.files);
+                                                event.target.value = '';
                                             }}
                                         />
                                     </div>

@@ -2,9 +2,9 @@ import { addAutomationLane } from '#/modules/Automation/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 export const handleAddAutomationLane = createHandler<'addAutomationLane'>({
-    execute: (a) => {
-        addAutomationLane(a.payload.trackId, a.payload.parameterId, a.payload.parameterName);
+    execute: (alpha) => {
+        addAutomationLane(alpha.payload.trackId, alpha.payload.parameterId, alpha.payload.parameterName);
     },
-    describe: (a) => ({ label: `Add automation: ${a.payload.parameterName}` }),
+    describe: (alpha) => ({ label: `Add automation: ${alpha.payload.parameterName}` }),
     undoable: true,
 });

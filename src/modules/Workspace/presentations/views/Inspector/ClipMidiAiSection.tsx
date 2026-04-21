@@ -90,7 +90,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         setVariationTokenCount(0);
         try {
             const count = await generateMidiVariations(clip.id, {
-                onToken: (token) => setVariationTokenCount((c) => c + token.length),
+                onToken: (token) => setVariationTokenCount((context) => context + token.length),
             });
             notifyAiChange('MIDI variations generated', [
                 `${String(count)} variation${count === 1 ? '' : 's'} created as alternative clips`,
@@ -162,10 +162,10 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             // calls would serialize anyway, just with noisier logs.
             const results: RenderResult[] = [];
             const textPreview = ttsText.trim().slice(0, 20) + (ttsText.trim().length > 20 ? '…' : '');
-            for (let i = 0; i < TTS_SPEED_VARIANTS.length; i++) {
-                const speed = baseSpeed * TTS_SPEED_VARIANTS[i]!;
+            for (let index = 0; index < TTS_SPEED_VARIANTS.length; index++) {
+                const speed = baseSpeed * TTS_SPEED_VARIANTS[index]!;
                 const result = await renderKokoroTts({
-                    phraseId: `${clip.id}-tts-${VARIANT_LABELS[i]}`,
+                    phraseId: `${clip.id}-tts-${VARIANT_LABELS[index]}`,
                     text: ttsText.trim(),
                     speakerId: ttsVoiceId,
                     speed,
@@ -174,7 +174,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                 results.push({
                     audio: result.audio,
                     sampleRate: result.sampleRate,
-                    label: VARIANT_LABELS[i]!,
+                    label: VARIANT_LABELS[index]!,
                     name: `${ttsVoiceId} · ${textPreview}`,
                 });
             }
@@ -197,13 +197,13 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             setSelectedVoicebankId('');
             return;
         }
-        const isValid = voicebanks.some((v) => v.id === selectedVoicebankId);
+        const isValid = voicebanks.some((value) => value.id === selectedVoicebankId);
         if (!isValid) {
             setSelectedVoicebankId(voicebanks[0]!.id);
         }
     }, [voicebanks, selectedVoicebankId]);
 
-    const activeVoicebank = voicebanks.find((v) => v.id === selectedVoicebankId);
+    const activeVoicebank = voicebanks.find((value) => value.id === selectedVoicebankId);
 
     const handleRenderSinging = async (): Promise<void> => {
         const midiState = midiStore.value;
@@ -227,19 +227,19 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             // Sequential — the ONNX worker is single-threaded so parallel
             // calls would serialize anyway, just with noisier logs.
             const results: RenderResult[] = [];
-            for (let i = 0; i < SVS_SEED_VARIANTS.length; i++) {
+            for (let index = 0; index < SVS_SEED_VARIANTS.length; index++) {
                 const result = await renderDiffSingerPhrase({
-                    phraseId: `${clip.id}-svs-${VARIANT_LABELS[i]}`,
+                    phraseId: `${clip.id}-svs-${VARIANT_LABELS[index]}`,
                     voicebankId: selectedVoicebankId,
                     lyrics,
                     notes,
                     renderQuality: svsRenderQuality,
-                    seed: SVS_SEED_VARIANTS[i],
+                    seed: SVS_SEED_VARIANTS[index],
                 });
                 results.push({
                     audio: result.audio,
                     sampleRate: result.sampleRate,
-                    label: VARIANT_LABELS[i]!,
+                    label: VARIANT_LABELS[index]!,
                     name: `${voiceName} · ${lyricsPreview}`,
                 });
             }
@@ -268,7 +268,6 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                 title="AI Actions"
                 startSlot={<Sparkles className="size-3 text-[var(--color-accent-lavender)]" aria-hidden="true" />}
             />
-
             <div className="space-y-2">
                 {/* AI Variations */}
                 <DawPluginSectionCard
@@ -382,7 +381,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                         </label>
                                         <DawCompactTextarea
                                             value={ttsText}
-                                            onChange={(e) => setTtsText(e.target.value)}
+                                            onChange={(event) => setTtsText(event.target.value)}
                                             placeholder="Type lyrics or text…"
                                             rows={2}
                                             aria-label="TTS text"
@@ -404,7 +403,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                         </label>
                                         <DawCompactSelect
                                             value={ttsSpeed}
-                                            onChange={(e) => setTtsSpeed(e.target.value)}
+                                            onChange={(event) => setTtsSpeed(event.target.value)}
                                             aria-label="Speed"
                                             className="w-full"
                                         >
@@ -481,7 +480,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                     </label>
                                     <DawCompactSelect
                                         value={selectedVoicebankId}
-                                        onChange={(e) => setSelectedVoicebankId(e.target.value)}
+                                        onChange={(event) => setSelectedVoicebankId(event.target.value)}
                                         aria-label="Voicebank"
                                         className="w-full"
                                     >
@@ -498,7 +497,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                     </label>
                                     <DawCompactTextarea
                                         value={diffSingerLyrics}
-                                        onChange={(e) => setDiffSingerLyrics(e.target.value)}
+                                        onChange={(event) => setDiffSingerLyrics(event.target.value)}
                                         placeholder="Type lyrics… (leave blank for la la la)"
                                         rows={2}
                                         aria-label="Singing lyrics"
@@ -510,8 +509,8 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                     </label>
                                     <DawCompactSelect
                                         value={svsRenderQuality}
-                                        onChange={(e) => {
-                                            const opt = QUALITY_OPTIONS.find((o) => o.value === e.target.value);
+                                        onChange={(event) => {
+                                            const opt = QUALITY_OPTIONS.find((output) => output.value === event.target.value);
                                             if (opt) {
                                                 setSvsRenderQuality(opt.value);
                                             }

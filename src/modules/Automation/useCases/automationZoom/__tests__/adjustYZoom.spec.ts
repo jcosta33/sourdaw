@@ -5,7 +5,7 @@ import * as subject from '../adjustYZoom';
 describe('adjustYZoom', () => {
     it('should export adjustYZoom', () => {
         expect(subject.adjustYZoom).toBeDefined();
-        const t = typeof subject.adjustYZoom;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.adjustYZoom;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

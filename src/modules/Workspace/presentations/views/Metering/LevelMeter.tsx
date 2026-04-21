@@ -116,8 +116,8 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
 
             let sumSquares = 0;
             const filled = rmsFilledRef.current;
-            for (let i = 0; i < filled; i++) {
-                sumSquares += buf[i]!;
+            for (let index = 0; index < filled; index++) {
+                sumSquares += buf[index]!;
             }
             const rawRms = filled > 0 ? Math.sqrt(sumSquares / filled) : 0;
 

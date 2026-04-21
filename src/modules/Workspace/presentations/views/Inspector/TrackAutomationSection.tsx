@@ -33,14 +33,14 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
 
     const autoState = useStore<TrackAutomationState>(automationStore, { lanes: [] });
 
-    const trackLanes = autoState.lanes.filter((l) => l.trackId === track.id);
+    const trackLanes = autoState.lanes.filter((length) => length.trackId === track.id);
 
     useEffect(() => {
         if (!showAutoMenu) {
             return undefined;
         }
-        const handleClick = (e: MouseEvent): void => {
-            if (autoMenuRef.current && !autoMenuRef.current.contains(e.target as Node)) {
+        const handleClick = (event: MouseEvent): void => {
+            if (autoMenuRef.current && !autoMenuRef.current.contains(event.target as Node)) {
                 setShowAutoMenu(false);
             }
         };
@@ -101,12 +101,12 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                         <DawMenuSeparator />
                                         {track.devices.map((device) => {
                                             const plugin = getBuiltinPlugins().find(
-                                                (p) => p.name.toLowerCase() === device.type.toLowerCase()
+                                                (param) => param.name.toLowerCase() === device.type.toLowerCase()
                                             );
                                             if (!plugin) {
                                                 return null;
                                             }
-                                            const autoParams = plugin.parameters.filter((p) => p.automatable);
+                                            const autoParams = plugin.parameters.filter((param) => param.automatable);
                                             if (autoParams.length === 0) {
                                                 return null;
                                             }

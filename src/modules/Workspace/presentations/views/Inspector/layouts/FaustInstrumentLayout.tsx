@@ -23,19 +23,19 @@ type ParamCategory = { title: string; match: (name: string) => boolean; primary:
 const CATEGORIES: ParamCategory[] = [
     {
         title: 'Tone',
-        match: (n) => /bright|tone|cutoff|frequency|color|filter|harmonic|timbre/i.test(n),
+        match: (node) => /bright|tone|cutoff|frequency|color|filter|harmonic|timbre/i.test(node),
         primary: true,
     },
-    { title: 'Envelope', match: (n) => /attack|decay|sustain|release|adsr|env/i.test(n), primary: true },
-    { title: 'Output', match: (n) => /gain|volume|level|mix|output|master/i.test(n), primary: true },
+    { title: 'Envelope', match: (node) => /attack|decay|sustain|release|adsr|env/i.test(node), primary: true },
+    { title: 'Output', match: (node) => /gain|volume|level|mix|output|master/i.test(node), primary: true },
     {
         title: 'Modulation',
-        match: (n) => /mod|vibrato|tremolo|lfo|rate|depth|chorus|leslie|speed/i.test(n),
+        match: (node) => /mod|vibrato|tremolo|lfo|rate|depth|chorus|leslie|speed/i.test(node),
         primary: false,
     },
-    { title: 'Resonance', match: (n) => /damp|reson|feedback|decay|ring|reverb/i.test(n), primary: false },
-    { title: 'Drawbars', match: (n) => /drawbar/i.test(n), primary: true },
-    { title: 'Character', match: (n) => /percussion|click|drive|saturation|overdrive/i.test(n), primary: false },
+    { title: 'Resonance', match: (node) => /damp|reson|feedback|decay|ring|reverb/i.test(node), primary: false },
+    { title: 'Drawbars', match: (node) => /drawbar/i.test(node), primary: true },
+    { title: 'Character', match: (node) => /percussion|click|drive|saturation|overdrive/i.test(node), primary: false },
 ];
 
 function categorizeParams(params: P[]): { title: string; params: P[]; primary: boolean }[] {
@@ -43,16 +43,16 @@ function categorizeParams(params: P[]): { title: string; params: P[]; primary: b
     const used = new Set<string>();
 
     for (const cat of CATEGORIES) {
-        const matching = params.filter((p) => cat.match(p.name) && !used.has(p.id));
+        const matching = params.filter((param) => cat.match(param.name) && !used.has(param.id));
         if (matching.length > 0) {
             result.push({ title: cat.title, params: matching, primary: cat.primary });
-            for (const p of matching) {
-                used.add(p.id);
+            for (const param of matching) {
+                used.add(param.id);
             }
         }
     }
 
-    const remaining = params.filter((p) => !used.has(p.id));
+    const remaining = params.filter((param) => !used.has(param.id));
     if (remaining.length > 0) {
         result.push({ title: 'Other', params: remaining, primary: false });
     }
@@ -61,24 +61,24 @@ function categorizeParams(params: P[]): { title: string; params: P[]; primary: b
 }
 
 const Param = ({
-    p,
+    param,
     device,
     trackId,
 }: {
-    p: P;
+    param: P;
     device: DeviceLayoutProps['device'];
     trackId: string;
 }): ReactElement => (
     <SurfaceCard className="rounded-md bg-surface-base p-2 w-full">
-        <DeviceParameterControl param={p} device={device} trackId={trackId} />
+        <DeviceParameterControl param={param} device={device} trackId={trackId} />
     </SurfaceCard>
 );
 
 const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {
     const categories = categorizeParams(parameters);
 
-    const change = (id: string, v: number): void => {
-        setDeviceParameter(device.id, id, v);
+    const change = (id: string, value: number): void => {
+        setDeviceParameter(device.id, id, value);
     };
 
     // Detect visualizations from device type (stable) with parameter fallback
@@ -93,10 +93,10 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
     // Visualization flags derived from device type
     const hasCompressor = isCompressor;
     const hasFilter =
-        isEq || parameters.some((p) => p.id === 'cutoff' || p.id === 'frequency' || p.id.includes('freq'));
+        isEq || parameters.some((param) => param.id === 'cutoff' || param.id === 'frequency' || param.id.includes('freq'));
     const hasEnvelope =
-        isSynth || parameters.some((p) => p.id === 'attack' && parameters.some((q) => q.id === 'sustain'));
-    const hasOscillator = isSynth && parameters.some((p) => p.id === 'waveform' || p.id === 'wave' || p.id === 'morph');
+        isSynth || parameters.some((param) => param.id === 'attack' && parameters.some((query) => query.id === 'sustain'));
+    const hasOscillator = isSynth && parameters.some((param) => param.id === 'waveform' || param.id === 'wave' || param.id === 'morph');
 
     if (parameters.length === 0) {
         return (
@@ -127,7 +127,6 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                     </div>
                 </div>
             ) : null}
-
             {hasFilter ? (
                 <div>
                     <SectionHeader title="Filter" />
@@ -143,7 +142,6 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                     </div>
                 </div>
             ) : null}
-
             {hasCompressor ? (
                 <div>
                     <SectionHeader title="Compression" />
@@ -160,7 +158,6 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                     </div>
                 </div>
             ) : null}
-
             {hasOscillator ? (
                 <div>
                     <SectionHeader title="Oscillator" />
@@ -176,15 +173,14 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                     </div>
                 </div>
             ) : null}
-
             {/* Parameter sections — all fully visible */}
             {categories.map(({ title, params }) => {
                 return (
                     <div key={title} className="mb-4">
                         <SectionHeader title={title} />
                         <div className="grid grid-cols-2 gap-2 mt-1">
-                            {params.map((p) => (
-                                <Param key={p.id} p={p} device={device} trackId={trackId} />
+                            {params.map((param) => (
+                                <Param key={param.id} param={param} device={device} trackId={trackId} />
                             ))}
                         </div>
                     </div>

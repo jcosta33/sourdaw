@@ -30,8 +30,8 @@ export class ShortTermLUFS {
             return -70;
         }
         let sum = 0;
-        for (let i = 0; i < this.count; i++) {
-            sum += 10 ** (this.blocks[(this.head + i) % this.maxBlocks]! / 10);
+        for (let index = 0; index < this.count; index++) {
+            sum += 10 ** (this.blocks[(this.head + index) % this.maxBlocks]! / 10);
         }
         const avg = sum / this.count;
         if (avg <= 0) {

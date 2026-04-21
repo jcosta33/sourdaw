@@ -25,7 +25,7 @@ export function insertAutomationShape(
         return;
     }
 
-    const lane = state.lanes.find((l) => l.id === laneId);
+    const lane = state.lanes.find((length) => length.id === laneId);
     if (!lane) {
         return;
     }
@@ -33,14 +33,14 @@ export function insertAutomationShape(
     const cycleDuration = (endBeat - startBeat) / cycles;
     const allPoints = [];
 
-    for (let c = 0; c < cycles; c++) {
-        const cycleStart = startBeat + c * cycleDuration;
+    for (let context = 0; context < cycles; context++) {
+        const cycleStart = startBeat + context * cycleDuration;
         const cycleEnd = cycleStart + cycleDuration;
         const points = generateShapePoints(shape, cycleStart, cycleEnd, lane.minValue, lane.maxValue);
         // Skip the last point of each cycle except the final one to avoid duplicates at boundaries
-        const end = c < cycles - 1 ? points.length - 1 : points.length;
-        for (let i = 0; i < end; i++) {
-            allPoints.push(points[i]!);
+        const end = context < cycles - 1 ? points.length - 1 : points.length;
+        for (let index = 0; index < end; index++) {
+            allPoints.push(points[index]!);
         }
     }
 

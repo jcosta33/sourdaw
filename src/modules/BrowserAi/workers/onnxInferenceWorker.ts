@@ -148,8 +148,8 @@ type DiffSingerSessions = {
  */
 function broadcastSpkEmbed(ort: OrtModule, embed: Float32Array, nFrames: number): OrtTensor {
     const tiled = new Float32Array(nFrames * 256);
-    for (let f = 0; f < nFrames; f++) {
-        tiled.set(embed, f * 256);
+    for (let freq = 0; freq < nFrames; freq++) {
+        tiled.set(embed, freq * 256);
     }
     return new ort.Tensor('float32', tiled, [1, nFrames, 256]);
 }
@@ -501,8 +501,8 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
                 !sessions.vocoder
             ) {
                 const missing = Object.entries(sessions)
-                    .filter(([, s]) => !s)
-                    .map(([k]) => k)
+                    .filter(([, state]) => !state)
+                    .map(([kIndex]) => kIndex)
                     .join(', ');
                 throw new Error(`DiffSinger sessions not loaded: ${missing}`);
             }

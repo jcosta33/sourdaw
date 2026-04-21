@@ -77,15 +77,15 @@ export const pushStore = createStore<PushState>({
         connected: false,
         model: null,
         padMode: 'session',
-        pads: Array.from({ length: 64 }, (_, i) => ({
-            index: i,
-            midiNote: 36 + i,
+        pads: Array.from({ length: 64 }, (_, index) => ({
+            index: index,
+            midiNote: 36 + index,
             velocity: 0,
             color: { r: 0, g: 0, b: 0 },
             aftertouch: 0,
         })),
-        encoders: Array.from({ length: 8 }, (_, i) => ({
-            index: i,
+        encoders: Array.from({ length: 8 }, (_, index) => ({
+            index: index,
             value: 64,
             parameterPath: null,
             label: '',

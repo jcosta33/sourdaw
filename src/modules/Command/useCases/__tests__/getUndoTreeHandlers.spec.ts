@@ -5,7 +5,7 @@ import * as subject from '../getUndoTreeHandlers';
 describe('getUndoTreeHandlers', () => {
     it('should export getUndoTreeHandlers', () => {
         expect(subject.getUndoTreeHandlers).toBeDefined();
-        const t = typeof subject.getUndoTreeHandlers;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getUndoTreeHandlers;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

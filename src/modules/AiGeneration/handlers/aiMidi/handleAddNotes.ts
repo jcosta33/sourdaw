@@ -3,8 +3,8 @@ import { addMidiNote } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 export const handleAddNotes = createHandler<'addNotes'>({
-    execute: (a) => {
-        const notes = a.payload.notes;
+    execute: (alpha) => {
+        const notes = alpha.payload.notes;
         if (!Array.isArray(notes) || notes.length === 0) {
             return;
         }
@@ -13,10 +13,10 @@ export const handleAddNotes = createHandler<'addNotes'>({
             const start = Math.max(0, note.startBeat);
             const dur = Math.max(0.0625, note.duration);
             const vel = Math.max(1, Math.min(127, note.velocity ?? 100));
-            addMidiNote(a.payload.clipId, pitch, start, dur, vel);
+            addMidiNote(alpha.payload.clipId, pitch, start, dur, vel);
         }
-        logger.info(`[AI MIDI] Added ${String(notes.length)} notes to clip ${a.payload.clipId}`);
+        logger.info(`[AI MIDI] Added ${String(notes.length)} notes to clip ${alpha.payload.clipId}`);
     },
-    describe: (a) => ({ label: `Add ${String(a.payload.notes.length)} MIDI notes` }),
+    describe: (alpha) => ({ label: `Add ${String(alpha.payload.notes.length)} MIDI notes` }),
     undoable: true,
 });

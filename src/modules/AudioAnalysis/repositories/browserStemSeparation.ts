@@ -157,7 +157,7 @@ export const separateStemsBrowser = inject({ logger })(({ logger }) => {
         // Determine which stems to return
         const wanted = requestedStems.includes('all')
             ? STEM_NAMES.slice(0, 4) // Default: drums, bass, other, vocals
-            : STEM_NAMES.filter((n) => requestedStems.includes(n));
+            : STEM_NAMES.filter((node) => requestedStems.includes(node));
 
         // Initialize accumulators for all 6 stems (stereo)
         const stemL: Float32Array[] = Array.from({ length: 6 }, () => new Float32Array(totalSamples));
@@ -203,12 +203,12 @@ export const separateStemsBrowser = inject({ logger })(({ logger }) => {
             const segOutLen = dims[3] ?? DEMUCS_SEGMENT_LEN;
             const copyLen = Math.min(segLen, segOutLen);
 
-            for (let s = 0; s < Math.min(nStems, 6); s++) {
-                for (let j = 0; j < copyLen; j++) {
-                    const lIdx = s * nCh * segOutLen + j;
-                    const rIdx = s * nCh * segOutLen + segOutLen + j;
-                    stemL[s]![offset + j] = outData[lIdx] ?? 0;
-                    stemR[s]![offset + j] = outData[rIdx] ?? 0;
+            for (let state = 0; state < Math.min(nStems, 6); state++) {
+                for (let jIndex = 0; jIndex < copyLen; jIndex++) {
+                    const lIdx = state * nCh * segOutLen + jIndex;
+                    const rIdx = state * nCh * segOutLen + segOutLen + jIndex;
+                    stemL[state]![offset + jIndex] = outData[lIdx] ?? 0;
+                    stemR[state]![offset + jIndex] = outData[rIdx] ?? 0;
                 }
             }
 

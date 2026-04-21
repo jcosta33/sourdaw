@@ -89,14 +89,14 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const [errorText, setErrorText] = useState('');
     const cancelledRef = useRef(false);
 
-    const toggleFormat = (f: ExportFormat) => {
+    const toggleFormat = (freq: ExportFormat) => {
         setFormats((prev) => {
             const next = new Set(prev);
             // Don't allow empty selections
-            if (next.has(f) && next.size > 1) {
-                next.delete(f);
+            if (next.has(freq) && next.size > 1) {
+                next.delete(freq);
             } else {
-                next.add(f);
+                next.add(freq);
             }
             saveExportSettings({ formats: Array.from(next), sampleRate, bitDepth, mp3BitRate });
             return next;
@@ -134,14 +134,14 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         };
         const blob = new Blob([data as unknown as BlobPart], { type: mimeMap[ext] || 'application/octet-stream' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${blobName}${ext}`;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
+        const alpha = document.createElement('a');
+        alpha.href = url;
+        alpha.download = `${blobName}${ext}`;
+        alpha.style.display = 'none';
+        document.body.appendChild(alpha);
+        alpha.click();
         setTimeout(() => {
-            document.body.removeChild(a);
+            document.body.removeChild(alpha);
             URL.revokeObjectURL(url);
         }, 1500); // 1.5s to ensure click dispatches
     };
@@ -229,7 +229,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 // that unrelated takes from other sessions are not mass-loaded.
                 const exportTracks = trackStore.value?.tracks ?? [];
                 const neededIds = exportTracks
-                    .flatMap((t) => t.clips.map((c) => c.audioBufferId))
+                    .flatMap((time) => time.clips.map((context) => context.audioBufferId))
                     .filter((id): id is string => Boolean(id));
                 await audioBufferCache.restoreFromIdb(ctx, neededIds.length > 0 ? neededIds : undefined);
             } else {
@@ -241,7 +241,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             }
 
             const tracks = trackStore.value?.tracks ?? [];
-            const maxBeat = Math.max(16, ...tracks.flatMap((t) => t.clips.map((c) => c.endBeat)));
+            const maxBeat = Math.max(16, ...tracks.flatMap((time) => time.clips.map((context) => context.endBeat)));
             const bd = bitDepth as 16 | 24 | 32;
             const formatList = Array.from(formats);
 
@@ -255,7 +255,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 fractionRange: number
             ) => {
                 let currentPass = 0;
-                for (const f of formatList) {
+                for (const freq of formatList) {
                     if (cancelledRef.current) {
                         return;
                     }
@@ -265,19 +265,19 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         setProgress(fractionOffset + subFraction * fractionRange);
                     };
 
-                    setStatusText(`Kneading ${name} (${f.toUpperCase()})...`);
+                    setStatusText(`Kneading ${name} (${freq.toUpperCase()})...`);
                     let fileData: Uint8Array | ArrayBuffer;
 
-                    if (f === 'mp3') {
+                    if (freq === 'mp3') {
                         fileData = await encodeMp3(buffer, mp3BitRate, passProgress);
-                    } else if (f === 'flac') {
+                    } else if (freq === 'flac') {
                         fileData = await encodeFlac(buffer, passProgress);
                     } else {
                         fileData = await encodeWav(buffer, bd, passProgress);
                     }
 
                     const uint8Data = fileData instanceof ArrayBuffer ? new Uint8Array(fileData) : fileData;
-                    const finalFileName = `${name}.${f}`;
+                    const finalFileName = `${name}.${freq}`;
 
                     if (isTauri()) {
                         const { writeFile } = await import('@tauri-apps/plugin-fs');
@@ -288,7 +288,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             await writeFile(fullPath, uint8Data);
                         } else if (tauriFilePath) {
                             // Single fallback mapping for mixdown
-                            const adjustedPath = tauriFilePath.replace(/\.[a-z0-9]+$/i, `.${f}`);
+                            const adjustedPath = tauriFilePath.replace(/\.[a-z0-9]+$/i, `.${freq}`);
                             await writeFile(adjustedPath, uint8Data);
                         }
                     } else {
@@ -339,7 +339,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     if (cancelledRef.current) {
                         return;
                     }
-                    const track = tracks.find((t) => t.id === trackId);
+                    const track = tracks.find((time) => time.id === trackId);
                     const safeTName = (track?.name || trackId).replaceAll(/[^a-zA-Z0-9_\- ]/g, '_');
 
                     // We map the remaining 50% of the progress bar to encoding the slices
@@ -532,18 +532,18 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
                     <DawDialogSection tone="warm" title="Ingredients">
                         <div className="grid grid-cols-3 gap-2">
-                            {FORMAT_OPTIONS.map((f) => {
-                                const active = formats.has(f.value);
+                            {FORMAT_OPTIONS.map((freq) => {
+                                const active = formats.has(freq.value);
                                 return (
                                     <button
                                         type="button"
-                                        key={f.value}
+                                        key={freq.value}
                                         className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
                                             active
                                                 ? 'border-orange-500/40 bg-orange-950/40 shadow-[inset_0_1px_0_rgba(251,146,60,0.1)]'
                                                 : 'border-stone-800 bg-stone-900/50 hover:border-stone-700 hover:bg-stone-800/80'
                                         }`}
-                                        onClick={() => toggleFormat(f.value)}
+                                        onClick={() => toggleFormat(freq.value)}
                                         aria-pressed={active}
                                         role="checkbox"
                                         aria-checked={active}
@@ -552,12 +552,12 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         <div
                                             className={`text-sm font-semibold ${active ? 'text-orange-200' : 'text-stone-400'}`}
                                         >
-                                            {f.label}
+                                            {freq.label}
                                         </div>
                                         <div
                                             className={`mt-0.5 text-[10px] ${active ? 'text-orange-400/80' : 'text-stone-600'}`}
                                         >
-                                            {f.desc}
+                                            {freq.desc}
                                         </div>
                                     </button>
                                 );

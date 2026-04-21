@@ -54,14 +54,14 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
 
     const handshake = createReadyHandshake({ pluginName: 'FermenterNode' });
     const telemetryListeners = new Set<(data: { peakL: number; peakR: number; scopeBuffer: Float32Array }) => void>();
-    node.port.onmessage = (e: MessageEvent) => {
-        if (e.data?.type === 'telemetry') {
-            const data = { peakL: e.data.peakL, peakR: e.data.peakR, scopeBuffer: e.data.scopeBuffer };
+    node.port.onmessage = (event: MessageEvent) => {
+        if (event.data?.type === 'telemetry') {
+            const data = { peakL: event.data.peakL, peakR: event.data.peakR, scopeBuffer: event.data.scopeBuffer };
             for (const listener of telemetryListeners) {
                 listener(data);
             }
         } else {
-            handshake.onMessage(e);
+            handshake.onMessage(event);
         }
     };
     const readyPromise = handshake.promise;

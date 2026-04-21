@@ -131,8 +131,8 @@ class GrinderProcessor extends AudioWorkletProcessor {
 
     constructor() {
         super();
-        this.port.onmessage = (e) => {
-            const msg = e.data;
+        this.port.onmessage = (event) => {
+            const msg = event.data;
             try {
                 if (msg.type === 'init') {
                     if (this._ready) {

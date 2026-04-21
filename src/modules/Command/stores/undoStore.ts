@@ -16,8 +16,8 @@ function loadFromSession(): UndoStoreState {
         if (raw) {
             const parsed = JSON.parse(raw) as UndoStoreState;
             if (Array.isArray(parsed.past) && Array.isArray(parsed.future)) {
-                function ensureKind(e: UndoEntry): UndoEntry {
-                    return ({ ...e, kind: e.kind ?? 'action' }) as UndoEntry;
+                function ensureKind(event: UndoEntry): UndoEntry {
+                    return ({ ...event, kind: event.kind ?? 'action' }) as UndoEntry;
                 }
                 return {
                     past: parsed.past.map(ensureKind),

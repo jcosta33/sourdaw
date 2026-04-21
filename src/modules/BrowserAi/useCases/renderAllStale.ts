@@ -12,7 +12,7 @@ import { renderQueueStore, enqueueRender } from '../stores/renderQueueStore';
 
 export const renderAllStale = inject({ logger })(
     ({ logger }) =>
-        function renderAllStale(): void {
+        (function renderAllStale(): void {
             const state = renderQueueStore.value;
             if (!state) {
                 return;
@@ -26,7 +26,7 @@ export const renderAllStale = inject({ logger })(
 
             for (const phraseId of stalePhraseIds) {
                 // Look up the pipeline from the existing entry (preserved by markRenderComplete).
-                const existingEntry = state.entries.find((e) => e.phraseId === phraseId);
+                const existingEntry = state.entries.find((event) => event.phraseId === phraseId);
                 if (!existingEntry) {
                     logger.warn(`[BrowserAi] Cannot re-queue ${phraseId} — no entry found, pipeline unknown`);
                     continue;
@@ -40,5 +40,5 @@ export const renderAllStale = inject({ logger })(
                     queuedAt: Date.now(),
                 });
             }
-        }
+        })
 );

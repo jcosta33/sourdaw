@@ -10,7 +10,7 @@ export function mcuSetFader(faderIndex: number, position: number): void {
         ...state,
         mcu: {
             ...state.mcu,
-            faders: state.mcu.faders.map((f, i) => (i === faderIndex ? { ...f, position: pos } : f)),
+            faders: state.mcu.faders.map((freq, index) => (index === faderIndex ? { ...freq, position: pos } : freq)),
         },
     });
 }

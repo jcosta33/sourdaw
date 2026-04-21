@@ -5,7 +5,7 @@ import * as subject from '../getTrackAnalyser';
 describe('getTrackAnalyser', () => {
     it('should export getTrackAnalyser', () => {
         expect(subject.getTrackAnalyser).toBeDefined();
-        const t = typeof subject.getTrackAnalyser;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getTrackAnalyser;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

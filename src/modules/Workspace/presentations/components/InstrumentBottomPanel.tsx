@@ -27,7 +27,7 @@ export const InstrumentBottomPanel = ({
     children,
 }: InstrumentBottomPanelProps): ReactElement => (
     <>
-        <DragResizeHandle side="top" onResize={(d) => onResize((h) => Math.max(160, h + d))} />
+        <DragResizeHandle side="top" onResize={(data) => onResize((h) => Math.max(160, h + data))} />
         <div
             className={`contain-strict flex flex-col bg-surface-base border-t ${borderColor} overflow-hidden shrink-0 animate-in slide-in-from-bottom-2 duration-200`}
             style={{ height }}

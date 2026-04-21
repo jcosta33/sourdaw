@@ -49,8 +49,8 @@ export const TrackVcaSection = ({ track }: TrackVcaSectionProps): ReactElement =
                         <DawCompactSelect
                             className="flex-1 border-border"
                             value={track.vcaGroupId ?? ''}
-                            onChange={(e) => {
-                                const val = e.target.value;
+                            onChange={(event) => {
+                                const val = event.target.value;
                                 if (val) {
                                     assignToVca(track.id, val);
                                 } else {

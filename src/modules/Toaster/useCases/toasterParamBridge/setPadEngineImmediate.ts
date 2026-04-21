@@ -17,7 +17,7 @@ export function setPadEngineImmediate(deviceId: string, padIndex: number, engine
     if (!strip) {
         return;
     }
-    const dn = strip.deviceNodes.find((d) => d.toasterControls && d.toasterControls.ready !== undefined);
+    const dn = strip.deviceNodes.find((data) => data.toasterControls && data.toasterControls.ready !== undefined);
     if (dn?.toasterControls) {
         dn.toasterControls.setPadParam(padIndex, 'engine_type', engineIdx);
     }

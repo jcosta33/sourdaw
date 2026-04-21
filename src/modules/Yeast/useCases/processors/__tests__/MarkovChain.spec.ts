@@ -5,7 +5,7 @@ import * as subject from '../MarkovChain';
 describe('MarkovChain', () => {
     it('should export MarkovChain', () => {
         expect(subject.MarkovChain).toBeDefined();
-        const t = typeof subject.MarkovChain;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.MarkovChain;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

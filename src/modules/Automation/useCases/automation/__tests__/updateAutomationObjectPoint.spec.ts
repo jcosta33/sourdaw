@@ -47,8 +47,8 @@ describe('updateAutomationObjectPoint', () => {
     it('should propagate point updates to linked objects without overrides', () => {
         updateAutomationObjectPoint('l1', 'o1', 1, 0.8);
         const lane = automationStore.value?.lanes[0];
-        expect(lane?.objects.find((o) => o.id === 'o1')?.points[0]?.value).toBe(0.8);
-        expect(lane?.objects.find((o) => o.id === 'o2')?.points[0]?.value).toBe(0.8);
+        expect(lane?.objects.find((output) => output.id === 'o1')?.points[0]?.value).toBe(0.8);
+        expect(lane?.objects.find((output) => output.id === 'o2')?.points[0]?.value).toBe(0.8);
     });
 
     it('should not propagate to objects with overrides', () => {
@@ -58,7 +58,7 @@ describe('updateAutomationObjectPoint', () => {
 
         updateAutomationObjectPoint('l1', 'o1', 1, 0.8);
         const lane = automationStore.value?.lanes[0];
-        expect(lane?.objects.find((o) => o.id === 'o1')?.points[0]?.value).toBe(0.8);
-        expect(lane?.objects.find((o) => o.id === 'o2')?.points[0]?.value).toBe(0.5);
+        expect(lane?.objects.find((output) => output.id === 'o1')?.points[0]?.value).toBe(0.8);
+        expect(lane?.objects.find((output) => output.id === 'o2')?.points[0]?.value).toBe(0.5);
     });
 });

@@ -24,8 +24,8 @@ describe('addTask', () => {
     });
 
     it('limits the task list to 50 items', () => {
-        const existingTasks = Array.from({ length: 50 }, (_, i) => ({
-            id: `task-${i}`,
+        const existingTasks = Array.from({ length: 50 }, (_, index) => ({
+            id: `task-${index}`,
             type: 'midi-generation' as const,
             status: 'success' as const,
             timestamp: 0,

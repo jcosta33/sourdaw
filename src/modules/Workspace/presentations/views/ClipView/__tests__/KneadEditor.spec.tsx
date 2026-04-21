@@ -44,7 +44,7 @@ vi.mock('#/components/ui/slider', () => ({
             max={max}
             step={step}
             className={className}
-            onChange={(e) => onValueChange([Number(e.target.value)])}
+            onChange={(event) => onValueChange([Number(event.target.value)])}
         />
     ),
 }));
@@ -64,7 +64,7 @@ vi.mock('#/components/daw/DawCompactCheckbox', () => ({
         <input
             type="checkbox"
             checked={checked}
-            onChange={(e) => onChange({ target: { checked: e.target.checked } })}
+            onChange={(event) => onChange({ target: { checked: event.target.checked } })}
             id={id}
             className={className}
         />

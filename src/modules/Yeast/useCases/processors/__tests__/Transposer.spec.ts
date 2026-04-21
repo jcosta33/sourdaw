@@ -27,7 +27,7 @@ describe('Transposer', () => {
 
         trans.processMidi(input, output, transport);
 
-        const noteOn = output.find((e) => e.kind.type === 'noteOn');
+        const noteOn = output.find((event) => event.kind.type === 'noteOn');
         expect(noteOn?.kind.note).toBe(74); // 60 + 14
     });
 
@@ -43,7 +43,7 @@ describe('Transposer', () => {
         const offInput: MidiEvent[] = [{ timeSamples: 500, kind: { type: 'noteOff', channel: 0, note: 60 } }];
         trans.processMidi(offInput, output, transport);
 
-        const noteOff = output.find((e) => e.kind.type === 'noteOff');
+        const noteOff = output.find((event) => event.kind.type === 'noteOff');
         expect(noteOff?.kind.note).toBe(67); // 60 + 7
     });
 
@@ -56,7 +56,7 @@ describe('Transposer', () => {
 
         trans.processMidi(input, output, transport);
 
-        const noteOn = output.find((e) => e.kind.type === 'noteOn');
+        const noteOn = output.find((event) => event.kind.type === 'noteOn');
         expect(noteOn?.kind.note).toBe(12);
     });
 });

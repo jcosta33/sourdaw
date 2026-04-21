@@ -51,10 +51,10 @@ export const exportStems: ExportStemsFn = async function exportStems(
         // Exclude disabled and structural tracks (unless they host a Toaster); muted tracks are included as stems
         // (users may want silent-in-mixdown stems for later use in a DAW).
         const eligible = tracks.tracks.filter(
-            (t) =>
-                !t.disabled &&
-                t.kind !== 'master' &&
-                (t.kind !== 'folder' || t.devices.some((d) => d.type === 'toaster'))
+            (time) =>
+                !time.disabled &&
+                time.kind !== 'master' &&
+                (time.kind !== 'folder' || time.devices.some((data) => data.type === 'toaster'))
         );
         let done = 0;
 

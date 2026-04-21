@@ -5,7 +5,7 @@ import * as subject from '../exportSdawFile';
 describe('exportSdawFile', () => {
     it('should export exportSdawFile', () => {
         expect(subject.exportSdawFile).toBeDefined();
-        const t = typeof subject.exportSdawFile;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.exportSdawFile;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

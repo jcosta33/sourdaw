@@ -59,15 +59,15 @@ export const EffectsTab = ({
     onToggleFavorite,
     preview,
 }: EffectsTabProps): ReactElement => {
-    const isEffectPlugin = (p: EffectPlugin) => p.category !== 'instrument';
+    const isEffectPlugin = (param: EffectPlugin) => param.category !== 'instrument';
 
     const effects = plugins.filter(isEffectPlugin);
     const query = searchQuery.toLowerCase().trim();
 
-    const fxPresets = getFactoryPresets().filter((p) => FX_PRESET_CATEGORIES.has(p.category));
+    const fxPresets = getFactoryPresets().filter((param) => FX_PRESET_CATEGORIES.has(param.category));
     const filteredFxPresets = query
         ? fxPresets.filter(
-              (p) => p.name.toLowerCase().includes(query) || p.tags.some((t) => t.toLowerCase().includes(query))
+              (param) => param.name.toLowerCase().includes(query) || param.tags.some((time) => time.toLowerCase().includes(query))
           )
         : fxPresets;
 
@@ -237,9 +237,9 @@ export const EffectsTab = ({
 
     if (query) {
         const filteredEffects = effects.filter(
-            (p) => p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query)
+            (param) => param.name.toLowerCase().includes(query) || param.category.toLowerCase().includes(query)
         );
-        const filteredMidi = MIDI_EFFECT_FACTORIES.filter((m) => m.name.toLowerCase().includes(query));
+        const filteredMidi = MIDI_EFFECT_FACTORIES.filter((message) => message.name.toLowerCase().includes(query));
         const total = filteredEffects.length + filteredFxPresets.length + filteredMidi.length;
 
         return (
@@ -334,8 +334,8 @@ export const EffectsTab = ({
         const items = groupId === 'other' ? uncategorized : (groupedEffects.get(groupId) ?? []);
 
         // Sort items so premium plugins are pinned to the top
-        const sortedItems = [...items].sort((a, b) => {
-            const aIsPremium = !!renderPremiumCard(a.id);
+        const sortedItems = [...items].sort((alpha, b) => {
+            const aIsPremium = !!renderPremiumCard(alpha.id);
             const bIsPremium = !!renderPremiumCard(b.id);
             if (aIsPremium && !bIsPremium) {
                 return -1;
@@ -343,7 +343,7 @@ export const EffectsTab = ({
             if (!aIsPremium && bIsPremium) {
                 return 1;
             }
-            return a.name.localeCompare(b.name);
+            return alpha.name.localeCompare(b.name);
         });
 
         return (

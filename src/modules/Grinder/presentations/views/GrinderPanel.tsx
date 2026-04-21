@@ -276,7 +276,7 @@ function GrinderTelemetryMeter({
     label,
     telemetryKey,
     accent,
-    transform = (v) => v,
+    transform = (value1) => value1,
 }: {
     deviceId: string;
     label: string;
@@ -447,10 +447,10 @@ function DriveStage({ patch }: { patch: GrinderPatch }): ReactElement {
     );
 }
 function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }): ReactElement {
-    const handleDrag = (micIndex: 1 | 2, e: React.MouseEvent) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+    const handleDrag = (micIndex: 1 | 2, event: React.MouseEvent) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+        const y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
 
         setGrinderMicParamWithAudio(deviceId, micIndex, 'positionX', x);
         setGrinderMicParamWithAudio(deviceId, micIndex, 'positionY', y);
@@ -471,9 +471,9 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                 <div
                     className="relative flex h-[180px] w-full items-center justify-center overflow-hidden rounded-[20px] border border-white/8 bg-[radial-gradient(circle_at_50%_42%,rgba(111,177,198,0.18),transparent_34%),radial-gradient(circle_at_50%_50%,rgba(229,168,75,0.14),transparent_54%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))]"
                     aria-label="Speaker field preview"
-                    onMouseMove={(e) => {
-                        if (e.buttons === 1) {
-                            handleDrag(1, e);
+                    onMouseMove={(event) => {
+                        if (event.buttons === 1) {
+                            handleDrag(1, event);
                         }
                     }}
                 >
@@ -490,7 +490,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                         <div
                             className="absolute flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-move items-center justify-center rounded-full border border-[var(--color-accent-peach)]/60 bg-[var(--color-accent-peach)]/18"
                             style={{ left: `${patch.mic2.positionX * 100}%`, top: `${patch.mic2.positionY * 100}%` }}
-                            onMouseDown={(e) => e.stopPropagation()}
+                            onMouseDown={(event) => event.stopPropagation()}
                         >
                             <span className="text-[10px] font-semibold text-[var(--color-accent-peach)]">2</span>
                         </div>
@@ -507,7 +507,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                         <div className="flex gap-2">
                             <RotaryKnob
                                 value={patch.mic1.positionX}
-                                onChange={(v) => setGrinderMicParamWithAudio(deviceId, 1, 'positionX', v)}
+                                onChange={(value) => setGrinderMicParamWithAudio(deviceId, 1, 'positionX', value)}
                                 min={0}
                                 max={1}
                                 step={0.01}
@@ -516,7 +516,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                             />
                             <RotaryKnob
                                 value={patch.mic1.positionY}
-                                onChange={(v) => setGrinderMicParamWithAudio(deviceId, 1, 'positionY', v)}
+                                onChange={(value) => setGrinderMicParamWithAudio(deviceId, 1, 'positionY', value)}
                                 min={0}
                                 max={1}
                                 step={0.01}
@@ -525,7 +525,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                             />
                             <RotaryKnob
                                 value={patch.mic1.distance}
-                                onChange={(v) => setGrinderMicParamWithAudio(deviceId, 1, 'distance', v)}
+                                onChange={(value) => setGrinderMicParamWithAudio(deviceId, 1, 'distance', value)}
                                 min={0}
                                 max={1}
                                 step={0.01}
@@ -542,7 +542,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                             <div className="flex gap-2">
                                 <RotaryKnob
                                     value={patch.mic2.positionX}
-                                    onChange={(v) => setGrinderMicParamWithAudio(deviceId, 2, 'positionX', v)}
+                                    onChange={(value) => setGrinderMicParamWithAudio(deviceId, 2, 'positionX', value)}
                                     min={0}
                                     max={1}
                                     step={0.01}
@@ -551,7 +551,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                                 />
                                 <RotaryKnob
                                     value={patch.mic2.positionY}
-                                    onChange={(v) => setGrinderMicParamWithAudio(deviceId, 2, 'positionY', v)}
+                                    onChange={(value) => setGrinderMicParamWithAudio(deviceId, 2, 'positionY', value)}
                                     min={0}
                                     max={1}
                                     step={0.01}
@@ -560,7 +560,7 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                                 />
                                 <RotaryKnob
                                     value={patch.mic2.distance}
-                                    onChange={(v) => setGrinderMicParamWithAudio(deviceId, 2, 'distance', v)}
+                                    onChange={(value) => setGrinderMicParamWithAudio(deviceId, 2, 'distance', value)}
                                     min={0}
                                     max={1}
                                     step={0.01}
@@ -627,7 +627,7 @@ function NeuralStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
                             label="CPU"
                             telemetryKey="neuralCpuPercent"
                             accent="var(--color-accent-lavender)"
-                            transform={(v) => v / 100}
+                            transform={(value) => value / 100}
                         />
                         <GrinderTelemetryMeter
                             deviceId={deviceId}
@@ -712,7 +712,7 @@ function LabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                     label="Sag"
                     telemetryKey="sagVoltage"
                     accent="var(--color-accent-orange)"
-                    transform={(v) => Math.max(0, Math.min(1, v))}
+                    transform={(value) => Math.max(0, Math.min(1, value))}
                 />
                 <GrinderTelemetryMeter
                     deviceId={deviceId}
@@ -1565,7 +1565,7 @@ function StatusStrip({ deviceId }: { deviceId: string }): ReactElement {
                 label="Sag"
                 telemetryKey="sagVoltage"
                 accent="var(--color-accent-orange)"
-                transform={(v) => Math.max(0, Math.min(1, v))}
+                transform={(value) => Math.max(0, Math.min(1, value))}
             />
             <GrinderTelemetryMeter
                 deviceId={deviceId}
@@ -1578,7 +1578,7 @@ function StatusStrip({ deviceId }: { deviceId: string }): ReactElement {
                 label="CPU"
                 telemetryKey="neuralCpuPercent"
                 accent="var(--color-accent-lavender)"
-                transform={(v) => v / 100}
+                transform={(value) => value / 100}
             />
         </div>
     );

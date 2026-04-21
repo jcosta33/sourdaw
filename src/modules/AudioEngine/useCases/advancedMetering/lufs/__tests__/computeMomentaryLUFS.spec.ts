@@ -12,11 +12,11 @@ describe('computeMomentaryLUFS', () => {
     });
 
     it('should produce a finite loudness value for non-silent audio', () => {
-        const s = new Float32Array(4800);
-        for (let i = 0; i < s.length; i++) {
-            s[i] = Math.sin(i * 0.1) * 0.5;
+        const state = new Float32Array(4800);
+        for (let index = 0; index < state.length; index++) {
+            state[index] = Math.sin(index * 0.1) * 0.5;
         }
-        const lufs = computeMomentaryLUFS(s, 48000);
+        const lufs = computeMomentaryLUFS(state, 48000);
         expect(Number.isFinite(lufs)).toBe(true);
         expect(lufs).toBeGreaterThan(-70);
     });

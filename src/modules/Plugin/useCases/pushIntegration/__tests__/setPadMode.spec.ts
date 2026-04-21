@@ -18,7 +18,7 @@ describe('setPadMode', () => {
         expect(state.padMode).toBe('scale');
         const expected = PAD_MODE_COLORS.scale;
         expect(
-            state.pads.every((p) => p.color.r === expected.r && p.color.g === expected.g && p.color.b === expected.b)
+            state.pads.every((param) => param.color.r === expected.r && param.color.g === expected.g && param.color.b === expected.b)
         ).toBe(true);
     });
 

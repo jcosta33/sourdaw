@@ -33,7 +33,7 @@ describe('removeNode', () => {
 
     it('should remove the node and any connection touching it', () => {
         removeNode('a');
-        expect(nodeViewStore.value?.nodes.map((n) => n.id)).toEqual(['b']);
+        expect(nodeViewStore.value?.nodes.map((node1) => node1.id)).toEqual(['b']);
         expect(nodeViewStore.value?.connections).toEqual([]);
     });
 

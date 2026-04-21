@@ -13,11 +13,11 @@ export function stretchAutomationTime(laneId: string, factor: number, anchorBeat
             return {
                 ...lane,
                 points: lane.points
-                    .map((p) => ({
-                        ...p,
-                        beat: Math.max(0, anchorBeat + (p.beat - anchorBeat) * factor),
+                    .map((param) => ({
+                        ...param,
+                        beat: Math.max(0, anchorBeat + (param.beat - anchorBeat) * factor),
                     }))
-                    .sort((a, b) => a.beat - b.beat),
+                    .sort((alpha, b) => alpha.beat - b.beat),
             };
         }),
     });

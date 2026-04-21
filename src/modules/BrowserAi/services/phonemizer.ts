@@ -1135,11 +1135,11 @@ export function phonemize({
 export function parsePhonemesTxt(content: string): Record<string, number> {
     const lines = content
         .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0);
+        .map((length) => length.trim())
+        .filter((length) => length.length > 0);
     const map: Record<string, number> = {};
-    for (let i = 0; i < lines.length; i++) {
-        map[lines[i]!] = i;
+    for (let index = 0; index < lines.length; index++) {
+        map[lines[index]!] = index;
     }
     return map;
 }

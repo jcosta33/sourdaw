@@ -154,7 +154,7 @@ export const CollaborationPanel = (): ReactElement | null => {
 
     const statusLabel = (() => {
         if (state.connectionStatus === 'connected') {
-            return `Collaborating \u00B7 ${state.peers.filter((p) => p.isConnected).length + 1} people`;
+            return `Collaborating \u00B7 ${state.peers.filter((param) => param.isConnected).length + 1} people`;
         }
         if (state.connectionStatus === 'connecting') {
             return 'Connecting...';
@@ -179,7 +179,6 @@ export const CollaborationPanel = (): ReactElement | null => {
                     </Button>
                 }
             />
-
             <div className="flex flex-col gap-3 p-3">
                 {/* Status */}
                 <CollaborationStatusRow icon={statusIcon} label={statusLabel} />
@@ -259,7 +258,7 @@ export const CollaborationPanel = (): ReactElement | null => {
                                 {/* Accept answer from joiner */}
                                 <DawCompactInput
                                     value={answerString}
-                                    onChange={(e) => setAnswerString(e.target.value)}
+                                    onChange={(event) => setAnswerString(event.target.value)}
                                     placeholder="Paste answer here"
                                     monospace
                                 />
@@ -300,7 +299,7 @@ export const CollaborationPanel = (): ReactElement | null => {
                         >
                             <DawCompactInput
                                 value={hostName}
-                                onChange={(e) => setHostName(e.target.value)}
+                                onChange={(event) => setHostName(event.target.value)}
                                 placeholder="Your name"
                             />
                             <Button variant="default" size="xs" onClick={handleCreate} className="w-full">
@@ -316,12 +315,12 @@ export const CollaborationPanel = (): ReactElement | null => {
                         >
                             <DawCompactInput
                                 value={joinName}
-                                onChange={(e) => setJoinName(e.target.value)}
+                                onChange={(event) => setJoinName(event.target.value)}
                                 placeholder="Your name"
                             />
                             <DawCompactInput
                                 value={joinInvite}
-                                onChange={(e) => setJoinInvite(e.target.value)}
+                                onChange={(event) => setJoinInvite(event.target.value)}
                                 placeholder="Paste invite"
                                 monospace
                             />

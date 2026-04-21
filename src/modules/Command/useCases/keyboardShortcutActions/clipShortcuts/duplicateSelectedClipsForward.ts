@@ -53,8 +53,8 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
         return;
     }
 
-    const earliestStart = Math.min(...selected.map((c) => c.startBeat));
-    const latestEnd = Math.max(...selected.map((c) => c.endBeat));
+    const earliestStart = Math.min(...selected.map((context) => context.startBeat));
+    const latestEnd = Math.max(...selected.map((context) => context.endBeat));
     const span = latestEnd - earliestStart;
 
     if (span <= 0) {
@@ -83,7 +83,7 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
     }
 
     // Capture the exact clips+positions for redo so we don't re-enter pushUndoEntry
-    const redoInfos = selected.map((info, i) => ({
+    const redoInfos = selected.map((info, index) => ({
         trackId: info.trackId,
         startBeat: info.startBeat + span,
         endBeat: info.endBeat + span,
@@ -91,7 +91,7 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
         type: info.type,
         audioBufferId: info.audioBufferId,
         sourceClipId: info.clipId,
-        createdId: createdIds[i]!,
+        createdId: createdIds[index]!,
     }));
 
     // Mutable tracking: redo creates new clip IDs, so undo must reference the latest set.

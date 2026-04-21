@@ -39,7 +39,7 @@ vi.mock('../../../helpers/automationViewHelpers', () => ({
 }));
 
 vi.mock('../../../helpers/automationLaneConstants', () => ({
-    formatParameterValue: vi.fn((v: number) => `${v.toFixed(2)}`),
+    formatParameterValue: vi.fn((value: number) => `${value.toFixed(2)}`),
     curveLabel: vi.fn(() => 'curve'),
 }));
 

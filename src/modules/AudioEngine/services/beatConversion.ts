@@ -5,7 +5,7 @@ export function beatToSeconds(beat: number, defaultTempo: number, changes: Tempo
         return (beat / defaultTempo) * 60;
     }
 
-    const sorted = [...changes].sort((a, b) => a.beat - b.beat);
+    const sorted = [...changes].sort((alpha, b) => alpha.beat - b.beat);
     let seconds = 0;
     let prevBeat = 0;
     let prevTempo = sorted[0]!.beat > 0 ? defaultTempo : sorted[0]!.tempo;

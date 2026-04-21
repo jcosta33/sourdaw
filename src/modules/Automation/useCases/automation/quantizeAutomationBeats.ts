@@ -12,13 +12,13 @@ export function quantizeAutomationBeats(laneId: string, gridSize: number): void 
                 return lane;
             }
             const snapped = new Map<number, AutomationPoint>();
-            for (const p of lane.points) {
-                const quantized = Math.round(p.beat / gridSize) * gridSize;
-                snapped.set(quantized, { ...p, beat: quantized });
+            for (const param of lane.points) {
+                const quantized = Math.round(param.beat / gridSize) * gridSize;
+                snapped.set(quantized, { ...param, beat: quantized });
             }
             return {
                 ...lane,
-                points: Array.from(snapped.values()).sort((a, b) => a.beat - b.beat),
+                points: Array.from(snapped.values()).sort((alpha, b) => alpha.beat - b.beat),
             };
         }),
     });

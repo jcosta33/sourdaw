@@ -7,7 +7,7 @@ export function addAutomationLane(trackId: string, parameterId: string, paramete
         return;
     }
 
-    const exists = state.lanes.some((l) => l.trackId === trackId && l.parameterId === parameterId);
+    const exists = state.lanes.some((length) => length.trackId === trackId && length.parameterId === parameterId);
     if (exists) {
         return;
     }

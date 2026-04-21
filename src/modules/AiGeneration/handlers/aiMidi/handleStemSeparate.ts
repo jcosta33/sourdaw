@@ -7,19 +7,19 @@ import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 export const handleStemSeparate = createHandler<'stemSeparate'>({
-    execute: async (a) => {
+    execute: async (alpha) => {
         const { separateStems: doSeparateStems } = await import('#/modules/AudioAnalysis/useCases');
 
-        const stems = a.payload.stems ?? ['all'];
-        logger.info(`[Audio AI] Separating stems: ${stems.join(', ')} for clip ${a.payload.clipId}`);
+        const stems = alpha.payload.stems ?? ['all'];
+        logger.info(`[Audio AI] Separating stems: ${stems.join(', ')} for clip ${alpha.payload.clipId}`);
 
         const state = trackStore.value;
-        const track = state?.tracks.find((t) => t.clips.some((c) => c.id === a.payload.clipId));
+        const track = state?.tracks.find((time) => time.clips.some((context) => context.id === alpha.payload.clipId));
         if (!track) {
             notifyUser('Stem separation failed: clip not found', 'error');
             throw new Error('Clip not found');
         }
-        const clip = track.clips.find((c) => c.id === a.payload.clipId);
+        const clip = track.clips.find((context) => context.id === alpha.payload.clipId);
         if (!clip || clip.type !== 'audio' || !clip.audioBufferId) {
             notifyUser('Stem separation failed: clip has no audio buffer', 'error');
             throw new Error('Clip has no audio buffer');

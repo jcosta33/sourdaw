@@ -5,6 +5,6 @@ export function createScaleFilter(root = 0, scaleName = 'major'): MidiEffect {
     return {
         id: 'midi-fx-scale-filter',
         name: `Scale Filter (${scaleName}, root ${root})`,
-        process: (notes) => notes.filter((n) => scaleNotes.includes((n.pitch - root + 12) % 12)),
+        process: (notes) => notes.filter((node) => scaleNotes.includes((node.pitch - root + 12) % 12)),
     };
 }

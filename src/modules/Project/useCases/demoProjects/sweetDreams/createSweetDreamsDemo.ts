@@ -70,9 +70,9 @@ const S = {
 } as const;
 
 // ── Helpers ──────────────────────────────────────────────────────────────
-function addDev(t: { devices?: unknown[] }, type: string, name: string, params: Record<string, number>) {
-    t.devices = [
-        ...(t.devices || []),
+function addDev(time: { devices?: unknown[] }, type: string, name: string, params: Record<string, number>) {
+    time.devices = [
+        ...(time.devices || []),
         {
             id: `dev-${crypto.randomUUID()}`,
             name,
@@ -124,20 +124,20 @@ export async function demo_SweetDreams(): Promise<void> {
     ];
 
     // 16 pad children (we only use pads 0=kick, 1=snare/clap, 2=closed hat, 3=open hat)
-    const DRUM_PAD_COLORS: readonly string[] = Array.from({ length: 16 }, (_, i) => {
-        const h = Math.round((i * 360) / 16 + 15);
+    const DRUM_PAD_COLORS: readonly string[] = Array.from({ length: 16 }, (_, index) => {
+        const h = Math.round((index * 360) / 16 + 15);
         return `oklch(0.42 0.03 ${h})`;
     });
 
-    const toasterPadTracks = Array.from({ length: 16 }, (_, i) => {
+    const toasterPadTracks = Array.from({ length: 16 }, (_, index) => {
         const child = createTrack({
-            name: DEFAULT_PAD_NAMES[i] ?? `Pad ${i + 1}`,
+            name: DEFAULT_PAD_NAMES[index] ?? `Pad ${index + 1}`,
             kind: 'midi',
             parentId: toasterFolder.id,
         });
         child.devices = [];
         child.outputId = toasterFolder.id;
-        child.color = DRUM_PAD_COLORS[i] ?? child.color;
+        child.color = DRUM_PAD_COLORS[index] ?? child.color;
         return child;
     });
 
@@ -584,8 +584,8 @@ export async function demo_SweetDreams(): Promise<void> {
     const bridgeChords = [chordCm, chordCm, chordAb, chordAb, chordBbMaj, chordBbMaj, chordGmaj, chordGmaj];
 
     function addPadChord(pitches: number[], start: number, dur: number, vel: number) {
-        for (const p of pitches) {
-            padNotes.push(note(p, start, dur, hv(vel, 4)));
+        for (const param of pitches) {
+            padNotes.push(note(param, start, dur, hv(vel, 4)));
         }
     }
 
@@ -782,8 +782,8 @@ export async function demo_SweetDreams(): Promise<void> {
     const brassChordCm = [C4, Eb4, G4]; // Cm triad stab
 
     function addBrassStab(start: number, vel: number, dur = 0.3) {
-        for (const p of brassChordCm) {
-            brassNotes.push(note(p, start, dur, hv(vel, 4)));
+        for (const param of brassChordCm) {
+            brassNotes.push(note(param, start, dur, hv(vel, 4)));
         }
     }
 
@@ -831,9 +831,9 @@ export async function demo_SweetDreams(): Promise<void> {
     ];
 
     function toasterSegmentIndex(absBeat: number) {
-        for (let i = toasterSegRanges.length - 1; i >= 0; i--) {
-            if (absBeat >= toasterSegRanges[i]![0]) {
-                return i;
+        for (let index = toasterSegRanges.length - 1; index >= 0; index--) {
+            if (absBeat >= toasterSegRanges[index]![0]) {
+                return index;
             }
         }
         return 0;
@@ -934,26 +934,26 @@ export async function demo_SweetDreams(): Promise<void> {
 
     // Sort and create clips
     for (let pi = 0; pi < 16; pi++) {
-        for (let s = 0; s < toasterSegRanges.length; s++) {
-            padSegNotes[pi]![s]!.sort((a, b) => a.startBeat - b.startBeat);
+        for (let state = 0; state < toasterSegRanges.length; state++) {
+            padSegNotes[pi]![state]!.sort((alpha, b) => alpha.startBeat - b.startBeat);
         }
     }
 
     const toasterTrackClips: ReturnType<typeof createMidiClip>[][] = [];
     const toasterNotesByClipId: Record<string, MidiNote[]> = {};
     for (let padIdx = 0; padIdx < 16; padIdx++) {
-        const t = toasterPadTracks[padIdx]!;
+        const time = toasterPadTracks[padIdx]!;
         const list: ReturnType<typeof createMidiClip>[] = [];
-        for (let s = 0; s < toasterSegRanges.length; s++) {
-            const arr = padSegNotes[padIdx]![s]!;
+        for (let state = 0; state < toasterSegRanges.length; state++) {
+            const arr = padSegNotes[padIdx]![state]!;
             if (arr.length === 0) {
                 continue;
             }
-            const [st, en] = toasterSegRanges[s]!;
+            const [st, en] = toasterSegRanges[state]!;
             const padName = DEFAULT_PAD_NAMES[padIdx] ?? `Pad ${padIdx + 1}`;
-            const c = createMidiClip(t.id, `${padName} - ${toasterSegLabels[s]}`, st, en, t.color);
-            list.push(c);
-            toasterNotesByClipId[c.id] = arr;
+            const context = createMidiClip(time.id, `${padName} - ${toasterSegLabels[state]}`, st, en, time.color);
+            list.push(context);
+            toasterNotesByClipId[context.id] = arr;
         }
         toasterTrackClips.push(list);
     }
@@ -962,8 +962,8 @@ export async function demo_SweetDreams(): Promise<void> {
     // WIRE UP CLIPS TO TRACKS
     // ══════════════════════════════════════════════════════════════════════
     const allMidiTracks = [tRiffR, tRiffL, tBass, tPad, tLead, tBrass, ...toasterPadTracks];
-    for (const t of allMidiTracks) {
-        t.clips = [];
+    for (const time of allMidiTracks) {
+        time.clips = [];
     }
 
     tRiffR.clips = [cRiffR];
@@ -972,8 +972,8 @@ export async function demo_SweetDreams(): Promise<void> {
     tPad.clips = [cPad];
     tLead.clips = [cLead];
     tBrass.clips = [cBrass];
-    for (const [i, t] of toasterPadTracks.entries()) {
-        t.clips = toasterTrackClips[i] ?? [];
+    for (const [index, time] of toasterPadTracks.entries()) {
+        time.clips = toasterTrackClips[index] ?? [];
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -1306,7 +1306,7 @@ export async function demo_SweetDreams(): Promise<void> {
     const { ensureTrackStrip, setTrackGain, setTrackPan, setTrackOutput, setTrackMute } =
         await import('#/modules/AudioEngine/useCases');
 
-    const toasterDev = toasterFolder.devices.find((d) => d.type === 'toaster');
+    const toasterDev = toasterFolder.devices.find((data) => data.type === 'toaster');
     if (toasterDev) {
         addDeviceToStrip(toasterFolder.id, toasterDev.id, 'toaster');
         for (const [paramId, value] of Object.entries(toasterDev.parameterValues)) {
@@ -1338,7 +1338,7 @@ export async function demo_SweetDreams(): Promise<void> {
         scaleName: 'chromatic',
         tuning: {
             name: 'Equal Temperament',
-            frequencies: Array.from({ length: 128 }, (_, i) => 440 * 2 ** ((i - 69) / 12)),
+            frequencies: Array.from({ length: 128 }, (_, index) => 440 * 2 ** ((index - 69) / 12)),
         },
     });
 }

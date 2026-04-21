@@ -125,25 +125,25 @@ export function summarizeFeatures(audioBufferId: string, options?: AnalysisOptio
         return null;
     }
 
-    const n = frames.length;
+    const node = frames.length;
 
-    const avgRms = frames.reduce((sum, f) => sum + f.rms, 0) / n;
+    const avgRms = frames.reduce((sum, freq) => sum + freq.rms, 0) / node;
     let peakRms = -Infinity;
-    for (const f of frames) {
-        if (f.rms > peakRms) {
-            peakRms = f.rms;
+    for (const freq of frames) {
+        if (freq.rms > peakRms) {
+            peakRms = freq.rms;
         }
     }
-    const avgSpectralCentroid = frames.reduce((sum, f) => sum + f.spectralCentroid, 0) / n;
-    const avgSpectralFlatness = frames.reduce((sum, f) => sum + f.spectralFlatness, 0) / n;
-    const avgZcr = frames.reduce((sum, f) => sum + f.zcr, 0) / n;
+    const avgSpectralCentroid = frames.reduce((sum, freq) => sum + freq.spectralCentroid, 0) / node;
+    const avgSpectralFlatness = frames.reduce((sum, freq) => sum + freq.spectralFlatness, 0) / node;
+    const avgZcr = frames.reduce((sum, freq) => sum + freq.zcr, 0) / node;
 
     // Average chroma profile
     const chromaProfile: number[] = Array.from({ length: 12 }).fill(0) as number[];
-    for (const f of frames) {
-        for (let i = 0; i < 12; i++) {
-            const chromaVal = f.chroma[i] ?? 0;
-            chromaProfile[i] = (chromaProfile[i] ?? 0) + chromaVal / n;
+    for (const freq of frames) {
+        for (let index = 0; index < 12; index++) {
+            const chromaVal = freq.chroma[index] ?? 0;
+            chromaProfile[index] = (chromaProfile[index] ?? 0) + chromaVal / node;
         }
     }
 
@@ -154,6 +154,6 @@ export function summarizeFeatures(audioBufferId: string, options?: AnalysisOptio
         avgSpectralFlatness,
         avgZcr,
         chromaProfile,
-        frameCount: n,
+        frameCount: node,
     };
 }

@@ -29,15 +29,15 @@ export async function undo(): Promise<void> {
 
     if (lastEntry.groupId) {
         const groupEntries: typeof state.past = [];
-        let i = state.past.length - 1;
-        while (i >= 0 && state.past[i]!.groupId === lastEntry.groupId) {
-            groupEntries.unshift(state.past[i]!);
-            i--;
+        let index = state.past.length - 1;
+        while (index >= 0 && state.past[index]!.groupId === lastEntry.groupId) {
+            groupEntries.unshift(state.past[index]!);
+            index--;
         }
-        const newPast = state.past.slice(0, i + 1);
+        const newPast = state.past.slice(0, index + 1);
 
-        for (let j = groupEntries.length - 1; j >= 0; j--) {
-            await executeUndo(groupEntries[j]!, executeAppAction);
+        for (let jIndex = groupEntries.length - 1; jIndex >= 0; jIndex--) {
+            await executeUndo(groupEntries[jIndex]!, executeAppAction);
         }
 
         undoStore.set({
@@ -86,12 +86,12 @@ export async function undoToIndex(targetIndex: number): Promise<void> {
 
     if (targetIndex < currentIndex) {
         const stepsBack = currentIndex - targetIndex;
-        for (let i = 0; i < stepsBack; i++) {
+        for (let index = 0; index < stepsBack; index++) {
             await undo();
         }
     } else {
         const stepsForward = targetIndex - currentIndex;
-        for (let i = 0; i < stepsForward; i++) {
+        for (let index = 0; index < stepsForward; index++) {
             await redo();
         }
     }

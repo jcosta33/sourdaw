@@ -58,8 +58,8 @@ class RecordingWorkletProcessor extends AudioWorkletProcessor {
 
         const head = Atomics.load(this._writeHead, 0);
         const ringSize = this._ringSize;
-        for (let i = 0; i < input.length; i++) {
-            this._ring[(head + i) % ringSize] = input[i];
+        for (let index = 0; index < input.length; index++) {
+            this._ring[(head + index) % ringSize] = input[index];
         }
         Atomics.add(this._writeHead, 0, input.length);
         return true;

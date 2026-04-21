@@ -13,6 +13,6 @@ export function handlePadPress(padIndex: number, velocity: number): void {
     }
     pushStore.set({
         ...state,
-        pads: state.pads.map((p) => (p.index === padIndex ? { ...p, velocity } : p)),
+        pads: state.pads.map((param) => (param.index === padIndex ? { ...param, velocity } : param)),
     });
 }

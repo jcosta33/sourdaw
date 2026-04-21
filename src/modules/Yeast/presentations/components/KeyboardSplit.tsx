@@ -31,11 +31,11 @@ export const KeyboardSplit = ({
 }: Props): ReactElement => {
     const whiteKeys: number[] = [];
     const blackKeys: number[] = [];
-    for (let n = RANGE_LOW; n < RANGE_HIGH; n++) {
-        if (isBlack(n)) {
-            blackKeys.push(n);
+    for (let node = RANGE_LOW; node < RANGE_HIGH; node++) {
+        if (isBlack(node)) {
+            blackKeys.push(node);
         } else {
-            whiteKeys.push(n);
+            whiteKeys.push(node);
         }
     }
 
@@ -45,8 +45,8 @@ export const KeyboardSplit = ({
     const noteToX = (note: number): number => {
         // Count white keys below this note
         let whiteCount = 0;
-        for (let n = RANGE_LOW; n < note; n++) {
-            if (!isBlack(n)) {
+        for (let node = RANGE_LOW; node < note; node++) {
+            if (!isBlack(node)) {
                 whiteCount++;
             }
         }

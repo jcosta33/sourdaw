@@ -46,20 +46,20 @@ function layoutNodes(tracks: Track[]): {
     width: number;
     height: number;
 } {
-    const sources = tracks.filter((t) => t.kind === 'audio' || t.kind === 'midi');
-    const buses = tracks.filter((t) => t.kind === 'bus');
-    const masterTrack = tracks.find((t) => t.kind === 'master') ?? null;
+    const sources = tracks.filter((time) => time.kind === 'audio' || time.kind === 'midi');
+    const buses = tracks.filter((time) => time.kind === 'bus');
+    const masterTrack = tracks.find((time) => time.kind === 'master') ?? null;
 
-    const sourcePositions: NodePosition[] = sources.map((track, i) => ({
+    const sourcePositions: NodePosition[] = sources.map((track, index) => ({
         x: PAD,
-        y: PAD + i * (NODE_H + ROW_GAP),
+        y: PAD + index * (NODE_H + ROW_GAP),
         track,
     }));
 
     const busColX = PAD + NODE_W + COL_GAP;
-    const busPositions: NodePosition[] = buses.map((track, i) => ({
+    const busPositions: NodePosition[] = buses.map((track, index) => ({
         x: busColX,
-        y: PAD + i * (NODE_H + ROW_GAP),
+        y: PAD + index * (NODE_H + ROW_GAP),
         track,
     }));
 
@@ -93,8 +93,8 @@ const TrackNode = ({ pos, isSelected }: { pos: NodePosition; isSelected: boolean
             role="button"
             tabIndex={0}
             aria-label={`Select ${pos.track.name}`}
-            onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
+            onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
                     selectTrack(pos.track.id);
                 }
             }}
@@ -197,18 +197,18 @@ export const RoutingGraph = (): ReactElement => {
         if (trackId === selectedTrackId) {
             return true;
         }
-        const selectedTrack = tracks.find((t) => t.id === selectedTrackId);
+        const selectedTrack = tracks.find((time) => time.id === selectedTrackId);
         if (!selectedTrack) {
             return false;
         }
         if (selectedTrack.outputId === trackId) {
             return true;
         }
-        if (selectedTrack.sends.some((s) => s.busId === trackId)) {
+        if (selectedTrack.sends.some((state1) => state1.busId === trackId)) {
             return true;
         }
-        const track = tracks.find((t) => t.id === trackId);
-        if (track && (track.outputId === selectedTrackId || track.sends.some((s) => s.busId === selectedTrackId))) {
+        const track = tracks.find((time) => time.id === trackId);
+        if (track && (track.outputId === selectedTrackId || track.sends.some((state1) => state1.busId === selectedTrackId))) {
             return true;
         }
         return sidechainRoutes.some(

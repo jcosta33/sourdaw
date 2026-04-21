@@ -25,8 +25,8 @@ class KneadProcessor extends AudioWorkletProcessor {
 
     constructor() {
         super();
-        this.port.onmessage = (e) => {
-            const msg = e.data;
+        this.port.onmessage = (event) => {
+            const msg = event.data;
             try {
                 if (msg.type === 'init') {
                     this._initWasm(msg.wasmBytes, msg.transportSAB);
@@ -74,10 +74,10 @@ class KneadProcessor extends AudioWorkletProcessor {
         // 1. Resolve current temporal position
         let currentShiftSemitones = 0;
         if (this._transportView) {
-            const v = this._transportView;
-            const currentBeat = v[0];
-            const tempo = v[1];
-            const isPlaying = v[5] > 0.5;
+            const value = this._transportView;
+            const currentBeat = value[0];
+            const tempo = value[1];
+            const isPlaying = value[5] > 0.5;
 
             if (isPlaying) {
                 // Find active clip

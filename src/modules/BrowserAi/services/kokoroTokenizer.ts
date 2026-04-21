@@ -186,9 +186,9 @@ export function textToKokoroInputIds(text: string): KokoroInputIds {
 
     const tokenIds: number[] = [];
 
-    for (let i = 0; i < phonemes.length; i++) {
-        const ph = phonemes[i]!;
-        const isLeadingOrTrailing = (i === 0 && ph === 'SP') || (i === phonemes.length - 1 && ph === 'SP');
+    for (let index = 0; index < phonemes.length; index++) {
+        const ph = phonemes[index]!;
+        const isLeadingOrTrailing = (index === 0 && ph === 'SP') || (index === phonemes.length - 1 && ph === 'SP');
 
         if (isLeadingOrTrailing) {
             // Skip boundary silences — Kokoro doesn't need explicit outer padding silences

@@ -43,7 +43,7 @@ type DownloadModelOutput = Promise<void>;
  */
 export const downloadModel = inject({ logger })(
     ({ logger }) =>
-        async function downloadModel({ spec, onProgress }: DownloadModelInput): DownloadModelOutput {
+        (async function downloadModel({ spec, onProgress }: DownloadModelInput): DownloadModelOutput {
             const { modelId, family, url, sha256, sizeBytes } = spec;
 
             updateModelStatus(modelId, { status: 'downloading', downloadProgress: 0 });
@@ -106,7 +106,7 @@ export const downloadModel = inject({ logger })(
                     }
 
                     // Concatenate chunks
-                    const totalLength = chunks.reduce((acc, c) => acc + c.byteLength, 0);
+                    const totalLength = chunks.reduce((acc, context) => acc + context.byteLength, 0);
                     const fullData = new Uint8Array(totalLength);
                     let offset = 0;
                     for (const chunk of chunks) {
@@ -203,5 +203,5 @@ export const downloadModel = inject({ logger })(
             throw new Error(
                 `Failed to download ${modelId} after ${String(MAX_RETRIES)} attempts: ${String(lastError)}`
             );
-        }
+        })
 );

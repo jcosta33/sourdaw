@@ -60,7 +60,7 @@ export function RenderProgressIndicator({ phraseId }: RenderProgressIndicatorPro
     }
 
     if (phraseStatus === 'queued') {
-        const queueEntry = queueState?.entries.find((e) => e.phraseId === phraseId);
+        const queueEntry = queueState?.entries.find((event) => event.phraseId === phraseId);
         const queuedRequestId = queueEntry?.requestId;
         const handleCancelQueued = (): void => {
             if (queuedRequestId) {

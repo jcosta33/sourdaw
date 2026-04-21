@@ -26,7 +26,7 @@ describe('quantizeNotes', () => {
 
     it('should snap start beats to the grid', () => {
         quantizeNotes('clip1', 0.25);
-        expect(midiStore.value?.notesByClipId.clip1?.map((n) => n.startBeat)).toEqual([0, 0.5]);
+        expect(midiStore.value?.notesByClipId.clip1?.map((node) => node.startBeat)).toEqual([0, 0.5]);
     });
 
     it('should not mutate when the clip or store is missing', () => {

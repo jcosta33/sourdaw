@@ -40,7 +40,7 @@ const baseStep: Step = {
 
 describe('StepSequencer', () => {
     it('should render', () => {
-        const pads = Array.from({ length: 2 }, (_, i) => makePad(i));
+        const pads = Array.from({ length: 2 }, (_, index) => makePad(index));
         const pattern: Pattern = {
             id: 'pat1',
             name: 'A',

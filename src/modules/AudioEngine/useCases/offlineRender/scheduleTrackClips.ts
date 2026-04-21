@@ -90,22 +90,22 @@ export async function scheduleTrackClips(
     }
 
     const clipsToProcess: { clip: import('#/modules/Arrangement/models/Track').Clip; padIndex: number }[] = [];
-    clipsToProcess.push(...resolveClipsWithComping(track.id, track.clips).map((c) => ({ clip: c, padIndex: -1 })));
+    clipsToProcess.push(...resolveClipsWithComping(track.id, track.clips).map((context) => ({ clip: context, padIndex: -1 })));
 
-    const instrumentEntry = deviceEntries.find((e) => e.instrumentControls);
+    const instrumentEntry = deviceEntries.find((event) => event.instrumentControls);
     const instrumentControls = instrumentEntry?.instrumentControls ?? null;
     const isToaster = instrumentEntry?.deviceType === 'toaster';
 
     // If this is a Toaster track, gather all clips from its child tracks.
     if (isToaster && allTracks) {
-        const children = allTracks.filter((t) => t.parentId === track.id);
-        for (let i = 0; i < children.length; i++) {
-            const childTrack = children[i];
+        const children = allTracks.filter((time) => time.parentId === track.id);
+        for (let index = 0; index < children.length; index++) {
+            const childTrack = children[index];
             if (!childTrack) {
                 continue;
             }
             const childClips = resolveClipsWithComping(childTrack.id, childTrack.clips);
-            clipsToProcess.push(...childClips.map((c) => ({ clip: c, padIndex: i })));
+            clipsToProcess.push(...childClips.map((context) => ({ clip: context, padIndex: index })));
         }
     }
 
@@ -135,7 +135,7 @@ export async function scheduleTrackClips(
             }
 
             const drumKit = resolveDrumKit(track.devices);
-            const drumKitDevice = track.devices.find((d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit');
+            const drumKitDevice = track.devices.find((data) => data.type === 'builtin-drum-kit' || data.type === 'drum-kit');
             const kitDef = drumKitDevice
                 ? getDrumKitDefByIndex(drumKitDevice.parameterValues.kit ?? drumKitDevice.parameterValues.kitId ?? 0)
                 : null;
@@ -144,8 +144,8 @@ export async function scheduleTrackClips(
             // is a child track of a Toaster, skip note processing — the parent
             // will gather them.
             if (!instrumentControls && track.parentId && allTracks) {
-                const parentTrack = allTracks.find((t) => t.id === track.parentId);
-                if (parentTrack?.devices.some((d) => d.type === 'toaster')) {
+                const parentTrack = allTracks.find((time) => time.id === track.parentId);
+                if (parentTrack?.devices.some((data) => data.type === 'toaster')) {
                     continue;
                 }
             }

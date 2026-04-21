@@ -5,7 +5,7 @@ import * as subject from '../clearClipSelection';
 describe('clearClipSelection', () => {
     it('should export clearClipSelection', () => {
         expect(subject.clearClipSelection).toBeDefined();
-        const t = typeof subject.clearClipSelection;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.clearClipSelection;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

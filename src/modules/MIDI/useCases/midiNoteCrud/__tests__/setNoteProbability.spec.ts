@@ -26,9 +26,9 @@ describe('setNoteProbability', () => {
 
     it('should set probability on the matching note and clamp to 0–100', () => {
         setNoteProbability('c1', 'n1', 150);
-        expect(midiStore.value?.notesByClipId.c1?.find((n) => n.id === 'n1')?.probability).toBe(100);
+        expect(midiStore.value?.notesByClipId.c1?.find((node) => node.id === 'n1')?.probability).toBe(100);
         setNoteProbability('c1', 'n1', -10);
-        expect(midiStore.value?.notesByClipId.c1?.find((n) => n.id === 'n1')?.probability).toBe(0);
+        expect(midiStore.value?.notesByClipId.c1?.find((node) => node.id === 'n1')?.probability).toBe(0);
     });
 
     it('should not mutate when the clip or store is missing', () => {

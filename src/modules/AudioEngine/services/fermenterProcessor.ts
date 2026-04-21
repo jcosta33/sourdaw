@@ -54,8 +54,8 @@ class FermenterProcessor extends AudioWorkletProcessor {
 
     constructor() {
         super();
-        this.port.onmessage = (e) => {
-            const msg = e.data;
+        this.port.onmessage = (event) => {
+            const msg = event.data;
             try {
                 if (msg.type === 'init') {
                     if (this._ready) {
@@ -125,8 +125,8 @@ class FermenterProcessor extends AudioWorkletProcessor {
                     if (typeof value === 'number') {
                         inst.set_param(camelToSnake(key), value);
                     } else if (key === 'macros' && Array.isArray(value)) {
-                        for (let i = 0; i < value.length; i++) {
-                            inst.set_param(`macro${i}`, value[i]);
+                        for (let index = 0; index < value.length; index++) {
+                            inst.set_param(`macro${index}`, value[index]);
                         }
                     }
                 }
@@ -180,13 +180,13 @@ class FermenterProcessor extends AudioWorkletProcessor {
             if (currentFrame % 2048 < frames) {
                 let peakL = 0;
                 let peakR = 0;
-                for (let i = 0; i < frames; i++) {
-                    const l = Math.abs(outL[i]);
-                    if (l > peakL) {
-                        peakL = l;
+                for (let index = 0; index < frames; index++) {
+                    const length = Math.abs(outL[index]);
+                    if (length > peakL) {
+                        peakL = length;
                     }
                     if (outR) {
-                        const r = Math.abs(outR[i]);
+                        const r = Math.abs(outR[index]);
                         if (r > peakR) {
                             peakR = r;
                         }
@@ -195,8 +195,8 @@ class FermenterProcessor extends AudioWorkletProcessor {
                 const scopeBuffer = new Float32Array(128);
                 // Downsample from block into scope buffer
                 const step = frames / 128;
-                for (let i = 0; i < 128; i++) {
-                    scopeBuffer[i] = outL[Math.floor(i * step)] || 0;
+                for (let index = 0; index < 128; index++) {
+                    scopeBuffer[index] = outL[Math.floor(index * step)] || 0;
                 }
                 this.port.postMessage({ type: 'telemetry', peakL, peakR, scopeBuffer }, [scopeBuffer.buffer]);
             }

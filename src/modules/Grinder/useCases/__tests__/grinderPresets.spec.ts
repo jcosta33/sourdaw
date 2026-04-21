@@ -18,7 +18,7 @@ describe('GRINDER_PRESETS', () => {
     });
 
     it('preset ids are unique', () => {
-        const ids = GRINDER_PRESETS.map((p) => p.id);
+        const ids = GRINDER_PRESETS.map((param) => param.id);
         expect(new Set(ids).size).toBe(ids.length);
     });
 });

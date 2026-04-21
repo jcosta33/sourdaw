@@ -18,8 +18,8 @@ export const clipCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                const track = trackStore.value?.tracks.find((t) => t.clips.some((c) => c.id === clipId));
-                const clip = track?.clips.find((c) => c.id === clipId);
+                const track = trackStore.value?.tracks.find((time) => time.clips.some((context) => context.id === clipId));
+                const clip = track?.clips.find((context) => context.id === clipId);
                 const name = window.prompt('Rename clip:', clip?.name ?? '');
                 if (name !== null && name.trim()) {
                     renameClip(clipId, name.trim());
@@ -85,8 +85,8 @@ export const clipCommands: CommandEntry[] = [
             const trackId = getSelectedTrackId();
             const clipId = getSelectedClipId();
             if (trackId && clipId) {
-                const track = trackStore.value?.tracks.find((t) => t.id === trackId);
-                const clip = track?.clips.find((c) => c.id === clipId);
+                const track = trackStore.value?.tracks.find((time) => time.id === trackId);
+                const clip = track?.clips.find((context) => context.id === clipId);
                 if (clip) {
                     void executeAppAction({
                         type: 'consolidateSelection',
@@ -104,8 +104,8 @@ export const clipCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                const track = trackStore.value?.tracks.find((t) => t.clips.some((c) => c.id === clipId));
-                const clip = track?.clips.find((c) => c.id === clipId);
+                const track = trackStore.value?.tracks.find((time) => time.clips.some((context) => context.id === clipId));
+                const clip = track?.clips.find((context) => context.id === clipId);
                 if (clip) {
                     void executeAppAction({ type: 'setClipLoop', payload: { clipId, enabled: !clip.loopEnabled } });
                 }

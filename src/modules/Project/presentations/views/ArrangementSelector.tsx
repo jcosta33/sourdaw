@@ -31,14 +31,14 @@ export const ArrangementSelector = (): ReactElement | null => {
             return undefined;
         }
 
-        const handleClickOutside = (e: MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
                 setOpen(false);
             }
         };
 
-        const handleEscape = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
                 if (editingId) {
                     setEditingId(null);
                 } else {
@@ -71,7 +71,7 @@ export const ArrangementSelector = (): ReactElement | null => {
         return null;
     }
 
-    const currentArrangement = state.arrangements.find((a) => a.id === state.activeArrangementId);
+    const currentArrangement = state.arrangements.find((alpha) => alpha.id === state.activeArrangementId);
 
     const handleCreate = () => {
         createArrangement(`Arrangement ${state.arrangements.length + 1}`);
@@ -111,7 +111,6 @@ export const ArrangementSelector = (): ReactElement | null => {
                 </TooltipTrigger>
                 <TooltipContent>Arrangement View Snapshots</TooltipContent>
             </Tooltip>
-
             {open ? (
                 <div
                     className="daw-floating-surface absolute top-full left-0 mt-1 z-50 w-56 rounded-md border border-border bg-surface-overlay py-1 select-none"
@@ -149,15 +148,15 @@ export const ArrangementSelector = (): ReactElement | null => {
                                             size="micro"
                                             className="h-5 flex-1 min-w-0 border-primary/50 bg-background/50 px-1"
                                             value={editName}
-                                            onChange={(e) => setEditName(e.target.value)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
+                                            onChange={(event) => setEditName(event.target.value)}
+                                            onKeyDown={(event) => {
+                                                if (event.key === 'Enter') {
                                                     handleRenameSubmit(arr.id);
                                                 }
-                                                e.stopPropagation();
+                                                event.stopPropagation();
                                             }}
                                             onBlur={() => handleRenameSubmit(arr.id)}
-                                            onClick={(e) => e.stopPropagation()}
+                                            onClick={(event) => event.stopPropagation()}
                                         />
                                     ) : (
                                         <DawPickerRow
@@ -180,8 +179,8 @@ export const ArrangementSelector = (): ReactElement | null => {
                                                         'rounded p-0.5 transition-all hover:bg-background/80',
                                                         isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
                                                     )}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
+                                                    onClick={(event) => {
+                                                        event.stopPropagation();
                                                         setEditName(arr.name);
                                                         setEditingId(arr.id);
                                                     }}

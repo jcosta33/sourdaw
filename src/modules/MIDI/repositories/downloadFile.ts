@@ -5,9 +5,9 @@
 export function downloadBlob(data: BlobPart, filename: string, mimeType: string): void {
     const blob = new Blob([data], { type: mimeType });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
+    const alpha = document.createElement('a');
+    alpha.href = url;
+    alpha.download = filename;
+    alpha.click();
     URL.revokeObjectURL(url);
 }

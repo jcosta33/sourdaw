@@ -12,7 +12,7 @@ import { cn } from '#/utils/Styles/cn';
 import { useTempoEditorState } from '../hooks/useTempoEditorState';
 
 export const TempoEditor = (): ReactElement => {
-    const t = useTempoEditorState();
+    const time = useTempoEditorState();
 
     return (
         <div className="daw-readout-well relative flex h-8 items-center gap-2 rounded-sm px-2">
@@ -20,9 +20,9 @@ export const TempoEditor = (): ReactElement => {
                 <TooltipTrigger asChild>
                     <div>
                         <ValueField
-                            value={t.transport.tempo}
-                            onChange={t.setTempoValue}
-                            onReset={() => t.setTempoValue(120)}
+                            value={time.transport.tempo}
+                            onChange={time.setTempoValue}
+                            onReset={() => time.setTempoValue(120)}
                             min={20}
                             max={300}
                             step={1}
@@ -34,29 +34,27 @@ export const TempoEditor = (): ReactElement => {
                 </TooltipTrigger>
                 <TooltipContent>Drag up/down to adjust, double-click to reset, Shift for fine.</TooltipContent>
             </Tooltip>
-
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Button
                         variant="ghost"
                         size="icon-xs"
-                        onClick={() => t.setMapOpen(!t.mapOpen)}
+                        onClick={() => time.setMapOpen(!time.mapOpen)}
                         aria-label="Toggle tempo map"
-                        aria-expanded={t.mapOpen}
-                        className={cn('size-5', t.mapOpen && 'bg-accent')}
+                        aria-expanded={time.mapOpen}
+                        className={cn('size-5', time.mapOpen && 'bg-accent')}
                     >
                         <Map className="size-3" />
                     </Button>
                 </TooltipTrigger>
                 <TooltipContent>Tempo map</TooltipContent>
             </Tooltip>
-
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Button
                         variant="ghost"
                         size="icon-xs"
-                        onClick={t.handleTapTempo}
+                        onClick={time.handleTapTempo}
                         aria-label="Tap tempo"
                         className="text-[9px] font-bold w-6 h-5"
                     >
@@ -65,19 +63,18 @@ export const TempoEditor = (): ReactElement => {
                 </TooltipTrigger>
                 <TooltipContent>Tap to set tempo</TooltipContent>
             </Tooltip>
-
-            {t.editingTimeSig ? (
+            {time.editingTimeSig ? (
                 <div className="flex items-center gap-0.5">
                     <DawCompactInput
                         type="number"
-                        value={t.numValue}
-                        onChange={(e) => t.setNumValue(e.target.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                                t.commitTimeSig();
+                        value={time.numValue}
+                        onChange={(event) => time.setNumValue(event.target.value)}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                                time.commitTimeSig();
                             }
-                            if (e.key === 'Escape') {
-                                t.cancelTimeSigEdit();
+                            if (event.key === 'Escape') {
+                                time.cancelTimeSigEdit();
                             }
                         }}
                         size="micro"
@@ -91,9 +88,9 @@ export const TempoEditor = (): ReactElement => {
                     />
                     <span className="text-xs text-muted-foreground">/</span>
                     <DawCompactSelect
-                        value={t.denValue}
-                        onChange={(e) => t.setDenValue(e.target.value)}
-                        onBlur={t.commitTimeSig}
+                        value={time.denValue}
+                        onChange={(event) => time.setDenValue(event.target.value)}
+                        onBlur={time.commitTimeSig}
                         align="center"
                         className="w-10 font-mono"
                         aria-label="Time signature denominator"
@@ -110,33 +107,32 @@ export const TempoEditor = (): ReactElement => {
                         <Button
                             variant="ghost"
                             size="sm"
-                            onClick={t.startTimeSigEdit}
-                            aria-label={`Time signature: ${t.transport.timeSignatureNumerator}/${t.transport.timeSignatureDenominator}. Click to edit.`}
+                            onClick={time.startTimeSigEdit}
+                            aria-label={`Time signature: ${time.transport.timeSignatureNumerator}/${time.transport.timeSignatureDenominator}. Click to edit.`}
                             className="px-2 py-0.5"
                         >
                             <span className="text-lg font-mono font-medium text-muted-foreground">
-                                {t.transport.timeSignatureNumerator}/{t.transport.timeSignatureDenominator}
+                                {time.transport.timeSignatureNumerator}/{time.transport.timeSignatureDenominator}
                             </span>
                         </Button>
                     </TooltipTrigger>
                     <TooltipContent>Click to edit time signature</TooltipContent>
                 </Tooltip>
             )}
-
-            {t.mapOpen ? (
+            {time.mapOpen ? (
                 <div
-                    ref={t.mapPanelRef}
+                    ref={time.mapPanelRef}
                     role="dialog"
                     aria-label="Tempo map editor"
                     className="daw-floating-surface absolute left-0 top-full z-50 mt-1 w-72 rounded-md p-2"
                 >
                     <h3 className="mb-1.5 text-xs font-semibold text-foreground">Tempo Map</h3>
 
-                    {t.tempoMap.changes.length === 0 ? (
+                    {time.tempoMap.changes.length === 0 ? (
                         <p className="py-2 text-center text-xs text-muted-foreground">No tempo changes</p>
                     ) : (
                         <div className="max-h-40 space-y-0.5 overflow-y-auto">
-                            {t.tempoMap.changes.map((change) => (
+                            {time.tempoMap.changes.map((change) => (
                                 <div
                                     key={change.id}
                                     className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs hover:bg-accent/30"
@@ -145,18 +141,18 @@ export const TempoEditor = (): ReactElement => {
                                         Beat {change.beat}
                                     </span>
 
-                                    {t.editingChangeId === change.id ? (
+                                    {time.editingChangeId === change.id ? (
                                         <DawCompactInput
                                             type="number"
-                                            value={t.editingChangeTempo}
-                                            onChange={(e) => t.setEditingChangeTempo(e.target.value)}
-                                            onBlur={t.commitEditChange}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    t.commitEditChange();
+                                            value={time.editingChangeTempo}
+                                            onChange={(event) => time.setEditingChangeTempo(event.target.value)}
+                                            onBlur={time.commitEditChange}
+                                            onKeyDown={(event) => {
+                                                if (event.key === 'Enter') {
+                                                    time.commitEditChange();
                                                 }
-                                                if (e.key === 'Escape') {
-                                                    t.cancelEditChange();
+                                                if (event.key === 'Escape') {
+                                                    time.cancelEditChange();
                                                 }
                                             }}
                                             size="micro"
@@ -174,7 +170,7 @@ export const TempoEditor = (): ReactElement => {
                                             variant="ghost"
                                             size="xs"
                                             className="w-14 text-center font-mono tabular-nums"
-                                            onClick={() => t.startEditChange(change)}
+                                            onClick={() => time.startEditChange(change)}
                                             aria-label={`${change.tempo} BPM at beat ${change.beat}. Click to edit.`}
                                         >
                                             {change.tempo}
@@ -198,7 +194,7 @@ export const TempoEditor = (): ReactElement => {
                                         variant="ghost"
                                         size="icon-xs"
                                         className="ml-auto size-5 text-muted-foreground hover:text-destructive"
-                                        onClick={() => t.removeChange(change.id)}
+                                        onClick={() => time.removeChange(change.id)}
                                         aria-label={`Remove tempo change at beat ${change.beat}`}
                                     >
                                         <Trash2 className="size-3" />
@@ -211,8 +207,8 @@ export const TempoEditor = (): ReactElement => {
                     <div className="mt-2 flex items-center gap-1 border-t border-border pt-2">
                         <DawCompactInput
                             type="number"
-                            value={t.newBeat}
-                            onChange={(e) => t.setNewBeat(e.target.value)}
+                            value={time.newBeat}
+                            onChange={(event) => time.setNewBeat(event.target.value)}
                             size="micro"
                             align="center"
                             monospace
@@ -224,8 +220,8 @@ export const TempoEditor = (): ReactElement => {
                         />
                         <DawCompactInput
                             type="number"
-                            value={t.newTempo}
-                            onChange={(e) => t.setNewTempo(e.target.value)}
+                            value={time.newTempo}
+                            onChange={(event) => time.setNewTempo(event.target.value)}
                             size="micro"
                             align="center"
                             monospace
@@ -237,8 +233,8 @@ export const TempoEditor = (): ReactElement => {
                             aria-label="New tempo change BPM"
                         />
                         <DawCompactSelect
-                            value={t.newCurve}
-                            onChange={(e) => t.setNewCurve(e.target.value as 'instant' | 'linear')}
+                            value={time.newCurve}
+                            onChange={(event) => time.setNewCurve(event.target.value as 'instant' | 'linear')}
                             className="bg-muted px-1"
                             aria-label="New tempo change curve type"
                         >
@@ -248,7 +244,7 @@ export const TempoEditor = (): ReactElement => {
                         <Button
                             variant="ghost"
                             size="icon-xs"
-                            onClick={t.handleAddTempoChange}
+                            onClick={time.handleAddTempoChange}
                             aria-label="Add tempo change"
                             className="size-6"
                         >

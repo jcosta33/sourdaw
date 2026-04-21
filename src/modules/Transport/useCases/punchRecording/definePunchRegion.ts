@@ -7,7 +7,7 @@ export function definePunchRegion(captureId: string, punchInBeat: number, punchO
         return;
     }
 
-    const capture = state.captures.find((c) => c.id === captureId);
+    const capture = state.captures.find((context) => context.id === captureId);
     if (!capture) {
         return;
     }
@@ -26,8 +26,8 @@ export function definePunchRegion(captureId: string, punchInBeat: number, punchO
 
     punchRecordingStore.set({
         ...state,
-        captures: state.captures.map((c) =>
-            c.id === captureId ? { ...c, punchRegions: [...c.punchRegions, region] } : c
+        captures: state.captures.map((context) =>
+            context.id === captureId ? { ...context, punchRegions: [...context.punchRegions, region] } : context
         ),
     });
 }

@@ -51,24 +51,24 @@ describe('fuzzySearch', () => {
             const context = { selectedTrackId: 't1', selectedClipId: undefined, selectedClipType: undefined };
             const available = getAvailablePresets(context);
             expect(available.length).toBe(2);
-            expect(available.map((a) => a.id)).toContain('global-1');
-            expect(available.map((a) => a.id)).toContain('track-1');
+            expect(available.map((alpha) => alpha.id)).toContain('global-1');
+            expect(available.map((alpha) => alpha.id)).toContain('track-1');
         });
 
         it('returns audio clip presets when an audio clip is selected', () => {
             const context = { selectedTrackId: 't1', selectedClipId: 'c1', selectedClipType: 'audio' as const };
             const available = getAvailablePresets(context);
             expect(available.length).toBe(3); // Global, Track, ClipAudio
-            expect(available.map((a) => a.id)).toContain('clip-1');
-            expect(available.map((a) => a.id)).not.toContain('clip-midi-1');
+            expect(available.map((alpha) => alpha.id)).toContain('clip-1');
+            expect(available.map((alpha) => alpha.id)).not.toContain('clip-midi-1');
         });
 
         it('returns midi clip presets when a midi clip is selected', () => {
             const context = { selectedTrackId: 't1', selectedClipId: 'c1', selectedClipType: 'midi' as const };
             const available = getAvailablePresets(context);
             expect(available.length).toBe(3); // Global, Track, ClipMidi
-            expect(available.map((a) => a.id)).toContain('clip-midi-1');
-            expect(available.map((a) => a.id)).not.toContain('clip-1');
+            expect(available.map((alpha) => alpha.id)).toContain('clip-midi-1');
+            expect(available.map((alpha) => alpha.id)).not.toContain('clip-1');
         });
 
         it('sorts presets by CATEGORY_ORDER', () => {

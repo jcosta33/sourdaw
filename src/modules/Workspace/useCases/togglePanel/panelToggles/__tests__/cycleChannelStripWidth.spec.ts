@@ -5,7 +5,7 @@ import * as subject from '../cycleChannelStripWidth';
 describe('cycleChannelStripWidth', () => {
     it('should export cycleChannelStripWidth', () => {
         expect(subject.cycleChannelStripWidth).toBeDefined();
-        const t = typeof subject.cycleChannelStripWidth;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.cycleChannelStripWidth;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

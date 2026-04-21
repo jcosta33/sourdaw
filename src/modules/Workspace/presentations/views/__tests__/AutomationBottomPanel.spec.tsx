@@ -95,8 +95,8 @@ vi.mock('../AutomationView/AutomationSidebarCell', () => ({
 vi.mock('../AutomationView/AutomationControls', () => ({
     AutomationAddLaneControl: ({ params }: { params: { id: string; name: string }[] }) => (
         <div data-testid="add-lane-control">
-            {params.map((p) => (
-                <span key={p.id}>{p.name}</span>
+            {params.map((param) => (
+                <span key={param.id}>{param.name}</span>
             ))}
         </div>
     ),

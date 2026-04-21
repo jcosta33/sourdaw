@@ -67,8 +67,8 @@ export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string):
     }
 
     const handshake = createReadyHandshake({ pluginName: 'GlutenNode' });
-    node.port.onmessage = (e: MessageEvent) => {
-        handshake.onMessage(e);
+    node.port.onmessage = (event: MessageEvent) => {
+        handshake.onMessage(event);
     };
     const readyPromise = handshake.promise;
 

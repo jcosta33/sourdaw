@@ -11,25 +11,25 @@ export const chordPatterns: PatternTemplate[] = [
         tags: ['anthem', 'common'],
         description: 'The most common pop progression',
         lengthBeats: 16,
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 48, 84);
-            const o = Math.max(0, sp.indexOf(snapToScale(60, sp)) - 0);
-            const d = p.density > 5 ? 2 : 4;
-            const beats = Array.from({ length: 16 / d }, (_, i) => i * d);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 48, 84);
+            const output = Math.max(0, sp.indexOf(snapToScale(60, sp)) - 0);
+            const data = param.density > 5 ? 2 : 4;
+            const beats = Array.from({ length: 16 / data }, (_, index) => index * data);
             const degs = [
                 [0, 2, 4],
                 [4, 6, 8],
                 [5, 7, 9],
                 [3, 5, 7],
             ];
-            return beats.flatMap((b, i) =>
+            return beats.flatMap((b, index) =>
                 chordFromDegrees(
-                    p.complexity > 5 ? [...degs[i % 4]!, degs[i % 4]![0]! + 7] : degs[i % 4]!,
+                    param.complexity > 5 ? [...degs[index % 4]!, degs[index % 4]![0]! + 7] : degs[index % 4]!,
                     sp,
-                    o,
+                    output,
                     b,
-                    d,
-                    75 + p.density * 2
+                    data,
+                    75 + param.density * 2
                 )
             );
         },
@@ -42,15 +42,15 @@ export const chordPatterns: PatternTemplate[] = [
         tags: ['classic', 'smooth'],
         description: 'Classic jazz cadence',
         lengthBeats: 12,
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 48, 84);
-            const o = Math.max(0, sp.indexOf(snapToScale(60, sp)) - 0);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 48, 84);
+            const output = Math.max(0, sp.indexOf(snapToScale(60, sp)) - 0);
             return [
                 [1, 3, 5, 7],
                 [4, 6, 8, 10],
                 [0, 2, 4, 6],
-            ].flatMap((deg, i) =>
-                chordFromDegrees(p.complexity > 5 ? deg : deg.slice(0, 3), sp, o, i * 4, 4, 72 + p.density * 2)
+            ].flatMap((deg, index) =>
+                chordFromDegrees(param.complexity > 5 ? deg : deg.slice(0, 3), sp, output, index * 4, 4, 72 + param.density * 2)
             );
         },
     },
@@ -63,14 +63,14 @@ export const chordPatterns: PatternTemplate[] = [
         description: 'Classic minor progression',
         lengthBeats: 12,
         scaleOverride: 'minor',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 48, 84);
-            const o = Math.max(0, sp.indexOf(snapToScale(57, sp)) - 0);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 48, 84);
+            const output = Math.max(0, sp.indexOf(snapToScale(57, sp)) - 0);
             return [
                 [0, 2, 4],
                 [3, 5, 7],
                 [4, 6, 8],
-            ].flatMap((deg, i) => chordFromDegrees(deg, sp, o, i * 4, 4, 78));
+            ].flatMap((deg, index) => chordFromDegrees(deg, sp, output, index * 4, 4, 78));
         },
     },
     {
@@ -82,11 +82,11 @@ export const chordPatterns: PatternTemplate[] = [
         description: '12-bar blues form',
         lengthBeats: 48,
         scaleOverride: 'blues',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 48, 84);
-            const o = Math.max(0, sp.indexOf(snapToScale(60, sp)) - 0);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 48, 84);
+            const output = Math.max(0, sp.indexOf(snapToScale(60, sp)) - 0);
             const pat = [0, 0, 0, 0, 3, 3, 0, 0, 4, 3, 0, 4];
-            return pat.flatMap((root, i) => chordFromDegrees([root, root + 2, root + 4], sp, o, i * 4, 4, 78));
+            return pat.flatMap((root, index) => chordFromDegrees([root, root + 2, root + 4], sp, output, index * 4, 4, 78));
         },
     },
     {
@@ -97,15 +97,15 @@ export const chordPatterns: PatternTemplate[] = [
         tags: ['ballad', 'emotional'],
         description: 'Emotional descending progression',
         lengthBeats: 16,
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 48, 84);
-            const o = Math.max(0, sp.indexOf(snapToScale(60, sp)) - 0);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 48, 84);
+            const output = Math.max(0, sp.indexOf(snapToScale(60, sp)) - 0);
             return [
                 [5, 7, 9],
                 [3, 5, 7],
                 [0, 2, 4],
                 [4, 6, 8],
-            ].flatMap((deg, i) => chordFromDegrees(deg, sp, o, i * 4, 4, 75));
+            ].flatMap((deg, index) => chordFromDegrees(deg, sp, output, index * 4, 4, 75));
         },
     },
     {
@@ -117,15 +117,15 @@ export const chordPatterns: PatternTemplate[] = [
         description: 'Spanish cadence i–VII–VI–V',
         lengthBeats: 16,
         scaleOverride: 'harmonic-minor',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 48, 84);
-            const o = Math.max(0, sp.indexOf(snapToScale(57, sp)) - 0);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 48, 84);
+            const output = Math.max(0, sp.indexOf(snapToScale(57, sp)) - 0);
             return [
                 [0, 2, 4],
                 [6, 8, 10],
                 [5, 7, 9],
                 [4, 6, 8],
-            ].flatMap((deg, i) => chordFromDegrees(deg, sp, o, i * 4, 4, 80));
+            ].flatMap((deg, index) => chordFromDegrees(deg, sp, output, index * 4, 4, 80));
         },
     },
     {
@@ -137,13 +137,13 @@ export const chordPatterns: PatternTemplate[] = [
         description: 'Two-chord dorian groove',
         lengthBeats: 8,
         scaleOverride: 'dorian',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 48, 84);
-            const o = Math.max(0, sp.indexOf(snapToScale(62, sp)) - 0);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 48, 84);
+            const output = Math.max(0, sp.indexOf(snapToScale(62, sp)) - 0);
             return [
                 [0, 2, 4, 6],
                 [5, 7, 9, 11],
-            ].flatMap((deg, i) => chordFromDegrees(p.complexity > 5 ? deg : deg.slice(0, 3), sp, o, i * 4, 4, 78));
+            ].flatMap((deg, index) => chordFromDegrees(param.complexity > 5 ? deg : deg.slice(0, 3), sp, output, index * 4, 4, 78));
         },
     },
     {
@@ -155,13 +155,13 @@ export const chordPatterns: PatternTemplate[] = [
         description: 'Big EDM chord stabs',
         lengthBeats: 16,
         scaleOverride: 'minor',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 36, 84);
-            const o = Math.max(0, sp.indexOf(snapToScale(45, sp)) - 0);
-            return [0, 3, 5, 4].flatMap((root, i) => {
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 36, 84);
+            const output = Math.max(0, sp.indexOf(snapToScale(45, sp)) - 0);
+            return [0, 3, 5, 4].flatMap((root, index) => {
                 const deg = [root, root + 2, root + 4];
-                const b = i * 4;
-                return [...chordFromDegrees(deg, sp, o, b, 2, 100), ...chordFromDegrees(deg, sp, o, b + 2, 2, 90)];
+                const b = index * 4;
+                return [...chordFromDegrees(deg, sp, output, b, 2, 100), ...chordFromDegrees(deg, sp, output, b + 2, 2, 90)];
             });
         },
     },
@@ -173,14 +173,14 @@ export const chordPatterns: PatternTemplate[] = [
         tags: ['worship', 'uplifting'],
         description: 'Gospel praise progression',
         lengthBeats: 12,
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 48, 84);
-            const o = Math.max(0, sp.indexOf(snapToScale(60, sp)) - 0);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 48, 84);
+            const output = Math.max(0, sp.indexOf(snapToScale(60, sp)) - 0);
             return [
                 [3, 5, 7, 9],
                 [5, 7, 9, 11],
                 [2, 4, 6, 8],
-            ].flatMap((deg, i) => chordFromDegrees(p.complexity > 5 ? deg : deg.slice(0, 3), sp, o, i * 4, 4, 82));
+            ].flatMap((deg, index) => chordFromDegrees(param.complexity > 5 ? deg : deg.slice(0, 3), sp, output, index * 4, 4, 82));
         },
     },
     {
@@ -192,10 +192,10 @@ export const chordPatterns: PatternTemplate[] = [
         description: 'Dark minor trap chords',
         lengthBeats: 16,
         scaleOverride: 'minor',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 36, 84);
-            const o = Math.max(0, sp.indexOf(snapToScale(48, sp)) - 0);
-            return [0, 6, 5, 4].flatMap((root, i) => chordFromDegrees([root, root + 2, root + 4], sp, o, i * 4, 4, 85));
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 36, 84);
+            const output = Math.max(0, sp.indexOf(snapToScale(48, sp)) - 0);
+            return [0, 6, 5, 4].flatMap((root, index) => chordFromDegrees([root, root + 2, root + 4], sp, output, index * 4, 4, 85));
         },
     },
     {
@@ -207,15 +207,15 @@ export const chordPatterns: PatternTemplate[] = [
         description: 'Atmospheric synth pads',
         lengthBeats: 16,
         scaleOverride: 'minor',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 48, 84);
-            const o = Math.max(0, sp.indexOf(snapToScale(57, sp)) - 0);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 48, 84);
+            const output = Math.max(0, sp.indexOf(snapToScale(57, sp)) - 0);
             return [
                 [0, 2, 4, 7],
                 [3, 5, 7, 10],
                 [4, 6, 8, 11],
                 [2, 4, 6, 9],
-            ].flatMap((deg, i) => chordFromDegrees(deg, sp, o, i * 4, 4, 68));
+            ].flatMap((deg, index) => chordFromDegrees(deg, sp, output, index * 4, 4, 68));
         },
     },
     {
@@ -226,15 +226,15 @@ export const chordPatterns: PatternTemplate[] = [
         tags: ['offbeat', 'island'],
         description: 'Offbeat reggae chords',
         lengthBeats: 8,
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 60, 84);
-            const o = 0;
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 60, 84);
+            const output = 0;
             return [
                 [0, 2, 4],
                 [4, 6, 8],
                 [5, 7, 9],
                 [3, 5, 7],
-            ].flatMap((deg, i) => chordFromDegrees(deg, sp, o, i * 2 + 0.5, 0.5, 75));
+            ].flatMap((deg, index) => chordFromDegrees(deg, sp, output, index * 2 + 0.5, 0.5, 75));
         },
     },
     {
@@ -245,15 +245,15 @@ export const chordPatterns: PatternTemplate[] = [
         tags: ['simple', 'classic'],
         description: 'Simple three-chord country',
         lengthBeats: 16,
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 48, 84);
-            const o = Math.max(0, sp.indexOf(snapToScale(55, sp)) - 0);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 48, 84);
+            const output = Math.max(0, sp.indexOf(snapToScale(55, sp)) - 0);
             return [
                 [0, 2, 4],
                 [0, 2, 4],
                 [3, 5, 7],
                 [4, 6, 8],
-            ].flatMap((deg, i) => chordFromDegrees(deg, sp, o, i * 4, 4, 80));
+            ].flatMap((deg, index) => chordFromDegrees(deg, sp, output, index * 4, 4, 80));
         },
     },
     {
@@ -264,18 +264,18 @@ export const chordPatterns: PatternTemplate[] = [
         tags: ['danceable', 'retro'],
         description: 'Rhythmic disco chords',
         lengthBeats: 8,
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 60, 84);
-            const o = 0;
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 60, 84);
+            const output = 0;
             const notes: PatternNote[] = [];
-            for (const [i, deg] of [
+            for (const [index, deg] of [
                 [0, 2, 4],
                 [5, 7, 9],
                 [3, 5, 7],
                 [4, 6, 8],
             ].entries()) {
-                notes.push(...chordFromDegrees(deg, sp, o, i * 2, 1, 80));
-                notes.push(...chordFromDegrees(deg, sp, o, i * 2 + 1, 0.5, 65));
+                notes.push(...chordFromDegrees(deg, sp, output, index * 2, 1, 80));
+                notes.push(...chordFromDegrees(deg, sp, output, index * 2 + 1, 0.5, 65));
             }
             return notes;
         },
@@ -289,16 +289,16 @@ export const chordPatterns: PatternTemplate[] = [
         description: 'Quick synth stabs',
         lengthBeats: 8,
         scaleOverride: 'minor',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 60, 84);
-            const o = 0;
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 60, 84);
+            const output = 0;
             return [
                 [0, 2, 4],
                 [3, 5, 7],
                 [4, 6, 8],
-            ].flatMap((deg, i) => [
-                ...chordFromDegrees(deg, sp, o, i * 2.5, 0.25, 100),
-                ...chordFromDegrees(deg, sp, o, i * 2.5 + 1.5, 0.25, 85),
+            ].flatMap((deg, index) => [
+                ...chordFromDegrees(deg, sp, output, index * 2.5, 0.25, 100),
+                ...chordFromDegrees(deg, sp, output, index * 2.5 + 1.5, 0.25, 85),
             ]);
         },
     },

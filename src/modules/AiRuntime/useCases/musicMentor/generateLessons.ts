@@ -64,8 +64,8 @@ export function generateMentorLessons(): MentorLesson[] {
     const lessons: MentorLesson[] = [];
 
     // ── Gain Staging
-    const gains = tracks.filter((t) => t.kind !== 'folder').map((t) => t.gain ?? 0);
-    const avgGain = gains.length > 0 ? gains.reduce((a, b) => a + b, 0) / gains.length : 0;
+    const gains = tracks.filter((time) => time.kind !== 'folder').map((time) => time.gain ?? 0);
+    const avgGain = gains.length > 0 ? gains.reduce((alpha, b) => alpha + b, 0) / gains.length : 0;
     const maxGain = gains.length > 0 ? Math.max(...gains) : 0;
 
     if (maxGain > 0) {
@@ -73,7 +73,7 @@ export function generateMentorLessons(): MentorLesson[] {
             createLesson(
                 'gain-staging',
                 'Hot Signal Levels',
-                `Track "${tracks.find((t) => t.gain === maxGain)?.name}" has gain at +${maxGain.toFixed(1)} dB.`,
+                `Track "${tracks.find((time) => time.gain === maxGain)?.name}" has gain at +${maxGain.toFixed(1)} dB.`,
                 'Positive gain at the track level reduces your headroom and can cause digital clipping at the master bus. Professional mixes typically keep individual tracks well below 0 dBFS to leave room for the sum of all tracks.',
                 'Try reducing all track faders by 6–12 dB and adjusting the master bus to compensate. This gives you much more control over the final mix.',
                 'beginner',
@@ -99,8 +99,8 @@ export function generateMentorLessons(): MentorLesson[] {
     }
 
     // ── Panning / Stereo Field
-    const pans = tracks.filter((t) => t.kind !== 'folder' && !t.muted).map((t) => t.pan ?? 0);
-    const centerTracks = pans.filter((p) => Math.abs(p) < 0.1).length;
+    const pans = tracks.filter((time) => time.kind !== 'folder' && !time.muted).map((time) => time.pan ?? 0);
+    const centerTracks = pans.filter((param) => Math.abs(param) < 0.1).length;
     const totalActive = pans.length || 1;
 
     if (centerTracks / totalActive > 0.7 && totalActive > 3) {
@@ -119,7 +119,7 @@ export function generateMentorLessons(): MentorLesson[] {
     }
 
     // ── Track Count / Arrangement
-    const trackCount = tracks.filter((t) => t.kind !== 'folder').length;
+    const trackCount = tracks.filter((time) => time.kind !== 'folder').length;
 
     if (trackCount > 30) {
         lessons.push(
@@ -152,7 +152,7 @@ export function generateMentorLessons(): MentorLesson[] {
     }
 
     // ── Solo/Mute Hygiene
-    const soloedTracks = tracks.filter((t) => t.soloed).length;
+    const soloedTracks = tracks.filter((time) => time.soloed).length;
     if (soloedTracks > 0) {
         lessons.push(
             createLesson(
@@ -215,5 +215,5 @@ export function generateMentorLessons(): MentorLesson[] {
         );
     }
 
-    return lessons.sort((a, b) => b.relevance - a.relevance);
+    return lessons.sort((alpha, b) => b.relevance - alpha.relevance);
 }

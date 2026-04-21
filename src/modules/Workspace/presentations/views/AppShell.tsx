@@ -67,14 +67,14 @@ import { StatusBar } from './StatusBar';
 import { TransportBar } from './TransportBar';
 
 const CollaborationPanelLazy = lazy(() =>
-    import('#/modules/Collaboration/presentations/views').then((m) => ({
-        default: m.CollaborationPanel,
+    import('#/modules/Collaboration/presentations/views').then((message) => ({
+        default: message.CollaborationPanel,
     }))
 );
 
 const BranchManagerDialogLazy = lazy(() =>
-    import('#/modules/CrdtDocument/presentations/views').then((m) => ({
-        default: m.BranchManagerDialog,
+    import('#/modules/CrdtDocument/presentations/views').then((message) => ({
+        default: message.BranchManagerDialog,
     }))
 );
 
@@ -271,10 +271,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             <GenerativeAiPanel />
         </div>
     );
-    const onSidebarResize = (d: number): void => setSidebarWidth((w) => clamp(w + d, 180, 500));
-    const onInspectorResize = (d: number): void => setInspectorWidth((w) => clamp(w + d, 200, 500));
-    const onChatResize = (d: number): void => setChatWidth((w) => clamp(w + d, 200, 600));
-    const onAiResize = (d: number): void => setAiWidth((w) => clamp(w + d, 200, 500));
+    const onSidebarResize = (data: number): void => setSidebarWidth((w) => clamp(w + data, 180, 500));
+    const onInspectorResize = (data: number): void => setInspectorWidth((w) => clamp(w + data, 200, 500));
+    const onChatResize = (data: number): void => setChatWidth((w) => clamp(w + data, 200, 600));
+    const onAiResize = (data: number): void => setAiWidth((w) => clamp(w + data, 200, 500));
 
     // ─── Launch screen overlay state ───────────────────────────────────────
     // We start hidden (loading:true is the default). Two effects manage transitions:
@@ -292,11 +292,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     useEffect(() => {
         if (project.initialized && !project.loading && showLaunch && !launchExiting) {
             setLaunchExiting(true);
-            const t = setTimeout(() => {
+            const time = setTimeout(() => {
                 setShowLaunch(false);
                 setLaunchExiting(false);
             }, 700);
-            return () => clearTimeout(t);
+            return () => clearTimeout(time);
         }
         return undefined;
     }, [project.initialized, project.loading, showLaunch, launchExiting]);
@@ -507,7 +507,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             <>
                                 <DragResizeHandle
                                     side="top"
-                                    onResize={(d) => setMixerHeight((h) => Math.max(120, h + d))}
+                                    onResize={(data) => setMixerHeight((h) => Math.max(120, h + data))}
                                 />
                                 <div
                                     className="contain-strict flex flex-col bg-surface-base overflow-hidden shrink-0"
@@ -614,8 +614,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             <>
                                 <DragResizeHandle
                                     side="top"
-                                    onResize={(d) => {
-                                        const next = Math.max(80, Math.min(400, (virtualKeyboardHeight ?? 160) + d));
+                                    onResize={(data) => {
+                                        const next = Math.max(80, Math.min(400, (virtualKeyboardHeight ?? 160) + data));
                                         updateWorkspaceState({ virtualKeyboardHeight: next });
                                     }}
                                 />

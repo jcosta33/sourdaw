@@ -58,7 +58,7 @@ describe('updateNotesForClip', () => {
     });
 
     it('should apply the updater and write back notes for the clip', () => {
-        updateNotesForClip('c1', (notes) => notes.map((n) => ({ ...n, velocity: 50 })));
+        updateNotesForClip('c1', (notes) => notes.map((node) => ({ ...node, velocity: 50 })));
 
         expect(mocks.midiStoreSet).toHaveBeenCalledWith(
             expect.objectContaining({

@@ -86,10 +86,10 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         refreshWarp();
     };
 
-    const handleDrop = async (e: DragEvent<HTMLDivElement>) => {
-        e.preventDefault();
+    const handleDrop = async (event: DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
         setIsDragging(false);
-        const file = e.dataTransfer.files[0];
+        const file = event.dataTransfer.files[0];
         if (!file || !file.type.startsWith('audio/')) {
             return;
         }
@@ -97,7 +97,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         try {
             const { id: bufferId } = await decodeAudioFile(file);
             replaceClipAudioBuffer(clipId, bufferId);
-            setBufferVersion((v) => v + 1);
+            setBufferVersion((value) => value + 1);
         } catch {
             notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
         }
@@ -137,29 +137,29 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
 
         const peaks = audioBufferCache.getWaveformPeaks(clipId, Math.floor(width));
 
-        const hasRealData = peaks.some((v) => v > 0);
+        const hasRealData = peaks.some((value) => value > 0);
 
         if (hasRealData) {
             ctx.fillStyle = 'rgba(90, 150, 115, 0.5)';
             ctx.beginPath();
             ctx.moveTo(0, midY);
-            for (let i = 0; i < peaks.length; i++) {
-                ctx.lineTo(i, midY - peaks[i]! * midY * 0.9);
+            for (let index = 0; index < peaks.length; index++) {
+                ctx.lineTo(index, midY - peaks[index]! * midY * 0.9);
             }
             ctx.lineTo(peaks.length - 1, midY);
-            for (let i = peaks.length - 1; i >= 0; i--) {
-                ctx.lineTo(i, midY + peaks[i]! * midY * 0.9);
+            for (let index = peaks.length - 1; index >= 0; index--) {
+                ctx.lineTo(index, midY + peaks[index]! * midY * 0.9);
             }
             ctx.closePath();
             ctx.fill();
         } else {
             ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
             const numBars = Math.floor(width / 3);
-            for (let i = 0; i < numBars; i++) {
-                const t = i / numBars;
-                const amp = Math.abs(Math.sin(t * Math.PI * 8) * Math.cos(t * Math.PI * 3)) * 0.6 + 0.05;
+            for (let index = 0; index < numBars; index++) {
+                const time = index / numBars;
+                const amp = Math.abs(Math.sin(time * Math.PI * 8) * Math.cos(time * Math.PI * 3)) * 0.6 + 0.05;
                 const barH = amp * height * 0.4;
-                ctx.fillRect(i * 3, midY - barH, 2, barH * 2);
+                ctx.fillRect(index * 3, midY - barH, 2, barH * 2);
             }
             ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
             ctx.font = '11px system-ui, sans-serif';
@@ -220,17 +220,17 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         return () => observer.disconnect();
     }, [draw]);
 
-    const getCanvasX = (e: { clientX: number }): number => {
+    const getCanvasX = (event: { clientX: number }): number => {
         const canvas = canvasRef.current;
         if (!canvas) {
             return 0;
         }
         const rect = canvas.getBoundingClientRect();
-        return e.clientX - rect.left + (containerRef.current?.scrollLeft ?? 0);
+        return event.clientX - rect.left + (containerRef.current?.scrollLeft ?? 0);
     };
 
     const hitTestMarker = (x: number) =>
-        warpState.markers.find((m) => Math.abs(m.warpedBeat * beatWidth - x) < 8) ?? null;
+        warpState.markers.find((message) => Math.abs(message.warpedBeat * beatWidth - x) < 8) ?? null;
 
     const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
         if (!warpState.enabled) {
@@ -266,7 +266,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         draggingMarker.current = null;
     };
 
-    const handleDoubleClick = (e: MouseEvent<HTMLCanvasElement>) => {
+    const handleDoubleClick = (event: MouseEvent<HTMLCanvasElement>) => {
         if (!warpState.enabled || didDrag.current) {
             return;
         }
@@ -274,7 +274,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         if (!canvas) {
             return;
         }
-        const x = getCanvasX(e);
+        const x = getCanvasX(event);
         const beat = x / beatWidth;
         const hitMarker = hitTestMarker(x);
         if (hitMarker) {
@@ -285,22 +285,22 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         refreshWarp();
     };
 
-    const handleWaveContextMenu = (e: MouseEvent<HTMLCanvasElement>) => {
-        e.preventDefault();
-        setWaveCtxMenu({ x: e.clientX, y: e.clientY });
+    const handleWaveContextMenu = (event: MouseEvent<HTMLCanvasElement>) => {
+        event.preventDefault();
+        setWaveCtxMenu({ x: event.clientX, y: event.clientY });
     };
 
     useEffect(() => {
         if (!waveCtxMenu) {
             return undefined;
         }
-        const dismiss = (e: globalThis.MouseEvent) => {
-            if (waveCtxRef.current && !waveCtxRef.current.contains(e.target as Node)) {
+        const dismiss = (event: globalThis.MouseEvent) => {
+            if (waveCtxRef.current && !waveCtxRef.current.contains(event.target as Node)) {
                 setWaveCtxMenu(null);
             }
         };
-        const esc = (e: globalThis.KeyboardEvent) => {
-            if (e.key === 'Escape') {
+        const esc = (event: globalThis.KeyboardEvent) => {
+            if (event.key === 'Escape') {
                 setWaveCtxMenu(null);
             }
         };
@@ -318,7 +318,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
     };
 
     const realClipId =
-        trackState.tracks.flatMap((t) => t.clips).find((c) => c.audioBufferId === clipId || c.id === clipId)?.id ??
+        trackState.tracks.flatMap((time) => time.clips).find((context) => context.audioBufferId === clipId || context.id === clipId)?.id ??
         clipId;
 
     return (
@@ -327,9 +327,9 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                 <span className="text-[10px] text-muted-foreground">Zoom:</span>
                 <Slider
                     value={[zoom * 100]}
-                    onValueChange={([v]) => {
-                        if (v !== undefined) {
-                            setZoom(v / 100);
+                    onValueChange={([value]) => {
+                        if (value !== undefined) {
+                            setZoom(value / 100);
                         }
                     }}
                     min={25}
@@ -387,8 +387,8 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
             <div
                 ref={containerRef}
                 className={cn('flex-1 overflow-auto relative', isDragging && 'ring-2 ring-primary ring-inset')}
-                onDragOver={(e) => {
-                    e.preventDefault();
+                onDragOver={(event) => {
+                    event.preventDefault();
                     setIsDragging(true);
                 }}
                 onDragLeave={() => setIsDragging(false)}
@@ -412,7 +412,6 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
 
                 <PitchEditor clipId={clipId} />
             </div>
-
             {waveCtxMenu ? (
                 <div
                     ref={waveCtxRef}
@@ -475,7 +474,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                         className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-[var(--color-accent-lavender)] hover:bg-accent"
                         role="menuitem"
                         onClick={waveAct(() => {
-                            const track = trackState.tracks.find((t) => t.clips.some((c) => c.id === clipId));
+                            const track = trackState.tracks.find((time) => time.clips.some((context) => context.id === clipId));
                             if (track) {
                                 audioToMidi({ clipId, trackId: track.id });
                             }

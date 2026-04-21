@@ -28,8 +28,8 @@ export function getTimeSignatureAtBeat(
         return { numerator: defaultNumerator, denominator: defaultDenominator };
     }
 
-    const sorted = [...changes].sort((a, b) => a.beat - b.beat);
-    const before = sorted.filter((c) => c.beat <= beat);
+    const sorted = [...changes].sort((alpha, b) => alpha.beat - b.beat);
+    const before = sorted.filter((context) => context.beat <= beat);
 
     if (before.length === 0) {
         return { numerator: defaultNumerator, denominator: defaultDenominator };
@@ -45,7 +45,7 @@ export function getBarBeatAtPosition(
     defaultNumerator: number,
     defaultDenominator: number
 ): { bar: number; beat: number; tick: number } {
-    const sorted = [...changes].sort((a, b) => a.beat - b.beat);
+    const sorted = [...changes].sort((alpha, b) => alpha.beat - b.beat);
     let bar = 1;
     let currentBeat = 0;
     let currentNumerator = defaultNumerator;

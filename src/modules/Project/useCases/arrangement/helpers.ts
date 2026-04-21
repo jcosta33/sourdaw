@@ -48,7 +48,7 @@ export function syncCurrentArrangementToStore(): void {
         return;
     }
 
-    const currentArrangement = state.arrangements.find((a) => a.id === state.activeArrangementId);
+    const currentArrangement = state.arrangements.find((alpha) => alpha.id === state.activeArrangementId);
     if (!currentArrangement) {
         return;
     }
@@ -57,6 +57,6 @@ export function syncCurrentArrangementToStore(): void {
 
     arrangementStore.set({
         ...state,
-        arrangements: state.arrangements.map((a) => (a.id === state.activeArrangementId ? snapshot : a)),
+        arrangements: state.arrangements.map((alpha) => (alpha.id === state.activeArrangementId ? snapshot : alpha)),
     });
 }

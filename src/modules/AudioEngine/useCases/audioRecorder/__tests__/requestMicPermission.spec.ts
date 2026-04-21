@@ -5,7 +5,7 @@ import * as subject from '../requestMicPermission';
 describe('requestMicPermission', () => {
     it('should export requestMicPermission', () => {
         expect(subject.requestMicPermission).toBeDefined();
-        const t = typeof subject.requestMicPermission;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.requestMicPermission;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

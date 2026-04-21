@@ -119,7 +119,7 @@ export class PermissionManager {
         if (data.type === 'role.grant') {
             // Only accept grants from a peer the store recognises as the host.
             const state = collaborationStore.value;
-            const senderIsHost = state?.peers.find((p) => p.id === peerId && p.isHost);
+            const senderIsHost = state?.peers.find((param) => param.id === peerId && param.isHost);
             if (!senderIsHost) {
                 return;
             }

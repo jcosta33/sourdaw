@@ -70,14 +70,14 @@ export const RecentProjectsMenu = (): ReactElement => {
             return undefined;
         }
 
-        const handleClickOutside = (e: MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
                 setOpen(false);
             }
         };
 
-        const handleEscape = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
+        const handleEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
                 setOpen(false);
             }
         };
@@ -134,8 +134,8 @@ export const RecentProjectsMenu = (): ReactElement => {
         setOpen(false);
     };
 
-    const handleRemove = (key: string, e: React.MouseEvent) => {
-        e.stopPropagation();
+    const handleRemove = (key: string, event: React.MouseEvent) => {
+        event.stopPropagation();
         removeFromRecentProjects(key);
         setEntries(getRecentProjects());
     };
@@ -158,7 +158,6 @@ export const RecentProjectsMenu = (): ReactElement => {
                 </TooltipTrigger>
                 <TooltipContent>Project menu</TooltipContent>
             </Tooltip>
-
             {open ? (
                 <div
                     className="absolute top-full left-0 mt-1 z-50 w-64 rounded-md border border-border bg-surface-overlay shadow-lg py-1"
@@ -268,9 +267,9 @@ export const RecentProjectsMenu = (): ReactElement => {
                             role="menuitem"
                             tabIndex={0}
                             onClick={() => handleLoad(entry)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault();
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault();
                                     handleLoad(entry);
                                 }
                             }}
@@ -286,7 +285,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                                 type="button"
                                 className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/20 transition-all"
                                 aria-label={`Remove ${entry.name} from recent projects`}
-                                onClick={(e) => handleRemove(entry.key, e)}
+                                onClick={(event) => handleRemove(entry.key, event)}
                             >
                                 <Trash2
                                     className="size-3 text-muted-foreground hover:text-destructive"
@@ -297,7 +296,6 @@ export const RecentProjectsMenu = (): ReactElement => {
                     ))}
                 </div>
             ) : null}
-
             <TemplateChooser
                 open={templateChooserOpen}
                 initialCategory={templateChooserCategory}

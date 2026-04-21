@@ -30,9 +30,9 @@ describe('moveNode', () => {
 
     it('should update x and y for the matching node', () => {
         moveNode('only', 12.5, -4);
-        const n = nodeViewStore.value?.nodes[0];
-        expect(n?.x).toBe(12.5);
-        expect(n?.y).toBe(-4);
+        const node1 = nodeViewStore.value?.nodes[0];
+        expect(node1?.x).toBe(12.5);
+        expect(node1?.y).toBe(-4);
     });
 
     it('should not mutate when node view store is null', () => {

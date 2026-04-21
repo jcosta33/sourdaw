@@ -92,6 +92,6 @@ export class GrooveModule extends BaseMidiProcessor {
     }
 
     static getTemplateNames(): string[] {
-        return GROOVE_TEMPLATES.map((t) => t.name);
+        return GROOVE_TEMPLATES.map((time) => time.name);
     }
 }

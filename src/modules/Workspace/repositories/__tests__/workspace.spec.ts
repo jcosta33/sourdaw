@@ -10,8 +10,8 @@ vi.mock('../../stores/workspaceStore', () => {
             get value() {
                 return internal.value;
             },
-            set: vi.fn((v) => {
-                internal.value = v;
+            set: vi.fn((value) => {
+                internal.value = value;
             }),
         },
     };

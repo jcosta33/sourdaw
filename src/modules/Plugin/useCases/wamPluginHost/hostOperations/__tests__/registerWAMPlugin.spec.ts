@@ -5,7 +5,7 @@ import * as subject from '../registerWAMPlugin';
 describe('registerWAMPlugin', () => {
     it('should export registerWAMPlugin', () => {
         expect(subject.registerWAMPlugin).toBeDefined();
-        const t = typeof subject.registerWAMPlugin;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.registerWAMPlugin;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

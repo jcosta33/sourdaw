@@ -48,8 +48,8 @@ export const AiChangeToast = (): ReactElement | null => {
                     <p className="text-xs font-medium text-foreground">{latest.summary}</p>
                     {latest.details.length > 0 ? (
                         <div className="mt-1 space-y-0.5">
-                            {latest.details.map((detail, i) => (
-                                <p key={i} className="text-[10px] text-muted-foreground">
+                            {latest.details.map((detail, index) => (
+                                <p key={index} className="text-[10px] text-muted-foreground">
                                     {detail}
                                 </p>
                             ))}

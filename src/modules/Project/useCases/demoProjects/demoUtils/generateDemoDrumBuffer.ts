@@ -11,8 +11,8 @@ export function createNoiseBurst(
     const noise = ctx.createBufferSource();
     const noiseBuf = ctx.createBuffer(1, Math.ceil(duration * 44100), 44100);
     const data = noiseBuf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-        data[i] = Math.random() * 2 - 1;
+    for (let index = 0; index < data.length; index++) {
+        data[index] = Math.random() * 2 - 1;
     }
     noise.buffer = noiseBuf;
     const env = ctx.createGain();

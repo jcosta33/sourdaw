@@ -12,7 +12,7 @@ const VALUE_RANGES: Record<MidiMappingTargetType, { min: number; max: number }> 
 
 export const completeMidiLearn = inject({ logger })(
     ({ logger }) =>
-        function completeMidiLearn(channel: number, cc: number): void {
+        (function completeMidiLearn(channel: number, cc: number): void {
             const state = midiLearnStore.value;
             if (!state || !state.isLearning || !state.learningTarget) {
                 return;
@@ -21,7 +21,7 @@ export const completeMidiLearn = inject({ logger })(
             const target = state.learningTarget;
             const defaults = VALUE_RANGES[target.targetType];
 
-            const existingIndex = state.mappings.findIndex((m) => m.channel === channel && m.cc === cc);
+            const existingIndex = state.mappings.findIndex((message) => message.channel === channel && message.cc === cc);
 
             const mapping: MidiMapping = {
                 id: `midi-map-${crypto.randomUUID()}`,
@@ -50,5 +50,5 @@ export const completeMidiLearn = inject({ logger })(
                 isLearning: false,
                 learningTarget: null,
             });
-        }
+        })
 );

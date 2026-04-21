@@ -5,7 +5,7 @@ import * as subject from '../getMasterPeakLevel';
 describe('getMasterPeakLevel', () => {
     it('should export getMasterPeakLevel', () => {
         expect(subject.getMasterPeakLevel).toBeDefined();
-        const t = typeof subject.getMasterPeakLevel;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getMasterPeakLevel;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

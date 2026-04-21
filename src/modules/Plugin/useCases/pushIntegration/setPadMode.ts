@@ -17,6 +17,6 @@ export function setPadMode(mode: PushPadMode): void {
     pushStore.set({
         ...state,
         padMode: mode,
-        pads: state.pads.map((p) => ({ ...p, color })),
+        pads: state.pads.map((param) => ({ ...param, color })),
     });
 }

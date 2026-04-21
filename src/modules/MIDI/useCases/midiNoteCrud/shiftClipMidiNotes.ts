@@ -17,13 +17,13 @@ export function shiftClipMidiNotes(clipId: string, beatDelta: number): void {
     midiStore.set({
         ...state,
         notesByClipId: notes
-            ? { ...state.notesByClipId, [clipId]: notes.map((n) => ({ ...n, startBeat: n.startBeat + beatDelta })) }
+            ? { ...state.notesByClipId, [clipId]: notes.map((node) => ({ ...node, startBeat: node.startBeat + beatDelta })) }
             : state.notesByClipId,
         ccByClipId: ccs
-            ? { ...state.ccByClipId, [clipId]: ccs.map((c) => ({ ...c, beat: c.beat + beatDelta })) }
+            ? { ...state.ccByClipId, [clipId]: ccs.map((context) => ({ ...context, beat: context.beat + beatDelta })) }
             : state.ccByClipId,
         pitchBendByClipId: pbs
-            ? { ...state.pitchBendByClipId, [clipId]: pbs.map((p) => ({ ...p, beat: p.beat + beatDelta })) }
+            ? { ...state.pitchBendByClipId, [clipId]: pbs.map((param) => ({ ...param, beat: param.beat + beatDelta })) }
             : state.pitchBendByClipId,
     });
 }

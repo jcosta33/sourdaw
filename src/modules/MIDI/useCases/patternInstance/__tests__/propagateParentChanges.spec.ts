@@ -5,7 +5,7 @@ import * as subject from '../propagateParentChanges';
 describe('propagateParentChanges', () => {
     it('should export propagateParentChanges', () => {
         expect(subject.propagateParentChanges).toBeDefined();
-        const t = typeof subject.propagateParentChanges;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.propagateParentChanges;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

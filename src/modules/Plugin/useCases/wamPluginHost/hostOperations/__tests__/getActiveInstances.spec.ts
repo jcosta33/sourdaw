@@ -30,10 +30,10 @@ describe('getActiveInstances', () => {
 
     it('should return a shallow copy of the instances map', () => {
         instances.set('a', mockInstance('g1'));
-        const a = getActiveInstances();
+        const alpha = getActiveInstances();
         const b = getActiveInstances();
-        expect(a).not.toBe(b);
-        expect(a.get('a')?.groupId).toBe('g1');
+        expect(alpha).not.toBe(b);
+        expect(alpha.get('a')?.groupId).toBe('g1');
     });
 
     it('should reflect mutations to the backing map', () => {

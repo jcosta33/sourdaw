@@ -9,8 +9,8 @@
 
 let timerId: ReturnType<typeof setInterval> | null = null;
 
-self.onmessage = (e: MessageEvent) => {
-    const msg = e.data;
+self.onmessage = (event: MessageEvent) => {
+    const msg = event.data;
 
     if (msg.type === 'start') {
         const intervalMs = typeof msg.interval === 'number' && msg.interval > 0 ? msg.interval : 10;

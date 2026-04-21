@@ -5,7 +5,7 @@ import * as subject from '../quantizeAutomationBeats';
 describe('quantizeAutomationBeats', () => {
     it('should export quantizeAutomationBeats', () => {
         expect(subject.quantizeAutomationBeats).toBeDefined();
-        const t = typeof subject.quantizeAutomationBeats;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.quantizeAutomationBeats;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

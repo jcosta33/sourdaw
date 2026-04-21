@@ -19,12 +19,12 @@ function generateDefaultFrames(): Float32Array[] {
     const frameCount = 16;
     const samplesPerFrame = 128;
     const frames: Float32Array[] = [];
-    for (let f = 0; f < frameCount; f++) {
+    for (let freq = 0; freq < frameCount; freq++) {
         const frame = new Float32Array(samplesPerFrame);
-        const morph = f / (frameCount - 1);
-        for (let i = 0; i < samplesPerFrame; i++) {
-            const t = (i / samplesPerFrame) * Math.PI * 2;
-            frame[i] = Math.sin(t) * (1 - morph) + ((t % (Math.PI * 2)) / Math.PI - 1) * morph;
+        const morph = freq / (frameCount - 1);
+        for (let index = 0; index < samplesPerFrame; index++) {
+            const time = (index / samplesPerFrame) * Math.PI * 2;
+            frame[index] = Math.sin(time) * (1 - morph) + ((time % (Math.PI * 2)) / Math.PI - 1) * morph;
         }
         frames.push(frame);
     }
@@ -58,18 +58,18 @@ export const Wavetable3D = ({
         const depthStep = (height * 0.5) / frameCount;
         const xShift = (width * 0.15) / frameCount;
 
-        for (let f = frameCount - 1; f >= 0; f--) {
-            const frame = frames[f]!;
-            const yBase = height * 0.7 - f * depthStep;
-            const xOffset = f * xShift;
-            const alpha = 0.3 + 0.7 * (f / frameCount);
+        for (let freq = frameCount - 1; freq >= 0; freq--) {
+            const frame = frames[freq]!;
+            const yBase = height * 0.7 - freq * depthStep;
+            const xOffset = freq * xShift;
+            const alpha = 0.3 + 0.7 * (freq / frameCount);
             const waveWidth = width * 0.7;
 
             ctx.beginPath();
-            for (let i = 0; i < frame.length; i++) {
-                const x = xOffset + (i / frame.length) * waveWidth;
-                const y = yBase - frame[i]! * depthStep * 2;
-                if (i === 0) {
+            for (let index = 0; index < frame.length; index++) {
+                const x = xOffset + (index / frame.length) * waveWidth;
+                const y = yBase - frame[index]! * depthStep * 2;
+                if (index === 0) {
                     ctx.moveTo(x, y);
                 } else {
                     ctx.lineTo(x, y);

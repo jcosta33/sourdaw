@@ -5,7 +5,7 @@ import * as subject from '../getVersionCount';
 describe('getVersionCount', () => {
     it('should export getVersionCount', () => {
         expect(subject.getVersionCount).toBeDefined();
-        const t = typeof subject.getVersionCount;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getVersionCount;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

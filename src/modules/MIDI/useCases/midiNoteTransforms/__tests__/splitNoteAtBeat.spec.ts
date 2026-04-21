@@ -32,8 +32,8 @@ describe('splitNoteAtBeat', () => {
         const notes = midiStore.value?.notesByClipId.clip1;
         expect(notes?.length).toBe(2);
 
-        const left = notes?.find((n) => n.startBeat === 0);
-        const right = notes?.find((n) => n.startBeat === 2);
+        const left = notes?.find((node) => node.startBeat === 0);
+        const right = notes?.find((node) => node.startBeat === 2);
 
         expect(left?.duration).toBe(2);
         expect(right?.duration).toBe(2);
@@ -63,6 +63,6 @@ describe('splitNoteAtBeat', () => {
         splitNoteAtBeat('clip1', ['a'], 2);
         const notes = midiStore.value?.notesByClipId.clip1;
         expect(notes?.length).toBe(3);
-        expect(notes?.some((n) => n.id === 'b' && n.duration === 4)).toBe(true);
+        expect(notes?.some((node) => node.id === 'b' && node.duration === 4)).toBe(true);
     });
 });

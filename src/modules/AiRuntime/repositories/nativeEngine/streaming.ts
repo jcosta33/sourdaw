@@ -32,8 +32,8 @@ export async function streamNativeCompletion(
             }
         };
 
-        const systemPrompt = messages.find((m) => m.role === 'system')?.content ?? '';
-        const nonSystemMessages = messages.filter((m) => m.role !== 'system');
+        const systemPrompt = messages.find((message) => message.role === 'system')?.content ?? '';
+        const nonSystemMessages = messages.filter((message) => message.role !== 'system');
 
         await tauriInvoke('stream_native_completion', {
             systemPrompt,

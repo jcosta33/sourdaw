@@ -92,11 +92,11 @@ export async function generateMidiViaLlm(
 }
 
 function fallbackToPatternMatch(promptText: string): MidiGenerationNote[] {
-    const q = promptText.toLowerCase();
+    const query = promptText.toLowerCase();
 
     const matched =
-        filterTemplates({ query: q })[0] ??
-        PATTERN_TEMPLATES.find((t) => t.tags.some((tag) => q.includes(tag)) || t.name.toLowerCase().includes(q));
+        filterTemplates({ query: query })[0] ??
+        PATTERN_TEMPLATES.find((time) => time.tags.some((tag) => query.includes(tag)) || time.name.toLowerCase().includes(query));
 
     if (matched) {
         const notes = matched.generate({ key: 'C', scale: 'minor', density: 5, complexity: 5 });

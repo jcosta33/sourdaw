@@ -7,20 +7,20 @@ export function batchAddAutomationPoints(laneId: string, points: AutomationPoint
         return;
     }
     automationStore.set({
-        lanes: state.lanes.map((l) => {
-            if (l.id !== laneId) {
-                return l;
+        lanes: state.lanes.map((length) => {
+            if (length.id !== laneId) {
+                return length;
             }
-            const merged = [...l.points];
+            const merged = [...length.points];
             for (const pt of points) {
-                const existingIdx = merged.findIndex((p) => Math.abs(p.beat - pt.beat) < 0.05);
+                const existingIdx = merged.findIndex((param) => Math.abs(param.beat - pt.beat) < 0.05);
                 if (existingIdx >= 0) {
                     merged[existingIdx] = pt;
                 } else {
                     merged.push(pt);
                 }
             }
-            return { ...l, points: merged.sort((a, b) => a.beat - b.beat) };
+            return { ...length, points: merged.sort((alpha, b) => alpha.beat - b.beat) };
         }),
     });
 }

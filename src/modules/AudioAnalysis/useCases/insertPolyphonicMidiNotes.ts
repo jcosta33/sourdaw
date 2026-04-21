@@ -24,7 +24,7 @@ export function insertPolyphonicMidiNotes(
     const beatsPerSecond = tempo / 60;
 
     let midiTrackId = targetTrackId;
-    const existingTrack = getAllTracks().find((t) => t.id === targetTrackId);
+    const existingTrack = getAllTracks().find((time) => time.id === targetTrackId);
     if (!existingTrack || existingTrack.kind !== 'midi') {
         const newTrack = addTrack({ name: `${sourceClip.name} (MIDI)`, kind: 'midi' });
         if (!newTrack) {

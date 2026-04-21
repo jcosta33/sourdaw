@@ -63,8 +63,8 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                                         variant="ghost"
                                         size="icon-xs"
                                         className="h-6 w-6"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
+                                        onClick={(event) => {
+                                            event.stopPropagation();
                                             void executeAppAction({
                                                 type: 'deleteTrackAlternative',
                                                 payload: { trackId: track.id, alternativeId: alt.id },

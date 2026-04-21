@@ -21,14 +21,14 @@ export function arpeggiate(
         return;
     }
 
-    const uniquePitches = [...new Set(notes.map((n) => n.pitch))].sort((a, b) => a - b);
+    const uniquePitches = [...new Set(notes.map((node) => node.pitch))].sort((alpha, b) => alpha - b);
 
     const expandedPitches: number[] = [];
     for (let oct = 0; oct < octaves; oct++) {
         for (const pitch of uniquePitches) {
-            const p = pitch + oct * 12;
-            if (p <= 127) {
-                expandedPitches.push(p);
+            const param = pitch + oct * 12;
+            if (param <= 127) {
+                expandedPitches.push(param);
             }
         }
     }
@@ -60,9 +60,9 @@ export function arpeggiate(
         }
         case 'random': {
             sequence = [...expandedPitches];
-            for (let i = sequence.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [sequence[i], sequence[j]] = [sequence[j]!, sequence[i]!];
+            for (let index = sequence.length - 1; index > 0; index--) {
+                const jIndex = Math.floor(Math.random() * (index + 1));
+                [sequence[index], sequence[jIndex]] = [sequence[jIndex]!, sequence[index]!];
             }
             break;
         }
@@ -74,11 +74,11 @@ export function arpeggiate(
 
     let minBeat = Infinity;
     let maxBeat = -Infinity;
-    for (const n of notes) {
-        if (n.startBeat < minBeat) {
-            minBeat = n.startBeat;
+    for (const node of notes) {
+        if (node.startBeat < minBeat) {
+            minBeat = node.startBeat;
         }
-        const end = n.startBeat + n.duration;
+        const end = node.startBeat + node.duration;
         if (end > maxBeat) {
             maxBeat = end;
         }

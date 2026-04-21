@@ -5,8 +5,8 @@ import { createHandler } from '#/utils/createHandler';
 type CvOutputType = 'cv-pitch' | 'cv-velocity' | 'cv-modulation' | 'gate' | 'trigger' | 'clock';
 
 export const handleAddCvOutput = createHandler<'addCvOutput'>({
-    execute: (a) => {
-        addCvOutput(a.payload.name, a.payload.channel, a.payload.type as CvOutputType);
+    execute: (alpha) => {
+        addCvOutput(alpha.payload.name, alpha.payload.channel, alpha.payload.type as CvOutputType);
     },
     describe: () => ({ label: 'Add CV/Gate Output' }),
     undoable: true,

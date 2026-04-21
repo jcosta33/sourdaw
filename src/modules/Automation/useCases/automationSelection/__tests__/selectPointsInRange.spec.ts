@@ -5,7 +5,7 @@ import * as subject from '../selectPointsInRange';
 describe('selectPointsInRange', () => {
     it('should export selectPointsInRange', () => {
         expect(subject.selectPointsInRange).toBeDefined();
-        const t = typeof subject.selectPointsInRange;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.selectPointsInRange;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

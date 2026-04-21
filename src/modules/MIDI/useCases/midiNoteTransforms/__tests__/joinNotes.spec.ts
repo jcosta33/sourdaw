@@ -33,10 +33,10 @@ describe('joinNotes', () => {
         joinNotes('clip1', ['a', 'b']);
         const notes = midiStore.value?.notesByClipId.clip1;
         expect(notes?.length).toBe(3);
-        const joined = notes?.find((n) => n.startBeat === 0 && n.pitch === 60);
+        const joined = notes?.find((node) => node.startBeat === 0 && node.pitch === 60);
         expect(joined?.duration).toBe(2);
-        expect(notes?.find((n) => n.id === 'c')).toBeDefined();
-        expect(notes?.find((n) => n.id === 'd')).toBeDefined();
+        expect(notes?.find((node) => node.id === 'c')).toBeDefined();
+        expect(notes?.find((node) => node.id === 'd')).toBeDefined();
     });
 
     it('should not merge non-adjacent notes', () => {

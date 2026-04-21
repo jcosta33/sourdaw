@@ -26,11 +26,11 @@ describe('moveMidiNote', () => {
 
     it('should update pitch and start beat for the matching note only', () => {
         moveMidiNote('c1', 'n1', 72, 4);
-        expect(midiStore.value?.notesByClipId.c1?.find((n) => n.id === 'n1')).toMatchObject({
+        expect(midiStore.value?.notesByClipId.c1?.find((node) => node.id === 'n1')).toMatchObject({
             pitch: 72,
             startBeat: 4,
         });
-        expect(midiStore.value?.notesByClipId.c1?.find((n) => n.id === 'n2')?.startBeat).toBe(0);
+        expect(midiStore.value?.notesByClipId.c1?.find((node) => node.id === 'n2')?.startBeat).toBe(0);
     });
 
     it('should not mutate when the clip or store is missing', () => {

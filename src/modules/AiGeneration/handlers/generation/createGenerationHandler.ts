@@ -41,8 +41,8 @@ export function createGenerationHandler<ActionType extends GenerationActionType>
     config: GenerationHandlerConfig<ActionType>
 ) {
     return createHandler<ActionType>({
-        execute: (a) => {
-            const payload = (a as unknown as { payload: CommonGenerationPayload }).payload;
+        execute: (alpha) => {
+            const payload = (alpha as unknown as { payload: CommonGenerationPayload }).payload;
             const style = config.validStyles.has(payload.style) ? payload.style : config.defaultStyle;
 
             const trackId = resolveOrCreateMidiTrack(payload.trackId, `${config.trackNamePrefix} (${style})`, {
@@ -65,7 +65,7 @@ export function createGenerationHandler<ActionType extends GenerationActionType>
 
             const result = config.applyToTrack(
                 trackId,
-                a as Extract<AppAction, { type: ActionType }>,
+                alpha as Extract<AppAction, { type: ActionType }>,
                 style,
                 placementBeat
             );
@@ -86,8 +86,8 @@ export function createGenerationHandler<ActionType extends GenerationActionType>
                 }
             }
         },
-        describe: (a) => ({
-            label: `Generate ${(a as unknown as { payload: CommonGenerationPayload }).payload.style} ${config.labelSuffix}`,
+        describe: (alpha) => ({
+            label: `Generate ${(alpha as unknown as { payload: CommonGenerationPayload }).payload.style} ${config.labelSuffix}`,
         }),
         undoable: true,
     });

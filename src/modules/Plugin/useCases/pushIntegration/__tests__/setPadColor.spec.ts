@@ -10,10 +10,10 @@ describe('setPadColor', () => {
     });
 
     it('should update only the targeted pad color', () => {
-        const c = { r: 10, g: 20, b: 30 };
-        setPadColor(1, c);
-        expect(pushStore.value?.pads[1]?.color).toEqual(c);
-        expect(pushStore.value?.pads[0]?.color).not.toEqual(c);
+        const context = { r: 10, g: 20, b: 30 };
+        setPadColor(1, context);
+        expect(pushStore.value?.pads[1]?.color).toEqual(context);
+        expect(pushStore.value?.pads[0]?.color).not.toEqual(context);
     });
 
     it('should not mutate when push store is null', () => {

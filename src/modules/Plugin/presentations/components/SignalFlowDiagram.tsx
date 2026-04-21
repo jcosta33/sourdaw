@@ -63,12 +63,12 @@ function getFlowForAlgorithm(
 
         case 'fdn-8':
         case 'fdn-16': {
-            const n = algorithm === 'fdn-8' ? 8 : 16;
+            const node = algorithm === 'fdn-8' ? 8 : 16;
             return {
                 nodes: [
                     { id: 'in', label: 'Input', x: 10, y: 30, active: !freeze, color: accent },
                     { id: 'early', label: 'Early Ref', x: 90, y: 15, active: true, color: '#7db8a0' },
-                    { id: 'fdn', label: `FDN-${n}`, x: 200, y: 30, active: true, color: '#a89bc4' },
+                    { id: 'fdn', label: `FDN-${node}`, x: 200, y: 30, active: true, color: '#a89bc4' },
                     { id: 'matrix', label: 'Hadamard', x: 310, y: 30, active: true, color: '#a89bc4' },
                     { id: 'absorb', label: 'Absorptive', x: 310, y: 55, active: true, color: dim },
                     { id: 'mix', label: 'E/L Mix', x: 400, y: 30, active: true, color: accent },
@@ -121,9 +121,9 @@ export const SignalFlowDiagram = ({
     return (
         <DawDiagramFrame title="Signal flow" compact className="bg-black/[0.16]" viewportClassName="p-2">
             <svg viewBox="0 0 500 65" className="h-[65px] w-full" xmlns="http://www.w3.org/2000/svg">
-                {edges.map((edge, i) => {
-                    const from = nodes.find((n) => n.id === edge.from);
-                    const to = nodes.find((n) => n.id === edge.to);
+                {edges.map((edge, index) => {
+                    const from = nodes.find((node) => node.id === edge.from);
+                    const to = nodes.find((node) => node.id === edge.to);
                     if (!from || !to) {
                         return null;
                     }
@@ -132,7 +132,7 @@ export const SignalFlowDiagram = ({
                     const x2 = to.x - 5;
                     const y2 = to.y;
                     return (
-                        <g key={i}>
+                        <g key={index}>
                             <line
                                 x1={x1}
                                 y1={y1}

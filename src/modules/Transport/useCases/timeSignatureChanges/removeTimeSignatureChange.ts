@@ -8,6 +8,6 @@ export function removeTimeSignatureChange(beat: number): void {
 
     timeSignatureMapStore.set({
         ...state,
-        changes: state.changes.filter((c) => c.beat !== beat),
+        changes: state.changes.filter((context) => context.beat !== beat),
     });
 }

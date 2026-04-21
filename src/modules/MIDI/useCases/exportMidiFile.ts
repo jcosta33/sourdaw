@@ -5,19 +5,19 @@ const TICKS_PER_BEAT = 480;
 
 function writeVarLen(value: number): number[] {
     const bytes: number[] = [];
-    let v = value & 0x0fffffff;
-    bytes.unshift(v & 0x7f);
-    while (v > 0x7f) {
-        v >>= 7;
-        bytes.unshift((v & 0x7f) | 0x80);
+    let value1 = value & 0x0fffffff;
+    bytes.unshift(value1 & 0x7f);
+    while (value1 > 0x7f) {
+        value1 >>= 7;
+        bytes.unshift((value1 & 0x7f) | 0x80);
     }
     return bytes;
 }
 
 function writeString(str: string): number[] {
     const bytes: number[] = [];
-    for (let i = 0; i < str.length; i++) {
-        bytes.push(str.charCodeAt(i));
+    for (let index = 0; index < str.length; index++) {
+        bytes.push(str.charCodeAt(index));
     }
     return bytes;
 }
@@ -61,25 +61,25 @@ function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: numbe
         events.push({ tick, data: [0xb0 | ((cc.channel ?? 0) & 0x0f), controller, value] });
     }
 
-    events.sort((a, b) => a.tick - b.tick);
+    events.sort((alpha, b) => alpha.tick - b.tick);
 
     const trackBytes: number[] = [];
     let lastTick = 0;
     for (const event of events) {
         const delta = Math.max(0, event.tick - lastTick);
         const deltaBytes = writeVarLen(delta);
-        for (let i = 0; i < deltaBytes.length; i++) {
-            trackBytes.push(deltaBytes[i]!);
+        for (let index = 0; index < deltaBytes.length; index++) {
+            trackBytes.push(deltaBytes[index]!);
         }
-        for (let i = 0; i < event.data.length; i++) {
-            trackBytes.push(event.data[i]!);
+        for (let index = 0; index < event.data.length; index++) {
+            trackBytes.push(event.data[index]!);
         }
         lastTick = event.tick;
     }
 
     const endDelta = writeVarLen(0);
-    for (let i = 0; i < endDelta.length; i++) {
-        trackBytes.push(endDelta[i]!);
+    for (let index = 0; index < endDelta.length; index++) {
+        trackBytes.push(endDelta[index]!);
     }
     trackBytes.push(0xff, 0x2f, 0x00);
 

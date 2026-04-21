@@ -96,14 +96,14 @@ export function startPlayheadScheduler(): void {
 
         if (current.isLooping && current.loopEnd > current.loopStart && newPosition >= current.loopEnd) {
             if (current.isRecording) {
-                const armedTracks = trackStore.value?.tracks.filter((t) => t.armed) ?? [];
+                const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
                 for (const track of armedTracks) {
                     const laneState = takeLaneStore.value;
-                    if (!laneState?.lanes.some((l) => l.trackId === track.id)) {
+                    if (!laneState?.lanes.some((length) => length.trackId === track.id)) {
                         addTakeLane(track.id);
                     }
                     const takeNum =
-                        (takeLaneStore.value?.lanes.find((l) => l.trackId === track.id)?.takes.length ?? 0) + 1;
+                        (takeLaneStore.value?.lanes.find((length) => length.trackId === track.id)?.takes.length ?? 0) + 1;
                     addTake(
                         track.id,
                         `take-${Date.now()}-${track.id}`,
@@ -160,7 +160,7 @@ export function startPlayheadScheduler(): void {
             current.isLooping
         );
 
-        const hasArmedTracks = trackStore.value?.tracks.some((t) => t.armed) ?? false;
+        const hasArmedTracks = trackStore.value?.tracks.some((time) => time.armed) ?? false;
         if (
             current.punchInEnabled &&
             !current.isRecording &&
@@ -173,10 +173,10 @@ export function startPlayheadScheduler(): void {
             const clips = startRecording();
             transportStore.set({ ...transportStore.value!, isRecording: true });
 
-            const armedTracks = trackStore.value?.tracks.filter((t) => t.armed) ?? [];
+            const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
             for (const track of armedTracks) {
                 if (track.kind === 'audio') {
-                    const recClip = clips.find((c) => c.trackId === track.id);
+                    const recClip = clips.find((context) => context.trackId === track.id);
                     void startAudioRecording(track.id, (buffer) => {
                         const bufferId = `rec-${crypto.randomUUID()}`;
                         audioBufferCache.set(bufferId, buffer);
@@ -185,10 +185,10 @@ export function startPlayheadScheduler(): void {
                             if (ts) {
                                 trackStore.set({
                                     ...ts,
-                                    tracks: ts.tracks.map((t) => ({
-                                        ...t,
-                                        clips: t.clips.map((c) =>
-                                            c.id === recClip.id ? { ...c, audioBufferId: bufferId } : c
+                                    tracks: ts.tracks.map((time) => ({
+                                        ...time,
+                                        clips: time.clips.map((context) =>
+                                            context.id === recClip.id ? { ...context, audioBufferId: bufferId } : context
                                         ),
                                     })),
                                 });
@@ -246,8 +246,8 @@ export function startPlayheadScheduler(): void {
         schedulerSession.worker = new Worker(new URL('../workers/schedulerWorker.ts', import.meta.url), {
             type: 'module',
         });
-        schedulerSession.worker.onmessage = (e) => {
-            if (e.data?.type === 'tick') {
+        schedulerSession.worker.onmessage = (event) => {
+            if (event.data?.type === 'tick') {
                 void tick();
             }
         };

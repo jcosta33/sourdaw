@@ -5,7 +5,7 @@ import * as subject from '../createAutomationLane';
 describe('createAutomationLane', () => {
     it('should export createAutomationLane', () => {
         expect(subject.createAutomationLane).toBeDefined();
-        const t = typeof subject.createAutomationLane;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.createAutomationLane;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

@@ -5,7 +5,7 @@ import * as subject from '../getMidiRoutingHandlers';
 describe('getMidiRoutingHandlers', () => {
     it('should export getMidiRoutingHandlers', () => {
         expect(subject.getMidiRoutingHandlers).toBeDefined();
-        const t = typeof subject.getMidiRoutingHandlers;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getMidiRoutingHandlers;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

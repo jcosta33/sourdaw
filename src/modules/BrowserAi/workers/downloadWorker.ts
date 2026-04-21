@@ -112,7 +112,7 @@ async function downloadModel(req: DownloadRequest): Promise<void> {
             }
 
             // Concatenate all chunks
-            const totalLength = chunks.reduce((acc, c) => acc + c.byteLength, 0);
+            const totalLength = chunks.reduce((acc, context) => acc + context.byteLength, 0);
             const fullData = new Uint8Array(totalLength);
             let offset = 0;
             for (const chunk of chunks) {

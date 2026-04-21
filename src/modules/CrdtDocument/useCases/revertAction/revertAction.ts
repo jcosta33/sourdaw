@@ -17,7 +17,7 @@ export async function revertAction(entryId: string): Promise<boolean> {
         return false;
     }
 
-    const entry = state.entries.find((e) => e.id === entryId);
+    const entry = state.entries.find((event) => event.id === entryId);
     if (!entry) {
         return false;
     }

@@ -13,19 +13,19 @@ type PadMixerProps = {
 
 export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => (
     <div className="flex gap-0.5 overflow-x-auto pb-1">
-        {pads.slice(0, 16).map((pad, i) => (
+        {pads.slice(0, 16).map((pad, index) => (
             <div key={pad.id} className="flex flex-col items-center w-9 shrink-0">
                 {/* Volume fader track */}
                 <div
                     className="w-3 rounded-full relative cursor-ns-resize mb-0.5"
                     style={{ height: 50, backgroundColor: 'rgba(255,255,255,0.04)' }}
-                    onPointerDown={(e) => {
-                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    onPointerDown={(event) => {
+                        const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
                         const setVol = (clientY: number) => {
                             const ratio = 1 - Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
-                            onPadParam(i, 'volume', ratio);
+                            onPadParam(index, 'volume', ratio);
                         };
-                        setVol(e.clientY);
+                        setVol(event.clientY);
                         const onMove = (ev: PointerEvent) => setVol(ev.clientY);
                         const onUp = () => {
                             document.removeEventListener('pointermove', onMove);
@@ -77,14 +77,14 @@ export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => (
                     <button
                         type="button"
                         className={`w-3.5 h-3 rounded text-[5px] font-bold leading-none flex items-center justify-center ${pad.muted ? 'bg-red-500/80 text-white' : 'bg-surface-inset/50 text-muted-foreground/30'}`}
-                        onClick={() => onPadParam(i, 'muted', pad.muted ? 0 : 1)}
+                        onClick={() => onPadParam(index, 'muted', pad.muted ? 0 : 1)}
                     >
                         M
                     </button>
                     <button
                         type="button"
                         className={`w-3.5 h-3 rounded text-[5px] font-bold leading-none flex items-center justify-center ${pad.soloed ? 'bg-[var(--color-accent-mint)]/80 text-white' : 'bg-surface-inset/50 text-muted-foreground/30'}`}
-                        onClick={() => onPadParam(i, 'soloed', pad.soloed ? 0 : 1)}
+                        onClick={() => onPadParam(index, 'soloed', pad.soloed ? 0 : 1)}
                     >
                         S
                     </button>

@@ -19,10 +19,10 @@ export function computeMomentaryLUFS(samples: Float32Array, sampleRate = 48000):
 
     let sumSquares = 0;
     let prevSample = 0;
-    for (let i = start; i < samples.length; i++) {
-        const s = samples[i]!;
-        const filtered = s - 0.85 * prevSample;
-        prevSample = s;
+    for (let index = start; index < samples.length; index++) {
+        const state = samples[index]!;
+        const filtered = state - 0.85 * prevSample;
+        prevSample = state;
         sumSquares += filtered * filtered;
     }
 

@@ -5,10 +5,10 @@ export function removeSetlistItem(id: string): void {
     if (!state) {
         return;
     }
-    const removed = state.items.find((i) => i.id === id);
+    const removed = state.items.find((index) => index.id === id);
     setlistStore.set({
         ...state,
-        items: state.items.filter((i) => i.id !== id),
+        items: state.items.filter((index) => index.id !== id),
         totalDuration: state.totalDuration - (removed?.estimatedDuration ?? 0),
     });
 }

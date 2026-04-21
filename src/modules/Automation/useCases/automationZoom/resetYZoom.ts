@@ -10,8 +10,8 @@ export function resetYZoom(laneId: string): void {
     }
 
     automationStore.set({
-        lanes: state.lanes.map((l) =>
-            l.id === laneId ? { ...l, viewMinValue: undefined, viewMaxValue: undefined } : l
+        lanes: state.lanes.map((length) =>
+            length.id === laneId ? { ...length, viewMinValue: undefined, viewMaxValue: undefined } : length
         ),
     });
 }

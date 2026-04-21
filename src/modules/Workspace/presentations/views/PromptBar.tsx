@@ -67,9 +67,9 @@ const SelectionTagChip = ({ tag, onRemove }: { tag: SelectionTag; onRemove: () =
             <span className="truncate max-w-20">{tag.label}</span>
             <button
                 type="button"
-                onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
+                onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
                     onRemove();
                 }}
                 className="ml-0.5 hover:text-primary transition-colors"
@@ -99,8 +99,8 @@ const FuzzyResultItem = ({
                     ? 'bg-white/[0.08] text-foreground'
                     : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground'
             }`}
-            onMouseDown={(e) => {
-                e.preventDefault();
+            onMouseDown={(event) => {
+                event.preventDefault();
                 onExecute();
             }}
             role="option"
@@ -131,9 +131,9 @@ export const PromptBar = (): ReactElement => {
                 <Sparkles className="size-3.5 shrink-0 text-[var(--color-accent-peach)]" aria-hidden="true" />
                 <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap gap-1">
-                        {prompt.preview.actions.map((a, i: number) => (
-                            <DawMicroBadge key={i} className="text-[10px] text-foreground">
-                                {describeAction(a)}
+                        {prompt.preview.actions.map((alpha, index: number) => (
+                            <DawMicroBadge key={index} className="text-[10px] text-foreground">
+                                {describeAction(alpha)}
                             </DawMicroBadge>
                         ))}
                     </div>
@@ -178,7 +178,7 @@ export const PromptBar = (): ReactElement => {
                     ref={prompt.inputRef}
                     type="text"
                     value={prompt.value}
-                    onChange={(e) => prompt.setValue(e.target.value)}
+                    onChange={(event) => prompt.setValue(event.target.value)}
                     onKeyDown={prompt.handleKeyDown}
                     onFocus={() => prompt.setIsFocused(true)}
                     onBlur={() => {
@@ -212,7 +212,6 @@ export const PromptBar = (): ReactElement => {
                 </Button>
                 <LlmStatusBadge status={prompt.llmStatus ?? { state: 'idle' }} onLoad={prompt.handleLoadModel} />
             </form>
-
             {prompt.fuzzyResults.length > 0 ? (
                 <div
                     id="prompt-results"
@@ -225,11 +224,11 @@ export const PromptBar = (): ReactElement => {
                             Available commands
                         </div>
                     ) : null}
-                    {prompt.fuzzyResults.map((result, i) => (
+                    {prompt.fuzzyResults.map((result, index) => (
                         <FuzzyResultItem
                             key={result.preset.id}
                             result={result}
-                            isSelected={i === prompt.selectedIndex}
+                            isSelected={index === prompt.selectedIndex}
                             onExecute={() => void prompt.executePreset(result)}
                         />
                     ))}

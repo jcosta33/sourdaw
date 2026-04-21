@@ -32,21 +32,21 @@ type SoloModeSelectorProps = {
 export const SoloModeSelector = ({ soloMode }: SoloModeSelectorProps): ReactElement => {
     return (
         <DawTransportCluster role="radiogroup" aria-label="Solo mode">
-            {SOLO_MODES.map((m) => (
-                <Tooltip key={m.value}>
+            {SOLO_MODES.map((message) => (
+                <Tooltip key={message.value}>
                     <TooltipTrigger asChild>
                         <Button
-                            variant={soloMode === m.value ? 'secondary' : 'ghost'}
+                            variant={soloMode === message.value ? 'secondary' : 'ghost'}
                             size="xs"
                             role="radio"
-                            aria-checked={soloMode === m.value}
-                            onClick={() => setSoloMode(m.value)}
-                            className={soloMode === m.value ? 'text-[var(--color-state-solo)]' : ''}
+                            aria-checked={soloMode === message.value}
+                            onClick={() => setSoloMode(message.value)}
+                            className={soloMode === message.value ? 'text-[var(--color-state-solo)]' : ''}
                         >
-                            {m.label}
+                            {message.label}
                         </Button>
                     </TooltipTrigger>
-                    <TooltipContent>{m.description}</TooltipContent>
+                    <TooltipContent>{message.description}</TooltipContent>
                 </Tooltip>
             ))}
         </DawTransportCluster>

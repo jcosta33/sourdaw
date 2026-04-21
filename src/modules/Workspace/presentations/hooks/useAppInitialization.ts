@@ -31,7 +31,7 @@ export const useAppInitialization = (): void => {
                     setMasterGainValue(transport.masterGain / 100);
                 }
                 const referencedIds = (trackStore.value?.tracks ?? [])
-                    .flatMap((t) => t.clips.map((c) => c.audioBufferId))
+                    .flatMap((time) => time.clips.map((context) => context.audioBufferId))
                     .filter((id): id is string => Boolean(id));
                 await audioBufferCache.restoreFromIdb(
                     getAudioContext(),

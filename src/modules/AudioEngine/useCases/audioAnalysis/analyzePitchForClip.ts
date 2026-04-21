@@ -96,9 +96,9 @@ export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchF
             const progressSteps = [0.2, 0.5, 0.8];
             for (const step of progressSteps) {
                 await new Promise((r) => setTimeout(r, 0));
-                const s = kneadStore.value;
-                if (s) {
-                    kneadStore.set({ ...s, analysisProgress: step });
+                const state = kneadStore.value;
+                if (state) {
+                    kneadStore.set({ ...state, analysisProgress: step });
                 }
             }
 

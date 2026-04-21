@@ -18,7 +18,7 @@ export function getEffectiveVolume(): number {
     }
 
     // Add monitor calibration offset
-    const activeMonitor = state.monitors.find((m) => m.id === state.activeMonitorId);
+    const activeMonitor = state.monitors.find((message) => message.id === state.activeMonitorId);
     if (activeMonitor) {
         volume += activeMonitor.calibrationDb;
     }

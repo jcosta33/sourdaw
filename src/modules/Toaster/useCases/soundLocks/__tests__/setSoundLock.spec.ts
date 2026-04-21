@@ -5,7 +5,7 @@ import * as subject from '../setSoundLock';
 describe('setSoundLock', () => {
     it('should export setSoundLock', () => {
         expect(subject.setSoundLock).toBeDefined();
-        const t = typeof subject.setSoundLock;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setSoundLock;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

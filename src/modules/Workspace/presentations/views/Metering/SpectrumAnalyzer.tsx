@@ -48,8 +48,8 @@ export const SpectrumAnalyzer = ({
             noiseCtx.globalAlpha = 0.03;
             for (let nx = 0; nx < width; nx += 3) {
                 for (let ny = 0; ny < height; ny += 3) {
-                    const v = Math.random() * 255;
-                    noiseCtx.fillStyle = `rgb(${v},${v},${v})`;
+                    const value = Math.random() * 255;
+                    noiseCtx.fillStyle = `rgb(${value},${value},${value})`;
                     noiseCtx.fillRect(nx, ny, 2, 2);
                 }
             }
@@ -81,8 +81,8 @@ export const SpectrumAnalyzer = ({
             ctx.lineWidth = 0.5;
             ctx.setLineDash([2, 4]);
             const freqMarks = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
-            for (const f of freqMarks) {
-                const x = freqToLogX(f, width, Math.min(22_000, sampleRate / 2));
+            for (const freq1 of freqMarks) {
+                const x = freqToLogX(freq1, width, Math.min(22_000, sampleRate / 2));
                 if (x > 0 && x < width) {
                     ctx.beginPath();
                     ctx.moveTo(x, 0);
@@ -108,9 +108,9 @@ export const SpectrumAnalyzer = ({
             // Frequency labels — dim and refined
             ctx.fillStyle = 'rgba(255,255,255,0.18)';
             ctx.textAlign = 'center';
-            for (const f of [100, 1000, 10000]) {
-                const x = freqToLogX(f, width, Math.min(22_000, sampleRate / 2));
-                const label = f >= 1000 ? `${f / 1000}k` : `${f}`;
+            for (const freq1 of [100, 1000, 10000]) {
+                const x = freqToLogX(freq1, width, Math.min(22_000, sampleRate / 2));
+                const label = freq1 >= 1000 ? `${freq1 / 1000}k` : `${freq1}`;
                 ctx.fillText(label, x, height - 2);
             }
             ctx.textAlign = 'left';
@@ -126,19 +126,19 @@ export const SpectrumAnalyzer = ({
             ctx.beginPath();
             ctx.moveTo(0, height);
 
-            for (let i = 1; i < fftSize; i++) {
-                const freq = (i / fftSize) * (sampleRate / 2);
+            for (let index = 1; index < fftSize; index++) {
+                const freq = (index / fftSize) * (sampleRate / 2);
                 if (freq < 20 || freq > 22000) {
                     continue;
                 }
 
                 const x = freqToLogX(freq, width, Math.min(22_000, sampleRate / 2));
-                const db = Math.max(-80, freqData[i]!);
+                const db = Math.max(-80, freqData[index]!);
                 // Perceptual tilt: +3dB/octave above 1kHz
                 const tiltedDb = db + 3 * Math.log2(Math.max(1, freq / 1000));
                 const y = dbToY(tiltedDb, height);
 
-                if (i === 1) {
+                if (index === 1) {
                     ctx.moveTo(x, y);
                 } else {
                     ctx.lineTo(x, y);
@@ -152,18 +152,18 @@ export const SpectrumAnalyzer = ({
 
             // Spectrum line — glow pass (wider, semi-transparent)
             ctx.beginPath();
-            for (let i = 1; i < fftSize; i++) {
-                const freq = (i / fftSize) * (sampleRate / 2);
+            for (let index = 1; index < fftSize; index++) {
+                const freq = (index / fftSize) * (sampleRate / 2);
                 if (freq < 20 || freq > 22000) {
                     continue;
                 }
 
                 const x = freqToLogX(freq, width, Math.min(22_000, sampleRate / 2));
-                const db = Math.max(-80, freqData[i]!);
+                const db = Math.max(-80, freqData[index]!);
                 const tiltedDb = db + 3 * Math.log2(Math.max(1, freq / 1000));
                 const y = dbToY(tiltedDb, height);
 
-                if (i === 1) {
+                if (index === 1) {
                     ctx.moveTo(x, y);
                 } else {
                     ctx.lineTo(x, y);
@@ -178,18 +178,18 @@ export const SpectrumAnalyzer = ({
 
             // Spectrum line — sharp pass
             ctx.beginPath();
-            for (let i = 1; i < fftSize; i++) {
-                const freq = (i / fftSize) * (sampleRate / 2);
+            for (let index = 1; index < fftSize; index++) {
+                const freq = (index / fftSize) * (sampleRate / 2);
                 if (freq < 20 || freq > 22000) {
                     continue;
                 }
 
                 const x = freqToLogX(freq, width, Math.min(22_000, sampleRate / 2));
-                const db = Math.max(-80, freqData[i]!);
+                const db = Math.max(-80, freqData[index]!);
                 const tiltedDb = db + 3 * Math.log2(Math.max(1, freq / 1000));
                 const y = dbToY(tiltedDb, height);
 
-                if (i === 1) {
+                if (index === 1) {
                     ctx.moveTo(x, y);
                 } else {
                     ctx.lineTo(x, y);

@@ -7,6 +7,6 @@ export function tagVersion(versionId: string, tag: string): void {
     }
     versionControlStore.set({
         ...state,
-        versions: state.versions.map((v) => (v.id === versionId ? { ...v, tags: [...v.tags, tag] } : v)),
+        versions: state.versions.map((value) => (value.id === versionId ? { ...value, tags: [...value.tags, tag] } : value)),
     });
 }

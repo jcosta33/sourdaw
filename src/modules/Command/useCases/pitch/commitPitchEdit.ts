@@ -63,9 +63,9 @@ export async function commitPitchEditCommand(clipId: string, segments: NoteSegme
             if (!state) {
                 return;
             }
-            const newTracks = state.tracks.map((t: any) => ({
-                ...t,
-                clips: t.clips.map((c: any) => (c.id === clipId ? { ...c, fileId: originalFileId } : c)),
+            const newTracks = state.tracks.map((time: any) => ({
+                ...time,
+                clips: time.clips.map((context: any) => (context.id === clipId ? { ...context, fileId: originalFileId } : context)),
             }));
             trackStore.set({ ...state, tracks: newTracks });
         }
@@ -75,9 +75,9 @@ export async function commitPitchEditCommand(clipId: string, segments: NoteSegme
             if (!state) {
                 return;
             }
-            const newTracks = state.tracks.map((t: any) => ({
-                ...t,
-                clips: t.clips.map((c: any) => (c.id === clipId ? { ...c, fileId: outputAudioPath } : c)),
+            const newTracks = state.tracks.map((time: any) => ({
+                ...time,
+                clips: time.clips.map((context: any) => (context.id === clipId ? { ...context, fileId: outputAudioPath } : context)),
             }));
             trackStore.set({ ...state, tracks: newTracks });
         }

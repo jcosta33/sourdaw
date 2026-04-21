@@ -24,13 +24,13 @@ function beginActualRecording(): void {
     const ctx = getAudioContext();
     const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
 
-    const armedTracks = getTrackStoreState()?.tracks.filter((t) => t.armed) ?? [];
+    const armedTracks = getTrackStoreState()?.tracks.filter((time) => time.armed) ?? [];
     for (const track of armedTracks) {
         if (track.kind === 'audio') {
             const trackLatencySec = getCompensationDelay(track.id);
             const totalLatencySec = totalHardwareLatencySec + trackLatencySec;
 
-            const recClip = clips.find((c) => c.trackId === track.id);
+            const recClip = clips.find((context) => context.trackId === track.id);
             startAudioRecording(track.id, (buffer) => {
                 const bufferId = `rec-${crypto.randomUUID()}`;
                 audioBufferCache.set(bufferId, buffer);
@@ -46,8 +46,8 @@ function beginActualRecording(): void {
 
                     // Update in one go
                     Promise.resolve().then(() => {
-                        updateClip(recClip.id, (c) => ({
-                            ...c,
+                        updateClip(recClip.id, (context) => ({
+                            ...context,
                             audioBufferId: bufferId,
                             startBeat: newStartBeat,
                             endBeat: exactEndBeat,
@@ -96,9 +96,9 @@ export function toggleRecording(): void {
         ensureTrackStrips();
 
         const ctx = getAudioContext();
-        for (let i = 0; i < countInBeats; i++) {
-            const time = ctx.currentTime + i / (state.tempo / 60);
-            scheduleClick(time, i % beatsPerBar === 0, state.metronomeVolume ?? 0.5);
+        for (let index = 0; index < countInBeats; index++) {
+            const time = ctx.currentTime + index / (state.tempo / 60);
+            scheduleClick(time, index % beatsPerBar === 0, state.metronomeVolume ?? 0.5);
         }
 
         countInTimerId = setTimeout(() => {

@@ -173,7 +173,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         category: template.category,
     }));
     const filteredTemplates =
-        activeCategory === 'all' ? allTemplates : allTemplates.filter((t) => t.category === activeCategory);
+        activeCategory === 'all' ? allTemplates : allTemplates.filter((time) => time.category === activeCategory);
 
     // Rotate quips during loading
     useEffect(() => {
@@ -181,7 +181,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
             clearInterval(intervalRef.current);
         } else {
             intervalRef.current = setInterval(() => {
-                setQuipIndex((i) => (i + 1) % LOADING_QUIPS.length);
+                setQuipIndex((index) => (index + 1) % LOADING_QUIPS.length);
             }, 2200);
         }
         return () => clearInterval(intervalRef.current);
@@ -212,16 +212,16 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         })();
     };
 
-    const handleDrop = (e: DragEvent<HTMLDivElement>): void => {
-        e.preventDefault();
-        e.stopPropagation();
+    const handleDrop = (event: DragEvent<HTMLDivElement>): void => {
+        event.preventDefault();
+        event.stopPropagation();
         setIsDragOver(false);
         setLoadingName('Importing files…');
         setView('loading');
         void (async () => {
             await new Promise<void>((r) => setTimeout(r, 100));
             newProject();
-            for (const file of Array.from(e.dataTransfer.files)) {
+            for (const file of Array.from(event.dataTransfer.files)) {
                 const ext = file.name.toLowerCase().split('.').pop() ?? '';
                 if (['mid', 'midi'].includes(ext) || file.type === 'audio/midi') {
                     await importMidiFile(file);
@@ -274,17 +274,17 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
             }}
             onDragOver={
                 view === 'home'
-                    ? (e) => {
-                          e.preventDefault();
-                          e.dataTransfer.dropEffect = 'copy';
+                    ? (event) => {
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = 'copy';
                           setIsDragOver(true);
                       }
                     : undefined
             }
             onDragLeave={
                 view === 'home'
-                    ? (e) => {
-                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    ? (event) => {
+                          if (!event.currentTarget.contains(event.relatedTarget as Node)) {
                               setIsDragOver(false);
                           }
                       }
@@ -293,7 +293,6 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
             onDrop={view === 'home' ? handleDrop : undefined}
         >
             <AmbientGlows />
-
             <div className="flex h-full items-center justify-center p-6">
                 {/* ── HOME ── */}
                 {view === 'home' ? (
@@ -513,14 +512,14 @@ const ActionCard = ({ id, label, sub, icon, colorVar, onClick }: ActionCardProps
         className="group flex flex-col items-center gap-2.5 p-4 rounded-xl border border-white/[0.07] bg-white/[0.03] transition-all duration-200 cursor-pointer text-center"
         style={{ ['--card-color' as string]: `var(${colorVar})` }}
         onClick={onClick}
-        onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.background = `color-mix(in srgb, var(${colorVar}) 10%, transparent)`;
-            (e.currentTarget as HTMLElement).style.borderColor =
+        onMouseEnter={(event) => {
+            (event.currentTarget as HTMLElement).style.background = `color-mix(in srgb, var(${colorVar}) 10%, transparent)`;
+            (event.currentTarget as HTMLElement).style.borderColor =
                 `color-mix(in srgb, var(${colorVar}) 35%, transparent)`;
         }}
-        onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.background = '';
-            (e.currentTarget as HTMLElement).style.borderColor = '';
+        onMouseLeave={(event) => {
+            (event.currentTarget as HTMLElement).style.background = '';
+            (event.currentTarget as HTMLElement).style.borderColor = '';
         }}
     >
         <div

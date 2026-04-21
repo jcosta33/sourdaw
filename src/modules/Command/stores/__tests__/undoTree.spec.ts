@@ -13,7 +13,7 @@ describe('undoTreeStore', () => {
     });
 
     it('should update state', () => {
-        undoTreeStore.update((s) => ({ ...s!, enabled: true }));
+        undoTreeStore.update((state) => ({ ...state!, enabled: true }));
         expect(undoTreeStore.value?.enabled).toBe(true);
     });
 });

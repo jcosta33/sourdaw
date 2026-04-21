@@ -174,8 +174,8 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
             const visiblePitches = getVisiblePitches(st, sr, folded);
             // Build O(1) pitch→row lookup to avoid indexOf scans in draw passes
             const pitchToRow = new Map<number, number>();
-            for (let i = 0; i < visiblePitches.length; i++) {
-                pitchToRow.set(visiblePitches[i]!, i);
+            for (let index = 0; index < visiblePitches.length; index++) {
+                pitchToRow.set(visiblePitches[index]!, index);
             }
             const noteAreaHeight = visiblePitches.length * ROW_HEIGHT;
             const containerW = canvas.parentElement?.clientWidth ?? GRID_BEATS * bw;
@@ -440,7 +440,7 @@ function drawGhostNotes(
     trackId: string,
     clipId: string
 ): void {
-    const otherMidiTracks = tracks.filter((t) => t.kind === 'midi' && t.id !== trackId);
+    const otherMidiTracks = tracks.filter((time) => time.kind === 'midi' && time.id !== trackId);
     for (const otherTrack of otherMidiTracks) {
         for (const otherClip of otherTrack.clips) {
             if (otherClip.type !== 'midi') {
@@ -457,7 +457,7 @@ function drawGhostNotes(
         }
     }
 
-    const activeTrack = tracks.find((t) => t.id === trackId);
+    const activeTrack = tracks.find((time) => time.id === trackId);
     if (activeTrack) {
         for (const sameTrackClip of activeTrack.clips) {
             if (sameTrackClip.id === clipId || sameTrackClip.type !== 'midi') {
@@ -532,7 +532,7 @@ function drawOpenedClipNotes(
         // Find the clip color from tracks
         let clipColor = 'oklch(0.7 0.12 250)'; // default blue-ish
         for (const track of tracks) {
-            const clip = track.clips.find((c) => c.id === openedId);
+            const clip = track.clips.find((context) => context.id === openedId);
             if (clip) {
                 clipColor = clip.color || track.color;
                 break;
@@ -584,8 +584,8 @@ function drawActiveNotes(
     clipId: string,
     dragPreview: DragPreview = null
 ): void {
-    const activeTrack = tracks?.find((t) => t.id === trackId);
-    const activeClip = activeTrack?.clips.find((c) => c.id === clipId);
+    const activeTrack = tracks?.find((time) => time.id === trackId);
+    const activeClip = activeTrack?.clips.find((context) => context.id === clipId);
     const clipColor = activeClip?.color || activeTrack?.color || 'oklch(0.45 0.06 250)';
     const selectedColor = brightenColor(clipColor, 0.22);
 

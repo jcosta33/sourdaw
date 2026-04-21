@@ -7,11 +7,11 @@ export function addTimeSignatureChange(beat: number, numerator: number, denomina
         return;
     }
 
-    const existing = state.changes.find((c) => c.beat === beat);
+    const existing = state.changes.find((context) => context.beat === beat);
     if (existing) {
         timeSignatureMapStore.set({
             ...state,
-            changes: state.changes.map((c) => (c.beat === beat ? { ...c, numerator, denominator } : c)),
+            changes: state.changes.map((context) => (context.beat === beat ? { ...context, numerator, denominator } : context)),
         });
         return;
     }
@@ -19,6 +19,6 @@ export function addTimeSignatureChange(beat: number, numerator: number, denomina
     const change = createTimeSignatureChange(beat, numerator, denominator);
     timeSignatureMapStore.set({
         ...state,
-        changes: [...state.changes, change].sort((a, b) => a.beat - b.beat),
+        changes: [...state.changes, change].sort((alpha, b) => alpha.beat - b.beat),
     });
 }

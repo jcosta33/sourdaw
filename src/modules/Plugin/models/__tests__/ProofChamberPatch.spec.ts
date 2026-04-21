@@ -11,8 +11,8 @@ describe('ProofChamberPatch constants', () => {
     it('should list a space preset entry for each SpaceType key', () => {
         const keys = Object.keys(SPACE_PRESETS) as Array<keyof typeof SPACE_PRESETS>;
         expect(keys.length).toBeGreaterThan(0);
-        for (const k of keys) {
-            expect(SPACE_PRESETS[k]).toBeDefined();
+        for (const kIndex of keys) {
+            expect(SPACE_PRESETS[kIndex]).toBeDefined();
         }
     });
 

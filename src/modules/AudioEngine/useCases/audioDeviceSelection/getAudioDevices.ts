@@ -9,19 +9,19 @@ export type AudioDeviceInfo = {
 
 export const getAudioDevices = inject({ logger })(
     ({ logger }) =>
-        async function getAudioDevices(): Promise<AudioDeviceInfo[]> {
+        (async function getAudioDevices(): Promise<AudioDeviceInfo[]> {
             try {
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 return devices
-                    .filter((d) => d.kind === 'audioinput' || d.kind === 'audiooutput')
-                    .map((d) => ({
-                        id: d.deviceId,
-                        label: d.label || `Device ${d.deviceId.slice(0, 8)}`,
-                        kind: d.kind as 'audioinput' | 'audiooutput',
+                    .filter((data) => data.kind === 'audioinput' || data.kind === 'audiooutput')
+                    .map((data) => ({
+                        id: data.deviceId,
+                        label: data.label || `Device ${data.deviceId.slice(0, 8)}`,
+                        kind: data.kind as 'audioinput' | 'audiooutput',
                     }));
             } catch (error) {
                 logger.warn(`Failed to enumerate audio devices: ${error}`);
                 return [];
             }
-        }
+        })
 );

@@ -5,7 +5,7 @@ import * as subject from '../stopMacroRecording';
 describe('stopMacroRecording', () => {
     it('should export stopMacroRecording', () => {
         expect(subject.stopMacroRecording).toBeDefined();
-        const t = typeof subject.stopMacroRecording;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.stopMacroRecording;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

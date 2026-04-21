@@ -9,7 +9,7 @@ vi.mock('../../deviceLayoutRegistry', async () => {
         registerDeviceLayout: (...args: unknown[]) => mockRegisterDeviceLayout(...args),
         SectionHeader: ({ title }: { title: string }) => <div data-testid="section-header">{title}</div>,
         filterParams: (params: unknown[], ids: string[]) =>
-            (params as Array<{ id: string }>).filter((p) => ids.includes(p.id)),
+            (params as Array<{ id: string }>).filter((param) => ids.includes(param.id)),
     };
 });
 

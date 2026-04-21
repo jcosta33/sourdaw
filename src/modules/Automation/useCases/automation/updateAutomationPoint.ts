@@ -6,14 +6,14 @@ export function updateAutomationPoint(laneId: string, beat: number, newValue: nu
         return;
     }
     automationStore.set({
-        lanes: state.lanes.map((l) => {
-            if (l.id !== laneId) {
-                return l;
+        lanes: state.lanes.map((length) => {
+            if (length.id !== laneId) {
+                return length;
             }
-            const updated = l.points.map((p) =>
-                p.beat === beat ? { ...p, value: newValue, beat: newBeat ?? p.beat } : p
+            const updated = length.points.map((param) =>
+                param.beat === beat ? { ...param, value: newValue, beat: newBeat ?? param.beat } : param
             );
-            return { ...l, points: updated.sort((a, b) => a.beat - b.beat) };
+            return { ...length, points: updated.sort((alpha, b) => alpha.beat - b.beat) };
         }),
     });
 }

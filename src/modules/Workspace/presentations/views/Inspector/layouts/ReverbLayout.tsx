@@ -12,16 +12,16 @@ import { SectionHeader } from '../SectionHeader';
 
 type P = DeviceLayoutProps['parameters'][number];
 const Param = ({
-    p,
+    param,
     device,
     trackId,
 }: {
-    p: P;
+    param: P;
     device: DeviceLayoutProps['device'];
     trackId: string;
 }): ReactElement => (
     <SurfaceCard className="rounded-md bg-surface-base p-2 w-full">
-        <DeviceParameterControl param={p} device={device} trackId={trackId} />
+        <DeviceParameterControl param={param} device={device} trackId={trackId} />
     </SurfaceCard>
 );
 
@@ -41,21 +41,20 @@ const ReverbLayout = ({ device, trackId, parameters }: DeviceLayoutProps): React
                     height={70}
                 />
             </div>
-
             <SectionHeader title="Controls" />
             <div className="grid grid-cols-2 gap-2">
-                {filterParams(parameters, ['rev-size', 'rev-decay']).map((p) => (
-                    <Param key={p.id} p={p} device={device} trackId={trackId} />
+                {filterParams(parameters, ['rev-size', 'rev-decay']).map((param) => (
+                    <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
             </div>
             <div className="grid grid-cols-2 gap-2">
-                {filterParams(parameters, ['rev-damping', 'rev-predelay']).map((p) => (
-                    <Param key={p.id} p={p} device={device} trackId={trackId} />
+                {filterParams(parameters, ['rev-damping', 'rev-predelay']).map((param) => (
+                    <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
             </div>
             <div className="grid grid-cols-2 gap-2">
-                {filterParams(parameters, ['rev-lowcut', 'rev-mix']).map((p) => (
-                    <Param key={p.id} p={p} device={device} trackId={trackId} />
+                {filterParams(parameters, ['rev-lowcut', 'rev-mix']).map((param) => (
+                    <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
             </div>
         </div>

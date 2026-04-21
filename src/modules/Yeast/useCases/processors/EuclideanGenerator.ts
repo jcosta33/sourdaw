@@ -23,8 +23,8 @@ function bjorklund(hits: number, steps: number): boolean[] {
     }
 
     const pattern: boolean[][] = [];
-    for (let i = 0; i < steps; i++) {
-        pattern.push([i < hits]);
+    for (let index = 0; index < steps; index++) {
+        pattern.push([index < hits]);
     }
 
     let level = 0;
@@ -35,19 +35,19 @@ function bjorklund(hits: number, steps: number): boolean[] {
     remainders.push(steps - hits);
     counts.push(hits);
     while (remainders[remainders.length - 1]! > 1) {
-        const c = counts[level]!;
+        const context = counts[level]!;
         const r = remainders[level]!;
-        counts.push(Math.min(c, r));
-        remainders.push(Math.max(c, r) - Math.min(c, r));
+        counts.push(Math.min(context, r));
+        remainders.push(Math.max(context, r) - Math.min(context, r));
         level++;
     }
 
     // Bresenham-style even distribution
     const out: boolean[] = [];
-    for (let i = 0; i < steps; i++) {
+    for (let index = 0; index < steps; index++) {
         // Toussaint's formulation: step i is a hit if floor(i*hits/steps) != floor((i-1)*hits/steps)
-        const current = Math.floor(((i + 1) * hits) / steps);
-        const previous = Math.floor((i * hits) / steps);
+        const current = Math.floor(((index + 1) * hits) / steps);
+        const previous = Math.floor((index * hits) / steps);
         out.push(current !== previous);
     }
 
@@ -78,8 +78,8 @@ export class EuclideanGenerator extends BaseMidiProcessor {
         const base = bjorklund(this.hits, this.steps);
         // Apply rotation
         this.pattern = [];
-        for (let i = 0; i < this.steps; i++) {
-            this.pattern.push(base[(((i - this.rotation) % this.steps) + this.steps) % this.steps]!);
+        for (let index = 0; index < this.steps; index++) {
+            this.pattern.push(base[(((index - this.rotation) % this.steps) + this.steps) % this.steps]!);
         }
     }
 
@@ -124,8 +124,8 @@ export class EuclideanGenerator extends BaseMidiProcessor {
 
         // Drain scheduled Note Offs
         const drained = this.scheduled.drainRange(0, blockEnd);
-        for (const e of drained) {
-            output.push(e);
+        for (const event1 of drained) {
+            output.push(event1);
         }
     }
 

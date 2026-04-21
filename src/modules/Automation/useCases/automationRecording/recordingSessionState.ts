@@ -31,7 +31,7 @@ export function findLaneId(trackId: string, parameterId: string): string | null 
     if (!state) {
         return null;
     }
-    const lane = state.lanes.find((l) => l.trackId === trackId && l.parameterId === parameterId);
+    const lane = state.lanes.find((length) => length.trackId === trackId && length.parameterId === parameterId);
     return lane?.id ?? null;
 }
 
@@ -41,13 +41,13 @@ export function clearPointsInRange(laneId: string, fromBeat: number, toBeat: num
         return;
     }
     automationStore.set({
-        lanes: state.lanes.map((l) => {
-            if (l.id !== laneId) {
-                return l;
+        lanes: state.lanes.map((length) => {
+            if (length.id !== laneId) {
+                return length;
             }
             return {
-                ...l,
-                points: l.points.filter((p) => p.beat < fromBeat || p.beat > toBeat),
+                ...length,
+                points: length.points.filter((param) => param.beat < fromBeat || param.beat > toBeat),
             };
         }),
     });

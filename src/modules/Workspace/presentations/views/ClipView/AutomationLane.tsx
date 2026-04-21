@@ -52,7 +52,7 @@ export const AutomationLane = ({
 }: AutomationLaneProps): ReactElement => {
     const [selectedLane, setSelectedLane] = useState('velocity');
 
-    const laneOption = LANE_OPTIONS.find((o) => o.value === selectedLane) ?? LANE_OPTIONS[0]!;
+    const laneOption = LANE_OPTIONS.find((output) => output.value === selectedLane) ?? LANE_OPTIONS[0]!;
     const mode = laneOption.mode;
 
     const renderLane = (): ReactElement => {
@@ -122,7 +122,7 @@ export const AutomationLane = ({
                 <DawCompactSelect
                     id="lane-selector"
                     value={selectedLane}
-                    onChange={(e) => setSelectedLane(e.target.value)}
+                    onChange={(event) => setSelectedLane(event.target.value)}
                     size="micro"
                     aria-label="Automation lane type"
                 >
@@ -133,7 +133,6 @@ export const AutomationLane = ({
                     ))}
                 </DawCompactSelect>
             </div>
-
             <div className="flex flex-1 min-h-0">
                 {/* Piano-key gutter spacer — matches PianoRoll's w-10 column */}
                 <div

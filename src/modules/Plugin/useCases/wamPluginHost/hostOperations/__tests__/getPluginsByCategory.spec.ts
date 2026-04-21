@@ -26,9 +26,9 @@ describe('getPluginsByCategory', () => {
         registerWAMPlugin(desc('fx1', 'effect'));
         registerWAMPlugin(desc('inst1', 'instrument'));
         registerWAMPlugin(desc('midi1', 'midi-effect'));
-        expect(getPluginsByCategory('effect').map((d) => d.id)).toEqual(['fx1']);
-        expect(getPluginsByCategory('instrument').map((d) => d.id)).toEqual(['inst1']);
-        expect(getPluginsByCategory('midi-effect').map((d) => d.id)).toEqual(['midi1']);
+        expect(getPluginsByCategory('effect').map((data) => data.id)).toEqual(['fx1']);
+        expect(getPluginsByCategory('instrument').map((data) => data.id)).toEqual(['inst1']);
+        expect(getPluginsByCategory('midi-effect').map((data) => data.id)).toEqual(['midi1']);
     });
 
     it('should return a new array instance each call', () => {

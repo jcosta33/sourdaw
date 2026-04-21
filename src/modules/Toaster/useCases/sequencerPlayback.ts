@@ -80,14 +80,14 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
         return;
     }
 
-    const sourcePattern = state.kit.patterns.find((p) => p.id === state.kit.activePatternId);
+    const sourcePattern = state.kit.patterns.find((param) => param.id === state.kit.activePatternId);
     if (!sourcePattern) {
         return;
     }
 
     let pattern: Pattern = sourcePattern;
     if (state.morph.enabled && state.morph.targetPatternId) {
-        const targetPattern = state.kit.patterns.find((p) => p.id === state.morph.targetPatternId);
+        const targetPattern = state.kit.patterns.find((param) => param.id === state.morph.targetPatternId);
         if (targetPattern) {
             pattern = morphPatterns(sourcePattern, targetPattern, state.morph.position);
         }

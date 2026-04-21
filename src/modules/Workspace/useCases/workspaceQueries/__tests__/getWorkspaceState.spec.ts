@@ -5,7 +5,7 @@ import * as subject from '../getWorkspaceState';
 describe('getWorkspaceState', () => {
     it('should export getWorkspaceState', () => {
         expect(subject.getWorkspaceState).toBeDefined();
-        const t = typeof subject.getWorkspaceState;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getWorkspaceState;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

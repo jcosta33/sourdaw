@@ -57,9 +57,9 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
             // the engine would need a ChannelSplitter. Here we approximate by
             // treating odd/even samples as L/R, which works for interleaved sources)
             const halfLen = Math.floor(data.length / 2);
-            for (let i = 0; i < halfLen; i++) {
-                left![i] = data[i * 2]!;
-                right![i] = data[i * 2 + 1]!;
+            for (let index = 0; index < halfLen; index++) {
+                left![index] = data[index * 2]!;
+                right![index] = data[index * 2 + 1]!;
             }
 
             const correlation = meterRef.current.update(left!, right!);

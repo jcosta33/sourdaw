@@ -5,7 +5,7 @@ import * as subject from '../setCueTrackLevel';
 describe('setCueTrackLevel', () => {
     it('should export setCueTrackLevel', () => {
         expect(subject.setCueTrackLevel).toBeDefined();
-        const t = typeof subject.setCueTrackLevel;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setCueTrackLevel;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

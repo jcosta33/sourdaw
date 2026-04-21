@@ -40,7 +40,7 @@ export function updateModelStatus(
             return state;
         }
 
-        const updatedInstruments = state.ddspInstruments.map((m) => (m.id === modelId ? { ...m, ...patch } : m));
+        const updatedInstruments = state.ddspInstruments.map((message) => (message.id === modelId ? { ...message, ...patch } : message));
 
         const updatedVoicebanks = state.diffSingerVoicebanks.map((vb) => ({
             ...vb,

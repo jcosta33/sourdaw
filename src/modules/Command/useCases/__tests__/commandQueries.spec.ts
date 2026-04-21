@@ -14,13 +14,13 @@ describe('commandQueries (undo helpers)', () => {
         const inverse: AppAction = { type: 'togglePlayback' };
         vi.spyOn(Date, 'now').mockReturnValue(9_000_001);
 
-        const a = createUndoEntry('Test', action, inverse, 'voice');
+        const alpha = createUndoEntry('Test', action, inverse, 'voice');
         const b = createUndoEntry('Test 2', action, null, 'manual');
 
-        expect(a.id).toMatch(/^undo-[a-f0-9]{8}$/i);
+        expect(alpha.id).toMatch(/^undo-[a-f0-9]{8}$/i);
         expect(b.id).toMatch(/^undo-[a-f0-9]{8}$/i);
-        expect(a.id).not.toBe(b.id);
-        expect(a).toMatchObject({
+        expect(alpha.id).not.toBe(b.id);
+        expect(alpha).toMatchObject({
             kind: 'action',
             label: 'Test',
             action,

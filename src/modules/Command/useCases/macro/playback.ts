@@ -13,7 +13,7 @@ export async function playMacro(macroId: string): Promise<void> {
         return;
     }
 
-    const macro = state.macros.find((m) => m.id === macroId);
+    const macro = state.macros.find((message) => message.id === macroId);
     if (!macro) {
         return;
     }

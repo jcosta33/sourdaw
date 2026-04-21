@@ -13,16 +13,16 @@ function mk(sourceSec: number, targetBeat: number) {
 
 describe('getStretchRateBetweenMarkers', () => {
     it('should return 1 when source or target duration is non-positive', () => {
-        const a = mk(1, 0);
+        const alpha = mk(1, 0);
         const b = mk(1, 0);
-        expect(getStretchRateBetweenMarkers(a, b, 120)).toBe(1);
+        expect(getStretchRateBetweenMarkers(alpha, b, 120)).toBe(1);
     });
 
     it('should return source seconds divided by target seconds at the given bpm', () => {
-        const a = mk(0, 0);
+        const alpha = mk(0, 0);
         const b = mk(2, 2);
         const bpm = 120;
         const targetSec = (2 / bpm) * 60;
-        expect(getStretchRateBetweenMarkers(a, b, bpm)).toBeCloseTo(2 / targetSec);
+        expect(getStretchRateBetweenMarkers(alpha, b, bpm)).toBeCloseTo(2 / targetSec);
     });
 });

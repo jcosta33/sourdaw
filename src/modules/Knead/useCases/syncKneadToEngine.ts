@@ -17,7 +17,7 @@ export function syncKneadToEngine(): () => void {
 
         // For each track, check if it has a Knead device and sync its clips' states
         for (const track of tracks) {
-            const hasKnead = track.devices.some((d) => d.type.toLowerCase() === 'knead');
+            const hasKnead = track.devices.some((data) => data.type.toLowerCase() === 'knead');
             if (hasKnead) {
                 // Collect all clips belonging to this track that have knead state
                 const trackClipsState: Record<string, any> = {};

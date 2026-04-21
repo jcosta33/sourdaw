@@ -17,7 +17,7 @@ let changeListeners: ((change: AiChangeNotification) => void)[] = [];
 export function subscribeAiChangeNotification(cb: (change: AiChangeNotification) => void): () => void {
     changeListeners.push(cb);
     return () => {
-        changeListeners = changeListeners.filter((l) => l !== cb);
+        changeListeners = changeListeners.filter((length) => length !== cb);
     };
 }
 

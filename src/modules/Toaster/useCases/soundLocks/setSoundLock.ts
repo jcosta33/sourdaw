@@ -7,12 +7,12 @@ export function setSoundLock(padIndex: number, stepIndex: number, engineType: Dr
         return;
     }
 
-    const pattern = state.kit.patterns.find((p) => p.id === state.kit.activePatternId);
+    const pattern = state.kit.patterns.find((param) => param.id === state.kit.activePatternId);
     if (!pattern) {
         return;
     }
 
-    const track = pattern.tracks.find((t) => t.padIndex === padIndex);
+    const track = pattern.tracks.find((time) => time.padIndex === padIndex);
     if (!track || !track.steps[stepIndex]) {
         return;
     }
@@ -28,7 +28,7 @@ export function setSoundLock(padIndex: number, stepIndex: number, engineType: Dr
 
     newSteps[stepIndex] = step;
 
-    const newTracks = pattern.tracks.map((t) => (t.padIndex === padIndex ? { ...t, steps: newSteps } : t));
-    const newPatterns = state.kit.patterns.map((p) => (p.id === pattern.id ? { ...p, tracks: newTracks } : p));
+    const newTracks = pattern.tracks.map((time) => (time.padIndex === padIndex ? { ...time, steps: newSteps } : time));
+    const newPatterns = state.kit.patterns.map((param) => (param.id === pattern.id ? { ...param, tracks: newTracks } : param));
     toasterStore.set({ ...state, kit: { ...state.kit, patterns: newPatterns } });
 }

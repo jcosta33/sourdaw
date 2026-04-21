@@ -70,11 +70,11 @@ export const VoiceKeyEditor = ({
         if (!listening) {
             return undefined;
         }
-        const handler = (e: KeyboardEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (e.key.length === 1) {
-                onChange(e.key.toLowerCase());
+        const handler = (event: KeyboardEvent) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.key.length === 1) {
+                onChange(event.key.toLowerCase());
             }
             setListening(false);
         };
@@ -126,7 +126,7 @@ export const GridSubdivisionSection = ({
                     ) : null}
                     {group.options.map((opt) => {
                         const entry = GRID_SNAP_OPTIONS.find(
-                            (o: { value: GridSnapOption; label: string }) => o.value === opt
+                            (output: { value: GridSnapOption; label: string }) => output.value === opt
                         );
                         return (
                             <Button

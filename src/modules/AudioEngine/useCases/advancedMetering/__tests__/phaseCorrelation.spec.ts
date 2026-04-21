@@ -8,8 +8,8 @@ describe('computePhaseCorrelation', () => {
     });
 
     it('should return 1 for identical mono signals', () => {
-        const a = new Float32Array([0.5, -0.5, 0.25]);
-        expect(computePhaseCorrelation(a, a)).toBeCloseTo(1);
+        const alpha = new Float32Array([0.5, -0.5, 0.25]);
+        expect(computePhaseCorrelation(alpha, alpha)).toBeCloseTo(1);
     });
 
     it('should return -1 when left is the inverse of right', () => {

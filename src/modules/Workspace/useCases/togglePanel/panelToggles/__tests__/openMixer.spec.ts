@@ -5,7 +5,7 @@ import * as subject from '../openMixer';
 describe('openMixer', () => {
     it('should export openMixer', () => {
         expect(subject.openMixer).toBeDefined();
-        const t = typeof subject.openMixer;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.openMixer;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

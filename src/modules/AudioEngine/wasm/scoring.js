@@ -14,8 +14,8 @@ if (typeof TextDecoder === 'undefined') {
                           input instanceof ArrayBuffer ? input.byteLength : input.byteLength
                       );
             let result = '';
-            for (let i = 0; i < bytes.length; i++) {
-                result += String.fromCharCode(bytes[i]);
+            for (let index = 0; index < bytes.length; index++) {
+                result += String.fromCharCode(bytes[index]);
             }
             return result;
         }
@@ -28,15 +28,15 @@ if (typeof TextEncoder === 'undefined') {
                 return new Uint8Array(0);
             }
             const buf = new Uint8Array(input.length);
-            for (let i = 0; i < input.length; i++) {
-                buf[i] = input.charCodeAt(i) & 0xff;
+            for (let index = 0; index < input.length; index++) {
+                buf[index] = input.charCodeAt(index) & 0xff;
             }
             return buf;
         }
         encodeInto(src, dest) {
             const len = Math.min(src.length, dest.length);
-            for (let i = 0; i < len; i++) {
-                dest[i] = src.charCodeAt(i) & 0xff;
+            for (let index = 0; index < len; index++) {
+                dest[index] = src.charCodeAt(index) & 0xff;
             }
             return { read: len, written: len };
         }

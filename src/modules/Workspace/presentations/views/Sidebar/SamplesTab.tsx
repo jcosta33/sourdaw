@@ -27,7 +27,7 @@ export const SamplesTab = ({
     selectedTrackId,
     preview,
 }: SamplesTabProps): ReactElement => {
-    const categories = [...new Set(samples.map((s) => s.category))];
+    const categories = [...new Set(samples.map((state) => state.category))];
 
     const handleAdd = (sample: SampleItem) => {
         let trackId = selectedTrackId;
@@ -68,21 +68,21 @@ export const SamplesTab = ({
                         <span className="text-[10px] font-medium text-muted-foreground uppercase">{cat}</span>
                     </div>
                     {samples
-                        .filter((s) => s.category === cat)
+                        .filter((state) => state.category === cat)
                         .map((sample) => (
                             <div
                                 key={sample.id}
                                 draggable
                                 className="group"
-                                onDragStart={(e) => {
+                                onDragStart={(event) => {
                                     const data = {
                                         name: sample.name,
                                         id: sample.id,
                                         duration: sample.duration,
                                         audioBufferId: sample.audioBufferId,
                                     };
-                                    e.dataTransfer.setData('application/x-sourdaw-sample', JSON.stringify(data));
-                                    e.dataTransfer.effectAllowed = 'copy';
+                                    event.dataTransfer.setData('application/x-sourdaw-sample', JSON.stringify(data));
+                                    event.dataTransfer.effectAllowed = 'copy';
                                 }}
                                 onClick={() => {
                                     handleAdd(sample);
@@ -119,8 +119,8 @@ export const SamplesTab = ({
                                                 'size-3 opacity-0 transition-opacity group-hover:opacity-100',
                                                 favorites.has(sample.id) && 'opacity-100'
                                             )}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
+                                            onClick={(event) => {
+                                                event.stopPropagation();
                                                 onToggleFavorite(sample.id);
                                             }}
                                             aria-label={

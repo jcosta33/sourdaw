@@ -5,12 +5,12 @@ import * as subject from '../generateDemoDrumBuffer';
 describe('generateDemoDrumBuffer', () => {
     it('should export createNoiseBurst', () => {
         expect(subject.createNoiseBurst).toBeDefined();
-        const t = typeof subject.createNoiseBurst;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.createNoiseBurst;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export generateDemoDrumBuffer', () => {
         expect(subject.generateDemoDrumBuffer).toBeDefined();
-        const t = typeof subject.generateDemoDrumBuffer;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.generateDemoDrumBuffer;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

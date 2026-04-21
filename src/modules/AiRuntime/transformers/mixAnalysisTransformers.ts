@@ -68,15 +68,15 @@ export function detectIssues({ masterLevels, bands, trackLevels }: DetectIssuesI
     }
 
     const activeTracks = trackLevels.filter(
-        (t: MixAnalysis['trackLevels'][number]) => !t.isMuted && t.peakDb > SILENCE_FLOOR_DB
+        (time: MixAnalysis['trackLevels'][number]) => !time.isMuted && time.peakDb > SILENCE_FLOOR_DB
     );
     if (activeTracks.length >= 2) {
-        const peaks = activeTracks.map((t: MixAnalysis['trackLevels'][number]) => t.peakDb);
+        const peaks = activeTracks.map((time: MixAnalysis['trackLevels'][number]) => time.peakDb);
         const maxPeak = Math.max(...peaks);
         const minPeak = Math.min(...peaks);
         if (maxPeak - minPeak > 20) {
-            const loudest = activeTracks.find((t: MixAnalysis['trackLevels'][number]) => t.peakDb === maxPeak);
-            const quietest = activeTracks.find((t: MixAnalysis['trackLevels'][number]) => t.peakDb === minPeak);
+            const loudest = activeTracks.find((time: MixAnalysis['trackLevels'][number]) => time.peakDb === maxPeak);
+            const quietest = activeTracks.find((time: MixAnalysis['trackLevels'][number]) => time.peakDb === minPeak);
             issues.push({
                 severity: 'info',
                 category: 'level',

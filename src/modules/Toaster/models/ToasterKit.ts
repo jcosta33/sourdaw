@@ -210,8 +210,8 @@ export function createDefaultPattern(numPads: number): Pattern {
         name: 'Pattern A1',
         stepsPerBar: 16,
         bars: 1,
-        tracks: Array.from({ length: numPads }, (_, i) => ({
-            padIndex: i,
+        tracks: Array.from({ length: numPads }, (_, index) => ({
+            padIndex: index,
             steps: Array.from({ length: 16 }, () => createDefaultStep()),
         })),
     };
@@ -222,7 +222,7 @@ export function createDefaultKit(): ToasterKit {
     return {
         version: 1,
         name: 'Plain Bread',
-        pads: Array.from({ length: numPads }, (_, i) => createDefaultPad(i)),
+        pads: Array.from({ length: numPads }, (_, index) => createDefaultPad(index)),
         patterns: [createDefaultPattern(numPads)],
         activePatternId: 'A1',
         swing: 0,

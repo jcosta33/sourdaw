@@ -40,7 +40,7 @@ describe('compareMixes', () => {
     it('should flag loudness mismatch with a suggestion', () => {
         const louder = { ...sampleAnalysis, lufs: -8 };
         const result = compareMixes(sampleAnalysis, louder);
-        expect(result.suggestions.some((s) => s.category === 'loudness')).toBe(true);
+        expect(result.suggestions.some((state) => state.category === 'loudness')).toBe(true);
     });
 
     it('should flag frequency band mismatch when profile differs enough', () => {
@@ -49,19 +49,19 @@ describe('compareMixes', () => {
             frequencyProfile: { ...sampleAnalysis.frequencyProfile, bass: 0.75 },
         };
         const result = compareMixes(sampleAnalysis, current);
-        expect(result.suggestions.some((s) => s.category === 'frequency' && s.target === 'bass')).toBe(true);
+        expect(result.suggestions.some((state) => state.category === 'frequency' && state.target === 'bass')).toBe(true);
     });
 
     it('should flag dynamics mismatch when dynamic range differs enough', () => {
         const current = { ...sampleAnalysis, dynamicRange: 5 };
         const result = compareMixes(sampleAnalysis, current);
-        expect(result.suggestions.some((s) => s.category === 'dynamics')).toBe(true);
+        expect(result.suggestions.some((state) => state.category === 'dynamics')).toBe(true);
     });
 
     it('should flag stereo width mismatch when width differs enough', () => {
         const current = { ...sampleAnalysis, stereoWidth: 0.95 };
         const result = compareMixes(sampleAnalysis, current);
-        expect(result.suggestions.some((s) => s.category === 'stereo')).toBe(true);
+        expect(result.suggestions.some((state) => state.category === 'stereo')).toBe(true);
     });
 
     it('should compareToReference using analyzeMix and createReferenceAnalysis', () => {

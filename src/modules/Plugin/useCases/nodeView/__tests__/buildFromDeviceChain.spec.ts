@@ -18,7 +18,7 @@ describe('buildFromDeviceChain', () => {
         buildFromDeviceChain('track-a', []);
         const state = nodeViewStore.value!;
         expect(state.activeTrackId).toBe('track-a');
-        expect(state.nodes.map((n) => n.type)).toEqual(['input', 'output']);
+        expect(state.nodes.map((node) => node.type)).toEqual(['input', 'output']);
         expect(state.connections).toHaveLength(1);
     });
 
@@ -28,7 +28,7 @@ describe('buildFromDeviceChain', () => {
             { id: 'd2', name: 'Comp' },
         ]);
         const state = nodeViewStore.value!;
-        expect(state.nodes.map((n) => n.type)).toEqual(['input', 'effect', 'effect', 'output']);
+        expect(state.nodes.map((node) => node.type)).toEqual(['input', 'effect', 'effect', 'output']);
         expect(state.nodes[1]?.deviceId).toBe('d1');
         expect(state.nodes[2]?.deviceId).toBe('d2');
         expect(state.connections).toHaveLength(3);

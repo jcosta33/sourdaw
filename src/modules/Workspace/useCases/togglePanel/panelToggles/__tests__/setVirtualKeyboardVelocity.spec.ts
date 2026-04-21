@@ -5,7 +5,7 @@ import * as subject from '../setVirtualKeyboardVelocity';
 describe('setVirtualKeyboardVelocity', () => {
     it('should export setVirtualKeyboardVelocity', () => {
         expect(subject.setVirtualKeyboardVelocity).toBeDefined();
-        const t = typeof subject.setVirtualKeyboardVelocity;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setVirtualKeyboardVelocity;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

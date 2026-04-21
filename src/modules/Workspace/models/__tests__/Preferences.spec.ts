@@ -38,15 +38,15 @@ describe('gridSnapBeats', () => {
 describe('option lists', () => {
     it('should list every grid snap value with a beat length', () => {
         expect(GRID_SNAP_OPTIONS.length).toBe(13);
-        expect(GRID_SNAP_OPTIONS.every((o) => typeof o.beats === 'number')).toBe(true);
+        expect(GRID_SNAP_OPTIONS.every((output) => typeof output.beats === 'number')).toBe(true);
     });
 
     it('should list buffer sizes in ascending order', () => {
-        expect(BUFFER_SIZE_OPTIONS.map((o) => o.value)).toEqual([128, 256, 512, 1024, 2048]);
+        expect(BUFFER_SIZE_OPTIONS.map((output) => output.value)).toEqual([128, 256, 512, 1024, 2048]);
     });
 
     it('should list common sample rates', () => {
-        expect(SAMPLE_RATE_OPTIONS.map((o) => o.value)).toEqual([44100, 48000, 96000]);
+        expect(SAMPLE_RATE_OPTIONS.map((output) => output.value)).toEqual([44100, 48000, 96000]);
     });
 });
 

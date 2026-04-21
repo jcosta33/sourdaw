@@ -65,7 +65,7 @@ export const controlSurfaceStore = createStore<ControlSurfaceState>({
     initialData: {
         protocol: null,
         mcu: {
-            faders: Array.from({ length: 9 }, (_, i) => ({ position: 0, trackIndex: i })),
+            faders: Array.from({ length: 9 }, (_, index) => ({ position: 0, trackIndex: index })),
             bankOffset: 0,
             vpots: Array.from({ length: 8 }, () => 0),
             mode: 'pan',

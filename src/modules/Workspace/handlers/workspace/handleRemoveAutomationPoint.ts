@@ -2,18 +2,18 @@ import { getAutomationStoreState, removeAutomationPoint } from '#/modules/Automa
 import { createHandler } from '#/utils/createHandler';
 
 export const handleRemoveAutomationPoint = createHandler<'removeAutomationPoint'>({
-    execute: (a) => {
+    execute: (alpha) => {
         const state = getAutomationStoreState();
         if (!state) {
             return;
         }
-        const lane = state.lanes.find((l) => l.id === a.payload.laneId);
-        if (!lane || a.payload.pointIndex < 0 || a.payload.pointIndex >= lane.points.length) {
+        const lane = state.lanes.find((length) => length.id === alpha.payload.laneId);
+        if (!lane || alpha.payload.pointIndex < 0 || alpha.payload.pointIndex >= lane.points.length) {
             return;
         }
-        const point = lane.points[a.payload.pointIndex];
+        const point = lane.points[alpha.payload.pointIndex];
         if (point) {
-            removeAutomationPoint(a.payload.laneId, point.beat);
+            removeAutomationPoint(alpha.payload.laneId, point.beat);
         }
     },
     describe: () => ({ label: 'Remove automation point' }),

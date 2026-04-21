@@ -2,8 +2,8 @@ import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
 
 export function quantizeNotes(clipId: string, gridSize: number, strength: number = 1, swing: number = 0): void {
     updateNotesForClip(clipId, (notes) =>
-        notes.map((n) => {
-            const stepIndex = Math.round(n.startBeat / gridSize);
+        notes.map((node) => {
+            const stepIndex = Math.round(node.startBeat / gridSize);
             // In a standard swing model, every second grid step is delayed.
             const isOffbeat = stepIndex % 2 !== 0;
 
@@ -13,10 +13,10 @@ export function quantizeNotes(clipId: string, gridSize: number, strength: number
             const targetStartBeat = stepIndex * gridSize + swingOffset;
 
             // Apply strength (0 = no quantization, 1 = full quantization)
-            const newStartBeat = n.startBeat + (targetStartBeat - n.startBeat) * strength;
+            const newStartBeat = node.startBeat + (targetStartBeat - node.startBeat) * strength;
 
             return {
-                ...n,
+                ...node,
                 startBeat: newStartBeat,
             };
         })

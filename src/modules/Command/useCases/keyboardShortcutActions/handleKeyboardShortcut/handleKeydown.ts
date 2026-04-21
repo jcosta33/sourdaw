@@ -117,13 +117,13 @@ function getSelectedGhostClipId(): string | null {
     const state = trackStore.value;
     const isGhost =
         (state?.ghostClips ?? []).some((g) => g.id === selectedId) ||
-        state?.tracks.flatMap((t) => t.clips).some((c) => c.id === selectedId && c.isGhost);
+        state?.tracks.flatMap((time) => time.clips).some((context) => context.id === selectedId && context.isGhost);
     return isGhost ? selectedId : null;
 }
 
 function executeDuplicateTimeRange(startBeat: number, endBeat: number): void {
     const duration = endBeat - startBeat;
-    const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((t) => t.id);
+    const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((time) => time.id);
     duplicateTimeRange(startBeat, endBeat);
     pushUndoEntry(
         'Duplicate Time Range',
@@ -293,7 +293,7 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                             const state = trackStore.value;
                             if (state) {
                                 for (const track of state.tracks) {
-                                    const clip = track.clips.find((c) => c.id === singleId);
+                                    const clip = track.clips.find((context) => context.id === singleId);
                                     if (clip) {
                                         setLoopRegion(clip.startBeat, clip.endBeat);
                                         break;
@@ -322,7 +322,7 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                     }
                     const duration = sel.endBeat - sel.startBeat;
                     const atBeat = sel.startBeat;
-                    const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((t) => t.id);
+                    const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((time) => time.id);
                     insertTime(atBeat, duration);
                     pushUndoEntry(
                         'Insert Silence',
@@ -345,9 +345,9 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                     // R-E1.2: Alt+]/[ cycle through ghost clips
                     const state = trackStore.value;
                     const allGhosts = [
-                        ...(state?.tracks ?? []).flatMap((t) => t.clips).filter((c) => c.isGhost),
+                        ...(state?.tracks ?? []).flatMap((time) => time.clips).filter((context) => context.isGhost),
                         ...(state?.ghostClips ?? []),
-                    ].map((c) => c.id);
+                    ].map((context) => context.id);
 
                     if (allGhosts.length === 0) {
                         return false;
@@ -399,7 +399,7 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
             return false;
         }
 
-        const allClips = trackStore.value?.tracks.flatMap((t) => t.clips) ?? [];
+        const allClips = trackStore.value?.tracks.flatMap((time) => time.clips) ?? [];
         const deletedClips = ids
             .map((id) => allClips.find((clip) => clip.id === id))
             .filter((clip): clip is NonNullable<typeof clip> => clip != null);

@@ -38,8 +38,8 @@ function invokeWorker(msg: Record<string, unknown>): Promise<WorkerResponse> {
             worker.removeEventListener('error', errorHandler);
             worker.removeEventListener('messageerror', errorHandler);
         };
-        function handler(e: MessageEvent): void {
-            const data = e.data as WorkerResponse;
+        function handler(event: MessageEvent): void {
+            const data = event.data as WorkerResponse;
             if (data.id !== id) {
                 return;
             }
@@ -52,9 +52,9 @@ function invokeWorker(msg: Record<string, unknown>): Promise<WorkerResponse> {
         };
         // §71.3: if the worker crashes or the message cannot be deserialised,
         // without these listeners the returned Promise would hang forever.
-        function errorHandler(e: ErrorEvent | MessageEvent): void {
+        function errorHandler(event: ErrorEvent | MessageEvent): void {
             cleanup();
-            const msg = e instanceof ErrorEvent ? e.message : 'crdt worker postMessage failed';
+            const msg = event instanceof ErrorEvent ? event.message : 'crdt worker postMessage failed';
             reject(new Error(`crdtWorker crashed: ${msg}`));
         };
         worker.addEventListener('message', handler);
@@ -289,8 +289,8 @@ class AutomergeRepository {
             }
         }
 
-        incrementals.sort((a, b) => {
-            const timeA = parseInt(a.id.split(':').pop() ?? '0', 10);
+        incrementals.sort((alpha, b) => {
+            const timeA = parseInt(alpha.id.split(':').pop() ?? '0', 10);
             const timeB = parseInt(b.id.split(':').pop() ?? '0', 10);
             return timeA - timeB;
         });

@@ -7,13 +7,13 @@ export function commitPunchRegion(captureId: string, regionId: string): void {
     }
     punchRecordingStore.set({
         ...state,
-        captures: state.captures.map((c) =>
-            c.id === captureId
+        captures: state.captures.map((context) =>
+            context.id === captureId
                 ? {
-                      ...c,
-                      punchRegions: c.punchRegions.map((r) => (r.id === regionId ? { ...r, committed: true } : r)),
+                      ...context,
+                      punchRegions: context.punchRegions.map((r) => (r.id === regionId ? { ...r, committed: true } : r)),
                   }
-                : c
+                : context
         ),
     });
 }

@@ -49,7 +49,7 @@ describe('createPatternInstance', () => {
         // Verify track state update
         expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
         const newState = mocks.setTrackState.mock.calls[0][0];
-        const instance = newState.tracks[0].clips.find((c: any) => c.id === instanceId);
+        const instance = newState.tracks[0].clips.find((context: any) => context.id === instanceId);
 
         expect(instance).toMatchObject({
             parentClipId: 'cBase',

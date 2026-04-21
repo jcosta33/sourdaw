@@ -10,18 +10,18 @@ export function exportPatternToTimeline(): void {
         return;
     }
 
-    const pattern = state.kit.patterns.find((p) => p.id === state.kit.activePatternId);
+    const pattern = state.kit.patterns.find((param) => param.id === state.kit.activePatternId);
     if (!pattern) {
         return;
     }
 
     const tracks = getAllTracks();
-    const parentTrack = tracks.find((t) => t.devices.some((d) => d.type === 'toaster'));
+    const parentTrack = tracks.find((time) => time.devices.some((data) => data.type === 'toaster'));
     if (!parentTrack) {
         return;
     }
 
-    const childTracks = tracks.filter((t) => t.parentId === parentTrack.id);
+    const childTracks = tracks.filter((time) => time.parentId === parentTrack.id);
     const stepsPerBar = pattern.stepsPerBar;
     const totalSteps = stepsPerBar * pattern.bars;
     const stepDurationBeats = 4 / stepsPerBar;
@@ -35,7 +35,7 @@ export function exportPatternToTimeline(): void {
 
         // Check for active steps on this pad
         const numSteps = track.stepsOverride ?? totalSteps;
-        const hasActiveSteps = track.steps.slice(0, numSteps).some((s) => s.active);
+        const hasActiveSteps = track.steps.slice(0, numSteps).some((state1) => state1.active);
         if (!hasActiveSteps) {
             continue;
         }
@@ -55,13 +55,13 @@ export function exportPatternToTimeline(): void {
         const clipId = clip.id;
 
         // Add MIDI notes for each active step
-        for (let s = 0; s < numSteps; s++) {
-            const step = track.steps[s];
+        for (let state1 = 0; state1 < numSteps; state1++) {
+            const step = track.steps[state1];
             if (!step?.active) {
                 continue;
             }
 
-            const startBeat = s * stepDurationBeats;
+            const startBeat = state1 * stepDurationBeats;
             const midiNote = 36 + track.padIndex;
             const velocity = Math.round(step.velocity * 127);
 

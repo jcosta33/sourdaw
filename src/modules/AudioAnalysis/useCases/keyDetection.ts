@@ -23,19 +23,19 @@ export function detectKey(audioBufferId: string): { key: string; mode: 'major' |
         for (let note = 0; note < 12; note++) {
             for (let octave = 2; octave <= 7; octave++) {
                 const freq = 440 * 2 ** ((note - 9 + (octave - 4) * 12) / 12);
-                const k = Math.round((freq * fftSize) / sampleRate);
-                if (k <= 0 || k >= fftSize / 2) {
+                const kIndex = Math.round((freq * fftSize) / sampleRate);
+                if (kIndex <= 0 || kIndex >= fftSize / 2) {
                     continue;
                 }
 
-                const w = (2 * Math.PI * k) / fftSize;
+                const w = (2 * Math.PI * kIndex) / fftSize;
                 const coeff = 2 * Math.cos(w);
                 let s0: number,
                     s1 = 0,
                     s2 = 0;
 
-                for (let i = 0; i < fftSize; i++) {
-                    s0 = (data[frame + i] ?? 0) + coeff * s1 - s2;
+                for (let index = 0; index < fftSize; index++) {
+                    s0 = (data[frame + index] ?? 0) + coeff * s1 - s2;
                     s2 = s1;
                     s1 = s0;
                 }
@@ -50,8 +50,8 @@ export function detectKey(audioBufferId: string): { key: string; mode: 'major' |
     if (maxChroma === 0) {
         return null;
     }
-    for (let i = 0; i < 12; i++) {
-        chroma[i] = chroma[i]! / maxChroma;
+    for (let index = 0; index < 12; index++) {
+        chroma[index] = chroma[index]! / maxChroma;
     }
 
     // Correlate with key profiles
@@ -62,10 +62,10 @@ export function detectKey(audioBufferId: string): { key: string; mode: 'major' |
     for (let shift = 0; shift < 12; shift++) {
         let corrMajor = 0,
             corrMinor = 0;
-        for (let i = 0; i < 12; i++) {
-            const ci = chroma[(i + shift) % 12]!;
-            corrMajor += ci * MAJOR_PROFILE[i]!;
-            corrMinor += ci * MINOR_PROFILE[i]!;
+        for (let index = 0; index < 12; index++) {
+            const ci = chroma[(index + shift) % 12]!;
+            corrMajor += ci * MAJOR_PROFILE[index]!;
+            corrMinor += ci * MINOR_PROFILE[index]!;
         }
         if (corrMajor > bestCorr) {
             bestCorr = corrMajor;

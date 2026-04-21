@@ -47,10 +47,10 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
                 automation: data.automation || { lanes: [] },
                 midi: {
                     notesByClipId: data.arrangement.tracks.reduce(
-                        (acc, t) => {
-                            for (const c of t.clips) {
-                                if (c.notes) {
-                                    acc[c.id] = c.notes;
+                        (acc, time) => {
+                            for (const context of time.clips) {
+                                if (context.notes) {
+                                    acc[context.id] = context.notes;
                                 }
                             }
                             return acc;
@@ -69,7 +69,7 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
     // Reconstruct audio buffers if they exist in the metadata (future proofing)
     // or fall back to IDB cache for referenced buffer IDs.
     const referencedIds = data.arrangement.tracks
-        .flatMap((t) => t.clips.map((c) => c.bufferId))
+        .flatMap((time) => time.clips.map((context) => context.bufferId))
         .filter((id): id is string => Boolean(id));
 
     await audioBufferCache.restoreFromIdb(ctx, referencedIds.length > 0 ? referencedIds : undefined);

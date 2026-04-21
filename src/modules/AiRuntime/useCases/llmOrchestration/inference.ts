@@ -30,10 +30,10 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
         // Try structured tool calling first (Tauri only)
         if (isTauri()) {
             try {
-                const tools = DAW_TOOL_SCHEMAS.map((t) => ({
-                    name: t.function.name,
-                    description: t.function.description,
-                    parameters: t.function.parameters,
+                const tools = DAW_TOOL_SCHEMAS.map((time) => ({
+                    name: time.function.name,
+                    description: time.function.description,
+                    parameters: time.function.parameters,
                 }));
 
                 const results = (await tauriInvoke('native_tool_calling', {

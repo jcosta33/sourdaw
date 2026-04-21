@@ -91,13 +91,13 @@ export const useVoiceRecording = (): VoiceRecordingState => {
     const [errorText, setErrorText] = useState('');
 
     // Sync to voiceStatusStore so VoiceButton can reflect state
-    const setListening = (v: boolean): void => {
-        setIsListening(v);
-        voiceStatusStore.set({ isListening: v, transcribing: voiceStatusStore.value?.transcribing ?? false });
+    const setListening = (value: boolean): void => {
+        setIsListening(value);
+        voiceStatusStore.set({ isListening: value, transcribing: voiceStatusStore.value?.transcribing ?? false });
     };
-    const setTranscribingAndStore = (v: boolean): void => {
-        setTranscribing(v);
-        voiceStatusStore.set({ isListening: voiceStatusStore.value?.isListening ?? false, transcribing: v });
+    const setTranscribingAndStore = (value: boolean): void => {
+        setTranscribing(value);
+        voiceStatusStore.set({ isListening: voiceStatusStore.value?.isListening ?? false, transcribing: value });
     };
 
     const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
@@ -182,8 +182,8 @@ export const useVoiceRecording = (): VoiceRecordingState => {
         recognition.onresult = (event) => {
             let finalPart = '';
             let interimPart = '';
-            for (let i = 0; i < event.results.length; i++) {
-                const result = event.results[i];
+            for (let index = 0; index < event.results.length; index++) {
+                const result = event.results[index];
                 if (!result || result.length === 0 || !result[0]) {
                     continue;
                 }

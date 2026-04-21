@@ -7,6 +7,6 @@ export function disconnectNodes(connId: string): void {
     }
     nodeViewStore.set({
         ...state,
-        connections: state.connections.filter((c) => c.id !== connId),
+        connections: state.connections.filter((context) => context.id !== connId),
     });
 }

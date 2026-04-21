@@ -26,10 +26,10 @@ export async function loadAllFromIdb(): Promise<DocumentBundle | null> {
             }
 
             const bundle: DocumentBundle = new Map();
-            for (let i = 0; i < keys.length; i++) {
-                const value = values[i];
+            for (let index = 0; index < keys.length; index++) {
+                const value = values[index];
                 if (value) {
-                    bundle.set(String(keys[i]), value);
+                    bundle.set(String(keys[index]), value);
                 }
             }
             resolve(bundle);

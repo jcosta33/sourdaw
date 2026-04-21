@@ -6,6 +6,6 @@ export function removeTempoChange(changeId: string): void {
         return;
     }
     tempoMapStore.set({
-        changes: state.changes.filter((c) => c.id !== changeId),
+        changes: state.changes.filter((context) => context.id !== changeId),
     });
 }

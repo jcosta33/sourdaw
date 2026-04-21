@@ -4,8 +4,8 @@ import { createHandler } from '#/utils/createHandler';
 import { findPluginByName } from '../../useCases/pluginScan/queries';
 
 export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
-    execute: async (a) => {
-        const { pluginId, trackId: providedTrackId } = a.payload;
+    execute: async (alpha) => {
+        const { pluginId, trackId: providedTrackId } = alpha.payload;
 
         let trackId = providedTrackId;
         if (!trackId) {
@@ -25,6 +25,6 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
         const pluginName = scanned?.name ?? pluginId;
         addExternalDevice(trackId, pluginId, pluginName);
     },
-    describe: (a) => ({ label: `Load external plugin "${a.payload.pluginId}"` }),
+    describe: (alpha) => ({ label: `Load external plugin "${alpha.payload.pluginId}"` }),
     undoable: false,
 });

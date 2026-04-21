@@ -58,7 +58,7 @@ export async function demo4_NativeShowcase(): Promise<void> {
         { start: 720, end: 816, name: 'Dust', prog: PROG_MAIN },
     ];
     function getSec(b: number): Sec {
-        return SECTIONS.find((s) => b >= s.start && b < s.end) ?? SECTIONS[0]!;
+        return SECTIONS.find((state) => b >= state.start && b < state.end) ?? SECTIONS[0]!;
     }
     function getChord(b: number): string {
         const sec = getSec(b);
@@ -171,8 +171,8 @@ export async function demo4_NativeShowcase(): Promise<void> {
         tomHigh,
         maracas,
     ];
-    for (const t of allDrumTracks) {
-        t.devices = [
+    for (const time of allDrumTracks) {
+        time.devices = [
             {
                 id: `dev-${crypto.randomUUID()}`,
                 name: '808 Kit',
@@ -210,9 +210,9 @@ export async function demo4_NativeShowcase(): Promise<void> {
     applyPreset(nebulaArp, 'factory-faust-additive-glass');
 
     // ── FX HELPER ─────────────────────────────────────────────────────────
-    function addDev(t: any, type: string, name: string, params: Record<string, number>) {
-        t.devices = [
-            ...(t.devices ?? []),
+    function addDev(time: any, type: string, name: string, params: Record<string, number>) {
+        time.devices = [
+            ...(time.devices ?? []),
             { id: `dev-${crypto.randomUUID()}`, name, type, bypassed: false, parameterValues: params },
         ];
     }
@@ -554,10 +554,10 @@ export async function demo4_NativeShowcase(): Promise<void> {
     nebulaArp.pan = 38;
 
     // ── CLIPS ────────────────────────────────────────────────────────────
-    function mkClip(t: any, name: string, s: number, e: number) {
-        const c = createMidiClip(t.id, name, s, e, t.color);
-        t.clips = [...(t.clips || []), c];
-        return c;
+    function mkClip(time: any, name: string, state: number, event: number) {
+        const context = createMidiClip(time.id, name, state, event, time.color);
+        time.clips = [...(time.clips || []), context];
+        return context;
     }
 
     const ck808 = mkClip(kick808, 'Kick 808', 0, TB);
@@ -642,8 +642,8 @@ export async function demo4_NativeShowcase(): Promise<void> {
         cstab,
         criser,
     ];
-    for (const c of allClips) {
-        N[c.id] = [];
+    for (const context of allClips) {
+        N[context.id] = [];
     }
 
     function isDense(b: number) {
@@ -654,13 +654,13 @@ export async function demo4_NativeShowcase(): Promise<void> {
     }
 
     // ── KICK LAYERS ──────────────────────────────────────────────────────
-    for (let s = 0; s < TB * 4; s++) {
-        const b = s * 0.25;
+    for (let state = 0; state < TB * 4; state++) {
+        const b = state * 0.25;
         if (b >= TB) {
             break;
         }
         const sec = getSec(b);
-        const p = b % 4;
+        const param = b % 4;
 
         // Kick 808: broken beat patterns — NOT 4-on-floor
         const bar = Math.floor(b / 4);
@@ -672,64 +672,64 @@ export async function demo4_NativeShowcase(): Promise<void> {
             [0, 1, 2.25, 3.5], // pattern 3
         ][sec.name === 'Fog' ? 0 : sec.name === 'Dust' ? 2 : patIdx]!;
 
-        if (kickHits.includes(p) && !R(b, 720, 816)) {
+        if (kickHits.includes(param) && !R(b, 720, 816)) {
             N[ck808.id]!.push(note(36, b, 0.4, hv(110)));
         }
         // Sub kick layer (lower velocity, slightly delayed)
-        if (b >= 64 && p === 0 && bar % 2 === 0) {
+        if (b >= 64 && param === 0 && bar % 2 === 0) {
             N[cksub.id]!.push(note(36, b + 0.02, 0.5, hv(75)));
         }
         // Click layer in dense sections
-        if (b >= 160 && isDense(b) && kickHits.includes(p)) {
+        if (b >= 160 && isDense(b) && kickHits.includes(param)) {
             N[ckclick.id]!.push(note(37, b, 0.05, hv(50))); // rimshot as click
         }
 
         // Snare: on 2 of each bar + ghost offbeats
-        if (b >= 64 && p === 2) {
+        if (b >= 64 && param === 2) {
             N[csn.id]!.push(note(38, b, 0.2, hv(100)));
         }
         // Syncopated snare in dense sections
-        if (isDense(b) && (p === 3.5 || (p === 1.25 && bar % 2 === 1))) {
+        if (isDense(b) && (param === 3.5 || (param === 1.25 && bar % 2 === 1))) {
             N[csn.id]!.push(note(38, b, 0.15, hv(80)));
         }
 
         // Clap: beat 2, layered with snare in dense
-        if (b >= 160 && p === 2 && isDense(b)) {
+        if (b >= 160 && param === 2 && isDense(b)) {
             N[cclap.id]!.push(note(39, b, 0.2, hv(95)));
         }
         // Random clap flams
-        if (isDense(b) && p === 2 && bar % 4 === 3) {
+        if (isDense(b) && param === 2 && bar % 4 === 3) {
             N[cclap.id]!.push(note(39, b - 0.05, 0.1, hv(60)));
         }
 
         // Ghost notes: tiny snare taps
-        if (b >= 64 && p % 0.25 === 0 && Math.random() < 0.12) {
+        if (b >= 64 && param % 0.25 === 0 && Math.random() < 0.12) {
             N[cghost.id]!.push(note(38, b, 0.08, hv(22, 5)));
         }
 
         // Closed HH: complex swung 16ths with velocity curves
-        if (p % 0.25 === 0) {
-            const swing = s % 2 === 1 ? 0.03 : 0;
-            const accent = p % 1 === 0 ? 70 : p % 0.5 === 0 ? 50 : 30;
+        if (param % 0.25 === 0) {
+            const swing = state % 2 === 1 ? 0.03 : 0;
+            const accent = param % 1 === 0 ? 70 : param % 0.5 === 0 ? 50 : 30;
             const secVel = sec.name === 'Fog' ? 0.5 : sec.name === 'Dust' ? 0.4 : 1;
-            const v = Math.round(accent * secVel);
-            if (v > 10) {
-                N[chc.id]!.push(note(42, b + swing, 0.1, hv(v)));
+            const value = Math.round(accent * secVel);
+            if (value > 10) {
+                N[chc.id]!.push(note(42, b + swing, 0.1, hv(value)));
             }
         }
 
         // Open HH: accents
-        if (b >= 64 && p === 0.5 && bar % 2 === 1) {
+        if (b >= 64 && param === 0.5 && bar % 2 === 1) {
             N[cho.id]!.push(note(46, b, 0.3, hv(55)));
         }
 
         // Ride texture: sparse, random
-        if (p % 1 === 0 && Math.random() < 0.15) {
+        if (param % 1 === 0 && Math.random() < 0.15) {
             N[cride.id]!.push(note(42, b, 0.4, hv(25, 4))); // very quiet ride
         }
 
         // Maracas: 8th notes in Fog and Dust for texture
-        if ((R(b, 0, 64) || R(b, 720, TB)) && p % 0.5 === 0) {
+        if ((R(b, 0, 64) || R(b, 720, TB)) && param % 0.5 === 0) {
             N[cmar.id]!.push(note(70, b, 0.08, hv(20, 3)));
         }
     }
@@ -840,28 +840,28 @@ export async function demo4_NativeShowcase(): Promise<void> {
         }
         const ch = cv(bs);
         const sec = getSec(bs);
-        const v = sec.name === 'Fog' || sec.name === 'Dust' ? 50 : 70;
+        const value = sec.name === 'Fog' || sec.name === 'Dust' ? 50 : 70;
         const pat = bar % 3;
         if (pat === 0) {
-            for (const t of ch) {
-                N[crhodes.id]!.push(note(t, bs + 0.1, 2, hv(v)));
+            for (const time of ch) {
+                N[crhodes.id]!.push(note(time, bs + 0.1, 2, hv(value)));
             }
-            for (const t of ch) {
-                N[crhodes.id]!.push(note(t, bs + 2.75, 0.8, hv(v - 12)));
+            for (const time of ch) {
+                N[crhodes.id]!.push(note(time, bs + 2.75, 0.8, hv(value - 12)));
             }
         } else if (pat === 1) {
-            for (const t of ch) {
-                N[crhodes.id]!.push(note(t, bs + 0.5, 3, hv(v - 5)));
+            for (const time of ch) {
+                N[crhodes.id]!.push(note(time, bs + 0.5, 3, hv(value - 5)));
             }
         } else {
-            for (const t of ch) {
-                N[crhodes.id]!.push(note(t, bs, 0.5, hv(v)));
+            for (const time of ch) {
+                N[crhodes.id]!.push(note(time, bs, 0.5, hv(value)));
             }
-            for (const t of ch) {
-                N[crhodes.id]!.push(note(t, bs + 1.5, 0.5, hv(v - 8)));
+            for (const time of ch) {
+                N[crhodes.id]!.push(note(time, bs + 1.5, 0.5, hv(value - 8)));
             }
-            for (const t of ch) {
-                N[crhodes.id]!.push(note(t, bs + 3, 0.8, hv(v - 5)));
+            for (const time of ch) {
+                N[crhodes.id]!.push(note(time, bs + 3, 0.8, hv(value - 5)));
             }
         }
     }
@@ -874,11 +874,11 @@ export async function demo4_NativeShowcase(): Promise<void> {
         }
         const ch = cv(bs);
         if (bar % 2 === 0) {
-            for (const t of ch) {
-                N[cwurli.id]!.push(note(t + 12, bs + 0.75, 0.2, hv(65)));
+            for (const time of ch) {
+                N[cwurli.id]!.push(note(time + 12, bs + 0.75, 0.2, hv(65)));
             }
-            for (const t of ch) {
-                N[cwurli.id]!.push(note(t + 12, bs + 2.5, 0.15, hv(55)));
+            for (const time of ch) {
+                N[cwurli.id]!.push(note(time + 12, bs + 2.5, 0.15, hv(55)));
             }
         }
     }
@@ -1013,36 +1013,36 @@ export async function demo4_NativeShowcase(): Promise<void> {
     // Dark Drone: sustained throughout
     for (let beat = 0; beat < TB; beat += 32) {
         const ch = cv(beat);
-        for (const t of ch.slice(0, 3)) {
-            N[cdrone.id]!.push(note(t - 12, beat, 31, hv(35)));
+        for (const time of ch.slice(0, 3)) {
+            N[cdrone.id]!.push(note(time - 12, beat, 31, hv(35)));
         }
     }
     // Ethereal Pad: mid sections
     for (let beat = 160; beat < TB; beat += 16) {
         const ch = cv(beat);
-        for (const t of ch) {
-            N[cether.id]!.push(note(t + 12, beat, 15, hv(40)));
+        for (const time of ch) {
+            N[cether.id]!.push(note(time + 12, beat, 15, hv(40)));
         }
     }
     // Warm Strings: from Warp onward
     for (let beat = 288; beat < TB; beat += 16) {
         const ch = cv(beat);
-        for (const t of ch) {
-            N[cwarm.id]!.push(note(t, beat, 15.5, hv(45)));
+        for (const time of ch) {
+            N[cwarm.id]!.push(note(time, beat, 15.5, hv(45)));
         }
     }
     // Native Ambient: throughout, very subtle
     for (let beat = 0; beat < TB; beat += 32) {
         const ch = cv(beat);
-        for (const t of ch.slice(0, 2)) {
-            N[cnamb.id]!.push(note(t + 12, beat, 30, hv(30)));
+        for (const time of ch.slice(0, 2)) {
+            N[cnamb.id]!.push(note(time + 12, beat, 30, hv(30)));
         }
     }
     // Lo-Fi Pad: Fracture through Hyperspace
     for (let beat = 64; beat < 720; beat += 16) {
         const ch = cv(beat);
-        for (const t of ch.slice(0, 3)) {
-            N[clofi.id]!.push(note(t, beat, 15, hv(35)));
+        for (const time of ch.slice(0, 3)) {
+            N[clofi.id]!.push(note(time, beat, 15, hv(35)));
         }
     }
 
@@ -1054,8 +1054,8 @@ export async function demo4_NativeShowcase(): Promise<void> {
     }
 
     // Glitch pluck: rapid random in dense sections
-    for (let s = 0; s < TB * 4; s++) {
-        const b = s * 0.25;
+    for (let state = 0; state < TB * 4; state++) {
+        const b = state * 0.25;
         if (b < 160 || b >= 720 || !isDense(b)) {
             continue;
         }
@@ -1066,24 +1066,24 @@ export async function demo4_NativeShowcase(): Promise<void> {
     }
 
     // Crystal arp: 16th note patterns in Warp+
-    for (let s = 0; s < TB * 4; s++) {
-        const b = s * 0.25;
+    for (let state = 0; state < TB * 4; state++) {
+        const b = state * 0.25;
         if (b < 288 || b >= 720) {
             continue;
         }
         const ch = cv(b);
-        const idx = s % ch.length;
-        const oct = Math.floor(s / ch.length) % 3 === 0 ? 12 : 0;
+        const idx = state % ch.length;
+        const oct = Math.floor(state / ch.length) % 3 === 0 ? 12 : 0;
         N[ccrystal.id]!.push(note(ch[idx]! + 12 + oct, b, 0.15, hv(50)));
     }
 
     // Dark pulse: 16th notes in Gravity through Nebula
-    for (let s = 0; s < TB * 4; s++) {
-        const b = s * 0.25;
+    for (let state = 0; state < TB * 4; state++) {
+        const b = state * 0.25;
         if (b < 160 || b >= 576) {
             continue;
         }
-        if (s % 2 === 0) {
+        if (state % 2 === 0) {
             N[cdpulse.id]!.push(note(broot(b), b, 0.1, hv(45)));
         }
     }
@@ -1094,8 +1094,8 @@ export async function demo4_NativeShowcase(): Promise<void> {
             continue;
         }
         const ch = cv(beat);
-        for (const t of ch) {
-            N[cstab.id]!.push(note(t + 12, beat, 0.1, hv(85)));
+        for (const time of ch) {
+            N[cstab.id]!.push(note(time + 12, beat, 0.1, hv(85)));
         }
     }
 
@@ -1107,10 +1107,10 @@ export async function demo4_NativeShowcase(): Promise<void> {
     }
 
     // Deep Space clip/note generation
-    function mkC2(t: any, name: string, s: number, e: number) {
-        const c = createMidiClip(t.id, name, s, e, t.color);
-        t.clips = [...(t.clips || []), c];
-        return c;
+    function mkC2(time: any, name: string, state: number, event: number) {
+        const context = createMidiClip(time.id, name, state, event, time.color);
+        time.clips = [...(time.clips || []), context];
+        return context;
     }
     const cCosmic = mkC2(cosmicDrone, 'Cosmic Drone', 0, TB);
     const cSpace = mkC2(spaceWash, 'Space Wash', 0, TB);
@@ -1120,18 +1120,18 @@ export async function demo4_NativeShowcase(): Promise<void> {
         nebN: MidiNote[] = [];
     for (let b = 0; b < TB; b += 32) {
         const ch = cv(b);
-        for (const t of ch.slice(0, 3)) {
-            cosmicN.push(note(t - 24, b, 31, hv(22)));
-            spaceN.push(note(t + 12, b, 31, hv(27)));
+        for (const time of ch.slice(0, 3)) {
+            cosmicN.push(note(time - 24, b, 31, hv(22)));
+            spaceN.push(note(time + 12, b, 31, hv(27)));
         }
     }
-    for (let s = 0; s < TB * 4; s++) {
-        const b = s * 0.25;
+    for (let state = 0; state < TB * 4; state++) {
+        const b = state * 0.25;
         if (b < 288 || b >= 720) {
             continue;
         }
         const ch = cv(b);
-        nebN.push(note(ch[s % ch.length]! + 24, b, 0.2, hv(35)));
+        nebN.push(note(ch[state % ch.length]! + 24, b, 0.2, hv(35)));
     }
     N[cCosmic.id] = cosmicN;
     N[cSpace.id] = spaceN;
@@ -1428,18 +1428,18 @@ export async function demo4_NativeShowcase(): Promise<void> {
         'oklch(0.32 0.06 240)',
     ];
     markerStore.set({
-        markers: SECTIONS.map((s, i) => ({
+        markers: SECTIONS.map((state, index) => ({
             id: crypto.randomUUID(),
-            beat: s.start,
-            name: s.name,
-            color: secColors[i]!,
+            beat: state.start,
+            name: state.name,
+            color: secColors[index]!,
         })),
-        sections: SECTIONS.map((s, i) => ({
+        sections: SECTIONS.map((state, index) => ({
             id: crypto.randomUUID(),
-            startBeat: s.start,
-            endBeat: s.end,
-            name: s.name,
-            color: secColors[i]!,
+            startBeat: state.start,
+            endBeat: state.end,
+            name: state.name,
+            color: secColors[index]!,
         })),
     });
 
@@ -1461,7 +1461,7 @@ export async function demo4_NativeShowcase(): Promise<void> {
         scaleName: 'chromatic',
         tuning: {
             name: 'Equal Temperament',
-            frequencies: Array.from({ length: 128 }, (_, i) => 440 * 2 ** ((i - 69) / 12)),
+            frequencies: Array.from({ length: 128 }, (_, index) => 440 * 2 ** ((index - 69) / 12)),
         },
     });
 }

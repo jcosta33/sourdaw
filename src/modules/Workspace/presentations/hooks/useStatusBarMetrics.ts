@@ -93,8 +93,8 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             }
             const filled = cpuFilledRef.current;
             let sum = 0;
-            for (let i = 0; i < filled; i++) {
-                sum += samples[i]!;
+            for (let index = 0; index < filled; index++) {
+                sum += samples[index]!;
             }
             const cpuPct = filled > 0 ? Math.round(sum / filled) : 0;
 

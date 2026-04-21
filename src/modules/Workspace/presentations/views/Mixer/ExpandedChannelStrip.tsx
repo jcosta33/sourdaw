@@ -40,10 +40,10 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
     const ctxRef = useRef<HTMLDivElement>(null);
     const renameRef = useRef<HTMLInputElement>(null);
 
-    const handleContextMenu = (e: MouseEvent<HTMLDivElement>) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setCtxMenu({ x: e.clientX, y: e.clientY });
+    const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setCtxMenu({ x: event.clientX, y: event.clientY });
     };
 
     useContextMenuDismiss(ctxRef, () => setCtxMenu(null));
@@ -76,7 +76,6 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
         >
             {/* Color bar */}
             <div className="h-1.5 w-full rounded-t-sm -mt-2 mb-1" style={{ backgroundColor: track.color }} />
-
             {/* Track name */}
             {isRenaming ? (
                 <DawCompactInput
@@ -86,16 +85,16 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     align="center"
                     monospace
                     className="w-full px-1 text-[9px]"
-                    onBlur={(e) => {
-                        actions.rename(e.currentTarget.value);
+                    onBlur={(event) => {
+                        actions.rename(event.currentTarget.value);
                         setIsRenaming(false);
                     }}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                            actions.rename(e.currentTarget.value);
+                    onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                            actions.rename(event.currentTarget.value);
                             setIsRenaming(false);
                         }
-                        if (e.key === 'Escape') {
+                        if (event.key === 'Escape') {
                             setIsRenaming(false);
                         }
                     }}
@@ -109,14 +108,12 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     {track.name}
                 </span>
             )}
-
             <span className="text-[10px] text-muted-foreground capitalize">{track.kind}</span>
             {track.vcaGroupId ? (
                 <DawMicroBadge tone="cyan" rounded="full" className="font-mono">
                     VCA
                 </DawMicroBadge>
             ) : null}
-
             {/* Mute / Solo / Arm / Monitor */}
             <div className="flex flex-wrap justify-center gap-1">
                 <Tooltip>
@@ -127,8 +124,8 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             size="icon-sm"
                             aria-label={track.muted ? 'Unmute' : 'Mute'}
                             className="font-bold text-[10px]"
-                            onClick={(e) => {
-                                e.stopPropagation();
+                            onClick={(event) => {
+                                event.stopPropagation();
                                 actions.toggleMute();
                             }}
                         >
@@ -145,9 +142,9 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             size="icon-sm"
                             aria-label={track.soloed ? 'Unsolo' : 'Solo'}
                             className="font-bold text-[10px]"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                actions.toggleSolo(e.metaKey || e.ctrlKey);
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                actions.toggleSolo(event.metaKey || event.ctrlKey);
                             }}
                         >
                             S
@@ -163,8 +160,8 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             size="icon-sm"
                             aria-label={track.armed ? 'Disarm' : 'Arm'}
                             className=""
-                            onClick={(e) => {
-                                e.stopPropagation();
+                            onClick={(event) => {
+                                event.stopPropagation();
                                 actions.toggleArm();
                             }}
                         >
@@ -182,8 +179,8 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                                 size="icon-sm"
                                 aria-label={track.inputMonitoring === 'on' ? 'Disable monitoring' : 'Enable monitoring'}
                                 className=""
-                                onClick={(e) => {
-                                    e.stopPropagation();
+                                onClick={(event) => {
+                                    event.stopPropagation();
                                     actions.toggleMonitoring();
                                 }}
                             >
@@ -195,7 +192,6 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                 ) : null}
                 {track.soloSafe ? <ShieldCheck className="size-3 text-state-active" aria-label="Solo safe" /> : null}
             </div>
-
             <MixerLevelReadout
                 trackId={track.id}
                 control={
@@ -215,7 +211,6 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                 }
                 value={<>{track.gain === 0 ? '-∞' : `${((track.gain - 0.8) * 40).toFixed(1)}`} dB</>}
             />
-
             {/* Pan */}
             <div className="w-full px-1 flex flex-col items-center mt-2 mb-2">
                 <div onPointerUp={actions.releasePanAutomation}>
@@ -237,19 +232,14 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                           : `L${Math.abs(Math.round(track.pan))}`}
                 </MixerStripValue>
             </div>
-
             {/* MIDI FX */}
             <MidiFxSection track={track} />
-
             {/* Devices — contained with scroll */}
             <DeviceChainSection track={track} />
-
             {/* Sends */}
             <SendsSection track={track} />
-
             {/* I/O */}
             <IOSection track={track} />
-
             {/* Context menu */}
             {ctxMenu ? (
                 <MixerPopupMenu
@@ -278,12 +268,12 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     <MixerPopupSeparator />
                     <MixerPopupLabel>Color</MixerPopupLabel>
                     <div className="flex gap-1 px-3 py-1">
-                        {TRACK_COLOR_PRESETS.map((c) => (
+                        {TRACK_COLOR_PRESETS.map((context) => (
                             <DawSwatchButton
-                                key={c}
-                                color={c}
-                                active={c === track.color}
-                                onClick={act(() => actions.setColor(c))}
+                                key={context}
+                                color={context}
+                                active={context === track.color}
+                                onClick={act(() => actions.setColor(context))}
                                 aria-label={`Set color`}
                             />
                         ))}

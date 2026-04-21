@@ -31,17 +31,17 @@ export function shiftMidiNotesAfterBeat(input: ShiftMidiNotesAfterBeatInput): vo
 
     const nextNotes: typeof state.notesByClipId = {};
     for (const [clipId, notes] of Object.entries(state.notesByClipId)) {
-        nextNotes[clipId] = notes.map((n) => (n.startBeat >= atBeat ? { ...n, startBeat: n.startBeat + delta } : n));
+        nextNotes[clipId] = notes.map((node) => (node.startBeat >= atBeat ? { ...node, startBeat: node.startBeat + delta } : node));
     }
 
     const nextCc: typeof state.ccByClipId = {};
     for (const [clipId, events] of Object.entries(state.ccByClipId)) {
-        nextCc[clipId] = events.map((e) => (e.beat >= atBeat ? { ...e, beat: e.beat + delta } : e));
+        nextCc[clipId] = events.map((event) => (event.beat >= atBeat ? { ...event, beat: event.beat + delta } : event));
     }
 
     const nextPb: typeof state.pitchBendByClipId = {};
     for (const [clipId, events] of Object.entries(state.pitchBendByClipId)) {
-        nextPb[clipId] = events.map((e) => (e.beat >= atBeat ? { ...e, beat: e.beat + delta } : e));
+        nextPb[clipId] = events.map((event) => (event.beat >= atBeat ? { ...event, beat: event.beat + delta } : event));
     }
 
     midiStore.set({

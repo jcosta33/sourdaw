@@ -4,8 +4,8 @@
  * inline drag handler in a component.
  */
 export const startMouseDrag = (onMove: (e: MouseEvent) => void, onUp: (e: MouseEvent) => void): void => {
-    const handleUp = (e: MouseEvent) => {
-        onUp(e);
+    const handleUp = (event: MouseEvent) => {
+        onUp(event);
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', handleUp);
     };

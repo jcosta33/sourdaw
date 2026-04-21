@@ -7,6 +7,6 @@ export function updateSetlistItem(id: string, updates: Partial<Omit<SetlistItem,
     }
     setlistStore.set({
         ...state,
-        items: state.items.map((i) => (i.id === id ? { ...i, ...updates } : i)),
+        items: state.items.map((index) => (index.id === id ? { ...index, ...updates } : index)),
     });
 }

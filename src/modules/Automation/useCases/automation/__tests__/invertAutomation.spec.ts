@@ -32,7 +32,7 @@ describe('invertAutomation', () => {
     it('should invert point values around the lane min/max range', () => {
         invertAutomation('lane-1');
 
-        const p = automationStore.value?.lanes[0]?.points[0];
-        expect(p?.value).toBeCloseTo(0.75);
+        const param = automationStore.value?.lanes[0]?.points[0];
+        expect(param?.value).toBeCloseTo(0.75);
     });
 });

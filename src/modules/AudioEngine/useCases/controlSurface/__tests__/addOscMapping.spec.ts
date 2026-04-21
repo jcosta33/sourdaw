@@ -5,7 +5,7 @@ import * as subject from '../addOscMapping';
 describe('addOscMapping', () => {
     it('should export addOscMapping', () => {
         expect(subject.addOscMapping).toBeDefined();
-        const t = typeof subject.addOscMapping;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.addOscMapping;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

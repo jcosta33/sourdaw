@@ -166,7 +166,7 @@ class AudioEngineImpl implements AudioEngine {
                     getBusGainNode: (id) => this.busNodes.get(id)?.strip.gainNode,
                     getTrackGainNode: (id) => this.trackNodes.get(id)?.strip.gainNode,
                     getSendsForTrack: (tId) =>
-                        Array.from(this.sendNodes.values()).filter((s) => s.sourceTrackId === tId),
+                        Array.from(this.sendNodes.values()).filter((state) => state.sourceTrackId === tId),
                     pendingDevicePromises: this.pendingDevicePromises,
                     transportSAB: this.transportSAB,
                 });
@@ -315,14 +315,14 @@ class AudioEngineImpl implements AudioEngine {
         loopEnd = 0,
         isLooping = false
     ): void {
-        const v = this.transportView;
-        v[0] = beat;
-        v[1] = tempo;
-        v[2] = this.context.sampleRate;
-        v[3] = loopStart;
-        v[4] = loopEnd;
-        v[5] = isPlaying ? 1 : 0;
-        v[6] = isLooping ? 1 : 0;
+        const value = this.transportView;
+        value[0] = beat;
+        value[1] = tempo;
+        value[2] = this.context.sampleRate;
+        value[3] = loopStart;
+        value[4] = loopEnd;
+        value[5] = isPlaying ? 1 : 0;
+        value[6] = isLooping ? 1 : 0;
     }
 
     public getTransportSAB(): SharedArrayBuffer {
@@ -398,7 +398,7 @@ class AudioEngineImpl implements AudioEngine {
             return;
         }
 
-        const deviceNode = targetStrip.deviceNodes.find((d) => d.deviceId === targetDeviceId);
+        const deviceNode = targetStrip.deviceNodes.find((data) => data.deviceId === targetDeviceId);
         if (!deviceNode || deviceNode.type !== 'builtin-sidechain-compressor') {
             return;
         }

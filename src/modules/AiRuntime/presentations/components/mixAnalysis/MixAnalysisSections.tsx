@@ -166,8 +166,8 @@ export const IssuesList = ({ issues }: IssuesListProps): ReactElement | null => 
             detail={`${issues.length} item${issues.length === 1 ? '' : 's'} need attention.`}
         >
             <div className="space-y-1">
-                {issues.map((issue, i) => (
-                    <div key={i} className="flex items-start gap-1.5 rounded bg-surface-overlay px-2 py-1.5">
+                {issues.map((issue, index) => (
+                    <div key={index} className="flex items-start gap-1.5 rounded bg-surface-overlay px-2 py-1.5">
                         {severityIcon(issue.severity)}
                         <span className="text-[10px] text-foreground leading-tight">{issue.message}</span>
                     </div>
@@ -188,10 +188,10 @@ export const SuggestionsList = ({ suggestions }: SuggestionsListProps): ReactEle
     return (
         <DawUtilitySection title="Suggestions" detail="Quick next moves suggested by the current analysis.">
             <ul className="space-y-1">
-                {suggestions.map((s, i) => (
-                    <li key={i} className="flex items-start gap-1.5 text-[10px] text-muted-foreground leading-tight">
+                {suggestions.map((state, index) => (
+                    <li key={index} className="flex items-start gap-1.5 text-[10px] text-muted-foreground leading-tight">
                         <span className="shrink-0 mt-0.5">•</span>
-                        <span>{s}</span>
+                        <span>{state}</span>
                     </li>
                 ))}
             </ul>

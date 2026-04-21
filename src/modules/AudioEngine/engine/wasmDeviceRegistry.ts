@@ -597,5 +597,5 @@ const WASM_DEVICE_DESCRIPTORS: WasmDeviceDescriptor[] = [
 ];
 
 export function findWasmDescriptor(deviceType: string): WasmDeviceDescriptor | undefined {
-    return WASM_DEVICE_DESCRIPTORS.find((d) => d.matches(deviceType));
+    return WASM_DEVICE_DESCRIPTORS.find((data) => data.matches(deviceType));
 }

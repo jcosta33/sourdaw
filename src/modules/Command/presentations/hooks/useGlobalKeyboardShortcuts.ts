@@ -5,26 +5,26 @@ import { handleKeyup } from '../../useCases/keyboardShortcutActions/handleKeyboa
 
 export const useGlobalKeyboardShortcuts = (): void => {
     useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            const target = e.target as HTMLElement;
+        const handler = (event: KeyboardEvent) => {
+            const target = event.target as HTMLElement;
             const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
 
             const shouldPreventDefault = handleKeydown({
-                key: e.key,
-                mod: e.metaKey || e.ctrlKey,
-                shift: e.shiftKey,
-                alt: e.altKey,
-                repeat: e.repeat,
+                key: event.key,
+                mod: event.metaKey || event.ctrlKey,
+                shift: event.shiftKey,
+                alt: event.altKey,
+                repeat: event.repeat,
                 isInput,
             });
 
             if (shouldPreventDefault) {
-                e.preventDefault();
+                event.preventDefault();
             }
         };
 
-        const keyupHandler = (e: KeyboardEvent) => {
-            handleKeyup(e.key);
+        const keyupHandler = (event: KeyboardEvent) => {
+            handleKeyup(event.key);
         };
 
         window.addEventListener('keydown', handler);

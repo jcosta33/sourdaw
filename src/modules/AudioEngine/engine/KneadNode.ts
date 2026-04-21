@@ -43,8 +43,8 @@ export async function createKneadNode(
     });
 
     const handshake = createReadyHandshake({ pluginName: 'KneadNode' });
-    node.port.onmessage = (e: MessageEvent) => {
-        handshake.onMessage(e);
+    node.port.onmessage = (event: MessageEvent) => {
+        handshake.onMessage(event);
     };
     const readyPromise = handshake.promise;
 

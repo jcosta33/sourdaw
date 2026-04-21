@@ -3,8 +3,8 @@
  * Runs custom JavaScript scripts for hardware integration in a sandboxed environment.
  */
 
-self.onmessage = (e) => {
-    const { type, payload } = e.data;
+self.onmessage = (event) => {
+    const { type, payload } = event.data;
 
     if (type === 'runScript') {
         const { code } = payload;

@@ -151,13 +151,13 @@ export const SpatialPanner = ({
             className="rounded border border-border/30 cursor-crosshair"
             aria-label={`Spatial panner: ${azimuth}° azimuth, ${(distance * 100).toFixed(0)}% distance`}
             role="slider"
-            onMouseDown={(e) => {
+            onMouseDown={(event) => {
                 dragging.current = true;
-                handlePointer(e);
+                handlePointer(event);
             }}
-            onMouseMove={(e) => {
+            onMouseMove={(event) => {
                 if (dragging.current) {
-                    handlePointer(e);
+                    handlePointer(event);
                 }
             }}
             onMouseUp={() => {

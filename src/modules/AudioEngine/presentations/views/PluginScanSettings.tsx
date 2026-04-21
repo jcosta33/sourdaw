@@ -65,7 +65,6 @@ export const PluginScanSettings = (): ReactElement | null => {
                 <Plug className="size-3" aria-hidden="true" />
                 <DawEyebrowLabel size="sm">Plugin Paths</DawEyebrowLabel>
             </div>
-
             <div className="space-y-2">
                 {state.scanPaths.length > 0 ? (
                     <div className="space-y-1">
@@ -96,13 +95,13 @@ export const PluginScanSettings = (): ReactElement | null => {
                         type="text"
                         placeholder="/path/to/plugins..."
                         value={newPath}
-                        onChange={(e) => {
-                            setNewPath(e.target.value);
+                        onChange={(event) => {
+                            setNewPath(event.target.value);
                         }}
                         className="flex-1"
                         monospace
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
+                        onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
                                 handleAddPath();
                             }
                         }}
@@ -149,8 +148,8 @@ export const PluginScanSettings = (): ReactElement | null => {
 
                 {state.errors.length > 0 ? (
                     <div className="space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-2">
-                        {state.errors.map((err, i) => (
-                            <div key={i} className="flex items-start gap-1 text-[10px] text-destructive">
+                        {state.errors.map((err, index) => (
+                            <div key={index} className="flex items-start gap-1 text-[10px] text-destructive">
                                 <AlertCircle className="size-3 shrink-0 mt-px" aria-hidden="true" />
                                 <span>{err}</span>
                             </div>

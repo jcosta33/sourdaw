@@ -43,8 +43,8 @@ export const SessionView = (): ReactElement => {
 
     const handleLaunchScene = (sceneIndex: number): void => {
         const next: Record<string, number> = {};
-        for (const t of tracks) {
-            next[t.id] = sceneIndex;
+        for (const time of tracks) {
+            next[time.id] = sceneIndex;
         }
         sessionLaunchStore.set({ activeSlots: next });
     };
@@ -76,7 +76,6 @@ export const SessionView = (): ReactElement => {
                     </Button>
                 }
             />
-
             {/* Grid */}
             <div className="flex-1 overflow-auto">
                 {tracks.length === 0 ? (
@@ -93,13 +92,13 @@ export const SessionView = (): ReactElement => {
                             <DawGridHeaderCell className="h-6 text-[10px] uppercase tracking-wider text-muted-foreground">
                                 Scene
                             </DawGridHeaderCell>
-                            {Array.from({ length: SCENE_COUNT }, (_, i) => (
+                            {Array.from({ length: SCENE_COUNT }, (_, index) => (
                                 <button
                                     type="button"
-                                    key={i}
+                                    key={index}
                                     className="h-10 cursor-pointer border-b border-border-hairline shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] transition-colors hover:bg-surface-raised"
-                                    onClick={() => handleLaunchScene(i)}
-                                    aria-label={`Launch scene ${i + 1}`}
+                                    onClick={() => handleLaunchScene(index)}
+                                    aria-label={`Launch scene ${index + 1}`}
                                 >
                                     <div className="flex h-full items-center justify-center">
                                         <Play className="size-3 text-muted-foreground transition-colors hover:text-foreground" />
@@ -109,9 +108,9 @@ export const SessionView = (): ReactElement => {
                         </DawSideRail>
 
                         {tracks.map((track: Track) => {
-                            const trackClipIds: Array<string | null> = Array.from({ length: SCENE_COUNT }, (_, i) => {
+                            const trackClipIds: Array<string | null> = Array.from({ length: SCENE_COUNT }, (_, index) => {
                                 const clips = track.clips ? (Object.values(track.clips) as Array<{ id: string }>) : [];
-                                return clips[i]?.id ?? null;
+                                return clips[index]?.id ?? null;
                             });
 
                             return (

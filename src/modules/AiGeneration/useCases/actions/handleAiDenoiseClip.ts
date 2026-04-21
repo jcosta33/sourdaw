@@ -32,22 +32,22 @@ export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7
             const noiseSamples = Math.min(Math.floor((buffer.sampleRate * 0.5) / hop) * hop, mono.length);
 
             let noisePower = 0;
-            for (let i = 0; i < noiseSamples; i++) {
-                noisePower += (mono[i] ?? 0) * (mono[i] ?? 0);
+            for (let index = 0; index < noiseSamples; index++) {
+                noisePower += (mono[index] ?? 0) * (mono[index] ?? 0);
             }
             noisePower /= Math.max(noiseSamples, 1);
             outNoiseFloor = 10 * Math.log10(Math.max(noisePower, 1e-12));
 
             const threshold = Math.sqrt(noisePower * (1 + strength * 3));
             const output = new Float32Array(mono.length);
-            for (let i = 0; i < mono.length; i++) {
-                const s = mono[i] ?? 0;
-                const abs = Math.abs(s);
+            for (let index = 0; index < mono.length; index++) {
+                const state = mono[index] ?? 0;
+                const abs = Math.abs(state);
                 if (abs < threshold) {
                     const ratio = abs / threshold;
-                    output[i] = s * (ratio * (1 - strength) + (1 - ratio) * 0.05);
+                    output[index] = state * (ratio * (1 - strength) + (1 - ratio) * 0.05);
                 } else {
-                    output[i] = s;
+                    output[index] = state;
                 }
             }
 

@@ -5,7 +5,7 @@ import * as subject from '../getAudioContext';
 describe('getAudioContext', () => {
     it('should export getAudioContext', () => {
         expect(subject.getAudioContext).toBeDefined();
-        const t = typeof subject.getAudioContext;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getAudioContext;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

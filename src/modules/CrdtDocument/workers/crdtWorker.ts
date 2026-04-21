@@ -49,8 +49,8 @@ function processLoad(bundle: Map<string, Uint8Array>): {
         }
     }
 
-    incrementals.sort((a, b) => {
-        const tA = parseInt(a.key.split(':').pop() ?? '0', 10);
+    incrementals.sort((alpha, b) => {
+        const tA = parseInt(alpha.key.split(':').pop() ?? '0', 10);
         const tB = parseInt(b.key.split(':').pop() ?? '0', 10);
         return tA - tB;
     });

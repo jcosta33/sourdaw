@@ -18,8 +18,8 @@ export function createReverb(ctx: BaseAudioContext): OfflineDeviceNode {
     const impulse = new AudioBuffer({ numberOfChannels: 2, length: len, sampleRate: ctx.sampleRate });
     for (let ch = 0; ch < 2; ch++) {
         const data = impulse.getChannelData(ch);
-        for (let i = 0; i < len; i++) {
-            data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.5));
+        for (let index = 0; index < len; index++) {
+            data[index] = (Math.random() * 2 - 1) * Math.exp(-index / (ctx.sampleRate * 0.5));
         }
     }
     convolver.buffer = impulse;

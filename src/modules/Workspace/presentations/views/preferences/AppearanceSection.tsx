@@ -21,20 +21,20 @@ export const AppearanceSection = ({ prefs, update }: SectionProps): ReactElement
 
         <FieldGroup label="Theme">
             <div className="flex gap-2">
-                {(['dark', 'light'] as const).map((t) => (
+                {(['dark', 'light'] as const).map((time) => (
                     <Button
-                        key={t}
-                        variant={prefs.theme === t ? 'secondary' : 'outline'}
+                        key={time}
+                        variant={prefs.theme === time ? 'secondary' : 'outline'}
                         size="sm"
                         onClick={() => {
-                            update({ theme: t });
-                            document.documentElement.classList.toggle('dark', t === 'dark');
-                            document.documentElement.classList.toggle('light', t === 'light');
+                            update({ theme: time });
+                            document.documentElement.classList.toggle('dark', time === 'dark');
+                            document.documentElement.classList.toggle('light', time === 'light');
                         }}
                         className="capitalize gap-1"
                     >
-                        {t === 'dark' ? <Moon className="size-3" /> : <Sun className="size-3" />}
-                        {t}
+                        {time === 'dark' ? <Moon className="size-3" /> : <Sun className="size-3" />}
+                        {time}
                     </Button>
                 ))}
             </div>
@@ -45,7 +45,7 @@ export const AppearanceSection = ({ prefs, update }: SectionProps): ReactElement
         <ToggleRow
             label="Colorblind Mode"
             value={prefs.colorblindMode}
-            onChange={(v) => update({ colorblindMode: v })}
+            onChange={(value) => update({ colorblindMode: value })}
         />
 
         <Separator />
@@ -54,9 +54,9 @@ export const AppearanceSection = ({ prefs, update }: SectionProps): ReactElement
             <div className="flex items-center gap-2">
                 <Slider
                     value={[prefs.uiScale * 100]}
-                    onValueChange={([v]) => {
-                        if (v !== undefined) {
-                            update({ uiScale: v / 100 });
+                    onValueChange={([value]) => {
+                        if (value !== undefined) {
+                            update({ uiScale: value / 100 });
                         }
                     }}
                     min={50}

@@ -5,7 +5,7 @@ import * as subject from '../updateAutomationPoint';
 describe('updateAutomationPoint', () => {
     it('should export updateAutomationPoint', () => {
         expect(subject.updateAutomationPoint).toBeDefined();
-        const t = typeof subject.updateAutomationPoint;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.updateAutomationPoint;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

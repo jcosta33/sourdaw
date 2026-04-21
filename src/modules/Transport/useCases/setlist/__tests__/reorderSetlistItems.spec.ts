@@ -47,6 +47,6 @@ describe('reorderSetlistItems', () => {
 
         reorderSetlistItems(0, 1);
         const next = mockSetlistStore.set.mock.calls[0]![0] as SetlistState;
-        expect(next.items.map((i) => i.id)).toEqual(['b', 'a']);
+        expect(next.items.map((index) => index.id)).toEqual(['b', 'a']);
     });
 });

@@ -16,19 +16,19 @@ export function hydrateModuleStoresFromProjectData(data: ProjectData): void {
     // 2. Automation
     if (data.automation) {
         automationStore.set({
-            lanes: (data.automation.lanes || []).map((l) => ({
-                ...l,
-                enabled: l.enabled ?? true,
-                visible: l.visible ?? true,
-                collapsed: l.collapsed ?? false,
-                virginTerritory: l.virginTerritory ?? true,
-                minValue: l.minValue ?? 0,
-                maxValue: l.maxValue ?? 1,
-                objects: l.objects || [],
-                points: l.points.map((p) => ({
-                    ...p,
-                    curve: p.curve as any,
-                    tension: p.tension ?? 0,
+            lanes: (data.automation.lanes || []).map((length) => ({
+                ...length,
+                enabled: length.enabled ?? true,
+                visible: length.visible ?? true,
+                collapsed: length.collapsed ?? false,
+                virginTerritory: length.virginTerritory ?? true,
+                minValue: length.minValue ?? 0,
+                maxValue: length.maxValue ?? 1,
+                objects: length.objects || [],
+                points: length.points.map((param) => ({
+                    ...param,
+                    curve: param.curve as any,
+                    tension: param.tension ?? 0,
                 })),
             })) as AutomationLane[],
         });
@@ -37,11 +37,11 @@ export function hydrateModuleStoresFromProjectData(data: ProjectData): void {
     // 3. Markers
     if (data.markers) {
         markerStore.set({
-            markers: data.markers.map((m) => ({
-                id: m.id,
-                beat: m.beat,
-                name: (m as any).name || (m as any).label || 'Untitled',
-                color: m.color,
+            markers: data.markers.map((message) => ({
+                id: message.id,
+                beat: message.beat,
+                name: (message as any).name || (message as any).label || 'Untitled',
+                color: message.color,
             })),
             sections: [],
         });

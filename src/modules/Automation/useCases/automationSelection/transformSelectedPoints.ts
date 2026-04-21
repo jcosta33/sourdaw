@@ -17,12 +17,12 @@ export function transformSelectedPoints(
         return;
     }
 
-    const lane = state.lanes.find((l) => l.id === laneId);
+    const lane = state.lanes.find((length) => length.id === laneId);
     if (!lane) {
         return;
     }
 
-    const selected = lane.points.filter((p) => selectedBeats.includes(p.beat));
+    const selected = lane.points.filter((param) => selectedBeats.includes(param.beat));
     if (selected.length === 0) {
         return;
     }
@@ -34,18 +34,18 @@ export function transformSelectedPoints(
     let maxBeat = -Infinity;
     let minVal = Infinity;
     let maxVal = -Infinity;
-    for (const p of selected) {
-        if (p.beat < minBeat) {
-            minBeat = p.beat;
+    for (const param of selected) {
+        if (param.beat < minBeat) {
+            minBeat = param.beat;
         }
-        if (p.beat > maxBeat) {
-            maxBeat = p.beat;
+        if (param.beat > maxBeat) {
+            maxBeat = param.beat;
         }
-        if (p.value < minVal) {
-            minVal = p.value;
+        if (param.value < minVal) {
+            minVal = param.value;
         }
-        if (p.value > maxVal) {
-            maxVal = p.value;
+        if (param.value > maxVal) {
+            maxVal = param.value;
         }
     }
 
@@ -55,26 +55,26 @@ export function transformSelectedPoints(
     const selectedSet = new Set(selectedBeats);
 
     automationStore.set({
-        lanes: state.lanes.map((l) => {
-            if (l.id !== laneId) {
-                return l;
+        lanes: state.lanes.map((length) => {
+            if (length.id !== laneId) {
+                return length;
             }
             return {
-                ...l,
-                points: l.points
-                    .map((p) => {
-                        if (!selectedSet.has(p.beat)) {
-                            return p;
+                ...length,
+                points: length.points
+                    .map((param) => {
+                        if (!selectedSet.has(param.beat)) {
+                            return param;
                         }
-                        const newBeat = (p.beat - beatCenter) * xScale + beatCenter + xOffset;
-                        const newValue = (p.value - valCenter) * yScale + valCenter + yOffset;
+                        const newBeat = (param.beat - beatCenter) * xScale + beatCenter + xOffset;
+                        const newValue = (param.value - valCenter) * yScale + valCenter + yOffset;
                         return {
-                            ...p,
+                            ...param,
                             beat: Math.max(0, newBeat),
-                            value: Math.max(l.minValue, Math.min(l.maxValue, newValue)),
+                            value: Math.max(length.minValue, Math.min(length.maxValue, newValue)),
                         };
                     })
-                    .sort((a, b) => a.beat - b.beat),
+                    .sort((alpha, b) => alpha.beat - b.beat),
             };
         }),
     });

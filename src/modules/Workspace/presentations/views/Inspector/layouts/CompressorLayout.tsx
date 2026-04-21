@@ -13,23 +13,23 @@ import { SectionHeader } from '../SectionHeader';
 
 type P = DeviceLayoutProps['parameters'][number];
 const Param = ({
-    p,
+    param,
     device,
     trackId,
 }: {
-    p: P;
+    param: P;
     device: DeviceLayoutProps['device'];
     trackId: string;
 }): ReactElement => (
     <SurfaceCard className="rounded-md bg-surface-base p-2 w-full">
-        <DeviceParameterControl param={p} device={device} trackId={trackId} />
+        <DeviceParameterControl param={param} device={device} trackId={trackId} />
     </SurfaceCard>
 );
 
 const CompressorLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {
     const pv = device.parameterValues;
-    const change = (id: string, v: number): void => {
-        setDeviceParameter(device.id, id, v);
+    const change = (id: string, value: number): void => {
+        setDeviceParameter(device.id, id, value);
     };
 
     return (
@@ -46,21 +46,20 @@ const CompressorLayout = ({ device, trackId, parameters }: DeviceLayoutProps): R
                     onParamChange={change}
                 />
             </div>
-
             <SectionHeader title="Controls" />
             <div className="grid grid-cols-2 gap-2">
-                {filterParams(parameters, ['comp-threshold', 'comp-ratio']).map((p) => (
-                    <Param key={p.id} p={p} device={device} trackId={trackId} />
+                {filterParams(parameters, ['comp-threshold', 'comp-ratio']).map((param) => (
+                    <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
             </div>
             <div className="grid grid-cols-2 gap-2">
-                {filterParams(parameters, ['comp-attack', 'comp-release']).map((p) => (
-                    <Param key={p.id} p={p} device={device} trackId={trackId} />
+                {filterParams(parameters, ['comp-attack', 'comp-release']).map((param) => (
+                    <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
             </div>
             <div className="grid grid-cols-2 gap-2">
-                {filterParams(parameters, ['comp-knee', 'comp-makeup']).map((p) => (
-                    <Param key={p.id} p={p} device={device} trackId={trackId} />
+                {filterParams(parameters, ['comp-knee', 'comp-makeup']).map((param) => (
+                    <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
             </div>
         </div>

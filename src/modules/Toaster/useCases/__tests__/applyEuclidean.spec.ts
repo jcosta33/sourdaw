@@ -48,7 +48,7 @@ describe('applyEuclideanToTrack', () => {
     it('writes a euclidean rhythm with the requested hit count', () => {
         applyEuclideanToTrack(0, 3, 8);
         const updated = setMock.mock.calls[0]![0]!.kit.patterns[0]!.tracks[0]!.steps;
-        expect(updated.filter((s) => s.active).length).toBe(3);
+        expect(updated.filter((state) => state.active).length).toBe(3);
     });
 
     it('noops when the active pattern is missing', () => {

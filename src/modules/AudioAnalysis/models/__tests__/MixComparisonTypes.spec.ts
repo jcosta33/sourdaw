@@ -14,10 +14,10 @@ describe('MixComparisonTypes', () => {
 
     it('should order bands from sub through air without gaps between adjacent ranges', () => {
         const ordered: FrequencyBand[] = ['sub', 'bass', 'low-mid', 'mid', 'high-mid', 'presence', 'air'];
-        for (let i = 0; i < ordered.length - 1; i++) {
-            const a = ordered[i]!;
-            const b = ordered[i + 1]!;
-            expect(FREQUENCY_RANGES[a][1]).toBe(FREQUENCY_RANGES[b][0]);
+        for (let index = 0; index < ordered.length - 1; index++) {
+            const alpha = ordered[index]!;
+            const b = ordered[index + 1]!;
+            expect(FREQUENCY_RANGES[alpha][1]).toBe(FREQUENCY_RANGES[b][0]);
         }
     });
 });

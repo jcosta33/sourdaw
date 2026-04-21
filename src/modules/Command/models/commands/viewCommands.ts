@@ -127,9 +127,9 @@ export const viewCommands: CommandEntry[] = [
         description: 'Delete time in the loop region, shifting everything left',
         category: 'Editing',
         action: () => {
-            const t = transportStore.value;
-            if (t) {
-                void executeAppAction({ type: 'deleteTime', payload: { startBeat: t.loopStart, endBeat: t.loopEnd } });
+            const time = transportStore.value;
+            if (time) {
+                void executeAppAction({ type: 'deleteTime', payload: { startBeat: time.loopStart, endBeat: time.loopEnd } });
             }
         },
     },
@@ -139,8 +139,8 @@ export const viewCommands: CommandEntry[] = [
         description: 'Insert empty time at the playhead position (4 beats)',
         category: 'Editing',
         action: () => {
-            const t = transportStore.value;
-            if (t) {
+            const time = transportStore.value;
+            if (time) {
                 void executeAppAction({
                     type: 'insertTime',
                     payload: { atBeat: playheadPositionRef.current, durationBeats: 4 },
@@ -154,11 +154,11 @@ export const viewCommands: CommandEntry[] = [
         description: 'Duplicate the loop region and insert the copy after it',
         category: 'Editing',
         action: () => {
-            const t = transportStore.value;
-            if (t) {
+            const time = transportStore.value;
+            if (time) {
                 void executeAppAction({
                     type: 'duplicateTimeRange',
-                    payload: { startBeat: t.loopStart, endBeat: t.loopEnd },
+                    payload: { startBeat: time.loopStart, endBeat: time.loopEnd },
                 });
             }
         },

@@ -16,7 +16,7 @@ export function extractGroove(clipId: string, subdivisions = 16): GrooveTemplate
     function findClip(id: string) {
         const tracks = getAllTracks();
         for (const track of tracks) {
-            const clip = track.clips.find((c) => c.id === id);
+            const clip = track.clips.find((context) => context.id === id);
             if (clip) {
                 return clip;
             }
@@ -44,8 +44,8 @@ export function extractGroove(clipId: string, subdivisions = 16): GrooveTemplate
         velocityAccum[stepIndex]!.push(note.velocity / 100);
     }
 
-    const offsets = offsetAccum.map((arr) => (arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0));
-    const velocities = velocityAccum.map((arr) => (arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 1));
+    const offsets = offsetAccum.map((arr) => (arr.length > 0 ? arr.reduce((alpha, b) => alpha + b, 0) / arr.length : 0));
+    const velocities = velocityAccum.map((arr) => (arr.length > 0 ? arr.reduce((alpha, b) => alpha + b, 0) / arr.length : 1));
 
     return {
         id: `extracted-${clipId}`,

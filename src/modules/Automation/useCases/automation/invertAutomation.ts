@@ -12,9 +12,9 @@ export function invertAutomation(laneId: string): void {
             }
             return {
                 ...lane,
-                points: lane.points.map((p) => ({
-                    ...p,
-                    value: lane.maxValue - (p.value - lane.minValue),
+                points: lane.points.map((param) => ({
+                    ...param,
+                    value: lane.maxValue - (param.value - lane.minValue),
                 })),
             };
         }),

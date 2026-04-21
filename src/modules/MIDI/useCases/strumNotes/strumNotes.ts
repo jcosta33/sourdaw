@@ -32,7 +32,7 @@ export function strumNotes(
     }
 
     const idSet = new Set(noteIds);
-    const targetNotes = existing.filter((n) => idSet.has(n.id));
+    const targetNotes = existing.filter((node) => idSet.has(node.id));
 
     if (targetNotes.length < 2) {
         return null;
@@ -41,17 +41,17 @@ export function strumNotes(
     // Sort by pitch for strum direction
     const sorted = [...targetNotes];
     if (direction === 'up') {
-        sorted.sort((a, b) => a.pitch - b.pitch); // low → high gets progressive delay
+        sorted.sort((alpha, b) => alpha.pitch - b.pitch); // low → high gets progressive delay
     } else if (direction === 'down') {
-        sorted.sort((a, b) => b.pitch - a.pitch); // high → low gets progressive delay
+        sorted.sort((alpha, b) => b.pitch - alpha.pitch); // high → low gets progressive delay
     }
     // 'random' keeps the array as-is (insertion order = pseudo-random for different chords)
 
     // Build offset map: noteId → offset delta
     const offsets = new Map<string, number>();
-    for (let i = 0; i < sorted.length; i++) {
-        const note = sorted[i]!;
-        const offset = direction === 'random' ? (Math.random() - 0.3) * strumAmount * sorted.length : i * strumAmount;
+    for (let index = 0; index < sorted.length; index++) {
+        const note = sorted[index]!;
+        const offset = direction === 'random' ? (Math.random() - 0.3) * strumAmount * sorted.length : index * strumAmount;
         offsets.set(note.id, offset);
     }
 
@@ -66,14 +66,14 @@ export function strumNotes(
         ...state,
         notesByClipId: {
             ...state.notesByClipId,
-            [clipId]: existing.map((n) => {
-                const offset = offsets.get(n.id);
+            [clipId]: existing.map((node) => {
+                const offset = offsets.get(node.id);
                 if (offset === undefined) {
-                    return n;
+                    return node;
                 }
                 return {
-                    ...n,
-                    startBeat: Math.max(0, n.startBeat + offset),
+                    ...node,
+                    startBeat: Math.max(0, node.startBeat + offset),
                 };
             }),
         },

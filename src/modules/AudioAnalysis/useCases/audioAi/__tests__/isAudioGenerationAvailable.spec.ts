@@ -5,7 +5,7 @@ import * as subject from '../isAudioGenerationAvailable';
 describe('isAudioGenerationAvailable', () => {
     it('should export isAudioGenerationAvailable', () => {
         expect(subject.isAudioGenerationAvailable).toBeDefined();
-        const t = typeof subject.isAudioGenerationAvailable;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.isAudioGenerationAvailable;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

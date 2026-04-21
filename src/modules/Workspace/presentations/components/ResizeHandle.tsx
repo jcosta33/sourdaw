@@ -13,11 +13,11 @@ export const ResizeHandle = ({ direction, onResize, onResizeEnd }: ResizeHandleP
     const lastPos = useRef(0);
 
     useEffect(() => {
-        const handleMouseMove = (e: globalThis.MouseEvent) => {
+        const handleMouseMove = (event: globalThis.MouseEvent) => {
             if (!dragging.current) {
                 return;
             }
-            const current = direction === 'vertical' ? e.clientX : e.clientY;
+            const current = direction === 'vertical' ? event.clientX : event.clientY;
             const delta = current - lastPos.current;
             lastPos.current = current;
             onResize(delta);
@@ -41,10 +41,10 @@ export const ResizeHandle = ({ direction, onResize, onResizeEnd }: ResizeHandleP
         };
     }, [direction, onResize, onResizeEnd]);
 
-    const handleMouseDown = (e: MouseEvent) => {
-        e.preventDefault();
+    const handleMouseDown = (event: MouseEvent) => {
+        event.preventDefault();
         dragging.current = true;
-        lastPos.current = direction === 'vertical' ? e.clientX : e.clientY;
+        lastPos.current = direction === 'vertical' ? event.clientX : event.clientY;
         document.body.style.cursor = direction === 'vertical' ? 'col-resize' : 'row-resize';
         document.body.style.userSelect = 'none';
     };

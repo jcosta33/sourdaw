@@ -50,10 +50,10 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                     {editingName ? (
                         <DawCompactInput
                             value={nameValue}
-                            onChange={(e) => setNameValue(e.target.value)}
+                            onChange={(event) => setNameValue(event.target.value)}
                             onBlur={commitName}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
                                     commitName();
                                 }
                             }}
@@ -160,17 +160,17 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                 <div className="space-y-1.5 pt-1">
                     <MetaText className="block">Color</MetaText>
                     <div className="flex flex-wrap gap-1">
-                        {TRACK_COLOR_PRESETS.map((c) => (
+                        {TRACK_COLOR_PRESETS.map((context) => (
                             <button
                                 type="button"
-                                key={c}
+                                key={context}
                                 className="size-4 rounded border border-border transition-transform hover:scale-125"
                                 style={{
-                                    backgroundColor: c,
-                                    outline: c === track.color ? '2px solid white' : 'none',
+                                    backgroundColor: context,
+                                    outline: context === track.color ? '2px solid white' : 'none',
                                     outlineOffset: '1px',
                                 }}
-                                onClick={() => setTrackColor(track.id, c)}
+                                onClick={() => setTrackColor(track.id, context)}
                                 aria-label={`Set color`}
                             />
                         ))}

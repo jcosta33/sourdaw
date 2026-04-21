@@ -19,16 +19,16 @@ Key rules:
 - MIDI: C4=60, 0.25=16th, 0.5=8th, 1=quarter, 4=whole note`;
 
 function getClaudeTools(): Anthropic.Messages.Tool[] {
-    return mcpToOpenAiTools().map((t) => ({
-        name: t.function.name,
-        description: t.function.description,
-        input_schema: t.function.parameters as Anthropic.Messages.Tool.InputSchema,
+    return mcpToOpenAiTools().map((time) => ({
+        name: time.function.name,
+        description: time.function.description,
+        input_schema: time.function.parameters as Anthropic.Messages.Tool.InputSchema,
     }));
 }
 
 export const generateCloudToolCalls = inject({ logger })(
     ({ logger }) =>
-        async function generateCloudToolCalls(projectState: string, userMessage: string): Promise<ToolCallResult[]> {
+        (async function generateCloudToolCalls(projectState: string, userMessage: string): Promise<ToolCallResult[]> {
             const client = getCloudClient();
             if (!client) {
                 throw new Error('Cloud AI not configured. Set API key first.');
@@ -62,5 +62,5 @@ export const generateCloudToolCalls = inject({ logger })(
             );
 
             return results;
-        }
+        })
 );

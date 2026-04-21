@@ -88,10 +88,10 @@ const LaneSparkline = ({
 
     const range = maxValue - minValue;
     const pathData = points
-        .map((p, i) => {
-            const x = (p.beat / (points[points.length - 1]!.beat || 1)) * width;
-            const y = SPARKLINE_HEIGHT - ((p.value - minValue) / (range || 1)) * (SPARKLINE_HEIGHT - 4) - 2;
-            return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+        .map((param, index) => {
+            const x = (param.beat / (points[points.length - 1]!.beat || 1)) * width;
+            const y = SPARKLINE_HEIGHT - ((param.value - minValue) / (range || 1)) * (SPARKLINE_HEIGHT - 4) - 2;
+            return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
         })
         .join(' ');
 
@@ -128,23 +128,23 @@ export const AutomationBottomPanel = (): ReactElement => {
     const ws = useStore<AutomationPanelWorkspaceState>(workspaceStore, defaultWorkspaceState);
 
     const selectedTrackId = trackState.selectedTrackId;
-    const selectedTrack = trackState.tracks.find((t) => t.id === selectedTrackId) ?? null;
+    const selectedTrack = trackState.tracks.find((time) => time.id === selectedTrackId) ?? null;
     const pixelsPerBeat = viewState.pixelsPerBeat;
     const scrollX = viewState.scrollX;
     const trackListWidth = ws.trackListWidth;
     const trackListOpen = ws.trackListOpen;
 
-    const trackLanes = selectedTrackId ? autoState.lanes.filter((l) => l.trackId === selectedTrackId && !l.clipId) : [];
+    const trackLanes = selectedTrackId ? autoState.lanes.filter((length) => length.trackId === selectedTrackId && !length.clipId) : [];
 
     const availableParams = selectedTrack
         ? getAutomatableParams(
               selectedTrack.id,
-              selectedTrack.devices.map((d) => ({ type: d.type, name: d.name }))
+              selectedTrack.devices.map((data) => ({ type: data.type, name: data.name }))
           )
         : [];
 
     // Filter out params that already have lanes
-    const unusedParams = availableParams.filter((p) => !trackLanes.some((l) => l.parameterId === p.id));
+    const unusedParams = availableParams.filter((param) => !trackLanes.some((length) => length.parameterId === param.id));
 
     const automationMode = selectedTrack?.automationMode ?? 'read';
     const trackColor = selectedTrack?.color ?? 'var(--color-palette-steel)';

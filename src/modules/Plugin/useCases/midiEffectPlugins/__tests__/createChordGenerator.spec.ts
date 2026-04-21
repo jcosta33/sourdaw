@@ -18,7 +18,7 @@ describe('createChordGenerator', () => {
     it('should expand one note into a major triad by default', () => {
         const fx = createChordGenerator('major');
         const out = fx.process([n(60)]);
-        expect(out.map((x) => x.pitch).sort((a, b) => a - b)).toEqual([60, 64, 67]);
+        expect(out.map((x) => x.pitch).sort((alpha, b) => alpha - b)).toEqual([60, 64, 67]);
     });
 
     it('should fall back to major intervals for unknown chord types', () => {

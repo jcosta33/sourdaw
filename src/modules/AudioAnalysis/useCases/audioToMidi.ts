@@ -24,8 +24,8 @@ const HOP_SIZE = 512;
 function computeRmsEnergy(data: Float32Array, start: number, length: number): number {
     let sum = 0;
     const end = Math.min(start + length, data.length);
-    for (let i = start; i < end; i++) {
-        sum += data[i]! * data[i]!;
+    for (let index = start; index < end; index++) {
+        sum += data[index]! * data[index]!;
     }
     return Math.sqrt(sum / (end - start));
 }
@@ -53,8 +53,8 @@ function estimatePitch(data: Float32Array, start: number, length: number, sample
     let bestCorr = -1;
     let energy = 0;
 
-    for (let i = start; i < start + searchEnd; i++) {
-        energy += data[i]! * data[i]!;
+    for (let index = start; index < start + searchEnd; index++) {
+        energy += data[index]! * data[index]!;
     }
 
     if (energy < 1e-8) {
@@ -63,8 +63,8 @@ function estimatePitch(data: Float32Array, start: number, length: number, sample
 
     for (let lag = minLag; lag < searchEnd; lag++) {
         let corr = 0;
-        for (let i = 0; i < searchEnd - lag; i++) {
-            corr += data[start + i]! * data[start + i + lag]!;
+        for (let index = 0; index < searchEnd - lag; index++) {
+            corr += data[start + index]! * data[start + index + lag]!;
         }
         corr /= energy;
 
@@ -95,17 +95,17 @@ export function detectOnsets(buffer: AudioBuffer, sensitivity: number, minInterv
     }
 
     const energies = new Float32Array(numFrames);
-    for (let i = 0; i < numFrames; i++) {
-        energies[i] = computeRmsEnergy(channelData, i * HOP_SIZE, FRAME_SIZE);
+    for (let index = 0; index < numFrames; index++) {
+        energies[index] = computeRmsEnergy(channelData, index * HOP_SIZE, FRAME_SIZE);
     }
 
     const flux = new Float32Array(numFrames - 1);
     let maxFlux = 0;
-    for (let i = 0; i < flux.length; i++) {
-        const diff = energies[i + 1]! - energies[i]!;
-        flux[i] = Math.max(0, diff);
-        if (flux[i]! > maxFlux) {
-            maxFlux = flux[i]!;
+    for (let index = 0; index < flux.length; index++) {
+        const diff = energies[index + 1]! - energies[index]!;
+        flux[index] = Math.max(0, diff);
+        if (flux[index]! > maxFlux) {
+            maxFlux = flux[index]!;
         }
     }
 
@@ -119,19 +119,19 @@ export function detectOnsets(buffer: AudioBuffer, sensitivity: number, minInterv
 
     let lastOnsetFrame = -minIntervalFrames;
 
-    for (let i = 1; i < flux.length - 1; i++) {
+    for (let index = 1; index < flux.length - 1; index++) {
         if (
-            flux[i]! > threshold &&
-            flux[i]! > flux[i - 1]! &&
-            flux[i]! >= flux[i + 1]! &&
-            i - lastOnsetFrame >= minIntervalFrames
+            flux[index]! > threshold &&
+            flux[index]! > flux[index - 1]! &&
+            flux[index]! >= flux[index + 1]! &&
+            index - lastOnsetFrame >= minIntervalFrames
         ) {
-            const timeSec = ((i + 1) * HOP_SIZE) / sampleRate;
+            const timeSec = ((index + 1) * HOP_SIZE) / sampleRate;
             onsets.push({
                 timeSec,
-                amplitude: energies[i + 1]!,
+                amplitude: energies[index + 1]!,
             });
-            lastOnsetFrame = i;
+            lastOnsetFrame = index;
         }
     }
 
@@ -161,8 +161,8 @@ export function audioToMidi(options: AudioToMidiOptions): void {
     const { clipId, trackId, sensitivity = 0.5, minInterval = 0.25, targetPitch = 36, mode = 'rhythm' } = options;
 
     const clip = getAllTracks()
-        .flatMap((t) => t.clips)
-        .find((c) => c.id === clipId);
+        .flatMap((time) => time.clips)
+        .find((context) => context.id === clipId);
     if (!clip) {
         return;
     }
@@ -188,7 +188,7 @@ export function audioToMidi(options: AudioToMidiOptions): void {
     }
 
     let midiTrackId = trackId;
-    const existingTrack = getAllTracks().find((t) => t.id === trackId);
+    const existingTrack = getAllTracks().find((time) => time.id === trackId);
     if (!existingTrack || existingTrack.kind !== 'midi') {
         const newTrack = addTrack({ name: `${clip.name} (MIDI)`, kind: 'midi' });
         if (!newTrack) {
@@ -213,16 +213,16 @@ export function audioToMidi(options: AudioToMidiOptions): void {
     }
 
     let maxAmplitude = 1e-8;
-    for (const o of onsets) {
-        if (o.amplitude > maxAmplitude) {
-            maxAmplitude = o.amplitude;
+    for (const output of onsets) {
+        if (output.amplitude > maxAmplitude) {
+            maxAmplitude = output.amplitude;
         }
     }
 
-    for (let i = 0; i < onsets.length; i++) {
-        const onset = onsets[i]!;
+    for (let index = 0; index < onsets.length; index++) {
+        const onset = onsets[index]!;
         const startBeat = onset.timeSec * beatsPerSecond;
-        const nextOnsetBeat = i < onsets.length - 1 ? onsets[i + 1]!.timeSec * beatsPerSecond : startBeat + 1;
+        const nextOnsetBeat = index < onsets.length - 1 ? onsets[index + 1]!.timeSec * beatsPerSecond : startBeat + 1;
         const duration = Math.max(minInterval, (nextOnsetBeat - startBeat) * 0.9);
         const velocity = Math.max(1, Math.min(127, Math.round((onset.amplitude / maxAmplitude) * 127)));
         const pitch = mode === 'pitched' && onset.pitch !== undefined ? onset.pitch : targetPitch;

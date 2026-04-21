@@ -45,7 +45,7 @@ export function stepRecordStepUp(): void {
 
         if (degree === -1) {
             // Force to nearest scale degree
-            degree = pattern.findIndex((p) => p > currentPc);
+            degree = pattern.findIndex((param) => param > currentPc);
             if (degree === -1) {
                 degree = 0;
             }
@@ -77,7 +77,7 @@ export function stepRecordStepDown(): void {
         let degree = pattern.indexOf(currentPc);
 
         if (degree === -1) {
-            degree = pattern.findIndex((p) => p > currentPc);
+            degree = pattern.findIndex((param) => param > currentPc);
             if (degree === -1) {
                 degree = pattern.length - 1;
             } else {

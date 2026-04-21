@@ -5,7 +5,7 @@ import * as subject from '../removeTimeSignatureChange';
 describe('removeTimeSignatureChange', () => {
     it('should export removeTimeSignatureChange', () => {
         expect(subject.removeTimeSignatureChange).toBeDefined();
-        const t = typeof subject.removeTimeSignatureChange;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.removeTimeSignatureChange;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

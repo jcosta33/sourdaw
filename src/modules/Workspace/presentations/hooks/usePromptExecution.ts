@@ -124,7 +124,7 @@ export const usePromptExecution = (): PromptExecutionState => {
     const selectedClipIds = wsState?.selectedClipIds ?? [];
 
     if (selectedTrackId) {
-        const track = trackState?.tracks.find((t) => t.id === selectedTrackId);
+        const track = trackState?.tracks.find((time) => time.id === selectedTrackId);
         if (track && !dismissedTags.has(`track:${selectedTrackId}`)) {
             selectionTags.push({ id: `track:${selectedTrackId}`, label: track.name, kind: 'track', icon: 'track' });
         }
@@ -135,8 +135,8 @@ export const usePromptExecution = (): PromptExecutionState => {
             selectionTags.push({ id: key, label: `${selectedClipIds.length} clips`, kind: 'clips', icon: 'clips' });
         }
     } else if (selectedClipId) {
-        const allClips = trackState?.tracks.flatMap((t) => t.clips) ?? [];
-        const clip = allClips.find((c) => c.id === selectedClipId);
+        const allClips = trackState?.tracks.flatMap((time) => time.clips) ?? [];
+        const clip = allClips.find((context) => context.id === selectedClipId);
         if (clip && !dismissedTags.has(`clip:${selectedClipId}`)) {
             selectionTags.push({ id: `clip:${selectedClipId}`, label: clip.name, kind: 'clip', icon: 'clip' });
         }
@@ -147,8 +147,8 @@ export const usePromptExecution = (): PromptExecutionState => {
         selectedTrackId: selectedTrackId ?? undefined,
         selectedClipId: selectedClipId ?? undefined,
         selectedClipType: (() => {
-            const allClips = trackState?.tracks.flatMap((t) => t.clips) ?? [];
-            const clip = allClips.find((c) => c.id === selectedClipId);
+            const allClips = trackState?.tracks.flatMap((time) => time.clips) ?? [];
+            const clip = allClips.find((context) => context.id === selectedClipId);
             return clip?.type;
         })(),
         trackCount: trackState?.tracks.length ?? 0,
@@ -212,10 +212,10 @@ export const usePromptExecution = (): PromptExecutionState => {
             const historyGroup = {
                 id: group.groupId,
                 prompt,
-                actions: executedLabels.map((l) => ({
+                actions: executedLabels.map((length) => ({
                     kind: 'appAction' as const,
-                    actionType: l.action.type,
-                    label: l.label,
+                    actionType: length.action.type,
+                    label: length.label,
                 })),
                 groupId: group.groupId,
                 timestamp: Date.now(),
@@ -254,7 +254,7 @@ export const usePromptExecution = (): PromptExecutionState => {
             if (actions.length > 0) {
                 notifyAiChange(
                     `Executed: ${result.preset.label}`,
-                    actions.map((a) => a.type)
+                    actions.map((alpha) => alpha.type)
                 );
             }
         } catch (error) {
@@ -266,8 +266,8 @@ export const usePromptExecution = (): PromptExecutionState => {
     };
 
     // ── Full prompt submission (for complex / LLM) ──────────────────────
-    const handleSubmit = async (e: FormEvent): Promise<void> => {
-        e.preventDefault();
+    const handleSubmit = async (event: FormEvent): Promise<void> => {
+        event.preventDefault();
         if (!value.trim() || isProcessing) {
             return;
         }
@@ -305,7 +305,7 @@ export const usePromptExecution = (): PromptExecutionState => {
                 await executeWithGroup(result.actions, value);
                 notifyAiChange(
                     `Executed: ${value}`,
-                    result.actions.map((a) => a.type)
+                    result.actions.map((alpha) => alpha.type)
                 );
             } else {
                 notifyAiChange('No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.', []);
@@ -328,7 +328,7 @@ export const usePromptExecution = (): PromptExecutionState => {
         await executeWithGroup(preview.actions, value);
         notifyAiChange(
             `Confirmed: ${value}`,
-            preview.actions.map((a) => a.type)
+            preview.actions.map((alpha) => alpha.type)
         );
         setPreview(null);
         setValue('');
@@ -345,29 +345,29 @@ export const usePromptExecution = (): PromptExecutionState => {
     };
 
     // ── Keyboard navigation ─────────────────────────────────────────────
-    const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
+    const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
         if (fuzzyResults.length > 0) {
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
                 setSelectedIndex((prev) => Math.min(prev + 1, fuzzyResults.length - 1));
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
                 setSelectedIndex((prev) => Math.max(prev - 1, -1));
-            } else if (e.key === 'Tab' && selectedIndex >= 0) {
-                e.preventDefault();
+            } else if (event.key === 'Tab' && selectedIndex >= 0) {
+                event.preventDefault();
                 const selected = fuzzyResults[selectedIndex];
                 if (selected) {
                     setValue(selected.preset.label);
                     setFuzzyResults([]);
                 }
-            } else if (e.key === 'Enter' && selectedIndex >= 0) {
-                e.preventDefault();
+            } else if (event.key === 'Enter' && selectedIndex >= 0) {
+                event.preventDefault();
                 const selected = fuzzyResults[selectedIndex];
                 if (selected) {
                     void executePreset(selected);
                 }
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
                 setFuzzyResults([]);
                 setSelectedIndex(-1);
             }

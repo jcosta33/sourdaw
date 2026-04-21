@@ -5,7 +5,7 @@ import * as subject from '../openPluginGui';
 describe('openPluginGui', () => {
     it('should export openPluginGui', () => {
         expect(subject.openPluginGui).toBeDefined();
-        const t = typeof subject.openPluginGui;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.openPluginGui;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

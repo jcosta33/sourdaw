@@ -39,13 +39,13 @@ describe('aiActionHistoryStore', () => {
         });
 
         it('limits history to 50 groups', () => {
-            for (let i = 0; i < 55; i++) {
+            for (let index = 0; index < 55; index++) {
                 pushAiActionGroup({
-                    id: `g${i}`,
+                    id: `g${index}`,
                     prompt: 'test prompt',
                     actions: [],
-                    groupId: `g${i}`,
-                    timestamp: i,
+                    groupId: `g${index}`,
+                    timestamp: index,
                     reverted: false,
                 });
             }

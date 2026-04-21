@@ -74,7 +74,6 @@ export const MixAnalysisPanel = (): ReactElement | null => {
                     </div>
                 }
             />
-
             <ScrollArea className="flex-1 max-h-[60vh]">
                 {state.result ? (
                     <div className="space-y-3 p-3">
@@ -105,7 +104,7 @@ export const MixAnalysisPanel = (): ReactElement | null => {
                                     onClick={handleAutoFix}
                                     disabled={
                                         state.isAnalyzing ||
-                                        state.result.issues.filter((i) => i.severity !== 'info').length === 0
+                                        state.result.issues.filter((index) => index.severity !== 'info').length === 0
                                     }
                                 >
                                     <Wrench className="size-3" />

@@ -17,10 +17,10 @@ export function euclidean(hits: number, steps: number, rotation: number = 0): bo
     // Bjorklund iterative algorithm
     type Group = boolean[];
     let groups: Group[] = [];
-    for (let i = 0; i < hits; i++) {
+    for (let index = 0; index < hits; index++) {
         groups.push([true]);
     }
-    for (let i = 0; i < steps - hits; i++) {
+    for (let index = 0; index < steps - hits; index++) {
         groups.push([false]);
     }
 
@@ -31,7 +31,7 @@ export function euclidean(hits: number, steps: number, rotation: number = 0): bo
         }
 
         const splitPos = groups.findIndex(
-            (g) => g.length !== firstGroup.length || g.some((v, j) => v !== firstGroup[j]!)
+            (g) => g.length !== firstGroup.length || g.some((value, jIndex) => value !== firstGroup[jIndex]!)
         );
 
         if (splitPos <= 0 || splitPos >= groups.length) {
@@ -42,15 +42,15 @@ export function euclidean(hits: number, steps: number, rotation: number = 0): bo
         const take = Math.min(remainder, splitPos);
 
         const newGroups: Group[] = [];
-        for (let i = 0; i < splitPos; i++) {
-            const combined = [...groups[i]!];
-            if (i < take) {
-                combined.push(...groups[splitPos + i]!);
+        for (let index = 0; index < splitPos; index++) {
+            const combined = [...groups[index]!];
+            if (index < take) {
+                combined.push(...groups[splitPos + index]!);
             }
             newGroups.push(combined);
         }
-        for (let i = splitPos + take; i < groups.length; i++) {
-            newGroups.push(groups[i]!);
+        for (let index = splitPos + take; index < groups.length; index++) {
+            newGroups.push(groups[index]!);
         }
 
         groups = newGroups;

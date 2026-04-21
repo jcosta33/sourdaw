@@ -129,13 +129,13 @@ function getScaleIntervals(scale: 'major' | 'minor'): readonly number[] {
     return scale === 'major' ? MAJOR_SCALE_INTERVALS : MINOR_SCALE_INTERVALS;
 }
 
-function clampMidi(n: number): number { return Math.max(0, Math.min(127, n)); }
-function clampVelocity(v: number): number { return Math.max(1, Math.min(127, Math.round(v))); }
+function clampMidi(node: number): number { return Math.max(0, Math.min(127, node)); }
+function clampVelocity(value: number): number { return Math.max(1, Math.min(127, Math.round(value))); }
 
 function applyVoicing(intervals: readonly number[], rootMidi: number, voicing: ChordVoicing): number[] {
     switch (voicing) {
         case 'close': {
-            return intervals.map((i) => clampMidi(rootMidi + i));
+            return intervals.map((index) => clampMidi(rootMidi + index));
         }
         case 'open': {
             return intervals.map((interval, idx) => {
@@ -172,8 +172,8 @@ function buildRhythmEvents(rhythm: 'whole' | 'half' | 'quarter' | 'syncopated', 
         }
         case 'quarter': {
             const events: RhythmEvent[] = [];
-            for (let i = 0; i < beatsPerBar; i++) {
-                events.push({ offsetBeat: i, durationBeats: 1 });
+            for (let index = 0; index < beatsPerBar; index++) {
+                events.push({ offsetBeat: index, durationBeats: 1 });
             }
             return events;
         }

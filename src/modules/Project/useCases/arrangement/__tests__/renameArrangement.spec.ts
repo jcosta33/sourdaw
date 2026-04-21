@@ -5,7 +5,7 @@ import * as subject from '../renameArrangement';
 describe('renameArrangement', () => {
     it('should export renameArrangement', () => {
         expect(subject.renameArrangement).toBeDefined();
-        const t = typeof subject.renameArrangement;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.renameArrangement;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

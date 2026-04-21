@@ -7,6 +7,6 @@ export function discardCapture(captureId: string): void {
     }
     punchRecordingStore.set({
         ...state,
-        captures: state.captures.filter((c) => c.id !== captureId),
+        captures: state.captures.filter((context) => context.id !== captureId),
     });
 }

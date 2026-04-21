@@ -70,8 +70,8 @@ export async function createBacteriaNode(ctx: BaseAudioContext, wasmUrl?: string
     }
 
     const handshake = createReadyHandshake({ pluginName: 'BacteriaNode' });
-    node.port.onmessage = (e: MessageEvent) => {
-        handshake.onMessage(e);
+    node.port.onmessage = (event: MessageEvent) => {
+        handshake.onMessage(event);
     };
     const readyPromise = handshake.promise;
 
@@ -100,9 +100,9 @@ export async function createBacteriaNode(ctx: BaseAudioContext, wasmUrl?: string
             const view = slot.view;
             const poll = () => {
                 const bandLevels = new Array<number>(BACTERIA_BAND_COUNT);
-                for (let i = 0; i < BACTERIA_BAND_COUNT; i++) {
-                    const linear = view[BACTERIA_IDX.bandLevelsBase + i] ?? 0;
-                    bandLevels[i] = linearToDb(linear);
+                for (let index = 0; index < BACTERIA_BAND_COUNT; index++) {
+                    const linear = view[BACTERIA_IDX.bandLevelsBase + index] ?? 0;
+                    bandLevels[index] = linearToDb(linear);
                 }
                 cb({
                     inputDb: view[BACTERIA_IDX.inputDb] ?? 0,

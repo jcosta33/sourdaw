@@ -143,7 +143,7 @@ export const ClipAudioAiSection = ({ clip, trackId }: ClipAudioAiSectionProps): 
                         <ControlHeader label="Strength" value={`${denoiseStrength}%`} valueClassName="font-normal" />
                         <Slider
                             value={[denoiseStrength]}
-                            onValueChange={([v]) => setDenoiseStrength(v!)}
+                            onValueChange={([value]) => setDenoiseStrength(value!)}
                             min={10}
                             max={100}
                             step={5}

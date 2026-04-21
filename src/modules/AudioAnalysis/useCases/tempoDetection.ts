@@ -12,23 +12,23 @@ export function detectTempo(audioBufferId: string): number | null {
     // Onset detection using energy difference
     const frameSize = Math.floor(sampleRate * 0.01); // 10ms frames
     const energies: number[] = [];
-    for (let i = 0; i < channelData.length; i += frameSize) {
+    for (let index = 0; index < channelData.length; index += frameSize) {
         let energy = 0;
-        const end = Math.min(i + frameSize, channelData.length);
-        for (let j = i; j < end; j++) {
-            energy += channelData[j]! * channelData[j]!;
+        const end = Math.min(index + frameSize, channelData.length);
+        for (let jIndex = index; jIndex < end; jIndex++) {
+            energy += channelData[jIndex]! * channelData[jIndex]!;
         }
         energies.push(energy);
     }
 
     // Find onsets (energy peaks)
     const onsets: number[] = [];
-    for (let i = 1; i < energies.length; i++) {
-        const diff = energies[i]! - energies[i - 1]!;
+    for (let index = 1; index < energies.length; index++) {
+        const diff = energies[index]! - energies[index - 1]!;
         if (diff > 0) {
-            const avg = energies.slice(Math.max(0, i - 10), i).reduce((a, b) => a + b, 0) / Math.min(i, 10);
-            if (energies[i]! > avg * 2) {
-                onsets.push((i * frameSize) / sampleRate);
+            const avg = energies.slice(Math.max(0, index - 10), index).reduce((alpha, b) => alpha + b, 0) / Math.min(index, 10);
+            if (energies[index]! > avg * 2) {
+                onsets.push((index * frameSize) / sampleRate);
             }
         }
     }
@@ -39,8 +39,8 @@ export function detectTempo(audioBufferId: string): number | null {
 
     // Calculate inter-onset intervals
     const intervals: number[] = [];
-    for (let i = 1; i < onsets.length; i++) {
-        intervals.push(onsets[i]! - onsets[i - 1]!);
+    for (let index = 1; index < onsets.length; index++) {
+        intervals.push(onsets[index]! - onsets[index - 1]!);
     }
 
     // Cluster intervals to find the most common beat period

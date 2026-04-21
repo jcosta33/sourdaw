@@ -29,8 +29,8 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
 
     constructor() {
         super();
-        this.port.onmessage = (e) => {
-            const msg = e.data;
+        this.port.onmessage = (event) => {
+            const msg = event.data;
             if (msg.type === 'init' && !this._ready) {
                 this._initSab(msg.sab);
             }

@@ -15,7 +15,7 @@ export function selectPointsInRange(
         return [];
     }
 
-    const lane = state.lanes.find((l) => l.id === laneId);
+    const lane = state.lanes.find((length) => length.id === laneId);
     if (!lane) {
         return [];
     }
@@ -26,6 +26,6 @@ export function selectPointsInRange(
     const maxVal = Math.max(valueMin, valueMax);
 
     return lane.points
-        .filter((p) => p.beat >= minBeat && p.beat <= maxBeat && p.value >= minVal && p.value <= maxVal)
-        .map((p) => p.beat);
+        .filter((param) => param.beat >= minBeat && param.beat <= maxBeat && param.value >= minVal && param.value <= maxVal)
+        .map((param) => param.beat);
 }

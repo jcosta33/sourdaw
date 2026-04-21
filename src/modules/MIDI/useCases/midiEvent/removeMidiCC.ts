@@ -15,7 +15,7 @@ export function removeMidiCC(clipId: string, ccId: string): void {
         ...state,
         ccByClipId: {
             ...state.ccByClipId,
-            [clipId]: existing.filter((c) => c.id !== ccId),
+            [clipId]: existing.filter((context) => context.id !== ccId),
         },
     });
 }

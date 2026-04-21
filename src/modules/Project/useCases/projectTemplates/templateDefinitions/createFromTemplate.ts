@@ -4,7 +4,7 @@ import { stopPlayback } from '#/modules/Transport/useCases';
 import { templates } from './helpers';
 
 export async function createFromTemplate(templateId: string): Promise<void> {
-    const template = templates.find((t) => t.id === templateId);
+    const template = templates.find((time) => time.id === templateId);
     if (!template) {
         return;
     }

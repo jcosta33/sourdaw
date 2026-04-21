@@ -26,7 +26,7 @@ describe('invertNotes', () => {
 
     it('should reflect pitches about the min/max midpoint', () => {
         invertNotes('clip1');
-        expect(midiStore.value?.notesByClipId.clip1?.map((n) => n.pitch)).toEqual([64, 60]);
+        expect(midiStore.value?.notesByClipId.clip1?.map((node) => node.pitch)).toEqual([64, 60]);
     });
 
     it('should do nothing when fewer than two notes exist', () => {

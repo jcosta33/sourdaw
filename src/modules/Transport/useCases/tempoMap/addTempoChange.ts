@@ -7,15 +7,15 @@ export function addTempoChange(beat: number, tempo: number, curve: TempoChange['
         return;
     }
 
-    const existing = state.changes.findIndex((c) => c.beat === beat);
+    const existing = state.changes.findIndex((context) => context.beat === beat);
     if (existing >= 0) {
         tempoMapStore.set({
-            changes: state.changes.map((c, i) => (i === existing ? { ...c, tempo, curve } : c)),
+            changes: state.changes.map((context, index) => (index === existing ? { ...context, tempo, curve } : context)),
         });
         return;
     }
 
     tempoMapStore.set({
-        changes: [...state.changes, createTempoChange(beat, tempo, curve)].sort((a, b) => a.beat - b.beat),
+        changes: [...state.changes, createTempoChange(beat, tempo, curve)].sort((alpha, b) => alpha.beat - b.beat),
     });
 }

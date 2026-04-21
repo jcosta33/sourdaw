@@ -15,8 +15,8 @@ export function setNotePressure(clipId: string, noteId: string, pressure: number
         ...state,
         notesByClipId: {
             ...state.notesByClipId,
-            [clipId]: existing.map((n) =>
-                n.id === noteId ? { ...n, pressure: Math.max(0, Math.min(127, pressure)) } : n
+            [clipId]: existing.map((node) =>
+                node.id === noteId ? { ...node, pressure: Math.max(0, Math.min(127, pressure)) } : node
             ),
         },
     });

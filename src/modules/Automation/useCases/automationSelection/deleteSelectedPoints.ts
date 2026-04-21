@@ -8,44 +8,44 @@ export function deleteSelectedPoints(laneId: string, selectedBeats: number[]): v
         return;
     }
 
-    const lane = state.lanes.find((l) => l.id === laneId);
+    const lane = state.lanes.find((length) => length.id === laneId);
     if (!lane) {
         return;
     }
 
     const selectedSet = new Set(selectedBeats);
-    const deletedPoints = lane.points.filter((p) => selectedSet.has(p.beat));
-    const remainingPoints = lane.points.filter((p) => !selectedSet.has(p.beat));
+    const deletedPoints = lane.points.filter((param) => selectedSet.has(param.beat));
+    const remainingPoints = lane.points.filter((param) => !selectedSet.has(param.beat));
 
     automationStore.set({
-        lanes: state.lanes.map((l) => (l.id === laneId ? { ...l, points: remainingPoints } : l)),
+        lanes: state.lanes.map((length) => (length.id === laneId ? { ...length, points: remainingPoints } : length)),
     });
 
     pushUndoEntry(
         'Delete automation points',
         () => {
-            const s = automationStore.value;
-            if (!s) {
+            const state1 = automationStore.value;
+            if (!state1) {
                 return;
             }
             automationStore.set({
-                lanes: s.lanes.map((l) => {
-                    if (l.id !== laneId) {
-                        return l;
+                lanes: state1.lanes.map((length) => {
+                    if (length.id !== laneId) {
+                        return length;
                     }
-                    const merged = [...l.points, ...deletedPoints].sort((a, b) => a.beat - b.beat);
-                    return { ...l, points: merged };
+                    const merged = [...length.points, ...deletedPoints].sort((alpha, b) => alpha.beat - b.beat);
+                    return { ...length, points: merged };
                 }),
             });
         },
         () => {
-            const s = automationStore.value;
-            if (!s) {
+            const state1 = automationStore.value;
+            if (!state1) {
                 return;
             }
             automationStore.set({
-                lanes: s.lanes.map((l) =>
-                    l.id === laneId ? { ...l, points: l.points.filter((p) => !selectedSet.has(p.beat)) } : l
+                lanes: state1.lanes.map((length) =>
+                    length.id === laneId ? { ...length, points: length.points.filter((param) => !selectedSet.has(param.beat)) } : length
                 ),
             });
         }

@@ -27,20 +27,20 @@ export function generateIR(config: IRConfig): AudioBuffer {
         let hpState = 0;
         const hpCoeff = Math.exp((-2 * Math.PI * lfDamping) / sampleRate);
 
-        for (let i = 0; i < len; i++) {
+        for (let index = 0; index < len; index++) {
             let sample = Math.random() * 2 - 1;
-            const isEarly = i < earlySamples;
+            const isEarly = index < earlySamples;
             if (isEarly) {
                 const spacing = Math.floor(sampleRate * 0.003 * (1 + ch * 0.2));
-                if (i % spacing < 2) {
+                if (index % spacing < 2) {
                     sample *= earlyLevel;
                 } else {
                     sample *= earlyLevel * diffusion * 0.3;
                 }
             }
-            const envelope = Math.exp(decayRate * i);
+            const envelope = Math.exp(decayRate * index);
             sample *= envelope;
-            const dampProgress = i / len;
+            const dampProgress = index / len;
             const effectiveLpCoeff = lpCoeff * (1 - dampProgress * 0.3);
             lpState = lpState * effectiveLpCoeff + sample * (1 - effectiveLpCoeff);
             sample = sample * (1 - diffusion) + lpState * diffusion;
@@ -48,7 +48,7 @@ export function generateIR(config: IRConfig): AudioBuffer {
                 hpState = hpState * hpCoeff + sample * (1 - hpCoeff);
                 sample = sample - hpState * 0.5;
             }
-            data[i] = sample;
+            data[index] = sample;
         }
     }
     return buf;

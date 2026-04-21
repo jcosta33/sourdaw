@@ -5,7 +5,7 @@ import * as subject from '../toggleAutomationPanel';
 describe('toggleAutomationPanel', () => {
     it('should export toggleAutomationPanel', () => {
         expect(subject.toggleAutomationPanel).toBeDefined();
-        const t = typeof subject.toggleAutomationPanel;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.toggleAutomationPanel;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

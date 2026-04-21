@@ -38,7 +38,7 @@ describe('setupDeviceStrategies', () => {
 
     it('should register native DSP devices with a custom matcher', () => {
         const calls = vi.mocked(deviceRegistry.register).mock.calls;
-        const nativeCall = calls.find((c) => c[1] === createNativeDspStrategy);
+        const nativeCall = calls.find((context) => context[1] === createNativeDspStrategy);
 
         expect(nativeCall).toBeDefined();
 

@@ -9,8 +9,8 @@ export function getChordAtBeat(beat: number): ChordEvent | null {
     }
 
     // Find the last event whose beat ≤ the query beat and whose range covers it
-    for (let i = state.events.length - 1; i >= 0; i--) {
-        const event = state.events[i]!;
+    for (let index = state.events.length - 1; index >= 0; index--) {
+        const event = state.events[index]!;
         if (event.beat <= beat && beat < event.beat + event.duration) {
             return event;
         }

@@ -5,10 +5,10 @@ export function createNoteQuantizer(gridBeats = 0.25, strength = 1.0): MidiEffec
         id: 'midi-fx-quantizer',
         name: `Note Quantizer (${gridBeats}b, ${Math.round(strength * 100)}%)`,
         process: (notes) =>
-            notes.map((n) => {
-                const quantized = Math.round(n.startBeat / gridBeats) * gridBeats;
-                const newStart = n.startBeat + (quantized - n.startBeat) * strength;
-                return { ...n, startBeat: newStart };
+            notes.map((node) => {
+                const quantized = Math.round(node.startBeat / gridBeats) * gridBeats;
+                const newStart = node.startBeat + (quantized - node.startBeat) * strength;
+                return { ...node, startBeat: newStart };
             }),
     };
 }

@@ -107,25 +107,25 @@ export class TrackNode {
         });
 
         // Notify native engine if bridge is active
-        const nativeDevice = this.strip.deviceNodes.find((d) => d.type === 'external-plugin');
+        const nativeDevice = this.strip.deviceNodes.find((data) => data.type === 'external-plugin');
         if (nativeDevice?.nativeDspControls) {
             // TODO: Send command to native bridge
         }
     }
 
     public removeMidiFx(fxId: string): void {
-        this.strip.midiFxNodes = this.strip.midiFxNodes.filter((f) => f.id !== fxId);
+        this.strip.midiFxNodes = this.strip.midiFxNodes.filter((freq) => freq.id !== fxId);
     }
 
     public updateMidiFxParam(fxId: string, paramId: string, value: number): void {
-        const fx = this.strip.midiFxNodes.find((f) => f.id === fxId);
+        const fx = this.strip.midiFxNodes.find((freq) => freq.id === fxId);
         if (fx) {
             fx.parameterValues[paramId] = value;
         }
     }
 
     public updateMidiFxBypass(fxId: string, bypassed: boolean): void {
-        const fx = this.strip.midiFxNodes.find((f) => f.id === fxId);
+        const fx = this.strip.midiFxNodes.find((freq) => freq.id === fxId);
         if (fx) {
             fx.bypassed = bypassed;
         }
@@ -163,8 +163,8 @@ export class TrackNode {
         if (this._analyserFallbackBuffer) {
             this.strip.analyserNode.getFloatTimeDomainData(this._analyserFallbackBuffer);
             let peak = 0;
-            for (let i = 0; i < this._analyserFallbackBuffer.length; i++) {
-                const abs = Math.abs(this._analyserFallbackBuffer[i]!);
+            for (let index = 0; index < this._analyserFallbackBuffer.length; index++) {
+                const abs = Math.abs(this._analyserFallbackBuffer[index]!);
                 if (abs > peak) {
                     peak = abs;
                 }
@@ -230,16 +230,16 @@ export class TrackNode {
     }
 
     public rebuildChain(): void {
-        const s = this.strip;
-        s.preFaderTap.disconnect();
-        s.gainNode.disconnect();
-        s.faderNode.disconnect();
-        s.postFaderGain.disconnect();
-        s.panNode.disconnect();
-        s.meterNode?.disconnect();
-        s.analyserNode.disconnect();
+        const state = this.strip;
+        state.preFaderTap.disconnect();
+        state.gainNode.disconnect();
+        state.faderNode.disconnect();
+        state.postFaderGain.disconnect();
+        state.panNode.disconnect();
+        state.meterNode?.disconnect();
+        state.analyserNode.disconnect();
 
-        for (const dn of s.deviceNodes) {
+        for (const dn of state.deviceNodes) {
             try {
                 dn.outputNode.disconnect();
             } catch {
@@ -247,15 +247,15 @@ export class TrackNode {
             }
         }
 
-        let prevs: AudioNode[] = [s.gainNode];
-        for (const dn of s.deviceNodes) {
+        let prevs: AudioNode[] = [state.gainNode];
+        for (const dn of state.deviceNodes) {
             if (dn.bypassed) {
                 continue;
             }
             if (dn.inputNode.numberOfInputs > 0) {
                 // Effect: all previous outputs connect to this input
-                for (const p of prevs) {
-                    p.connect(dn.inputNode);
+                for (const param of prevs) {
+                    param.connect(dn.inputNode);
                 }
                 prevs = [dn.outputNode];
             } else {
@@ -265,17 +265,17 @@ export class TrackNode {
         }
 
         // Connect all final outputs to the preFaderTap
-        for (const p of prevs) {
-            p.connect(s.preFaderTap);
+        for (const param of prevs) {
+            param.connect(state.preFaderTap);
         }
-        s.preFaderTap.connect(s.faderNode);
-        s.faderNode.connect(s.postFaderGain);
-        s.postFaderGain.connect(s.panNode);
-        if (s.meterNode) {
-            s.panNode.connect(s.meterNode);
-            s.meterNode.connect(s.analyserNode);
+        state.preFaderTap.connect(state.faderNode);
+        state.faderNode.connect(state.postFaderGain);
+        state.postFaderGain.connect(state.panNode);
+        if (state.meterNode) {
+            state.panNode.connect(state.meterNode);
+            state.meterNode.connect(state.analyserNode);
         } else {
-            s.panNode.connect(s.analyserNode);
+            state.panNode.connect(state.analyserNode);
         }
 
         this.routeOutput();
@@ -283,7 +283,7 @@ export class TrackNode {
     }
 
     public addDevice(deviceId: string, deviceType: string, externalInstanceId?: string): void {
-        if (this.strip.deviceNodes.some((d) => d.deviceId === deviceId)) {
+        if (this.strip.deviceNodes.some((data) => data.deviceId === deviceId)) {
             logger.debug(`Device ${deviceId} already exists on track ${this.trackId}`);
             return;
         }
@@ -324,7 +324,7 @@ export class TrackNode {
                 0 // engine plugin ID — will be assigned by Rust
             )
                 .then((result) => {
-                    const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
+                    const idx = this.strip.deviceNodes.findIndex((data) => data.deviceId === deviceId);
                     if (idx !== -1) {
                         const bridgeDn: BuiltinDeviceNode = {
                             deviceId,
@@ -368,7 +368,7 @@ export class TrackNode {
                     deviceType,
                     transportSAB: this.deps.transportSAB,
                     onLoaded: (finalDn) => {
-                        const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
+                        const idx = this.strip.deviceNodes.findIndex((data) => data.deviceId === deviceId);
                         if (idx !== -1) {
                             this.strip.deviceNodes[idx] = finalDn;
                             this.scheduleRebuildChain();
@@ -386,7 +386,7 @@ export class TrackNode {
     }
 
     public removeDevice(deviceId: string): void {
-        const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
+        const dn = this.strip.deviceNodes.find((data) => data.deviceId === deviceId);
         if (!dn) {
             return;
         }
@@ -411,15 +411,15 @@ export class TrackNode {
         if (dn.type === 'proof') {
             unregisterProofDevice(deviceId);
         }
-        for (const n of dn.nodes) {
-            n.disconnect();
+        for (const node of dn.nodes) {
+            node.disconnect();
         }
-        this.strip.deviceNodes = this.strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
+        this.strip.deviceNodes = this.strip.deviceNodes.filter((data) => data.deviceId !== deviceId);
         this.rebuildChain();
     }
 
     public updateParam(deviceId: string, paramId: string, value: number): void {
-        const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
+        const dn = this.strip.deviceNodes.find((data) => data.deviceId === deviceId);
         if (!dn) {
             return;
         }
@@ -468,7 +468,7 @@ export class TrackNode {
     }
 
     public updatePatch(deviceId: string, patch: Record<string, unknown>): void {
-        const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
+        const dn = this.strip.deviceNodes.find((data) => data.deviceId === deviceId);
         if (!dn) {
             return;
         }
@@ -479,7 +479,7 @@ export class TrackNode {
     }
 
     public scheduleParam(deviceId: string, paramId: string, value: number, time: number): void {
-        const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
+        const dn = this.strip.deviceNodes.find((data) => data.deviceId === deviceId);
         if (!dn) {
             return;
         }
@@ -511,7 +511,7 @@ export class TrackNode {
     }
 
     public updateBypass(deviceId: string, bypassed: boolean): void {
-        const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
+        const dn = this.strip.deviceNodes.find((data) => data.deviceId === deviceId);
         if (!dn) {
             return;
         }
@@ -566,8 +566,8 @@ export class TrackNode {
             if (dn.type === 'proof') {
                 unregisterProofDevice(dn.deviceId);
             }
-            for (const n of dn.nodes) {
-                n.disconnect();
+            for (const node of dn.nodes) {
+                node.disconnect();
             }
         }
     }

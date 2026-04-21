@@ -5,7 +5,7 @@ import * as subject from '../builtinDSP';
 describe('builtinDSP', () => {
     it('should export registerBuiltinFaustDSP', () => {
         expect(subject.registerBuiltinFaustDSP).toBeDefined();
-        const t = typeof subject.registerBuiltinFaustDSP;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.registerBuiltinFaustDSP;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

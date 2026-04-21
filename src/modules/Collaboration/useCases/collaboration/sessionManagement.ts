@@ -238,7 +238,7 @@ function generateSessionId(): string {
 /** Pick the first color from PEER_COLORS not already in use. */
 const pickPeerColor = (excludeColors: string[]): string => {
     const used = new Set(excludeColors);
-    return PEER_COLORS.find((c) => !used.has(c)) ?? PEER_COLORS[0]!;
+    return PEER_COLORS.find((context) => !used.has(context)) ?? PEER_COLORS[0]!;
 };
 
 const getLocalPeerInfo = (): CollaborationPeer => {
@@ -447,7 +447,7 @@ export const acceptAnswer = async (answerString: string): Promise<void> => {
         const joinerInfo: CollaborationPeer = {
             id: answer.peerId,
             name: answer.name,
-            color: pickPeerColor([state.localColor, ...state.peers.map((p) => p.color)]),
+            color: pickPeerColor([state.localColor, ...state.peers.map((param) => param.color)]),
             isHost: false,
             isConnected: false,
             lastSeen: Date.now(),
@@ -699,7 +699,7 @@ function handlePeerDisconnected(peerId: PeerId): void {
 
     const state = collaborationStore.value;
     if (state) {
-        const anyConnected = state.peers.some((p) => p.isConnected && p.id !== peerId);
+        const anyConnected = state.peers.some((param) => param.isConnected && param.id !== peerId);
         if (!anyConnected && state.peers.length > 0) {
             collaborationStore.set({ ...state, connectionStatus: 'disconnected' });
         }
@@ -711,7 +711,7 @@ const addOrUpdatePeer = (peer: CollaborationPeer): void => {
     if (!state) {
         return;
     }
-    const existing = state.peers.findIndex((p) => p.id === peer.id);
+    const existing = state.peers.findIndex((param) => param.id === peer.id);
     if (existing >= 0) {
         const peers = [...state.peers];
         peers[existing] = { ...peer, isConnected: true, lastSeen: Date.now() };
@@ -731,7 +731,7 @@ const removePeer = (peerId: PeerId): void => {
     }
     collaborationStore.set({
         ...state,
-        peers: state.peers.filter((p) => p.id !== peerId),
+        peers: state.peers.filter((param) => param.id !== peerId),
     });
     sessionState.peerManager?.removePeer(peerId);
 };
@@ -743,7 +743,7 @@ const updatePeerLastSeen = (peerId: PeerId): void => {
     }
     collaborationStore.set({
         ...state,
-        peers: state.peers.map((p) => (p.id === peerId ? { ...p, lastSeen: Date.now() } : p)),
+        peers: state.peers.map((param) => (param.id === peerId ? { ...param, lastSeen: Date.now() } : param)),
     });
 };
 
@@ -754,7 +754,7 @@ const updatePeerConnectionState = (peerId: PeerId, isConnected: boolean): void =
     }
     collaborationStore.set({
         ...state,
-        peers: state.peers.map((p) => (p.id === peerId ? { ...p, isConnected, lastSeen: Date.now() } : p)),
+        peers: state.peers.map((param) => (param.id === peerId ? { ...param, isConnected, lastSeen: Date.now() } : param)),
     });
 };
 
@@ -775,7 +775,7 @@ async function readAllChunks(stream: ReadableStream<Uint8Array>): Promise<Uint8A
         }
         chunks.push(value);
     }
-    const total = chunks.reduce((n, c) => n + c.length, 0);
+    const total = chunks.reduce((node, context) => node + context.length, 0);
     const result = new Uint8Array(total);
     let offset = 0;
     for (const chunk of chunks) {
@@ -802,7 +802,7 @@ async function decompressInvite(raw: string): Promise<string> {
         return atob(raw);
     }
     const binary = atob(raw.slice(2));
-    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    const bytes = Uint8Array.from(binary, (context) => context.charCodeAt(0));
     const stream = new DecompressionStream('deflate-raw');
     const writer = stream.writable.getWriter();
     writer.write(bytes);

@@ -5,7 +5,7 @@ import * as subject from '../toggleTrackList';
 describe('toggleTrackList', () => {
     it('should export toggleTrackList', () => {
         expect(subject.toggleTrackList).toBeDefined();
-        const t = typeof subject.toggleTrackList;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.toggleTrackList;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

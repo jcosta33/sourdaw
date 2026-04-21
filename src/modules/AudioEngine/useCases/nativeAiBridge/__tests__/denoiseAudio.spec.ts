@@ -5,7 +5,7 @@ import * as subject from '../denoiseAudio';
 describe('denoiseAudio', () => {
     it('should export denoiseAudio', () => {
         expect(subject.denoiseAudio).toBeDefined();
-        const t = typeof subject.denoiseAudio;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.denoiseAudio;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

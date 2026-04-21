@@ -21,7 +21,7 @@ function makePattern(id: string, velocities: number[]) {
         tracks: [
             {
                 padIndex: 0,
-                steps: velocities.map((v) => ({ ...baseStep, velocity: v })),
+                steps: velocities.map((value) => ({ ...baseStep, velocity: value })),
             },
         ],
     } as never;
@@ -29,23 +29,23 @@ function makePattern(id: string, velocities: number[]) {
 
 describe('morphPatterns', () => {
     it('lerps velocity between two patterns at the midpoint', () => {
-        const a = makePattern('a', [0, 0.5]);
+        const alpha = makePattern('a', [0, 0.5]);
         const b = makePattern('b', [1, 0.5]);
-        const morphed = morphPatterns(a, b, 0.5) as { tracks: { steps: { velocity: number }[] }[] };
+        const morphed = morphPatterns(alpha, b, 0.5) as { tracks: { steps: { velocity: number }[] }[] };
         expect(morphed.tracks[0]!.steps[0]!.velocity).toBe(0.5);
     });
 
     it('clamps t to [0, 1]', () => {
-        const a = makePattern('a', [0]);
+        const alpha = makePattern('a', [0]);
         const b = makePattern('b', [1]);
-        const high = morphPatterns(a, b, 5) as { tracks: { steps: { velocity: number }[] }[] };
-        const low = morphPatterns(a, b, -1) as { tracks: { steps: { velocity: number }[] }[] };
+        const high = morphPatterns(alpha, b, 5) as { tracks: { steps: { velocity: number }[] }[] };
+        const low = morphPatterns(alpha, b, -1) as { tracks: { steps: { velocity: number }[] }[] };
         expect(high.tracks[0]!.steps[0]!.velocity).toBe(1);
         expect(low.tracks[0]!.steps[0]!.velocity).toBe(0);
     });
 
     it('falls back to A track when B has no matching index', () => {
-        const a = {
+        const alpha = {
             id: 'a',
             name: 'a',
             stepsPerBar: 16,
@@ -56,7 +56,7 @@ describe('morphPatterns', () => {
             ],
         } as never;
         const b = makePattern('b', [0]);
-        const morphed = morphPatterns(a, b, 0.5) as { tracks: { padIndex: number }[] };
+        const morphed = morphPatterns(alpha, b, 0.5) as { tracks: { padIndex: number }[] };
         expect(morphed.tracks).toHaveLength(2);
     });
 });

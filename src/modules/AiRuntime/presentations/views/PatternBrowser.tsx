@@ -65,12 +65,12 @@ const MiniPianoRoll = ({ notes, lengthBeats }: { notes: PatternNote[]; lengthBea
         // notes and Math.max(...arr) spreads stack-overflow on large inputs.
         let minPitch = notes[0]!.pitch;
         let maxPitch = minPitch;
-        for (let i = 1; i < notes.length; i++) {
-            const p = notes[i]!.pitch;
-            if (p < minPitch) {
-                minPitch = p;
-            } else if (p > maxPitch) {
-                maxPitch = p;
+        for (let index = 1; index < notes.length; index++) {
+            const param = notes[index]!.pitch;
+            if (param < minPitch) {
+                minPitch = param;
+            } else if (param > maxPitch) {
+                maxPitch = param;
             }
         }
         minPitch -= 1;
@@ -115,14 +115,14 @@ const CompactSelect = <T extends string>({
         <DawEyebrowLabel>{label}</DawEyebrowLabel>
         <DawCompactSelect
             value={value ?? ''}
-            onChange={(e) => onChange(e.target.value ? (e.target.value as T) : undefined)}
+            onChange={(event) => onChange(event.target.value ? (event.target.value as T) : undefined)}
             className="border-border/60 bg-surface-base px-1 text-[11px] text-foreground/90 focus-visible:ring-purple-500/50"
             aria-label={label}
         >
             <option value="">{allLabel}</option>
-            {options.map((o) => (
-                <option key={o.id} value={o.id}>
-                    {o.label}
+            {options.map((output) => (
+                <option key={output.id} value={output.id}>
+                    {output.label}
                 </option>
             ))}
         </DawCompactSelect>
@@ -261,10 +261,10 @@ export const PatternBrowser = (): ReactElement => {
         const tState = trackStore.value;
         const selectedTrackId = tState?.selectedTrackId;
         let targetTrackId: string | undefined = tState?.tracks.find(
-            (t) => t.id === selectedTrackId && t.kind === 'midi'
+            (time) => time.id === selectedTrackId && time.kind === 'midi'
         )?.id;
         if (!targetTrackId) {
-            targetTrackId = tState?.tracks.find((t) => t.kind === 'midi')?.id;
+            targetTrackId = tState?.tracks.find((time) => time.kind === 'midi')?.id;
         }
         // §14.3 / G4 — the AI generation handler auto-creates a MIDI track
         // when none exists. The pattern browser used to silently return,
@@ -313,8 +313,8 @@ export const PatternBrowser = (): ReactElement => {
         notifyUser(`Inserted ${template.name} (${notes.length} notes)`, 'success');
     };
 
-    const keyOptions = ALL_KEYS.map((k) => ({ id: k, label: k }));
-    const scaleOptions = SCALE_TYPES.map((s) => ({ id: s, label: SCALE_LABELS[s] }));
+    const keyOptions = ALL_KEYS.map((kIndex) => ({ id: kIndex, label: kIndex }));
+    const scaleOptions = SCALE_TYPES.map((state) => ({ id: state, label: SCALE_LABELS[state] }));
     const genreOptions = ALL_GENRES;
 
     return (
@@ -326,7 +326,7 @@ export const PatternBrowser = (): ReactElement => {
                     <DawCompactInput
                         type="text"
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={(event) => setSearchQuery(event.target.value)}
                         placeholder="Search patterns..."
                         size="sm"
                         className="w-full border-border/60 bg-surface-base pl-7 pr-2"
@@ -344,7 +344,6 @@ export const PatternBrowser = (): ReactElement => {
                     <SlidersHorizontal className="size-3.5" />
                 </Button>
             </div>
-
             {/* Generation controls */}
             {showControls ? (
                 <div className="bg-surface-base/60 border border-border/40 rounded-lg p-2 space-y-2">
@@ -353,14 +352,14 @@ export const PatternBrowser = (): ReactElement => {
                             label="Key"
                             value={key}
                             options={keyOptions}
-                            onChange={(v) => setKey(v ?? 'C')}
+                            onChange={(value) => setKey(value ?? 'C')}
                             allLabel="C"
                         />
                         <CompactSelect
                             label="Scale"
                             value={scale}
                             options={scaleOptions}
-                            onChange={(v) => setScale(v ?? 'minor')}
+                            onChange={(value) => setScale(value ?? 'minor')}
                             allLabel="Minor"
                         />
                         <CompactSelect
@@ -376,7 +375,6 @@ export const PatternBrowser = (): ReactElement => {
                     </div>
                 </div>
             ) : null}
-
             {/* Category filter */}
             <div className="flex gap-1 flex-wrap">
                 <button
@@ -410,7 +408,6 @@ export const PatternBrowser = (): ReactElement => {
                     {filteredTemplates.length}/{PATTERN_TEMPLATES.length}
                 </span>
             </div>
-
             {/* Template grid */}
             {filteredTemplates.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-muted-foreground opacity-60">

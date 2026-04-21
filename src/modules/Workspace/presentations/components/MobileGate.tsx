@@ -16,7 +16,7 @@ function useIsMobile(): boolean {
 
     useEffect(() => {
         const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
-        const handler = (e: MediaQueryListEvent): void => setIsMobile(e.matches);
+        const handler = (event: MediaQueryListEvent): void => setIsMobile(event.matches);
         mq.addEventListener('change', handler);
         setIsMobile(mq.matches);
         return () => mq.removeEventListener('change', handler);

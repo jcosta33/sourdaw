@@ -6,16 +6,16 @@ import { createHandler } from '#/utils/createHandler';
 import { llmGenerateNotes } from './llmNoteHelpers';
 
 export const handleCompleteMidi = createHandler<'completeMidi'>({
-    execute: async (a) => {
-        const existing = getNotesForClip(a.payload.clipId);
-        const bars = a.payload.bars ?? 4;
-        const direction = a.payload.direction ?? 'forward';
+    execute: async (alpha) => {
+        const existing = getNotesForClip(alpha.payload.clipId);
+        const bars = alpha.payload.bars ?? 4;
+        const direction = alpha.payload.direction ?? 'forward';
 
         let maxBeat = 0;
-        for (const n of existing) {
-            const v = n.startBeat + n.duration;
-            if (v > maxBeat) {
-                maxBeat = v;
+        for (const node of existing) {
+            const value = node.startBeat + node.duration;
+            if (value > maxBeat) {
+                maxBeat = value;
             }
         }
 
@@ -24,9 +24,9 @@ export const handleCompleteMidi = createHandler<'completeMidi'>({
                 ? `Continue this melody/pattern for ${String(bars)} more bars (${String(bars * 4)} beats), starting from beat ${String(maxBeat)}. Match the style, rhythm, and key of the existing notes.`
                 : `Write ${String(bars)} bars of content BEFORE beat 0 as a lead-in/intro, matching the style.`;
 
-        const notes = await llmGenerateNotes(generateToolCalls, instruction, existing, a.payload.clipId);
+        const notes = await llmGenerateNotes(generateToolCalls, instruction, existing, alpha.payload.clipId);
         for (const note of notes) {
-            addMidiNote(a.payload.clipId, note.pitch, note.startBeat, note.duration, note.velocity ?? 100);
+            addMidiNote(alpha.payload.clipId, note.pitch, note.startBeat, note.duration, note.velocity ?? 100);
         }
         logger.info(`[AI MIDI] Completed ${String(notes.length)} notes (${direction})`);
     },

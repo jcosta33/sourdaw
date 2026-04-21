@@ -320,7 +320,7 @@ export const YeastPanel = (): ReactElement => {
 // ── Level 1: Play ────────────────────────────────────────────────────────────
 
 const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
-    const hasArp = state.processors.some((p) => p.type === 'arpeggiator');
+    const hasArp = state.processors.some((param) => param.type === 'arpeggiator');
 
     return (
         <Row align="center" justify="center" gap={8} className="flex-1 px-8">
@@ -335,7 +335,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                 caps
                 onClick={() => {
                     if (hasArp) {
-                        const arp = state.processors.find((p) => p.type === 'arpeggiator');
+                        const arp = state.processors.find((param) => param.type === 'arpeggiator');
                         if (arp) {
                             removeYeastProcessor(arp.id);
                         }
@@ -346,7 +346,6 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
             >
                 {hasArp ? 'Arp On' : 'Arp Off'}
             </DawPluginToggle>
-
             {/* Mode */}
             <Stack align="center" gap={1}>
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Mode</span>
@@ -354,10 +353,10 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     size="micro"
                     tone="inset"
                     className="min-w-[4.5rem]"
-                    onChange={(e) => {
-                        const arp = state.processors.find((p) => p.type === 'arpeggiator');
+                    onChange={(event) => {
+                        const arp = state.processors.find((param) => param.type === 'arpeggiator');
                         if (arp) {
-                            setYeastProcessorParam(arp.id, 'mode', parseInt(e.target.value));
+                            setYeastProcessorParam(arp.id, 'mode', parseInt(event.target.value));
                         }
                     }}
                     defaultValue={0}
@@ -371,16 +370,15 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     <option value={6}>Chord</option>
                 </DawCompactSelect>
             </Stack>
-
             {/* Rate */}
             <Stack align="center" gap={1}>
                 <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Rate</span>
                 <YeastKnob
                     value={8}
-                    onChange={(v) => {
-                        const arp = state.processors.find((p) => p.type === 'arpeggiator');
+                    onChange={(value) => {
+                        const arp = state.processors.find((param) => param.type === 'arpeggiator');
                         if (arp) {
-                            setYeastProcessorParam(arp.id, 'rate_denom', Math.round(v));
+                            setYeastProcessorParam(arp.id, 'rate_denom', Math.round(value));
                         }
                     }}
                     min={1}
@@ -391,12 +389,11 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                 />
                 <span className="text-[8px] text-muted-foreground font-mono">1/8</span>
             </Stack>
-
             {/* Latch */}
             <YeastChip
                 size="sm"
                 onClick={() => {
-                    const arp = state.processors.find((p) => p.type === 'arpeggiator');
+                    const arp = state.processors.find((param) => param.type === 'arpeggiator');
                     if (arp) {
                         setYeastProcessorParam(arp.id, 'latch', 1);
                     }
@@ -411,14 +408,14 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
 // ── Level 2: Shape ───────────────────────────────────────────────────────────
 
 const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
-    const arp = state.processors.find((p) => p.type === 'arpeggiator');
+    const arp = state.processors.find((param) => param.type === 'arpeggiator');
 
     return (
         <Row align="start" justify="around" className="flex-1 px-4 py-3">
             <KnobCol
                 label="Gate"
                 value={0.8}
-                onChange={(v) => arp && setYeastProcessorParam(arp.id, 'gate', v)}
+                onChange={(value) => arp && setYeastProcessorParam(arp.id, 'gate', value)}
                 min={0.01}
                 max={2}
                 unit="%"
@@ -426,7 +423,7 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
             <KnobCol
                 label="Swing"
                 value={0}
-                onChange={(v) => arp && setYeastProcessorParam(arp.id, 'swing', v)}
+                onChange={(value) => arp && setYeastProcessorParam(arp.id, 'swing', value)}
                 min={0}
                 max={1}
                 unit="%"
@@ -434,7 +431,7 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
             <KnobCol
                 label="Octaves"
                 value={1}
-                onChange={(v) => arp && setYeastProcessorParam(arp.id, 'octave_range', v)}
+                onChange={(value) => arp && setYeastProcessorParam(arp.id, 'octave_range', value)}
                 min={1}
                 max={4}
                 unit=""
@@ -442,7 +439,7 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
             <KnobCol
                 label="Velocity"
                 value={100}
-                onChange={(v) => arp && setYeastProcessorParam(arp.id, 'fixed_velocity', v)}
+                onChange={(value) => arp && setYeastProcessorParam(arp.id, 'fixed_velocity', value)}
                 min={1}
                 max={127}
                 unit=""
@@ -456,7 +453,7 @@ const Level2Shape = ({ state }: { state: YeastState }): ReactElement => {
 const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [arpPattern, setArpPattern] = useState<ArpStep[]>(() => createDefaultPattern(8));
-    const hasArpPattern = state.processors.some((p) => p.type === 'arpeggiator');
+    const hasArpPattern = state.processors.some((param) => param.type === 'arpeggiator');
 
     const handleStepChange = (index: number, step: ArpStep) => {
         const next = [...arpPattern];
@@ -476,7 +473,7 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
         <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto">
             {/* Rack chain with expandable params */}
             <Stack gap={1}>
-                {state.processors.map((proc, i) => (
+                {state.processors.map((proc, index) => (
                     <div key={proc.id} className="rounded bg-surface-base/50 border border-border/20 overflow-hidden">
                         {/* Header row */}
                         <Row
@@ -485,7 +482,7 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
                             className="px-2 py-1.5 cursor-pointer"
                             onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}
                         >
-                            <span className="text-[7px] text-muted-foreground/50 w-3">{i + 1}</span>
+                            <span className="text-[7px] text-muted-foreground/50 w-3">{index + 1}</span>
                             <span
                                 className={`text-[6px] ${expandedId === proc.id ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/30'}`}
                             >
@@ -501,8 +498,8 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
                                 tone="peach"
                                 size="xs"
                                 shape="soft"
-                                onClick={(e) => {
-                                    e.stopPropagation();
+                                onClick={(event) => {
+                                    event.stopPropagation();
                                     setYeastProcessorBypass(proc.id, !proc.bypassed);
                                 }}
                             >
@@ -511,8 +508,8 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
                             <button
                                 type="button"
                                 className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
-                                onClick={(e) => {
-                                    e.stopPropagation();
+                                onClick={(event) => {
+                                    event.stopPropagation();
                                     removeYeastProcessor(proc.id);
                                 }}
                             >
@@ -533,7 +530,6 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
                     </div>
                 ))}
             </Stack>
-
             {/* Arp pattern editor (when arp is present) */}
             {hasArpPattern ? (
                 <Stack gap={1} className="border-t border-border/20 pt-2">
@@ -548,7 +544,6 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
                     />
                 </Stack>
             ) : null}
-
             {/* Add processor */}
             <Row wrap gap={1} className="pt-1 border-t border-border/20">
                 {PROCESSOR_TYPES.filter((pt) => pt.level <= 3).map((pt) => (
@@ -573,10 +568,9 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
                 <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest block">Keyboard</span>
                 <KeyboardSplit width={500} height={32} />
             </Stack>
-
             {/* Rack chain with params */}
             <Stack gap={1}>
-                {state.processors.map((proc, i) => (
+                {state.processors.map((proc, index) => (
                     <div key={proc.id} className="rounded bg-surface-base/50 border border-border/20 overflow-hidden">
                         <Row
                             align="center"
@@ -584,7 +578,7 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
                             className="px-2 py-1.5 cursor-pointer"
                             onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}
                         >
-                            <span className="text-[7px] text-muted-foreground/50 w-3">{i + 1}</span>
+                            <span className="text-[7px] text-muted-foreground/50 w-3">{index + 1}</span>
                             <span
                                 className={`text-[6px] ${expandedId === proc.id ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/30'}`}
                             >
@@ -600,8 +594,8 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
                                 tone="peach"
                                 size="xs"
                                 shape="soft"
-                                onClick={(e) => {
-                                    e.stopPropagation();
+                                onClick={(event) => {
+                                    event.stopPropagation();
                                     setYeastProcessorBypass(proc.id, !proc.bypassed);
                                 }}
                             >
@@ -610,8 +604,8 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
                             <button
                                 type="button"
                                 className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
-                                onClick={(e) => {
-                                    e.stopPropagation();
+                                onClick={(event) => {
+                                    event.stopPropagation();
                                     removeYeastProcessor(proc.id);
                                 }}
                             >
@@ -630,7 +624,6 @@ const Level4Route = ({ state }: { state: YeastState }): ReactElement => {
                     </div>
                 ))}
             </Stack>
-
             {/* Add — includes Route-level processors */}
             <Row wrap gap={1} className="pt-1 border-t border-border/20">
                 {PROCESSOR_TYPES.filter((pt) => pt.level <= 4).map((pt) => (
@@ -655,7 +648,7 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
             <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto">
                 {/* Rack chain with params */}
                 <Stack gap={1}>
-                    {state.processors.map((proc, i) => (
+                    {state.processors.map((proc, index) => (
                         <div
                             key={proc.id}
                             className="rounded bg-surface-base/50 border border-border/20 overflow-hidden"
@@ -666,7 +659,7 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
                                 className="px-2 py-1.5 cursor-pointer"
                                 onClick={() => setExpandedId(expandedId === proc.id ? null : proc.id)}
                             >
-                                <span className="text-[7px] text-muted-foreground/50 w-3">{i + 1}</span>
+                                <span className="text-[7px] text-muted-foreground/50 w-3">{index + 1}</span>
                                 <span
                                     className={`text-[6px] ${expandedId === proc.id ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/30'}`}
                                 >
@@ -682,8 +675,8 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
                                     tone="peach"
                                     size="xs"
                                     shape="soft"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
+                                    onClick={(event) => {
+                                        event.stopPropagation();
                                         setYeastProcessorBypass(proc.id, !proc.bypassed);
                                     }}
                                 >
@@ -692,8 +685,8 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
                                 <button
                                     type="button"
                                     className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
+                                    onClick={(event) => {
+                                        event.stopPropagation();
                                         removeYeastProcessor(proc.id);
                                     }}
                                 >
@@ -742,7 +735,6 @@ const Level5Lab = ({ state }: { state: YeastState }): ReactElement => {
                     </Row>
                 </Stack>
             </Stack>
-
             {/* Right: Pattern editor + keyboard */}
             <Stack gap={2} className="w-[280px] shrink-0 border-l border-border/20 p-2 overflow-y-auto">
                 <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest">Pattern Editor</span>

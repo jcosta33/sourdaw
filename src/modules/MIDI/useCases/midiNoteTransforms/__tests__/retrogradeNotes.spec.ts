@@ -26,7 +26,7 @@ describe('retrogradeNotes', () => {
 
     it('should reverse note order along the timeline', () => {
         retrogradeNotes('clip1');
-        const starts = midiStore.value?.notesByClipId.clip1?.map((n) => n.startBeat);
+        const starts = midiStore.value?.notesByClipId.clip1?.map((node) => node.startBeat);
         expect(starts).toEqual([0.5, 0]);
     });
 

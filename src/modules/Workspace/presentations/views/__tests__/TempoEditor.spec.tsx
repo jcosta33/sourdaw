@@ -36,7 +36,7 @@ vi.mock('#/components/daw/ValueField', () => ({
             type="number"
             data-testid="tempo-input"
             value={value}
-            onChange={(e) => onChange(parseFloat(e.target.value))}
+            onChange={(event) => onChange(parseFloat(event.target.value))}
         />
     ),
 }));

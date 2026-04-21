@@ -95,10 +95,10 @@ export class Humanizer extends BaseMidiProcessor {
             case 'preset': {
                 const preset = (['tight', 'loose', 'drunk', 'rushed', 'laidBack'] as const)[Math.round(value)];
                 if (preset && PRESETS[preset]) {
-                    const p = PRESETS[preset];
-                    this.timingMeanMs = p.timingMeanMs;
-                    this.timingSigmaMs = p.timingSigmaMs;
-                    this.velSigma = p.velSigma;
+                    const param = PRESETS[preset];
+                    this.timingMeanMs = param.timingMeanMs;
+                    this.timingSigmaMs = param.timingSigmaMs;
+                    this.velSigma = param.velSigma;
                 }
                 break;
             }

@@ -3,9 +3,9 @@ import { createHandler } from '#/utils/createHandler';
 import { removeTimeSignatureChange } from '../../useCases/timeSignatureChanges/removeTimeSignatureChange';
 
 export const handleRemoveTimeSignatureChange = createHandler<'removeTimeSignatureChange'>({
-    execute: (a) => {
-        removeTimeSignatureChange(a.payload.beat);
+    execute: (alpha) => {
+        removeTimeSignatureChange(alpha.payload.beat);
     },
-    describe: (a) => ({ label: `Remove time signature change at beat ${a.payload.beat}` }),
+    describe: (alpha) => ({ label: `Remove time signature change at beat ${alpha.payload.beat}` }),
     undoable: true,
 });

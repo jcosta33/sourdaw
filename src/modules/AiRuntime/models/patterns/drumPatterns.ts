@@ -18,7 +18,7 @@ export const drumPatterns: PatternTemplate[] = [
         tags: ['dance', 'classic'],
         description: 'Standard dance beat',
         lengthBeats: 4,
-        generate: (p) => {
+        generate: (param) => {
             const notes: PatternNote[] = [];
             for (let b = 0; b < 4; b++) {
                 notes.push({ pitch: KK, velocity: 100, startBeat: b, durationBeats: 0.25 });
@@ -26,7 +26,7 @@ export const drumPatterns: PatternTemplate[] = [
                     notes.push({ pitch: CL, velocity: 95, startBeat: b, durationBeats: 0.25 });
                 }
             }
-            const step = p.density > 7 ? 0.25 : 0.5;
+            const step = param.density > 7 ? 0.25 : 0.5;
             for (let b = 0; b < 4; b += step) {
                 notes.push({ pitch: CH, velocity: b % 1 === 0 ? 70 : 55, startBeat: b, durationBeats: step / 2 });
             }
@@ -64,18 +64,18 @@ export const drumPatterns: PatternTemplate[] = [
         tags: ['808', 'modern'],
         description: 'Trap with rapid hi-hats',
         lengthBeats: 4,
-        generate: (p) => {
+        generate: (param) => {
             const notes: PatternNote[] = [
                 { pitch: KK, velocity: 110, startBeat: 0, durationBeats: 0.25 },
                 { pitch: KK, velocity: 100, startBeat: 3.75, durationBeats: 0.25 },
                 { pitch: CL, velocity: 100, startBeat: 1, durationBeats: 0.25 },
                 { pitch: CL, velocity: 100, startBeat: 3, durationBeats: 0.25 },
             ];
-            const step = p.density > 7 ? 0.125 : 0.25;
+            const step = param.density > 7 ? 0.125 : 0.25;
             for (let b = 0; b < 4; b += step) {
                 notes.push({
                     pitch: CH,
-                    velocity: 50 + Math.round(p.complexity * 4),
+                    velocity: 50 + Math.round(param.complexity * 4),
                     startBeat: b,
                     durationBeats: step / 2,
                 });
@@ -174,14 +174,14 @@ export const drumPatterns: PatternTemplate[] = [
         tags: ['fast', 'energy'],
         description: 'Fast DnB two-step beat',
         lengthBeats: 4,
-        generate: (p) => {
+        generate: (param) => {
             const notes: PatternNote[] = [
                 { pitch: KK, velocity: 110, startBeat: 0, durationBeats: 0.25 },
                 { pitch: KK, velocity: 100, startBeat: 2.75, durationBeats: 0.25 },
                 { pitch: SN, velocity: 100, startBeat: 0.5, durationBeats: 0.25 },
                 { pitch: SN, velocity: 100, startBeat: 2, durationBeats: 0.25 },
             ];
-            const step = p.density > 5 ? 0.25 : 0.5;
+            const step = param.density > 5 ? 0.25 : 0.5;
             for (let b = 0; b < 4; b += step) {
                 notes.push({ pitch: CH, velocity: 75, startBeat: b, durationBeats: step / 2 });
             }
@@ -197,10 +197,10 @@ export const drumPatterns: PatternTemplate[] = [
         description: 'Extreme blast beat',
         lengthBeats: 4,
         generate: () =>
-            Array.from({ length: 16 }, (_, i) => [
-                { pitch: KK, velocity: 100, startBeat: i * 0.25, durationBeats: 0.125 },
-                { pitch: SN, velocity: 95, startBeat: i * 0.25, durationBeats: 0.125 },
-                { pitch: CH, velocity: 80, startBeat: i * 0.25, durationBeats: 0.125 },
+            Array.from({ length: 16 }, (_, index) => [
+                { pitch: KK, velocity: 100, startBeat: index * 0.25, durationBeats: 0.125 },
+                { pitch: SN, velocity: 95, startBeat: index * 0.25, durationBeats: 0.125 },
+                { pitch: CH, velocity: 80, startBeat: index * 0.25, durationBeats: 0.125 },
             ]).flat(),
     },
     {

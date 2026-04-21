@@ -58,8 +58,8 @@ async function drain(): Promise<void> {
     // Copy the available samples out of the ring (handles wrap-around).
     const chunk = new Float32Array(available);
     const ringSize = ring.length;
-    for (let i = 0; i < available; i++) {
-        chunk[i] = ring[(localReadHead + i) % ringSize] ?? 0;
+    for (let index = 0; index < available; index++) {
+        chunk[index] = ring[(localReadHead + index) % ringSize] ?? 0;
     }
     localReadHead += available;
 

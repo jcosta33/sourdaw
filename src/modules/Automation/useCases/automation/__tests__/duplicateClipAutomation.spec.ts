@@ -5,7 +5,7 @@ import * as subject from '../duplicateClipAutomation';
 describe('duplicateClipAutomation', () => {
     it('should export duplicateClipAutomation', () => {
         expect(subject.duplicateClipAutomation).toBeDefined();
-        const t = typeof subject.duplicateClipAutomation;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.duplicateClipAutomation;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

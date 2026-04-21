@@ -21,7 +21,7 @@ import { WaveformEditor } from './ClipView/WaveformEditor';
 
 export const ClipView = (): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
-    const selectedTrack = tracks.find((t) => t.id === selectedTrackId);
+    const selectedTrack = tracks.find((time) => time.id === selectedTrackId);
     const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
     // beatWidth is reported by PianoRoll when its zoom changes
     const [pianoRollBeatWidth, setPianoRollBeatWidth] = useState(40);
@@ -51,7 +51,7 @@ export const ClipView = (): ReactElement => {
     }
 
     const selectedClip =
-        selectedTrack.clips.find((c) => c.id === wsState?.selectedClipId) ?? selectedTrack.clips[0] ?? null;
+        selectedTrack.clips.find((context) => context.id === wsState?.selectedClipId) ?? selectedTrack.clips[0] ?? null;
 
     // A9: collect all selected MIDI clip IDs across all tracks for multi-clip editing
     const openedClipIds: string[] | undefined = (() => {
@@ -60,7 +60,7 @@ export const ClipView = (): ReactElement => {
             return undefined;
         }
         const midiClipIds = ids.filter((id) =>
-            tracks.some((t) => t.kind === 'midi' && t.clips.some((c) => c.id === id))
+            tracks.some((time) => time.kind === 'midi' && time.clips.some((context) => context.id === id))
         );
         return midiClipIds.length > 1 ? midiClipIds : undefined;
     })();

@@ -5,7 +5,7 @@ import * as subject from '../getCompensationDelay';
 describe('getCompensationDelay', () => {
     it('should export getCompensationDelay', () => {
         expect(subject.getCompensationDelay).toBeDefined();
-        const t = typeof subject.getCompensationDelay;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getCompensationDelay;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

@@ -26,15 +26,15 @@ type InspectorPanelProps = {
 
 export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
-    const masterTrack = tracks.find((t) => t.kind === 'master');
+    const masterTrack = tracks.find((time) => time.kind === 'master');
 
     const selectedTrack =
-        (selectedTrackId ? tracks.find((t) => t.id === selectedTrackId) : null) ?? masterTrack ?? null;
+        (selectedTrackId ? tracks.find((time) => time.id === selectedTrackId) : null) ?? masterTrack ?? null;
     const wsSelectedClipId = useStore(workspaceStore, defaultWorkspaceState).selectedClipId;
     const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
 
-    const selectedClip = selectedTrack?.clips.find((c) => c.id === wsSelectedClipId) ?? null;
-    const selectedDevice = selectedTrack?.devices.find((d) => d.id === selectedDeviceId) ?? null;
+    const selectedClip = selectedTrack?.clips.find((context) => context.id === wsSelectedClipId) ?? null;
+    const selectedDevice = selectedTrack?.devices.find((data) => data.id === selectedDeviceId) ?? null;
 
     const isDeviceView = !!selectedDevice;
 

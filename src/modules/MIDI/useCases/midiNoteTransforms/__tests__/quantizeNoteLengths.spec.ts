@@ -26,7 +26,7 @@ describe('quantizeNoteLengths', () => {
 
     it('should quantize durations to the grid with a minimum of gridSize', () => {
         quantizeNoteLengths('clip1', 0.25);
-        expect(midiStore.value?.notesByClipId.clip1?.map((n) => n.duration)).toEqual([0.25, 0.5]);
+        expect(midiStore.value?.notesByClipId.clip1?.map((node) => node.duration)).toEqual([0.25, 0.5]);
     });
 
     it('should not run when the clip is empty or missing', () => {

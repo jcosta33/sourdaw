@@ -101,9 +101,9 @@ export function compareMixes(reference: MixAnalysis, current: MixAnalysis): MixC
             loudness: Math.round(loudnessScore),
             stereoWidth: Math.round(stereoScore),
         },
-        suggestions: suggestions.sort((a, b) => {
+        suggestions: suggestions.sort((alpha, b) => {
             const sev = { critical: 0, warning: 1, info: 2 };
-            return sev[a.severity] - sev[b.severity];
+            return sev[alpha.severity] - sev[b.severity];
         }),
         referenceAnalysis: reference,
         currentAnalysis: current,

@@ -16,8 +16,8 @@ export function readLevels(analyser: AnalyserNode): LevelReading {
     let peak = 0;
     let sumSquares = 0;
 
-    for (let i = 0; i < data.length; i++) {
-        const sample = data[i]!;
+    for (let index = 0; index < data.length; index++) {
+        const sample = data[index]!;
         const abs = Math.abs(sample);
         if (abs > peak) {
             peak = abs;

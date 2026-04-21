@@ -15,7 +15,7 @@ export function addWarpMarker(clipId: string, sourceSec: number, targetBeat: num
     const newMap = new Map(state.clipSettings);
     newMap.set(clipId, {
         ...settings,
-        markers: [...settings.markers, marker].sort((a, b) => a.sourceSec - b.sourceSec),
+        markers: [...settings.markers, marker].sort((alpha, b) => alpha.sourceSec - b.sourceSec),
     });
     audioWarpStore.set({ ...state, clipSettings: newMap });
 }

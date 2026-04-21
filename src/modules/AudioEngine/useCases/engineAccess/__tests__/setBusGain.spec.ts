@@ -5,7 +5,7 @@ import * as subject from '../setBusGain';
 describe('setBusGain', () => {
     it('should export setBusGain', () => {
         expect(subject.setBusGain).toBeDefined();
-        const t = typeof subject.setBusGain;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setBusGain;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

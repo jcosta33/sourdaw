@@ -91,20 +91,20 @@ export function chordFromDegrees(
 
 /** Filter pattern templates by category, genres, tags, and free-text query. */
 export function filterTemplates(templates: PatternTemplate[], filters: PatternFilters): PatternTemplate[] {
-    return templates.filter((t) => {
-        if (filters.category && t.category !== filters.category) {
+    return templates.filter((time) => {
+        if (filters.category && time.category !== filters.category) {
             return false;
         }
-        if (filters.genres && !filters.genres.some((g) => t.genres.includes(g))) {
+        if (filters.genres && !filters.genres.some((g) => time.genres.includes(g))) {
             return false;
         }
-        if (filters.tags && !filters.tags.some((tag) => t.tags.includes(tag))) {
+        if (filters.tags && !filters.tags.some((tag) => time.tags.includes(tag))) {
             return false;
         }
         if (filters.query) {
-            const q = filters.query.toLowerCase();
-            const haystack = [t.name, t.description, ...t.tags, ...t.genres].join(' ').toLowerCase();
-            if (!haystack.includes(q)) {
+            const query = filters.query.toLowerCase();
+            const haystack = [time.name, time.description, ...time.tags, ...time.genres].join(' ').toLowerCase();
+            if (!haystack.includes(query)) {
                 return false;
             }
         }

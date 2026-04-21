@@ -7,8 +7,8 @@ export function stopAllSlots(): void {
     }
     loopStationStore.set({
         ...state,
-        slots: state.slots.map((s) =>
-            s.state === 'playing' || s.state === 'overdubbing' ? { ...s, state: 'stopped' as const } : s
+        slots: state.slots.map((state1) =>
+            state1.state === 'playing' || state1.state === 'overdubbing' ? { ...state1, state: 'stopped' as const } : state1
         ),
     });
 }

@@ -10,16 +10,16 @@ export function decodeLatent(vectors: LatentVector[], sampleRate: number): Float
     const output = new Float32Array(totalSamples);
 
     for (let vi = 0; vi < vectors.length; vi++) {
-        const v = vectors[vi]!;
+        const value = vectors[vi]!;
         const offset = vi * frameSize;
 
-        for (let j = 0; j < frameSize; j++) {
+        for (let jIndex = 0; jIndex < frameSize; jIndex++) {
             let sample = 0;
-            for (let d = 0; d < v.values.length; d++) {
-                sample += v.values[d]! * Math.sin((2 * Math.PI * (d + 1) * 100 * j) / sampleRate) * 0.1;
+            for (let data = 0; data < value.values.length; data++) {
+                sample += value.values[data]! * Math.sin((2 * Math.PI * (data + 1) * 100 * jIndex) / sampleRate) * 0.1;
             }
-            if (offset + j < output.length) {
-                output[offset + j] = Math.tanh(sample);
+            if (offset + jIndex < output.length) {
+                output[offset + jIndex] = Math.tanh(sample);
             }
         }
     }

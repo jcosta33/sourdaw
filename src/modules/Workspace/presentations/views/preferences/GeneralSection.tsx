@@ -22,7 +22,6 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
     return (
         <>
             <SectionTitle icon={<Settings className="size-4" />} title="General" />
-
             <FieldGroup label="Track Height">
                 <div className="flex gap-2">
                     {trackHeights.map((h) => (
@@ -38,43 +37,38 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                     ))}
                 </div>
             </FieldGroup>
-
-            <GridSubdivisionSection value={prefs.gridSubdivision} onChange={(v) => update({ gridSubdivision: v })} />
-
+            <GridSubdivisionSection value={prefs.gridSubdivision} onChange={(value) => update({ gridSubdivision: value })} />
             <Separator />
-
             <div className="space-y-3">
-                <ToggleRow label="Snap to Grid" value={prefs.snapToGrid} onChange={(v) => update({ snapToGrid: v })} />
+                <ToggleRow label="Snap to Grid" value={prefs.snapToGrid} onChange={(value) => update({ snapToGrid: value })} />
                 <ToggleRow
                     label="Snap to Zero Crossing"
                     value={prefs.snapToZeroCrossing}
-                    onChange={(v) => update({ snapToZeroCrossing: v })}
+                    onChange={(value) => update({ snapToZeroCrossing: value })}
                 />
-                <ToggleRow label="Auto Save" value={prefs.autoSave} onChange={(v) => update({ autoSave: v })} />
+                <ToggleRow label="Auto Save" value={prefs.autoSave} onChange={(value) => update({ autoSave: value })} />
                 <ToggleRow
                     label="Show Minimap"
                     value={prefs.showMinimap}
-                    onChange={(v) => update({ showMinimap: v })}
+                    onChange={(value) => update({ showMinimap: value })}
                 />
             </div>
-
             <Separator />
-
             <FieldGroup label="Metronome">
                 <div className="space-y-2">
                     <ToggleRow
                         label="Enabled"
                         value={prefs.metronomeEnabled}
-                        onChange={(v) => update({ metronomeEnabled: v })}
+                        onChange={(value) => update({ metronomeEnabled: value })}
                     />
                     {prefs.metronomeEnabled ? (
                         <div className="space-y-1">
                             <label className="text-[10px] text-muted-foreground block">Volume</label>
                             <Slider
                                 value={[prefs.metronomeVolume * 100]}
-                                onValueChange={([v]) => {
-                                    if (v !== undefined) {
-                                        update({ metronomeVolume: v / 100 });
+                                onValueChange={([value]) => {
+                                    if (value !== undefined) {
+                                        update({ metronomeVolume: value / 100 });
                                     }
                                 }}
                                 max={100}
@@ -86,9 +80,7 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                     ) : null}
                 </div>
             </FieldGroup>
-
             <Separator />
-
             <FieldGroup label="Recording">
                 <div className="space-y-3">
                     <div className="space-y-1">
@@ -137,9 +129,7 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                     </div>
                 </div>
             </FieldGroup>
-
             <Separator />
-
             <FieldGroup label="Mixer">
                 <div className="space-y-1">
                     <label className="text-[10px] text-muted-foreground block">Solo Mode</label>
@@ -180,7 +170,6 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                     </div>
                 </div>
             </FieldGroup>
-
             <VoiceKeyEditor currentKey={prefs.voiceCommandKey} onChange={(key) => update({ voiceCommandKey: key })} />
         </>
     );

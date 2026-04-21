@@ -13,8 +13,8 @@ async function float32ToBase64(arr: Float32Array): Promise<string> {
     const YIELD_EVERY = 32; // yield to main thread every 32 chunks (~256 KB)
     let binary = '';
     let chunkIndex = 0;
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK) as unknown as number[]);
+    for (let index = 0; index < bytes.length; index += CHUNK) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(index, index + CHUNK) as unknown as number[]);
         if (++chunkIndex % YIELD_EVERY === 0) {
             await new Promise<void>((r) => setTimeout(r, 0));
         }
@@ -25,8 +25,8 @@ async function float32ToBase64(arr: Float32Array): Promise<string> {
 function base64ToFloat32(b64: string): Float32Array {
     const binary = atob(b64);
     const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
+    for (let index = 0; index < binary.length; index++) {
+        bytes[index] = binary.charCodeAt(index);
     }
     return new Float32Array(bytes.buffer);
 }
@@ -247,17 +247,17 @@ export const audioBufferCache = {
             if (!mipmap) {
                 const mipmapLength = Math.ceil(channelData.length / 256);
                 mipmap = new Float32Array(mipmapLength);
-                for (let i = 0; i < mipmapLength; i++) {
+                for (let index = 0; index < mipmapLength; index++) {
                     let peak = 0;
-                    const start = i * 256;
+                    const start = index * 256;
                     const end = Math.min(start + 256, channelData.length);
-                    for (let j = start; j < end; j++) {
-                        const abs = Math.abs(channelData[j]!);
+                    for (let jIndex = start; jIndex < end; jIndex++) {
+                        const abs = Math.abs(channelData[jIndex]!);
                         if (abs > peak) {
                             peak = abs;
                         }
                     }
-                    mipmap[i] = peak;
+                    mipmap[index] = peak;
                 }
                 mipmapLevel1Cache.set(id, mipmap);
             }
@@ -273,10 +273,10 @@ export const audioBufferCache = {
                 if (start === end) {
                     peak = mipmap[start] || 0;
                 } else {
-                    for (let i = start; i < end; i++) {
-                        const v = mipmap[i]!;
-                        if (v > peak) {
-                            peak = v;
+                    for (let index = start; index < end; index++) {
+                        const value = mipmap[index]!;
+                        if (value > peak) {
+                            peak = value;
                         }
                     }
                 }
@@ -291,8 +291,8 @@ export const audioBufferCache = {
                 if (start === end) {
                     peak = Math.abs(channelData[start] || 0);
                 } else {
-                    for (let i = start; i < end; i++) {
-                        const abs = Math.abs(channelData[i]!);
+                    for (let index = start; index < end; index++) {
+                        const abs = Math.abs(channelData[index]!);
                         if (abs > peak) {
                             peak = abs;
                         }
@@ -499,9 +499,9 @@ export const audioBufferCache = {
                 new Promise<IDBValidKey[]>((resolve) => (keysReq.onsuccess = () => resolve(keysReq.result))),
             ]);
 
-            for (let i = 0; i < data.length; i++) {
-                const item = data[i]!;
-                const key = keys[i]! as string;
+            for (let index = 0; index < data.length; index++) {
+                const item = data[index]!;
+                const key = keys[index]! as string;
                 if ((item.lastAccessed ?? 0) < threshold) {
                     store.delete(key);
                     cache.delete(key);
@@ -531,14 +531,14 @@ export const audioBufferCache = {
 
             // Sort by access time ascending (oldest first)
             const entries = data
-                .map((item, i) => ({
-                    id: keys[i]! as string,
+                .map((item, index) => ({
+                    id: keys[index]! as string,
                     lastAccessed: item.lastAccessed ?? 0,
                     size: item.sizeInBytes ?? 0,
                 }))
-                .sort((a, b) => a.lastAccessed - b.lastAccessed);
+                .sort((alpha, b) => alpha.lastAccessed - b.lastAccessed);
 
-            let currentTotal = entries.reduce((acc, e) => acc + e.size, 0);
+            let currentTotal = entries.reduce((acc, event) => acc + event.size, 0);
 
             for (const entry of entries) {
                 if (currentTotal <= maxSizeBytes) {

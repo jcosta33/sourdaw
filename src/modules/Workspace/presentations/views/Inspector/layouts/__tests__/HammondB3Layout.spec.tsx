@@ -23,7 +23,7 @@ vi.mock('#/components/ui/slider', () => ({
             type="range"
             data-testid="slider"
             value={value[0]}
-            onChange={(e) => onValueChange([Number(e.target.value)])}
+            onChange={(event) => onValueChange([Number(event.target.value)])}
         />
     ),
 }));
