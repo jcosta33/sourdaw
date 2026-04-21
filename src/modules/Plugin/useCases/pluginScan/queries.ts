@@ -2,7 +2,9 @@ import { pluginScanStore, defaultPluginScanState, type ScannedPlugin } from '../
 
 export type { ScannedPlugin } from '../../stores/pluginScanStore';
 
-const getState = () => pluginScanStore.value ?? defaultPluginScanState;
+function getState() {
+    return pluginScanStore.value ?? defaultPluginScanState;
+}
 
 export function findPluginByName(name: string): ScannedPlugin | undefined {
     const lower = name.toLowerCase();

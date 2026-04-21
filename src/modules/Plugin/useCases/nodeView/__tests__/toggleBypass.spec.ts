@@ -4,18 +4,20 @@ import { nodeViewStore, type ProcessingNode } from '#/modules/Plugin/stores/node
 
 import { toggleBypass } from '../toggleBypass';
 
-const node = (id: string, bypassed: boolean): ProcessingNode => ({
-    id,
-    type: 'effect',
-    label: id,
-    deviceId: null,
-    x: 0,
-    y: 0,
-    width: 80,
-    height: 40,
-    bypassed,
-    color: '#000',
-});
+function node(id: string, bypassed: boolean): ProcessingNode {
+    return {
+        id,
+        type: 'effect',
+        label: id,
+        deviceId: null,
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 40,
+        bypassed,
+        color: '#000',
+    };
+}
 
 describe('toggleBypass', () => {
     beforeEach(() => {

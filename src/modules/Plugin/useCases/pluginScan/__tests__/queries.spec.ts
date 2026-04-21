@@ -3,19 +3,21 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { defaultPluginScanState, pluginScanStore, type ScannedPlugin } from '../../../stores/pluginScanStore';
 import { findPluginByName } from '../queries';
 
-const sample = (name: string): ScannedPlugin => ({
-    id: `id-${name}`,
-    name,
-    vendor: 'V',
-    format: 'VST3',
-    category: 'Fx',
-    path: '/tmp',
-    version: '1',
-    num_inputs: 2,
-    num_outputs: 2,
-    num_parameters: 4,
-    has_custom_ui: true,
-});
+function sample(name: string): ScannedPlugin {
+    return {
+        id: `id-${name}`,
+        name,
+        vendor: 'V',
+        format: 'VST3',
+        category: 'Fx',
+        path: '/tmp',
+        version: '1',
+        num_inputs: 2,
+        num_outputs: 2,
+        num_parameters: 4,
+        has_custom_ui: true,
+    };
+}
 
 describe('pluginScan queries', () => {
     beforeEach(() => {
