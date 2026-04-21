@@ -437,7 +437,11 @@ export async function demo_SweetDreams(): Promise<void> {
             (cycleStart >= S.chorus2 && cycleStart < S.bridge) ||
             (cycleStart >= S.finalChorus && cycleStart < S.outro);
         const isIntro = cycleStart < S.verse1;
-        const velMult = isChorus ? 1.05 : isIntro ? 0.85 : 1.0;
+        const velMult = (() => {
+            if (isChorus) return 1.05;
+            if (isIntro) return 0.85;
+            return 1.0;
+        })();
 
         for (const [offset, pitch, baseVel] of riffRPattern) {
             const beat = cycleStart + offset;

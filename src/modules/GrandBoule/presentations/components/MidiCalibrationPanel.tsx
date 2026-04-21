@@ -219,13 +219,11 @@ export const MidiCalibrationPanel = ({
                         max={r.velocityCurveExponent.max}
                         step={r.velocityCurveExponent.step}
                         defaultValue={r.velocityCurveExponent.default}
-                        readout={
-                            midiCalibration.velocityCurveExponent < 0.95
-                                ? 'soft'
-                                : midiCalibration.velocityCurveExponent > 1.05
-                                  ? 'hard'
-                                  : 'linear'
-                        }
+                        readout={(() => {
+                            if (midiCalibration.velocityCurveExponent < 0.95) return 'soft';
+                            if (midiCalibration.velocityCurveExponent > 1.05) return 'hard';
+                            return 'linear';
+                        })()}
                     />
                     <Knob
                         value={midiCalibration.velocityFloor}

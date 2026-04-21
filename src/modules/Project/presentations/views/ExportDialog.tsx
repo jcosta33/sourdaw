@@ -49,7 +49,11 @@ const loadExportSettings = (): {
         if (stored) {
             const parsed = JSON.parse(stored);
             return {
-                formats: Array.isArray(parsed.formats) ? parsed.formats : parsed.format ? [parsed.format] : ['wav'],
+                formats: (() => {
+                    if (Array.isArray(parsed.formats)) return parsed.formats;
+                    if (parsed.format) return [parsed.format];
+                    return ['wav'];
+                })(),
                 sampleRate: parsed.sampleRate ?? 44100,
                 bitDepth: parsed.bitDepth ?? 24,
                 mp3BitRate: ([96, 128, 192, 320] as Mp3BitRate[]).includes(parsed.mp3BitRate)

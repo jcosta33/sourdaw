@@ -870,11 +870,11 @@ const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string })
                             <div className="px-3 py-2 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)]">
                                 Your master at {formatLufs(state.integratedLufs)}LUFS will be turned down by{' '}
                                 {delta.toFixed(1)} dB on
-                                {patch.target === 'streaming'
-                                    ? ' Spotify, Apple Music, and YouTube'
-                                    : patch.target === 'broadcast'
-                                      ? ' broadcast television'
-                                      : ` ${patch.target}`}
+                                {(() => {
+                                    if (patch.target === 'streaming') return ' Spotify, Apple Music, and YouTube';
+                                    if (patch.target === 'broadcast') return ' broadcast television';
+                                    return ` ${patch.target}`;
+                                })()}
                                 . Consider targeting {targetLufs}LUFS.
                             </div>
                         );

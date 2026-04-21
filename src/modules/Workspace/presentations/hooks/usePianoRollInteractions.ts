@@ -508,7 +508,13 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             const hy = event.clientY - rect.top - RULER_HEIGHT;
             if (hy >= 0) {
                 const hit = hitTest(hx, hy);
-                setHoverCursor(hit ? (hit.edge === 'body' ? 'grab' : 'ew-resize') : 'crosshair');
+                setHoverCursor(
+                    (() => {
+                        if (!hit) return 'crosshair';
+                        if (hit.edge === 'body') return 'grab';
+                        return 'ew-resize';
+                    })()
+                );
 
                 // R-A13: note preview on hover — debounce 200ms, fire playAuditionNote
                 if (notePreviewEnabled && hit?.edge === 'body') {

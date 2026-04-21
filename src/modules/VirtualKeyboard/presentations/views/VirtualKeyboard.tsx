@@ -472,11 +472,13 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                                         key={whiteIdx}
                                         className={cn(
                                             'relative shrink-0 border-r flex flex-col justify-end items-center pb-1 cursor-pointer',
-                                            isPressed
-                                                ? 'bg-[var(--color-accent-lavender)]/50 border-r-[var(--color-accent-lavender)]/40'
-                                                : isCurrentOctaveStart
-                                                  ? 'bg-[oklch(0.97_0.005_260)] hover:bg-[oklch(0.91_0.01_260)] border-r-neutral-300'
-                                                  : 'bg-[oklch(0.94_0_0)] hover:bg-[oklch(0.88_0_0)] border-r-neutral-300'
+                                            (() => {
+                                                if (isPressed)
+                                                    return 'bg-[var(--color-accent-lavender)]/50 border-r-[var(--color-accent-lavender)]/40';
+                                                if (isCurrentOctaveStart)
+                                                    return 'bg-[oklch(0.97_0.005_260)] hover:bg-[oklch(0.91_0.01_260)] border-r-neutral-300';
+                                                return 'bg-[oklch(0.94_0_0)] hover:bg-[oklch(0.88_0_0)] border-r-neutral-300';
+                                            })()
                                         )}
                                         style={{
                                             width: KEY_W,

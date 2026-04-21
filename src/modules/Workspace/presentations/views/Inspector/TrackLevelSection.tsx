@@ -58,7 +58,9 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                             <span className="text-[10px] font-mono text-muted-foreground">
                                 {(() => {
                                     const param = track.pan;
-                                    return param === 0 ? 'C' : param > 0 ? `R${param}` : `L${Math.abs(param)}`;
+                                    if (param === 0) return 'C';
+                                    if (param > 0) return `R${param}`;
+                                    return `L${Math.abs(param)}`;
                                 })()}
                             </span>
                             <div className="flex items-center gap-1.5 mt-0.5">
