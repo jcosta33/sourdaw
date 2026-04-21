@@ -179,11 +179,11 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     useEffect(() => {
         if (view !== 'loading') {
             clearInterval(intervalRef.current);
-            return;
+        } else {
+            intervalRef.current = setInterval(() => {
+                setQuipIndex((i) => (i + 1) % LOADING_QUIPS.length);
+            }, 2200);
         }
-        intervalRef.current = setInterval(() => {
-            setQuipIndex((i) => (i + 1) % LOADING_QUIPS.length);
-        }, 2200);
         return () => clearInterval(intervalRef.current);
     }, [view]);
 
