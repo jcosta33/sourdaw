@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { setTempo } from '../../../useCases/setTempo';
+import { stopPlayback } from '../../../useCases/transportControls/stopPlayback';
 import { handleSetTempo } from '../handleSetTempo';
 import { handleStopPlayback } from '../handleStopPlayback';
 
@@ -10,9 +12,6 @@ vi.mock('../../../useCases/setTempo', () => ({
 vi.mock('../../../useCases/transportControls/stopPlayback', () => ({
     stopPlayback: vi.fn(),
 }));
-
-import { setTempo } from '../../../useCases/setTempo';
-import { stopPlayback } from '../../../useCases/transportControls/stopPlayback';
 
 describe('transport handlers', () => {
     beforeEach(() => {

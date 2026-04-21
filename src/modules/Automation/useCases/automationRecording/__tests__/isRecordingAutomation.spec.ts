@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { getTrackById } from '#/modules/Arrangement/useCases';
+
 import { isRecordingAutomation } from '../isRecordingAutomation';
 
 const { activeRecording, touchActive } = vi.hoisted(() => {
@@ -21,8 +23,6 @@ vi.mock('../recordingSessionState', () => ({
     touchActive,
     makeKey: (trackId: string, parameterId: string) => `${trackId}::${parameterId}`,
 }));
-
-import { getTrackById } from '#/modules/Arrangement/useCases';
 
 describe('isRecordingAutomation', () => {
     beforeEach(() => {

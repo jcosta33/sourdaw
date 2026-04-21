@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { removeChordEvent } from '../../../useCases/chordTrack/removeChordEvent';
 import { handleRemoveChordEvent } from '../handleRemoveChordEvent';
 
 vi.mock('../../../useCases/chordTrack/removeChordEvent', () => ({
     removeChordEvent: vi.fn(),
 }));
-
-import { removeChordEvent } from '../../../useCases/chordTrack/removeChordEvent';
 
 describe('handleRemoveChordEvent', () => {
     beforeEach(() => {

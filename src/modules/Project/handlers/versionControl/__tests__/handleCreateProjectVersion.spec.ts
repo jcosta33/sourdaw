@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { createVersionBranch } from '../../../useCases/versionControl/branching/createVersionBranch';
+import { createProjectVersion } from '../../../useCases/versionControl/createProjectVersion';
+import { restoreVersion } from '../../../useCases/versionControl/restoreVersion';
 import { handleCreateProjectVersion } from '../handleCreateProjectVersion';
 import { handleCreateVersionBranch } from '../handleCreateVersionBranch';
 import { handleRestoreProjectVersion } from '../handleRestoreProjectVersion';
@@ -15,10 +18,6 @@ vi.mock('../../../useCases/versionControl/restoreVersion', () => ({
 vi.mock('../../../useCases/versionControl/branching/createVersionBranch', () => ({
     createVersionBranch: vi.fn(),
 }));
-
-import { createProjectVersion } from '../../../useCases/versionControl/createProjectVersion';
-import { restoreVersion } from '../../../useCases/versionControl/restoreVersion';
-import { createVersionBranch } from '../../../useCases/versionControl/branching/createVersionBranch';
 
 describe('version control handlers', () => {
     beforeEach(() => {

@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { removeAutomationPoint } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
+import { getAutomationStoreState } from '#/modules/Automation/useCases/getAutomationStoreState';
+import { pickFiles } from '#/modules/Project/repositories/nativeFileDialog/pickFiles';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { setWorkspaceMode } from '../../../useCases/setWorkspaceMode';
+import { handleImportMidiFile } from '../handleImportMidiFile';
+import { handleRemoveAutomationPoint } from '../handleRemoveAutomationPoint';
 import { handleSetWorkspaceMode } from '../handleSetWorkspaceMode';
 
 vi.mock('../../../useCases/setWorkspaceMode', () => ({
@@ -24,15 +32,6 @@ vi.mock('#/modules/Project/repositories/nativeFileDialog/pickFiles', () => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
-
-import { removeAutomationPoint } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
-import { getAutomationStoreState } from '#/modules/Automation/useCases/getAutomationStoreState';
-import { pickFiles } from '#/modules/Project/repositories/nativeFileDialog/pickFiles';
-import { notifyUser } from '#/utils/Notification/notifyUser';
-
-import { setWorkspaceMode } from '../../../useCases/setWorkspaceMode';
-import { handleImportMidiFile } from '../handleImportMidiFile';
-import { handleRemoveAutomationPoint } from '../handleRemoveAutomationPoint';
 
 describe('workspace handlers', () => {
     beforeEach(() => {

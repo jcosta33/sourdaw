@@ -103,11 +103,11 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                     },
                 });
                 return;
-                })
-                .catch((error) => {
+            })
+            .catch((error) => {
                 logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
                 return;
-                });
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -152,11 +152,11 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                 });
                 void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
                 return;
-                })
-                .catch((error) => {
+            })
+            .catch((error) => {
                 logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
                 return;
-                });
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -211,11 +211,11 @@ const levainDescriptor: WasmDeviceDescriptor = {
                 );
                 setEngineReady(true);
                 return;
-                })
-                .catch((error) => {
+            })
+            .catch((error) => {
                 logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
                 return;
-                });
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -246,11 +246,11 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 return;
-                })
-                .catch((error) => {
+            })
+            .catch((error) => {
                 logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
                 return;
-                });
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -291,11 +291,11 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 return;
-                })
-                .catch((error) => {
+            })
+            .catch((error) => {
                 logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
                 return;
-                });
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -329,11 +329,11 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 return;
-                })
-                .catch((error) => {
+            })
+            .catch((error) => {
                 logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
                 return;
-                });
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -384,11 +384,11 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 return;
-                })
-                .catch((error) => {
+            })
+            .catch((error) => {
                 logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
                 return;
-                });
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -428,11 +428,11 @@ const proofDescriptor: WasmDeviceDescriptor = {
                 });
                 void syncFullPatch(deviceId);
                 return;
-                })
-                .catch((error) => {
+            })
+            .catch((error) => {
                 logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
                 return;
-                });
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -466,11 +466,11 @@ const scoringDescriptor: WasmDeviceDescriptor = {
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 return;
-                })
-                .catch((error) => {
+            })
+            .catch((error) => {
                 logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
                 return;
-                });
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -527,11 +527,11 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                 });
                 void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
                 return;
-                })
-                .catch((error) => {
+            })
+            .catch((error) => {
                 logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
                 return;
-                });
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -569,11 +569,11 @@ const faustDescriptor: WasmDeviceDescriptor = {
                 });
                 void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
                 return;
-                })
-                .catch((error) => {
+            })
+            .catch((error) => {
                 logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
                 return;
-                });
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -618,11 +618,11 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                     },
                 });
                 return;
-                })
-                .catch((error) => {
+            })
+            .catch((error) => {
                 logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
                 return;
-                });
+            });
         return { placeholder, loadPromise };
     },
 };

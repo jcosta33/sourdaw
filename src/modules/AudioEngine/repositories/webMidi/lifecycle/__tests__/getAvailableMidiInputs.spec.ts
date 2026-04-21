@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import { type MidiInputInfo } from '../../../../models/WebMidiTypes';
+import { getAvailableMidiInputs } from '../getAvailableMidiInputs';
 
 const getStateMock = vi.hoisted(() =>
     vi.fn(() => ({
@@ -13,8 +14,6 @@ const getStateMock = vi.hoisted(() =>
 vi.mock('../../state', () => ({
     getState: getStateMock,
 }));
-
-import { getAvailableMidiInputs } from '../getAvailableMidiInputs';
 
 describe('getAvailableMidiInputs', () => {
     it('should return inputs from web MIDI state', () => {

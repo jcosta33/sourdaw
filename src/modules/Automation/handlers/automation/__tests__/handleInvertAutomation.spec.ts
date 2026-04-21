@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { invertAutomation } from '../../../useCases/automation/invertAutomation';
 import { handleInvertAutomation } from '../handleInvertAutomation';
 
 vi.mock('../../../useCases/automation/invertAutomation', () => ({
     invertAutomation: vi.fn(),
 }));
-
-import { invertAutomation } from '../../../useCases/automation/invertAutomation';
 
 describe('handleInvertAutomation', () => {
     beforeEach(() => {

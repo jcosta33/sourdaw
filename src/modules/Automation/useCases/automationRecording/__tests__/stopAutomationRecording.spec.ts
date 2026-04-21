@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { getAllTracks } from '#/modules/Arrangement/useCases';
+
 import { stopAutomationRecording } from '../stopAutomationRecording';
 
 const { activeRecording, pendingPoints, touchActive, findLaneId, clearPointsInRange, flushPendingPoints } = vi.hoisted(
@@ -34,8 +36,6 @@ vi.mock('../recordingSessionState', () => ({
     clearPointsInRange,
     flushPendingPoints,
 }));
-
-import { getAllTracks } from '#/modules/Arrangement/useCases';
 
 describe('stopAutomationRecording', () => {
     beforeEach(() => {

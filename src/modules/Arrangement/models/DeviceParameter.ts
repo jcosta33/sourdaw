@@ -1,16 +1,4 @@
-/**
- * Built-in plugin catalog and aggregation helpers.
- *
- * Type definitions live in `./DeviceParameterTypes.ts`; descriptor data is
- * split by family in `./pluginDescriptors/`. This file only owns the
- * variant builders, the aggregated `BUILTIN_PLUGINS` array, and the
- * platform/availability helpers. It re-exports the shared types so existing
- * in-module callers do not need to update their import paths.
- */
-
 import { type PluginDescriptor } from './DeviceParameterTypes';
-
-// ── Descriptor sub-modules ─────────────────────────────────────────────────
 import { BACTERIA_DESCRIPTOR } from './pluginDescriptors/bacteriaDescriptor';
 import { BUILTIN_EFFECT_DESCRIPTORS } from './pluginDescriptors/builtinEffectDescriptors';
 import { BUILTIN_INSTRUMENT_DESCRIPTORS } from './pluginDescriptors/builtinInstrumentDescriptors';
@@ -26,6 +14,18 @@ import { NATIVE_DSP_DESCRIPTORS } from './pluginDescriptors/nativeDspDescriptors
 import { PROOF_DESCRIPTOR } from './pluginDescriptors/proofDescriptor';
 import { TOASTER_DESCRIPTOR } from './pluginDescriptors/toasterDescriptor';
 import { YEAST_DESCRIPTOR } from './pluginDescriptors/yeastDescriptor';
+
+/**
+ * Built-in plugin catalog and aggregation helpers.
+ *
+ * Type definitions live in `./DeviceParameterTypes.ts`; descriptor data is
+ * split by family in `./pluginDescriptors/`. This file only owns the
+ * variant builders, the aggregated `BUILTIN_PLUGINS` array, and the
+ * platform/availability helpers. It re-exports the shared types so existing
+ * in-module callers do not need to update their import paths.
+ */
+
+// ── Descriptor sub-modules ─────────────────────────────────────────────────
 
 export type {
     DeviceParameterType,

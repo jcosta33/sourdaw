@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import { type MixAnalysis } from '../../../models/MixComparisonTypes';
+import { compareMixes, compareToReference } from '../compareMixes';
 
 const sampleAnalysis: MixAnalysis = {
     rmsDb: -18,
@@ -27,8 +28,6 @@ vi.mock('../analyzeMix/createReferenceAnalysis', () => ({
 vi.mock('../analyzeMix/analyzeMix', () => ({
     analyzeMix: vi.fn(() => sampleAnalysis),
 }));
-
-import { compareMixes, compareToReference } from '../compareMixes';
 
 describe('compareMixes', () => {
     it('should produce a high score when current matches reference', () => {

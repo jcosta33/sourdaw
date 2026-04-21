@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { workspaceStore } from '#/modules/Workspace/stores/workspaceStore';
+import { toggleDualView } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 
 const mocks = vi.hoisted(() => ({
     updateWorkspaceState: vi.fn(),
@@ -10,8 +11,6 @@ vi.mock('../../../../repositories/workspace', () => ({
     getWorkspaceState: () => workspaceStore.value,
     updateWorkspaceState: mocks.updateWorkspaceState,
 }));
-
-import { toggleDualView } from '#/modules/Workspace/useCases/togglePanel/panelToggles';
 
 describe('toggleDualView', () => {
     beforeEach(() => {

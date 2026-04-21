@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
+import { createAudioEngine } from '../createWebAudioEngine';
 
 // Mock TrackNode and BusNode to avoid deep dependencies
 vi.mock('../../engine/TrackNode', () => ({
@@ -36,8 +37,6 @@ vi.mock('../../engine/BusNode', () => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
-
-import { createAudioEngine } from '../createWebAudioEngine';
 
 describe('AudioEngine', () => {
     let engine: any;

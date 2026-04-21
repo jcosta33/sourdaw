@@ -1,3 +1,17 @@
+import { searchCommands as searchCommandsImpl } from '../services/commandSearch';
+
+import { type CommandEntry } from './CommandEntry';
+import { aiCommands } from './commands/aiCommands';
+import { automationCommands } from './commands/automationCommands';
+import { clipCommands } from './commands/clipCommands';
+import { editCommands } from './commands/editCommands';
+import { midiCommands } from './commands/midiCommands';
+import { miscCommands } from './commands/miscCommands';
+import { projectCommands } from './commands/projectCommands';
+import { trackCommands } from './commands/trackCommands';
+import { transportCommands } from './commands/transportCommands';
+import { viewCommands } from './commands/viewCommands';
+
 /**
  * Command registry — aggregates all commands from per-category sub-files.
  *
@@ -10,21 +24,7 @@
  * consumers (e.g. CommandPalette.tsx) keep working.
  */
 
-import { searchCommands as searchCommandsImpl } from '../services/commandSearch';
-
-import { type CommandEntry } from './CommandEntry';
-
 // ── Category sub-modules ───────────────────────────────────────────────────
-import { aiCommands } from './commands/aiCommands';
-import { automationCommands } from './commands/automationCommands';
-import { clipCommands } from './commands/clipCommands';
-import { editCommands } from './commands/editCommands';
-import { midiCommands } from './commands/midiCommands';
-import { miscCommands } from './commands/miscCommands';
-import { projectCommands } from './commands/projectCommands';
-import { trackCommands } from './commands/trackCommands';
-import { transportCommands } from './commands/transportCommands';
-import { viewCommands } from './commands/viewCommands';
 
 // ── Re-exports for in-module consumers ────────────────────────────────────
 

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { getAllTracks } from '#/modules/Arrangement/useCases';
+
 import { startAutomationRecording } from '../startAutomationRecording';
 
 const { activeRecording, pendingPoints, touchActive, automationSnapshot } = vi.hoisted(() => {
@@ -35,8 +37,6 @@ vi.mock('../../../stores/automationStore', () => ({
         },
     },
 }));
-
-import { getAllTracks } from '#/modules/Arrangement/useCases';
 
 describe('startAutomationRecording', () => {
     beforeEach(() => {
