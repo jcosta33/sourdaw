@@ -132,7 +132,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
             onDragLeave={() => setIsDragOver(false)}
             onDrop={(e) => {
                 setIsDragOver(false);
-                handleCrumbsFileDrop(deviceId, e);
+                void handleCrumbsFileDrop(deviceId, e);
             }}
         >
             {isDragOver ? (

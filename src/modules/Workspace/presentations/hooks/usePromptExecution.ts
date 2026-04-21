@@ -364,7 +364,7 @@ export const usePromptExecution = (): PromptExecutionState => {
                 e.preventDefault();
                 const selected = fuzzyResults[selectedIndex];
                 if (selected) {
-                    executePreset(selected);
+                    void executePreset(selected);
                 }
             } else if (e.key === 'Escape') {
                 e.preventDefault();

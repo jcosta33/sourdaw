@@ -27,7 +27,7 @@ describe('transport handlers', () => {
     });
 
     it('handleStopPlayback calls stopPlayback', () => {
-        handleStopPlayback.execute({ type: 'stopPlayback', payload: undefined });
+        void handleStopPlayback.execute({ type: 'stopPlayback', payload: undefined });
 
         expect(stopPlayback).toHaveBeenCalled();
     });

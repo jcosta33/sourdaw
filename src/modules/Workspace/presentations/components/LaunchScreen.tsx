@@ -206,7 +206,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     const handleTemplateSelect = (template: LaunchTemplate): void => {
         setLoadingName(template.name);
         setView('loading');
-        (async () => {
+        void (async () => {
             await new Promise<void>((r) => setTimeout(r, 80));
             await createFromTemplate(template.id);
         })();
@@ -218,7 +218,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         setIsDragOver(false);
         setLoadingName('Importing files…');
         setView('loading');
-        (async () => {
+        void (async () => {
             await new Promise<void>((r) => setTimeout(r, 100));
             newProject();
             for (const file of Array.from(e.dataTransfer.files)) {

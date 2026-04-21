@@ -40,7 +40,7 @@ describe('workspace handlers', () => {
     });
 
     it('handleSetWorkspaceMode forwards mode', () => {
-        handleSetWorkspaceMode.execute({
+        void handleSetWorkspaceMode.execute({
             type: 'setWorkspaceMode',
             payload: { mode: 'arrange' },
         });
@@ -59,7 +59,7 @@ describe('workspace handlers', () => {
             ],
         });
 
-        handleRemoveAutomationPoint.execute({
+        void handleRemoveAutomationPoint.execute({
             type: 'removeAutomationPoint',
             payload: { laneId: 'lane-1', pointIndex: 0 },
         });
@@ -70,7 +70,7 @@ describe('workspace handlers', () => {
     it('handleImportMidiFile notifies on file dialog failure', async () => {
         vi.mocked(pickFiles).mockRejectedValue(new Error('dialog'));
 
-        handleImportMidiFile.execute({ type: 'importMidiFile', payload: undefined });
+        void handleImportMidiFile.execute({ type: 'importMidiFile', payload: undefined });
 
         await vi.waitFor(() => {
             expect(notifyUser).toHaveBeenCalledWith('Failed to open file dialog', 'error');

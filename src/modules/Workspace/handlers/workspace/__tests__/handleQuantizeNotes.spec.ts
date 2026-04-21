@@ -15,7 +15,7 @@ describe('handleQuantizeNotes', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('delegates to quantizeNotes MIDI use case', () => {
-        handleQuantizeNotes.execute({
+        void handleQuantizeNotes.execute({
             type: 'quantizeNotes',
             payload: { clipId: 'c1', gridSize: 0.25 },
         });

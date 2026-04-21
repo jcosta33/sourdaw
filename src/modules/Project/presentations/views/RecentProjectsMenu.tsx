@@ -91,7 +91,7 @@ export const RecentProjectsMenu = (): ReactElement => {
     }, [open]);
 
     const handleNewProject = () => {
-        saveProject();
+        void saveProject();
         newProject();
         setOpen(false);
     };
@@ -109,7 +109,7 @@ export const RecentProjectsMenu = (): ReactElement => {
     };
 
     const handleSave = () => {
-        saveProject();
+        void saveProject();
         setOpen(false);
     };
 
@@ -119,7 +119,7 @@ export const RecentProjectsMenu = (): ReactElement => {
     };
 
     const handleExportProject = () => {
-        exportProjectFile();
+        void exportProjectFile();
         setOpen(false);
     };
 

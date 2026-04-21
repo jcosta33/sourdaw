@@ -9,7 +9,7 @@ export const handleImportMidiFile = createHandler<'importMidiFile'>({
             .then((files) => {
                 if (files) {
                     for (const file of files) {
-                        importMidiFile(file);
+                        void importMidiFile(file);
                     }
                 }
             })

@@ -185,7 +185,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
             return;
         }
         const numericValue = typeof value === 'boolean' ? (value ? 1 : 0) : value;
-        executeAppAction({
+        void executeAppAction({
             type: 'setDeviceParameter',
             payload: { deviceId, paramId: rustKey, value: numericValue },
         });
@@ -374,7 +374,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                             const next = [...decayEqMults];
                                             next[band] = mult;
                                             setDecayEqMults(next);
-                                            executeAppAction({
+                                            void executeAppAction({
                                                 type: 'setDeviceParameter',
                                                 payload: { deviceId, paramId: `decay_eq_${band}`, mult },
                                             });
@@ -690,7 +690,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                                         ...prev,
                                                         algorithm: algorithm.id,
                                                     }));
-                                                    executeAppAction({
+                                                    void executeAppAction({
                                                         type: 'setDeviceParameter',
                                                         payload: {
                                                             deviceId,

@@ -31,7 +31,7 @@ async function connectFolderBrowser(): Promise<string | null> {
         addLibraryRoot(root);
 
         // Start scanning in background
-        scanBrowserDirectory(root);
+        void scanBrowserDirectory(root);
 
         return id;
     } catch {
