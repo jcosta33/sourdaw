@@ -90,12 +90,16 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
         disconnect() {
             try {
                 node.disconnect();
-            } catch {}
+            } catch {
+                // ignore
+            }
         },
         destroy() {
             try {
                 node.disconnect();
-            } catch {}
+            } catch {
+                // ignore
+            }
             node.port.close();
         },
         ready: readyPromise,

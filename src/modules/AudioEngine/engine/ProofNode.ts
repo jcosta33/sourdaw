@@ -158,7 +158,9 @@ export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): 
             }
             try {
                 node.disconnect();
-            } catch {}
+            } catch {
+                // ignore
+            }
             node.port.close();
         },
         ready: readyPromise,

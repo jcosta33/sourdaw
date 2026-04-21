@@ -346,7 +346,9 @@ class AudioEngineImpl implements AudioEngine {
             if (existing.preFader !== preFader) {
                 try {
                     existing.gainNode.disconnect();
-                } catch {}
+                } catch {
+                    // ignore
+                }
                 const tap = preFader ? trackNode.strip.preFaderTap : trackNode.strip.analyserNode;
                 tap.connect(existing.gainNode);
                 existing.gainNode.connect(busStrip.gainNode);
@@ -464,7 +466,9 @@ class AudioEngineImpl implements AudioEngine {
         for (const node of [...this.scheduledNodes]) {
             try {
                 node.stop(now);
-            } catch {}
+            } catch {
+                // ignore
+            }
         }
         this.scheduledNodes.length = 0;
 
@@ -502,13 +506,17 @@ class AudioEngineImpl implements AudioEngine {
         for (const [, scGain] of this.sidechainConnections) {
             try {
                 scGain.disconnect();
-            } catch {}
+            } catch {
+                // ignore
+            }
         }
         this.sidechainConnections.clear();
         for (const [, send] of this.sendNodes) {
             try {
                 send.gainNode.disconnect();
-            } catch {}
+            } catch {
+                // ignore
+            }
         }
         this.sendNodes.clear();
         for (const [id] of this.busNodes) {

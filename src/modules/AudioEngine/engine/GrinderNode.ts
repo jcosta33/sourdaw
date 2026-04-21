@@ -140,7 +140,9 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
         disconnect() {
             try {
                 node.disconnect();
-            } catch {}
+            } catch {
+                // ignore
+            }
         },
         destroy() {
             if (meterRafId !== null) {
@@ -153,7 +155,9 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
             }
             try {
                 node.disconnect();
-            } catch {}
+            } catch {
+                // ignore
+            }
             node.port.close();
         },
         ready: readyPromise,

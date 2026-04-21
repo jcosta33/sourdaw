@@ -126,5 +126,7 @@ export async function generateDemoDrumBuffer(
 
         const rendered = await ctx.startRendering();
         audioBufferCache.set(bufferId, rendered);
-    } catch {}
+    } catch {
+        // ignore
+    }
 }

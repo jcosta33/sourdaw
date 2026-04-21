@@ -112,7 +112,9 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
         destroy() {
             try {
                 node.disconnect();
-            } catch {}
+            } catch {
+                // ignore
+            }
             node.port.close();
         },
         ready: readyPromise,

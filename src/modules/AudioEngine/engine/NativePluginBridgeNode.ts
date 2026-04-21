@@ -82,7 +82,9 @@ export async function createNativePluginBridgeNode(
         destroy() {
             try {
                 node.disconnect();
-            } catch {}
+            } catch {
+                // ignore
+            }
             node.port.close();
         },
     };

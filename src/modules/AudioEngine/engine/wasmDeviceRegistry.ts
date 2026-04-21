@@ -612,7 +612,9 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                         destroy: () => {
                             try {
                                 result.workletNode.disconnect();
-                            } catch {}
+                            } catch {
+                                // ignore
+                            }
                             result.workletNode.port.close();
                         },
                     },
