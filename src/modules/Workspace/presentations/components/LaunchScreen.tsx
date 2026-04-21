@@ -14,13 +14,25 @@ import {
     Headphones,
     Piano,
     Layers,
+    Clock,
 } from 'lucide-react';
 
 import { addTrack, addClip, importMidiFile } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
-import { newProject, createFromTemplate, getTemplates } from '#/modules/Project/useCases';
+import {
+    newProject,
+    createFromTemplate,
+    getTemplates,
+    getRecentProjects,
+    loadRecentProject,
+    pickAndImportDawProject,
+    previewLoops,
+    templatePreviewPlayer,
+} from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { TemplatePreviewThumb } from '../views/TemplatePreviewThumb';
 
 import { SourdawLogo } from './SourdawLogo';
 
@@ -139,6 +151,31 @@ const AmbientGlows = (): ReactElement => (
     </div>
 );
 
+type RecentProject = ReturnType<typeof getRecentProjects>[number];
+
+const RECENT_PROJECTS_LIMIT = 5;
+
+const formatRelativeTime = (timestamp: number): string => {
+    const diff = Date.now() - timestamp;
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    if (seconds < 60) {
+        return 'just now';
+    }
+    if (minutes < 60) {
+        return `${String(minutes)}m ago`;
+    }
+    if (hours < 24) {
+        return `${String(hours)}h ago`;
+    }
+    if (days < 7) {
+        return `${String(days)}d ago`;
+    }
+    return new Date(timestamp).toLocaleDateString();
+};
+
 const LogoBlock = (): ReactElement => (
     <div className="flex flex-col items-center gap-3">
         <div className="relative">
@@ -164,7 +201,11 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     const [loadingName, setLoadingName] = useState('');
     const [isDragOver, setIsDragOver] = useState(false);
     const [quipIndex, setQuipIndex] = useState(0);
+    const [recentProjects, setRecentProjects] = useState<RecentProject[]>(() =>
+        getRecentProjects().slice(0, RECENT_PROJECTS_LIMIT)
+    );
     const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
+    const hoverDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
     const allTemplates: LaunchTemplate[] = getTemplates().map((template) => ({
         id: template.id,
@@ -187,6 +228,29 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         return () => clearInterval(intervalRef.current);
     }, [view]);
 
+    useEffect(() => {
+        return () => {
+            clearTimeout(hoverDebounceRef.current);
+            templatePreviewPlayer.stop();
+        };
+    }, []);
+
+    const handleTemplateHoverEnter = (templateId: string): void => {
+        clearTimeout(hoverDebounceRef.current);
+        const preview = previewLoops[templateId];
+        if (!preview) {
+            return;
+        }
+        hoverDebounceRef.current = setTimeout(() => {
+            templatePreviewPlayer.play(preview);
+        }, 150);
+    };
+
+    const handleTemplateHoverLeave = (): void => {
+        clearTimeout(hoverDebounceRef.current);
+        templatePreviewPlayer.stop();
+    };
+
     // ── Actions ──
 
     const handleNewProject = (): void => {
@@ -198,9 +262,35 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         }, 280);
     };
 
+    const handleImportDawProject = (): void => {
+        (async () => {
+            const ok = await pickAndImportDawProject();
+            if (!ok) {
+                return;
+            }
+            setLoadingName('Imported DAWproject');
+            setView('loading');
+            setRecentProjects(getRecentProjects().slice(0, RECENT_PROJECTS_LIMIT));
+        })();
+    };
+
     const handleOpenGrid = (category: LaunchTemplateCategory | 'all'): void => {
         setActiveCategory(category);
         setView('grid');
+    };
+
+    const handleRecentProjectSelect = (entry: RecentProject): void => {
+        setLoadingName(entry.name);
+        setView('loading');
+        (async () => {
+            await new Promise<void>((r) => setTimeout(r, 80));
+            const ok = await loadRecentProject(entry.key);
+            if (!ok) {
+                notifyUser(`Failed to open "${entry.name}"`, 'error');
+                setRecentProjects(getRecentProjects().slice(0, RECENT_PROJECTS_LIMIT));
+                setView('home');
+            }
+        })();
     };
 
     const handleTemplateSelect = (template: LaunchTemplate): void => {
@@ -307,6 +397,30 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                     >
                         <LogoBlock />
 
+                        {recentProjects.length > 0 ? (
+                            <div className="flex flex-col gap-2 w-full">
+                                <div className="flex items-center gap-1.5 px-0.5">
+                                    <Clock className="size-3 text-white/35" aria-hidden="true" />
+                                    <span className="text-[10px] font-semibold text-white/45 uppercase tracking-wider">
+                                        Recent Projects
+                                    </span>
+                                </div>
+                                <div
+                                    className="flex gap-2 overflow-x-auto scrollbar-thin -mx-1 px-1 pb-1"
+                                    role="list"
+                                    aria-label="Recent projects"
+                                >
+                                    {recentProjects.map((entry) => (
+                                        <RecentProjectCard
+                                            key={entry.key}
+                                            entry={entry}
+                                            onOpen={handleRecentProjectSelect}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        ) : null}
+
                         <div className="grid grid-cols-3 gap-3 w-full">
                             <ActionCard
                                 id="launch-new-project"
@@ -344,6 +458,17 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                             <Upload className="size-3.5 shrink-0" aria-hidden="true" />
                             <span className="text-[11px]">Drop audio or MIDI to start instantly</span>
                         </div>
+
+                        <button
+                            type="button"
+                            id="launch-import-dawproject"
+                            onClick={handleImportDawProject}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] text-white/45 border border-white/[0.07] hover:border-white/[0.18] hover:text-white/80 transition-colors cursor-pointer"
+                        >
+                            <Upload className="size-3" aria-hidden="true" />
+                            Import .dawproject
+                            <span className="text-white/25">from Ableton, Bitwig, Studio One, Reaper…</span>
+                        </button>
 
                         <p className="text-[9px] text-white/12 tracking-wider">Sourdaw Studio · Time to cook</p>
                     </div>
@@ -415,6 +540,10 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                         key={template.id}
                                         type="button"
                                         onClick={() => handleTemplateSelect(template)}
+                                        onMouseEnter={() => handleTemplateHoverEnter(template.id)}
+                                        onMouseLeave={handleTemplateHoverLeave}
+                                        onFocus={() => handleTemplateHoverEnter(template.id)}
+                                        onBlur={handleTemplateHoverLeave}
                                         className={`group flex items-start gap-3 p-4 rounded-xl border transition-all duration-150 cursor-pointer text-left hover:shadow-[0_4px_16px_rgba(0,0,0,0.4)] hover:brightness-110 ${colors.border} bg-white/[0.03] hover:bg-white/[0.06] backdrop-blur-sm`}
                                     >
                                         <div
@@ -422,7 +551,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                         >
                                             {icon}
                                         </div>
-                                        <div className="min-w-0">
+                                        <div className="min-w-0 flex-1">
                                             <p className={`text-xs font-semibold text-white/80 truncate`}>
                                                 {template.name}
                                             </p>
@@ -432,6 +561,9 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                             <p className="text-[10px] text-white/30 mt-1 leading-relaxed line-clamp-2">
                                                 {template.description}
                                             </p>
+                                            <div className="mt-2 overflow-hidden rounded-md border border-white/[0.06]">
+                                                <TemplatePreviewThumb templateId={template.id} />
+                                            </div>
                                         </div>
                                     </button>
                                 );
@@ -533,5 +665,30 @@ const ActionCard = ({ id, label, sub, icon, colorVar, onClick }: ActionCardProps
             <span className="text-xs font-semibold text-white/75 block leading-tight">{label}</span>
             <span className="text-[9px] text-white/28 mt-0.5 block">{sub}</span>
         </div>
+    </button>
+);
+
+// ─── Recent project card ─────────────────────────────────────────────────
+
+type RecentProjectCardProps = {
+    entry: RecentProject;
+    onOpen: (entry: RecentProject) => void;
+};
+
+const RecentProjectCard = ({ entry, onOpen }: RecentProjectCardProps): ReactElement => (
+    <button
+        type="button"
+        aria-label={`Open recent project ${entry.name}`}
+        className="shrink-0 flex flex-col items-start gap-1 min-w-[120px] max-w-[160px] p-2.5 rounded-lg border border-white/[0.07] bg-white/[0.03] text-left transition-all duration-200 cursor-pointer hover:bg-white/[0.06] hover:border-white/[0.15]"
+        onClick={() => onOpen(entry)}
+    >
+        <div className="flex items-center gap-1.5 w-full min-w-0">
+            <FolderOpen
+                className="size-3 shrink-0 text-[var(--color-accent-orange)]/70"
+                aria-hidden="true"
+            />
+            <span className="text-[11px] font-semibold text-white/80 truncate">{entry.name}</span>
+        </div>
+        <span className="text-[9px] text-white/35">{formatRelativeTime(entry.updatedAt)}</span>
     </button>
 );

@@ -5,3 +5,6 @@ export { preferencesStore } from './preferencesStore';
 
 export { workspaceStore, defaultWorkspaceState } from './workspaceStore';
 export { toolSwapStore } from './toolSwapStore';
+
+export { onboardingStore, defaultOnboardingState } from './onboardingStore';
+export type { OnboardingState } from './onboardingStore';

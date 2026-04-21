@@ -374,6 +374,7 @@ export type AppAction =
     | { type: 'connectPush'; payload: { model: 'push2' | 'push3' } }
     | { type: 'disconnectPush'; payload?: undefined }
     | { type: 'exportDawProject'; payload?: undefined }
+    | { type: 'importDawProject'; payload?: undefined }
     | { type: 'loadRaveModel'; payload: { modelId: string } }
     | { type: 'setRaveBlend'; payload: { blend: number } }
     | { type: 'enableWarping'; payload: { clipId: string } }
