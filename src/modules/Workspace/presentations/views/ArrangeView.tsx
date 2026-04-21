@@ -97,7 +97,7 @@ export const ArrangeView = (): ReactElement => {
     useLayoutEffect(() => {
         const el = timelineContainerRef.current;
         if (!el) {
-            return;
+            return undefined;
         }
         const observer = new ResizeObserver(() => {
             setViewportWidth(el.clientWidth);

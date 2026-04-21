@@ -208,7 +208,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
         let lastScale = 1;
         const onGestureStart = (e: Event): void => {

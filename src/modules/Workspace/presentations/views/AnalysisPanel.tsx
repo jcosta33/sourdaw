@@ -29,7 +29,7 @@ const Measured = ({ children, className = '' }: MeasuredProps): ReactElement => 
     useEffect(() => {
         const el = ref.current;
         if (!el) {
-            return;
+            return undefined;
         }
         const ro = new ResizeObserver(([entry]) => {
             if (entry) {

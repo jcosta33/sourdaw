@@ -298,6 +298,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             }, 700);
             return () => clearTimeout(t);
         }
+        return undefined;
     }, [project.initialized, project.loading, showLaunch, launchExiting]);
 
     return (

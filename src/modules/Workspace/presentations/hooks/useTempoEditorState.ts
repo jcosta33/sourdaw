@@ -93,7 +93,7 @@ export const useTempoEditorState = (): TempoEditorState => {
     // Click-outside to close tempo map panel
     useEffect(() => {
         if (!mapOpen) {
-            return;
+            return undefined;
         }
         const handleClickOutside = (e: MouseEvent): void => {
             if (mapPanelRef.current && !mapPanelRef.current.contains(e.target as Node)) {
