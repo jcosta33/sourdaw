@@ -67,7 +67,9 @@ export class ChordGenerator extends BaseMidiProcessor {
                     notes.push(note);
 
                     const offset =
-                        this.strumDirection === 'up' ? index * strumSamples : (intervals.length - 1 - index) * strumSamples;
+                        this.strumDirection === 'up'
+                            ? index * strumSamples
+                            : (intervals.length - 1 - index) * strumSamples;
                     output.push({
                         timeSamples: event.timeSamples + offset,
                         kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },

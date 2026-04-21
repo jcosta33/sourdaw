@@ -9,12 +9,20 @@ export type ResolvedClip = Clip & {
 export function resolveClipsWithComping(trackId: string, clips: Clip[]): ResolvedClip[] {
     const laneState = takeLaneStore.value;
     if (!laneState) {
-        return clips.map((context) => ({ ...context, regionStartBeat: context.startBeat, regionEndBeat: context.endBeat }));
+        return clips.map((context) => ({
+            ...context,
+            regionStartBeat: context.startBeat,
+            regionEndBeat: context.endBeat,
+        }));
     }
 
     const lane = laneState.lanes.find((length) => length.trackId === trackId);
     if (!lane || lane.activeCompRegions.length === 0) {
-        return clips.map((context) => ({ ...context, regionStartBeat: context.startBeat, regionEndBeat: context.endBeat }));
+        return clips.map((context) => ({
+            ...context,
+            regionStartBeat: context.startBeat,
+            regionEndBeat: context.endBeat,
+        }));
     }
 
     const resolved: ResolvedClip[] = [];

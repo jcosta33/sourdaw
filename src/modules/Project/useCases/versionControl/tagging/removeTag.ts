@@ -7,6 +7,8 @@ export function removeTag(versionId: string, tag: string): void {
     }
     versionControlStore.set({
         ...state,
-        versions: state.versions.map((value) => (value.id === versionId ? { ...value, tags: value.tags.filter((time) => time !== tag) } : value)),
+        versions: state.versions.map((value) =>
+            value.id === versionId ? { ...value, tags: value.tags.filter((time) => time !== tag) } : value
+        ),
     });
 }

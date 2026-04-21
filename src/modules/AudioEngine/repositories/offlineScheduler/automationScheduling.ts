@@ -109,7 +109,8 @@ export function scheduleTrackAutomation(
             const audioParam = resolveDeviceParam(deviceEntry.deviceType, paramKey, deviceEntry.node);
             if (audioParam) {
                 const scale = resolveDeviceParamScale(deviceEntry.deviceType, paramKey);
-                const points = scale !== 1 ? lane.points.map((param) => ({ ...param, value: param.value * scale })) : lane.points;
+                const points =
+                    scale !== 1 ? lane.points.map((param) => ({ ...param, value: param.value * scale })) : lane.points;
                 scheduleAutomationOnParam(audioParam, points, durationSeconds, defaultTempo, changes);
             }
             continue;
@@ -122,7 +123,8 @@ export function scheduleTrackAutomation(
             const audioParam = resolveDeviceParam(directEntry.deviceType, lane.parameterId, directEntry.node);
             if (audioParam) {
                 const scale = resolveDeviceParamScale(directEntry.deviceType, lane.parameterId);
-                const points = scale !== 1 ? lane.points.map((param) => ({ ...param, value: param.value * scale })) : lane.points;
+                const points =
+                    scale !== 1 ? lane.points.map((param) => ({ ...param, value: param.value * scale })) : lane.points;
                 scheduleAutomationOnParam(audioParam, points, durationSeconds, defaultTempo, changes);
             }
         }

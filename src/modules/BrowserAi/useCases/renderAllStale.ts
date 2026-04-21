@@ -12,7 +12,7 @@ import { renderQueueStore, enqueueRender } from '../stores/renderQueueStore';
 
 export const renderAllStale = inject({ logger })(
     ({ logger }) =>
-        (function renderAllStale(): void {
+        function renderAllStale(): void {
             const state = renderQueueStore.value;
             if (!state) {
                 return;
@@ -40,5 +40,5 @@ export const renderAllStale = inject({ logger })(
                     queuedAt: Date.now(),
                 });
             }
-        })
+        }
 );

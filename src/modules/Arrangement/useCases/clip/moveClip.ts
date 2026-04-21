@@ -33,7 +33,9 @@ export function moveClip(clipId: string, targetTrackId: string, startBeat: numbe
 
     setTrackState({
         ...state,
-        tracks: tracksWithoutClip.map((time) => (time.id === targetTrackId ? { ...time, clips: [...time.clips, movedClip!] } : time)),
+        tracks: tracksWithoutClip.map((time) =>
+            time.id === targetTrackId ? { ...time, clips: [...time.clips, movedClip!] } : time
+        ),
     });
 
     // Automation: shift from the original drag start (preview doesn't shift automation)

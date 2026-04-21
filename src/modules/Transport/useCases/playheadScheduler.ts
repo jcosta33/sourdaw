@@ -103,7 +103,8 @@ export function startPlayheadScheduler(): void {
                         addTakeLane(track.id);
                     }
                     const takeNum =
-                        (takeLaneStore.value?.lanes.find((length) => length.trackId === track.id)?.takes.length ?? 0) + 1;
+                        (takeLaneStore.value?.lanes.find((length) => length.trackId === track.id)?.takes.length ?? 0) +
+                        1;
                     addTake(
                         track.id,
                         `take-${Date.now()}-${track.id}`,
@@ -188,7 +189,9 @@ export function startPlayheadScheduler(): void {
                                     tracks: ts.tracks.map((time) => ({
                                         ...time,
                                         clips: time.clips.map((context) =>
-                                            context.id === recClip.id ? { ...context, audioBufferId: bufferId } : context
+                                            context.id === recClip.id
+                                                ? { ...context, audioBufferId: bufferId }
+                                                : context
                                         ),
                                     })),
                                 });

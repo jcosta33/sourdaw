@@ -45,7 +45,9 @@ export function deleteSelectedPoints(laneId: string, selectedBeats: number[]): v
             }
             automationStore.set({
                 lanes: state1.lanes.map((length) =>
-                    length.id === laneId ? { ...length, points: length.points.filter((param) => !selectedSet.has(param.beat)) } : length
+                    length.id === laneId
+                        ? { ...length, points: length.points.filter((param) => !selectedSet.has(param.beat)) }
+                        : length
                 ),
             });
         }

@@ -513,7 +513,8 @@ const ActionCard = ({ id, label, sub, icon, colorVar, onClick }: ActionCardProps
         style={{ ['--card-color' as string]: `var(${colorVar})` }}
         onClick={onClick}
         onMouseEnter={(event) => {
-            (event.currentTarget as HTMLElement).style.background = `color-mix(in srgb, var(${colorVar}) 10%, transparent)`;
+            (event.currentTarget as HTMLElement).style.background =
+                `color-mix(in srgb, var(${colorVar}) 10%, transparent)`;
             (event.currentTarget as HTMLElement).style.borderColor =
                 `color-mix(in srgb, var(${colorVar}) 35%, transparent)`;
         }}

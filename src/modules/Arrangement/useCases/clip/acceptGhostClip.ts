@@ -17,7 +17,9 @@ export function acceptGhostClip(clipId: string): void {
             if (time.clips.some((context) => context.id === clipId)) {
                 updateTrack(time.id, (track) => ({
                     ...track,
-                    clips: track.clips.map((context) => (context.id === clipId ? { ...context, isGhost: false } : context)),
+                    clips: track.clips.map((context) =>
+                        context.id === clipId ? { ...context, isGhost: false } : context
+                    ),
                 }));
             }
         }

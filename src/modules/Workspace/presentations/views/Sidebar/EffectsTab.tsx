@@ -67,7 +67,9 @@ export const EffectsTab = ({
     const fxPresets = getFactoryPresets().filter((param) => FX_PRESET_CATEGORIES.has(param.category));
     const filteredFxPresets = query
         ? fxPresets.filter(
-              (param) => param.name.toLowerCase().includes(query) || param.tags.some((time) => time.toLowerCase().includes(query))
+              (param) =>
+                  param.name.toLowerCase().includes(query) ||
+                  param.tags.some((time) => time.toLowerCase().includes(query))
           )
         : fxPresets;
 

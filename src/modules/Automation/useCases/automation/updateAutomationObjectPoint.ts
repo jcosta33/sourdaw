@@ -41,7 +41,9 @@ export function updateAutomationObjectPoint(
                 return {
                     ...obj,
                     points: obj.points
-                        .map((param) => (param.beat === beat ? { ...param, value: newValue, beat: newBeat ?? param.beat } : param))
+                        .map((param) =>
+                            param.beat === beat ? { ...param, value: newValue, beat: newBeat ?? param.beat } : param
+                        )
                         .sort((alpha, b) => alpha.beat - b.beat),
                 };
             }),

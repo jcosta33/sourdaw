@@ -860,7 +860,15 @@ export async function demo5_NebulaDrift(): Promise<void> {
         const len = Math.min(4, callMelody.length);
         for (let node = 0; node < len; node++) {
             const vel = 55 + node * 3 + (b >= S.peak ? 12 : 0);
-            callN.push(hum(callMelody[(state * 3 + node) % callMelody.length]!, b + node * 4.5, 4, vel, state * 10 + node + 700));
+            callN.push(
+                hum(
+                    callMelody[(state * 3 + node) % callMelody.length]!,
+                    b + node * 4.5,
+                    4,
+                    vel,
+                    state * 10 + node + 700
+                )
+            );
         }
     }
 
@@ -871,7 +879,15 @@ export async function demo5_NebulaDrift(): Promise<void> {
         const len = Math.min(3, answerMelody.length);
         for (let node = 0; node < len; node++) {
             const vel = 52 + node * 4 + (b >= S.peak ? 10 : 0);
-            answerN.push(hum(answerMelody[(state * 2 + node) % answerMelody.length]!, b + node * 5.2, 5, vel, state * 10 + node + 800));
+            answerN.push(
+                hum(
+                    answerMelody[(state * 2 + node) % answerMelody.length]!,
+                    b + node * 5.2,
+                    5,
+                    vel,
+                    state * 10 + node + 800
+                )
+            );
         }
     }
 

@@ -119,7 +119,9 @@ export const AutomationLaneRow = ({
         }
     }
 
-    const visiblePoints = lane.points.filter((param) => param.beat >= viewportStartBeat - 2 && param.beat <= viewportEndBeat + 2);
+    const visiblePoints = lane.points.filter(
+        (param) => param.beat >= viewportStartBeat - 2 && param.beat <= viewportEndBeat + 2
+    );
     const selectedSet = new Set(selectedPoints);
 
     // Build SVG paths — in VT mode, break into separate segments per region
@@ -127,7 +129,9 @@ export const AutomationLaneRow = ({
 
     if (lane.virginTerritory && vtRegions.length > 0) {
         for (const region of vtRegions) {
-            const regionPoints = visiblePoints.filter((param) => param.beat >= region.startBeat && param.beat <= region.endBeat);
+            const regionPoints = visiblePoints.filter(
+                (param) => param.beat >= region.startBeat && param.beat <= region.endBeat
+            );
             if (regionPoints.length === 0) {
                 continue;
             }
@@ -360,7 +364,12 @@ export const AutomationLaneRow = ({
                 {/* Fill under curve segments */}
                 {pathSegments.map((seg, index) =>
                     seg.fillD ? (
-                        <path key={`fill-${index}`} d={seg.fillD} fill={curveColor} fillOpacity={isDisabled ? 0.04 : 0.1} />
+                        <path
+                            key={`fill-${index}`}
+                            d={seg.fillD}
+                            fill={curveColor}
+                            fillOpacity={isDisabled ? 0.04 : 0.1}
+                        />
                     ) : null
                 )}
 
@@ -467,7 +476,14 @@ export const AutomationLaneRow = ({
                                 fill="transparent"
                                 className="cursor-grab"
                                 onMouseDown={(event) =>
-                                    onPointMouseDown(point.beat, event, lane, setDragPointBeat, setSelectedPoints, coords)
+                                    onPointMouseDown(
+                                        point.beat,
+                                        event,
+                                        lane,
+                                        setDragPointBeat,
+                                        setSelectedPoints,
+                                        coords
+                                    )
                                 }
                                 onDoubleClick={(event) => handlePointDoubleClick(point.beat, event)}
                                 onContextMenu={(event) => handlePointContextMenu(point.beat, event)}

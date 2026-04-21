@@ -28,7 +28,7 @@ export function createSubscriptionRegistry<TEvents extends EventMap>() {
     function on<TEventName extends keyof TEvents & string>(
         event: TEventName,
         handler: EventHandler<TEvents[TEventName]>
-    ): (() => void) {
+    ): () => void {
         getHandlers(event).add(handler);
         return () => off(event, handler);
     }
@@ -36,7 +36,7 @@ export function createSubscriptionRegistry<TEvents extends EventMap>() {
     function once<TEventName extends keyof TEvents & string>(
         event: TEventName,
         handler: EventHandler<TEvents[TEventName]>
-    ): (() => void) {
+    ): () => void {
         function onceHandler(payload: TEvents[TEventName]) {
             off(event, onceHandler);
             return handler(payload);
@@ -44,7 +44,7 @@ export function createSubscriptionRegistry<TEvents extends EventMap>() {
         return on(event, onceHandler);
     }
 
-    function onAny(handler: WildcardHandler<TEvents>): (() => void) {
+    function onAny(handler: WildcardHandler<TEvents>): () => void {
         wildcardHandlers.add(handler);
         return () => wildcardHandlers.delete(handler);
     }
@@ -67,4 +67,4 @@ export function createSubscriptionRegistry<TEvents extends EventMap>() {
         onAny,
         getSnapshot,
     };
-};
+}

@@ -37,7 +37,8 @@ export function joinNotes(clipId: string, selectedIds: string[]): void {
                 // Extend the run while notes are adjacent (end of j meets start of j+1)
                 while (
                     jIndex + 1 < sorted.length &&
-                    Math.abs(sorted[jIndex]!.startBeat + sorted[jIndex]!.duration - sorted[jIndex + 1]!.startBeat) < 0.001
+                    Math.abs(sorted[jIndex]!.startBeat + sorted[jIndex]!.duration - sorted[jIndex + 1]!.startBeat) <
+                        0.001
                 ) {
                     jIndex++;
                 }

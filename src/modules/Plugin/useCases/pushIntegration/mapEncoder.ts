@@ -7,6 +7,8 @@ export function mapEncoder(encoderIndex: number, parameterPath: string, label: s
     }
     pushStore.set({
         ...state,
-        encoders: state.encoders.map((event) => (event.index === encoderIndex ? { ...event, parameterPath, label } : event)),
+        encoders: state.encoders.map((event) =>
+            event.index === encoderIndex ? { ...event, parameterPath, label } : event
+        ),
     });
 }

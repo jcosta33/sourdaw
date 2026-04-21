@@ -54,7 +54,7 @@ export function detectImportDecision(bundle: DocumentBundle): ImportDecision {
     } catch {
         return 'separate';
     }
-};
+}
 
 export async function importSdawFile(file: File): Promise<MergeResult | null> {
     try {

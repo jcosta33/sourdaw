@@ -6,6 +6,8 @@ export function toggleLaneCollapsed(laneId: string): void {
         return;
     }
     automationStore.set({
-        lanes: state.lanes.map((length) => (length.id === laneId ? { ...length, collapsed: !length.collapsed } : length)),
+        lanes: state.lanes.map((length) =>
+            length.id === laneId ? { ...length, collapsed: !length.collapsed } : length
+        ),
     });
 }

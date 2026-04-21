@@ -134,7 +134,9 @@ export const AutomationBottomPanel = (): ReactElement => {
     const trackListWidth = ws.trackListWidth;
     const trackListOpen = ws.trackListOpen;
 
-    const trackLanes = selectedTrackId ? autoState.lanes.filter((length) => length.trackId === selectedTrackId && !length.clipId) : [];
+    const trackLanes = selectedTrackId
+        ? autoState.lanes.filter((length) => length.trackId === selectedTrackId && !length.clipId)
+        : [];
 
     const availableParams = selectedTrack
         ? getAutomatableParams(
@@ -144,7 +146,9 @@ export const AutomationBottomPanel = (): ReactElement => {
         : [];
 
     // Filter out params that already have lanes
-    const unusedParams = availableParams.filter((param) => !trackLanes.some((length) => length.parameterId === param.id));
+    const unusedParams = availableParams.filter(
+        (param) => !trackLanes.some((length) => length.parameterId === param.id)
+    );
 
     const automationMode = selectedTrack?.automationMode ?? 'read';
     const trackColor = selectedTrack?.color ?? 'var(--color-palette-steel)';

@@ -7,6 +7,12 @@ export function phaser(
     return {
         type: 'builtin-phaser',
         name,
-        parameterValues: { 'phaser-rate': 0.5, 'phaser-depth': 0.5, 'phaser-feedback': 0.3, 'phaser-stages': 4, ...params },
+        parameterValues: {
+            'phaser-rate': 0.5,
+            'phaser-depth': 0.5,
+            'phaser-feedback': 0.3,
+            'phaser-stages': 4,
+            ...params,
+        },
     };
 }

@@ -19,7 +19,7 @@ import { DEFAULT_PAD_NAMES, PAD_COLORS } from '../models/ToasterKit';
 
 export const createDrumTrackStack = inject({ eventBus })(
     ({ eventBus }) =>
-        (function createDrumTrackStack(): string | null {
+        function createDrumTrackStack(): string | null {
             const state = getTrackStoreState();
             if (!state) {
                 return null;
@@ -65,5 +65,5 @@ export const createDrumTrackStack = inject({ eventBus })(
             void eventBus.emit('track.added', { trackId: parent.id, name: parent.name, kind: parent.kind });
 
             return parent.id;
-        })
+        }
 );

@@ -10,6 +10,8 @@ export function addTake(trackId: string, clipId: string, name: string, startBeat
     const take = createTake(clipId, name, startBeat, endBeat);
 
     takeLaneStore.set({
-        lanes: state.lanes.map((length) => (length.trackId === trackId ? { ...length, takes: [...length.takes, take] } : length)),
+        lanes: state.lanes.map((length) =>
+            length.trackId === trackId ? { ...length, takes: [...length.takes, take] } : length
+        ),
     });
 }

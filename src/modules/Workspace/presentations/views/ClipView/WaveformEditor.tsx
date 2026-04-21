@@ -318,8 +318,9 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
     };
 
     const realClipId =
-        trackState.tracks.flatMap((time) => time.clips).find((context) => context.audioBufferId === clipId || context.id === clipId)?.id ??
-        clipId;
+        trackState.tracks
+            .flatMap((time) => time.clips)
+            .find((context) => context.audioBufferId === clipId || context.id === clipId)?.id ?? clipId;
 
     return (
         <div className="flex flex-1 flex-col overflow-hidden">
@@ -474,7 +475,9 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                         className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-[var(--color-accent-lavender)] hover:bg-accent"
                         role="menuitem"
                         onClick={waveAct(() => {
-                            const track = trackState.tracks.find((time) => time.clips.some((context) => context.id === clipId));
+                            const track = trackState.tracks.find((time) =>
+                                time.clips.some((context) => context.id === clipId)
+                            );
                             if (track) {
                                 audioToMidi({ clipId, trackId: track.id });
                             }

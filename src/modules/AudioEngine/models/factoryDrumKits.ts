@@ -557,7 +557,9 @@ export function getDrumKitById(id: string): DrumKit | null {
     return kitIndex.get(id) ?? null;
 }
 
-const KIT_ID_BY_INDEX: Record<number, string> = Object.fromEntries(FACTORY_KITS.map((kIndex, index) => [index, kIndex.id]));
+const KIT_ID_BY_INDEX: Record<number, string> = Object.fromEntries(
+    FACTORY_KITS.map((kIndex, index) => [index, kIndex.id])
+);
 
 export function getDrumKitByIndex(index: number): DrumKit | null {
     return getDrumKitById(KIT_ID_BY_INDEX[index] ?? '');

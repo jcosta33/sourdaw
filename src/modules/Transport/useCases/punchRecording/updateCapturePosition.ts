@@ -7,6 +7,8 @@ export function updateCapturePosition(captureId: string, currentBeat: number): v
     }
     punchRecordingStore.set({
         ...state,
-        captures: state.captures.map((context) => (context.id === captureId ? { ...context, endBeat: currentBeat } : context)),
+        captures: state.captures.map((context) =>
+            context.id === captureId ? { ...context, endBeat: currentBeat } : context
+        ),
     });
 }

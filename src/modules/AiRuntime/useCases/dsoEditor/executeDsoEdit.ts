@@ -48,7 +48,7 @@ export type DsoEditResult = {
  */
 export const executeDsoEdit = inject({ logger })(
     ({ logger }) =>
-        (async function executeDsoEdit(userRequest: string): Promise<DsoEditResult> {
+        async function executeDsoEdit(userRequest: string): Promise<DsoEditResult> {
             const backend = resolveBackend();
 
             if (!isDsoBackendAvailable()) {
@@ -183,7 +183,7 @@ export const executeDsoEdit = inject({ logger })(
                 llmStatusStore.set({ state: 'error', message: err.message });
                 return { success: false, plan: null, summaries: [], error: err.message };
             }
-        })
+        }
 );
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

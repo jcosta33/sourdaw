@@ -367,7 +367,7 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
             }
         }
         return false;
-    };
+    }
 
     /**
      * Delete callback used by `editing.deleteSelection` (Delete / Backspace).
@@ -472,7 +472,7 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                 return false;
             }
         }
-    };
+    }
 
     return function handleKeydown(desc: KeyDescriptor): boolean {
         const { key, mod, shift, alt, repeat, isInput } = desc;

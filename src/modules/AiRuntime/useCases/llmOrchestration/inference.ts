@@ -59,7 +59,7 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
             `[AI Engine] (native/text) Raw response (${String(content.length)} chars): ${content.slice(0, 500)}`
         );
         return parseToolCallXml(content);
-    };
+    }
 
     return async function generateToolCalls(systemPrompt: string, userMessage: string): Promise<ToolCallResult[]> {
         const chain = getBackendChain();

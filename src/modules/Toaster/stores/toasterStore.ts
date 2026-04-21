@@ -100,7 +100,9 @@ export function toggleStep(padIndex: number, stepIndex: number): void {
     newSteps[stepIndex] = { ...newSteps[stepIndex]!, active: !newSteps[stepIndex]!.active };
 
     const newTracks = pattern.tracks.map((time) => (time.padIndex === padIndex ? { ...time, steps: newSteps } : time));
-    const newPatterns = state.kit.patterns.map((param) => (param.id === pattern.id ? { ...param, tracks: newTracks } : param));
+    const newPatterns = state.kit.patterns.map((param) =>
+        param.id === pattern.id ? { ...param, tracks: newTracks } : param
+    );
     toasterStore.set({ ...state, kit: { ...state.kit, patterns: newPatterns } });
 }
 
@@ -122,6 +124,8 @@ export function setStepVelocity(padIndex: number, stepIndex: number, velocity: n
     newSteps[stepIndex] = { ...newSteps[stepIndex]!, velocity: Math.max(0, Math.min(1, velocity)) };
 
     const newTracks = pattern.tracks.map((time) => (time.padIndex === padIndex ? { ...time, steps: newSteps } : time));
-    const newPatterns = state.kit.patterns.map((param) => (param.id === pattern.id ? { ...param, tracks: newTracks } : param));
+    const newPatterns = state.kit.patterns.map((param) =>
+        param.id === pattern.id ? { ...param, tracks: newTracks } : param
+    );
     toasterStore.set({ ...state, kit: { ...state.kit, patterns: newPatterns } });
 }

@@ -21,7 +21,7 @@ function loadPersistedMacros(): Macro[] {
         // Fallback to empty
     }
     return [];
-};
+}
 
 export const macroStore = createStore<MacroStoreState>({
     initialData: { macros: loadPersistedMacros(), recording: false, currentRecording: [] },

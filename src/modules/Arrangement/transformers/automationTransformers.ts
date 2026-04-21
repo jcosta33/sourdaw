@@ -122,7 +122,8 @@ export function interpolateAutomationValue(
 
         // Catmull-Rom coefficients
         const result =
-            0.5 * (2 * v1 + (-v0 + v2) * time + (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 + (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
+            0.5 *
+            (2 * v1 + (-v0 + v2) * time + (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 + (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
 
         return result;
     }
@@ -147,12 +148,7 @@ export function generateShapePoints(
     const duration = endBeat - startBeat;
     const mid = startBeat + duration / 2;
 
-    function pt(
-        beat: number,
-        norm: number,
-        curve: AutomationPoint['curve'] = 'linear',
-        tension = 0
-    ): AutomationPoint {
+    function pt(beat: number, norm: number, curve: AutomationPoint['curve'] = 'linear', tension = 0): AutomationPoint {
         return {
             beat,
             value: minValue + norm * range,

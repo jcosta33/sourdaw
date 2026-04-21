@@ -15,7 +15,9 @@ export function replaceClipAudioBuffer(clipId: string, newBufferId: string): voi
         tracks: state.tracks.map((time) => ({
             ...time,
             clips: time.clips.map((context) =>
-                context.id === clipId || context.audioBufferId === clipId ? { ...context, audioBufferId: newBufferId } : context
+                context.id === clipId || context.audioBufferId === clipId
+                    ? { ...context, audioBufferId: newBufferId }
+                    : context
             ),
         })),
     });

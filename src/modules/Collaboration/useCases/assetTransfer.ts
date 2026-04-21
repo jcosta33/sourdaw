@@ -134,7 +134,8 @@ export class AssetTransfer {
         });
 
         // Send requested chunks (or all if none specified)
-        const chunksToSend = missingChunks.length > 0 ? missingChunks : Array.from({ length: chunkCount }, (_, index1) => index1);
+        const chunksToSend =
+            missingChunks.length > 0 ? missingChunks : Array.from({ length: chunkCount }, (_, index1) => index1);
 
         for (const index of chunksToSend) {
             const start = index * CHUNK_SIZE;

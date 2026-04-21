@@ -14,7 +14,11 @@ import { generateWebLlmCompletion } from './engineLifecycle';
  */
 export const generateWebLlmToolCalls = inject({ logger })(
     ({ logger }) =>
-        (async function generateWebLlmToolCalls(systemPrompt: string, userMessage: string, tools: ChatCompletionTool[]): Promise<ToolCallResult[]> {
+        async function generateWebLlmToolCalls(
+            systemPrompt: string,
+            userMessage: string,
+            tools: ChatCompletionTool[]
+        ): Promise<ToolCallResult[]> {
             const toolDescriptions = tools
                 .map((time) => {
                     const params = time.function.parameters as Record<string, unknown> | undefined;
@@ -36,5 +40,5 @@ export const generateWebLlmToolCalls = inject({ logger })(
             const response = await generateWebLlmCompletion(fullSystemPrompt, userMessage, { temperature: 0.1 });
             logger.info(`[WebLLM] Response (${String(response.length)} chars): ${response.slice(0, 200)}`);
             return parseToolCallXml(response);
-        })
+        }
 );

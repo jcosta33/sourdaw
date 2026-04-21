@@ -14,4 +14,4 @@ export async function hasCrdtDocsInIdb(): Promise<boolean> {
         request.onsuccess = () => resolve(request.result > 0);
         request.onerror = () => reject(request.error);
     });
-};
+}

@@ -96,7 +96,9 @@ export const TrackListView = ({
         setScrollY(el.scrollTop);
     };
 
-    const collapsedFolders = new Set(tracks.filter((time) => time.kind === 'folder' && time.collapsed).map((time) => time.id));
+    const collapsedFolders = new Set(
+        tracks.filter((time) => time.kind === 'folder' && time.collapsed).map((time) => time.id)
+    );
     const visibleTracks = tracks.filter((time) => {
         if (time.kind === 'master') {
             return false;
@@ -224,7 +226,9 @@ export const TrackListView = ({
                                     size="icon-xs"
                                     aria-label="Add folder"
                                     onClick={() =>
-                                        createFolder(`Folder ${tracks.filter((time) => time.kind === 'folder').length + 1}`)
+                                        createFolder(
+                                            `Folder ${tracks.filter((time) => time.kind === 'folder').length + 1}`
+                                        )
                                     }
                                 >
                                     <FolderPlus className="size-3" aria-hidden="true" />

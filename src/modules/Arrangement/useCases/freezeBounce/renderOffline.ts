@@ -93,7 +93,8 @@ export async function renderTrackOffline(
                 source.connect(gainNode);
                 // The frozen buffer was rendered starting at the track's earliest
                 // clip startBeat. Offset it relative to this render's startBeat.
-                const trackStartBeat = time.clips.length > 0 ? Math.min(...time.clips.map((context) => context.startBeat)) : 0;
+                const trackStartBeat =
+                    time.clips.length > 0 ? Math.min(...time.clips.map((context) => context.startBeat)) : 0;
                 const offsetSeconds = Math.max(0, ((trackStartBeat - startBeat) / tempo) * 60);
                 source.start(offsetSeconds);
             }

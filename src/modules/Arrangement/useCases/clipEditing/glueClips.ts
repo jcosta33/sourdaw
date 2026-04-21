@@ -13,7 +13,9 @@ export function glueClips(clipIds: string[]): void {
     }
 
     // Guard: reject selections that span multiple tracks
-    const tracksWithMatchingClips = state.tracks.filter((time) => time.clips.some((context) => clipIds.includes(context.id)));
+    const tracksWithMatchingClips = state.tracks.filter((time) =>
+        time.clips.some((context) => clipIds.includes(context.id))
+    );
     if (tracksWithMatchingClips.length > 1) {
         logger.warn('glueClips: clips span multiple tracks — gluing is only supported within a single track');
         return;

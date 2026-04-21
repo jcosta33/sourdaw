@@ -278,16 +278,28 @@ export function tryCompoundFastPath(normalized: string, context: ProjectContext)
     }
 
     if (/^mute\s+all\s+tracks$/i.test(normalized)) {
-        return context.tracks.map((time) => ({ type: 'muteTrack' as const, payload: { trackId: time.id, muted: true } }));
+        return context.tracks.map((time) => ({
+            type: 'muteTrack' as const,
+            payload: { trackId: time.id, muted: true },
+        }));
     }
     if (/^unmute\s+all\s+tracks$/i.test(normalized)) {
-        return context.tracks.map((time) => ({ type: 'muteTrack' as const, payload: { trackId: time.id, muted: false } }));
+        return context.tracks.map((time) => ({
+            type: 'muteTrack' as const,
+            payload: { trackId: time.id, muted: false },
+        }));
     }
     if (/^solo\s+all\s+tracks$/i.test(normalized)) {
-        return context.tracks.map((time) => ({ type: 'soloTrack' as const, payload: { trackId: time.id, soloed: true } }));
+        return context.tracks.map((time) => ({
+            type: 'soloTrack' as const,
+            payload: { trackId: time.id, soloed: true },
+        }));
     }
     if (/^unsolo\s+all\s+tracks$/i.test(normalized)) {
-        return context.tracks.map((time) => ({ type: 'soloTrack' as const, payload: { trackId: time.id, soloed: false } }));
+        return context.tracks.map((time) => ({
+            type: 'soloTrack' as const,
+            payload: { trackId: time.id, soloed: false },
+        }));
     }
 
     const multiDeviceMatch = normalized.match(
@@ -406,7 +418,10 @@ export function findTrack(context: ProjectContext, name: string): ProjectContext
         .toLowerCase()
         .replace(/\s+track$/i, '')
         .trim();
-    return (context.tracks.find((time) => time.name.toLowerCase() === lower) ?? context.tracks.find((time) => time.name.toLowerCase().includes(lower)));
+    return (
+        context.tracks.find((time) => time.name.toLowerCase() === lower) ??
+        context.tracks.find((time) => time.name.toLowerCase().includes(lower))
+    );
 }
 
 /**

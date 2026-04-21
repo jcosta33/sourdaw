@@ -26,7 +26,12 @@ const defaultMidiLearnState: MidiLearnState = {
 };
 
 const isTargetMatch = (alpha: LearningTarget, buffer: LearningTarget): boolean => {
-    return (alpha.targetType === buffer.targetType && alpha.trackId === buffer.trackId && alpha.deviceId === buffer.deviceId && alpha.paramId === buffer.paramId);
+    return (
+        alpha.targetType === buffer.targetType &&
+        alpha.trackId === buffer.trackId &&
+        alpha.deviceId === buffer.deviceId &&
+        alpha.paramId === buffer.paramId
+    );
 };
 
 export const MidiLearnButton = ({ targetType, trackId, deviceId, paramId }: MidiLearnButtonProps): ReactElement => {

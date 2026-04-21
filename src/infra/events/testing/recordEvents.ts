@@ -17,4 +17,4 @@ export function recordEvents<TEvents extends EventMap>(bus: EventBus<TEvents>) {
         },
         stop,
     };
-};
+}

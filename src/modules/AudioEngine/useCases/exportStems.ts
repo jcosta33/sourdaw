@@ -151,7 +151,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                 if (taskIndex >= tasks.length && activeTasks === 0) {
                     resolve();
                 }
-            };
+            }
             next();
         });
 

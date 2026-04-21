@@ -16,7 +16,9 @@ export function moveMidiCC(clipId: string, ccId: string, newBeat: number, newVal
         ccByClipId: {
             ...state.ccByClipId,
             [clipId]: existing.map((context) =>
-                context.id === ccId ? { ...context, beat: Math.max(0, newBeat), value: Math.max(0, Math.min(127, newValue)) } : context
+                context.id === ccId
+                    ? { ...context, beat: Math.max(0, newBeat), value: Math.max(0, Math.min(127, newValue)) }
+                    : context
             ),
         },
     });

@@ -155,7 +155,9 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                                                     defaultValue={snap.name}
                                                     size="micro"
                                                     className="flex-1 text-[10px]"
-                                                    onBlur={(event) => handleRenameCommit(snap.id, event.currentTarget.value)}
+                                                    onBlur={(event) =>
+                                                        handleRenameCommit(snap.id, event.currentTarget.value)
+                                                    }
                                                     onKeyDown={(event) => {
                                                         if (event.key === 'Enter') {
                                                             handleRenameCommit(snap.id, event.currentTarget.value);

@@ -50,7 +50,14 @@ export const chordPatterns: PatternTemplate[] = [
                 [4, 6, 8, 10],
                 [0, 2, 4, 6],
             ].flatMap((deg, index) =>
-                chordFromDegrees(param.complexity > 5 ? deg : deg.slice(0, 3), sp, output, index * 4, 4, 72 + param.density * 2)
+                chordFromDegrees(
+                    param.complexity > 5 ? deg : deg.slice(0, 3),
+                    sp,
+                    output,
+                    index * 4,
+                    4,
+                    72 + param.density * 2
+                )
             );
         },
     },
@@ -86,7 +93,9 @@ export const chordPatterns: PatternTemplate[] = [
             const sp = getScalePitches(param.key, param.scale, 48, 84);
             const output = Math.max(0, sp.indexOf(snapToScale(60, sp)) - 0);
             const pat = [0, 0, 0, 0, 3, 3, 0, 0, 4, 3, 0, 4];
-            return pat.flatMap((root, index) => chordFromDegrees([root, root + 2, root + 4], sp, output, index * 4, 4, 78));
+            return pat.flatMap((root, index) =>
+                chordFromDegrees([root, root + 2, root + 4], sp, output, index * 4, 4, 78)
+            );
         },
     },
     {
@@ -143,7 +152,9 @@ export const chordPatterns: PatternTemplate[] = [
             return [
                 [0, 2, 4, 6],
                 [5, 7, 9, 11],
-            ].flatMap((deg, index) => chordFromDegrees(param.complexity > 5 ? deg : deg.slice(0, 3), sp, output, index * 4, 4, 78));
+            ].flatMap((deg, index) =>
+                chordFromDegrees(param.complexity > 5 ? deg : deg.slice(0, 3), sp, output, index * 4, 4, 78)
+            );
         },
     },
     {
@@ -161,7 +172,10 @@ export const chordPatterns: PatternTemplate[] = [
             return [0, 3, 5, 4].flatMap((root, index) => {
                 const deg = [root, root + 2, root + 4];
                 const b = index * 4;
-                return [...chordFromDegrees(deg, sp, output, b, 2, 100), ...chordFromDegrees(deg, sp, output, b + 2, 2, 90)];
+                return [
+                    ...chordFromDegrees(deg, sp, output, b, 2, 100),
+                    ...chordFromDegrees(deg, sp, output, b + 2, 2, 90),
+                ];
             });
         },
     },
@@ -180,7 +194,9 @@ export const chordPatterns: PatternTemplate[] = [
                 [3, 5, 7, 9],
                 [5, 7, 9, 11],
                 [2, 4, 6, 8],
-            ].flatMap((deg, index) => chordFromDegrees(param.complexity > 5 ? deg : deg.slice(0, 3), sp, output, index * 4, 4, 82));
+            ].flatMap((deg, index) =>
+                chordFromDegrees(param.complexity > 5 ? deg : deg.slice(0, 3), sp, output, index * 4, 4, 82)
+            );
         },
     },
     {
@@ -195,7 +211,9 @@ export const chordPatterns: PatternTemplate[] = [
         generate: (param) => {
             const sp = getScalePitches(param.key, param.scale, 36, 84);
             const output = Math.max(0, sp.indexOf(snapToScale(48, sp)) - 0);
-            return [0, 6, 5, 4].flatMap((root, index) => chordFromDegrees([root, root + 2, root + 4], sp, output, index * 4, 4, 85));
+            return [0, 6, 5, 4].flatMap((root, index) =>
+                chordFromDegrees([root, root + 2, root + 4], sp, output, index * 4, 4, 85)
+            );
         },
     },
     {

@@ -50,7 +50,9 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
         }
 
         const takeLaneState = takeLaneStore.value;
-        const takeLanes = takeLaneState ? takeLaneState.lanes.filter((length) => length.trackId === alpha.payload.trackId) : [];
+        const takeLanes = takeLaneState
+            ? takeLaneState.lanes.filter((length) => length.trackId === alpha.payload.trackId)
+            : [];
         const takeLaneSnapshots = structuredClone(takeLanes);
 
         return {

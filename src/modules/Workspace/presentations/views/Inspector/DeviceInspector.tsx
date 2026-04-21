@@ -110,7 +110,7 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                 <LayoutComponent device={device} trackId={trackId} parameters={parameters} />
             ) : parameters.length > 0 ? (
                 /* ── Smart generic fallback: auto-grouped with collapsible sections ── */
-                (<GenericDeviceLayout device={device} trackId={trackId} parameters={parameters} />)
+                <GenericDeviceLayout device={device} trackId={trackId} parameters={parameters} />
             ) : (
                 <div className="px-1">
                     <MetaText>No parameters available for this device.</MetaText>

@@ -19,7 +19,10 @@ export function swipeGroupComp(grpId: string, takeSetIdVal: string, startBeat: n
                 return gain;
             }
             const cleaned = gain.compRegions.filter((r) => r.endBeat <= startBeat || r.startBeat >= endBeat);
-            return { ...gain, compRegions: [...cleaned, region].sort((alpha, buffer) => alpha.startBeat - buffer.startBeat) };
+            return {
+                ...gain,
+                compRegions: [...cleaned, region].sort((alpha, buffer) => alpha.startBeat - buffer.startBeat),
+            };
         }),
     });
 }

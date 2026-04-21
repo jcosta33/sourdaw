@@ -5,5 +5,8 @@ export function renameSection(sectionId: string, name: string): void {
     if (!state) {
         return;
     }
-    markerStore.set({ ...state, sections: state.sections.map((state1) => (state1.id === sectionId ? { ...state1, name } : state1)) });
+    markerStore.set({
+        ...state,
+        sections: state.sections.map((state1) => (state1.id === sectionId ? { ...state1, name } : state1)),
+    });
 }

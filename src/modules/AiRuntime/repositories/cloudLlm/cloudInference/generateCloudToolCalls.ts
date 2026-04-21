@@ -28,7 +28,7 @@ function getClaudeTools(): Anthropic.Messages.Tool[] {
 
 export const generateCloudToolCalls = inject({ logger })(
     ({ logger }) =>
-        (async function generateCloudToolCalls(projectState: string, userMessage: string): Promise<ToolCallResult[]> {
+        async function generateCloudToolCalls(projectState: string, userMessage: string): Promise<ToolCallResult[]> {
             const client = getCloudClient();
             if (!client) {
                 throw new Error('Cloud AI not configured. Set API key first.');
@@ -62,5 +62,5 @@ export const generateCloudToolCalls = inject({ logger })(
             );
 
             return results;
-        })
+        }
 );

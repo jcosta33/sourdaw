@@ -58,19 +58,17 @@ export const renderDiffSingerPhrase = inject({
     writeRenderCache,
 })(
     ({ logger, readModel, readRenderCache, writeRenderCache }) =>
-        (async function renderDiffSingerPhrase(
-            {
-                phraseId,
-                voicebankId,
-                lyrics,
-                notes,
-                phonemeToId = DEFAULT_EN_PHONEME_MAP,
-                renderQuality = 'standard',
-                depth = 0.6,
-                speakerEmbed,
-                seed,
-            }: RenderDiffSingerPhraseInput
-        ): RenderDiffSingerPhraseOutput {
+        async function renderDiffSingerPhrase({
+            phraseId,
+            voicebankId,
+            lyrics,
+            notes,
+            phonemeToId = DEFAULT_EN_PHONEME_MAP,
+            renderQuality = 'standard',
+            depth = 0.6,
+            speakerEmbed,
+            seed,
+        }: RenderDiffSingerPhraseInput): RenderDiffSingerPhraseOutput {
             const requestId = crypto.randomUUID();
             const steps = RENDER_QUALITY_STEPS[renderQuality];
 
@@ -232,5 +230,5 @@ export const renderDiffSingerPhrase = inject({
             } finally {
                 clearActiveRender(requestId);
             }
-        })
+        }
 );

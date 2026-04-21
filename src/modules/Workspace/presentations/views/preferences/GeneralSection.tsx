@@ -37,10 +37,17 @@ export const GeneralSection = ({ prefs, update }: SectionProps): ReactElement =>
                     ))}
                 </div>
             </FieldGroup>
-            <GridSubdivisionSection value={prefs.gridSubdivision} onChange={(value) => update({ gridSubdivision: value })} />
+            <GridSubdivisionSection
+                value={prefs.gridSubdivision}
+                onChange={(value) => update({ gridSubdivision: value })}
+            />
             <Separator />
             <div className="space-y-3">
-                <ToggleRow label="Snap to Grid" value={prefs.snapToGrid} onChange={(value) => update({ snapToGrid: value })} />
+                <ToggleRow
+                    label="Snap to Grid"
+                    value={prefs.snapToGrid}
+                    onChange={(value) => update({ snapToGrid: value })}
+                />
                 <ToggleRow
                     label="Snap to Zero Crossing"
                     value={prefs.snapToZeroCrossing}

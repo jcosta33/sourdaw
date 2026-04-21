@@ -6,7 +6,9 @@ import { type PatternTemplateModel } from '../helpers';
 describe('aiRuntimeQueries helpers', () => {
     describe('toPublicPatternTemplate', () => {
         it('maps model pattern template to public format', () => {
-            function mockGenerate() { return [{ pitch: 60, startBeat: 0, durationBeats: 1, velocity: 100 }]; }
+            function mockGenerate() {
+                return [{ pitch: 60, startBeat: 0, durationBeats: 1, velocity: 100 }];
+            }
             const modelTemplate: PatternTemplateModel = {
                 id: 't1',
                 name: 'Test Template',

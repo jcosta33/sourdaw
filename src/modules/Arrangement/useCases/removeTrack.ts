@@ -11,7 +11,7 @@ import { takeLaneStore } from '../stores/takeLaneStore';
 
 export const removeTrack = inject({ eventBus })(
     ({ eventBus }) =>
-        (function removeTrack(trackId: string): void {
+        function removeTrack(trackId: string): void {
             const state = getTrackState();
             if (!state) {
                 return;
@@ -70,5 +70,5 @@ export const removeTrack = inject({ eventBus })(
             }
 
             void eventBus.emit('track.removed', { trackId });
-        })
+        }
 );

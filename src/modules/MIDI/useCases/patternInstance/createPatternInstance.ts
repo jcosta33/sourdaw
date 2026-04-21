@@ -64,7 +64,9 @@ export function createPatternInstance(sourceClipId: string, targetTrackId: strin
 
     setTrackState({
         ...state,
-        tracks: state.tracks.map((time) => (time.id === targetTrackId ? { ...time, clips: [...time.clips, instance] } : time)),
+        tracks: state.tracks.map((time) =>
+            time.id === targetTrackId ? { ...time, clips: [...time.clips, instance] } : time
+        ),
     });
 
     return instanceId;

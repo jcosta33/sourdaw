@@ -7,7 +7,9 @@ import { type Clip, type Device } from '../models/Track';
  * Conforms to R3: Content Hash Computation.
  */
 export async function computeTrackHash(clips: Clip[], devices: Device[]): Promise<string> {
-    const sortedClips = [...clips].sort((alpha, buffer) => alpha.startBeat - buffer.startBeat || alpha.id.localeCompare(buffer.id));
+    const sortedClips = [...clips].sort(
+        (alpha, buffer) => alpha.startBeat - buffer.startBeat || alpha.id.localeCompare(buffer.id)
+    );
     const clipStrings = sortedClips.map((clip) => {
         const duration = clip.endBeat - clip.startBeat;
         return `${clip.id}:${clip.startBeat}:${duration}:${clip.assetHash ?? ''}:${clip.gain}`;

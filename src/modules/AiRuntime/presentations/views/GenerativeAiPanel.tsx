@@ -105,8 +105,12 @@ export const GenerativeAiPanel = (): ReactElement | null => {
 
     // In-flight detection — disable the Generate button while a task of the matching
     // type is already processing. This prevents double-submits and gives clear feedback.
-    const midiIsProcessing = state.tasks.some((time) => time.type === 'midi-generation' && time.status === 'processing');
-    const audioIsProcessing = state.tasks.some((time) => time.type === 'audio-generation' && time.status === 'processing');
+    const midiIsProcessing = state.tasks.some(
+        (time) => time.type === 'midi-generation' && time.status === 'processing'
+    );
+    const audioIsProcessing = state.tasks.some(
+        (time) => time.type === 'audio-generation' && time.status === 'processing'
+    );
 
     const handleCancelAudio = (): void => {
         cancelProcessingTask('audio-generation');
@@ -153,7 +157,9 @@ export const GenerativeAiPanel = (): ReactElement | null => {
     const selectedClipId = workspaceState?.selectedClipId ?? null;
     const tracks = trackState?.tracks ?? [];
     const selectedClip =
-        tracks.flatMap((time) => time.clips).find((context) => context.id === selectedClipId && context.type === 'audio') ?? null;
+        tracks
+            .flatMap((time) => time.clips)
+            .find((context) => context.id === selectedClipId && context.type === 'audio') ?? null;
 
     const handleStemSep = () => {
         if (selectedClip) {

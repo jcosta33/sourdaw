@@ -195,7 +195,9 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
             // Ghost clip click: accept it immediately (R-E1.2)
             const state = trackStore.value;
-            const clipForHit = state?.tracks.flatMap((time) => time.clips).find((context) => context.id === clipHit.clipId);
+            const clipForHit = state?.tracks
+                .flatMap((time) => time.clips)
+                .find((context) => context.id === clipHit.clipId);
             if (clipForHit?.isGhost) {
                 acceptGhostClip(clipHit.clipId);
                 return;
@@ -414,7 +416,9 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
             if (preferencesStore.value?.snapToZeroCrossing) {
                 const state = trackStore.value;
-                const clip = state?.tracks.flatMap((time) => time.clips).find((context) => context.id === dragState.clipId);
+                const clip = state?.tracks
+                    .flatMap((time) => time.clips)
+                    .find((context) => context.id === dragState.clipId);
                 if (clip && clip.type === 'audio') {
                     newEnd = snapToZeroCrossing(clip, newEnd);
                 }
@@ -537,7 +541,11 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             const rippleEnabled = getWorkspaceState()?.rippleEditing ?? false;
             if (rippleEnabled) {
                 // Ripple insert: compute plan BEFORE adding the clip so it doesn't include the new clip
-                const ripplePlan = planRippleInsert({ trackId: drawTrackId, insertBeat: state1, insertDuration: length });
+                const ripplePlan = planRippleInsert({
+                    trackId: drawTrackId,
+                    insertBeat: state1,
+                    insertDuration: length,
+                });
                 const clip = addClip({
                     trackId: drawTrackId,
                     startBeat: state1,
@@ -769,7 +777,9 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                                                 ...savedPlan.gapClosedClips,
                                                 ...savedPlan.destinationOpenedClips,
                                             ];
-                                            const shiftMap = new Map(allShifted.map((state1) => [state1.clipId, state1]));
+                                            const shiftMap = new Map(
+                                                allShifted.map((state1) => [state1.clipId, state1])
+                                            );
                                             const updatedTracks = state2.tracks.map((time) => {
                                                 if (time.id !== origTrackId) {
                                                     return time;

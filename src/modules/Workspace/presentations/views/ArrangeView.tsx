@@ -197,7 +197,10 @@ const TimelineHScrollbar = ({
     viewportWidth: number;
 }): ReactElement | null => {
     const maxEndBeat = tracks.reduce((max, time) => {
-        const trackMax = time.clips.reduce((message, context) => (context.endBeat > message ? context.endBeat : message), max);
+        const trackMax = time.clips.reduce(
+            (message, context) => (context.endBeat > message ? context.endBeat : message),
+            max
+        );
         return trackMax;
     }, 256);
     const totalContentWidth = maxEndBeat * pixelsPerBeat;
@@ -311,7 +314,10 @@ const EmptyArrangeOverlay = (): ReactElement => {
                 setIsDragOver(true);
             }}
             onDragLeave={(event) => {
-                if (event.currentTarget === event.target || !event.currentTarget.contains(event.relatedTarget as Node)) {
+                if (
+                    event.currentTarget === event.target ||
+                    !event.currentTarget.contains(event.relatedTarget as Node)
+                ) {
                     setIsDragOver(false);
                 }
             }}

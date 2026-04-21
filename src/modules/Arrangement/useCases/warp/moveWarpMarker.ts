@@ -4,6 +4,8 @@ export function moveWarpMarker(clipId: string, markerId: string, newWarpedBeat: 
     const current = getWarpState(clipId);
     warpStates.set(clipId, {
         ...current,
-        markers: current.markers.map((message) => (message.id === markerId ? { ...message, warpedBeat: newWarpedBeat } : message)),
+        markers: current.markers.map((message) =>
+            message.id === markerId ? { ...message, warpedBeat: newWarpedBeat } : message
+        ),
     });
 }

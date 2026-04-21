@@ -32,7 +32,7 @@ function isNativeDevice(type: string) {
         isScoringDevice(type) ||
         isKneadDevice(type)
     );
-};
+}
 
 deviceRegistry.register(isNativeDevice, createNativeDspStrategy);
 

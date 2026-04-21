@@ -18,7 +18,7 @@ type CancelRenderInput = {
 
 export const cancelRender = inject({ logger })(
     ({ logger }) =>
-        (function cancelRender({ phraseId, requestId }: CancelRenderInput): void {
+        function cancelRender({ phraseId, requestId }: CancelRenderInput): void {
             logger.info(`[BrowserAi] Cancelling render: phrase=${phraseId}`);
 
             // Determine which worker is running this render and terminate it.
@@ -34,5 +34,5 @@ export const cancelRender = inject({ logger })(
             cancelQueuedRender(phraseId);
             clearActiveRender(requestId);
             updateRenderStatus(phraseId, 'not-rendered');
-        })
+        }
 );

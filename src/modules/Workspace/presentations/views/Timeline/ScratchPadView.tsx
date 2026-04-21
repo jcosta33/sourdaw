@@ -225,7 +225,9 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                                                 size="micro"
                                                 className="w-full border-0 bg-transparent px-0 text-[10px] font-semibold text-white shadow-none focus-visible:ring-0"
                                                 value={editing.name}
-                                                onChange={(event) => setEditing({ ...editing, name: event.target.value })}
+                                                onChange={(event) =>
+                                                    setEditing({ ...editing, name: event.target.value })
+                                                }
                                                 onBlur={commitRename}
                                                 onKeyDown={(event) => {
                                                     if (event.key === 'Enter') {

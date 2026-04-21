@@ -108,10 +108,15 @@ export const SessionView = (): ReactElement => {
                         </DawSideRail>
 
                         {tracks.map((track: Track) => {
-                            const trackClipIds: Array<string | null> = Array.from({ length: SCENE_COUNT }, (_, index) => {
-                                const clips = track.clips ? (Object.values(track.clips) as Array<{ id: string }>) : [];
-                                return clips[index]?.id ?? null;
-                            });
+                            const trackClipIds: Array<string | null> = Array.from(
+                                { length: SCENE_COUNT },
+                                (_, index) => {
+                                    const clips = track.clips
+                                        ? (Object.values(track.clips) as Array<{ id: string }>)
+                                        : [];
+                                    return clips[index]?.id ?? null;
+                                }
+                            );
 
                             return (
                                 <div

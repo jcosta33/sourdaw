@@ -145,7 +145,9 @@ export function endDrawSession(): void {
                 return;
             }
             automationStore.set({
-                lanes: state1.lanes.map((length) => (length.id === laneId ? { ...length, points: previousPoints } : length)),
+                lanes: state1.lanes.map((length) =>
+                    length.id === laneId ? { ...length, points: previousPoints } : length
+                ),
             });
         },
         () => {
@@ -155,7 +157,9 @@ export function endDrawSession(): void {
                 return;
             }
             automationStore.set({
-                lanes: state1.lanes.map((length) => (length.id === laneId ? { ...length, points: currentPoints } : length)),
+                lanes: state1.lanes.map((length) =>
+                    length.id === laneId ? { ...length, points: currentPoints } : length
+                ),
             });
         }
     );

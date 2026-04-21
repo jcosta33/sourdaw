@@ -169,7 +169,9 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
         const totalTimeMs = contour.points[contour.points.length - 1]?.time_ms || 0;
         const clickedTimeMs = (x / rect.width) * totalTimeMs;
 
-        const segIdx = shifts.findIndex((state) => clickedTimeMs >= state.start_time_ms && clickedTimeMs < state.end_time_ms);
+        const segIdx = shifts.findIndex(
+            (state) => clickedTimeMs >= state.start_time_ms && clickedTimeMs < state.end_time_ms
+        );
         if (segIdx !== -1) {
             const shiftVal = shifts[segIdx]?.shift_semitones ?? 0;
             dragRef.current = {

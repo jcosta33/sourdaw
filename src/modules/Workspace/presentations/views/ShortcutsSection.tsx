@@ -159,7 +159,9 @@ export const ShortcutsSection = (): ReactElement => {
         bucket.sort((alpha, b) => alpha.label.localeCompare(b.label));
     }
 
-    const categories = [...grouped.keys()].sort((alpha, b) => (CATEGORY_ORDER[alpha] ?? 999) - (CATEGORY_ORDER[b] ?? 999));
+    const categories = [...grouped.keys()].sort(
+        (alpha, b) => (CATEGORY_ORDER[alpha] ?? 999) - (CATEGORY_ORDER[b] ?? 999)
+    );
 
     const editingDefinition = editingId
         ? (state.definitions.find((definition) => definition.id === editingId) ?? null)

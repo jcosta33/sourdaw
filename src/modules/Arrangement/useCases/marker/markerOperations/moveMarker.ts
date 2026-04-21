@@ -6,5 +6,8 @@ export function moveMarker(markerId: string, newBeat: number): void {
         return;
     }
     const beat = Math.max(0, Math.round(newBeat));
-    markerStore.set({ ...state, markers: state.markers.map((message) => (message.id === markerId ? { ...message, beat } : message)) });
+    markerStore.set({
+        ...state,
+        markers: state.markers.map((message) => (message.id === markerId ? { ...message, beat } : message)),
+    });
 }

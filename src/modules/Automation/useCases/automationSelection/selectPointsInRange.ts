@@ -26,6 +26,8 @@ export function selectPointsInRange(
     const maxVal = Math.max(valueMin, valueMax);
 
     return lane.points
-        .filter((param) => param.beat >= minBeat && param.beat <= maxBeat && param.value >= minVal && param.value <= maxVal)
+        .filter(
+            (param) => param.beat >= minBeat && param.beat <= maxBeat && param.value >= minVal && param.value <= maxVal
+        )
         .map((param) => param.beat);
 }

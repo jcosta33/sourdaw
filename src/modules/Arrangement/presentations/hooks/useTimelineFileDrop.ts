@@ -55,7 +55,9 @@ export const useTimelineFileDrop = ({
                     durationSeconds: number;
                 };
                 let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
-                const targetTrack = targetTrackId ? trackStore.value?.tracks.find((time) => time.id === targetTrackId) : null;
+                const targetTrack = targetTrackId
+                    ? trackStore.value?.tracks.find((time) => time.id === targetTrackId)
+                    : null;
                 if (!targetTrackId || !targetTrack || targetTrack.kind !== 'audio') {
                     const newTrack = addTrack({ name: render.name, kind: 'audio' });
                     if (!newTrack) {

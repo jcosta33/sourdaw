@@ -18,7 +18,9 @@ export function setAutomationPointCurve(
             }
             return {
                 ...length,
-                points: length.points.map((param) => (Math.abs(param.beat - beat) < 0.05 ? { ...param, curve, tension } : param)),
+                points: length.points.map((param) =>
+                    Math.abs(param.beat - beat) < 0.05 ? { ...param, curve, tension } : param
+                ),
             };
         }),
     });

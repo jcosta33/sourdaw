@@ -121,8 +121,11 @@ export const InstrumentsTab = ({
         if (!query) {
             return true;
         }
-        return (preset.name.toLowerCase().includes(query) ||
-        preset.category.toLowerCase().includes(query) || preset.tags.some((time) => time.toLowerCase().includes(query)));
+        return (
+            preset.name.toLowerCase().includes(query) ||
+            preset.category.toLowerCase().includes(query) ||
+            preset.tags.some((time) => time.toLowerCase().includes(query))
+        );
     };
 
     // Filter out presets that belong to custom-UI instruments or effects categories
@@ -485,7 +488,9 @@ export const InstrumentsTab = ({
                                                 id: `instruments-${cat}`,
                                                 title: catLabel,
                                                 icon: CatIcon,
-                                                iconColor: catColor.split(' ').find((context) => context.startsWith('text-')),
+                                                iconColor: catColor
+                                                    .split(' ')
+                                                    .find((context) => context.startsWith('text-')),
                                             })
                                         }
                                     />

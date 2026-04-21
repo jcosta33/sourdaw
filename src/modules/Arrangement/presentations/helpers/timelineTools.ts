@@ -35,7 +35,9 @@ export const handleCutTool = (x: number, y: number, beat: number): boolean => {
     if (!hit) {
         return true; // consumed, no clip hit
     }
-    const origClip = trackStore.value?.tracks.flatMap((time) => time.clips).find((context) => context.id === hit.clipId);
+    const origClip = trackStore.value?.tracks
+        .flatMap((time) => time.clips)
+        .find((context) => context.id === hit.clipId);
     if (origClip) {
         const savedClip = { ...origClip };
         splitClip(hit.clipId, beat);
@@ -135,10 +137,14 @@ export const handleAutomationTool = (
     const value = trackHit ? valueAtTrackY(contentY, trackHit.offset, trackHit.height) : 0.5;
 
     // Ensure a gain lane exists on this track
-    let lane = automationStore.value?.lanes.find((length) => length.trackId === trackId && length.parameterId === 'gain');
+    let lane = automationStore.value?.lanes.find(
+        (length) => length.trackId === trackId && length.parameterId === 'gain'
+    );
     if (!lane) {
         addAutomationLane(trackId, 'gain', 'Gain');
-        lane = automationStore.value?.lanes.find((length) => length.trackId === trackId && length.parameterId === 'gain');
+        lane = automationStore.value?.lanes.find(
+            (length) => length.trackId === trackId && length.parameterId === 'gain'
+        );
     }
     if (lane) {
         const point: AutomationPoint = { beat, value, curve: 'linear', tension: 0 };

@@ -9,7 +9,7 @@ export type AudioDeviceInfo = {
 
 export const getAudioDevices = inject({ logger })(
     ({ logger }) =>
-        (async function getAudioDevices(): Promise<AudioDeviceInfo[]> {
+        async function getAudioDevices(): Promise<AudioDeviceInfo[]> {
             try {
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 return devices
@@ -23,5 +23,5 @@ export const getAudioDevices = inject({ logger })(
                 logger.warn(`Failed to enumerate audio devices: ${error}`);
                 return [];
             }
-        })
+        }
 );

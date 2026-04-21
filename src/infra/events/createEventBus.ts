@@ -66,7 +66,7 @@ export function createEventBus<TEvents extends EventMap>(): EventBus<TEvents> {
                 }
             }
         }
-    };
+    }
 
     return {
         on: registry.on,
@@ -81,4 +81,4 @@ export function createEventBus<TEvents extends EventMap>(): EventBus<TEvents> {
             return pendingCount === 0;
         },
     };
-};
+}

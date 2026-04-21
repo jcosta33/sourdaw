@@ -37,7 +37,7 @@ export type BuildDeviceChainOutput = DeviceNodeEntry[];
  */
 export const buildDeviceChain = inject({ logger })(
     ({ logger }) =>
-        (async function buildDeviceChain(
+        async function buildDeviceChain(
             ctx: BaseAudioContext,
             devices: Device[],
             inputNode: AudioNode,
@@ -109,5 +109,5 @@ export const buildDeviceChain = inject({ logger })(
 
             prev.connect(outputNode);
             return entries;
-        })
+        }
 );

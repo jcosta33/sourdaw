@@ -72,8 +72,11 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
         if (!query) {
             return true;
         }
-        return (param.name.toLowerCase().includes(query) ||
-        param.vendor.toLowerCase().includes(query) || param.category.toLowerCase().includes(query));
+        return (
+            param.name.toLowerCase().includes(query) ||
+            param.vendor.toLowerCase().includes(query) ||
+            param.category.toLowerCase().includes(query)
+        );
     });
 
     const pluginsByFormat = FORMAT_ORDER.map((format) => ({

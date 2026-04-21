@@ -7,6 +7,12 @@ export function chorus(
     return {
         type: 'builtin-chorus',
         name,
-        parameterValues: { 'chorus-rate': 1.5, 'chorus-depth': 7, 'chorus-feedback': 0.2, 'chorus-mix': 0.5, ...params },
+        parameterValues: {
+            'chorus-rate': 1.5,
+            'chorus-depth': 7,
+            'chorus-feedback': 0.2,
+            'chorus-mix': 0.5,
+            ...params,
+        },
     };
 }

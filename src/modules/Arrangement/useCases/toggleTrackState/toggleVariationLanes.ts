@@ -12,7 +12,9 @@ export function toggleVariationLanes(trackId: string, force?: boolean): void {
     trackStore.set({
         ...state,
         tracks: state.tracks.map((time) =>
-            time.id === trackId ? { ...time, showVariationLanes: force !== undefined ? force : !time.showVariationLanes } : time
+            time.id === trackId
+                ? { ...time, showVariationLanes: force !== undefined ? force : !time.showVariationLanes }
+                : time
         ),
     });
 }

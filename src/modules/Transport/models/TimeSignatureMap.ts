@@ -5,11 +5,7 @@ export type TimeSignatureChange = {
     denominator: number;
 };
 
-export function createTimeSignatureChange(
-    beat: number,
-    numerator: number,
-    denominator: number
-): TimeSignatureChange {
+export function createTimeSignatureChange(beat: number, numerator: number, denominator: number): TimeSignatureChange {
     return {
         id: `ts-${crypto.randomUUID()}`,
         beat,

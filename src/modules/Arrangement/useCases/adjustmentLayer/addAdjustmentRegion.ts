@@ -18,7 +18,10 @@ export function addAdjustmentRegion(layerIdVal: string, startBeat: number, endBe
     adjustmentLayerStore.set({
         layers: state.layers.map((length) =>
             length.id === layerIdVal
-                ? { ...length, regions: [...length.regions, region].sort((alpha, buffer) => alpha.startBeat - buffer.startBeat) }
+                ? {
+                      ...length,
+                      regions: [...length.regions, region].sort((alpha, buffer) => alpha.startBeat - buffer.startBeat),
+                  }
                 : length
         ),
     });

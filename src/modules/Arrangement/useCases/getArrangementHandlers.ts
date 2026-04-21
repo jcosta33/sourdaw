@@ -7,16 +7,9 @@ import { handleToggleLoopRecord } from '../handlers/batchFeature/handleToggleLoo
 import { handleTogglePunchRecording } from '../handlers/batchFeature/handleTogglePunchRecording';
 import { handleTriggerScene } from '../handlers/batchFeature/handleTriggerScene';
 import { clipHandlers } from '../handlers/clip/clipHandlers';
-import { handleCreateVcaGroup } from '../handlers/vca/handleCreateVcaGroup';
-import { handleRemoveFromVca } from '../handlers/vca/handleRemoveFromVca';
-import { handleSetVcaGain } from '../handlers/vca/handleSetVcaGain';
 import { handleFitClipToBeats } from '../handlers/clipStretch/handleFitClipToBeats';
 import { handleSetClipStretchMode } from '../handlers/clipStretch/handleSetClipStretchMode';
 import { handleSetClipStretchRatio } from '../handlers/clipStretch/handleSetClipStretchRatio';
-import { handleLoadPreset } from '../handlers/preset/handleLoadPreset';
-import { handleSavePreset } from '../handlers/preset/handleSavePreset';
-import { handleRestoreClip } from '../handlers/restore/handleRestoreClip';
-import { handleRestoreTrack } from '../handlers/restore/handleRestoreTrack';
 import { handleAddDevice } from '../handlers/device/handleAddDevice';
 import { handleAddSend } from '../handlers/device/handleAddSend';
 import { handleAddSidechainRoute } from '../handlers/device/handleAddSidechainRoute';
@@ -36,6 +29,10 @@ import { handleGetMentorTips } from '../handlers/newFeature/handleGetMentorTips'
 import { handleSwitchMonitor } from '../handlers/newFeature/handleSwitchMonitor';
 import { handleToggleControlRoomDim } from '../handlers/newFeature/handleToggleControlRoomDim';
 import { handleToggleControlRoomMono } from '../handlers/newFeature/handleToggleControlRoomMono';
+import { handleLoadPreset } from '../handlers/preset/handleLoadPreset';
+import { handleSavePreset } from '../handlers/preset/handleSavePreset';
+import { handleRestoreClip } from '../handlers/restore/handleRestoreClip';
+import { handleRestoreTrack } from '../handlers/restore/handleRestoreTrack';
 import { handleDeleteTrackTemplate } from '../handlers/template/handleDeleteTrackTemplate';
 import { handleLoadTrackTemplate } from '../handlers/template/handleLoadTrackTemplate';
 import { handleSaveTrackTemplate } from '../handlers/template/handleSaveTrackTemplate';
@@ -78,6 +75,9 @@ import { handleDeleteTrackAlternative } from '../handlers/trackAlternative/handl
 import { handleRenameTrackAlternative } from '../handlers/trackAlternative/handleRenameTrackAlternative';
 import { handleSwitchTrackAlternative } from '../handlers/trackAlternative/handleSwitchTrackAlternative';
 import { handleAssignToVca } from '../handlers/vca/handleAssignToVca';
+import { handleCreateVcaGroup } from '../handlers/vca/handleCreateVcaGroup';
+import { handleRemoveFromVca } from '../handlers/vca/handleRemoveFromVca';
+import { handleSetVcaGain } from '../handlers/vca/handleSetVcaGain';
 
 /**
  * Merges Arrangement handler maps for Command. Does **not** call `createHandler` here.

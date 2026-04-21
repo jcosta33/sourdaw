@@ -8,7 +8,10 @@ export const handleDetectSongStructure = createHandler<'detectSongStructure'>({
         if (sections.length === 0) {
             notifyUser('No clips found to analyze — add some clips first', 'warning');
         } else {
-            notifyUser(`Detected ${sections.length} sections: ${sections.map((state) => state.name).join(', ')}`, 'success');
+            notifyUser(
+                `Detected ${sections.length} sections: ${sections.map((state) => state.name).join(', ')}`,
+                'success'
+            );
         }
     },
     undoable: true,

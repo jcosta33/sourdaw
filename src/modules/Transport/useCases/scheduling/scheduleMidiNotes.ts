@@ -350,7 +350,9 @@ export async function scheduleMidiNotes(
                 }
             }
 
-            const workletSynthDevice = toasterRoute ? null : track.devices.find((data) => data.type in WORKLET_SYNTH_DEVICES);
+            const workletSynthDevice = toasterRoute
+                ? null
+                : track.devices.find((data) => data.type in WORKLET_SYNTH_DEVICES);
             const workletSynthEntry = workletSynthDevice
                 ? (WORKLET_SYNTH_DEVICES[workletSynthDevice.type] ?? null)
                 : null;

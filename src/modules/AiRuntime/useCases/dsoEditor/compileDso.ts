@@ -810,7 +810,10 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
 
                 const existing = ms.notesByClipId[dso.clip_id] ?? [];
                 const newNotes = dso.notes.map(
-                    (node: { pitch: number; start_beat: number; duration: number; velocity: number }, index: number) => ({
+                    (
+                        node: { pitch: number; start_beat: number; duration: number; velocity: number },
+                        index: number
+                    ) => ({
                         id: `note-ai-${Date.now()}-${index}`,
                         pitch: Math.max(0, Math.min(127, node.pitch)),
                         startBeat: Math.max(0, clipStartBeat + node.start_beat),

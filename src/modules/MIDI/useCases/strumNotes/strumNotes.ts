@@ -51,7 +51,8 @@ export function strumNotes(
     const offsets = new Map<string, number>();
     for (let index = 0; index < sorted.length; index++) {
         const note = sorted[index]!;
-        const offset = direction === 'random' ? (Math.random() - 0.3) * strumAmount * sorted.length : index * strumAmount;
+        const offset =
+            direction === 'random' ? (Math.random() - 0.3) * strumAmount * sorted.length : index * strumAmount;
         offsets.set(note.id, offset);
     }
 

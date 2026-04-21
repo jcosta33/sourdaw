@@ -74,7 +74,7 @@ export const loadPresetToTrack = inject({ logger })(({ logger }) => {
         for (const [paramId, value] of Object.entries(dp.parameterValues)) {
             updateDeviceParam(trackId, device.id, paramId, value);
         }
-    };
+    }
 
     return function loadPresetToTrack(trackId: string, preset: SoundPreset): void {
         const track = getTrackById(trackId);

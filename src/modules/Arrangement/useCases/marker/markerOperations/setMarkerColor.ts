@@ -5,5 +5,8 @@ export function setMarkerColor(markerId: string, color: string): void {
     if (!state) {
         return;
     }
-    markerStore.set({ ...state, markers: state.markers.map((message) => (message.id === markerId ? { ...message, color } : message)) });
+    markerStore.set({
+        ...state,
+        markers: state.markers.map((message) => (message.id === markerId ? { ...message, color } : message)),
+    });
 }

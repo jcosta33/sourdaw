@@ -49,7 +49,9 @@ describe('compareMixes', () => {
             frequencyProfile: { ...sampleAnalysis.frequencyProfile, bass: 0.75 },
         };
         const result = compareMixes(sampleAnalysis, current);
-        expect(result.suggestions.some((state) => state.category === 'frequency' && state.target === 'bass')).toBe(true);
+        expect(result.suggestions.some((state) => state.category === 'frequency' && state.target === 'bass')).toBe(
+            true
+        );
     });
 
     it('should flag dynamics mismatch when dynamic range differs enough', () => {

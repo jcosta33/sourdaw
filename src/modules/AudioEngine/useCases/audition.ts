@@ -10,7 +10,8 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
 
     const track = getTrackById(trackId);
     const drumDevice = track?.devices.find(
-        (data) => data.type === 'builtin-drum-kit' || data.type === 'drum-kit' || data.type.startsWith('builtin-drum-machine')
+        (data) =>
+            data.type === 'builtin-drum-kit' || data.type === 'drum-kit' || data.type.startsWith('builtin-drum-machine')
     );
 
     if (drumDevice) {
@@ -51,7 +52,9 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         const effectiveTrackId = toasterParentTrack ? toasterParentTrack.id : trackId;
         const parentStrip = audioEngine.ensureTrackStrip(effectiveTrackId);
 
-        const dn = parentStrip.deviceNodes.find((data) => data.deviceId === toasterDevice.id || data.type === 'toaster');
+        const dn = parentStrip.deviceNodes.find(
+            (data) => data.deviceId === toasterDevice.id || data.type === 'toaster'
+        );
 
         if (dn?.toasterControls?.ready) {
             let pad = pitch - 36;
@@ -75,7 +78,9 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
 
     const grandBouleDevice = track?.devices.find((data) => data.type === 'grand-boule');
     if (grandBouleDevice) {
-        const dn = strip.deviceNodes.find((data) => data.deviceId === grandBouleDevice.id || data.type === 'grand-boule');
+        const dn = strip.deviceNodes.find(
+            (data) => data.deviceId === grandBouleDevice.id || data.type === 'grand-boule'
+        );
         if (dn?.grandBouleControls?.ready) {
             dn.grandBouleControls.noteOn(pitch, velocity / 127);
             return () => {

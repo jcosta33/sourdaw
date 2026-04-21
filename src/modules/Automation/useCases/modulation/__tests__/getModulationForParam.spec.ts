@@ -55,7 +55,9 @@ describe('getModulationForParam', () => {
         const state = modulationStore.value!;
         modulationStore.set({
             ...state,
-            modulators: state.modulators.map((message) => (message.id === 'mod1' ? { ...message, enabled: false } : message)),
+            modulators: state.modulators.map((message) =>
+                message.id === 'mod1' ? { ...message, enabled: false } : message
+            ),
         });
         // only mod2: 0.5 * -0.2 = -0.1
         const result = getModulationForParam('t1', 'd1', 'p1');

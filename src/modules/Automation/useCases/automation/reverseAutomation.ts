@@ -16,7 +16,9 @@ export function reverseAutomation(laneId: string): void {
             const maxBeat = Math.max(...lane.points.map((param) => param.beat));
             return {
                 ...lane,
-                points: lane.points.map((param) => ({ ...param, beat: maxBeat - param.beat })).sort((alpha, b) => alpha.beat - b.beat),
+                points: lane.points
+                    .map((param) => ({ ...param, beat: maxBeat - param.beat }))
+                    .sort((alpha, b) => alpha.beat - b.beat),
             };
         }),
     });

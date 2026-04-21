@@ -193,7 +193,7 @@ function startBranchSync(isHost: boolean): void {
             sessionState.isProjectingBranches = false;
         }
     });
-};
+}
 
 /**
  * Stop branch sync and restore the pre-session branchStore state.
@@ -226,7 +226,7 @@ function stopBranchSync(): void {
     persistCrdtProject().catch((error) => {
         logger.warn('[Collaboration] Failed to persist after branch sync cleanup:', error);
     });
-};
+}
 
 function generatePeerId(): PeerId {
     return crypto.randomUUID();
@@ -335,7 +335,7 @@ export async function generateInvite(): Promise<string> {
     };
 
     return await compressInvite(JSON.stringify(invite));
-};
+}
 
 /**
  * Join a session by pasting an invite string.
@@ -487,7 +487,7 @@ function cleanupSubsystems(): void {
         sessionState.peerManager = null;
     }
     sessionState.presenceListeners.clear();
-};
+}
 
 // -- Asset resolution --
 
@@ -567,7 +567,7 @@ function stopPlayheadBroadcast(): void {
         clearInterval(sessionState.playheadBroadcastInterval);
         sessionState.playheadBroadcastInterval = null;
     }
-};
+}
 
 /**
  * Leave the current session.
@@ -704,7 +704,7 @@ function handlePeerDisconnected(peerId: PeerId): void {
             collaborationStore.set({ ...state, connectionStatus: 'disconnected' });
         }
     }
-};
+}
 
 const addOrUpdatePeer = (peer: CollaborationPeer): void => {
     const state = collaborationStore.value;
@@ -754,7 +754,9 @@ const updatePeerConnectionState = (peerId: PeerId, isConnected: boolean): void =
     }
     collaborationStore.set({
         ...state,
-        peers: state.peers.map((param) => (param.id === peerId ? { ...param, isConnected, lastSeen: Date.now() } : param)),
+        peers: state.peers.map((param) =>
+            param.id === peerId ? { ...param, isConnected, lastSeen: Date.now() } : param
+        ),
     });
 };
 

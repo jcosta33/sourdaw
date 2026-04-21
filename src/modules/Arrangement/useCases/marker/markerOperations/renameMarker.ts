@@ -5,5 +5,8 @@ export function renameMarker(markerId: string, name: string): void {
     if (!state) {
         return;
     }
-    markerStore.set({ ...state, markers: state.markers.map((message) => (message.id === markerId ? { ...message, name } : message)) });
+    markerStore.set({
+        ...state,
+        markers: state.markers.map((message) => (message.id === markerId ? { ...message, name } : message)),
+    });
 }

@@ -86,7 +86,7 @@ export async function requestMicPermission(): Promise<boolean> {
 
 export const startAudioRecording = inject({ logger })(
     ({ logger }) =>
-        (async function startAudioRecording(
+        async function startAudioRecording(
             trackId: string,
             onComplete: (buffer: AudioBuffer) => void,
             inputId?: string | null
@@ -172,7 +172,7 @@ export const startAudioRecording = inject({ logger })(
                 cleanupNodes();
                 return false;
             }
-        })
+        }
 );
 
 export function stopAudioRecording(): void {

@@ -41,7 +41,9 @@ export function updateChatMessage(id: string, partialUpdate: Partial<ChatMessage
 
     chatStore.set({
         ...currentState,
-        messages: currentState.messages.map((message) => (message.id === id ? { ...message, ...partialUpdate } : message)),
+        messages: currentState.messages.map((message) =>
+            message.id === id ? { ...message, ...partialUpdate } : message
+        ),
     });
 }
 

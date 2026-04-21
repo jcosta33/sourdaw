@@ -6,7 +6,7 @@ export function getTrackAtY(
     for (let index = 0; index < tracks.length; index++) {
         const h = tracks[index]!.height ?? 64;
         if (contentY >= offset && contentY < offset + h) {
-            return { index: index, id: tracks[index]!.id };
+            return { index, id: tracks[index]!.id };
         }
         offset += h;
     }

@@ -432,7 +432,10 @@ export const TimelineSurface = (): ReactElement => {
                 setIsDragOver(true);
             }}
             onDragLeave={(event) => {
-                if (event.currentTarget === event.target || !event.currentTarget.contains(event.relatedTarget as Node)) {
+                if (
+                    event.currentTarget === event.target ||
+                    !event.currentTarget.contains(event.relatedTarget as Node)
+                ) {
                     setIsDragOver(false);
                 }
             }}

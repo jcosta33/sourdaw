@@ -110,7 +110,9 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                                         <select
                                             className="bg-surface-base text-[10px] rounded border border-border/50 px-1 outline-none"
                                             value={fx.parameterValues.mode || 0}
-                                            onChange={(event) => handleParamChange(fx.id, 'mode', parseInt(event.target.value))}
+                                            onChange={(event) =>
+                                                handleParamChange(fx.id, 'mode', parseInt(event.target.value))
+                                            }
                                         >
                                             <option value={0}>Up</option>
                                             <option value={1}>Down</option>

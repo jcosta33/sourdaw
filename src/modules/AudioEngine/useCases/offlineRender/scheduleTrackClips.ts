@@ -90,7 +90,9 @@ export async function scheduleTrackClips(
     }
 
     const clipsToProcess: { clip: import('#/modules/Arrangement/models/Track').Clip; padIndex: number }[] = [];
-    clipsToProcess.push(...resolveClipsWithComping(track.id, track.clips).map((context) => ({ clip: context, padIndex: -1 })));
+    clipsToProcess.push(
+        ...resolveClipsWithComping(track.id, track.clips).map((context) => ({ clip: context, padIndex: -1 }))
+    );
 
     const instrumentEntry = deviceEntries.find((event) => event.instrumentControls);
     const instrumentControls = instrumentEntry?.instrumentControls ?? null;
@@ -135,7 +137,9 @@ export async function scheduleTrackClips(
             }
 
             const drumKit = resolveDrumKit(track.devices);
-            const drumKitDevice = track.devices.find((data) => data.type === 'builtin-drum-kit' || data.type === 'drum-kit');
+            const drumKitDevice = track.devices.find(
+                (data) => data.type === 'builtin-drum-kit' || data.type === 'drum-kit'
+            );
             const kitDef = drumKitDevice
                 ? getDrumKitDefByIndex(drumKitDevice.parameterValues.kit ?? drumKitDevice.parameterValues.kitId ?? 0)
                 : null;

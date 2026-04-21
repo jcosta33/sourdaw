@@ -16,7 +16,7 @@ type DeviceNodeRef = {
 
 export const initToasterSubscribers = inject({ eventBus, logger })(
     ({ eventBus, logger }) =>
-        (function initToasterSubscribers(): () => void {
+        function initToasterSubscribers(): () => void {
             const unsubscribe = eventBus.on('audioDevice.loaded', (payload) => {
                 if (payload.deviceType !== 'toaster') {
                     return;
@@ -82,5 +82,5 @@ export const initToasterSubscribers = inject({ eventBus, logger })(
             });
 
             return unsubscribe;
-        })
+        }
 );

@@ -18,7 +18,7 @@ describe('Factory Presets', () => {
             expect(Array.isArray(param.devices)).toBe(true);
             expect(param.devices.length).toBeGreaterThan(0);
         }
-    };
+    }
 
     it('bassPresets should be valid', () => checkPresets(bassPresets));
     it('keysPresets should be valid', () => checkPresets(keysPresets));

@@ -231,7 +231,12 @@ export const melodyPatterns: PatternTemplate[] = [
                 notes.push({ pitch: sp[8], velocity: 90, startBeat: 2, durationBeats: 0.5 });
             }
             for (let index = 7; index >= 5 && index < sp.length; index--) {
-                notes.push({ pitch: sp[index]!, velocity: 75, startBeat: 2.75 + (7 - index) * 0.25, durationBeats: 0.25 });
+                notes.push({
+                    pitch: sp[index]!,
+                    velocity: 75,
+                    startBeat: 2.75 + (7 - index) * 0.25,
+                    durationBeats: 0.25,
+                });
             }
             return notes;
         },

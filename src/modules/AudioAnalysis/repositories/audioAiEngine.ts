@@ -120,7 +120,7 @@ export const separateStems = inject({ logger })(({ logger }) => {
         }
 
         return stemBuffers;
-    };
+    }
 
     return async function separateStems(audioData: ArrayBuffer, stems: string[] = ['all']): Promise<StemResult> {
         logger.info(`[Audio AI] Separating stems: ${stems.join(', ')}`);

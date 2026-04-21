@@ -267,7 +267,7 @@ export const handleNoteOn = inject({
     handleNoteOff,
 })(
     ({ handleNoteOff, ...deps }) =>
-        (function handleNoteOn(channel: number, note: number, velocity: number): void {
+        function handleNoteOn(channel: number, note: number, velocity: number): void {
             if (velocity === 0) {
                 handleNoteOff(channel, note);
                 return;
@@ -385,7 +385,9 @@ export const handleNoteOn = inject({
 
             const fermenterDev = instrumentTrack?.devices.find((data) => data.type === 'fermenter');
             if (fermenterDev) {
-                const dn = strip.deviceNodes.find((data) => data.deviceId === fermenterDev.id || data.type === 'fermenter');
+                const dn = strip.deviceNodes.find(
+                    (data) => data.deviceId === fermenterDev.id || data.type === 'fermenter'
+                );
                 if (dn?.fermenterControls?.ready) {
                     dn.fermenterControls.noteOn(note, velocity);
                     noteData.fermenterDeviceId = fermenterDev.id;
@@ -417,7 +419,9 @@ export const handleNoteOn = inject({
 
             const grandBouleDev = instrumentTrack?.devices.find((data) => data.type === 'grand-boule');
             if (grandBouleDev) {
-                const dn = strip.deviceNodes.find((data) => data.deviceId === grandBouleDev.id || data.type === 'grand-boule');
+                const dn = strip.deviceNodes.find(
+                    (data) => data.deviceId === grandBouleDev.id || data.type === 'grand-boule'
+                );
                 if (dn?.grandBouleControls?.ready) {
                     const gbStore = createGrandBouleStore(grandBouleDev.id);
                     const calibration = gbStore.value?.midiCalibration;
@@ -494,12 +498,12 @@ export const handleNoteOn = inject({
             if (osc) {
                 noteData.osc = osc;
             }
-        })
+        }
 );
 
 export const handleCC = inject(midiMessageHandlerDependencies)(
     (deps) =>
-        (function handleCC(channel: number, cc: number, value: number): void {
+        function handleCC(channel: number, cc: number, value: number): void {
             const learnState = deps.getMidiLearnState();
             if (learnState?.isLearning && learnState.learningTarget) {
                 deps.completeMidiLearn(channel, cc);
@@ -566,12 +570,14 @@ export const handleCC = inject(midiMessageHandlerDependencies)(
             const levainDevice = track?.devices.find((data) => data.type === 'levain');
             if (levainDevice) {
                 const strip = audioEngine.getTrackStrip(getTargetTrackId()!);
-                const dn = strip?.deviceNodes.find((data) => data.deviceId === levainDevice.id || data.type === 'levain');
+                const dn = strip?.deviceNodes.find(
+                    (data) => data.deviceId === levainDevice.id || data.type === 'levain'
+                );
                 if (dn?.levainControls?.ready) {
                     dn.levainControls.handleCc(cc, value);
                 }
             }
-        })
+        }
 );
 
 export function handleChannelPressure(channel: number, pressure: number): void {
@@ -595,7 +601,7 @@ const MPE_BEND_RANGE_CENTS = 48 * 100;
 
 export const handlePitchBend = inject(midiMessageHandlerDependencies)(
     (deps) =>
-        (function handlePitchBend(channel: number, lsb: number, msb: number): void {
+        function handlePitchBend(channel: number, lsb: number, msb: number): void {
             const bendValue = ((msb << 7) | lsb) - 8192;
 
             if (getMpeEnabled() && channel >= 1) {
@@ -624,7 +630,7 @@ export const handlePitchBend = inject(midiMessageHandlerDependencies)(
                     noteData.osc.detune.setTargetAtTime(baseDetune + bendCents, now, 0.003);
                 }
             }
-        })
+        }
 );
 
 export function onMidiMessage(event: MIDIMessageEvent): void {

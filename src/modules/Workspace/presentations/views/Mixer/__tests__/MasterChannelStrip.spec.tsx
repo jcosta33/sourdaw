@@ -26,7 +26,12 @@ vi.mock('#/components/daw/DawChannelStripShell', () => ({
 
 vi.mock('#/components/daw/Fader', () => ({
     Fader: ({ value, onChange }: any) => (
-        <input type="range" data-testid="fader" value={value} onChange={(event) => onChange(parseFloat(event.target.value))} />
+        <input
+            type="range"
+            data-testid="fader"
+            value={value}
+            onChange={(event) => onChange(parseFloat(event.target.value))}
+        />
     ),
 }));
 

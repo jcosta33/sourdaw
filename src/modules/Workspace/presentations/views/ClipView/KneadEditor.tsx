@@ -321,7 +321,8 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
         const y = event.clientY - rect.top;
 
         const avgCents =
-            kneadState.blobs.reduce((alpha, b) => alpha + (b.pitchCenterCents || 6000), 0) / (kneadState.blobs.length || 1);
+            kneadState.blobs.reduce((alpha, b) => alpha + (b.pitchCenterCents || 6000), 0) /
+            (kneadState.blobs.length || 1);
 
         const hit = kneadState.blobs.find((blob) => {
             const bx = blob.startTime * pixelsPerSecond;
@@ -476,7 +477,11 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                                     onChange={(event) => handleKeyChange(parseInt(event.target.value))}
                                 >
                                     {KEY_NAMES.map((name, index) => (
-                                        <option key={name} value={index} className="bg-surface-elevated text-foreground">
+                                        <option
+                                            key={name}
+                                            value={index}
+                                            className="bg-surface-elevated text-foreground"
+                                        >
                                             {name}
                                         </option>
                                     ))}
@@ -521,7 +526,10 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                             <DawCompactCheckbox
                                 checked={kneadState.formantPreserve ?? true}
                                 onChange={(event) =>
-                                    updateClipKneadState(clipId, (state) => ({ ...state, formantPreserve: event.target.checked }))
+                                    updateClipKneadState(clipId, (state) => ({
+                                        ...state,
+                                        formantPreserve: event.target.checked,
+                                    }))
                                 }
                                 className="cursor-pointer"
                                 id="formant-toggle"

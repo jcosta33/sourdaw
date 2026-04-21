@@ -10,6 +10,8 @@ export function toggleVirginTerritory(laneId: string): void {
     }
 
     automationStore.set({
-        lanes: state.lanes.map((length) => (length.id === laneId ? { ...length, virginTerritory: !length.virginTerritory } : length)),
+        lanes: state.lanes.map((length) =>
+            length.id === laneId ? { ...length, virginTerritory: !length.virginTerritory } : length
+        ),
     });
 }

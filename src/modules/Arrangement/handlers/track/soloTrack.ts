@@ -8,7 +8,10 @@ export const handleSoloTrack = createHandler<'soloTrack'>({
     },
     describe: (alpha) => ({
         label: alpha.payload.soloed ? 'Solo track' : 'Unsolo track',
-        inverseAction: { type: 'soloTrack', payload: { trackId: alpha.payload.trackId, soloed: !alpha.payload.soloed } },
+        inverseAction: {
+            type: 'soloTrack',
+            payload: { trackId: alpha.payload.trackId, soloed: !alpha.payload.soloed },
+        },
     }),
     undoable: true,
 });

@@ -14,4 +14,4 @@ export async function clearCrdtIdb(): Promise<void> {
         request.onsuccess = () => resolve();
         request.onerror = () => reject(request.error);
     });
-};
+}

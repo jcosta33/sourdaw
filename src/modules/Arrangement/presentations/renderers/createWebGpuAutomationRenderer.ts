@@ -113,7 +113,16 @@ export async function createWebGpuAutomationRenderer(canvas: HTMLCanvasElement):
         let vIdx = 0;
         const { viewportStartBeat, pixelsPerBeat, width, height } = model;
 
-        function addRect(x1: number, y1: number, x2: number, y2: number, r: number, g: number, b: number, alpha: number) {
+        function addRect(
+            x1: number,
+            y1: number,
+            x2: number,
+            y2: number,
+            r: number,
+            g: number,
+            b: number,
+            alpha: number
+        ) {
             if (vIdx + 36 >= MAX_VERTICES * 6) {
                 return;
             }

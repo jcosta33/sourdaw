@@ -93,10 +93,13 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
     // Visualization flags derived from device type
     const hasCompressor = isCompressor;
     const hasFilter =
-        isEq || parameters.some((param) => param.id === 'cutoff' || param.id === 'frequency' || param.id.includes('freq'));
+        isEq ||
+        parameters.some((param) => param.id === 'cutoff' || param.id === 'frequency' || param.id.includes('freq'));
     const hasEnvelope =
-        isSynth || parameters.some((param) => param.id === 'attack' && parameters.some((query) => query.id === 'sustain'));
-    const hasOscillator = isSynth && parameters.some((param) => param.id === 'waveform' || param.id === 'wave' || param.id === 'morph');
+        isSynth ||
+        parameters.some((param) => param.id === 'attack' && parameters.some((query) => query.id === 'sustain'));
+    const hasOscillator =
+        isSynth && parameters.some((param) => param.id === 'waveform' || param.id === 'wave' || param.id === 'morph');
 
     if (parameters.length === 0) {
         return (

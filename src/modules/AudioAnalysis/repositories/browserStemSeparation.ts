@@ -97,7 +97,7 @@ export const separateStemsBrowser = inject({ logger })(({ logger }) => {
         }
 
         return buffer;
-    };
+    }
 
     /**
      * Create or return a cached ONNX inference session.
@@ -132,7 +132,7 @@ export const separateStemsBrowser = inject({ logger })(({ logger }) => {
         ortSession.cached = session as unknown as OrtSession;
         logger.info('[Browser Stems] Session ready');
         return ortSession.cached;
-    };
+    }
 
     return async function separateStemsBrowser(
         audioData: ArrayBuffer,

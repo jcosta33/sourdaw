@@ -67,7 +67,12 @@ export const PianoRollContextMenu = ({
                 .slice(-8)
                 .map(
                     (node) =>
-                        [Math.floor(node.pitch), node.velocity, node.startBeat, node.duration] as [number, number, number, number]
+                        [Math.floor(node.pitch), node.velocity, node.startBeat, node.duration] as [
+                            number,
+                            number,
+                            number,
+                            number,
+                        ]
                 );
             const res = await generateMidiAI(seed, 16);
             if (res?.notes) {
@@ -356,7 +361,9 @@ export const PianoRollContextMenu = ({
                 shortcut="⌫"
                 disabled={selectedNoteIds.size === 0}
                 onClick={act(() => {
-                    const deletedNotes = notes.filter((node) => selectedNoteIds.has(node.id)).map((node) => ({ ...node }));
+                    const deletedNotes = notes
+                        .filter((node) => selectedNoteIds.has(node.id))
+                        .map((node) => ({ ...node }));
                     for (const id of selectedNoteIds) {
                         removeMidiNote(clipId, id);
                     }

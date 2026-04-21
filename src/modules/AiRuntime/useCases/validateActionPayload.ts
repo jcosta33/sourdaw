@@ -72,7 +72,8 @@ const validators = {
     // Track lifecycle
     addTrack: (param): param is PayloadOf<'addTrack'> => isObj(param) && isString(param.name) && isString(param.kind),
     removeTrack: hasTrackId as PayloadValidator<'removeTrack'>,
-    renameTrack: (param): param is PayloadOf<'renameTrack'> => isObj(param) && isString(param.trackId) && isString(param.name),
+    renameTrack: (param): param is PayloadOf<'renameTrack'> =>
+        isObj(param) && isString(param.trackId) && isString(param.name),
     duplicateTrack: hasTrackId as PayloadValidator<'duplicateTrack'>,
     deleteTrackAlternative: (param): param is PayloadOf<'deleteTrackAlternative'> =>
         isObj(param) && isString(param.trackId) && isString(param.alternativeId),
@@ -86,22 +87,33 @@ const validators = {
     addClip: (param): param is PayloadOf<'addClip'> =>
         isObj(param) && isString(param.trackId) && isNumber(param.startBeat) && isNumber(param.endBeat),
     removeClip: hasClipId as PayloadValidator<'removeClip'>,
-    splitClip: (param): param is PayloadOf<'splitClip'> => isObj(param) && isString(param.clipId) && isNumber(param.splitBeat),
+    splitClip: (param): param is PayloadOf<'splitClip'> =>
+        isObj(param) && isString(param.clipId) && isNumber(param.splitBeat),
     moveClip: (param): param is PayloadOf<'moveClip'> =>
-        isObj(param) && isString(param.clipId) && isNumber(param.newStartBeat) && isOptional(param.newTrackId, isString),
+        isObj(param) &&
+        isString(param.clipId) &&
+        isNumber(param.newStartBeat) &&
+        isOptional(param.newTrackId, isString),
     duplicateClip: hasClipId as PayloadValidator<'duplicateClip'>,
 
     // Device lifecycle
-    addDevice: (param): param is PayloadOf<'addDevice'> => isObj(param) && isString(param.trackId) && isString(param.deviceType),
-    removeDevice: (param): param is PayloadOf<'removeDevice'> => isObj(param) && isString(param.trackId) && isString(param.deviceId),
+    addDevice: (param): param is PayloadOf<'addDevice'> =>
+        isObj(param) && isString(param.trackId) && isString(param.deviceType),
+    removeDevice: (param): param is PayloadOf<'removeDevice'> =>
+        isObj(param) && isString(param.trackId) && isString(param.deviceId),
     setDeviceParameter: (param): param is PayloadOf<'setDeviceParameter'> =>
-        isObj(param) && isString(param.trackId) && isString(param.deviceId) && isString(param.paramId) && isNumber(param.value),
+        isObj(param) &&
+        isString(param.trackId) &&
+        isString(param.deviceId) &&
+        isString(param.paramId) &&
+        isNumber(param.value),
     loadExternalPlugin: (param): param is PayloadOf<'loadExternalPlugin'> => isObj(param) && isString(param.pluginPath),
 
     // Transport (pre-existing range checks from §91)
     setTempo: (param): param is PayloadOf<'setTempo'> => isObj(param) && isInRange(param.bpm, 20, 300),
     setMasterGain: (param): param is PayloadOf<'setMasterGain'> => isObj(param) && isInRange(param.gain, 0, 1),
-    setMetronomeVolume: (param): param is PayloadOf<'setMetronomeVolume'> => isObj(param) && isInRange(param.volume, 0, 1),
+    setMetronomeVolume: (param): param is PayloadOf<'setMetronomeVolume'> =>
+        isObj(param) && isInRange(param.volume, 0, 1),
 
     // Automation
     addAutomationLane: (param): param is PayloadOf<'addAutomationLane'> =>
@@ -113,21 +125,30 @@ const validators = {
 
     // Sidechain routing
     addSidechainRoute: (param): param is PayloadOf<'addSidechainRoute'> =>
-        isObj(param) && isString(param.sourceTrackId) && isString(param.targetTrackId) && isString(param.targetDeviceId),
-    removeSidechainRoute: (param): param is PayloadOf<'removeSidechainRoute'> => isObj(param) && isString(param.routeId),
+        isObj(param) &&
+        isString(param.sourceTrackId) &&
+        isString(param.targetTrackId) &&
+        isString(param.targetDeviceId),
+    removeSidechainRoute: (param): param is PayloadOf<'removeSidechainRoute'> =>
+        isObj(param) && isString(param.routeId),
 
     // MIDI note batch ops
-    quantizeNotes: (param): param is PayloadOf<'quantizeNotes'> => isObj(param) && isString(param.clipId) && isNumber(param.grid),
-    transposeNotes: (param): param is PayloadOf<'transposeNotes'> => isObj(param) && isString(param.clipId) && isNumber(param.semitones),
+    quantizeNotes: (param): param is PayloadOf<'quantizeNotes'> =>
+        isObj(param) && isString(param.clipId) && isNumber(param.grid),
+    transposeNotes: (param): param is PayloadOf<'transposeNotes'> =>
+        isObj(param) && isString(param.clipId) && isNumber(param.semitones),
 
     // Marker + section
     removeMarker: (param): param is PayloadOf<'removeMarker'> => isObj(param) && isString(param.markerId),
     removeSection: (param): param is PayloadOf<'removeSection'> => isObj(param) && isString(param.sectionId),
-    removeTimeSignatureChange: (param): param is PayloadOf<'removeTimeSignatureChange'> => isObj(param) && isString(param.changeId),
+    removeTimeSignatureChange: (param): param is PayloadOf<'removeTimeSignatureChange'> =>
+        isObj(param) && isString(param.changeId),
 
     // Time operations
-    deleteTime: (param): param is PayloadOf<'deleteTime'> => isObj(param) && isNumber(param.startBeat) && isNumber(param.endBeat),
-    insertTime: (param): param is PayloadOf<'insertTime'> => isObj(param) && isNumber(param.atBeat) && isNumber(param.durationBeats),
+    deleteTime: (param): param is PayloadOf<'deleteTime'> =>
+        isObj(param) && isNumber(param.startBeat) && isNumber(param.endBeat),
+    insertTime: (param): param is PayloadOf<'insertTime'> =>
+        isObj(param) && isNumber(param.atBeat) && isNumber(param.durationBeats),
 
     // Imports / exports / project lifecycle
     importAudioFile: (param): param is PayloadOf<'importAudioFile'> => isObj(param) && isString(param.path),

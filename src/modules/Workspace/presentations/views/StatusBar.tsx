@@ -42,7 +42,8 @@ export const StatusBar = (): ReactElement => {
     const renderQueue = useStore(renderQueueStore, { entries: [], cachedPhraseIds: [], phraseStatusMap: {} });
     const activeRenderCount = renderQueue
         ? renderQueue.entries.filter(
-              (event) => event.status === 'rendering-browser' || event.status === 'queued' || event.status === 'preparing'
+              (event) =>
+                  event.status === 'rendering-browser' || event.status === 'queued' || event.status === 'preparing'
           ).length
         : 0;
 

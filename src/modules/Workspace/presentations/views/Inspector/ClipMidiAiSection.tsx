@@ -510,7 +510,9 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                                     <DawCompactSelect
                                         value={svsRenderQuality}
                                         onChange={(event) => {
-                                            const opt = QUALITY_OPTIONS.find((output) => output.value === event.target.value);
+                                            const opt = QUALITY_OPTIONS.find(
+                                                (output) => output.value === event.target.value
+                                            );
                                             if (opt) {
                                                 setSvsRenderQuality(opt.value);
                                             }

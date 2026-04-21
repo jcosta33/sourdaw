@@ -208,7 +208,10 @@ export const RoutingGraph = (): ReactElement => {
             return true;
         }
         const track = tracks.find((time) => time.id === trackId);
-        if (track && (track.outputId === selectedTrackId || track.sends.some((state1) => state1.busId === selectedTrackId))) {
+        if (
+            track &&
+            (track.outputId === selectedTrackId || track.sends.some((state1) => state1.busId === selectedTrackId))
+        ) {
             return true;
         }
         return sidechainRoutes.some(

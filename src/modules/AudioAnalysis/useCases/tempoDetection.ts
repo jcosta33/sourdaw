@@ -26,7 +26,8 @@ export function detectTempo(audioBufferId: string): number | null {
     for (let index = 1; index < energies.length; index++) {
         const diff = energies[index]! - energies[index - 1]!;
         if (diff > 0) {
-            const avg = energies.slice(Math.max(0, index - 10), index).reduce((alpha, b) => alpha + b, 0) / Math.min(index, 10);
+            const avg =
+                energies.slice(Math.max(0, index - 10), index).reduce((alpha, b) => alpha + b, 0) / Math.min(index, 10);
             if (energies[index]! > avg * 2) {
                 onsets.push((index * frameSize) / sampleRate);
             }

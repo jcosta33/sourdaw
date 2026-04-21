@@ -225,7 +225,9 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
             if (time.id !== trackId) {
                 return time;
             }
-            const keptClips = time.clips.filter((context) => context.endBeat <= startBeat || context.startBeat >= endBeat);
+            const keptClips = time.clips.filter(
+                (context) => context.endBeat <= startBeat || context.startBeat >= endBeat
+            );
             return {
                 ...time,
                 clips: [...keptClips, bouncedClip],

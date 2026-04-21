@@ -55,7 +55,9 @@ describe('streamCloudChatCompletion', () => {
 
     it('yields tokens to the onToken callback', async () => {
         const tokens: string[] = [];
-        function onToken(text: string) { tokens.push(text); }
+        function onToken(text: string) {
+            tokens.push(text);
+        }
 
         await streamCloudChatCompletion([{ role: 'user', content: 'test' }], onToken);
 

@@ -12,7 +12,9 @@ export function moveWarpMarker(clipId: string, markerId: string, targetBeat: num
     const newMap = new Map(state.clipSettings);
     newMap.set(clipId, {
         ...settings,
-        markers: settings.markers.map((message) => (message.id === markerId && !message.locked ? { ...message, targetBeat } : message)),
+        markers: settings.markers.map((message) =>
+            message.id === markerId && !message.locked ? { ...message, targetBeat } : message
+        ),
     });
     audioWarpStore.set({ ...state, clipSettings: newMap });
 }

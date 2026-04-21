@@ -189,7 +189,10 @@ export const SuggestionsList = ({ suggestions }: SuggestionsListProps): ReactEle
         <DawUtilitySection title="Suggestions" detail="Quick next moves suggested by the current analysis.">
             <ul className="space-y-1">
                 {suggestions.map((state, index) => (
-                    <li key={index} className="flex items-start gap-1.5 text-[10px] text-muted-foreground leading-tight">
+                    <li
+                        key={index}
+                        className="flex items-start gap-1.5 text-[10px] text-muted-foreground leading-tight"
+                    >
                         <span className="shrink-0 mt-0.5">•</span>
                         <span>{state}</span>
                     </li>

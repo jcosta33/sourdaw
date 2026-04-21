@@ -9,7 +9,9 @@ export function assignToVca(trackId: string, vcaGroupId: string): void {
     }
 
     if (!group.trackIds.includes(trackId)) {
-        setVcaGroupsState(groups.map((gain) => (gain.id === vcaGroupId ? { ...gain, trackIds: [...gain.trackIds, trackId] } : gain)));
+        setVcaGroupsState(
+            groups.map((gain) => (gain.id === vcaGroupId ? { ...gain, trackIds: [...gain.trackIds, trackId] } : gain))
+        );
     }
 
     updateTrack(trackId, (time) => ({ ...time, vcaGroupId }));

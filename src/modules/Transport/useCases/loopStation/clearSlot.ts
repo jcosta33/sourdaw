@@ -8,7 +8,9 @@ export function clearSlot(slotId: string): void {
     loopStationStore.set({
         ...state,
         slots: state.slots.map((state1) =>
-            state1.id === slotId ? { ...state1, state: 'empty' as const, layers: [], lengthBeats: 0, loopCount: 0 } : state1
+            state1.id === slotId
+                ? { ...state1, state: 'empty' as const, layers: [], lengthBeats: 0, loopCount: 0 }
+                : state1
         ),
     });
 }

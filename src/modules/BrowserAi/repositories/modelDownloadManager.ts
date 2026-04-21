@@ -43,7 +43,7 @@ type DownloadModelOutput = Promise<void>;
  */
 export const downloadModel = inject({ logger })(
     ({ logger }) =>
-        (async function downloadModel({ spec, onProgress }: DownloadModelInput): DownloadModelOutput {
+        async function downloadModel({ spec, onProgress }: DownloadModelInput): DownloadModelOutput {
             const { modelId, family, url, sha256, sizeBytes } = spec;
 
             updateModelStatus(modelId, { status: 'downloading', downloadProgress: 0 });
@@ -60,7 +60,7 @@ export const downloadModel = inject({ logger })(
                 } catch {
                     // BroadcastChannel not available
                 }
-            };
+            }
 
             let lastError: unknown;
 
@@ -203,5 +203,5 @@ export const downloadModel = inject({ logger })(
             throw new Error(
                 `Failed to download ${modelId} after ${String(MAX_RETRIES)} attempts: ${String(lastError)}`
             );
-        })
+        }
 );

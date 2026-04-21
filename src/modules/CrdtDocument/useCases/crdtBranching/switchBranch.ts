@@ -31,4 +31,4 @@ export function switchBranch(branchId: string): void {
 
     branchStore.set({ ...state, activeBranchId: branchId });
     projectCrdtToStores();
-};
+}

@@ -17,7 +17,10 @@ export function shiftClipMidiNotes(clipId: string, beatDelta: number): void {
     midiStore.set({
         ...state,
         notesByClipId: notes
-            ? { ...state.notesByClipId, [clipId]: notes.map((node) => ({ ...node, startBeat: node.startBeat + beatDelta })) }
+            ? {
+                  ...state.notesByClipId,
+                  [clipId]: notes.map((node) => ({ ...node, startBeat: node.startBeat + beatDelta })),
+              }
             : state.notesByClipId,
         ccByClipId: ccs
             ? { ...state.ccByClipId, [clipId]: ccs.map((context) => ({ ...context, beat: context.beat + beatDelta })) }

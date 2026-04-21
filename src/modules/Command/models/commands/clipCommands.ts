@@ -18,7 +18,9 @@ export const clipCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                const track = trackStore.value?.tracks.find((time) => time.clips.some((context) => context.id === clipId));
+                const track = trackStore.value?.tracks.find((time) =>
+                    time.clips.some((context) => context.id === clipId)
+                );
                 const clip = track?.clips.find((context) => context.id === clipId);
                 const name = window.prompt('Rename clip:', clip?.name ?? '');
                 if (name !== null && name.trim()) {
@@ -104,7 +106,9 @@ export const clipCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                const track = trackStore.value?.tracks.find((time) => time.clips.some((context) => context.id === clipId));
+                const track = trackStore.value?.tracks.find((time) =>
+                    time.clips.some((context) => context.id === clipId)
+                );
                 const clip = track?.clips.find((context) => context.id === clipId);
                 if (clip) {
                     void executeAppAction({ type: 'setClipLoop', payload: { clipId, enabled: !clip.loopEnabled } });

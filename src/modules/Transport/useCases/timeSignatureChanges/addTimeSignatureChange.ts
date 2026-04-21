@@ -11,7 +11,9 @@ export function addTimeSignatureChange(beat: number, numerator: number, denomina
     if (existing) {
         timeSignatureMapStore.set({
             ...state,
-            changes: state.changes.map((context) => (context.beat === beat ? { ...context, numerator, denominator } : context)),
+            changes: state.changes.map((context) =>
+                context.beat === beat ? { ...context, numerator, denominator } : context
+            ),
         });
         return;
     }

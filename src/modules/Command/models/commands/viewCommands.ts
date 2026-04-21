@@ -129,7 +129,10 @@ export const viewCommands: CommandEntry[] = [
         action: () => {
             const time = transportStore.value;
             if (time) {
-                void executeAppAction({ type: 'deleteTime', payload: { startBeat: time.loopStart, endBeat: time.loopEnd } });
+                void executeAppAction({
+                    type: 'deleteTime',
+                    payload: { startBeat: time.loopStart, endBeat: time.loopEnd },
+                });
             }
         },
     },

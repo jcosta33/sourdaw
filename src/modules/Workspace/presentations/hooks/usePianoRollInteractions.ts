@@ -842,7 +842,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             } else if (mode === 'resize-left' && preview?.beatOverride?.has(noteId)) {
                 const override = preview.beatOverride.get(noteId)!;
                 const note =
-                    notes.find((node) => node.id === noteId) ?? openedClipNotes?.[noteClipId]?.find((node) => node.id === noteId);
+                    notes.find((node) => node.id === noteId) ??
+                    openedClipNotes?.[noteClipId]?.find((node) => node.id === noteId);
                 if (note && (override.beat !== origBeat || override.duration !== origDuration)) {
                     resizeMidiNote(noteClipId, noteId, override.beat, override.duration);
                     pushUndoEntry(
@@ -860,7 +861,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             } else if (mode === 'resize-right' && preview?.durationOverride?.has(noteId)) {
                 const newDuration = preview.durationOverride.get(noteId)!;
                 const note =
-                    notes.find((node) => node.id === noteId) ?? openedClipNotes?.[noteClipId]?.find((node) => node.id === noteId);
+                    notes.find((node) => node.id === noteId) ??
+                    openedClipNotes?.[noteClipId]?.find((node) => node.id === noteId);
                 if (note && newDuration !== origDuration) {
                     resizeMidiNote(noteClipId, noteId, undefined, newDuration);
                     pushUndoEntry(
@@ -980,7 +982,9 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         if (drag.mode === 'paint') {
             const paintedIds = [...paintNotesRef.current];
             if (paintedIds.length > 0) {
-                const paintedNotes = notes.filter((node) => paintNotesRef.current.has(node.id)).map((node) => ({ ...node }));
+                const paintedNotes = notes
+                    .filter((node) => paintNotesRef.current.has(node.id))
+                    .map((node) => ({ ...node }));
                 pushUndoEntry(
                     `Paint ${paintedIds.length} note${paintedIds.length > 1 ? 's' : ''}`,
                     () => {
@@ -1197,7 +1201,14 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         };
 
         // ── A4: L — Legato ─────────────────────────────────────────────────
-        if (event.key === 'l' && !event.metaKey && !event.ctrlKey && !event.shiftKey && !stepInput && selectedNoteIds.size > 0) {
+        if (
+            event.key === 'l' &&
+            !event.metaKey &&
+            !event.ctrlKey &&
+            !event.shiftKey &&
+            !stepInput &&
+            selectedNoteIds.size > 0
+        ) {
             const singleClip = getSingleClipForSelection();
             if (singleClip !== null) {
                 event.preventDefault();
@@ -1248,7 +1259,14 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         }
 
         // ── A6: J — Join adjacent same-pitch notes ─────────────────────────
-        if (event.key === 'j' && !event.metaKey && !event.ctrlKey && !event.shiftKey && !stepInput && selectedNoteIds.size >= 2) {
+        if (
+            event.key === 'j' &&
+            !event.metaKey &&
+            !event.ctrlKey &&
+            !event.shiftKey &&
+            !stepInput &&
+            selectedNoteIds.size >= 2
+        ) {
             const singleClip = getSingleClipForSelection();
             if (singleClip !== null) {
                 event.preventDefault();
