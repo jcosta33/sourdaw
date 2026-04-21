@@ -193,7 +193,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                     onClick={act(() => {
                         const prompt = window.prompt('Describe the audio to generate:');
                         if (prompt?.trim()) {
-                            executeAppAction({
+                            void executeAppAction({
                                 type: 'generateAudio',
                                 payload: { prompt: prompt.trim(), durationSeconds: 8, trackId: trackId ?? undefined },
                             });
@@ -212,7 +212,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    executeAppAction({
+                    void executeAppAction({
                         type: 'generateDrumPattern',
                         payload: { style: 'rock', bars: 4, trackId: trackId ?? undefined, startBeat: beat },
                     });
@@ -224,7 +224,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    executeAppAction({
+                    void executeAppAction({
                         type: 'generateChordProgression',
                         payload: {
                             style: 'pop',
@@ -243,7 +243,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    executeAppAction({
+                    void executeAppAction({
                         type: 'generateMelody',
                         payload: {
                             style: 'simple',
