@@ -16,7 +16,7 @@ describe('collaborationHandlers', () => {
     });
 
     it('handleCreateCollabSession forwards name', () => {
-        handleCreateCollabSession.execute({ type: 'createCollabSession', payload: { name: 'Jam' } });
+        void handleCreateCollabSession.execute({ type: 'createCollabSession', payload: { name: 'Jam' } });
 
         expect(createSession).toHaveBeenCalledWith('Jam');
     });

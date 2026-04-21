@@ -140,7 +140,7 @@ async function stopWorker(): Promise<void> {
 self.onmessage = ({ data }: MessageEvent): void => {
     switch ((data as { type: string }).type) {
         case 'init':
-            initWorker(data.sab as SharedArrayBuffer, data.sampleRate as number).then(() => {
+            void initWorker(data.sab as SharedArrayBuffer, data.sampleRate as number).then(() => {
                 self.postMessage({ type: 'ready' });
             });
             break;
@@ -148,7 +148,7 @@ self.onmessage = ({ data }: MessageEvent): void => {
             startPolling();
             break;
         case 'stop':
-            stopWorker();
+            void stopWorker();
             break;
     }
 };
