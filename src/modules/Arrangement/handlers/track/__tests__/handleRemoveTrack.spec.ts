@@ -52,7 +52,7 @@ describe('handleRemoveTrack', () => {
 
     describe('execute', () => {
         it('calls removeTrack with the provided trackId', () => {
-            handleRemoveTrack.execute({
+            void handleRemoveTrack.execute({
                 type: 'removeTrack',
                 payload: { trackId: 't1' },
             });

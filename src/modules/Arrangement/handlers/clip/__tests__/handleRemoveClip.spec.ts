@@ -45,14 +45,14 @@ describe('handleRemoveClip', () => {
 
     describe('execute', () => {
         it('removes clip directly if track state is missing', () => {
-            handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
+            void handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
             expect(mocks.removeClip).toHaveBeenCalledWith('c1');
             expect(mocks.rippleDeleteClips).not.toHaveBeenCalled();
         });
 
         it('removes clip directly if clip is not found in tracks', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [] }] });
-            handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
+            void handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
             expect(mocks.removeClip).toHaveBeenCalledWith('c1');
         });
 
@@ -60,7 +60,7 @@ describe('handleRemoveClip', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [{ id: 'c1' }] }] });
             mocks.rippleDeleteClips.mockReturnValue(false);
 
-            handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
+            void handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
 
             expect(mocks.rippleDeleteClips).toHaveBeenCalledWith({ trackId: 't1', clipIds: ['c1'] });
             expect(mocks.removeClip).toHaveBeenCalledWith('c1');
@@ -70,7 +70,7 @@ describe('handleRemoveClip', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [{ id: 'c1' }] }] });
             mocks.rippleDeleteClips.mockReturnValue(true);
 
-            handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
+            void handleRemoveClip.execute({ type: 'removeClip', payload: { clipId: 'c1' } });
 
             expect(mocks.rippleDeleteClips).toHaveBeenCalledWith({ trackId: 't1', clipIds: ['c1'] });
             expect(mocks.removeClip).not.toHaveBeenCalled();

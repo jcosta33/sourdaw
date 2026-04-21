@@ -60,7 +60,7 @@ describe('handleRestoreTrack', () => {
     it('restores track snapshot to track store', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
 
-        handleRestoreTrack.execute({
+        void handleRestoreTrack.execute({
             type: 'restoreTrack',
             payload: {
                 trackSnapshot: { id: 't1' },
@@ -78,7 +78,7 @@ describe('handleRestoreTrack', () => {
     it('restores automation lanes if present', () => {
         mocks.automationStoreValue.value = { lanes: [] };
 
-        handleRestoreTrack.execute({
+        void handleRestoreTrack.execute({
             type: 'restoreTrack',
             payload: {
                 trackSnapshot: { id: 't1' },
@@ -96,7 +96,7 @@ describe('handleRestoreTrack', () => {
     it('restores midi data if present', () => {
         mocks.midiStoreValue.value = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
 
-        handleRestoreTrack.execute({
+        void handleRestoreTrack.execute({
             type: 'restoreTrack',
             payload: {
                 trackSnapshot: { id: 't1' },
@@ -118,7 +118,7 @@ describe('handleRestoreTrack', () => {
     it('restores take lanes if present', () => {
         mocks.takeLaneStoreValue.value = { lanes: [] };
 
-        handleRestoreTrack.execute({
+        void handleRestoreTrack.execute({
             type: 'restoreTrack',
             payload: {
                 trackSnapshot: { id: 't1' },
