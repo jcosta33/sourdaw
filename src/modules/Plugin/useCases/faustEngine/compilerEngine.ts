@@ -14,9 +14,11 @@ import {
     instantiateFaustModuleFromFile,
     FaustCompiler,
     FaustMonoDspGenerator,
+    FaustPolyDspGenerator,
     LibFaust,
     type IFaustCompiler,
     type IFaustMonoWebAudioNode,
+    type IFaustPolyWebAudioNode,
 } from '@grame/faustwasm';
 
 import { isAppError } from '#/infra/errors/isAppError';
@@ -27,6 +29,13 @@ import { type FaustModule, type FaustParamDescriptor } from '../../models/FaustE
 import { registerPluginLoader } from '../../services/pluginLoaderRegistry';
 import { type WAMDescriptor } from '../wamPluginHost/hostOperations/helpers';
 import { registerWAMPlugin } from '../wamPluginHost/hostOperations/registerWAMPlugin';
+
+/**
+ * Default voice count for polyphonic Faust instruments. 8 covers typical keyboard
+ * chord + sustain; per-instrument overrides could be threaded through if a preset
+ * needs more.
+ */
+const POLY_VOICES_DEFAULT = 8;
 
 // Module registry (raw Map singleton)
 const modules = new Map<string, FaustModule>();
@@ -100,6 +109,7 @@ export function registerFaustDSP(
         dspCode,
         paramDescriptors: params,
         compiled: false,
+        isInstrument,
         generator: null,
     };
     modules.set(mod.id, mod);
@@ -142,7 +152,7 @@ export async function compileFaustDSP(moduleId: string): Promise<boolean> {
     const promise = (async () => {
         try {
             const compiler = await getCompiler();
-            const generator = new FaustMonoDspGenerator();
+            const generator = mod.isInstrument ? new FaustPolyDspGenerator() : new FaustMonoDspGenerator();
             // Use sanitized name as processor name
             const processorName = mod.name.replaceAll(/\s+/g, '_');
             const result = await generator.compile(compiler, processorName, mod.dspCode, '-I libraries/');
@@ -184,13 +194,20 @@ export async function compileAllFaustModules(): Promise<number> {
 export async function createFaustNode(
     moduleId: string,
     context: BaseAudioContext
-): Promise<IFaustMonoWebAudioNode | null> {
+): Promise<IFaustMonoWebAudioNode | IFaustPolyWebAudioNode | null> {
     const mod = modules.get(moduleId);
     if (!mod?.generator || !mod.compiled) {
         const reason = compilerState.error ? `Compiler unavailable: ${compilerState.error}` : 'Module not compiled';
         logger.warn(`[Faust] Cannot create node for "${moduleId}": ${reason}`);
         return null;
     }
+
+    const generator = mod.generator;
+    const callCreateNode = (): Promise<IFaustMonoWebAudioNode | IFaustPolyWebAudioNode | null> => {
+        return generator instanceof FaustPolyDspGenerator
+            ? generator.createNode(context, POLY_VOICES_DEFAULT)
+            : generator.createNode(context);
+    };
 
     // Get or create the registration map for this context
     let contextRegistrations = registrationPromises.get(context);
@@ -218,7 +235,7 @@ export async function createFaustNode(
     }
 
     try {
-        const node = await mod.generator.createNode(context);
+        const node = await callCreateNode();
 
         // Registration successful (or was already done)
         if (!existingReg) {
@@ -243,7 +260,7 @@ export async function createFaustNode(
 
             // Try one more time — if it was just a race, it might succeed now.
             try {
-                return await mod.generator.createNode(context);
+                return await callCreateNode();
             } catch (retryError) {
                 logger.warn(`[Faust] Node creation retry failed for "${mod.name}":`, retryError);
             }
@@ -261,7 +278,7 @@ export async function createFaustNode(
             for (let i = 0; i < maxRetries; i++) {
                 await new Promise<void>((r) => setTimeout(r, backoff));
                 try {
-                    return await mod.generator.createNode(context);
+                    return await callCreateNode();
                 } catch (retryError) {
                     if (i === maxRetries - 1) {
                         logger.warn(`[Faust] Node creation retry failed for "${mod.name}":`, retryError);
