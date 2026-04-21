@@ -37,7 +37,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
 
     useEffect(() => {
         if (!showAutoMenu) {
-            return;
+            return undefined;
         }
         const handleClick = (e: MouseEvent): void => {
             if (autoMenuRef.current && !autoMenuRef.current.contains(e.target as Node)) {

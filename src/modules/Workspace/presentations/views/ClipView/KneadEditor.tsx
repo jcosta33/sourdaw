@@ -128,15 +128,15 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
     // Render loop for the Canvas-based Blob Editor
     useEffect(() => {
         if (!hasKnead) {
-            return;
+            return undefined;
         }
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return undefined;
         }
 
         const style = getComputedStyle(document.documentElement);

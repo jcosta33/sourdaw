@@ -129,7 +129,7 @@ export const PianoRoll = ({
         const canvas = canvasRef.current;
         const parent = canvas?.parentElement;
         if (!parent) {
-            return;
+            return undefined;
         }
         const report = (): void => {
             const parentWidth = parent.clientWidth;

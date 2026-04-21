@@ -292,7 +292,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
 
     useEffect(() => {
         if (!waveCtxMenu) {
-            return;
+            return undefined;
         }
         const dismiss = (e: globalThis.MouseEvent) => {
             if (waveCtxRef.current && !waveCtxRef.current.contains(e.target as Node)) {
