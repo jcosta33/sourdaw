@@ -69,15 +69,17 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                             >
                                 {/* Fill */}
                                 <div
-                                    className={`absolute bottom-0 left-0 right-0 rounded-sm transition-all ${
-                                        step.active
-                                            ? step.stepType === 'rest'
+                                    className={`absolute bottom-0 left-0 right-0 rounded-sm transition-all ${(() => {
+                                        if (step.active) {
+                                            return step.stepType === 'rest'
                                                 ? 'bg-muted-foreground/20'
                                                 : step.stepType === 'tie'
                                                   ? 'bg-[var(--color-accent-cyan)]/50'
-                                                  : 'bg-[var(--color-accent-peach)]'
-                                            : 'bg-muted-foreground/10'
-                                    }`}
+                                                  : 'bg-[var(--color-accent-peach)]';
+                                        } else {
+                                            return 'bg-muted-foreground/10';
+                                        }
+                                    })()}`}
                                     style={{
                                         height: `${velNorm * 100}%`,
                                         width: `${Math.min(100, step.gateMul * 100)}%`,
@@ -92,23 +94,29 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                                 ) : null}
 
                                 {/* Octave badge */}
-                                {step.octaveOffset !== 0 ? (
-                                    <div
-                                        className="absolute bottom-0.5 left-0.5 text-[5px] font-bold cursor-pointer"
-                                        style={{
-                                            color:
-                                                step.octaveOffset > 0
-                                                    ? 'var(--color-accent-cyan)'
-                                                    : 'var(--color-accent-lavender)',
-                                        }}
-                                        onClick={(event) => {
-                                            event.stopPropagation();
-                                            cycleOctave(index);
-                                        }}
-                                    >
-                                        {step.octaveOffset > 0 ? `+${step.octaveOffset}` : step.octaveOffset}
-                                    </div>
-                                ) : null}
+                                {(() => {
+                                    if (step.octaveOffset !== 0) {
+                                        return (
+                                            <div
+                                                className="absolute bottom-0.5 left-0.5 text-[5px] font-bold cursor-pointer"
+                                                style={{
+                                                    color:
+                                                        step.octaveOffset > 0
+                                                            ? 'var(--color-accent-cyan)'
+                                                            : 'var(--color-accent-lavender)',
+                                                }}
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    cycleOctave(index);
+                                                }}
+                                            >
+                                                {step.octaveOffset > 0 ? `+${step.octaveOffset}` : step.octaveOffset}
+                                            </div>
+                                        );
+                                    } else {
+                                        return null;
+                                    }
+                                })()}
                             </div>
                             {/* Step number */}
                             <span

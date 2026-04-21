@@ -474,19 +474,29 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                     <DawPluginChip
                         key={id}
                         active={activeTab === id}
-                        tone={
-                            id === 'dist'
-                                ? 'danger'
-                                : id === 'comp'
-                                  ? 'lavender'
-                                  : id === 'reverb'
-                                    ? 'mint'
-                                    : id === 'delay' || id === 'eq'
-                                      ? 'cyan'
-                                      : id === 'mod'
-                                        ? 'peach'
-                                        : 'neutral'
-                        }
+                        tone={(() => {
+                            if (id === 'dist') {
+                                return 'danger';
+                            } else {
+                                if (id === 'comp') {
+                                    return 'lavender';
+                                } else {
+                                    if (id === 'reverb') {
+                                        return 'mint';
+                                    } else {
+                                        if (id === 'delay' || id === 'eq') {
+                                            return 'cyan';
+                                        } else {
+                                            if (id === 'mod') {
+                                                return 'peach';
+                                            } else {
+                                                return 'neutral';
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        })()}
                         size="xs"
                         style={activeTab === id && id === 'master' ? { backgroundColor: color } : undefined}
                         onClick={() => setActiveTab(id)}
@@ -495,7 +505,6 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                     </DawPluginChip>
                 ))}
             </div>
-
             {/* Active effect content */}
             <div className="min-h-[130px]">{renderContent()}</div>
         </div>

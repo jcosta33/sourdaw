@@ -1079,7 +1079,29 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     for (let b = 0; b < TB; b += 4) {
         const context = ch(b);
         const inBD = b >= 320 && b < 384;
-        const baseVel = b < 16 ? 35 : b < 32 ? 45 : b < 64 ? 58 : inBD ? 38 : b >= 512 ? 48 : 72;
+        const baseVel = (() => {
+            if (b < 16) {
+                return 35;
+            } else {
+                if (b < 32) {
+                    return 45;
+                } else {
+                    if (b < 64) {
+                        return 58;
+                    } else {
+                        if (inBD) {
+                            return 38;
+                        } else {
+                            if (b >= 512) {
+                                return 48;
+                            } else {
+                                return 72;
+                            }
+                        }
+                    }
+                }
+            }
+        })();
         // Velocity swell: crescendo +5 per note within each 16-beat chord section
         const posInChord = Math.floor((b % 16) / 4); // 0-3 within chord section
         const vel = Math.min(127, baseVel + posInChord * 5);
@@ -1176,7 +1198,25 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     for (let b = 0; b < TB; b += 16) {
         const context = ch(b);
         const inBD = b >= 320 && b < 384;
-        const vel = b < 16 ? 32 : b < 64 ? 48 : inBD ? 38 : b >= 512 ? 50 : 68;
+        const vel = (() => {
+            if (b < 16) {
+                return 32;
+            } else {
+                if (b < 64) {
+                    return 48;
+                } else {
+                    if (inBD) {
+                        return 38;
+                    } else {
+                        if (b >= 512) {
+                            return 50;
+                        } else {
+                            return 68;
+                        }
+                    }
+                }
+            }
+        })();
         const dur = inBD ? 14 : 15.8;
         warmPadN.push(note(context.root + 12, b, dur, hv(vel, 6)));
         warmPadN.push(note(context.third + 12, b, dur, hv(vel - 4, 6)));

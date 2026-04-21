@@ -137,11 +137,17 @@ export const drawClip = (
     ctx.font = '500 10px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
     ctx.fillText(clip.name, x + 6, trackY + 14, w - 12);
 
-    const typeLabel = clip.isLinkedInstance
-        ? `${clip.type === 'midi' ? 'MIDI' : 'AUDIO'} ⧉`
-        : clip.type === 'midi'
-          ? 'MIDI'
-          : 'AUDIO';
+    const typeLabel = (() => {
+        if (clip.isLinkedInstance) {
+            return `${clip.type === 'midi' ? 'MIDI' : 'AUDIO'} ⧉`;
+        } else {
+            if (clip.type === 'midi') {
+                return 'MIDI';
+            } else {
+                return 'AUDIO';
+            }
+        }
+    })();
     ctx.fillStyle = clip.isLinkedInstance ? 'rgba(120, 180, 255, 0.5)' : 'rgba(255, 255, 255, 0.25)';
     ctx.font = '7px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
     if (w > 50) {

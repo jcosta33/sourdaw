@@ -188,13 +188,21 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     const isZip = mode === 'stems' || formats.size > 1; // Zipping required for >1 file
                     const primaryExt = Array.from(formats)[0] || 'wav';
                     const fileExt = isZip ? '.zip' : `.${primaryExt}`;
-                    const mime = isZip
-                        ? 'application/zip'
-                        : primaryExt === 'wav'
-                          ? 'audio/wav'
-                          : primaryExt === 'flac'
-                            ? 'audio/flac'
-                            : 'audio/mpeg';
+                    const mime = (() => {
+                        if (isZip) {
+                            return 'application/zip';
+                        } else {
+                            if (primaryExt === 'wav') {
+                                return 'audio/wav';
+                            } else {
+                                if (primaryExt === 'flac') {
+                                    return 'audio/flac';
+                                } else {
+                                    return 'audio/mpeg';
+                                }
+                            }
+                        }
+                    })();
 
                     webFileHandle = await (
                         window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<unknown> }
@@ -655,48 +663,58 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         detail={isTauri() ? 'Desktop oven ready' : 'Web oven ready'}
                     >
                         <div className="h-10">
-                            {exporting || progress === 100 ? (
-                                <div className="space-y-1.5 animate-in fade-in duration-300">
-                                    <div className="flex items-end justify-between text-xs">
-                                        <span
-                                            className={`font-medium ${progress === 100 ? 'text-green-400' : 'text-orange-400'}`}
-                                        >
-                                            {statusText}
-                                        </span>
-                                        <span className="font-mono text-[10px] text-orange-500/50">
-                                            {progress.toFixed(0)}%
-                                        </span>
-                                    </div>
-                                    <div
-                                        className="h-2 w-full overflow-hidden rounded-full border border-stone-800 bg-stone-900 shadow-inner"
-                                        role="progressbar"
-                                        aria-valuenow={Math.round(progress)}
-                                        aria-valuemin={0}
-                                        aria-valuemax={100}
-                                    >
-                                        <div
-                                            className={`h-full rounded-full transition-all duration-300 ease-out ${
-                                                progress === 100
-                                                    ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]'
-                                                    : 'bg-gradient-to-r from-amber-600 to-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.6)]'
-                                            }`}
-                                            style={{ width: `${progress}%` }}
-                                        >
-                                            {progress < 100 ? (
-                                                <div className="absolute inset-0 w-[30%] animate-[shimmer_1.5s_infinite] bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.4)_50%,transparent_100%)]" />
-                                            ) : null}
+                            {(() => {
+                                if (exporting || progress === 100) {
+                                    return (
+                                        <div className="space-y-1.5 animate-in fade-in duration-300">
+                                            <div className="flex items-end justify-between text-xs">
+                                                <span
+                                                    className={`font-medium ${progress === 100 ? 'text-green-400' : 'text-orange-400'}`}
+                                                >
+                                                    {statusText}
+                                                </span>
+                                                <span className="font-mono text-[10px] text-orange-500/50">
+                                                    {progress.toFixed(0)}%
+                                                </span>
+                                            </div>
+                                            <div
+                                                className="h-2 w-full overflow-hidden rounded-full border border-stone-800 bg-stone-900 shadow-inner"
+                                                role="progressbar"
+                                                aria-valuenow={Math.round(progress)}
+                                                aria-valuemin={0}
+                                                aria-valuemax={100}
+                                            >
+                                                <div
+                                                    className={`h-full rounded-full transition-all duration-300 ease-out ${
+                                                        progress === 100
+                                                            ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]'
+                                                            : 'bg-gradient-to-r from-amber-600 to-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.6)]'
+                                                    }`}
+                                                    style={{ width: `${progress}%` }}
+                                                >
+                                                    {progress < 100 ? (
+                                                        <div className="absolute inset-0 w-[30%] animate-[shimmer_1.5s_infinite] bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.4)_50%,transparent_100%)]" />
+                                                    ) : null}
+                                                </div>
+                                            </div>
                                         </div>
-                                    </div>
-                                </div>
-                            ) : errorText ? (
-                                <div className="flex h-full items-center rounded-lg border border-red-900/30 bg-red-950/20 px-3 text-xs text-red-400 animate-in fade-in">
-                                    {errorText}
-                                </div>
-                            ) : (
-                                <div className="flex h-full flex-col justify-center text-center text-[10px] uppercase tracking-widest text-stone-500">
-                                    {isTauri() ? 'Desktop Oven Ready' : 'Web Oven Ready'}
-                                </div>
-                            )}
+                                    );
+                                } else {
+                                    if (errorText) {
+                                        return (
+                                            <div className="flex h-full items-center rounded-lg border border-red-900/30 bg-red-950/20 px-3 text-xs text-red-400 animate-in fade-in">
+                                                {errorText}
+                                            </div>
+                                        );
+                                    } else {
+                                        return (
+                                            <div className="flex h-full flex-col justify-center text-center text-[10px] uppercase tracking-widest text-stone-500">
+                                                {isTauri() ? 'Desktop Oven Ready' : 'Web Oven Ready'}
+                                            </div>
+                                        );
+                                    }
+                                }
+                            })()}
                         </div>
                     </DawDialogSection>
                 </DawDialogBody>

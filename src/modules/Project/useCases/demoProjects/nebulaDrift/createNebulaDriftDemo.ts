@@ -691,16 +691,25 @@ export async function demo5_NebulaDrift(): Promise<void> {
     let sx = 0;
     // 16th notes at 76bpm = step every 0.25 beats (but use ~1 beat spacing for musicality)
     for (let b = 6; b < TB; b += 1.0) {
-        const pat =
-            b < S.build1
-                ? seqIntro
-                : b < S.peak
-                  ? seqBuild
-                  : b < S.breakdown
-                    ? seqPeak
-                    : b < S.final
-                      ? seqBreak
-                      : seqFinal;
+        const pat = (() => {
+            if (b < S.build1) {
+                return seqIntro;
+            } else {
+                if (b < S.peak) {
+                    return seqBuild;
+                } else {
+                    if (b < S.breakdown) {
+                        return seqPeak;
+                    } else {
+                        if (b < S.final) {
+                            return seqBreak;
+                        } else {
+                            return seqFinal;
+                        }
+                    }
+                }
+            }
+        })();
 
         // Intro: very sparse (every 4th step)
         if (b < S.build1 && sx % 4 !== 0) {
@@ -741,16 +750,25 @@ export async function demo5_NebulaDrift(): Promise<void> {
     let bm = 44;
     while (bm < TB - 10) {
         // Pick phrase based on section
-        const phrase =
-            bm < S.build1
-                ? phraseA
-                : bm < S.peak
-                  ? phraseB
-                  : bm < S.breakdown
-                    ? phraseC
-                    : bm < S.final
-                      ? phraseD
-                      : phraseA;
+        const phrase = (() => {
+            if (bm < S.build1) {
+                return phraseA;
+            } else {
+                if (bm < S.peak) {
+                    return phraseB;
+                } else {
+                    if (bm < S.breakdown) {
+                        return phraseC;
+                    } else {
+                        if (bm < S.final) {
+                            return phraseD;
+                        } else {
+                            return phraseA;
+                        }
+                    }
+                }
+            }
+        })();
         const inBreak = bm >= S.breakdown && bm < S.final - 16;
         if (!inBreak) {
             const pi = mx % phrase.length;

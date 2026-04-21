@@ -100,23 +100,35 @@ export const StatusBar = (): ReactElement => {
 
                     <DawMetricCluster
                         label="GPU"
-                        value={
-                            llmStatus?.state === 'generating' ? (
-                                <span className="animate-pulse font-mono text-[10px] text-[var(--color-accent-lavender)]">
-                                    active
-                                </span>
-                            ) : llmStatus?.state === 'loading' ? (
-                                <span className="font-mono text-[10px] text-[var(--color-state-warning)]">
-                                    {Math.round(llmStatus.progress * 100)}%
-                                </span>
-                            ) : llmStatus?.state === 'ready' ? (
-                                <span className="font-mono text-[10px] text-[var(--color-state-success)]/70">
-                                    ready
-                                </span>
-                            ) : (
-                                <span className="font-mono text-[10px] text-muted-foreground/50">idle</span>
-                            )
-                        }
+                        value={(() => {
+                            if (llmStatus?.state === 'generating') {
+                                return (
+                                    <span className="animate-pulse font-mono text-[10px] text-[var(--color-accent-lavender)]">
+                                        active
+                                    </span>
+                                );
+                            } else {
+                                if (llmStatus?.state === 'loading') {
+                                    return (
+                                        <span className="font-mono text-[10px] text-[var(--color-state-warning)]">
+                                            {Math.round(llmStatus.progress * 100)}%
+                                        </span>
+                                    );
+                                } else {
+                                    if (llmStatus?.state === 'ready') {
+                                        return (
+                                            <span className="font-mono text-[10px] text-[var(--color-state-success)]/70">
+                                                ready
+                                            </span>
+                                        );
+                                    } else {
+                                        return (
+                                            <span className="font-mono text-[10px] text-muted-foreground/50">idle</span>
+                                        );
+                                    }
+                                }
+                            }
+                        })()}
                     />
 
                     {activeRenderCount > 0 ? (

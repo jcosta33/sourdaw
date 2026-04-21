@@ -57,7 +57,21 @@ export class MarkovChain extends BaseMidiProcessor {
             for (let jIndex = 0; jIndex < this.stateCount; jIndex++) {
                 // Default: favor adjacent states, some probability for jumps
                 const dist = Math.min(Math.abs(index - jIndex), this.stateCount - Math.abs(index - jIndex));
-                const val = dist === 0 ? 0.05 : dist === 1 ? 0.35 : dist === 2 ? 0.15 : 0.05;
+                const val = (() => {
+                    if (dist === 0) {
+                        return 0.05;
+                    } else {
+                        if (dist === 1) {
+                            return 0.35;
+                        } else {
+                            if (dist === 2) {
+                                return 0.15;
+                            } else {
+                                return 0.05;
+                            }
+                        }
+                    }
+                })();
                 row[jIndex] = val;
                 sum += val;
             }

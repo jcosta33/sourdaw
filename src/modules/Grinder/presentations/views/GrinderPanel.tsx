@@ -799,37 +799,41 @@ function BrowserRail({
                     ))}
                 </div>
                 <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
-                    {filteredPresets.length > 0 ? (
-                        filteredPresets.map((preset) => (
-                            <button
-                                key={preset.id}
-                                type="button"
-                                className={`grinder-window flex w-full flex-col items-start gap-1 px-3 py-2.5 text-left ${
-                                    patch.name === preset.patch.name
-                                        ? 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/10'
-                                        : ''
-                                }`}
-                                onClick={() => replacePatch({ ...preset.patch, uiSection: patch.uiSection })}
-                            >
-                                <div className="flex w-full items-center justify-between gap-3">
-                                    <span className="text-[13px] font-medium text-white/88">{preset.name}</span>
-                                    <span className="text-[9px] uppercase tracking-[0.2em] text-white/36">
-                                        {preset.category}
+                    {(() => {
+                        if (filteredPresets.length > 0) {
+                            return filteredPresets.map((preset) => (
+                                <button
+                                    key={preset.id}
+                                    type="button"
+                                    className={`grinder-window flex w-full flex-col items-start gap-1 px-3 py-2.5 text-left ${
+                                        patch.name === preset.patch.name
+                                            ? 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/10'
+                                            : ''
+                                    }`}
+                                    onClick={() => replacePatch({ ...preset.patch, uiSection: patch.uiSection })}
+                                >
+                                    <div className="flex w-full items-center justify-between gap-3">
+                                        <span className="text-[13px] font-medium text-white/88">{preset.name}</span>
+                                        <span className="text-[9px] uppercase tracking-[0.2em] text-white/36">
+                                            {preset.category}
+                                        </span>
+                                    </div>
+                                    <span className="text-[11px] text-white/45">
+                                        {preset.patch.ampModel === 'clean-twin'
+                                            ? 'Clean platform'
+                                            : (AMP_MODELS.find((amp) => amp.id === preset.patch.ampModel)?.label ??
+                                              'House preset')}
                                     </span>
+                                </button>
+                            ));
+                        } else {
+                            return (
+                                <div className="rounded-[18px] border border-dashed border-white/10 bg-black/18 px-4 py-4 text-[13px] text-white/46">
+                                    Nothing matches that search. Clear it or try another tray.
                                 </div>
-                                <span className="text-[11px] text-white/45">
-                                    {preset.patch.ampModel === 'clean-twin'
-                                        ? 'Clean platform'
-                                        : (AMP_MODELS.find((amp) => amp.id === preset.patch.ampModel)?.label ??
-                                          'House preset')}
-                                </span>
-                            </button>
-                        ))
-                    ) : (
-                        <div className="rounded-[18px] border border-dashed border-white/10 bg-black/18 px-4 py-4 text-[13px] text-white/46">
-                            Nothing matches that search. Clear it or try another tray.
-                        </div>
-                    )}
+                            );
+                        }
+                    })()}
                 </div>
             </div>
             <div className="grinder-window flex max-h-[24vh] flex-col gap-2 overflow-y-auto p-3">

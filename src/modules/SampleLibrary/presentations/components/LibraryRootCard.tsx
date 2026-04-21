@@ -31,26 +31,40 @@ export const LibraryRootCard = ({
         onClick={onSelect}
     >
         <HardDrive
-            className={`size-3.5 shrink-0 ${
-                root.status === 'ready'
-                    ? 'text-emerald-400'
-                    : root.status === 'scanning'
-                      ? 'text-amber-400 animate-pulse'
-                      : root.status === 'permission_required'
-                        ? 'text-amber-500'
-                        : 'text-muted-foreground/30'
-            }`}
+            className={`size-3.5 shrink-0 ${(() => {
+                if (root.status === 'ready') {
+                    return 'text-emerald-400';
+                } else {
+                    if (root.status === 'scanning') {
+                        return 'text-amber-400 animate-pulse';
+                    } else {
+                        if (root.status === 'permission_required') {
+                            return 'text-amber-500';
+                        } else {
+                            return 'text-muted-foreground/30';
+                        }
+                    }
+                }
+            })()}`}
         />
         <div className="flex-1 min-w-0">
             <div className="text-[10px] font-medium text-foreground truncate">{root.name}</div>
             <div className="text-[8px] text-muted-foreground/50">
-                {root.status === 'scanning'
-                    ? 'Scanning...'
-                    : root.status === 'ready'
-                      ? `${root.fileCount} files`
-                      : root.status === 'permission_required'
-                        ? 'Click to restore access'
-                        : 'Offline'}
+                {(() => {
+                    if (root.status === 'scanning') {
+                        return 'Scanning...';
+                    } else {
+                        if (root.status === 'ready') {
+                            return `${root.fileCount} files`;
+                        } else {
+                            if (root.status === 'permission_required') {
+                                return 'Click to restore access';
+                            } else {
+                                return 'Offline';
+                            }
+                        }
+                    }
+                })()}
             </div>
         </div>
 

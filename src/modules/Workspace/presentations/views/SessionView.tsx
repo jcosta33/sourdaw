@@ -78,116 +78,126 @@ export const SessionView = (): ReactElement => {
             />
             {/* Grid */}
             <div className="flex-1 overflow-auto">
-                {tracks.length === 0 ? (
-                    <div className="flex min-h-full items-center justify-center p-6">
-                        <DawEmptyState
-                            title="No session tracks yet"
-                            description="Add a track to start launching clips and scenes from the grid."
-                            className="max-w-sm"
-                        />
-                    </div>
-                ) : (
-                    <div className="flex min-w-max">
-                        <DawSideRail className="w-10">
-                            <DawGridHeaderCell className="h-6 text-[10px] uppercase tracking-wider text-muted-foreground">
-                                Scene
-                            </DawGridHeaderCell>
-                            {Array.from({ length: SCENE_COUNT }, (_, index) => (
-                                <button
-                                    type="button"
-                                    key={index}
-                                    className="h-10 cursor-pointer border-b border-border-hairline shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] transition-colors hover:bg-surface-raised"
-                                    onClick={() => handleLaunchScene(index)}
-                                    aria-label={`Launch scene ${index + 1}`}
-                                >
-                                    <div className="flex h-full items-center justify-center">
-                                        <Play className="size-3 text-muted-foreground transition-colors hover:text-foreground" />
-                                    </div>
-                                </button>
-                            ))}
-                        </DawSideRail>
-
-                        {tracks.map((track: Track) => {
-                            const trackClipIds: Array<string | null> = Array.from(
-                                { length: SCENE_COUNT },
-                                (_, index) => {
-                                    const clips = track.clips
-                                        ? (Object.values(track.clips) as Array<{ id: string }>)
-                                        : [];
-                                    return clips[index]?.id ?? null;
-                                }
-                            );
-
-                            return (
-                                <div
-                                    key={track.id}
-                                    className="flex w-24 shrink-0 flex-col border-r border-border-hairline"
-                                >
-                                    <DawGridHeaderCell
-                                        className="h-6 truncate px-1"
-                                        accentColor={track.color ?? undefined}
-                                        title={track.name}
-                                    >
-                                        {track.name}
+                {(() => {
+                    if (tracks.length === 0) {
+                        return (
+                            <div className="flex min-h-full items-center justify-center p-6">
+                                <DawEmptyState
+                                    title="No session tracks yet"
+                                    description="Add a track to start launching clips and scenes from the grid."
+                                    className="max-w-sm"
+                                />
+                            </div>
+                        );
+                    } else {
+                        return (
+                            <div className="flex min-w-max">
+                                <DawSideRail className="w-10">
+                                    <DawGridHeaderCell className="h-6 text-[10px] uppercase tracking-wider text-muted-foreground">
+                                        Scene
                                     </DawGridHeaderCell>
-
-                                    {Array.from({ length: SCENE_COUNT }, (_, sceneIndex) => {
-                                        const clipId = trackClipIds[sceneIndex] ?? null;
-                                        const isActive = activeSlots[track.id] === sceneIndex;
-
-                                        return (
-                                            <div
-                                                key={sceneIndex}
-                                                className={cn(
-                                                    'flex h-10 cursor-pointer items-center justify-center border-b border-border-hairline transition-colors',
-                                                    clipId
-                                                        ? isActive
-                                                            ? 'bg-[var(--color-state-play)]/20 shadow-[inset_0_0_8px_color-mix(in_oklch,var(--color-state-play)_10%,transparent)]'
-                                                            : 'bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)] hover:bg-surface-raised'
-                                                        : 'hover:bg-white/[0.03]'
-                                                )}
-                                                onClick={() => {
-                                                    if (clipId) {
-                                                        handleLaunchSlot(track.id, sceneIndex);
-                                                    }
-                                                }}
-                                                role="gridcell"
-                                                aria-label={`${track.name} scene ${sceneIndex + 1}${clipId ? ' - clip loaded' : ' - empty'}`}
-                                            >
-                                                {clipId ? (
-                                                    <div className="flex items-center gap-1">
-                                                        {isActive ? (
-                                                            <Play className="size-2.5 fill-[var(--color-state-play)] text-[var(--color-state-play)]" />
-                                                        ) : null}
-                                                        <span
-                                                            className={cn(
-                                                                'rounded px-1 py-0.5 text-[10px]',
-                                                                isActive
-                                                                    ? 'bg-[var(--color-state-play)]/30 text-[var(--color-state-play)]'
-                                                                    : 'bg-muted/30 text-muted-foreground'
-                                                            )}
-                                                            style={{
-                                                                backgroundColor: isActive
-                                                                    ? undefined
-                                                                    : track.color
-                                                                      ? `${track.color}20`
-                                                                      : undefined,
-                                                            }}
-                                                        >
-                                                            Clip
-                                                        </span>
-                                                    </div>
-                                                ) : (
-                                                    <Plus className="size-2.5 text-muted-foreground/30" />
-                                                )}
+                                    {Array.from({ length: SCENE_COUNT }, (_, index) => (
+                                        <button
+                                            type="button"
+                                            key={index}
+                                            className="h-10 cursor-pointer border-b border-border-hairline shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] transition-colors hover:bg-surface-raised"
+                                            onClick={() => handleLaunchScene(index)}
+                                            aria-label={`Launch scene ${index + 1}`}
+                                        >
+                                            <div className="flex h-full items-center justify-center">
+                                                <Play className="size-3 text-muted-foreground transition-colors hover:text-foreground" />
                                             </div>
-                                        );
-                                    })}
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
+                                        </button>
+                                    ))}
+                                </DawSideRail>
+                                {tracks.map((track: Track) => {
+                                    const trackClipIds: Array<string | null> = Array.from(
+                                        { length: SCENE_COUNT },
+                                        (_, index) => {
+                                            const clips = track.clips
+                                                ? (Object.values(track.clips) as Array<{ id: string }>)
+                                                : [];
+                                            return clips[index]?.id ?? null;
+                                        }
+                                    );
+
+                                    return (
+                                        <div
+                                            key={track.id}
+                                            className="flex w-24 shrink-0 flex-col border-r border-border-hairline"
+                                        >
+                                            <DawGridHeaderCell
+                                                className="h-6 truncate px-1"
+                                                accentColor={track.color ?? undefined}
+                                                title={track.name}
+                                            >
+                                                {track.name}
+                                            </DawGridHeaderCell>
+                                            {Array.from({ length: SCENE_COUNT }, (_, sceneIndex) => {
+                                                const clipId = trackClipIds[sceneIndex] ?? null;
+                                                const isActive = activeSlots[track.id] === sceneIndex;
+
+                                                return (
+                                                    <div
+                                                        key={sceneIndex}
+                                                        className={cn(
+                                                            'flex h-10 cursor-pointer items-center justify-center border-b border-border-hairline transition-colors',
+                                                            clipId
+                                                                ? isActive
+                                                                    ? 'bg-[var(--color-state-play)]/20 shadow-[inset_0_0_8px_color-mix(in_oklch,var(--color-state-play)_10%,transparent)]'
+                                                                    : 'bg-surface-inset shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)] hover:bg-surface-raised'
+                                                                : 'hover:bg-white/[0.03]'
+                                                        )}
+                                                        onClick={() => {
+                                                            if (clipId) {
+                                                                handleLaunchSlot(track.id, sceneIndex);
+                                                            }
+                                                        }}
+                                                        role="gridcell"
+                                                        aria-label={`${track.name} scene ${sceneIndex + 1}${clipId ? ' - clip loaded' : ' - empty'}`}
+                                                    >
+                                                        {(() => {
+                                                            if (clipId) {
+                                                                return (
+                                                                    <div className="flex items-center gap-1">
+                                                                        {isActive ? (
+                                                                            <Play className="size-2.5 fill-[var(--color-state-play)] text-[var(--color-state-play)]" />
+                                                                        ) : null}
+                                                                        <span
+                                                                            className={cn(
+                                                                                'rounded px-1 py-0.5 text-[10px]',
+                                                                                isActive
+                                                                                    ? 'bg-[var(--color-state-play)]/30 text-[var(--color-state-play)]'
+                                                                                    : 'bg-muted/30 text-muted-foreground'
+                                                                            )}
+                                                                            style={{
+                                                                                backgroundColor: isActive
+                                                                                    ? undefined
+                                                                                    : track.color
+                                                                                      ? `${track.color}20`
+                                                                                      : undefined,
+                                                                            }}
+                                                                        >
+                                                                            Clip
+                                                                        </span>
+                                                                    </div>
+                                                                );
+                                                            } else {
+                                                                return (
+                                                                    <Plus className="size-2.5 text-muted-foreground/30" />
+                                                                );
+                                                            }
+                                                        })()}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        );
+                    }
+                })()}
             </div>
         </DawPanelSurface>
     );

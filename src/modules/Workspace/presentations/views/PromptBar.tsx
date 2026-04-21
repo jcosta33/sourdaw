@@ -184,15 +184,17 @@ export const PromptBar = (): ReactElement => {
                     onBlur={() => {
                         setTimeout(() => prompt.setIsFocused(false), 200);
                     }}
-                    placeholder={
-                        prompt.isProcessing
-                            ? prompt.llmStatus?.state === 'generating'
-                                ? 'AI is thinking...'
-                                : 'Processing...'
-                            : prompt.selectionTags.length > 0
-                              ? 'What do you want to do with this?'
-                              : 'Type a command... (⌘K for palette)'
-                    }
+                    placeholder={(() => {
+                        if (prompt.isProcessing) {
+                            return prompt.llmStatus?.state === 'generating' ? 'AI is thinking...' : 'Processing...';
+                        } else {
+                            if (prompt.selectionTags.length > 0) {
+                                return 'What do you want to do with this?';
+                            } else {
+                                return 'Type a command... (⌘K for palette)';
+                            }
+                        }
+                    })()}
                     className="h-7 border-0 bg-transparent text-xs shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/60"
                     aria-label="Prompt command input"
                     aria-autocomplete="list"
@@ -212,33 +214,39 @@ export const PromptBar = (): ReactElement => {
                 </Button>
                 <LlmStatusBadge status={prompt.llmStatus ?? { state: 'idle' }} onLoad={prompt.handleLoadModel} />
             </form>
-            {prompt.fuzzyResults.length > 0 ? (
-                <div
-                    id="prompt-results"
-                    role="listbox"
-                    aria-label="Command suggestions"
-                    className="daw-floating-surface absolute top-full left-0 right-0 z-50 mt-1 max-h-80 overflow-y-auto rounded-md py-1"
-                >
-                    {prompt.value.trim().length === 0 ? (
-                        <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-muted-foreground/50 font-medium">
-                            Available commands
+            {(() => {
+                if (prompt.fuzzyResults.length > 0) {
+                    return (
+                        <div
+                            id="prompt-results"
+                            role="listbox"
+                            aria-label="Command suggestions"
+                            className="daw-floating-surface absolute top-full left-0 right-0 z-50 mt-1 max-h-80 overflow-y-auto rounded-md py-1"
+                        >
+                            {prompt.value.trim().length === 0 ? (
+                                <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-muted-foreground/50 font-medium">
+                                    Available commands
+                                </div>
+                            ) : null}
+                            {prompt.fuzzyResults.map((result, index) => (
+                                <FuzzyResultItem
+                                    key={result.preset.id}
+                                    result={result}
+                                    isSelected={index === prompt.selectedIndex}
+                                    onExecute={() => void prompt.executePreset(result)}
+                                />
+                            ))}
+                            {prompt.value.trim().length > 0 && prompt.fuzzyResults.length === 0 ? (
+                                <div className="px-3 py-2 text-xs text-muted-foreground/60 italic">
+                                    No matching commands — press Enter to try AI
+                                </div>
+                            ) : null}
                         </div>
-                    ) : null}
-                    {prompt.fuzzyResults.map((result, index) => (
-                        <FuzzyResultItem
-                            key={result.preset.id}
-                            result={result}
-                            isSelected={index === prompt.selectedIndex}
-                            onExecute={() => void prompt.executePreset(result)}
-                        />
-                    ))}
-                    {prompt.value.trim().length > 0 && prompt.fuzzyResults.length === 0 ? (
-                        <div className="px-3 py-2 text-xs text-muted-foreground/60 italic">
-                            No matching commands — press Enter to try AI
-                        </div>
-                    ) : null}
-                </div>
-            ) : null}
+                    );
+                } else {
+                    return null;
+                }
+            })()}
         </div>
     );
 };

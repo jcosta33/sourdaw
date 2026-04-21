@@ -826,7 +826,6 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                     })}
                 </Row>
             </Stack>
-
             <Stack gap={3} className="bacteria-window p-3">
                 <SectionHeader
                     eyebrow="Controls"
@@ -834,121 +833,126 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                     description={getModuleMeta(activeModule).hint}
                 />
 
-                {activeModule === 'distortion' ? (
-                    <Stack gap={3}>
-                        <Row gap={2}>
-                            <BChip
-                                active={Boolean(band.distortionEnabled)}
-                                onClick={() => setBandParam('distortionEnabled', !band.distortionEnabled)}
-                            >
-                                Enabled
-                            </BChip>
-                            <Row wrap gap={1}>
-                                {DISTORTION_MODES.map((mode) => (
+                {(() => {
+                    if (activeModule === 'distortion') {
+                        return (
+                            <Stack gap={3}>
+                                <Row gap={2}>
                                     <BChip
-                                        key={mode}
-                                        active={band.distortionMode === mode}
-                                        onClick={() => setBandParam('distortionMode', mode)}
+                                        active={Boolean(band.distortionEnabled)}
+                                        onClick={() => setBandParam('distortionEnabled', !band.distortionEnabled)}
                                     >
-                                        {mode.replace('-', ' ')}
+                                        Enabled
                                     </BChip>
-                                ))}
-                            </Row>
-                        </Row>
-
-                        <Row wrap gap={4}>
-                            <K
-                                v={band.drive}
-                                k="drive"
-                                label="Drive"
-                                min={0}
-                                max={100}
-                                step={1}
-                                def={25}
-                                unit="%"
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
-                            />
-                            <K
-                                v={band.asymmetry}
-                                k="asymmetry"
-                                label="Asym"
-                                min={-1}
-                                max={1}
-                                step={0.01}
-                                def={0}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
-                            />
-                            {band.distortionMode === 'foldback' ? (
-                                <K
-                                    deviceId={deviceId}
-                                    v={band.foldbackThreshold}
-                                    k="foldbackThreshold"
-                                    label="Fold"
-                                    min={0.1}
-                                    max={1}
-                                    step={0.01}
-                                    def={0.7}
-                                    onChangeFn={setBandParam as never}
-                                />
-                            ) : null}
-                            {band.distortionMode === 'bitcrush' ? (
-                                <>
+                                    <Row wrap gap={1}>
+                                        {DISTORTION_MODES.map((mode) => (
+                                            <BChip
+                                                key={mode}
+                                                active={band.distortionMode === mode}
+                                                onClick={() => setBandParam('distortionMode', mode)}
+                                            >
+                                                {mode.replace('-', ' ')}
+                                            </BChip>
+                                        ))}
+                                    </Row>
+                                </Row>
+                                <Row wrap gap={4}>
                                     <K
-                                        deviceId={deviceId}
-                                        v={band.bitDepth}
-                                        k="bitDepth"
-                                        label="Bits"
-                                        min={1}
-                                        max={24}
+                                        v={band.drive}
+                                        k="drive"
+                                        label="Drive"
+                                        min={0}
+                                        max={100}
                                         step={1}
-                                        def={16}
+                                        def={25}
+                                        unit="%"
+                                        deviceId={deviceId}
                                         onChangeFn={setBandParam as never}
                                     />
                                     <K
+                                        v={band.asymmetry}
+                                        k="asymmetry"
+                                        label="Asym"
+                                        min={-1}
+                                        max={1}
+                                        step={0.01}
+                                        def={0}
                                         deviceId={deviceId}
-                                        v={band.sampleRateReduce}
-                                        k="sampleRateReduce"
-                                        label="Rate div"
-                                        min={1}
-                                        max={64}
-                                        step={1}
-                                        def={1}
                                         onChangeFn={setBandParam as never}
                                     />
-                                </>
-                            ) : null}
-                            {band.distortionMode === 'tube' ? (
-                                <K
-                                    deviceId={deviceId}
-                                    v={band.tubeBias}
-                                    k="tubeBias"
-                                    label="Bias"
-                                    min={0}
-                                    max={1}
-                                    step={0.01}
-                                    def={0.5}
-                                    onChangeFn={setBandParam as never}
-                                />
-                            ) : null}
-                            {band.distortionMode === 'breakdown' ? (
-                                <K
-                                    deviceId={deviceId}
-                                    v={band.breakdownDepth}
-                                    k="breakdownDepth"
-                                    label="Depth"
-                                    min={0}
-                                    max={4}
-                                    step={0.1}
-                                    def={1}
-                                    unit="st"
-                                    onChangeFn={setBandParam as never}
-                                />
-                            ) : null}
-                        </Row>
-                    </Stack>
-                ) : null}
+                                    {band.distortionMode === 'foldback' ? (
+                                        <K
+                                            deviceId={deviceId}
+                                            v={band.foldbackThreshold}
+                                            k="foldbackThreshold"
+                                            label="Fold"
+                                            min={0.1}
+                                            max={1}
+                                            step={0.01}
+                                            def={0.7}
+                                            onChangeFn={setBandParam as never}
+                                        />
+                                    ) : null}
+                                    {band.distortionMode === 'bitcrush' ? (
+                                        <>
+                                            <K
+                                                deviceId={deviceId}
+                                                v={band.bitDepth}
+                                                k="bitDepth"
+                                                label="Bits"
+                                                min={1}
+                                                max={24}
+                                                step={1}
+                                                def={16}
+                                                onChangeFn={setBandParam as never}
+                                            />
+                                            <K
+                                                deviceId={deviceId}
+                                                v={band.sampleRateReduce}
+                                                k="sampleRateReduce"
+                                                label="Rate div"
+                                                min={1}
+                                                max={64}
+                                                step={1}
+                                                def={1}
+                                                onChangeFn={setBandParam as never}
+                                            />
+                                        </>
+                                    ) : null}
+                                    {band.distortionMode === 'tube' ? (
+                                        <K
+                                            deviceId={deviceId}
+                                            v={band.tubeBias}
+                                            k="tubeBias"
+                                            label="Bias"
+                                            min={0}
+                                            max={1}
+                                            step={0.01}
+                                            def={0.5}
+                                            onChangeFn={setBandParam as never}
+                                        />
+                                    ) : null}
+                                    {band.distortionMode === 'breakdown' ? (
+                                        <K
+                                            deviceId={deviceId}
+                                            v={band.breakdownDepth}
+                                            k="breakdownDepth"
+                                            label="Depth"
+                                            min={0}
+                                            max={4}
+                                            step={0.1}
+                                            def={1}
+                                            unit="st"
+                                            onChangeFn={setBandParam as never}
+                                        />
+                                    ) : null}
+                                </Row>
+                            </Stack>
+                        );
+                    } else {
+                        return null;
+                    }
+                })()}
 
                 {activeModule === 'filter' ? (
                     <Stack gap={3}>
@@ -1380,7 +1384,6 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                     </Stack>
                 ) : null}
             </Stack>
-
             <Stack gap={3} className="bacteria-window p-3">
                 <SectionHeader
                     eyebrow="Quick modulation"

@@ -99,7 +99,6 @@ export const PresetBrowser = ({
                     className="w-full h-6 rounded border border-border/40 bg-surface-inset pl-7 pr-2 text-[9px] text-foreground outline-none focus:border-[var(--color-accent-lavender)]"
                 />
             </div>
-
             {/* Category pills */}
             <div className="flex flex-wrap gap-0.5 px-2 py-1 shrink-0 border-b border-border/20">
                 {CATEGORIES.map((cat) => (
@@ -126,32 +125,36 @@ export const PresetBrowser = ({
                     </button>
                 ))}
             </div>
-
             {/* Tag filter (contextual) */}
-            {category !== 'user' ? (
-                <div className="flex flex-wrap gap-0.5 px-2 py-0.5 shrink-0">
-                    {TAGS.filter((tag) => {
-                        // Only show tags that have matching presets in current category
-                        return filtered.some((p) => p.tags.includes(tag));
-                    })
-                        .slice(0, 10)
-                        .map((tag) => (
-                            <button
-                                key={tag}
-                                type="button"
-                                className={`px-1 py-0 rounded text-[6px] transition-colors ${
-                                    selectedTag === tag
-                                        ? 'bg-muted text-foreground'
-                                        : 'text-muted-foreground/40 hover:text-muted-foreground'
-                                }`}
-                                onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
-                            >
-                                #{tag}
-                            </button>
-                        ))}
-                </div>
-            ) : null}
-
+            {(() => {
+                if (category !== 'user') {
+                    return (
+                        <div className="flex flex-wrap gap-0.5 px-2 py-0.5 shrink-0">
+                            {TAGS.filter((tag) => {
+                                // Only show tags that have matching presets in current category
+                                return filtered.some((p) => p.tags.includes(tag));
+                            })
+                                .slice(0, 10)
+                                .map((tag) => (
+                                    <button
+                                        key={tag}
+                                        type="button"
+                                        className={`px-1 py-0 rounded text-[6px] transition-colors ${
+                                            selectedTag === tag
+                                                ? 'bg-muted text-foreground'
+                                                : 'text-muted-foreground/40 hover:text-muted-foreground'
+                                        }`}
+                                        onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
+                                    >
+                                        #{tag}
+                                    </button>
+                                ))}
+                        </div>
+                    );
+                } else {
+                    return null;
+                }
+            })()}
             {/* Preset list */}
             <div className="flex-1 overflow-y-auto px-1 py-0.5">
                 {filtered.length === 0 ? (
@@ -174,7 +177,6 @@ export const PresetBrowser = ({
                     ))
                 )}
             </div>
-
             <div className="px-2 py-0.5 border-t border-border/20 shrink-0">
                 <span className="text-[7px] text-muted-foreground/40">{filtered.length} presets</span>
             </div>

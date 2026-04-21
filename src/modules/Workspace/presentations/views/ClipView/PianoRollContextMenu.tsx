@@ -149,7 +149,7 @@ export const PianoRollContextMenu = ({
                             quantizeNotes(clipId, g);
                             const after = getNotesForClip(clipId).map((node) => ({ ...node }));
                             pushUndoEntry(
-                                `Quantize notes (${g === 1 ? '1/1' : g === 0.5 ? '1/2' : g === 0.25 ? '1/4' : '1/8'})`,
+                                `Quantize notes (${{ 1: '1/1', 0.5: '1/2', 0.25: '1/4', 0.125: '1/8' }[g]})`,
                                 () => {
                                     for (const node of before) {
                                         moveMidiNote(clipId, node.id, node.pitch, node.startBeat);
@@ -163,7 +163,7 @@ export const PianoRollContextMenu = ({
                             );
                         })}
                     >
-                        {g === 1 ? '1/1' : g === 0.5 ? '1/2' : g === 0.25 ? '1/4' : '1/8'}
+                        {{ 1: '1/1', 0.5: '1/2', 0.25: '1/4', 0.125: '1/8' }[g]}
                     </button>
                 ))}
             </div>
@@ -187,7 +187,7 @@ export const PianoRollContextMenu = ({
                             );
                         })}
                     >
-                        {semi === -12 ? '-Oct' : semi === -1 ? '-1' : semi === 1 ? '+1' : '+Oct'}
+                        {{ '-12': '-Oct', '-1': '-1', '1': '+1', '12': '+Oct' }[semi]}
                     </button>
                 ))}
             </div>

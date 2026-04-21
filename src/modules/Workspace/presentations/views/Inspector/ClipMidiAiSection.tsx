@@ -300,316 +300,387 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                 </DawPluginSectionCard>
 
                 {/* Vocals — unified section for Spoken (Kokoro TTS) and Sung (DiffSinger SVS) */}
-                {isUnsupported ? null : (
-                    <DawPluginSectionCard
-                        title="Vocals"
-                        detail={<Mic className="size-3 text-[var(--color-accent-peach)]" aria-hidden="true" />}
-                        detailMode="badge"
-                    >
-                        {/* Mode toggle */}
-                        <div className="flex gap-1 mb-2">
-                            <button
-                                type="button"
-                                onClick={() => setVocalMode('spoken')}
-                                className={`flex-1 h-5 text-[9px] font-medium rounded transition-colors ${
-                                    vocalMode === 'spoken'
-                                        ? 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]'
-                                        : 'bg-surface-overlay/50 text-muted-foreground/60 hover:text-muted-foreground'
-                                }`}
+                {(() => {
+                    if (isUnsupported) {
+                        return null;
+                    } else {
+                        return (
+                            <DawPluginSectionCard
+                                title="Vocals"
+                                detail={<Mic className="size-3 text-[var(--color-accent-peach)]" aria-hidden="true" />}
+                                detailMode="badge"
                             >
-                                Spoken
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setVocalMode('sung')}
-                                className={`flex-1 h-5 text-[9px] font-medium rounded transition-colors ${
-                                    vocalMode === 'sung'
-                                        ? 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]'
-                                        : 'bg-surface-overlay/50 text-muted-foreground/60 hover:text-muted-foreground'
-                                }`}
-                            >
-                                Sung
-                            </button>
-                        </div>
-
-                        {/* ── Spoken mode (Kokoro TTS) ── */}
-                        {vocalMode === 'spoken' ? (
-                            kokoroStatus === 'downloading' ? (
-                                <div className="space-y-1.5">
-                                    <p className="text-[9px] text-muted-foreground">Downloading voice model…</p>
-                                    <div
-                                        className="w-full h-1 bg-border/40 rounded-full overflow-hidden"
-                                        role="progressbar"
-                                        aria-valuenow={Math.round(kokoroProgress * 100)}
-                                        aria-valuemin={0}
-                                        aria-valuemax={100}
+                                {/* Mode toggle */}
+                                <div className="flex gap-1 mb-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setVocalMode('spoken')}
+                                        className={`flex-1 h-5 text-[9px] font-medium rounded transition-colors ${
+                                            vocalMode === 'spoken'
+                                                ? 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]'
+                                                : 'bg-surface-overlay/50 text-muted-foreground/60 hover:text-muted-foreground'
+                                        }`}
                                     >
-                                        <div
-                                            className="h-full bg-[var(--color-accent-peach)] transition-all"
-                                            style={{ width: `${Math.round(kokoroProgress * 100)}%` }}
-                                        />
-                                    </div>
-                                    <p className="text-[9px] text-muted-foreground/60 tabular-nums">
-                                        {Math.round(kokoroProgress * 100)}%
-                                    </p>
-                                </div>
-                            ) : kokoroStatus !== 'ready' ? (
-                                <DawEmptyState
-                                    compact
-                                    title="Download a voice to get started"
-                                    description="Type text and generate a spoken vocal scratch track."
-                                    action={
-                                        <Button
-                                            variant="secondary"
-                                            size="xs"
-                                            className="h-6 text-[10px] bg-[var(--color-accent-peach)]/20 hover:bg-[var(--color-accent-peach)]/40 text-[var(--color-accent-peach)]"
-                                            onClick={handleDownloadKokoro}
-                                        >
-                                            <Download className="size-3 mr-1" aria-hidden="true" />
-                                            Download Voice Model
-                                            <DawMicroBadge tone="muted" className="ml-1.5">
-                                                ~86 MB
-                                            </DawMicroBadge>
-                                        </Button>
-                                    }
-                                />
-                            ) : (
-                                <div className="space-y-2">
-                                    <div className="space-y-1">
-                                        <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
-                                            Text
-                                        </label>
-                                        <DawCompactTextarea
-                                            value={ttsText}
-                                            onChange={(event) => setTtsText(event.target.value)}
-                                            placeholder="Type lyrics or text…"
-                                            rows={2}
-                                            aria-label="TTS text"
-                                        />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
-                                            Voice
-                                        </label>
-                                        <KokoroVoiceSelector
-                                            value={ttsVoiceId}
-                                            onChange={setTtsVoiceId}
-                                            disabled={isRenderingTts}
-                                        />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
-                                            Speed
-                                        </label>
-                                        <DawCompactSelect
-                                            value={ttsSpeed}
-                                            onChange={(event) => setTtsSpeed(event.target.value)}
-                                            aria-label="Speed"
-                                            className="w-full"
-                                        >
-                                            <option value="0.5">0.5× Slow</option>
-                                            <option value="0.75">0.75×</option>
-                                            <option value="1.0">1.0× Normal</option>
-                                            <option value="1.25">1.25×</option>
-                                            <option value="1.5">1.5× Fast</option>
-                                            <option value="2.0">2.0× Very fast</option>
-                                        </DawCompactSelect>
-                                    </div>
-                                    <Button
-                                        variant="secondary"
-                                        size="xs"
-                                        className="w-full h-6 text-[10px] bg-[var(--color-accent-peach)]/20 hover:bg-[var(--color-accent-peach)]/40 text-[var(--color-accent-peach)]"
-                                        onClick={handlePreviewVoice}
-                                        disabled={isRenderingTts || !ttsText.trim()}
+                                        Spoken
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setVocalMode('sung')}
+                                        className={`flex-1 h-5 text-[9px] font-medium rounded transition-colors ${
+                                            vocalMode === 'sung'
+                                                ? 'bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]'
+                                                : 'bg-surface-overlay/50 text-muted-foreground/60 hover:text-muted-foreground'
+                                        }`}
                                     >
-                                        {isRenderingTts ? (
-                                            <>
-                                                <Loader2 className="size-3 mr-1 animate-spin" aria-hidden="true" />{' '}
-                                                Rendering…
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Mic className="size-3 mr-1" aria-hidden="true" /> Render 3 Alternatives
-                                            </>
-                                        )}
-                                    </Button>
-                                    {ttsResults.length > 0 ? (
-                                        <div className="space-y-1 pt-1">
-                                            <p className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">
-                                                Drag onto an audio track
-                                            </p>
-                                            {ttsResults.map((r) => (
-                                                <AiRenderClipPreview
-                                                    key={r.label}
-                                                    audio={r.audio}
-                                                    sampleRate={r.sampleRate}
-                                                    label={r.label}
-                                                    name={r.name}
-                                                />
-                                            ))}
-                                        </div>
-                                    ) : null}
+                                        Sung
+                                    </button>
                                 </div>
-                            )
-                        ) : /* ── Sung mode (DiffSinger SVS) ── */
-                        voicebanks.length === 0 ? (
-                            <DawEmptyState
-                                compact
-                                title="No singing voices downloaded"
-                                description="Download a singing voice to render your MIDI notes as vocals."
-                                action={
-                                    <Button
-                                        variant="secondary"
-                                        size="xs"
-                                        className="h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
-                                        onClick={openPreferencesDialog}
-                                    >
-                                        <Download className="size-3 mr-1" aria-hidden="true" />
-                                        Browse Singing Voices
-                                        <DawMicroBadge tone="muted" className="ml-1.5">
-                                            ~150 MB each
-                                        </DawMicroBadge>
-                                    </Button>
-                                }
-                            />
-                        ) : (
-                            <div className="space-y-2">
-                                <div className="space-y-1">
-                                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
-                                        Voice
-                                    </label>
-                                    <DawCompactSelect
-                                        value={selectedVoicebankId}
-                                        onChange={(event) => setSelectedVoicebankId(event.target.value)}
-                                        aria-label="Voicebank"
-                                        className="w-full"
-                                    >
-                                        {voicebanks.map((vb) => (
-                                            <option key={vb.id} value={vb.id}>
-                                                {vb.name}
-                                            </option>
-                                        ))}
-                                    </DawCompactSelect>
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
-                                        Lyrics
-                                    </label>
-                                    <DawCompactTextarea
-                                        value={diffSingerLyrics}
-                                        onChange={(event) => setDiffSingerLyrics(event.target.value)}
-                                        placeholder="Type lyrics… (leave blank for la la la)"
-                                        rows={2}
-                                        aria-label="Singing lyrics"
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
-                                        Quality
-                                    </label>
-                                    <DawCompactSelect
-                                        value={svsRenderQuality}
-                                        onChange={(event) => {
-                                            const opt = QUALITY_OPTIONS.find(
-                                                (output) => output.value === event.target.value
-                                            );
-                                            if (opt) {
-                                                setSvsRenderQuality(opt.value);
+                                {/* ── Spoken mode (Kokoro TTS) ── */}
+                                {(() => {
+                                    if (vocalMode === 'spoken') {
+                                        return (() => {
+                                            if (kokoroStatus === 'downloading') {
+                                                return (
+                                                    <div className="space-y-1.5">
+                                                        <p className="text-[9px] text-muted-foreground">
+                                                            Downloading voice model…
+                                                        </p>
+                                                        <div
+                                                            className="w-full h-1 bg-border/40 rounded-full overflow-hidden"
+                                                            role="progressbar"
+                                                            aria-valuenow={Math.round(kokoroProgress * 100)}
+                                                            aria-valuemin={0}
+                                                            aria-valuemax={100}
+                                                        >
+                                                            <div
+                                                                className="h-full bg-[var(--color-accent-peach)] transition-all"
+                                                                style={{
+                                                                    width: `${Math.round(kokoroProgress * 100)}%`,
+                                                                }}
+                                                            />
+                                                        </div>
+                                                        <p className="text-[9px] text-muted-foreground/60 tabular-nums">
+                                                            {Math.round(kokoroProgress * 100)}%
+                                                        </p>
+                                                    </div>
+                                                );
+                                            } else {
+                                                if (kokoroStatus !== 'ready') {
+                                                    return (
+                                                        <DawEmptyState
+                                                            compact
+                                                            title="Download a voice to get started"
+                                                            description="Type text and generate a spoken vocal scratch track."
+                                                            action={
+                                                                <Button
+                                                                    variant="secondary"
+                                                                    size="xs"
+                                                                    className="h-6 text-[10px] bg-[var(--color-accent-peach)]/20 hover:bg-[var(--color-accent-peach)]/40 text-[var(--color-accent-peach)]"
+                                                                    onClick={handleDownloadKokoro}
+                                                                >
+                                                                    <Download
+                                                                        className="size-3 mr-1"
+                                                                        aria-hidden="true"
+                                                                    />
+                                                                    Download Voice Model
+                                                                    <DawMicroBadge tone="muted" className="ml-1.5">
+                                                                        ~86 MB
+                                                                    </DawMicroBadge>
+                                                                </Button>
+                                                            }
+                                                        />
+                                                    );
+                                                } else {
+                                                    return (
+                                                        <div className="space-y-2">
+                                                            <div className="space-y-1">
+                                                                <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
+                                                                    Text
+                                                                </label>
+                                                                <DawCompactTextarea
+                                                                    value={ttsText}
+                                                                    onChange={(event) => setTtsText(event.target.value)}
+                                                                    placeholder="Type lyrics or text…"
+                                                                    rows={2}
+                                                                    aria-label="TTS text"
+                                                                />
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                                <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
+                                                                    Voice
+                                                                </label>
+                                                                <KokoroVoiceSelector
+                                                                    value={ttsVoiceId}
+                                                                    onChange={setTtsVoiceId}
+                                                                    disabled={isRenderingTts}
+                                                                />
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                                <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
+                                                                    Speed
+                                                                </label>
+                                                                <DawCompactSelect
+                                                                    value={ttsSpeed}
+                                                                    onChange={(event) =>
+                                                                        setTtsSpeed(event.target.value)
+                                                                    }
+                                                                    aria-label="Speed"
+                                                                    className="w-full"
+                                                                >
+                                                                    <option value="0.5">0.5× Slow</option>
+                                                                    <option value="0.75">0.75×</option>
+                                                                    <option value="1.0">1.0× Normal</option>
+                                                                    <option value="1.25">1.25×</option>
+                                                                    <option value="1.5">1.5× Fast</option>
+                                                                    <option value="2.0">2.0× Very fast</option>
+                                                                </DawCompactSelect>
+                                                            </div>
+                                                            <Button
+                                                                variant="secondary"
+                                                                size="xs"
+                                                                className="w-full h-6 text-[10px] bg-[var(--color-accent-peach)]/20 hover:bg-[var(--color-accent-peach)]/40 text-[var(--color-accent-peach)]"
+                                                                onClick={handlePreviewVoice}
+                                                                disabled={isRenderingTts || !ttsText.trim()}
+                                                            >
+                                                                {isRenderingTts ? (
+                                                                    <>
+                                                                        <Loader2
+                                                                            className="size-3 mr-1 animate-spin"
+                                                                            aria-hidden="true"
+                                                                        />{' '}
+                                                                        Rendering…
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <Mic
+                                                                            className="size-3 mr-1"
+                                                                            aria-hidden="true"
+                                                                        />{' '}
+                                                                        Render 3 Alternatives
+                                                                    </>
+                                                                )}
+                                                            </Button>
+                                                            {ttsResults.length > 0 ? (
+                                                                <div className="space-y-1 pt-1">
+                                                                    <p className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">
+                                                                        Drag onto an audio track
+                                                                    </p>
+                                                                    {ttsResults.map((r) => (
+                                                                        <AiRenderClipPreview
+                                                                            key={r.label}
+                                                                            audio={r.audio}
+                                                                            sampleRate={r.sampleRate}
+                                                                            label={r.label}
+                                                                            name={r.name}
+                                                                        />
+                                                                    ))}
+                                                                </div>
+                                                            ) : null}
+                                                        </div>
+                                                    );
+                                                }
                                             }
-                                        }}
-                                        aria-label="Render quality"
-                                        className="w-full"
-                                    >
-                                        {QUALITY_OPTIONS.map((opt) => (
-                                            <option key={opt.value} value={opt.value}>
-                                                {opt.label}
-                                            </option>
-                                        ))}
-                                    </DawCompactSelect>
-                                </div>
-
-                                {vocoderStatus === 'downloading' ? (
-                                    <div className="space-y-1.5">
-                                        <p className="text-[9px] text-muted-foreground">Downloading singing engine…</p>
-                                        <div
-                                            className="w-full h-1 bg-border/40 rounded-full overflow-hidden"
-                                            role="progressbar"
-                                            aria-valuenow={Math.round(vocoderProgress * 100)}
-                                            aria-valuemin={0}
-                                            aria-valuemax={100}
-                                        >
-                                            <div
-                                                className="h-full bg-[var(--color-accent-lavender)] transition-all"
-                                                style={{ width: `${Math.round(vocoderProgress * 100)}%` }}
-                                            />
-                                        </div>
-                                        <p className="text-[9px] text-muted-foreground/60 tabular-nums">
-                                            {Math.round(vocoderProgress * 100)}%
-                                        </p>
-                                    </div>
-                                ) : vocoderStatus !== 'ready' ? (
-                                    <div className="space-y-1.5">
-                                        <p className="text-[9px] text-muted-foreground/70">
-                                            {vocoderStatus === 'error'
-                                                ? 'Download failed — check your connection and try again.'
-                                                : 'A singing engine is also required to render audio.'}
-                                        </p>
-                                        <Button
-                                            variant="secondary"
-                                            size="xs"
-                                            className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
-                                            onClick={handleDownloadVocoder}
-                                        >
-                                            <Download className="size-3 mr-1" aria-hidden="true" />
-                                            {vocoderStatus === 'error' ? 'Retry Download' : 'Download Singing Engine'}
-                                            <DawMicroBadge tone="muted" className="ml-1.5">
-                                                ~52 MB
-                                            </DawMicroBadge>
-                                        </Button>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <Button
-                                            variant="secondary"
-                                            size="xs"
-                                            className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
-                                            onClick={handleRenderSinging}
-                                            disabled={isRenderingSvs}
-                                        >
-                                            {isRenderingSvs ? (
-                                                <>
-                                                    <Loader2 className="size-3 mr-1 animate-spin" aria-hidden="true" />{' '}
-                                                    Rendering…
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <AudioLines className="size-3 mr-1" aria-hidden="true" /> Render 3
-                                                    Alternatives
-                                                </>
-                                            )}
-                                        </Button>
-                                        {svsResults.length > 0 ? (
-                                            <div className="space-y-1 pt-1">
-                                                <p className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">
-                                                    Drag onto an audio track
-                                                </p>
-                                                {svsResults.map((r) => (
-                                                    <AiRenderClipPreview
-                                                        key={r.label}
-                                                        audio={r.audio}
-                                                        sampleRate={r.sampleRate}
-                                                        label={r.label}
-                                                        name={r.name}
-                                                    />
-                                                ))}
-                                            </div>
-                                        ) : null}
-                                    </>
-                                )}
-                            </div>
-                        )}
-                    </DawPluginSectionCard>
-                )}
+                                        })();
+                                    } else {
+                                        if (voicebanks.length === 0) {
+                                            return (
+                                                <DawEmptyState
+                                                    compact
+                                                    title="No singing voices downloaded"
+                                                    description="Download a singing voice to render your MIDI notes as vocals."
+                                                    action={
+                                                        <Button
+                                                            variant="secondary"
+                                                            size="xs"
+                                                            className="h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
+                                                            onClick={openPreferencesDialog}
+                                                        >
+                                                            <Download className="size-3 mr-1" aria-hidden="true" />
+                                                            Browse Singing Voices
+                                                            <DawMicroBadge tone="muted" className="ml-1.5">
+                                                                ~150 MB each
+                                                            </DawMicroBadge>
+                                                        </Button>
+                                                    }
+                                                />
+                                            );
+                                        } else {
+                                            return (
+                                                <div className="space-y-2">
+                                                    <div className="space-y-1">
+                                                        <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
+                                                            Voice
+                                                        </label>
+                                                        <DawCompactSelect
+                                                            value={selectedVoicebankId}
+                                                            onChange={(event) =>
+                                                                setSelectedVoicebankId(event.target.value)
+                                                            }
+                                                            aria-label="Voicebank"
+                                                            className="w-full"
+                                                        >
+                                                            {voicebanks.map((vb) => (
+                                                                <option key={vb.id} value={vb.id}>
+                                                                    {vb.name}
+                                                                </option>
+                                                            ))}
+                                                        </DawCompactSelect>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
+                                                            Lyrics
+                                                        </label>
+                                                        <DawCompactTextarea
+                                                            value={diffSingerLyrics}
+                                                            onChange={(event) =>
+                                                                setDiffSingerLyrics(event.target.value)
+                                                            }
+                                                            placeholder="Type lyrics… (leave blank for la la la)"
+                                                            rows={2}
+                                                            aria-label="Singing lyrics"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
+                                                            Quality
+                                                        </label>
+                                                        <DawCompactSelect
+                                                            value={svsRenderQuality}
+                                                            onChange={(event) => {
+                                                                const opt = QUALITY_OPTIONS.find(
+                                                                    (output) => output.value === event.target.value
+                                                                );
+                                                                if (opt) {
+                                                                    setSvsRenderQuality(opt.value);
+                                                                }
+                                                            }}
+                                                            aria-label="Render quality"
+                                                            className="w-full"
+                                                        >
+                                                            {QUALITY_OPTIONS.map((opt) => (
+                                                                <option key={opt.value} value={opt.value}>
+                                                                    {opt.label}
+                                                                </option>
+                                                            ))}
+                                                        </DawCompactSelect>
+                                                    </div>
+                                                    {(() => {
+                                                        if (vocoderStatus === 'downloading') {
+                                                            return (
+                                                                <div className="space-y-1.5">
+                                                                    <p className="text-[9px] text-muted-foreground">
+                                                                        Downloading singing engine…
+                                                                    </p>
+                                                                    <div
+                                                                        className="w-full h-1 bg-border/40 rounded-full overflow-hidden"
+                                                                        role="progressbar"
+                                                                        aria-valuenow={Math.round(
+                                                                            vocoderProgress * 100
+                                                                        )}
+                                                                        aria-valuemin={0}
+                                                                        aria-valuemax={100}
+                                                                    >
+                                                                        <div
+                                                                            className="h-full bg-[var(--color-accent-lavender)] transition-all"
+                                                                            style={{
+                                                                                width: `${Math.round(vocoderProgress * 100)}%`,
+                                                                            }}
+                                                                        />
+                                                                    </div>
+                                                                    <p className="text-[9px] text-muted-foreground/60 tabular-nums">
+                                                                        {Math.round(vocoderProgress * 100)}%
+                                                                    </p>
+                                                                </div>
+                                                            );
+                                                        } else {
+                                                            if (vocoderStatus !== 'ready') {
+                                                                return (
+                                                                    <div className="space-y-1.5">
+                                                                        <p className="text-[9px] text-muted-foreground/70">
+                                                                            {vocoderStatus === 'error'
+                                                                                ? 'Download failed — check your connection and try again.'
+                                                                                : 'A singing engine is also required to render audio.'}
+                                                                        </p>
+                                                                        <Button
+                                                                            variant="secondary"
+                                                                            size="xs"
+                                                                            className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
+                                                                            onClick={handleDownloadVocoder}
+                                                                        >
+                                                                            <Download
+                                                                                className="size-3 mr-1"
+                                                                                aria-hidden="true"
+                                                                            />
+                                                                            {vocoderStatus === 'error'
+                                                                                ? 'Retry Download'
+                                                                                : 'Download Singing Engine'}
+                                                                            <DawMicroBadge
+                                                                                tone="muted"
+                                                                                className="ml-1.5"
+                                                                            >
+                                                                                ~52 MB
+                                                                            </DawMicroBadge>
+                                                                        </Button>
+                                                                    </div>
+                                                                );
+                                                            } else {
+                                                                return (
+                                                                    <>
+                                                                        <Button
+                                                                            variant="secondary"
+                                                                            size="xs"
+                                                                            className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
+                                                                            onClick={handleRenderSinging}
+                                                                            disabled={isRenderingSvs}
+                                                                        >
+                                                                            {isRenderingSvs ? (
+                                                                                <>
+                                                                                    <Loader2
+                                                                                        className="size-3 mr-1 animate-spin"
+                                                                                        aria-hidden="true"
+                                                                                    />{' '}
+                                                                                    Rendering…
+                                                                                </>
+                                                                            ) : (
+                                                                                <>
+                                                                                    <AudioLines
+                                                                                        className="size-3 mr-1"
+                                                                                        aria-hidden="true"
+                                                                                    />{' '}
+                                                                                    Render 3 Alternatives
+                                                                                </>
+                                                                            )}
+                                                                        </Button>
+                                                                        {svsResults.length > 0 ? (
+                                                                            <div className="space-y-1 pt-1">
+                                                                                <p className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">
+                                                                                    Drag onto an audio track
+                                                                                </p>
+                                                                                {svsResults.map((r) => (
+                                                                                    <AiRenderClipPreview
+                                                                                        key={r.label}
+                                                                                        audio={r.audio}
+                                                                                        sampleRate={r.sampleRate}
+                                                                                        label={r.label}
+                                                                                        name={r.name}
+                                                                                    />
+                                                                                ))}
+                                                                            </div>
+                                                                        ) : null}
+                                                                    </>
+                                                                );
+                                                            }
+                                                        }
+                                                    })()}
+                                                </div>
+                                            );
+                                        }
+                                    }
+                                })()}
+                            </DawPluginSectionCard>
+                        );
+                    }
+                })()}
             </div>
         </section>
     );

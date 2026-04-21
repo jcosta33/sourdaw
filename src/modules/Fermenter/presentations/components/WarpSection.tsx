@@ -79,43 +79,49 @@ export const WarpSection = ({
                     </DawPluginChip>
                 ))}
             </div>
-            {audioModTarget > 0 ? (
-                <div className="flex items-end gap-2 px-1">
-                    <div className="flex flex-col items-center gap-0.5">
-                        <RotaryKnob
-                            value={audioModRate}
-                            onChange={(v) => onParam('audioModRate', v)}
-                            min={0}
-                            max={5000}
-                            step={1}
-                            defaultValue={0}
-                            size="lg"
-                            tone="sage"
-                        />
-                        <span className="text-[7px] text-muted-foreground">Rate</span>
-                        <span className="text-[6px] text-muted-foreground/50 font-mono">
-                            {audioModRate < 20
-                                ? `${audioModRate.toFixed(1)}Hz`
-                                : audioModRate < 1000
-                                  ? `${Math.round(audioModRate)}Hz`
-                                  : `${(audioModRate / 1000).toFixed(1)}kHz`}
-                        </span>
-                    </div>
-                    <div className="flex flex-col items-center gap-0.5">
-                        <RotaryKnob
-                            value={audioModDepth}
-                            onChange={(v) => onParam('audioModDepth', v)}
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            defaultValue={0}
-                            size="lg"
-                            tone="sage"
-                        />
-                        <span className="text-[7px] text-muted-foreground">Depth</span>
-                    </div>
-                </div>
-            ) : null}
+            {(() => {
+                if (audioModTarget > 0) {
+                    return (
+                        <div className="flex items-end gap-2 px-1">
+                            <div className="flex flex-col items-center gap-0.5">
+                                <RotaryKnob
+                                    value={audioModRate}
+                                    onChange={(v) => onParam('audioModRate', v)}
+                                    min={0}
+                                    max={5000}
+                                    step={1}
+                                    defaultValue={0}
+                                    size="lg"
+                                    tone="sage"
+                                />
+                                <span className="text-[7px] text-muted-foreground">Rate</span>
+                                <span className="text-[6px] text-muted-foreground/50 font-mono">
+                                    {audioModRate < 20
+                                        ? `${audioModRate.toFixed(1)}Hz`
+                                        : audioModRate < 1000
+                                          ? `${Math.round(audioModRate)}Hz`
+                                          : `${(audioModRate / 1000).toFixed(1)}kHz`}
+                                </span>
+                            </div>
+                            <div className="flex flex-col items-center gap-0.5">
+                                <RotaryKnob
+                                    value={audioModDepth}
+                                    onChange={(v) => onParam('audioModDepth', v)}
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    defaultValue={0}
+                                    size="lg"
+                                    tone="sage"
+                                />
+                                <span className="text-[7px] text-muted-foreground">Depth</span>
+                            </div>
+                        </div>
+                    );
+                } else {
+                    return null;
+                }
+            })()}
         </div>
     </div>
 );
