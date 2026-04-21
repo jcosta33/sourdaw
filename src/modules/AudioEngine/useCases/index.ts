@@ -91,6 +91,9 @@ export { audioBufferToWav } from './audioBufferToWav';
 export { audioBufferToMp3 } from './audioBufferToMp3';
 export { audioBufferToFlac } from './audioBufferToFlac';
 
+export { scheduleAdjustmentLayers } from './adjustmentLayer/scheduleAdjustmentLayers';
+export { getSharedAdjustmentLayerApplier } from './adjustmentLayer/sharedAdjustmentLayerApplier';
+
 export { scheduleClick } from './scheduling/scheduleClick';
 export { stopAllScheduled } from './scheduling/stopAllScheduled';
 export { getCurrentTime } from './scheduling/getCurrentTime';

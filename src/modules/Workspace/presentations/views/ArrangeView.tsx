@@ -12,6 +12,7 @@ import { Piano, Upload, Headphones } from 'lucide-react';
 
 import { useStore } from '#/infra/store/useStore';
 import {
+    AdjustmentLayerStrip,
     TimelineSurface,
     TimelineMinimap,
     ArrangementBar,
@@ -20,7 +21,7 @@ import {
     TimelineChromeSurface,
     TrackListView,
 } from '#/modules/Arrangement/presentations/views';
-import { timelineViewStore, setScrollX, markerStore } from '#/modules/Arrangement/stores';
+import { adjustmentLayerStore, timelineViewStore, setScrollX, markerStore } from '#/modules/Arrangement/stores';
 import { addTrack, addClip, importMidiFile } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
@@ -120,8 +121,11 @@ export const ArrangeView = (): ReactElement => {
 
     const chordState = useStore(chordTrackStore, { enabled: false, events: [] });
 
+    const adjustmentState = useStore(adjustmentLayerStore, { layers: [] });
+
     const hasMarkers = (markerState?.markers.length ?? 0) > 0;
     const hasChords = (chordState?.events.length ?? 0) > 0 || (chordState?.enabled ?? false);
+    const adjustmentLayerCount = adjustmentState?.layers.length ?? 0;
     const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
     const scrollX = viewState?.scrollX ?? 0;
 
@@ -155,7 +159,15 @@ export const ArrangeView = (): ReactElement => {
                 <>
                     <TrackListView
                         style={{ width: localTrackListWidth }}
-                        extraHeaderHeight={22 + (hasMarkers ? 20 : 0) + 28 + 22 + (hasChords ? 26 : 0)}
+                        extraHeaderHeight={
+                            22 +
+                            (hasMarkers ? 20 : 0) +
+                            28 +
+                            22 +
+                            (hasChords ? 26 : 0) +
+                            20 +
+                            adjustmentLayerCount * 20
+                        }
                     />
                     <ResizeHandle
                         direction="vertical"
@@ -166,6 +178,7 @@ export const ArrangeView = (): ReactElement => {
             ) : null}
             <div ref={timelineContainerRef} className="flex flex-1 flex-col overflow-hidden relative">
                 <ArrangementBar pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
+                <AdjustmentLayerStrip pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
                 {hasMarkers ? <MarkerLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} /> : null}
                 <TimelineMinimap />
                 <BeatRulerBar />
