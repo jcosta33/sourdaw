@@ -5,5 +5,5 @@ export function removeCvOutput(id: string): void {
     if (!state) {
         return;
     }
-    cvGateStore.set({ ...state, outputs: state.outputs.filter((o) => o.id !== id) });
+    cvGateStore.set({ ...state, outputs: state.outputs.filter((out) => out.id !== id) });
 }
