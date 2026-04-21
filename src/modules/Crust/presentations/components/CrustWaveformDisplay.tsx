@@ -82,11 +82,11 @@ export const CrustWaveformDisplay = ({
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return () => {};
         }
         const ctxOrNull = canvas.getContext('2d');
         if (!ctxOrNull) {
-            return;
+            return () => {};
         }
         // Capture into a local that the nested `draw` closure can use
         // without re-narrowing the union type on every reference.

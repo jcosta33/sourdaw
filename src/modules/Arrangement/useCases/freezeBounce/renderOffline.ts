@@ -298,11 +298,12 @@ async function renderWithProgress(
         const totalFrames = offlineCtx.length;
 
         if (options?.abortSignal?.aborted) {
-            return reject(new Error('Render aborted'));
+            reject(new Error('Render aborted'));
+            return;
         }
 
         function abortHandler() {
-            return reject(new Error('Render aborted'));
+            reject(new Error('Render aborted'));
         }
         options?.abortSignal?.addEventListener('abort', abortHandler);
 

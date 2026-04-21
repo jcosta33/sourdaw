@@ -257,7 +257,8 @@ class AutomergeRepository {
         } catch (error) {
             // Worker unavailable — fall back to synchronous parsing on main thread.
             logger.warn('[AutomergeRepository] CRDT worker failed, falling back to synchronous load:', error);
-            return this._loadAllSync(bundle);
+            this._loadAllSync(bundle);
+            return;
         }
 
         for (const [id, bytes] of compacted) {
