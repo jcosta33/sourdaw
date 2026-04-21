@@ -132,7 +132,7 @@ export const TimelineMinimap = (): ReactElement => {
     useLayoutEffect(() => {
         const container = containerRef.current;
         if (!container) {
-            return;
+            return undefined;
         }
 
         const observer = new ResizeObserver((entries) => {

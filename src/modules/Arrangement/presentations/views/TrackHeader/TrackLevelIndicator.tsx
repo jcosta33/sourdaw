@@ -58,11 +58,11 @@ export const TrackLevelIndicator = ({ trackId, height }: TrackLevelIndicatorProp
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return undefined;
         }
 
         const dpr = window.devicePixelRatio || 1;

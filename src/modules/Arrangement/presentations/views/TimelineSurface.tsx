@@ -230,7 +230,7 @@ export const TimelineSurface = (): ReactElement => {
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
 
         let lastScale = 1;
@@ -267,7 +267,7 @@ export const TimelineSurface = (): ReactElement => {
         const canvas = canvasRef.current;
         const container = containerRef.current;
         if (!canvas || !container) {
-            return;
+            return undefined;
         }
 
         let disposed = false;
