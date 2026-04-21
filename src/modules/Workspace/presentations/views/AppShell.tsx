@@ -25,6 +25,7 @@ import { GrinderPanel } from '#/modules/Grinder/presentations/views';
 import { LevainPanel } from '#/modules/Levain/presentations/views';
 import { ProofChamberPanel } from '#/modules/Plugin/presentations/views';
 import { ToasterPanel } from '#/modules/Toaster/presentations/views';
+import { LoopStationPanel, SetlistPanel } from '#/modules/Transport/presentations/views';
 import { clamp } from '#/utils/Math/clamp';
 import { onPanelShowAutomation } from '../../useCases/panels/devicePanels/onPanelShowAutomation';
 import { updateWorkspaceState } from '../../useCases/workspaceState';
@@ -37,8 +38,15 @@ import { useAppInitialization } from '../hooks/useAppInitialization';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 
 
+import { trackStore } from '#/modules/Arrangement/stores';
+
+import { isOnboardingCompleted } from '../../useCases/onboarding/isOnboardingCompleted';
+import { startOnboardingTour } from '../../useCases/onboarding/startOnboardingTour';
+
+import { AudioResumeOverlay } from './AudioResumeOverlay';
 import { AutomationBottomPanel } from './AutomationBottomPanel';
 import { InspectorPanel } from './InspectorPanel';
+import { OnboardingTour } from './OnboardingTour';
 import { Sidebar } from './Sidebar';
 import { TransportBar } from './TransportBar';
 
@@ -134,9 +142,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [exportOpen, setExportOpen] = useState(false);
     const [prefsOpen, setPrefsOpen] = useState(false);
     const [showAlphaNotice, setShowAlphaNotice] = useState(false);
-    const [bottomTab, setBottomTab] = useState<'editor' | 'mixer' | 'session' | 'routing' | 'analysis' | 'automation'>(
-        'mixer'
-    );
+    const [bottomTab, setBottomTab] = useState<
+        'editor' | 'mixer' | 'session' | 'routing' | 'analysis' | 'automation' | 'setlist' | 'loopStation'
+    >('mixer');
     // One unified "active device panel" slot. The "only one panel open at a
     // time" invariant is enforced by the discriminated union in
     // useActiveDevicePanel; adding a new plugin is one line there instead of
@@ -177,6 +185,38 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         if (project.initialized && localStorage.getItem(ALPHA_NOTICE_KEY) !== 'true') {
             setShowAlphaNotice(true);
         }
+    }, [project.initialized]);
+
+    useEffect(() => {
+        if (!project.initialized) {
+            return;
+        }
+        if (isOnboardingCompleted()) {
+            return;
+        }
+        const triggerIfReady = (): boolean => {
+            const trackCount = trackStore.value?.tracks.length ?? 0;
+            if (trackCount === 0) {
+                return false;
+            }
+            startOnboardingTour();
+            return true;
+        };
+        if (triggerIfReady()) {
+            return;
+        }
+        const unsubscribe = trackStore.subscribe(() => {
+            if (isOnboardingCompleted()) {
+                unsubscribe();
+                return;
+            }
+            if (triggerIfReady()) {
+                unsubscribe();
+            }
+        });
+        return () => {
+            unsubscribe();
+        };
     }, [project.initialized]);
 
     // Auto-switch bottom tab when clip selected
@@ -587,6 +627,24 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                         >
                                             Analysis
                                         </Button>
+                                        <Button
+                                            variant={bottomTab === 'setlist' ? 'secondary' : 'ghost'}
+                                            size="xs"
+                                            className={bottomTab === 'setlist' ? 'text-[var(--color-accent-amber)]' : ''}
+                                            onClick={() => setBottomTab('setlist')}
+                                        >
+                                            Setlist
+                                        </Button>
+                                        <Button
+                                            variant={bottomTab === 'loopStation' ? 'secondary' : 'ghost'}
+                                            size="xs"
+                                            className={
+                                                bottomTab === 'loopStation' ? 'text-[var(--color-accent-mint)]' : ''
+                                            }
+                                            onClick={() => setBottomTab('loopStation')}
+                                        >
+                                            Loop Station
+                                        </Button>
 
                                         <div className="flex-1" />
 
@@ -611,6 +669,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                             <SessionView />
                                         ) : bottomTab === 'analysis' ? (
                                             <AnalysisPanel />
+                                        ) : bottomTab === 'setlist' ? (
+                                            <SetlistPanel />
+                                        ) : bottomTab === 'loopStation' ? (
+                                            <LoopStationPanel />
                                         ) : (
                                             <RoutingMatrix />
                                         )}
@@ -691,6 +753,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
                 {/* Launch screen overlay — shown for new users, fades out when project initializes */}
                 {showLaunch ? <LaunchScreen exiting={launchExiting} /> : null}
+
+                <AudioResumeOverlay />
+
+                <OnboardingTour />
             </div>
         </MobileGate>
     );

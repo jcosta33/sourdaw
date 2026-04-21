@@ -1,17 +1,20 @@
-import { spawnSync } from 'child_process';
+import { spawnSync, spawn } from 'child_process';
 import { writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { cyan, dim, bold, blue } from './colors.ts';
+import { writeState } from './state.ts';
 
 /**
  * Resolve the effective terminal backend based on config/flag/platform.
- * @param {string} requested  - 'auto'|'current'|'terminal'|'iterm'
+ * @param {string} requested  - 'auto'|'current'|'terminal'|'iterm'|'linux-auto'|'windows-auto'
  * @returns {string}
  */
 export function resolveBackend(requested) {
     if (requested === 'auto') {
-        return process.platform === 'darwin' ? 'terminal' : 'current';
+        if (process.platform === 'darwin') return 'terminal';
+        if (process.platform === 'win32') return 'windows-auto';
+        return 'linux-auto';
     }
     return requested;
 }
@@ -40,15 +43,20 @@ function buildBanner(info) {
  * @param {string} agentCmd
  * @param {string[]} agentArgs
  * @param {object} bannerInfo
+ * @param {string} repoRoot
  */
-export function launch(backend, worktreePath, agentCmd, agentArgs, bannerInfo) {
+export function launch(backend, worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot) {
     switch (backend) {
         case 'current':
-            return launchCurrent(worktreePath, agentCmd, agentArgs, bannerInfo);
+            return launchCurrent(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot);
         case 'terminal':
-            return launchTerminalApp(worktreePath, agentCmd, agentArgs, bannerInfo);
+            return launchTerminalApp(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot);
         case 'iterm':
-            return launchIterm(worktreePath, agentCmd, agentArgs, bannerInfo);
+            return launchIterm(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot);
+        case 'linux-auto':
+            return launchLinuxAuto(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot);
+        case 'windows-auto':
+            return launchWindowsAuto(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot);
         default:
             throw new Error(`Unsupported terminal backend: "${backend}". Supported: auto, current, terminal, iterm`);
     }
@@ -57,17 +65,34 @@ export function launch(backend, worktreePath, agentCmd, agentArgs, bannerInfo) {
 /**
  * Launch in the current terminal session (blocking — agent takes over stdio).
  */
-function launchCurrent(worktreePath, agentCmd, agentArgs, bannerInfo) {
+function launchCurrent(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot) {
     process.chdir(worktreePath);
     process.stdout.write('\x1Bc'); // clear screen
     console.log(buildBanner(bannerInfo));
     console.log('');
+    
+    if (repoRoot) {
+        writeState(repoRoot, bannerInfo.slug, {
+             backend: 'current',
+             agent: bannerInfo.agent,
+             status: 'running',
+             pid: process.pid // in current mode, the node script blocks and acts as the agent process owner
+        });
+    }
 
     const result = spawnSync(agentCmd, agentArgs, {
         cwd: worktreePath,
         stdio: 'inherit',
         shell: false,
     });
+
+    if (repoRoot) {
+        writeState(repoRoot, bannerInfo.slug, {
+             status: result.error ? 'failed' : 'stopped',
+             exitCode: result.status,
+             error: result.error ? result.error.message : null
+        });
+    }
 
     if (result.error) {
         // If --name is unsupported by the agent, retry without it
@@ -138,8 +163,15 @@ function posixQuote(str) {
  * Launch in a new macOS Terminal.app window.
  * Uses a temp shell script to avoid AppleScript string-escaping issues.
  */
-function launchTerminalApp(worktreePath, agentCmd, agentArgs, bannerInfo) {
-    const scriptPath = writeLaunchScript(worktreePath, agentCmd, agentArgs, bannerInfo);
+function launchTerminalApp(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot) {
+    if (repoRoot) {
+        writeState(repoRoot, bannerInfo.slug, {
+             backend: 'terminal',
+             agent: bannerInfo.agent,
+             status: 'launched', // we don't have the PID for the AppleScript window
+        });
+    }
+    const scriptPath = writeLaunchScript(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot);
 
     // The only thing injected into AppleScript is the script path.
     // tmpdir() on macOS (/var/folders/... or /tmp) never contains single quotes.
@@ -172,8 +204,15 @@ function launchTerminalApp(worktreePath, agentCmd, agentArgs, bannerInfo) {
  * Launch in iTerm2.
  * Uses a temp shell script to avoid AppleScript string-escaping issues.
  */
-function launchIterm(worktreePath, agentCmd, agentArgs, bannerInfo) {
-    const scriptPath = writeLaunchScript(worktreePath, agentCmd, agentArgs, bannerInfo);
+function launchIterm(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot) {
+    if (repoRoot) {
+        writeState(repoRoot, bannerInfo.slug, {
+             backend: 'iterm',
+             agent: bannerInfo.agent,
+             status: 'launched', // we don't have the PID for the AppleScript window
+        });
+    }
+    const scriptPath = writeLaunchScript(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot);
 
     const appleScript = `
     tell application "iTerm"
@@ -225,9 +264,87 @@ export function checkBackend(backend) {
             });
             return r.status === 0 ? { ok: true } : { ok: false, reason: 'iTerm2 not found' };
         }
-        case 'auto':
+        case 'linux-auto':
+            if (process.platform === 'win32' || process.platform === 'darwin') return { ok: false, reason: 'linux-auto requires Linux' };
             return { ok: true };
+        case 'windows-auto':
+            if (process.platform !== 'win32') return { ok: false, reason: 'windows-auto requires Windows' };
+            return { ok: true };
+        case 'auto':
+            return { ok: true }; // Resolve logic handles auto -> OS specific
         default:
-            return { ok: false, reason: `Unknown backend: ${backend}` };
+            return { ok: false, reason: `Unknown terminal backend: ${backend}` };
+    }
+}
+
+/**
+ * Launch in a new Linux terminal.
+ * Tries gnome-terminal, konsole, xfce4-terminal, xterm.
+ */
+function launchLinuxAuto(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot) {
+    if (repoRoot) {
+        writeState(repoRoot, bannerInfo.slug, {
+             backend: 'linux-auto',
+             agent: bannerInfo.agent,
+             status: 'launched',
+        });
+    }
+    const scriptPath = writeLaunchScript(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot);
+    
+    const terminals = [
+        ['gnome-terminal', '--', 'bash', '-c'],
+        ['konsole', '-e', 'bash', '-c'],
+        ['xfce4-terminal', '-e', 'bash', '-c'],
+        ['xterm', '-e', 'bash', '-c']
+    ];
+
+    let launched = false;
+    for (const [cmd, ...args] of terminals) {
+        if (spawnSync('which', [cmd]).status === 0) {
+            spawn(cmd, [...args, `"${scriptPath}"`], { detached: true, stdio: 'ignore' }).unref();
+            launched = true;
+            break;
+        }
+    }
+
+    if (!launched) {
+        console.error(`Could not find a supported Linux terminal. Falling back to current.`);
+        launchCurrent(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot);
+    }
+}
+
+/**
+ * Launch in a new Windows terminal.
+ * Tries wt.exe (Windows Terminal) or falls back to cmd.exe.
+ */
+function launchWindowsAuto(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot) {
+    if (repoRoot) {
+        writeState(repoRoot, bannerInfo.slug, {
+             backend: 'windows-auto',
+             agent: bannerInfo.agent,
+             status: 'launched',
+        });
+    }
+    const scriptPath = writeLaunchScript(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot);
+
+    const hasWt = spawnSync('where', ['wt']).status === 0;
+    if (hasWt) {
+        spawn('wt', ['-w', '0', 'nt', 'cmd', '/c', `"${scriptPath}"`], { detached: true, stdio: 'ignore' }).unref();
+    } else {
+        spawn('cmd', ['/c', 'start', 'cmd', '/c', `"${scriptPath}"`], { detached: true, stdio: 'ignore' }).unref();
+    }
+}
+             backend: 'windows-auto',
+             agent: bannerInfo.agent,
+             status: 'launched',
+        });
+    }
+    const scriptPath = writeLaunchScript(worktreePath, agentCmd, agentArgs, bannerInfo);
+
+    const hasWt = spawnSync('where', ['wt']).status === 0;
+    if (hasWt) {
+        spawn('wt', ['-w', '0', 'nt', 'cmd', '/c', `"${scriptPath}"`], { detached: true, stdio: 'ignore' }).unref();
+    } else {
+        spawn('cmd', ['/c', 'start', 'cmd', '/c', `"${scriptPath}"`], { detached: true, stdio: 'ignore' }).unref();
     }
 }

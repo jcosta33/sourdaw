@@ -14,12 +14,16 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { hasCrdtProject } from '#/modules/CrdtDocument';
 import { registerProModulationEffects } from '#/modules/Plugin';
 import { verifyAudioBufferReferences, loadProject, projectStore, saveProject } from '#/modules/Project';
-import { restoreLibrary } from '#/modules/SampleLibrary';
+import { restoreLibrary, seedFactoryLibrary } from '#/modules/SampleLibrary';
 import { registerProSynthInstruments } from '#/modules/Synth';
 import { ensureTrackStrips, getTransportState } from '#/modules/Transport';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { isTauri } from '#/utils/tauriBridge';
 
 import { preferencesStore } from '../../stores/preferencesStore';
+
+const FIRST_LOAD_HINT_KEY = 'wd:first-load-hint-shown';
+const FIRST_LOAD_HINT_DELAY_MS = 3000;
 
 export const useAppInitialization = (): void => {
     useEffect(() => {
@@ -73,7 +77,14 @@ export const useAppInitialization = (): void => {
     }, []);
 
     useEffect(() => {
-        restoreLibrary();
+        (async () => {
+            await restoreLibrary();
+            try {
+                await seedFactoryLibrary(getAudioContext());
+            } catch (error) {
+                logger.error(new Error('Factory library seed failed', { cause: error }));
+            }
+        })();
     }, []);
 
     useEffect(() => {
@@ -91,5 +102,27 @@ export const useAppInitialization = (): void => {
 
         applyDisplayScale();
         return preferencesStore.subscribe(applyDisplayScale);
+    }, []);
+
+    useEffect(() => {
+        let alreadyShown = false;
+        try {
+            alreadyShown = localStorage.getItem(FIRST_LOAD_HINT_KEY) === '1';
+        } catch {
+            alreadyShown = true;
+        }
+        if (alreadyShown) {
+            return;
+        }
+
+        const modKey = isTauri() ? 'Ctrl' : '⌘';
+        const timeout = setTimeout(() => {
+            notifyUser(`Press ? for shortcuts · ${modKey}K to search commands`, 'info');
+            try {
+                localStorage.setItem(FIRST_LOAD_HINT_KEY, '1');
+            } catch {}
+        }, FIRST_LOAD_HINT_DELAY_MS);
+
+        return () => clearTimeout(timeout);
     }, []);
 };

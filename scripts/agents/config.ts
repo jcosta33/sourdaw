@@ -6,6 +6,12 @@ const DEFAULTS = {
     worktreeDirPattern: '../{repoName}--{slug}',
     defaultTerminal: 'auto',
     defaultAgent: 'claude',
+    commands: {
+        install: 'pnpm i',
+        typecheck: 'pnpm typecheck',
+        validateDeps: 'pnpm deps:validate',
+        test: 'pnpm test',
+    },
     agents: {
         claude: { command: 'claude', args: [] },
         gemini: { command: 'gemini', args: [] },
