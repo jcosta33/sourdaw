@@ -40,7 +40,7 @@ export const AudioDevicePicker = (): ReactElement => {
     const inputs = devices.filter((d) => d.kind === 'audioinput');
 
     const handleOutputChange = (deviceId: string) => {
-        setOutputDevice(deviceId);
+        void setOutputDevice(deviceId);
     };
 
     const handleInputChange = (deviceId: string) => {

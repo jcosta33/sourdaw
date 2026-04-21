@@ -146,7 +146,7 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
-                eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
             })
             .catch((error) => logger.warn(`[WebAudioEngine] Toaster failed: ${error}`));
         return { placeholder, loadPromise };
@@ -489,7 +489,7 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
-                eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
             })
             .catch((error) => logger.warn(`[WebAudioEngine] Grand Boule failed: ${error}`));
         return { placeholder, loadPromise };

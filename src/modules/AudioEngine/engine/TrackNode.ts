@@ -377,7 +377,7 @@ export class TrackNode {
                 });
                 dn = placeholder;
                 pendingDevicePromises.add(loadPromise);
-                loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
+                void loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
             }
         }
 
