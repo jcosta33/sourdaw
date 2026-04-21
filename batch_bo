@@ -1,0 +1,5 @@
+src/modules/Workspace/presentations/views/AutomationView/__tests__/AutomationContextMenu.spec.tsx
+src/modules/Workspace/presentations/views/BounceOptionsDialog.tsx
+src/modules/Workspace/presentations/views/Inspector/ClipMidiAiSection.tsx
+src/modules/Workspace/presentations/views/Inspector/__tests__/TrackVcaSection.spec.tsx
+src/modules/Workspace/presentations/views/__tests__/AppShell.spec.tsx

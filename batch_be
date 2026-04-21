@@ -1,0 +1,5 @@
+src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleTimeDisplayMode.spec.ts
+src/infra/di/__tests__/inject.spec.ts
+src/infra/errors/__tests__/createAppError.spec.ts
+src/modules/AiGeneration/handlers/generation/__tests__/handleGenerateMelody.spec.ts
+src/modules/AiRuntime/useCases/aiPanelActions/__tests__/runAppAction.spec.ts

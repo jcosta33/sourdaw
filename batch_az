@@ -1,0 +1,5 @@
+src/modules/Transport/useCases/transportControls/__tests__/setPunchOut.spec.ts
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+src/modules/Transport/useCases/transportControls/__tests__/toggleCountIn.spec.ts
+src/modules/Transport/useCases/transportControls/__tests__/toggleLoop.spec.ts
+src/modules/Transport/useCases/transportControls/__tests__/toggleMetronome.spec.ts

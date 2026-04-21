@@ -1,0 +1,5 @@
+src/modules/Arrangement/useCases/freezeBounce/__tests__/freezeTrack.spec.ts
+src/modules/Workspace/presentations/views/Inspector/TrackMidiFxSection.tsx
+src/modules/Arrangement/useCases/freezeBounce/__tests__/flattenTrack.spec.ts
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/hitTestAutomationSubLane.spec.ts
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts

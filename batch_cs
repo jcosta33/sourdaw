@@ -1,0 +1,5 @@
+src/modules/Project/presentations/views/ExportDialog.tsx
+src/modules/AiRuntime/presentations/views/__tests__/GenerativeAiPanel.spec.tsx
+src/modules/AiRuntime/presentations/views/__tests__/MixAnalysisPanel.spec.tsx
+src/modules/Arrangement/services/__tests__/applySoloLogic.spec.ts
+src/modules/Arrangement/useCases/rippleDelete/__tests__/undoRippleDelete.spec.ts

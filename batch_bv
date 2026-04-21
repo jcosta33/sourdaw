@@ -1,0 +1,5 @@
+src/modules/AudioEngine/useCases/audioWarping/__tests__/setWarpAlgorithm.spec.ts
+src/modules/Automation/useCases/automationRecording/__tests__/isRecordingAutomation.spec.ts
+src/modules/Automation/useCases/automationSelection/__tests__/getSelectionBounds.spec.ts
+src/modules/Command/useCases/__tests__/undoRedo.spec.ts
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts

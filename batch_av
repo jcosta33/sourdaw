@@ -1,0 +1,5 @@
+src/modules/Transport/useCases/punchRecording/__tests__/updateCapturePosition.spec.ts
+src/modules/Transport/useCases/scheduling/__tests__/applyAutomation.spec.ts
+src/modules/Transport/useCases/setlist/__tests__/addSetlistItem.spec.ts
+src/modules/Transport/useCases/setlist/__tests__/getCurrentItem.spec.ts
+src/modules/Transport/useCases/setlist/__tests__/getRemainingDuration.spec.ts

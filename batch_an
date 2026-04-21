@@ -1,0 +1,5 @@
+src/modules/Grinder/stores/grinderStore.ts
+src/modules/Grinder/useCases/grinderParamBridge/setGrinderMicParamWithAudio.ts
+src/modules/Knead/useCases/hydrateKneadFromTrackStore.ts
+src/modules/Knead/useCases/syncKneadToEngine.ts
+src/modules/MIDI/handlers/chordTrack/__tests__/handleAddChordEvent.spec.ts

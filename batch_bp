@@ -1,0 +1,5 @@
+src/modules/Workspace/useCases/__tests__/rippleEditing.spec.ts
+src/modules/Workspace/useCases/__tests__/setWorkspaceMode.spec.ts
+src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/toggleSidebar.spec.ts
+src/routes/__tests__/index.spec.tsx
+src/infra/errors/createAppError.ts

@@ -1,0 +1,5 @@
+src/modules/Arrangement/repositories/trackTemplate/__tests__/trackTemplates.spec.ts
+src/modules/Arrangement/services/__tests__/snapSplitBeatToZeroCrossing.spec.ts
+src/modules/Arrangement/useCases/__tests__/removeTrack.spec.ts
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/getLayerCount.spec.ts
+src/modules/Arrangement/useCases/device/__tests__/addDevice.spec.ts

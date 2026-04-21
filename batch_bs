@@ -1,0 +1,5 @@
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/setLayerParameter.spec.ts
+src/modules/Arrangement/useCases/clip/__tests__/ghostClips.spec.ts
+src/modules/Arrangement/useCases/clip/__tests__/moveClip.spec.ts
+src/modules/Arrangement/useCases/device/__tests__/reorderDevices.spec.ts
+src/modules/Arrangement/useCases/groupComping/compGroupOperations/__tests__/createCompGroup.spec.ts

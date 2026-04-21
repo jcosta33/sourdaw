@@ -1,0 +1,5 @@
+src/modules/AudioEngine/useCases/scheduling/__tests__/getCurrentTime.spec.ts
+src/modules/AudioEngine/workers/recordingWorker.ts
+src/modules/Automation/useCases/automationRecording/__tests__/startAutomationRecording.spec.ts
+src/modules/Collaboration/useCases/__tests__/collaborationQueries.spec.ts
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts

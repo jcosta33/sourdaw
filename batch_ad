@@ -1,0 +1,5 @@
+src/modules/Arrangement/useCases/device/sendManagement/__tests__/setSend.spec.ts
+src/modules/Arrangement/useCases/groupComping/compGroupOperations/__tests__/setActiveGroupTakeSet.spec.ts
+src/modules/Arrangement/useCases/recording/__tests__/armTrack.spec.ts
+src/modules/Arrangement/useCases/recording/__tests__/startRecording.spec.ts
+src/modules/Arrangement/useCases/rippleDelete/__tests__/planRippleDelete.spec.ts

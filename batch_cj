@@ -1,0 +1,5 @@
+src/modules/AudioEngine/useCases/audition.ts
+src/modules/CrdtDocument/workers/crdtWorker.ts
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+src/modules/Project/useCases/projectPersistence/helpers/hydrateModuleStoresFromProjectData.ts
+src/modules/Transport/workers/schedulerWorker.ts

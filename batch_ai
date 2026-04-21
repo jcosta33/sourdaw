@@ -1,0 +1,5 @@
+src/modules/AudioEngine/useCases/controlRoom/__tests__/toggleMono.spec.ts
+src/modules/AudioEngine/useCases/controlRoom/__tests__/toggleMute.spec.ts
+src/modules/AudioEngine/useCases/controlRoom/__tests__/toggleReference.spec.ts
+src/modules/AudioEngine/useCases/controlRoom/__tests__/toggleTalkback.spec.ts
+src/modules/Automation/useCases/automationRecording/__tests__/stopAutomationRecording.spec.ts

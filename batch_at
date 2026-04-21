@@ -1,0 +1,5 @@
+src/modules/Transport/useCases/loopStation/__tests__/undoLastLayer.spec.ts
+src/modules/Transport/useCases/playheadScheduler.ts
+src/modules/Transport/useCases/punchRecording/__tests__/commitPunchRegion.spec.ts
+src/modules/Transport/useCases/punchRecording/__tests__/definePunchRegion.spec.ts
+src/modules/Transport/useCases/punchRecording/__tests__/discardCapture.spec.ts

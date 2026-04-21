@@ -1,0 +1,5 @@
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/AudioDeviceStrategy.spec.ts
+src/modules/MIDI/useCases/grooveExtraction/__tests__/applyGrooveToClip.spec.ts
+src/modules/Project/useCases/versionControl/snapshotHelpers/restoreSnapshot.ts
+src/modules/Arrangement/handlers/restore/__tests__/handleRestoreTrack.spec.ts

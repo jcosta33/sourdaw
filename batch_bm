@@ -1,0 +1,5 @@
+src/modules/Command/useCases/selectionHelpers/__tests__/goToNextMarker.spec.ts
+src/modules/Command/useCases/selectionHelpers/__tests__/goToPreviousMarker.spec.ts
+src/modules/MIDI/useCases/grooveExtraction/__tests__/extractGrooveFromClip.spec.ts
+src/modules/Plugin/useCases/__tests__/proofChamberParamBridge.spec.ts
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts

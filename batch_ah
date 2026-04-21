@@ -1,0 +1,5 @@
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+src/modules/AudioEngine/useCases/audioDeviceSelection/__tests__/setInputDevice.spec.ts
+src/modules/AudioEngine/useCases/audioDeviceSelection/__tests__/setOutputDevice.spec.ts
+src/modules/AudioEngine/useCases/controlRoom/__tests__/setMonitorVolume.spec.ts
+src/modules/AudioEngine/useCases/controlRoom/__tests__/toggleDim.spec.ts

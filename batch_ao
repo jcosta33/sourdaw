@@ -1,0 +1,5 @@
+src/modules/MIDI/repositories/__tests__/downloadFile.spec.ts
+src/modules/MIDI/useCases/chordStamps/__tests__/removeNotesByIds.spec.ts
+src/modules/MIDI/useCases/chordTrack/__tests__/addChordEvent.spec.ts
+src/modules/MIDI/useCases/grooveExtraction/__tests__/restoreGrooveOriginals.spec.ts
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/updateNotesForClip.spec.ts

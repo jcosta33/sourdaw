@@ -1,0 +1,5 @@
+src/modules/Workspace/presentations/views/__tests__/TransportBar.spec.tsx
+src/modules/Workspace/repositories/__tests__/workspace.spec.ts
+src/modules/Workspace/useCases/__tests__/setTrackHeight.spec.ts
+src/modules/Workspace/useCases/__tests__/workspaceQueries.spec.ts
+src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/dualView.spec.ts

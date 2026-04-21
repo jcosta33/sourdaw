@@ -1,0 +1,5 @@
+src/modules/Extension/useCases/extension/__tests__/getExtensionCommands.spec.ts
+src/modules/Extension/useCases/extension/__tests__/getInstalledExtensions.spec.ts
+src/modules/Extension/useCases/extension/__tests__/installExtension.spec.ts
+src/modules/Extension/useCases/extension/__tests__/registerCommand.spec.ts
+src/modules/Extension/useCases/extension/__tests__/runEditorScript.spec.ts

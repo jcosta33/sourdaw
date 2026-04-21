@@ -1,0 +1,5 @@
+src/modules/Transport/useCases/setlist/__tests__/getSetlistProgress.spec.ts
+src/modules/Transport/useCases/setlist/__tests__/nextItem.spec.ts
+src/modules/Transport/useCases/setlist/__tests__/previousItem.spec.ts
+src/modules/Transport/useCases/setlist/__tests__/removeSetlistItem.spec.ts
+src/modules/Transport/useCases/setlist/__tests__/renameSetlist.spec.ts

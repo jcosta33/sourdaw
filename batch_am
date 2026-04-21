@@ -1,0 +1,5 @@
+src/modules/Extension/useCases/extension/__tests__/setEditorContent.spec.ts
+src/modules/Extension/useCases/extension/__tests__/toggleExtension.spec.ts
+src/modules/Extension/useCases/extension/__tests__/toggleScriptEditor.spec.ts
+src/modules/Extension/useCases/extension/__tests__/uninstallExtension.spec.ts
+src/modules/GrandBoule/presentations/components/SpectralWaterfall.tsx

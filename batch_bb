@@ -1,0 +1,5 @@
+src/modules/Transport/useCases/transportQueries/__tests__/updateTransportState.spec.ts
+src/modules/Workspace/handlers/workspace/__tests__/handleHumanizeNotes.spec.ts
+src/modules/Workspace/handlers/workspace/__tests__/handleQuantizeNotes.spec.ts
+src/modules/Workspace/presentations/views/AutomationLane/__tests__/NotePropertyLane.spec.tsx
+src/modules/Workspace/presentations/views/ClipView/__tests__/PianoRoll.spec.tsx

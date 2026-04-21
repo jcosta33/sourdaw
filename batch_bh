@@ -1,0 +1,5 @@
+src/modules/Arrangement/useCases/device/__tests__/removeDevice.spec.ts
+src/modules/Arrangement/useCases/freezeBounce/__tests__/cleanupUnusedFreezeFiles.spec.ts
+src/modules/Arrangement/useCases/freezeBounce/__tests__/renderOffline.spec.ts
+src/modules/Arrangement/useCases/groupComping/__tests__/compGroupOperations.spec.ts
+src/modules/Arrangement/useCases/groupComping/compGroupOperations/__tests__/deleteCompGroup.spec.ts

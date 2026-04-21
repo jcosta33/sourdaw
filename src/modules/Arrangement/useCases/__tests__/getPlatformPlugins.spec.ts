@@ -10,7 +10,7 @@ vi.mock('../../repositories/getPlatformPlugins', () => ({
 
 describe('getPlatformPlugins', () => {
     it('should return plugin list from repo', () => {
-        const plugins = Object.freeze([
+        const plugins: PluginDescriptor[] = [
             {
                 id: 'p1',
                 name: 'P',
@@ -19,9 +19,9 @@ describe('getPlatformPlugins', () => {
                 category: 'effect',
                 parameters: [],
                 hasCustomUI: false,
-            } satisfies PluginDescriptor,
-        ]);
-        vi.mocked(repoGetPlatformPlugins).mockReturnValue(plugins as any);
+            },
+        ];
+        vi.mocked(repoGetPlatformPlugins).mockReturnValue(plugins);
 
         expect(getPlatformPlugins()).toBe(plugins);
         expect(repoGetPlatformPlugins).toHaveBeenCalledTimes(1);

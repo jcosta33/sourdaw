@@ -1,0 +1,5 @@
+src/infra/di/testing/spy.ts
+src/modules/AiRuntime/presentations/hooks/__tests__/useVoiceRecording.spec.tsx
+src/modules/AiRuntime/useCases/llmOrchestration/backendResolution/__tests__/helpers.spec.ts
+src/modules/AiRuntime/useCases/llmOrchestration/lifecycle/__tests__/initEngine.spec.ts
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleSwitchTrackAlternative.spec.ts

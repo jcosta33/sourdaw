@@ -1,0 +1,5 @@
+src/modules/Workspace/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+src/modules/Workspace/presentations/views/__tests__/ClipView.spec.tsx
+src/setupTests.ts
+src/infra/di/inject.ts
+src/modules/AiGeneration/handlers/aiMidi/__tests__/handleStemSeparate.spec.ts

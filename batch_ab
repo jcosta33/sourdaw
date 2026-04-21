@@ -1,0 +1,5 @@
+src/modules/Arrangement/useCases/__tests__/setTrackStoreState.spec.ts
+src/modules/Arrangement/useCases/__tests__/timelineQueries.spec.ts
+src/modules/Arrangement/useCases/__tests__/trackZoom.spec.ts
+src/modules/Arrangement/useCases/__tests__/updateClip.spec.ts
+src/modules/Arrangement/useCases/__tests__/updateTrack.spec.ts

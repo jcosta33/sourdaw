@@ -1,0 +1,5 @@
+src/modules/Workspace/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateCloudToolCalls.spec.ts
+src/modules/Arrangement/handlers/trackAlternative/__tests__/handleDeleteTrackAlternative.spec.ts
+src/modules/Arrangement/useCases/freezeBounce/__tests__/initStalenessDetection.spec.ts
+src/modules/Arrangement/useCases/freezeBounce/__tests__/unfreezeTrack.spec.ts

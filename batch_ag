@@ -1,0 +1,5 @@
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/setTrackOutput.spec.ts
+src/modules/Arrangement/useCases/vca/__tests__/getEffectiveGain.spec.ts
+src/modules/Arrangement/useCases/vca/__tests__/setVcaGain.spec.ts
+src/modules/Arrangement/useCases/vca/__tests__/toggleVcaMembership.spec.ts
+src/modules/AudioAnalysis/useCases/__tests__/polyphonicAudioToMidi.spec.ts

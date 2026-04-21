@@ -1,0 +1,5 @@
+src/modules/AiGeneration/handlers/generation/__tests__/handleGenerateChordProgression.spec.ts
+src/modules/AiGeneration/useCases/__tests__/generateMidiVariations.spec.ts
+src/modules/AiRuntime/repositories/nativeEngine/__tests__/streaming.spec.ts
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineGestures.spec.tsx
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx

@@ -1,0 +1,5 @@
+src/modules/Transport/useCases/loopStation/__tests__/stopAllSlots.spec.ts
+src/modules/Transport/useCases/loopStation/__tests__/stopSlot.spec.ts
+src/modules/Transport/useCases/loopStation/__tests__/toggleArm.spec.ts
+src/modules/Transport/useCases/loopStation/__tests__/toggleRecord.spec.ts
+src/modules/Transport/useCases/loopStation/__tests__/triggerScene.spec.ts

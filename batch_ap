@@ -1,0 +1,5 @@
+src/modules/MIDI/useCases/patternInstance/__tests__/getPatternInstances.spec.ts
+src/modules/MIDI/useCases/strumNotes/__tests__/restoreStrumOriginals.spec.ts
+src/modules/Plugin/useCases/pluginBrowserActions/__tests__/createTrackForPlugin.spec.ts
+src/modules/Plugin/useCases/pluginScan/__tests__/startPluginScan.spec.ts
+src/modules/Project/presentations/views/__tests__/RecentProjectsMenu.spec.tsx

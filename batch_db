@@ -1,0 +1,5 @@
+src/modules/Workspace/presentations/views/ClipView/PitchEditor.tsx
+src/modules/Workspace/presentations/views/Inspector/layouts/HammondB3Layout.tsx
+src/modules/MIDI/useCases/strumNotes/__tests__/strumNotes.spec.ts
+src/modules/AudioEngine/services/fermenterProcessor.ts
+src/modules/AudioEngine/services/__tests__/processorQueues.spec.ts

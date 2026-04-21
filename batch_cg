@@ -1,0 +1,5 @@
+src/infra/di/testing/createMock.ts
+src/modules/AiGeneration/handlers/generation/__tests__/createGenerationHandler.spec.ts
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamCloudChatCompletion.spec.ts
+src/modules/AiRuntime/useCases/__tests__/notifyAiChange.spec.ts
+src/modules/AiRuntime/useCases/dsoEditor/compileDso.ts

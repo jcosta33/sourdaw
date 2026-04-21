@@ -1,0 +1,5 @@
+src/modules/Workspace/presentations/views/__tests__/MixerPanel.spec.tsx
+src/modules/Workspace/useCases/__tests__/automationSubLanes.spec.ts
+src/modules/Workspace/useCases/togglePanel/__tests__/panelToggles.spec.ts
+src/modules/Workspace/useCases/togglePanel/zoomOperations/__tests__/zoom.spec.ts
+src/modules/Yeast/useCases/__tests__/yeastSchedulingBridge.spec.ts

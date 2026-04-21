@@ -1,0 +1,5 @@
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/getActiveLayersAtBeat.spec.ts
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/removeAdjustmentLayer.spec.ts
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/removeAdjustmentRegion.spec.ts
+src/modules/Arrangement/useCases/clip/__tests__/removeClip.spec.ts
+src/modules/Arrangement/useCases/clipEditing/__tests__/trimClipEnd.spec.ts

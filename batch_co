@@ -1,0 +1,5 @@
+src/modules/AudioAnalysis/handlers/analysis/__tests__/handleAutoFixMix.spec.ts
+src/modules/AudioAnalysis/useCases/__tests__/analyzeMix.spec.ts
+src/modules/AudioEngine/useCases/audioWarping/__tests__/moveWarpMarker.spec.ts
+src/modules/AudioEngine/useCases/audioWarping/__tests__/setStretchRatio.spec.ts
+src/modules/Project/models/ProjectData.ts

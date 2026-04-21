@@ -1,0 +1,5 @@
+src/modules/SampleLibrary/repositories/libraryPersistence/__tests__/libraryPersistence.spec.ts
+src/modules/VirtualKeyboard/presentations/views/__tests__/VirtualKeyboard.spec.tsx
+src/modules/Workspace/presentations/views/__tests__/AutomationView.spec.tsx
+src/modules/Workspace/presentations/views/__tests__/SessionView.spec.tsx
+src/modules/Workspace/presentations/views/__tests__/TempoEditor.spec.tsx

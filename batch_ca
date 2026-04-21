@@ -1,0 +1,5 @@
+src/modules/Arrangement/presentations/views/TrackHeader/__tests__/TrackLevelIndicator.spec.tsx
+src/modules/Arrangement/useCases/__tests__/initTimelineRenderer.spec.ts
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/toggleAdjustmentLayer.spec.ts
+src/modules/Arrangement/useCases/clipEditing/__tests__/nudgeClip.spec.ts
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts

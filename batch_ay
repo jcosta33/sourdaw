@@ -1,0 +1,5 @@
+src/modules/Transport/useCases/transportControls/__tests__/pauseStart.spec.ts
+src/modules/Transport/useCases/transportControls/__tests__/setCountInBars.spec.ts
+src/modules/Transport/useCases/transportControls/__tests__/setLoopRegion.spec.ts
+src/modules/Transport/useCases/transportControls/__tests__/setPreRollBars.spec.ts
+src/modules/Transport/useCases/transportControls/__tests__/setPunchIn.spec.ts

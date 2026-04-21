@@ -1,0 +1,5 @@
+src/modules/Arrangement/repositories/presets/__tests__/factoryPresets.spec.ts
+src/modules/Arrangement/stores/__tests__/arrangementMiscStores.spec.ts
+src/modules/Arrangement/useCases/__tests__/addTrack.spec.ts
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/createAdjustmentLayer.spec.ts
+src/modules/Arrangement/useCases/adjustmentLayer/__tests__/setLayerMix.spec.ts
