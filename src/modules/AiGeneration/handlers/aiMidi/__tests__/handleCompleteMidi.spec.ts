@@ -23,20 +23,20 @@ const mocks = vi.hoisted(() => ({
     }
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
     addClip: mocks.addClip,
-}));
-
-vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: mocks.trackStore,
 }));
 
-vi.mock('#/modules/MIDI/useCases', () => ({
+vi.mock('#/modules/MIDI', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
     getNotesForClip: mocks.getNotesForClip,
     addMidiNote: mocks.addMidiNote,
 }));
 
-vi.mock('#/modules/AiRuntime/useCases', () => ({
+vi.mock('#/modules/AiRuntime', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
     generateToolCalls: mocks.generateToolCalls,
 }));
 

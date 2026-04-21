@@ -1,7 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { generateToolCalls } from '#/modules/AiRuntime';
-import { trackStore } from '#/modules/Arrangement/stores';
-import { addClip } from '#/modules/Arrangement/useCases';
+import { trackStore, addClip } from '#/modules/Arrangement';
 import { addMidiNote, getNotesForClip } from '#/modules/MIDI';
 import { createHandler } from '#/utils/createHandler';
 
