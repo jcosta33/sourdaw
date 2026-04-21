@@ -3,7 +3,7 @@ import { type DocId } from '../../models/CrdtDocumentTypes';
 import { STORE_NAME, openDatabase } from './helpers';
 
 /** Save an incremental chunk for a document (append, don't replace). */
-export const saveIncrementalToIdb = async (id: DocId, chunk: Uint8Array): Promise<void> => {
+export async function saveIncrementalToIdb(id: DocId, chunk: Uint8Array): Promise<void> {
     if (chunk.length === 0) {
         return;
     }
