@@ -21,13 +21,13 @@ function interpolateValue(p1: AutomationPoint, p2: AutomationPoint, beat: number
 
 const AUTOMATION_SAMPLE_INTERVAL_SEC = 0.01;
 
-export const scheduleAutomationOnParam = (
+export function scheduleAutomationOnParam(
     param: AudioParam,
     points: AutomationPoint[],
     durationSeconds: number,
     defaultTempo: number,
     changes: TempoChange[]
-): void => {
+): void {
     if (points.length === 0) {
         return;
     }
@@ -71,7 +71,7 @@ export const scheduleAutomationOnParam = (
             }
         }
     }
-};
+}
 
 export function scheduleTrackAutomation(
     lanes: AutomationLane[],
@@ -127,4 +127,4 @@ export function scheduleTrackAutomation(
             }
         }
     }
-};
+}

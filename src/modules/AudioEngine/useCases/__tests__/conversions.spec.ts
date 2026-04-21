@@ -27,7 +27,7 @@ describe('Audio Buffer Conversion Use Cases', () => {
 
     it('audioBufferToMp3 delegates to encoder', async () => {
         const buffer = {} as any;
-        const onProgress = () => {};
+        function onProgress() {}
         await audioBufferToMp3(buffer, 192, onProgress);
         expect(mocks.mp3Encode).toHaveBeenCalledWith(buffer, 192, onProgress);
     });

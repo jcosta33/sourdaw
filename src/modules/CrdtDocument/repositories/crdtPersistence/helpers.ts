@@ -14,7 +14,7 @@ export function getDbPromise(): Promise<IDBDatabase | null> | null {
     return _dbPromise;
 }
 
-export const openDatabase = (): Promise<IDBDatabase | null> => {
+export function openDatabase(): Promise<IDBDatabase | null> {
     if (_dbPromise) {
         return _dbPromise;
     }
@@ -46,4 +46,4 @@ export const openDatabase = (): Promise<IDBDatabase | null> => {
     });
 
     return _dbPromise;
-};
+}

@@ -28,10 +28,10 @@ export function setIceServers(servers: RTCIceServer[] | null): void {
 }
 
 /** Get the current ICE server configuration. */
-const getIceConfig = (): RTCConfiguration => {
+function getIceConfig(): RTCConfiguration {
     const servers = iceServersStore.value ?? DEFAULT_ICE_SERVERS;
     return { iceServers: servers };
-};
+}
 
 type PeerConnectionCallbacks = {
     onMessage: ({ peerId, message }: { peerId: PeerId; message: PeerMessage }) => void;
