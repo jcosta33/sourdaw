@@ -74,7 +74,9 @@ describe('stopAutomationRecording', () => {
 
     it('invokes clearPointsInRange for latch mode when a lane exists and pending points extend the session', () => {
         findLaneId.mockReturnValue('lane-a');
-        vi.mocked(getAllTracks).mockReturnValue([{ id: 't1', kind: 'audio', automationMode: 'latch' }] as any);
+        vi.mocked(getAllTracks).mockReturnValue([
+            { id: 't1', kind: 'audio', automationMode: 'latch' } as unknown as ReturnType<typeof getAllTracks>[number],
+        ]);
 
         activeRecording.set('t1::gain', {
             parameterId: 'gain',

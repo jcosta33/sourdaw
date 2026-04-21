@@ -1,5 +1,0 @@
-src/modules/Arrangement/useCases/scratchPad/__tests__/setScratchPadSectionColor.spec.ts
-src/modules/Arrangement/useCases/setTrackGainPan/__tests__/setInputMonitoring.spec.ts
-src/modules/Arrangement/useCases/toggleTrackState/__tests__/disableTrack.spec.ts
-src/modules/Arrangement/useCases/toggleTrackState/__tests__/groupTracks.spec.ts
-src/modules/Arrangement/useCases/toggleTrackState/__tests__/muteTrack.spec.ts

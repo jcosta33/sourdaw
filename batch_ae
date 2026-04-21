@@ -1,5 +1,0 @@
-src/modules/Arrangement/useCases/rippleDelete/__tests__/rippleDeleteClips.spec.ts
-src/modules/Arrangement/useCases/rippleInsert/__tests__/rippleInsertClip.spec.ts
-src/modules/Arrangement/useCases/rippleMove/__tests__/rippleMoveClip.spec.ts
-src/modules/Arrangement/useCases/scratchPad/__tests__/removeScratchPadSection.spec.ts
-src/modules/Arrangement/useCases/scratchPad/__tests__/renameScratchPadSection.spec.ts
