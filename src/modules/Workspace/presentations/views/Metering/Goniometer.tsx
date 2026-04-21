@@ -23,11 +23,11 @@ export const Goniometer = ({
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (!ctx) {
-            return;
+            return undefined;
         }
 
         let rafId = 0;

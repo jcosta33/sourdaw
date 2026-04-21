@@ -55,7 +55,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
 
     useEffect(() => {
         if (!showDeviceMenu) {
-            return;
+            return undefined;
         }
         const handleClick = (e: MouseEvent): void => {
             if (deviceMenuRef.current && !deviceMenuRef.current.contains(e.target as Node)) {
