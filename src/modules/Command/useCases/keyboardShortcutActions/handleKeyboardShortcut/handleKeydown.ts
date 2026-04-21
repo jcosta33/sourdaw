@@ -10,7 +10,14 @@ import {
     removeClip,
     addClip,
 } from '#/modules/Arrangement/useCases';
-import { stopPlayback, seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
+import {
+    stopPlayback,
+    seekPlayhead,
+    setLoopRegion,
+    stopAllSlots,
+    triggerPad,
+} from '#/modules/Transport/useCases';
+import { loopStationStore } from '#/modules/Transport/stores';
 import { workspaceStore, toolSwapStore } from '#/modules/Workspace/stores';
 import {
     clearClipSelection,
@@ -32,7 +39,7 @@ import {
 } from '#/modules/Workspace/useCases';
 import { getWorkspaceState } from '#/modules/Workspace/useCases';
 
-import { shortcutStore, type ShortcutAction } from '../../../stores/shortcutStore';
+import { parseLoopStationPadCallbackId, shortcutStore, type ShortcutAction } from '../../../stores/shortcutStore';
 import { executeAppAction } from '../../executeAppAction';
 import { pushUndoEntry } from '../../pushUndoEntry';
 import { getAllClipIds } from '../../selectionHelpers/getAllClipIds';
@@ -44,6 +51,59 @@ import { duplicateSelectedClipsForward } from '../clipShortcuts/duplicateSelecte
 import { duplicateTrack } from '../trackShortcuts/duplicateTrack';
 
 const ZOOM_STEP = 4;
+
+const AI_LEADER_TIMEOUT_MS = 1500;
+
+type AiLeaderState = {
+    armedAt: number;
+};
+
+let aiLeaderState: AiLeaderState | null = null;
+
+function armAiLeader(): void {
+    aiLeaderState = { armedAt: performance.now() };
+}
+
+function disarmAiLeader(): void {
+    aiLeaderState = null;
+}
+
+function isAiLeaderArmed(): boolean {
+    if (!aiLeaderState) {
+        return false;
+    }
+    if (performance.now() - aiLeaderState.armedAt > AI_LEADER_TIMEOUT_MS) {
+        aiLeaderState = null;
+        return false;
+    }
+    return true;
+}
+
+function dispatchAiChord(key: string): boolean {
+    disarmAiLeader();
+    const normalized = key.toLowerCase();
+    switch (normalized) {
+        case 'd':
+            executeAppAction({ type: 'generateDrumPattern', payload: { style: 'rock' } });
+            return true;
+        case 'm':
+            executeAppAction({ type: 'generateMelody', payload: { style: 'simple' } });
+            return true;
+        case 'c':
+            executeAppAction({ type: 'generateChordProgression', payload: { style: 'pop' } });
+            return true;
+        case 'b': {
+            const selectedId = workspaceStore.value?.selectedClipId;
+            if (!selectedId) {
+                return true;
+            }
+            executeAppAction({ type: 'generateBassline', payload: { clipId: selectedId, style: 'root-fifth' } });
+            return true;
+        }
+        default:
+            return false;
+    }
+}
 
 const NUMBER_TOOL_MAP: Record<string, EditingTool> = {
     '1': 'select',
@@ -181,9 +241,17 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                     const ws = workspaceStore.value;
                     if (ws && (ws.selectedClipIds.length > 0 || ws.selectedClipId)) {
                         clearClipSelection();
-                    } else {
-                        stopPlayback();
+                        return false;
                     }
+                    const loopState = loopStationStore.value;
+                    const hasActiveSlot = (loopState?.slots ?? []).some(
+                        (slot) => slot.state === 'playing' || slot.state === 'overdubbing' || slot.state === 'recording'
+                    );
+                    if (hasActiveSlot) {
+                        stopAllSlots();
+                        return true;
+                    }
+                    stopPlayback();
                     return false;
                 }
                 case 'zoomIn':
@@ -340,6 +408,10 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                     executeDuplicateTimeRange(sel.startBeat, sel.endBeat);
                     return true;
                 }
+                case 'aiLeaderKey': {
+                    armAiLeader();
+                    return true;
+                }
                 case 'cycleGhostClipNext':
                 case 'cycleGhostClipPrev': {
                     // R-E1.2: Alt+]/[ cycle through ghost clips
@@ -362,8 +434,14 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                     }
                     return true;
                 }
-                default:
+                default: {
+                    const pad = parseLoopStationPadCallbackId(action.id);
+                    if (pad) {
+                        triggerPad({ row: pad.rowIndex, column: pad.columnIndex, record: pad.record });
+                        return true;
+                    }
                     return false;
+                }
             }
         }
         return false;
@@ -436,9 +514,17 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
             definitions: [],
             customMappings: {},
         };
+        const loopStationArmed = loopStationStore.value?.armed === true;
         for (const def of definitions) {
             const keys = customMappings[def.id] ?? def.defaultKeys;
             if (matches(desc, keys)) {
+                if (
+                    def.id.startsWith('loopStation.pad.') &&
+                    def.id.endsWith('.play') &&
+                    !loopStationArmed
+                ) {
+                    continue;
+                }
                 return executeShortcutAction(def.action);
             }
         }
@@ -477,6 +563,16 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
     return function handleKeydown(desc: KeyDescriptor): boolean {
         const { key, mod, shift, alt, repeat, isInput } = desc;
 
+        // AI leader chord resolution — if `g` was pressed recently and this
+        // keypress is a bare letter (no modifiers), consume it as the second
+        // stroke of `g, <letter>`.
+        if (isAiLeaderArmed() && !mod && !shift && !alt && !repeat && !isInput && key.length === 1) {
+            if (dispatchAiChord(key)) {
+                return true;
+            }
+            disarmAiLeader();
+        }
+
         // V: voice toggle (press)
         if (key === 'v' && !mod && !shift && !alt && !repeat) {
             if (isInput) {
@@ -491,12 +587,25 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
             definitions: [],
             customMappings: {},
         };
+        const loopStationArmed = loopStationStore.value?.armed === true;
         for (const def of definitions) {
             const keys = customMappings[def.id] ?? def.defaultKeys;
             if (matches(desc, keys)) {
                 // Some shortcuts (like Cmd+K) should work even in inputs
                 const allowedInInput = def.id === 'workspace.toggleCommandPalette';
                 if (isInput && !allowedInInput) {
+                    continue;
+                }
+                // Gate Loop Station play-pad shortcuts behind the `armed`
+                // toggle so they don't steal letter keys from existing
+                // transport / tool bindings. Shift-press record variants
+                // always fire — they carry a shift modifier that otherwise
+                // has no binding, so there is no conflict to gate against.
+                if (
+                    def.id.startsWith('loopStation.pad.') &&
+                    def.id.endsWith('.play') &&
+                    !loopStationArmed
+                ) {
                     continue;
                 }
                 return executeShortcutAction(def.action);
