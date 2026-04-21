@@ -89,7 +89,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         if (!inputValue.trim() || chatState?.isGenerating) {
             return;
         }
-        sendChatMessage(inputValue.trim());
+        void sendChatMessage(inputValue.trim());
         setInputValue('');
 
         // Return focus to input area after sending

@@ -17,7 +17,7 @@ describe('runAppAction', () => {
 
     it('forwards the action to executeAppAction', () => {
         const action = { type: 'testAction', payload: 123 } as any;
-        runAppAction(action);
+        void runAppAction(action);
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(action);
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);

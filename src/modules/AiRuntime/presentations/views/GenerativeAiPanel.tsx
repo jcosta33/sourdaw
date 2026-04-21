@@ -157,7 +157,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
 
     const handleStemSep = () => {
         if (selectedClip) {
-            handleStemSeparationPreview(selectedClip.id);
+            void handleStemSeparationPreview(selectedClip.id);
         }
     };
 
