@@ -134,13 +134,28 @@ function stripFlag(flag, args) {
  * shell-escaping issues when passing paths/args through AppleScript.
  * @returns {string} path to the temp script
  */
-function writeLaunchScript(worktreePath, agentCmd, agentArgs, bannerInfo) {
+function writeLaunchScript(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot) {
     const banner = buildBanner(bannerInfo);
-    // Use printf '%s\n' to safely print banner regardless of special chars in title
+    
+    let logSetup = '';
+    if (repoRoot) {
+        const { existsSync, mkdirSync } = require('fs');
+        const logDir = join(repoRoot, '.agents', 'logs');
+        if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true });
+        const logFile = join(logDir, `${bannerInfo.slug}.log`);
+        logSetup = `
+LOG_FILE=${posixQuote(logFile)}
+touch "$LOG_FILE"
+echo "=== Agent Session Started at $(date) ===" >> "$LOG_FILE"
+exec > >(tee -a "$LOG_FILE") 2>&1
+`;
+    }
+
     const lines = [
         '#!/bin/sh',
         `cd ${posixQuote(worktreePath)}`,
         'clear',
+        logSetup,
         `printf '%s\\n\\n' ${posixQuote(banner)}`,
         [agentCmd, ...agentArgs].map(posixQuote).join(' '),
     ];
@@ -320,31 +335,3 @@ function launchLinuxAuto(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot
 function launchWindowsAuto(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot) {
     if (repoRoot) {
         writeState(repoRoot, bannerInfo.slug, {
-             backend: 'windows-auto',
-             agent: bannerInfo.agent,
-             status: 'launched',
-        });
-    }
-    const scriptPath = writeLaunchScript(worktreePath, agentCmd, agentArgs, bannerInfo, repoRoot);
-
-    const hasWt = spawnSync('where', ['wt']).status === 0;
-    if (hasWt) {
-        spawn('wt', ['-w', '0', 'nt', 'cmd', '/c', `"${scriptPath}"`], { detached: true, stdio: 'ignore' }).unref();
-    } else {
-        spawn('cmd', ['/c', 'start', 'cmd', '/c', `"${scriptPath}"`], { detached: true, stdio: 'ignore' }).unref();
-    }
-}
-             backend: 'windows-auto',
-             agent: bannerInfo.agent,
-             status: 'launched',
-        });
-    }
-    const scriptPath = writeLaunchScript(worktreePath, agentCmd, agentArgs, bannerInfo);
-
-    const hasWt = spawnSync('where', ['wt']).status === 0;
-    if (hasWt) {
-        spawn('wt', ['-w', '0', 'nt', 'cmd', '/c', `"${scriptPath}"`], { detached: true, stdio: 'ignore' }).unref();
-    } else {
-        spawn('cmd', ['/c', 'start', 'cmd', '/c', `"${scriptPath}"`], { detached: true, stdio: 'ignore' }).unref();
-    }
-}

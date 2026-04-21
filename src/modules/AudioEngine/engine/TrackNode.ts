@@ -19,6 +19,9 @@ export type TrackNodeDeps = {
     getSendsForTrack: (tId: string) => SendNode[];
     pendingDevicePromises: Set<Promise<any>>;
     transportSAB?: SharedArrayBuffer;
+    /** Adjustment-layer insert: when non-null for this track, `analyserNode`
+     *  routes to this node instead of the track's default destination. */
+    getAdjustmentBusForTrack?: (trackId: string) => AudioNode | null;
 };
 
 export class TrackNode {
@@ -181,22 +184,29 @@ export class TrackNode {
         this.routeOutput();
     }
 
-    private routeOutput(): void {
-        const { analyserNode, outputId } = this.strip;
+    public getDefaultDestination(): AudioNode {
+        const { outputId } = this.strip;
         const { masterGainNode, getBusGainNode, getTrackGainNode } = this.deps;
+        if (outputId === 'hw_out' || !outputId) {
+            return masterGainNode;
+        }
+        const target = getBusGainNode(outputId) || getTrackGainNode(outputId);
+        return target ?? masterGainNode;
+    }
+
+    public routeOutput(): void {
+        const { analyserNode } = this.strip;
+        const { getAdjustmentBusForTrack } = this.deps;
 
         analyserNode.disconnect();
 
-        if (outputId === 'hw_out' || !outputId) {
-            analyserNode.connect(masterGainNode);
-        } else {
-            const target = getBusGainNode(outputId) || getTrackGainNode(outputId);
-            if (target) {
-                analyserNode.connect(target);
-            } else {
-                analyserNode.connect(masterGainNode);
-            }
+        const adjustmentBus = getAdjustmentBusForTrack?.(this.trackId) ?? null;
+        if (adjustmentBus) {
+            analyserNode.connect(adjustmentBus);
+            return;
         }
+
+        analyserNode.connect(this.getDefaultDestination());
     }
 
     private reconnectSends(): void {

@@ -6,6 +6,7 @@ export {
     exportStems,
     cancelExport,
     isExportActive,
+    getAutoDetectedTailSeconds,
     audioBufferToWav,
     audioBufferToMp3,
     audioBufferToFlac,
@@ -14,3 +15,5 @@ export {
     audioBufferToFlac as encodeFlac,
     type OfflineRenderOptions,
 } from '#/modules/AudioEngine/useCases';
+
+export { renderToClip } from './renderToClip';

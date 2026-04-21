@@ -33,6 +33,10 @@ export type OfflineBusStrip = {
 export type OfflineRenderOptions = {
     durationBeats: number;
     sampleRate?: number;
+    /** Beat at which the render starts (project beat 0 by default). */
+    startBeat?: number;
+    /** Extra seconds rendered after the region end so reverb/delay tails can ring out. */
+    tailSeconds?: number;
     onProgress?: (fraction: number) => void;
     /** Called when a non-fatal issue is detected (e.g. missing audio buffer). */
     onWarning?: (message: string) => void;

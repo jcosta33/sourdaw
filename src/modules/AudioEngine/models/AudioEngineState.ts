@@ -179,4 +179,24 @@ export type AudioEngine = {
         loopEnd?: number,
         isLooping?: boolean
     ): void;
+    applyAdjustmentLayerTick?(records: AdjustmentLayerTickInput[]): void;
+    resetAdjustmentLayers?(): void;
+    listLiveAdjustmentBusKeys?(): string[];
+};
+
+export type AdjustmentLayerTickInput = {
+    trackId: string;
+    layerId: string;
+    effectType:
+        | 'eq'
+        | 'compressor'
+        | 'reverb'
+        | 'delay'
+        | 'saturation'
+        | 'filter'
+        | 'stereo-width'
+        | 'volume'
+        | 'pan';
+    parameters: Record<string, number>;
+    blend: number;
 };

@@ -1,382 +1,125 @@
-# Sourdaw
+# Swarm Evolution CLI
 
-A modern, browser-native digital audio workstation (DAW) built with React 19, TypeScript, and the Web Audio API. Runs in any modern browser and as a native desktop app via Tauri.
+The Swarm Evolution CLI (`agents`) is a powerful, autonomous, and zero-dependency orchestration toolkit designed to manage intelligent software engineering agents. It provides a structured, sandboxed environment for AI agents to analyze, refactor, test, and release code across large codebases.
 
-## Features
+Built for scale and safety, the CLI enforces strict worktree isolation, ensuring that agents operate in parallel without colliding with human developers or each other.
 
-- **Multi-track timeline** — Arrange MIDI and audio clips on an unlimited number of tracks
-- **Piano roll editor** — Full-featured MIDI note editor with draw, select, resize, and velocity editing
-- **Mixer console** — Channel strips with volume faders, pan knobs, mute/solo, and send buses
-- **Automation lanes** — Draw and edit parameter automation with linear, S-curve, and exponential interpolation
-- **Transport controls** — Play, pause, record, loop, metronome, tempo, and time signature
-- **Command palette** — Quick access to every action via `⌘K`
-- **AI copilot** — Built-in chat panel for AI-assisted music production with voice command support
-- **Project management** — Save, load, new project, import/export (WAV, MP3, MIDI)
-- **Undo / Redo** — Full undo history with per-action snapshots
-- **Collaboration** — Real-time collaboration panel (experimental)
-- **Cross-platform** — Runs in the browser or as a native app via Tauri
+---
 
-## Tech Stack
+## 🚀 Quick Start
 
-| Layer        | Technology                                                         |
-| ------------ | ------------------------------------------------------------------ |
-| UI Framework | React 19 with React Compiler                                       |
-| Language     | TypeScript 5.9                                                     |
-| Build Tool   | Vite 8                                                             |
-| Styling      | Tailwind CSS v4                                                    |
-| State        | Vanilla TypeScript Stores + TanStack Query                         |
-| Routing      | TanStack Router                                                    |
-| Audio        | Web Audio API + AudioWorklet                                       |
-| Desktop      | Tauri 2                                                            |
-| AI           | Web LLM (browser-local), llama.cpp / whisper.cpp (desktop sidecar) |
-
-## Getting Started
-
-### Prerequisites
-
-- **Node.js** ≥ 20
-- **pnpm** (recommended package manager)
-- For desktop builds: [Tauri prerequisites](https://tauri.app/start/prerequisites/)
-
-### Installation
+The CLI is integrated into the project's package scripts. To see the full list of available commands, run:
 
 ```bash
-git clone https://github.com/jcosta33/sourdaw.git
-cd sourdaw
-pnpm install
+pnpm agents --help
 ```
 
-### Running
+To create a new agent sandbox and assign it a task:
 
 ```bash
-# Web (development server with HMR)
-pnpm dev
-
-# Desktop via Tauri
-pnpm tauri:dev
+pnpm agents new my-feature-branch "Implement the new billing module"
 ```
 
-The app will open at [http://localhost:5173](http://localhost:5173).
-
-### Building
-
-```bash
-# Web production bundle
-pnpm build
-pnpm preview        # serve the production build locally
-
-# Desktop production binary
-pnpm tauri:build
-```
-
-### Code Quality
-
-```bash
-pnpm typecheck      # TypeScript type checking
-pnpm lint           # ESLint
-pnpm lint:fix       # ESLint with auto-fix
-pnpm format         # Prettier formatting
-```
+This will:
+1. Create a new Git worktree.
+2. Check out `my-feature-branch`.
+3. Generate a task file at `.agents/tasks/my-feature-branch.md`.
+4. Prompt you to launch an agent to begin work.
 
 ---
 
-## User Guide
+## 🧠 Core Concepts
 
-### Layout Overview
-
-The interface follows a standard DAW layout:
-
-```
-┌─────────────────────────────────────────────────┐
-│                  Transport Bar                   │
-├────────┬───────────────────────┬────────┬────────┤
-│        │                       │Autom.  │  AI    │
-│Sidebar │   Timeline / Arrange  │ Panel  │ Chat   │
-│        │    (main content)     │        │        │
-├────────┴───────────────────────┴────────┴────────┤
-│                  Mixer Panel                     │
-├─────────────────────────────────────────────────┤
-│                   Status Bar                     │
-└─────────────────────────────────────────────────┘
-```
-
-All panels are **resizable** by dragging their borders and can be toggled on/off via keyboard shortcuts.
+- **Sandboxing (Worktrees):** Agents never work directly in your main repository directory. The CLI provisions dedicated `git worktree` environments. This prevents agents from accidentally breaking your active workspace or conflicting with uncommitted changes.
+- **Task-Driven:** Every agent session is driven by a Markdown task file (e.g., `.agents/tasks/<slug>.md`). This file contains the objective, constraints, and a strict verification checklist that the agent must complete before declaring the task done.
+- **Empirical Verification:** Agents are required to prove their work. They must paste actual console output from tests, linters, and compilers into their task files to verify correctness.
+- **State Management:** The CLI tracks all active sandboxes, their PIDs, and their current status in `.agents/state.json`.
 
 ---
 
-### Transport
+## 🛠️ Command Reference
 
-The top bar contains playback and project controls:
+The Swarm CLI is organized into evolutionary "waves" of capabilities, from basic workspace management to enterprise-scale production engineering.
 
-- **Play / Pause** — Click the play button or press `Space`
-- **Stop** — Press `Escape`
-- **Record** — Click the record button or press `R`
-- **Loop** — Toggle with the loop button or press `L`
-- **Metronome** — Toggle with `M`
-- **Tempo** — Click the BPM display to edit
-- **Time signature** — Click to change
-- **Navigate** — `Home` jumps to start, `End` jumps to end
+### Core Subcommands
 
----
+Manage the lifecycle of agent sandboxes.
 
-### Timeline / Arrange View
+- `new [slug] [title]` - Create a new sandbox worktree and task file.
+- `open <slug>` - Reopen an existing sandbox terminal.
+- `list` - List all active sandboxes and their status.
+- `show <slug>` - Show detailed metadata and history for a specific sandbox.
+- `task <slug>` - Interactive prompt to append human feedback/hints to the task file.
+- `validate` - Run configured linters and typechecks, truncating output for LLM context limits.
+- `test` - Run the test runner (Vitest) with smart log truncation.
+- `test-radius <file>` - Calculate the blast radius of a file and run only the impacted specs.
+- `pr <slug>` - Auto-commit changes and generate a GitHub Pull Request based on the completed task file.
+- `screenshot [url]` - Capture a screenshot of the running app using Playwright for visual validation by an LLM.
+- `ui` - Launch the real-time persistent Swarm Terminal UI dashboard.
 
-The main content area shows tracks and clips on a timeline grid.
+### Context & RAG (V3)
 
-#### Working with tracks
+Tools for deep codebase understanding, context compression, and security analysis.
 
-| Action          | How                                             |
-| --------------- | ----------------------------------------------- |
-| New MIDI track  | Press `N`                                       |
-| New audio track | Press `Shift+N`                                 |
-| Duplicate track | `⌘⇧D`                                           |
-| Delete track    | Right-click → Delete                            |
-| Rename track    | Double-click the track name                     |
-| Mute / Solo     | Click the `M` / `S` buttons on the track header |
-| Clear all solos | `Alt+S`                                         |
+- `compress <file>` - Strip function bodies from a TypeScript file to save LLM context tokens while retaining signatures.
+- `graph <file>` - Extract and map the import/export dependencies of a module.
+- `references <symbol>` - Fast codebase scan to find usages of a specific symbol or class.
+- `docs <file>` - Extract and format JSDoc blocks from a module.
+- `complexity <file>` - Calculate cyclomatic complexity heuristics to enforce maintainability invariants.
+- `audit-sec <file>` - Scan for common dangerous patterns, secrets, and vulnerabilities.
+- `dead-code <file>` - Find exported symbols that are never imported anywhere in the project.
+- `format <file>` - Wrapper for Prettier/ESLint autofixes with truncated output.
+- `logs <slug>` - View the execution output logs of a running agent session.
+- `health` - Run pre-flight environment checks for the Swarm.
+- `context [dir]` - Generate a semantic map of exported symbols for Retrieval-Augmented Generation (RAG).
+- `memory <get|set|list>` - Global memory bank for cross-agent invariant tracking and learned preferences.
 
-#### Working with clips
+### Autonomous Lifecycles (V4)
 
-| Action                | How                                          |
-| --------------------- | -------------------------------------------- |
-| Select clip           | Click it                                     |
-| Multi-select          | `⌘+click` or `⌘A` (select all)               |
-| Move clip             | Drag to new position or track                |
-| Copy / Cut / Paste    | `⌘C` / `⌘X` / `⌘V`                           |
-| Duplicate             | `⌘D`                                         |
-| Duplicate to next bar | `Alt+D`                                      |
-| Delete clip           | Select + `Delete` or `Backspace`             |
-| Split clip            | Select the Cut tool (`C` or `2`), then click |
-| Open clip editor      | Double-click or press `Tab`                  |
+Tools for independent agent collaboration, planning, and self-healing.
 
-#### Editing tools
+- `epic <file>` - Decompose a high-level markdown list into individual, actionable child tasks.
+- `triage <file>` - Convert an unstructured bug report into a strict, verifiable technical spec.
+- `arch` - Lint and enforce cross-module boundary invariants and architectural rules.
+- `review <slug>` - Spawn an adversarial peer-review agent session to critique another agent's work.
+- `chat <slug> [msg]` - Send or read an IPC message with another running agent.
+- `repro` - Verify that test files were modified *before* source code to enforce Test-Driven Development.
+- `find <type> <target>` - Semantic search across the codebase (e.g., find all classes that implement an interface).
+- `mock <file> <Name>` - Instantly generate a TypeScript mock factory for a specific interface.
+- `daemon` - Background watcher that automatically runs `test-radius` when human developers save files.
+- `heal` - Self-healing hotfix generator that triggers automatically on CI branch failures.
 
-Switch tools via the toolbar or keyboard:
+### Production Scale (V5)
 
-| Key        | Tool        | Description                            |
-| ---------- | ----------- | -------------------------------------- |
-| `S` or `1` | Select      | Click to select, drag to move          |
-| `C` or `2` | Cut / Split | Click a clip to split it at that point |
-| `D` or `3` | Draw        | Click to create new clips              |
-| `A` or `4` | Automation  | Click to add automation points         |
-| `T` or `5` | Stretch     | Drag clip edges to time-stretch        |
+Enterprise-scale orchestration tools for massive refactors and reliability engineering.
 
-#### Zoom & navigation
+- `refactor <dir> <goal>` - Break a massive refactor into 5-file chunks and distribute them as tasks.
+- `deps` - Find outdated packages, fetch release notes, and generate upgrade tasks.
+- `migrate <file> <lang>` - Spawn a Translator and Verifier agent pair to rewrite code into a new language/framework.
+- `fuzz <file> <func>` - Generate and execute unexpected test permutations (nulls, NaNs, etc.) against a function signature.
+- `chaos <start|stop>` - Inject latency and mock network failures into the local environment to test resilience.
+- `visual <baseline|compare>` - Screenshot-based visual regression comparison loop.
+- `knowledge <query>` - Semantic vector-like search across past tasks, PRs, and specs.
+- `telemetry` - Dashboard tracking Swarm resource/token usage, time-to-completion, and success rates.
+- `profile <cmd>` - Analyze a Node process for bottlenecks and assign a Performance Engineer agent to optimize them.
+- `release` - Auto-bump semantic version, generate a changelog from git history, and draft release notes.
 
-| Action             | How                        |
-| ------------------ | -------------------------- |
-| Zoom in / out      | `=` / `-` or pinch gesture |
-| Zoom to fit        | `F`                        |
-| Zoom to selection  | `Shift+F`                  |
-| Scroll to playhead | `Shift+L`                  |
-| Zoom track heights | `⌘⇧=` / `⌘⇧-`              |
-| Navigate markers   | `]` next / `[` previous    |
+### Workspace Management
 
----
+Utilities for maintaining a clean Swarm environment.
 
-### Piano Roll (MIDI Editor)
-
-Open by double-clicking a MIDI clip (or pressing `Tab` with a clip selected).
-
-#### Creating notes
-
-- **Click** on empty space to draw a note (uses current grid snap)
-- **Click and drag** to set the note length while drawing
-- **Step input mode** — Toggle with the Step button; press pitch keys to enter notes sequentially
-
-#### Selecting notes
-
-| Action                            | How                       |
-| --------------------------------- | ------------------------- |
-| Select one note                   | Click it                  |
-| Toggle selection                  | `Shift+click`             |
-| Rubber-band select                | `Alt+drag` on empty space |
-| Add to selection with rubber-band | `Shift+Alt+drag`          |
-| Select all                        | `⌘A`                      |
-
-#### Editing notes
-
-| Action                   | How                                                    |
-| ------------------------ | ------------------------------------------------------ |
-| Move note(s)             | Drag a selected note (all selected move together)      |
-| Resize note (left/right) | Drag the left or right edge                            |
-| Delete note              | `Double-click` or select + `Delete`/`Backspace`        |
-| Nudge in time            | `←` / `→` (uses grid snap)                             |
-| Transpose                | `↑` / `↓` (semitone) or `Shift+↑` / `Shift+↓` (octave) |
-| Set velocity             | Keys `1`–`7` set velocity presets (in step input mode) |
-
-#### Grid snap
-
-Change the grid resolution with the snap buttons: `1` (whole), `1/2`, `1/4`, `1/8`
-
-#### Scale highlighting
-
-Select a root note and scale type to highlight in-key rows.
-
-#### Context menu (right-click)
-
-Select all, copy, cut, paste, quantize, humanize, and more.
+- `ast rename` - Structural rename utility for safely modifying symbols across the project.
+- `remove <slug>` - Forcefully remove a sandbox and delete its worktree.
+- `prune` - Clean up and remove merged or orphaned sandboxes.
+- `doctor` - Run diagnostic preflight checks on the CLI and workspace.
+- `path <slug>` - Print the absolute filesystem path to a specific sandbox worktree.
+- `focus <slug>` - Open the specified sandbox worktree in your default editor.
+- `pick` - Interactive fuzzy-finder menu to select tasks for `new`, `open`, `focus`, or `remove`.
 
 ---
 
-### Automation
+## 🔒 Safety & Permissions
 
-Toggle the automation panel with `⌘⇧A`.
+The Swarm CLI operates under a strict "Show, Don't Tell" philosophy. Agents are required to provide empirical proof (console output) of their success. The CLI defaults to non-destructive actions, but agents have full filesystem access within their isolated worktrees.
 
-#### Adding points
-
-- Select the Automation tool (`A` or `4`), then click on the automation lane
-- Or click directly in the automation panel
-
-#### Editing points
-
-| Action            | How                                                             |
-| ----------------- | --------------------------------------------------------------- |
-| Move point        | Drag it                                                         |
-| Delete point      | `Double-click` it                                               |
-| Change curve type | Right-click → choose curve (linear, S-curve, exponential, step) |
-
-#### Parameters
-
-Each track has automation lanes for volume, pan, mute, and plugin parameters. Select the parameter from the dropdown in each lane.
-
----
-
-### Mixer
-
-Toggle with `⌘M`. Shows channel strips for all tracks with:
-
-- **Volume fader** — Drag to adjust level
-- **Pan knob** — Drag to adjust stereo position
-- **Mute / Solo** — Click the `M` / `S` buttons
-- **Send buses** — Route audio to effect buses
-
----
-
-### AI Copilot
-
-Toggle with `⌘J`. The AI chat panel lets you:
-
-- Ask questions about your project
-- Request automated edits (add tracks, set tempo, etc.)
-- Get mix analysis and suggestions
-
-#### Voice commands
-
-Hold `V` to speak a voice command (requires microphone permission).
-
----
-
-### Project Management
-
-| Action       | How                                     |
-| ------------ | --------------------------------------- |
-| New project  | File menu → New Project                 |
-| Save project | `⌘S` (also auto-saves every 30 seconds) |
-| Export audio | `⌘⇧E` → choose format (WAV / MP3)       |
-| Import MIDI  | File menu → Import MIDI                 |
-| Preferences  | `⌘,`                                    |
-
----
-
-### Keyboard Shortcuts Reference
-
-Press `?` at any time to open the full shortcut cheat sheet overlay.
-
-#### Global
-
-| Shortcut | Action               |
-| -------- | -------------------- |
-| `⌘K`     | Command palette      |
-| `⌘Z`     | Undo                 |
-| `⌘⇧Z`    | Redo                 |
-| `⌘S`     | Save project         |
-| `⌘⇧E`    | Export audio         |
-| `⌘,`     | Preferences          |
-| `?`      | Shortcut cheat sheet |
-
-#### Panels
-
-| Shortcut | Panel      |
-| -------- | ---------- |
-| `⌘B`     | Sidebar    |
-| `⌘I`     | Inspector  |
-| `⌘M`     | Mixer      |
-| `⌘⇧A`    | Automation |
-| `⌘J`     | AI Chat    |
-| `⌘T`     | Track list |
-
-#### Transport
-
-| Shortcut | Action           |
-| -------- | ---------------- |
-| `Space`  | Play / Pause     |
-| `Escape` | Stop / Deselect  |
-| `R`      | Record           |
-| `L`      | Toggle loop      |
-| `M`      | Toggle metronome |
-| `Home`   | Go to start      |
-| `End`    | Go to end        |
-
-#### Editing
-
-| Shortcut            | Action                |
-| ------------------- | --------------------- |
-| `⌘C`                | Copy clip             |
-| `⌘X`                | Cut clip              |
-| `⌘V`                | Paste clip            |
-| `⌘D`                | Duplicate clip        |
-| `⌥D`                | Duplicate to next bar |
-| `⌘A`                | Select all            |
-| `⌘⇧A`               | Deselect all          |
-| `Del` / `Backspace` | Delete selected       |
-
-#### View
-
-| Shortcut  | Action             |
-| --------- | ------------------ |
-| `=` / `+` | Zoom in            |
-| `-`       | Zoom out           |
-| `F`       | Zoom to fit        |
-| `⇧F`      | Zoom to selection  |
-| `⇧L`      | Scroll to playhead |
-| `⌘⇧=`     | Zoom tracks in     |
-| `⌘⇧-`     | Zoom tracks out    |
-
-#### Tracks
-
-| Shortcut | Action          |
-| -------- | --------------- |
-| `N`      | New MIDI track  |
-| `⇧N`     | New audio track |
-| `⌘⇧D`    | Duplicate track |
-| `⌥S`     | Clear all solos |
-
----
-
-## Architecture
-
-The codebase follows a **domain-driven design** with strict module boundaries:
-
-```
-src/modules/
-├── AiRuntime/      # AI copilot, voice commands, inference
-├── AudioEngine/    # Web Audio API, AudioWorklet, DSP
-├── Collaboration/  # Real-time collaboration
-├── Command/        # Actions, undo/redo, keyboard shortcuts
-├── Project/        # Project persistence, import/export
-├── Timeline/       # Timeline rendering, grid, markers
-├── Track/          # Tracks, clips, MIDI, automation
-├── Transport/      # Playback, recording, metronome
-└── Workspace/      # UI shell, panels, layout
-```
-
-Each module exposes a public API through **contract folders** (`models/`, `events/`, `useCases/`, `presentations/views/`). Cross-module imports may only reference these contracts.
-
-For detailed architecture documentation, see [`docs/architecture.md`](docs/architecture.md).
-
----
-
-## License
-
-Private — All rights reserved.
+When an agent completes a task, human review is typically performed by reading the self-review section of the task file and running `pnpm agents pr <slug>` to merge the verified code back into the main repository.

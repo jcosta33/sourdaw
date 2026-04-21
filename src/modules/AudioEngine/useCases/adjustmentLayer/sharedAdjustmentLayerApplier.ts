@@ -11,6 +11,8 @@ import {
     type TrackGainPanApplier,
 } from './adjustmentLayerApplier';
 
+import type { AdjustmentLayerTickInput } from '../../models/AudioEngineState';
+
 /**
  * Singleton applier wired to the real audio engine + arrangement store.
  *
@@ -101,6 +103,23 @@ function ensureSingleton(): ApplierSingleton {
     return singleton;
 }
 
+function toEngineTick(records: AppliedLayerRecord[]): AdjustmentLayerTickInput[] {
+    const inputs: AdjustmentLayerTickInput[] = [];
+    for (const rec of records) {
+        if (rec.effectType === 'volume' || rec.effectType === 'pan') {
+            continue;
+        }
+        inputs.push({
+            trackId: rec.trackId,
+            layerId: rec.layerId,
+            effectType: rec.effectType,
+            parameters: rec.parameters,
+            blend: rec.blend,
+        });
+    }
+    return inputs;
+}
+
 export function getSharedAdjustmentLayerApplier(): CreateAdjustmentLayerApplierOutput {
     const holder = ensureSingleton();
     return {
@@ -108,6 +127,7 @@ export function getSharedAdjustmentLayerApplier(): CreateAdjustmentLayerApplierO
             holder.batchAppliedRecords.length = 0;
             const result = holder.inner.applyLayers(args);
             adjustmentApplicationStore.set({ applied: holder.batchAppliedRecords.slice() });
+            audioEngine.applyAdjustmentLayerTick?.(toEngineTick(result));
             return result;
         },
         reset: () => {
@@ -116,6 +136,7 @@ export function getSharedAdjustmentLayerApplier(): CreateAdjustmentLayerApplierO
             holder.userPanByTrack.clear();
             holder.batchAppliedRecords.length = 0;
             adjustmentApplicationStore.set({ applied: [] });
+            audioEngine.resetAdjustmentLayers?.();
         },
     };
 }

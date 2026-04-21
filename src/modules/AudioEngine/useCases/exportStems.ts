@@ -35,12 +35,18 @@ export const exportStems: ExportStemsFn = async function exportStems(
             typeof optsOrBeats === 'number' ? (maybeSampleRate ?? 44100) : (optsOrBeats.sampleRate ?? 44100);
         const onProgress = typeof optsOrBeats === 'object' ? optsOrBeats.onProgress : undefined;
         const onWarning = typeof optsOrBeats === 'object' ? optsOrBeats.onWarning : undefined;
+        const startBeat = typeof optsOrBeats === 'object' ? (optsOrBeats.startBeat ?? 0) : 0;
+        const tailSeconds = typeof optsOrBeats === 'object' ? (optsOrBeats.tailSeconds ?? 0) : 0;
 
         if (!Number.isFinite(durationBeats) || durationBeats <= 0) {
             throw createExportError(`Invalid export duration: ${durationBeats} beats.`);
         }
 
-        const { tracks, midi, defaultTempo, changes, durationSeconds } = resolveRenderContext(durationBeats);
+        const { tracks, midi, defaultTempo, changes, durationSeconds } = resolveRenderContext({
+            durationBeats,
+            startBeat,
+            tailSeconds,
+        });
         const stems = new Map<string, AudioBuffer>();
 
         if (!tracks || !midi) {
@@ -92,7 +98,8 @@ export const exportStems: ExportStemsFn = async function exportStems(
                 onWarning,
                 pendingWorkletEvents,
                 [track],
-                deviceEntriesByTrack
+                deviceEntriesByTrack,
+                startBeat
             );
 
             schedulePendingSuspends(offlineCtx, pendingWorkletEvents, durationSeconds);

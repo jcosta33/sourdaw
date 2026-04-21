@@ -85,6 +85,7 @@ export { denoiseAudio } from './nativeAiBridge/denoiseAudio';
 
 export type { OfflineRenderOptions } from './offlineRender/types';
 export { cancelExport, isExportActive } from './offlineRender/exportCancellation';
+export { getAutoDetectedTailSeconds } from './offlineRender/getAutoDetectedTailSeconds';
 export { renderOffline } from './renderOffline';
 export { exportStems } from './exportStems';
 export { audioBufferToWav } from './audioBufferToWav';
