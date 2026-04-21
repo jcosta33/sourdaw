@@ -17,20 +17,22 @@ vi.mock('../goToItem', () => ({
     goToItem: vi.fn(),
 }));
 
-const oneItem = (id: string): SetlistItem => ({
-    id,
-    name: 'A',
-    projectPath: null,
-    bpm: null,
-    timeSignature: null,
-    estimatedDuration: 1,
-    notes: '',
-    programChange: null,
-    color: '#000',
-    autoStop: true,
-    gapSeconds: 0,
-    markers: [],
-});
+function oneItem(id: string): SetlistItem {
+    return {
+        id,
+        name: 'A',
+        projectPath: null,
+        bpm: null,
+        timeSignature: null,
+        estimatedDuration: 1,
+        notes: '',
+        programChange: null,
+        color: '#000',
+        autoStop: true,
+        gapSeconds: 0,
+        markers: [],
+    };
+}
 
 describe('previousItem', () => {
     beforeEach(() => {

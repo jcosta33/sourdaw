@@ -12,20 +12,22 @@ vi.mock('../../../stores/setlistStore', () => ({
     setlistStore: mockSetlistStore,
 }));
 
-const item = (id: string, dur: number): SetlistItem => ({
-    id,
-    name: 'A',
-    projectPath: null,
-    bpm: null,
-    timeSignature: null,
-    estimatedDuration: dur,
-    notes: '',
-    programChange: null,
-    color: '#000',
-    autoStop: true,
-    gapSeconds: 0,
-    markers: [],
-});
+function item(id: string, dur: number): SetlistItem {
+    return {
+        id,
+        name: 'A',
+        projectPath: null,
+        bpm: null,
+        timeSignature: null,
+        estimatedDuration: dur,
+        notes: '',
+        programChange: null,
+        color: '#000',
+        autoStop: true,
+        gapSeconds: 0,
+        markers: [],
+    };
+}
 
 describe('removeSetlistItem', () => {
     beforeEach(() => {

@@ -102,10 +102,9 @@ describe('panelToggles', () => {
         });
     });
 
-    describe('functions that read then update workspace state', () => {
-        const base = (): typeof defaultWorkspaceState => ({ ...defaultWorkspaceState });
-
-        it.each([
+        function base(): typeof defaultWorkspaceState {
+            return { ...defaultWorkspaceState };
+        }
             ['setSoloMode', setSoloMode, () => setSoloMode('pfl'), { soloMode: 'pfl' }],
             ['toggleSidebar', toggleSidebar, () => toggleSidebar(), { sidebarOpen: false }],
             ['toggleInspector', toggleInspector, () => toggleInspector(), { inspectorOpen: false }],

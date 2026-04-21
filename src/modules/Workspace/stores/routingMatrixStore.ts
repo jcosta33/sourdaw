@@ -28,4 +28,6 @@ const defaultState: RoutingMatrixState = { connections: {} };
 
 export const routingMatrixStore = createStore<RoutingMatrixState>({ initialData: defaultState });
 
-export const routingConnectionKey = (sourceId: string, destId: string): string => `${sourceId}→${destId}`;
+export function routingConnectionKey(sourceId: string, destId: string): string {
+    return `${sourceId}→${destId}`;
+}
