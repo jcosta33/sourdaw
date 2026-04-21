@@ -499,11 +499,23 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
 const faustDescriptor: WasmDeviceDescriptor = {
     matches: isFaustModule,
     create({ context, deviceId, deviceType, onLoaded }) {
-        const pendingParams: Array<{ name: string; value: number; time?: number }> = [];
+        type PendingParam = { kind: 'param'; name: string; value: number; time?: number };
+        type PendingKey = {
+            kind: 'keyOn' | 'keyOff';
+            channel: number;
+            pitch: number;
+            velocity: number;
+            time?: number;
+        };
+        const pending: Array<PendingParam | PendingKey> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.wamControls = {
-            setParam: (name, value) => pendingParams.push({ name, value }),
-            scheduleParam: (name, value, time) => pendingParams.push({ name, value, time }),
+            setParam: (name, value) => pending.push({ kind: 'param', name, value }),
+            scheduleParam: (name, value, time) => pending.push({ kind: 'param', name, value, time }),
+            keyOn: (channel, pitch, velocity, time) =>
+                pending.push({ kind: 'keyOn', channel, pitch, velocity, time }),
+            keyOff: (channel, pitch, velocity, time) =>
+                pending.push({ kind: 'keyOff', channel, pitch, velocity, time }),
             destroy: () => {},
         };
         const loadPromise = createFaustDeviceNode(context, deviceType)
@@ -512,11 +524,17 @@ const faustDescriptor: WasmDeviceDescriptor = {
                     return;
                 }
                 const controls = result.wamControls;
-                for (const { name, value, time } of pendingParams) {
-                    if (time !== undefined) {
-                        controls?.scheduleParam(name, value, time);
+                for (const event of pending) {
+                    if (event.kind === 'param') {
+                        if (event.time !== undefined) {
+                            controls?.scheduleParam(event.name, event.value, event.time);
+                        } else {
+                            controls?.setParam(event.name, event.value);
+                        }
+                    } else if (event.kind === 'keyOn') {
+                        controls?.keyOn?.(event.channel, event.pitch, event.velocity, event.time);
                     } else {
-                        controls?.setParam(name, value);
+                        controls?.keyOff?.(event.channel, event.pitch, event.velocity, event.time);
                     }
                 }
                 onLoaded({
