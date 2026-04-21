@@ -10,7 +10,7 @@ import { projectCrdtToStores } from '../projection/projectProjection';
 /**
  * Merge a source branch into the current (target) branch.
  */
-export const mergeBranch = async (sourceBranchId: string): Promise<void> => {
+export async function mergeBranch(sourceBranchId: string): Promise<void> {
     const state = branchStore.value;
     if (!state) {
         return;
@@ -36,4 +36,4 @@ export const mergeBranch = async (sourceBranchId: string): Promise<void> => {
     await saveAllToIdb(bundle);
 
     projectCrdtToStores();
-};
+}

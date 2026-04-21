@@ -11,7 +11,7 @@ import { projectCrdtToStores } from '../projection/projectProjection';
  * Fork the current project into a new branch.
  * Uses Automerge.clone() for a fast copy that shares history with the source.
  */
-export const forkProjectBranch = async (name: string, note = ''): Promise<string> => {
+export async function forkProjectBranch(name: string, note = ''): Promise<string> {
     const state = branchStore.value;
     if (!state) {
         throw createBranchError('Branch store not initialized');
@@ -53,4 +53,4 @@ export const forkProjectBranch = async (name: string, note = ''): Promise<string
     projectCrdtToStores();
 
     return branchId;
-};
+}
