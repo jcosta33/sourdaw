@@ -151,7 +151,7 @@ Several substantial features have fully implemented stores and use-case director
 | Setlist | `src/modules/Transport/stores/setlistStore.ts` | `src/modules/Transport/useCases/setlist/` | ❌ | Store tested. UseCases for item CRUD/reordering exist. |
 | DAWproject import/export | — | `src/modules/Project/useCases/dawProject/` | Partial | `exportDawProject` action and handler exist, but the underlying `parseDawProject.ts` / `exportDawProject.ts` useCases are not called by the handler. |
 | Music Mentor | — | `src/modules/AiRuntime/useCases/musicMentor/` | Partial | **CORRECTION (2026-04-20):** `handleGetMentorTips` does call `generateMentorLessons()` from the module's useCases index. What is actually unwired is `queries.ts` in the `musicMentor/` directory — verify whether those query helpers have any consumer outside the `__tests__/queries.spec.ts` file. |
-| Modulation System | — | `src/modules/Plugin/useCases/modulationSystem/` | ❌ | Complete CRUD for modulation routes. No UI wired. |
+| Modulation System | `src/modules/Automation/stores/modulationStore.ts` | `src/modules/Automation/useCases/modulation/` | Partial | **CORRECTION (2026-04-20):** Lives under `src/modules/Automation/`, not `Plugin/`; store + model + `applyModulation` tick-hook exist, but CRUD use-cases for modulators/mappings and audio-path dispatch (engine write-through) were missing and have since been added in this session. |
 | Node View | `src/modules/Plugin/stores/nodeView.ts` | `src/modules/Plugin/useCases/nodeView/` | ❌ | Store and useCases for graph editor exist. |
 | Push Integration | `src/modules/Plugin/stores/push.ts` | `src/modules/Plugin/useCases/pushIntegration/` | ❌ | Ableton Push 2 support. Store and useCases present. |
 
