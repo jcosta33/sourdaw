@@ -467,20 +467,21 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                                 const isPressed = pressedNotes.has(midiNote);
                                 const displayOctave = Math.floor(midiNote / 12) - 1;
 
+                                let keyClasses = 'bg-[oklch(0.94_0_0)] hover:bg-[oklch(0.88_0_0)] border-r-neutral-300';
+                                if (isPressed) {
+                                    keyClasses =
+                                        'bg-[var(--color-accent-lavender)]/50 border-r-[var(--color-accent-lavender)]/40';
+                                } else if (isCurrentOctaveStart) {
+                                    keyClasses =
+                                        'bg-[oklch(0.97_0.005_260)] hover:bg-[oklch(0.91_0.01_260)] border-r-neutral-300';
+                                }
+
                                 return (
                                     <div
                                         key={whiteIdx}
                                         className={cn(
                                             'relative shrink-0 border-r flex flex-col justify-end items-center pb-1 cursor-pointer',
-                                            (() => {
-                                                if (isPressed) {
-                                                    return 'bg-[var(--color-accent-lavender)]/50 border-r-[var(--color-accent-lavender)]/40';
-                                                }
-                                                if (isCurrentOctaveStart) {
-                                                    return 'bg-[oklch(0.97_0.005_260)] hover:bg-[oklch(0.91_0.01_260)] border-r-neutral-300';
-                                                }
-                                                return 'bg-[oklch(0.94_0_0)] hover:bg-[oklch(0.88_0_0)] border-r-neutral-300';
-                                            })()
+                                            keyClasses
                                         )}
                                         style={{
                                             width: KEY_W,

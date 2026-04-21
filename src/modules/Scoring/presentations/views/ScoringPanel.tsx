@@ -71,6 +71,13 @@ export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement =
         centerGlow = 'rgba(255,100,100,0.14)';
     }
 
+    let displayComponent = <PolyDisplay />;
+    if (mode === 'needle') {
+        displayComponent = <NeedleDisplay cents={cents} active={active} confidence={confidence} />;
+    } else if (mode === 'strobe') {
+        displayComponent = <StrobeDisplay cents={cents} active={active} />;
+    }
+
     return (
         <div className="scoring-faceplate flex h-full min-h-0 gap-3 overflow-hidden p-3">
             <aside className="flex h-full w-[232px] shrink-0 flex-col gap-3 overflow-y-auto pr-1">
@@ -189,19 +196,7 @@ export const ScoringPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                     <div className="text-xl text-white/42">{active ? octave : ''}</div>
                                 </div>
 
-                                <div className="min-h-0">
-                                    {(() => {
-                                        if (mode === 'needle') {
-                                            return (
-                                                <NeedleDisplay cents={cents} active={active} confidence={confidence} />
-                                            );
-                                        }
-                                        if (mode === 'strobe') {
-                                            return <StrobeDisplay cents={cents} active={active} />;
-                                        }
-                                        return <PolyDisplay />;
-                                    })()}
-                                </div>
+                                <div className="min-h-0">{displayComponent}</div>
 
                                 <div className="flex flex-col items-center gap-1">
                                     <div

@@ -184,12 +184,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         if (!rustKey) {
             return;
         }
-        const numericValue = (() => {
-            if (typeof value === 'boolean') {
-                return value ? 1 : 0;
-            }
-            return value;
-        })();
+        const numericValue = typeof value === 'boolean' ? (value ? 1 : 0) : value;
         void executeAppAction({
             type: 'setDeviceParameter',
             payload: { deviceId, paramId: rustKey, value: numericValue },
@@ -228,6 +223,13 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                 });
             }
         }
+    }
+
+    let tailViewLed = 'Live tail';
+    if (showDecayEq) {
+        tailViewLed = 'EQ overlay';
+    } else if (showFlow) {
+        tailViewLed = 'Flow open';
     }
 
     return (
@@ -366,17 +368,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                         <div className="flex h-full min-h-0 flex-col">
                             <div className="flex items-center justify-between px-3 py-2">
                                 <div className="text-[9px] uppercase tracking-[0.24em] text-white/44">Tail view</div>
-                                <ChamberLed>
-                                    {(() => {
-                                        if (showDecayEq) {
-                                            return 'EQ overlay';
-                                        }
-                                        if (showFlow) {
-                                            return 'Flow open';
-                                        }
-                                        return 'Live tail';
-                                    })()}
-                                </ChamberLed>
+                                <ChamberLed>{tailViewLed}</ChamberLed>
                             </div>
                             <div className="relative min-h-0 flex-1 border-t border-white/6">
                                 <ReverbSpectrogram decay={params.decay} damping={params.damping} />

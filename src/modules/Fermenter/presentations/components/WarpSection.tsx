@@ -24,108 +24,113 @@ export const WarpSection = ({
     audioModDepth,
     audioModTarget,
     onParam,
-}: WarpSectionProps): ReactElement => (
-    <div className="space-y-2">
-        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">Warp / Mod</div>
+}: WarpSectionProps): ReactElement => {
+    let audioModRateStr = '';
+    if (audioModRate < 20) {
+        audioModRateStr = `${audioModRate.toFixed(1)}Hz`;
+    } else if (audioModRate < 1000) {
+        audioModRateStr = `${Math.round(audioModRate)}Hz`;
+    } else {
+        audioModRateStr = `${(audioModRate / 1000).toFixed(1)}kHz`;
+    }
 
-        {/* Warp mode selector */}
-        <div className="space-y-0.5">
-            <div className="text-[8px] text-muted-foreground/70 px-1">Spectral Warp</div>
-            <div className="flex flex-wrap gap-0.5 px-1">
-                {WARP_MODE_NAMES.map((name, i) => (
-                    <DawPluginChip
-                        key={name}
-                        active={warpMode === i}
-                        tone="peach"
-                        size="xs"
-                        onClick={() => onParam('warpMode', i)}
-                    >
-                        {name}
-                    </DawPluginChip>
-                ))}
+    return (
+        <div className="space-y-2">
+            <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">
+                Warp / Mod
             </div>
-            {warpMode > 0 ? (
-                <div className="flex items-end gap-2 px-1">
-                    <div className="flex flex-col items-center gap-0.5">
-                        <RotaryKnob
-                            value={warpAmount}
-                            onChange={(v) => onParam('warpAmount', v)}
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            defaultValue={0}
-                            size="lg"
-                            tone="sage"
-                        />
-                        <span className="text-[7px] text-muted-foreground">Amount</span>
-                    </div>
+
+            {/* Warp mode selector */}
+            <div className="space-y-0.5">
+                <div className="text-[8px] text-muted-foreground/70 px-1">Spectral Warp</div>
+                <div className="flex flex-wrap gap-0.5 px-1">
+                    {WARP_MODE_NAMES.map((name, i) => (
+                        <DawPluginChip
+                            key={name}
+                            active={warpMode === i}
+                            tone="peach"
+                            size="xs"
+                            onClick={() => onParam('warpMode', i)}
+                        >
+                            {name}
+                        </DawPluginChip>
+                    ))}
                 </div>
-            ) : null}
-        </div>
-
-        {/* Audio-rate modulation */}
-        <div className="space-y-0.5">
-            <div className="text-[8px] text-muted-foreground/70 px-1">Audio-Rate Mod</div>
-            <div className="flex gap-0.5 px-1">
-                {AUDIO_MOD_TARGET_NAMES.map((name, i) => (
-                    <DawPluginChip
-                        key={name}
-                        active={audioModTarget === i}
-                        tone="mint"
-                        size="xs"
-                        onClick={() => onParam('audioModTarget', i)}
-                    >
-                        {name}
-                    </DawPluginChip>
-                ))}
-            </div>
-            {(() => {
-                if (audioModTarget > 0) {
-                    return (
-                        <div className="flex items-end gap-2 px-1">
-                            <div className="flex flex-col items-center gap-0.5">
-                                <RotaryKnob
-                                    value={audioModRate}
-                                    onChange={(v) => onParam('audioModRate', v)}
-                                    min={0}
-                                    max={5000}
-                                    step={1}
-                                    defaultValue={0}
-                                    size="lg"
-                                    tone="sage"
-                                />
-                                <span className="text-[7px] text-muted-foreground">Rate</span>
-                                <span className="text-[6px] text-muted-foreground/50 font-mono">
-                                    {(() => {
-                                        if (audioModRate < 20) {
-                                            return `${audioModRate.toFixed(1)}Hz`;
-                                        }
-                                        if (audioModRate < 1000) {
-                                            return `${Math.round(audioModRate)}Hz`;
-                                        }
-                                        return `${(audioModRate / 1000).toFixed(1)}kHz`;
-                                    })()}
-                                </span>
-                            </div>
-                            <div className="flex flex-col items-center gap-0.5">
-                                <RotaryKnob
-                                    value={audioModDepth}
-                                    onChange={(v) => onParam('audioModDepth', v)}
-                                    min={0}
-                                    max={1}
-                                    step={0.01}
-                                    defaultValue={0}
-                                    size="lg"
-                                    tone="sage"
-                                />
-                                <span className="text-[7px] text-muted-foreground">Depth</span>
-                            </div>
+                {warpMode > 0 ? (
+                    <div className="flex items-end gap-2 px-1">
+                        <div className="flex flex-col items-center gap-0.5">
+                            <RotaryKnob
+                                value={warpAmount}
+                                onChange={(v) => onParam('warpAmount', v)}
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                defaultValue={0}
+                                size="lg"
+                                tone="sage"
+                            />
+                            <span className="text-[7px] text-muted-foreground">Amount</span>
                         </div>
-                    );
-                } else {
-                    return null;
-                }
-            })()}
+                    </div>
+                ) : null}
+            </div>
+
+            {/* Audio-rate modulation */}
+            <div className="space-y-0.5">
+                <div className="text-[8px] text-muted-foreground/70 px-1">Audio-Rate Mod</div>
+                <div className="flex gap-0.5 px-1">
+                    {AUDIO_MOD_TARGET_NAMES.map((name, i) => (
+                        <DawPluginChip
+                            key={name}
+                            active={audioModTarget === i}
+                            tone="mint"
+                            size="xs"
+                            onClick={() => onParam('audioModTarget', i)}
+                        >
+                            {name}
+                        </DawPluginChip>
+                    ))}
+                </div>
+                {(() => {
+                    if (audioModTarget > 0) {
+                        return (
+                            <div className="flex items-end gap-2 px-1">
+                                <div className="flex flex-col items-center gap-0.5">
+                                    <RotaryKnob
+                                        value={audioModRate}
+                                        onChange={(v) => onParam('audioModRate', v)}
+                                        min={0}
+                                        max={5000}
+                                        step={1}
+                                        defaultValue={0}
+                                        size="lg"
+                                        tone="sage"
+                                    />
+                                    <span className="text-[7px] text-muted-foreground">Rate</span>
+                                    <span className="text-[6px] text-muted-foreground/50 font-mono">
+                                        {audioModRateStr}
+                                    </span>
+                                </div>
+                                <div className="flex flex-col items-center gap-0.5">
+                                    <RotaryKnob
+                                        value={audioModDepth}
+                                        onChange={(v) => onParam('audioModDepth', v)}
+                                        min={0}
+                                        max={1}
+                                        step={0.01}
+                                        defaultValue={0}
+                                        size="lg"
+                                        tone="sage"
+                                    />
+                                    <span className="text-[7px] text-muted-foreground">Depth</span>
+                                </div>
+                            </div>
+                        );
+                    } else {
+                        return null;
+                    }
+                })()}
+            </div>
         </div>
-    </div>
-);
+    );
+};

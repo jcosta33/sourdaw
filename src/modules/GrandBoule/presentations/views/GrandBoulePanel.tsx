@@ -238,6 +238,20 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
         });
     };
 
+    let velocityCurveReadout = 'linear';
+    if (parameters.velocityCurve < 0.95) {
+        velocityCurveReadout = 'soft';
+    } else if (parameters.velocityCurve > 1.05) {
+        velocityCurveReadout = 'hard';
+    }
+
+    let lidPositionReadout = 'full';
+    if (lidPosition < 0.3) {
+        lidPositionReadout = 'closed';
+    } else if (lidPosition < 0.7) {
+        lidPositionReadout = 'half';
+    }
+
     return (
         <div className="grand-boule-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
             <div className="grid h-full min-h-0 grid-cols-[16rem_minmax(0,1fr)_16rem] gap-3">
@@ -542,15 +556,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             max={2}
                             step={0.05}
                             defaultValue={1.0}
-                            readout={(() => {
-                                if (parameters.velocityCurve < 0.95) {
-                                    return 'soft';
-                                }
-                                if (parameters.velocityCurve > 1.05) {
-                                    return 'hard';
-                                }
-                                return 'linear';
-                            })()}
+                            readout={velocityCurveReadout}
                         />
                     </SectionCard>
 
@@ -583,15 +589,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             max={1}
                             step={0.01}
                             defaultValue={1.0}
-                            readout={(() => {
-                                if (lidPosition < 0.3) {
-                                    return 'closed';
-                                }
-                                if (lidPosition < 0.7) {
-                                    return 'half';
-                                }
-                                return 'full';
-                            })()}
+                            readout={lidPositionReadout}
                         />
                     </SectionCard>
                 </aside>

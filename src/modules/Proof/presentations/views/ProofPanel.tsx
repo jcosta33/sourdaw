@@ -809,6 +809,13 @@ const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string })
     const delta = state.integratedLufs > -100 ? state.integratedLufs - targetLufs : 0;
     const { fftData, fftVersion, sampleRate, fftSize } = useProofAnalyser();
 
+    let platformNormalizationTarget = ` ${patch.target}`;
+    if (patch.target === 'streaming') {
+        platformNormalizationTarget = ' Spotify, Apple Music, and YouTube';
+    } else if (patch.target === 'broadcast') {
+        platformNormalizationTarget = ' broadcast television';
+    }
+
     return (
         <div className="flex-1 flex min-h-0 overflow-hidden">
             {/* Left: Advanced metering dashboard */}
@@ -864,28 +871,13 @@ const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string })
                 </div>
 
                 {/* Platform normalization info */}
-                {(() => {
-                    if (delta > 1) {
-                        return (
-                            <div className="px-3 py-2 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)]">
-                                Your master at {formatLufs(state.integratedLufs)}LUFS will be turned down by{' '}
-                                {delta.toFixed(1)} dB on
-                                {(() => {
-                                    if (patch.target === 'streaming') {
-                                        return ' Spotify, Apple Music, and YouTube';
-                                    }
-                                    if (patch.target === 'broadcast') {
-                                        return ' broadcast television';
-                                    }
-                                    return ` ${patch.target}`;
-                                })()}
-                                . Consider targeting {targetLufs}LUFS.
-                            </div>
-                        );
-                    } else {
-                        return null;
-                    }
-                })()}
+                {delta > 1 && (
+                    <div className="px-3 py-2 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)]">
+                        Your master at {formatLufs(state.integratedLufs)}LUFS will be turned down by {delta.toFixed(1)}{' '}
+                        dB on
+                        {platformNormalizationTarget}. Consider targeting {targetLufs}LUFS.
+                    </div>
+                )}
 
                 {/* Reset integrated button */}
                 <button

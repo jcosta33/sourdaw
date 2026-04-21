@@ -300,6 +300,13 @@ function ToneResponseStage({ deviceId, patch }: { deviceId: string; patch: Grind
         [100, 70 - patch.presence * 2.8],
     ];
 
+    let ampStageLed = 'Classic';
+    if (patch.bright) {
+        ampStageLed = 'Bright';
+    } else if (patch.fat) {
+        ampStageLed = 'Fat';
+    }
+
     return (
         <div className="grinder-window flex h-full flex-col gap-3 p-3">
             <div className="flex items-start justify-between">
@@ -314,17 +321,7 @@ function ToneResponseStage({ deviceId, patch }: { deviceId: string; patch: Grind
                         Channel {patch.channel + 1} · {patch.powerTubeType.toUpperCase()} · {patch.rectifierType}
                     </div>
                 </div>
-                <DawPluginLed tone="amber">
-                    {(() => {
-                        if (patch.bright) {
-                            return 'Bright';
-                        }
-                        if (patch.fat) {
-                            return 'Fat';
-                        }
-                        return 'Classic';
-                    })()}
-                </DawPluginLed>
+                <DawPluginLed tone="amber">{ampStageLed}</DawPluginLed>
             </div>
             <div className="flex flex-1 items-center gap-3 min-h-0">
                 <svg
@@ -809,41 +806,37 @@ function BrowserRail({
                     ))}
                 </div>
                 <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
-                    {(() => {
-                        if (filteredPresets.length > 0) {
-                            return filteredPresets.map((preset) => (
-                                <button
-                                    key={preset.id}
-                                    type="button"
-                                    className={`grinder-window flex w-full flex-col items-start gap-1 px-3 py-2.5 text-left ${
-                                        patch.name === preset.patch.name
-                                            ? 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/10'
-                                            : ''
-                                    }`}
-                                    onClick={() => replacePatch({ ...preset.patch, uiSection: patch.uiSection })}
-                                >
-                                    <div className="flex w-full items-center justify-between gap-3">
-                                        <span className="text-[13px] font-medium text-white/88">{preset.name}</span>
-                                        <span className="text-[9px] uppercase tracking-[0.2em] text-white/36">
-                                            {preset.category}
-                                        </span>
-                                    </div>
-                                    <span className="text-[11px] text-white/45">
-                                        {preset.patch.ampModel === 'clean-twin'
-                                            ? 'Clean platform'
-                                            : (AMP_MODELS.find((amp) => amp.id === preset.patch.ampModel)?.label ??
-                                              'House preset')}
+                    {filteredPresets.length > 0 ? (
+                        filteredPresets.map((preset) => (
+                            <button
+                                key={preset.id}
+                                type="button"
+                                className={`grinder-window flex w-full flex-col items-start gap-1 px-3 py-2.5 text-left ${
+                                    patch.name === preset.patch.name
+                                        ? 'border-[var(--color-accent-amber)]/60 bg-[var(--color-accent-amber)]/10'
+                                        : ''
+                                }`}
+                                onClick={() => replacePatch({ ...preset.patch, uiSection: patch.uiSection })}
+                            >
+                                <div className="flex w-full items-center justify-between gap-3">
+                                    <span className="text-[13px] font-medium text-white/88">{preset.name}</span>
+                                    <span className="text-[9px] uppercase tracking-[0.2em] text-white/36">
+                                        {preset.category}
                                     </span>
-                                </button>
-                            ));
-                        } else {
-                            return (
-                                <div className="rounded-[18px] border border-dashed border-white/10 bg-black/18 px-4 py-4 text-[13px] text-white/46">
-                                    Nothing matches that search. Clear it or try another tray.
                                 </div>
-                            );
-                        }
-                    })()}
+                                <span className="text-[11px] text-white/45">
+                                    {preset.patch.ampModel === 'clean-twin'
+                                        ? 'Clean platform'
+                                        : (AMP_MODELS.find((amp) => amp.id === preset.patch.ampModel)?.label ??
+                                          'House preset')}
+                                </span>
+                            </button>
+                        ))
+                    ) : (
+                        <div className="rounded-[18px] border border-dashed border-white/10 bg-black/18 px-4 py-4 text-[13px] text-white/46">
+                            Nothing matches that search. Clear it or try another tray.
+                        </div>
+                    )}
                 </div>
             </div>
             <div className="grinder-window flex max-h-[24vh] flex-col gap-2 overflow-y-auto p-3">
@@ -973,6 +966,13 @@ function ControlDeck({
     patch: GrinderPatch;
     replacePatch: (next: GrinderPatch) => void;
 }): ReactElement {
+    let engineModeText = 'Hybrid loaded';
+    if (patch.engineMode === 'circuit') {
+        engineModeText = 'Circuit first';
+    } else if (patch.engineMode === 'capture') {
+        engineModeText = 'Capture loaded';
+    }
+
     if (patch.uiSection === 'amp') {
         return (
             <div className="flex flex-wrap gap-3">
@@ -1440,17 +1440,7 @@ function ControlDeck({
                     Current preset
                 </div>
                 <div className="text-xl font-semibold text-white/90">{patch.name}</div>
-                <div className="text-sm text-white/46">
-                    {(() => {
-                        if (patch.engineMode === 'circuit') {
-                            return 'Circuit first';
-                        }
-                        if (patch.engineMode === 'capture') {
-                            return 'Capture loaded';
-                        }
-                        return 'Hybrid loaded';
-                    })()}
-                </div>
+                <div className="text-sm text-white/46">{engineModeText}</div>
             </div>
             <div className="grinder-window flex min-w-[200px] flex-col gap-2 px-3 py-3">
                 <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
@@ -1480,6 +1470,13 @@ function HeroStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
     }
 
     const activeAmp = AMP_MODELS.find((amp) => amp.id === patch.ampModel);
+
+    let heroEngineText = 'Circuit';
+    if (patch.engineMode === 'capture') {
+        heroEngineText = 'Capture';
+    } else if (patch.engineMode === 'hybrid') {
+        heroEngineText = 'Hybrid';
+    }
 
     return (
         <div className="grid h-full grid-cols-[1.02fr_0.98fr] gap-3">
@@ -1521,19 +1518,7 @@ function HeroStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                 </div>
                 <div className="text-lg font-semibold text-white/90">{activeAmp?.label ?? 'Custom amp'}</div>
                 <div className="space-y-2.5 text-[13px] text-white/56">
-                    <div>
-                        Engine:{' '}
-                        {(() => {
-                            if (patch.engineMode === 'capture') {
-                                return 'Capture';
-                            }
-                            if (patch.engineMode === 'hybrid') {
-                                return 'Hybrid';
-                            }
-                            return 'Circuit';
-                        })()}
-                        .
-                    </div>
+                    <div>Engine: {heroEngineText}.</div>
                     <div>
                         Gate: {patch.gateEnabled ? 'enabled' : 'off'} · Cab: {patch.cabEnabled ? 'on' : 'off'} · Neural:{' '}
                         {patch.neuralEnabled ? 'on' : 'off'}.

@@ -48,16 +48,15 @@ const loadExportSettings = (): {
         const stored = window.localStorage.getItem(EXPORT_SETTINGS_KEY);
         if (stored) {
             const parsed = JSON.parse(stored);
+            let parsedFormats: ExportFormat[] = ['wav'];
+            if (Array.isArray(parsed.formats)) {
+                parsedFormats = parsed.formats;
+            } else if (parsed.format) {
+                parsedFormats = [parsed.format];
+            }
+
             return {
-                formats: (() => {
-                    if (Array.isArray(parsed.formats)) {
-                        return parsed.formats;
-                    }
-                    if (parsed.format) {
-                        return [parsed.format];
-                    }
-                    return ['wav'];
-                })(),
+                formats: parsedFormats,
                 sampleRate: parsed.sampleRate ?? 44100,
                 bitDepth: parsed.bitDepth ?? 24,
                 mp3BitRate: ([96, 128, 192, 320] as Mp3BitRate[]).includes(parsed.mp3BitRate)
@@ -196,21 +195,14 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     const isZip = mode === 'stems' || formats.size > 1; // Zipping required for >1 file
                     const primaryExt = Array.from(formats)[0] || 'wav';
                     const fileExt = isZip ? '.zip' : `.${primaryExt}`;
-                    const mime = (() => {
-                        if (isZip) {
-                            return 'application/zip';
-                        } else {
-                            if (primaryExt === 'wav') {
-                                return 'audio/wav';
-                            } else {
-                                if (primaryExt === 'flac') {
-                                    return 'audio/flac';
-                                } else {
-                                    return 'audio/mpeg';
-                                }
-                            }
-                        }
-                    })();
+                    let mime = 'audio/mpeg';
+                    if (isZip) {
+                        mime = 'application/zip';
+                    } else if (primaryExt === 'wav') {
+                        mime = 'audio/wav';
+                    } else if (primaryExt === 'flac') {
+                        mime = 'audio/flac';
+                    }
 
                     webFileHandle = await (
                         window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<unknown> }
@@ -671,112 +663,94 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         detail={isTauri() ? 'Desktop oven ready' : 'Web oven ready'}
                     >
                         <div className="h-10">
-                            {(() => {
-                                if (exporting || progress === 100) {
-                                    return (
-                                        <div className="space-y-1.5 animate-in fade-in duration-300">
-                                            <div className="flex items-end justify-between text-xs">
-                                                <span
-                                                    className={`font-medium ${progress === 100 ? 'text-green-400' : 'text-orange-400'}`}
-                                                >
-                                                    {statusText}
-                                                </span>
-                                                <span className="font-mono text-[10px] text-orange-500/50">
-                                                    {progress.toFixed(0)}%
-                                                </span>
-                                            </div>
-                                            <div
-                                                className="h-2 w-full overflow-hidden rounded-full border border-stone-800 bg-stone-900 shadow-inner"
-                                                role="progressbar"
-                                                aria-valuenow={Math.round(progress)}
-                                                aria-valuemin={0}
-                                                aria-valuemax={100}
-                                            >
-                                                <div
-                                                    className={`h-full rounded-full transition-all duration-300 ease-out ${
-                                                        progress === 100
-                                                            ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]'
-                                                            : 'bg-gradient-to-r from-amber-600 to-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.6)]'
-                                                    }`}
-                                                    style={{ width: `${progress}%` }}
-                                                >
-                                                    {progress < 100 ? (
-                                                        <div className="absolute inset-0 w-[30%] animate-[shimmer_1.5s_infinite] bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.4)_50%,transparent_100%)]" />
-                                                    ) : null}
-                                                </div>
-                                            </div>
+                            {exporting || progress === 100 ? (
+                                <div className="space-y-1.5 animate-in fade-in duration-300">
+                                    <div className="flex items-end justify-between text-xs">
+                                        <span
+                                            className={`font-medium ${progress === 100 ? 'text-green-400' : 'text-orange-400'}`}
+                                        >
+                                            {statusText}
+                                        </span>
+                                        <span className="font-mono text-[10px] text-orange-500/50">
+                                            {progress.toFixed(0)}%
+                                        </span>
+                                    </div>
+                                    <div
+                                        className="h-2 w-full overflow-hidden rounded-full border border-stone-800 bg-stone-900 shadow-inner"
+                                        role="progressbar"
+                                        aria-valuenow={Math.round(progress)}
+                                        aria-valuemin={0}
+                                        aria-valuemax={100}
+                                    >
+                                        <div
+                                            className={`h-full rounded-full transition-all duration-300 ease-out ${
+                                                progress === 100
+                                                    ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]'
+                                                    : 'bg-gradient-to-r from-amber-600 to-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.6)]'
+                                            }`}
+                                            style={{ width: `${progress}%` }}
+                                        >
+                                            {progress < 100 ? (
+                                                <div className="absolute inset-0 w-[30%] animate-[shimmer_1.5s_infinite] bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.4)_50%,transparent_100%)]" />
+                                            ) : null}
                                         </div>
-                                    );
-                                } else {
-                                    if (errorText) {
-                                        return (
-                                            <div className="flex h-full items-center rounded-lg border border-red-900/30 bg-red-950/20 px-3 text-xs text-red-400 animate-in fade-in">
-                                                {errorText}
-                                            </div>
-                                        );
-                                    } else {
-                                        return (
-                                            <div className="flex h-full flex-col justify-center text-center text-[10px] uppercase tracking-widest text-stone-500">
-                                                {isTauri() ? 'Desktop Oven Ready' : 'Web Oven Ready'}
-                                            </div>
-                                        );
-                                    }
-                                }
-                            })()}
+                                    </div>
+                                </div>
+                            ) : errorText ? (
+                                <div className="flex h-full items-center rounded-lg border border-red-900/30 bg-red-950/20 px-3 text-xs text-red-400 animate-in fade-in">
+                                    {errorText}
+                                </div>
+                            ) : (
+                                <div className="flex h-full flex-col justify-center text-center text-[10px] uppercase tracking-widest text-stone-500">
+                                    {isTauri() ? 'Desktop Oven Ready' : 'Web Oven Ready'}
+                                </div>
+                            )}
                         </div>
                     </DawDialogSection>
                 </DawDialogBody>
 
                 <DawDialogFooter tone="warm" align="end" className="px-6">
-                    {(() => {
-                        if (exporting) {
-                            return (
-                                <Button
-                                    variant="destructive"
-                                    size="sm"
-                                    onClick={handleCancel}
-                                    className="border border-red-900/50 bg-red-950 text-red-400 hover:bg-red-900 hover:text-red-200"
-                                >
-                                    <X className="mr-1 size-3.5" />
-                                    Turn off Oven
-                                </Button>
-                            );
-                        }
-                        if (progress === 100) {
-                            return (
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={onClose}
-                                    className="border-green-900/50 text-green-400 hover:bg-green-950/30 hover:text-green-300"
-                                >
-                                    <CheckCircle2 className="mr-1 size-3.5" />
-                                    Close Bakery
-                                </Button>
-                            );
-                        }
-                        return (
-                            <>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={onClose}
-                                    className="text-stone-400 hover:text-stone-200"
-                                >
-                                    Cancel
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    onClick={handleExport}
-                                    disabled={formats.size === 0 || isExportActive()}
-                                    className="border-t border-orange-400/30 bg-orange-600 font-medium text-white shadow-[0_0_15px_rgba(234,88,12,0.3)] transition-all hover:bg-orange-500 hover:shadow-[0_0_20px_rgba(249,115,22,0.5)]"
-                                >
-                                    <Flame className="mr-1.5 size-3.5 opacity-80" />
-                                    Start Baking
-                                </Button>
-                            </>
-                        );
-                    })()}
+                    {exporting ? (
+                        <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={handleCancel}
+                            className="border border-red-900/50 bg-red-950 text-red-400 hover:bg-red-900 hover:text-red-200"
+                        >
+                            <X className="mr-1 size-3.5" />
+                            Turn off Oven
+                        </Button>
+                    ) : progress === 100 ? (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={onClose}
+                            className="border-green-900/50 text-green-400 hover:bg-green-950/30 hover:text-green-300"
+                        >
+                            <CheckCircle2 className="mr-1 size-3.5" />
+                            Close Bakery
+                        </Button>
+                    ) : (
+                        <>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={onClose}
+                                className="text-stone-400 hover:text-stone-200"
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                size="sm"
+                                onClick={handleExport}
+                                disabled={formats.size === 0 || isExportActive()}
+                                className="border-t border-orange-400/30 bg-orange-600 font-medium text-white shadow-[0_0_15px_rgba(234,88,12,0.3)] transition-all hover:bg-orange-500 hover:shadow-[0_0_20px_rgba(249,115,22,0.5)]"
+                            >
+                                <Flame className="mr-1.5 size-3.5 opacity-80" />
+                                Start Baking
+                            </Button>
+                        </>
+                    )}
                 </DawDialogFooter>
             </DialogContent>
         </Dialog>

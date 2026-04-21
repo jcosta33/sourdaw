@@ -122,6 +122,15 @@ export const CrustMeteringStrip = ({
 
     const targetDiff = lufsTarget !== null ? lufsIntegrated - lufsTarget : null;
 
+    let targetDiffColor = '#D4A847';
+    if (targetDiff !== null) {
+        if (Math.abs(targetDiff) <= 0.5) {
+            targetDiffColor = '#7FC8A0';
+        } else if (targetDiff > 0) {
+            targetDiffColor = '#C44030';
+        }
+    }
+
     return (
         <div
             className="flex flex-col gap-2 p-2 h-full"
@@ -174,15 +183,7 @@ export const CrustMeteringStrip = ({
                         <span
                             className="text-[8px] font-mono ml-1"
                             style={{
-                                color: (() => {
-                                    if (Math.abs(targetDiff) <= 0.5) {
-                                        return '#7FC8A0';
-                                    }
-                                    if (targetDiff > 0) {
-                                        return '#C44030';
-                                    }
-                                    return '#D4A847';
-                                })(),
+                                color: targetDiffColor,
                             }}
                         >
                             ({targetDiff > 0 ? '+' : ''}
