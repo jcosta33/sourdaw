@@ -118,7 +118,7 @@ export function readProjectJson(): string | null {
 
     // Fallback: try localStorage for migration from old storage
     try {
-        const legacy = localStorage.getItem('sourdaw-project');
+        const legacy = window.localStorage.getItem('sourdaw-project');
         if (legacy) {
             cachedJson = legacy;
             // Migrate to IndexedDB
@@ -141,7 +141,7 @@ export function writeProjectJson(json: string): void {
 
     // Also try localStorage as a fallback (may fail for large projects)
     try {
-        localStorage.setItem('sourdaw-project', json);
+        window.localStorage.setItem('sourdaw-project', json);
     } catch {
         // Quota exceeded — IndexedDB has it, so this is fine
     }
@@ -151,7 +151,7 @@ export function removeProjectJson(): void {
     cachedJson = null;
     idbDelete(PRIMARY_KEY);
     try {
-        localStorage.removeItem('sourdaw-project');
+        window.localStorage.removeItem('sourdaw-project');
     } catch {
         // Ignore
     }
@@ -161,7 +161,7 @@ export function writeNamedProjectJson(name: string, json: string): void {
     const key = `sourdaw:project:${name}`;
     idbPut(key, json);
     try {
-        localStorage.setItem(key, json);
+        window.localStorage.setItem(key, json);
     } catch {
         // Quota exceeded — IndexedDB has it
     }
@@ -170,7 +170,7 @@ export function writeNamedProjectJson(name: string, json: string): void {
 export function readNamedProjectJson(key: string): string | null {
     // For named projects, try localStorage first (sync), then IndexedDB would need async
     try {
-        return localStorage.getItem(key);
+        return window.localStorage.getItem(key);
     } catch {
         return null;
     }

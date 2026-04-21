@@ -56,7 +56,7 @@ const LEVELS = [
 
 function loadUserPatches(): Array<{ id: string; name: string; patch: FermenterPatch }> {
     try {
-        return JSON.parse(localStorage.getItem(USER_PATCHES_KEY) ?? '[]');
+        return JSON.parse(window.localStorage.getItem(USER_PATCHES_KEY) ?? '[]');
     } catch {
         return [];
     }
@@ -65,7 +65,7 @@ function loadUserPatches(): Array<{ id: string; name: string; patch: FermenterPa
 function saveUserPatch(name: string, patch: FermenterPatch): void {
     const patches = loadUserPatches();
     patches.push({ id: `user-${Date.now()}`, name, patch: { ...patch, name } });
-    localStorage.setItem(USER_PATCHES_KEY, JSON.stringify(patches));
+    window.localStorage.setItem(USER_PATCHES_KEY, JSON.stringify(patches));
 }
 
 function formatPercent(value: number): string {

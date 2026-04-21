@@ -45,7 +45,7 @@ const loadExportSettings = (): {
     mp3BitRate: Mp3BitRate;
 } => {
     try {
-        const stored = localStorage.getItem(EXPORT_SETTINGS_KEY);
+        const stored = window.localStorage.getItem(EXPORT_SETTINGS_KEY);
         if (stored) {
             const parsed = JSON.parse(stored);
             return {
@@ -78,7 +78,7 @@ const saveExportSettings = (settings: {
     mp3BitRate: Mp3BitRate;
 }): void => {
     try {
-        localStorage.setItem(EXPORT_SETTINGS_KEY, JSON.stringify(settings));
+        window.localStorage.setItem(EXPORT_SETTINGS_KEY, JSON.stringify(settings));
     } catch {
         /* ignore */
     }

@@ -13,7 +13,7 @@ export const createLocalStorage = <TData>(key: LocalStorageKey): StorageAdapter<
                 return cachedValue;
             }
 
-            const raw = localStorage.getItem(key);
+            const raw = window.localStorage.getItem(key);
             if (raw === null) {
                 cachedValue = null;
                 return null;
@@ -32,16 +32,16 @@ export const createLocalStorage = <TData>(key: LocalStorageKey): StorageAdapter<
             cachedValue = value;
 
             if (value === null) {
-                localStorage.removeItem(key);
+                window.localStorage.removeItem(key);
                 return;
             }
 
-            localStorage.setItem(key, stringify(value));
+            window.localStorage.setItem(key, stringify(value));
         },
 
         clear(): void {
             cachedValue = null;
-            localStorage.removeItem(key);
+            window.localStorage.removeItem(key);
         },
 
         isSupported(): boolean {

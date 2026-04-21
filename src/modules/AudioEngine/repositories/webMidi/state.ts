@@ -48,7 +48,7 @@ const STORAGE_KEY = 'sourdaw:midi:selectedInputId';
 
 function readPersistedInputId(): string | null {
     try {
-        return localStorage.getItem(STORAGE_KEY);
+        return window.localStorage.getItem(STORAGE_KEY);
     } catch {
         return null;
     }
@@ -57,9 +57,9 @@ function readPersistedInputId(): string | null {
 function persistInputId(id: string | null): void {
     try {
         if (id) {
-            localStorage.setItem(STORAGE_KEY, id);
+            window.localStorage.setItem(STORAGE_KEY, id);
         } else {
-            localStorage.removeItem(STORAGE_KEY);
+            window.localStorage.removeItem(STORAGE_KEY);
         }
     } catch {
         // storage not available

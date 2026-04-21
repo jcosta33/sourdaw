@@ -8,7 +8,7 @@ const VC_STORAGE_KEY = 'sourdaw-version-control';
 
 function loadFromStorage(): VersionControlState {
     try {
-        const raw = localStorage.getItem(VC_STORAGE_KEY);
+        const raw = window.localStorage.getItem(VC_STORAGE_KEY);
         if (raw) {
             return JSON.parse(raw) as VersionControlState;
         }
@@ -32,7 +32,7 @@ function persistVersionControlState(value: VersionControlState): void {
                 snapshot: { data: '', size: value1.snapshot.size },
             })),
         };
-        localStorage.setItem(VC_STORAGE_KEY, JSON.stringify(lightweight));
+        window.localStorage.setItem(VC_STORAGE_KEY, JSON.stringify(lightweight));
     } catch {
         /* storage full */
     }

@@ -91,7 +91,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
     const [userSamples, setUserSamples] = useState<UserSample[]>([]);
     const [favorites, setFavorites] = useState<Set<string>>(() => {
         try {
-            const stored = localStorage.getItem('sourdaw-favorites');
+            const stored = window.localStorage.getItem('sourdaw-favorites');
             return stored ? new Set(JSON.parse(stored) as string[]) : new Set();
         } catch {
             return new Set();
@@ -143,7 +143,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                 next.add(id);
             }
             try {
-                localStorage.setItem('sourdaw-favorites', JSON.stringify([...next]));
+                window.localStorage.setItem('sourdaw-favorites', JSON.stringify([...next]));
             } catch {
                 /* ignore */
             }

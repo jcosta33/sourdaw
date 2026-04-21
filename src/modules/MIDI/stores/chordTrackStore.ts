@@ -11,7 +11,7 @@ export const defaultChordTrackState: ChordTrackState = { enabled: false, events:
 
 function loadFromStorage(): ChordTrackState {
     try {
-        const stored = localStorage.getItem('sourdaw_chord_track');
+        const stored = window.localStorage.getItem('sourdaw_chord_track');
         if (stored) {
             return JSON.parse(stored) as ChordTrackState;
         }
@@ -29,6 +29,6 @@ export const chordTrackStore = createStore<ChordTrackState>({
 chordTrackStore.subscribe(() => {
     const state = chordTrackStore.value;
     if (state) {
-        localStorage.setItem('sourdaw_chord_track', JSON.stringify(state));
+        window.localStorage.setItem('sourdaw_chord_track', JSON.stringify(state));
     }
 });

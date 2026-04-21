@@ -202,7 +202,7 @@ const USER_PRESETS_KEY = 'proof-chamber-user-presets';
 
 export function getUserPresets(): ProofChamberPreset[] {
     try {
-        const raw = localStorage.getItem(USER_PRESETS_KEY);
+        const raw = window.localStorage.getItem(USER_PRESETS_KEY);
         if (raw) {
             return JSON.parse(raw) as ProofChamberPreset[];
         }

@@ -13,7 +13,7 @@ export type MacroStoreState = {
 
 function loadPersistedMacros(): Macro[] {
     try {
-        const stored = localStorage.getItem(STORAGE_KEY);
+        const stored = window.localStorage.getItem(STORAGE_KEY);
         if (stored) {
             return JSON.parse(stored) as Macro[];
         }
@@ -31,7 +31,7 @@ macroStore.subscribe(() => {
     const state = macroStore.value;
     if (state) {
         try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(state.macros));
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state.macros));
         } catch {
             // Storage full — silently degrade
         }

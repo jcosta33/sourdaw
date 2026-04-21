@@ -163,7 +163,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // Show alpha notice when project initializes — localStorage is the
     // source of truth, so HMR can't cause the notice to re-appear.
     useEffect(() => {
-        if (project.initialized && localStorage.getItem(ALPHA_NOTICE_KEY) !== 'true') {
+        if (project.initialized && window.localStorage.getItem(ALPHA_NOTICE_KEY) !== 'true') {
             setShowAlphaNotice(true);
         }
     }, [project.initialized]);
@@ -696,7 +696,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     open={showAlphaNotice}
                     onOpenChange={(open) => {
                         if (!open) {
-                            localStorage.setItem(ALPHA_NOTICE_KEY, 'true');
+                            window.localStorage.setItem(ALPHA_NOTICE_KEY, 'true');
                         }
                         setShowAlphaNotice(open);
                     }}
