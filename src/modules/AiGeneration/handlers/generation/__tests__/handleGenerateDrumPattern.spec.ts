@@ -58,7 +58,8 @@ describe('handleGenerateDrumPattern', () => {
         void handleGenerateDrumPattern.execute({
             type: 'generateDrumPattern',
             payload: {
-                style: 'invalid-style' as any,
+                // @ts-expect-error - Intentionally passing an invalid style to test fallback
+                style: 'invalid-style',
                 bars: 4,
                 density: 0.5,
             },

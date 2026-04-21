@@ -1,7 +1,7 @@
 import type { EventHandler, EventMap, WildcardHandler } from '../types';
 
 export function createSubscriptionRegistry<TEvents extends EventMap>() {
-    const handlers = new Map<keyof TEvents & string, Set<EventHandler<any>>>();
+    const handlers = new Map<keyof TEvents & string, Set<EventHandler<never>>>();
     const wildcardHandlers = new Set<WildcardHandler<TEvents>>();
 
     function getHandlers<TEventName extends keyof TEvents & string>(

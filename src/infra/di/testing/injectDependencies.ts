@@ -3,7 +3,7 @@ import { testOverrides } from '../internal/containerState';
 
 import type { InjectableFunction } from '../inject';
 
-export const injectDependencies = <TInjectable extends InjectableFunction, TMocks extends Record<string, any>>(
+export const injectDependencies = <TInjectable extends InjectableFunction, TMocks extends Record<string, unknown>>(
     injectable: TInjectable,
     mocks: TMocks
 ) => {

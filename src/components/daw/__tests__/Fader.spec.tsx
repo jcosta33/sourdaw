@@ -1,10 +1,10 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
 import { Fader } from '../Fader';
 
 describe('Fader', () => {
-    let getBoundingClientRectSpy: ReturnType<typeof vi.spyOn>;
+    let getBoundingClientRectSpy: MockInstance;
 
     beforeEach(() => {
         getBoundingClientRectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
