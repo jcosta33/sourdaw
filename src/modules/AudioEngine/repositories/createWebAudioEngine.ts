@@ -267,6 +267,14 @@ class AudioEngineImpl implements AudioEngine {
         this.trackNodes.get(trackId)?.scheduleParam(deviceId, paramId, value, time);
     }
 
+    public scheduleDeviceKeyOn(trackId: string, deviceId: string, pitch: number, velocity: number, time?: number): void {
+        this.trackNodes.get(trackId)?.scheduleDeviceKeyOn(deviceId, pitch, velocity, time);
+    }
+
+    public scheduleDeviceKeyOff(trackId: string, deviceId: string, pitch: number, velocity: number, time?: number): void {
+        this.trackNodes.get(trackId)?.scheduleDeviceKeyOff(deviceId, pitch, velocity, time);
+    }
+
     public updateDeviceBypass(trackId: string, deviceId: string, bypassed: boolean): void {
         this.trackNodes.get(trackId)?.updateBypass(deviceId, bypassed);
     }

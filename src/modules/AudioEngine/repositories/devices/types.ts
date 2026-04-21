@@ -13,6 +13,8 @@ export type OfflineDeviceNode = {
     wamControls?: {
         setParam: (name: string, value: number) => void;
         scheduleParam: (name: string, value: number, time: number) => void;
+        keyOn?: (channel: number, pitch: number, velocity: number, time?: number) => void;
+        keyOff?: (channel: number, pitch: number, velocity: number, time?: number) => void;
         destroy?: () => void;
     };
 };

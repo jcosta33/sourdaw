@@ -25,6 +25,8 @@ export type BuiltinDeviceNode = {
     wamControls?: {
         setParam: (name: string, value: number) => void;
         scheduleParam: (name: string, value: number, time: number) => void;
+        keyOn?: (channel: number, pitch: number, velocity: number, time?: number) => void;
+        keyOff?: (channel: number, pitch: number, velocity: number, time?: number) => void;
         destroy?: () => void;
     };
     /** Controls for the Fermenter synthesizer (MIDI + param updates via MessagePort) */
@@ -151,6 +153,8 @@ export type AudioEngine = {
     updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void;
     updateDevicePatch(trackId: string, deviceId: string, patch: Record<string, unknown>): void;
     scheduleDeviceParam(trackId: string, deviceId: string, paramId: string, value: number, time: number): void;
+    scheduleDeviceKeyOn(trackId: string, deviceId: string, pitch: number, velocity: number, time?: number): void;
+    scheduleDeviceKeyOff(trackId: string, deviceId: string, pitch: number, velocity: number, time?: number): void;
     updateDeviceBypass(trackId: string, deviceId: string, bypassed: boolean): void;
     addMidiFxToStrip(trackId: string, fxId: string, fxType: 'arp' | 'velocity' | 'probability'): void;
     removeMidiFxFromStrip(trackId: string, fxId: string): void;

@@ -510,6 +510,20 @@ export class TrackNode {
         }
     }
 
+    public scheduleDeviceKeyOn(deviceId: string, pitch: number, velocity: number, time?: number): void {
+        const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
+        if (dn?.wamControls?.keyOn) {
+            dn.wamControls.keyOn(0, pitch, velocity, time);
+        }
+    }
+
+    public scheduleDeviceKeyOff(deviceId: string, pitch: number, velocity: number, time?: number): void {
+        const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
+        if (dn?.wamControls?.keyOff) {
+            dn.wamControls.keyOff(0, pitch, velocity, time);
+        }
+    }
+
     public updateBypass(deviceId: string, bypassed: boolean): void {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
         if (!dn) {

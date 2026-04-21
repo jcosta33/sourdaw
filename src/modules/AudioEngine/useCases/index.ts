@@ -38,6 +38,8 @@ export { removeDeviceFromStrip } from './deviceControls/removeDeviceFromStrip';
 export { updateDeviceParam } from './deviceControls/updateDeviceParam';
 export { updateDevicePatch } from './deviceControls/updateDevicePatch';
 export { scheduleDeviceParam } from './deviceControls/scheduleDeviceParam';
+export { scheduleDeviceKeyOn } from './deviceControls/scheduleDeviceKeyOn';
+export { scheduleDeviceKeyOff } from './deviceControls/scheduleDeviceKeyOff';
 export { updateDeviceBypass } from './deviceControls/updateDeviceBypass';
 export { registerTuningTable } from './deviceControls/tuningControls';
 export {
