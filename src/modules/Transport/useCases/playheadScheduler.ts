@@ -7,8 +7,14 @@ import {
     stopAudioRecording,
     getAudioContext,
     audioEngine,
+    scheduleAdjustmentLayers,
 } from '#/modules/AudioEngine/useCases';
-import { startAutomationRecording, stopAutomationRecording, applyModulation } from '#/modules/Automation/useCases';
+import {
+    startAutomationRecording,
+    stopAutomationRecording,
+    applyModulation,
+    applyModulationToEngine,
+} from '#/modules/Automation/useCases';
 
 import { getTempoAtBeat } from '../models/TempoMap';
 import { playheadPositionRef } from '../stores/playheadPositionRef';
@@ -238,6 +244,8 @@ export function startPlayheadScheduler(): void {
         applyVcaGains();
         applyAutomation(newPosition);
         applyModulation(newPosition);
+        applyModulationToEngine(newPosition);
+        scheduleAdjustmentLayers(newPosition);
 
         schedulerSession.lastScheduledBeat = scheduleUpTo;
     };
