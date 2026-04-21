@@ -140,9 +140,9 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
             label: track.freezeState.status === 'stale' ? 'Update Freeze' : track.frozen ? 'Unfreeze' : 'Freeze',
             action: () => {
                 if (track.frozen) {
-                    unfreezeTrack(track.id);
+                    void unfreezeTrack(track.id);
                 } else {
-                    freezeTrack(track.id);
+                    void freezeTrack(track.id);
                 }
                 close();
             },
@@ -152,7 +152,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                   {
                       label: 'Flatten Track',
                       action: () => {
-                          flattenTrack(track.id);
+                          void flattenTrack(track.id);
                           close();
                       },
                   },
@@ -169,7 +169,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
         {
             label: 'Save as Template',
             action: () => {
-                saveTrackAsTemplate(track.id, track.name);
+                void saveTrackAsTemplate(track.id, track.name);
                 close();
             },
         },
@@ -186,7 +186,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                         variant: 'danger',
                     });
                     if (ok) {
-                        removeTrack(track.id);
+                        void removeTrack(track.id);
                     }
                 })();
             },
@@ -204,7 +204,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                        handleImportAudio(file);
+                        void handleImportAudio(file);
                     }
                     e.target.value = '';
                 }}
@@ -217,7 +217,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
                 onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                        importMidiFile(file);
+                        void importMidiFile(file);
                     }
                     e.target.value = '';
                     close();

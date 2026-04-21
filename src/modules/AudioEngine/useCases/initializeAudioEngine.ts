@@ -6,10 +6,9 @@ import { audioEngine } from '../repositories/createWebAudioEngine';
 export async function initializeAudioEngine(): Promise<void> {
     await audioEngine.initialize();
     syncKneadToEngine();
-    registerBuiltinPlugins();
     registerBuiltinFaustDSP();
     const ctx = audioEngine.context;
     if (ctx) {
-        initWAMEnvironment(ctx);
+        void initWAMEnvironment(ctx);
     }
 }

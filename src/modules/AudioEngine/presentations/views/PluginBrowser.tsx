@@ -106,11 +106,11 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
             }
             trackId = newTrack.id;
         }
-        loadExternalPlugin(trackId, plugin.id, plugin.name);
+        void loadExternalPlugin(trackId, plugin.id, plugin.name);
     };
 
     const handleScan = () => {
-        startPluginScan();
+        void startPluginScan();
     };
 
     return (

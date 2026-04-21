@@ -179,7 +179,7 @@ export const audioBufferCache = {
     get(id: string): AudioBuffer | undefined {
         const buf = audioCacheGet(id);
         if (buf) {
-            updateAccessTimeInIdb(id);
+            void updateAccessTimeInIdb(id);
         }
         return buf;
     },
@@ -187,13 +187,13 @@ export const audioBufferCache = {
     set(id: string, buffer: AudioBuffer): void {
         audioCacheSet(id, buffer);
         clearWaveformCachesForId(id);
-        persistToIdb(id, buffer);
+        void persistToIdb(id, buffer);
     },
 
     remove(id: string): void {
         cache.delete(id);
         clearWaveformCachesForId(id);
-        removeFromIdb(id);
+        void removeFromIdb(id);
     },
 
     has(id: string): boolean {

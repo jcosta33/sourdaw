@@ -398,7 +398,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     outputNode: result.workletNode,
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
-                syncFullPatch(deviceId);
+                void syncFullPatch(deviceId);
             })
             .catch((error) => logger.warn(`[WebAudioEngine] Proof failed: ${error}`));
         return { placeholder, loadPromise };
@@ -527,7 +527,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
                     outputNode: result.outputNode,
                     wamControls: controls,
                 });
-                eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
             })
             .catch((error) => logger.warn(`[WebAudioEngine] Faust failed: ${error}`));
         return { placeholder, loadPromise };

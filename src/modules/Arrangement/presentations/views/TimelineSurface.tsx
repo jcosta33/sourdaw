@@ -385,7 +385,7 @@ export const TimelineSurface = (): ReactElement => {
             animationScheduler.register(`timeline-${renderId}`, renderLoop);
         };
 
-        initRenderer();
+        void initRenderer();
 
         const resizeObserver = new ResizeObserver((entries) => {
             for (const entry of entries) {

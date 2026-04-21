@@ -150,7 +150,7 @@ export const startAudioRecording = inject({ logger })(
                         audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: true });
                     } else if (msg.type === 'wav') {
                         // Worker has flushed OPFS → decode WAV on the main thread.
-                        decodeAndDeliver(msg.buffer, ctx);
+                        void decodeAndDeliver(msg.buffer, ctx);
                     } else if (msg.type === 'error') {
                         logger.error(new Error(`Recording worker error: ${msg.message}`));
                         cleanupNodes();

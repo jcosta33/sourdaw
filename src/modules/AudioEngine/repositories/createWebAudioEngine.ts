@@ -524,7 +524,7 @@ class AudioEngineImpl implements AudioEngine {
         this.resetGraph();
         this.masterGainNode.disconnect();
         this.masterAnalyser.disconnect();
-        this.context.close();
+        void this.context.close();
     }
 }
 

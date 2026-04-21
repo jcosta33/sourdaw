@@ -177,7 +177,7 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
             if (dn?.grandBouleControls) {
                 dn.grandBouleControls.noteOff(note);
             }
-            deps.eventBus.emit('midi.noteOff', { midiNote: note });
+            void deps.eventBus.emit('midi.noteOff', { midiNote: note });
         }
 
         if (noteData.levainDeviceId && getTargetTrackId()) {

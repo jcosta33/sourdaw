@@ -77,7 +77,7 @@ function startPolling(): void {
             tick();
         }, POLL_MS);
     };
-    tick();
+    void tick();
 }
 
 async function stopWorker(): Promise<void> {

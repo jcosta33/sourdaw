@@ -315,7 +315,7 @@ async function renderWithProgress(
                     if (options?.abortSignal?.aborted) {
                         return;
                     }
-                    options?.onProgress?.(i / totalFrames);
+                    void options?.onProgress?.(i / totalFrames);
                     offlineCtx.resume();
                 })
                 .catch(reject);

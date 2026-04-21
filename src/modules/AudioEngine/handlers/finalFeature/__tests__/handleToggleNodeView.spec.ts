@@ -14,7 +14,7 @@ describe('handleToggleNodeView', () => {
     });
 
     it('forwards to toggleNodeView', () => {
-        handleToggleNodeView.execute({ type: 'toggleNodeView', payload: undefined });
+        void handleToggleNodeView.execute({ type: 'toggleNodeView', payload: undefined });
 
         expect(toggleNodeView).toHaveBeenCalledTimes(1);
     });

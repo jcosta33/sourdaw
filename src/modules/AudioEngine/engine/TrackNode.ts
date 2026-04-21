@@ -344,7 +344,7 @@ export class TrackNode {
                 })
                 .catch((error) => logger.warn(`[WebAudioEngine] Native plugin bridge failed: ${error}`));
             pendingDevicePromises.add(loadPromise);
-            loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
+            void loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
         } else {
             const factory = DEVICE_FACTORIES[deviceType];
             if (factory) {

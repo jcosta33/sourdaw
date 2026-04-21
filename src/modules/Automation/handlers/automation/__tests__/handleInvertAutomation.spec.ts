@@ -14,7 +14,7 @@ describe('handleInvertAutomation', () => {
     });
 
     it('forwards laneId', () => {
-        handleInvertAutomation.execute({ type: 'invertAutomation', payload: { laneId: 'lane-1' } });
+        void handleInvertAutomation.execute({ type: 'invertAutomation', payload: { laneId: 'lane-1' } });
 
         expect(invertAutomation).toHaveBeenCalledWith('lane-1');
     });

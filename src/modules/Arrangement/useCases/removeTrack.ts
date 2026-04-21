@@ -69,6 +69,6 @@ export const removeTrack = inject({ eventBus })(
                 }
             }
 
-            eventBus.emit('track.removed', { trackId });
+            void eventBus.emit('track.removed', { trackId });
         }
 );

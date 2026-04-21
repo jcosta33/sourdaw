@@ -12,7 +12,7 @@ export function toggleInputMonitoring(trackId: string): void {
     updateTrack(trackId, (t) => ({ ...t, inputMonitoring: newValue }));
 
     if (newValue === 'on') {
-        startInputMonitoring(trackId);
+        void startInputMonitoring(trackId);
     } else {
         stopInputMonitoring();
     }

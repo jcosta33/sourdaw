@@ -26,7 +26,7 @@ export const AudioDevicePicker = (): ReactElement => {
 
     const refresh = () => {
         setLoading(true);
-        getAudioDevices().then((result) => {
+        void getAudioDevices().then((result) => {
             setDevices(result);
             setLoading(false);
         });
