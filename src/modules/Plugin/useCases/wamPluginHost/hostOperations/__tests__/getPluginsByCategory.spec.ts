@@ -6,14 +6,16 @@ import { getPluginsByCategory } from '../getPluginsByCategory';
 import { registry } from '../helpers';
 import { registerWAMPlugin } from '../registerWAMPlugin';
 
-const desc = (id: string, category: WAMDescriptor['category']): WAMDescriptor => ({
-    id,
-    name: id,
-    vendor: 'V',
-    version: '1',
-    category,
-    sdkVersion: '2.0',
-});
+function desc(id: string, category: WAMDescriptor['category']): WAMDescriptor {
+    return {
+        id,
+        name: id,
+        vendor: 'V',
+        version: '1',
+        category,
+        sdkVersion: '2.0',
+    };
+}
 
 describe('getPluginsByCategory', () => {
     beforeEach(() => {

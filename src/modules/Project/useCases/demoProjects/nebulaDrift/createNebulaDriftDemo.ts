@@ -401,7 +401,9 @@ export async function demo5_NebulaDrift(): Promise<void> {
     // Initial levels & static pans (automation adds motion)
     const widePans = [-38, 34, -28, 30, -22, 26, -40, 36];
     let pi = 0;
-    const nextPan = () => widePans[pi++ % widePans.length] ?? 0;
+    function nextPan() {
+        return widePans[pi++ % widePans.length] ?? 0;
+    }
 
     tSubDrone.gain = 0;
     tDarkMist.gain = 0;
@@ -453,7 +455,9 @@ export async function demo5_NebulaDrift(): Promise<void> {
         pad.gain = 1;
     }
 
-    const clip = (trackId: string, name: string) => createMidiClip(trackId, name, 0, TB);
+    function clip(trackId: string, name: string) {
+        return createMidiClip(trackId, name, 0, TB);
+    }
 
     const cSub = clip(tSubDrone.id, 'Sub');
     const cDark = clip(tDarkMist.id, 'Mist');
@@ -479,13 +483,13 @@ export async function demo5_NebulaDrift(): Promise<void> {
 
     // ── MIDI content ──────────────────────────────────────────────────────
     // Humanization: wider timing offsets (+-0.2 beats), more velocity variation (+-12)
-    const hum = (pitch: number, beat: number, duration: number, velocity: number, salt: number): MidiNote => {
+    function hum(pitch: number, beat: number, duration: number, velocity: number, salt: number): MidiNote {
         const tb = ((salt * 19) % 37) / 95 - 0.2; // +-0.2 beats timing offset
         const td = ((salt * 11) % 13) / 60 - 0.1; // +-0.1 duration variance
         const dv = ((salt * 23) % 25) - 12; // +-12 velocity variance
         const v = Math.max(1, Math.min(127, Math.round(velocity + dv)));
         return note(pitch, Math.max(0, beat + tb), Math.max(0.08, duration + td), v);
-    };
+    }
 
     const subN: MidiNote[] = [];
     for (let b = 0, s = 0; b < TB; b += 20, s++) {
@@ -881,7 +885,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
         [S.final, TB],
     ];
 
-    const toasterSegmentIndex = (absBeat: number): number => {
+    function toasterSegmentIndex(absBeat: number): number {
         if (absBeat < S.build1) {
             return 0;
         }
@@ -895,7 +899,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
             return 3;
         }
         return 4;
-    };
+    }
 
     const padSegNotes: MidiNote[][][] = Array.from({ length: 16 }, () => toasterSegRanges.map(() => [] as MidiNote[]));
 

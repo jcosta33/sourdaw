@@ -14,12 +14,14 @@ const descriptor: WAMDescriptor = {
     sdkVersion: '2.0',
 };
 
-const mockInstance = (id: string): WAMInstance => ({
-    descriptor,
-    audioNode: {} as AudioNode,
-    initialized: true,
-    groupId: id,
-});
+function mockInstance(id: string): WAMInstance {
+    return {
+        descriptor,
+        audioNode: {} as AudioNode,
+        initialized: true,
+        groupId: id,
+    };
+}
 
 describe('getActiveInstances', () => {
     beforeEach(() => {

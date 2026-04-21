@@ -6,14 +6,16 @@ import { getRegisteredPlugins } from '../getRegisteredPlugins';
 import { registry } from '../helpers';
 import { registerWAMPlugin } from '../registerWAMPlugin';
 
-const desc = (id: string): WAMDescriptor => ({
-    id,
-    name: id,
-    vendor: 'V',
-    version: '1',
-    category: 'effect',
-    sdkVersion: '2.0',
-});
+function desc(id: string): WAMDescriptor {
+    return {
+        id,
+        name: id,
+        vendor: 'V',
+        version: '1',
+        category: 'effect',
+        sdkVersion: '2.0',
+    };
+}
 
 describe('getRegisteredPlugins', () => {
     beforeEach(() => {
