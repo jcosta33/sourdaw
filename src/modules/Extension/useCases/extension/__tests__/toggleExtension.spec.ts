@@ -27,18 +27,20 @@ function baseState(overrides: Partial<ExtensionMarketplaceState> = {}): Extensio
     };
 }
 
-const manifest = (id: string): ExtensionManifest => ({
-    id,
-    name: 'T',
-    version: '1',
-    description: 'd',
-    author: 'a',
-    minDawVersion: '0',
-    main: 'm.js',
-    permissions: [],
-    category: 'utilities',
-    license: 'MIT',
-});
+function manifest(id: string): ExtensionManifest {
+    return {
+        id,
+        name: 'T',
+        version: '1',
+        description: 'd',
+        author: 'a',
+        minDawVersion: '0',
+        main: 'm.js',
+        permissions: [],
+        category: 'utilities',
+        license: 'MIT',
+    };
+}
 
 describe('toggleExtension', () => {
     beforeEach(() => {

@@ -23,18 +23,20 @@ function baseState(overrides: Partial<ExtensionMarketplaceState> = {}): Extensio
     };
 }
 
-const minimalManifest = (id: string): ExtensionManifest => ({
-    id,
-    name: 'Test',
-    version: '1.0.0',
-    description: 'd',
-    author: 'a',
-    minDawVersion: '0.1.0',
-    main: 'index.js',
-    permissions: [],
-    category: 'utilities',
-    license: 'MIT',
-});
+function minimalManifest(id: string): ExtensionManifest {
+    return {
+        id,
+        name: 'Test',
+        version: '1.0.0',
+        description: 'd',
+        author: 'a',
+        minDawVersion: '0.1.0',
+        main: 'index.js',
+        permissions: [],
+        category: 'utilities',
+        license: 'MIT',
+    };
+}
 
 describe('installExtension', () => {
     beforeEach(() => {
