@@ -78,7 +78,7 @@ export function startPlayheadScheduler(): void {
 
     const grainMs = state.scheduleGrainMs ?? DEFAULT_SCHEDULE_GRAIN_MS;
 
-    const tick = async (): Promise<void> => {
+    async function tick(): Promise<void> {
         const current = transportStore.value;
         if (!current?.isPlaying) {
             return;
@@ -240,7 +240,7 @@ export function startPlayheadScheduler(): void {
         applyModulation(newPosition);
 
         schedulerSession.lastScheduledBeat = scheduleUpTo;
-    };
+    }
 
     if (!schedulerSession.worker) {
         schedulerSession.worker = new Worker(new URL('../workers/schedulerWorker.ts', import.meta.url), {

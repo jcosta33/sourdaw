@@ -24,30 +24,34 @@ vi.mock('../../../stores/setlistStore', () => {
     return { setlistStore };
 });
 
-const baseItem = (overrides?: Partial<SetlistItem>): SetlistItem => ({
-    id: 'item-1',
-    name: 'Song',
-    projectPath: null,
-    bpm: null,
-    timeSignature: null,
-    estimatedDuration: 120,
-    notes: '',
-    programChange: null,
-    color: '#000',
-    autoStop: false,
-    gapSeconds: 0,
-    markers: [],
-    ...overrides,
-});
+function baseItem(overrides?: Partial<SetlistItem>): SetlistItem {
+    return {
+        id: 'item-1',
+        name: 'Song',
+        projectPath: null,
+        bpm: null,
+        timeSignature: null,
+        estimatedDuration: 120,
+        notes: '',
+        programChange: null,
+        color: '#000',
+        autoStop: false,
+        gapSeconds: 0,
+        markers: [],
+        ...overrides,
+    };
+}
 
-const baseState = (items: SetlistItem[], currentIndex: number): SetlistState => ({
-    name: 'Set',
-    items,
-    currentIndex,
-    autoAdvance: false,
-    countInBars: 1,
-    totalDuration: 0,
-});
+function baseState(items: SetlistItem[], currentIndex: number): SetlistState {
+    return {
+        name: 'Set',
+        items,
+        currentIndex,
+        autoAdvance: false,
+        countInBars: 1,
+        totalDuration: 0,
+    };
+}
 
 describe('goToItem', () => {
     beforeEach(() => {

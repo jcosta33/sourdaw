@@ -136,13 +136,13 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
         const swingMs = stepIdx % 2 === 1 ? state.kit.swing * stepDurationMs * 0.5 : 0;
         const totalDelayMs = Math.max(0, swingMs + microOffsetMs);
 
-        const fire = () => {
+        function fire(): void {
             triggerToasterPad(track.padIndex, vel);
             if (step.soundLock && pad && toasterDeviceId) {
                 const defaultIdx = TOASTER_ENGINE_MAP[pad.engineType] ?? 0;
                 setPadEngineImmediate(toasterDeviceId, track.padIndex, defaultIdx);
             }
-        };
+        }
 
         if (totalDelayMs > 1) {
             setTimeout(fire, totalDelayMs);

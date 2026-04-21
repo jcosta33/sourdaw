@@ -5,23 +5,25 @@ export type TimeSignatureChange = {
     denominator: number;
 };
 
-export const createTimeSignatureChange = (
+export function createTimeSignatureChange(
     beat: number,
     numerator: number,
     denominator: number
-): TimeSignatureChange => ({
-    id: `ts-${crypto.randomUUID()}`,
-    beat,
-    numerator: Math.max(1, Math.min(32, numerator)),
-    denominator: Math.max(1, Math.min(32, denominator)),
-});
+): TimeSignatureChange {
+    return {
+        id: `ts-${crypto.randomUUID()}`,
+        beat,
+        numerator: Math.max(1, Math.min(32, numerator)),
+        denominator: Math.max(1, Math.min(32, denominator)),
+    };
+}
 
-export const getTimeSignatureAtBeat = (
+export function getTimeSignatureAtBeat(
     changes: TimeSignatureChange[],
     beat: number,
     defaultNumerator: number,
     defaultDenominator: number
-): { numerator: number; denominator: number } => {
+): { numerator: number; denominator: number } {
     if (changes.length === 0) {
         return { numerator: defaultNumerator, denominator: defaultDenominator };
     }
@@ -35,14 +37,14 @@ export const getTimeSignatureAtBeat = (
 
     const last = before[before.length - 1]!;
     return { numerator: last.numerator, denominator: last.denominator };
-};
+}
 
-export const getBarBeatAtPosition = (
+export function getBarBeatAtPosition(
     changes: TimeSignatureChange[],
     position: number,
     defaultNumerator: number,
     defaultDenominator: number
-): { bar: number; beat: number; tick: number } => {
+): { bar: number; beat: number; tick: number } {
     const sorted = [...changes].sort((a, b) => a.beat - b.beat);
     let bar = 1;
     let currentBeat = 0;
@@ -71,4 +73,4 @@ export const getBarBeatAtPosition = (
     const tick = Math.floor((quartersIntoBeat / beatUnit) * 480);
 
     return { bar, beat: beatInBar, tick };
-};
+}
