@@ -314,7 +314,13 @@ function ToneResponseStage({ deviceId, patch }: { deviceId: string; patch: Grind
                         Channel {patch.channel + 1} · {patch.powerTubeType.toUpperCase()} · {patch.rectifierType}
                     </div>
                 </div>
-                <DawPluginLed tone="amber">{patch.bright ? 'Bright' : patch.fat ? 'Fat' : 'Classic'}</DawPluginLed>
+                <DawPluginLed tone="amber">
+                    {(() => {
+                        if (patch.bright) return 'Bright';
+                        if (patch.fat) return 'Fat';
+                        return 'Classic';
+                    })()}
+                </DawPluginLed>
             </div>
             <div className="flex flex-1 items-center gap-3 min-h-0">
                 <svg

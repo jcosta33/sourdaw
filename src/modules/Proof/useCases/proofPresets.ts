@@ -21,7 +21,11 @@ export const PROOF_PRESETS: readonly ProofPreset[] = [
         targetLufs: -14,
         limCeiling: -1.0,
         eqBands: DEFAULT_PATCH.eqBands.map((b, i) =>
-            i === 1 ? { ...b, gain: 1.5 } : i === 6 ? { ...b, gain: 1.0 } : b
+            (() => {
+                if (i === 1) return { ...b, gain: 1.5 };
+                if (i === 6) return { ...b, gain: 1.0 };
+                return b;
+            })()
         ),
     }),
     preset('cd-master', 'CD Master', 'target', {
@@ -51,7 +55,11 @@ export const PROOF_PRESETS: readonly ProofPreset[] = [
     // ── Style-based ──
     preset('warm', 'Warm Master', 'style', {
         eqBands: DEFAULT_PATCH.eqBands.map((b, i) =>
-            i === 1 ? { ...b, gain: 2.0 } : i === 6 ? { ...b, gain: 1.5 } : b
+            (() => {
+                if (i === 1) return { ...b, gain: 2.0 };
+                if (i === 6) return { ...b, gain: 1.5 };
+                return b;
+            })()
         ),
         excBypassed: false,
         excBands: [
@@ -92,13 +100,21 @@ export const PROOF_PRESETS: readonly ProofPreset[] = [
         targetLufs: -6,
         limCeiling: -0.5,
         eqBands: DEFAULT_PATCH.eqBands.map((b, i) =>
-            i === 1 ? { ...b, gain: 3.0 } : i === 4 ? { ...b, gain: 2.0 } : b
+            (() => {
+                if (i === 1) return { ...b, gain: 3.0 };
+                if (i === 4) return { ...b, gain: 2.0 };
+                return b;
+            })()
         ),
         imgBandWidth: [0.0, 1.0, 1.3, 1.5],
     }),
     preset('hiphop', 'Hip-Hop / R&B', 'genre', {
         eqBands: DEFAULT_PATCH.eqBands.map((b, i) =>
-            i === 1 ? { ...b, gain: 3.5 } : i === 4 ? { ...b, gain: 1.5 } : b
+            (() => {
+                if (i === 1) return { ...b, gain: 3.5 };
+                if (i === 4) return { ...b, gain: 1.5 };
+                return b;
+            })()
         ),
         dynBands: DEFAULT_PATCH.dynBands.map((b, i) => (i === 0 ? { ...b, threshold: -18, ratio: 3, attack: 5 } : b)),
     }),

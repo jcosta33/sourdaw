@@ -785,7 +785,11 @@ export async function demo5_NebulaDrift(): Promise<void> {
         }
         mx++;
         const busy = bm >= S.peak && bm < S.breakdown;
-        const step = busy ? 2.6 : bm >= S.build1 ? 3.5 : 5.2;
+        const step = (() => {
+            if (busy) return 2.6;
+            if (bm >= S.build1) return 3.5;
+            return 5.2;
+        })();
         bm += step;
     }
 

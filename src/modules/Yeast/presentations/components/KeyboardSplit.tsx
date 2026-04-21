@@ -86,12 +86,16 @@ export const KeyboardSplit = ({
                             left: x,
                             width: whiteKeyWidth - 1,
                             height,
-                            background: sounding
-                                ? 'var(--color-accent-peach)'
-                                : held
-                                  ? 'var(--color-accent-lavender)'
-                                  : '#1a1a1a',
-                            opacity: sounding ? 0.9 : held ? 0.7 : 1,
+                            background: (() => {
+                                if (sounding) return 'var(--color-accent-peach)';
+                                if (held) return 'var(--color-accent-lavender)';
+                                return '#1a1a1a';
+                            })(),
+                            opacity: (() => {
+                                if (sounding) return 0.9;
+                                if (held) return 0.7;
+                                return 1;
+                            })(),
                             borderRadius: '0 0 2px 2px',
                         }}
                     />
@@ -111,11 +115,11 @@ export const KeyboardSplit = ({
                             left: x,
                             width: whiteKeyWidth * 0.6,
                             height: height * 0.6,
-                            background: sounding
-                                ? 'var(--color-accent-peach)'
-                                : held
-                                  ? 'var(--color-accent-lavender)'
-                                  : '#0e0e0e',
+                            background: (() => {
+                                if (sounding) return 'var(--color-accent-peach)';
+                                if (held) return 'var(--color-accent-lavender)';
+                                return '#0e0e0e';
+                            })(),
                             borderRadius: '0 0 2px 2px',
                             zIndex: 1,
                         }}

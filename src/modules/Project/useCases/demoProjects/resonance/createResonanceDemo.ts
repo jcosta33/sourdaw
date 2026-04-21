@@ -1121,7 +1121,11 @@ export async function demo1_TheCompleteMix(): Promise<void> {
             continue;
         }
         const context = ch(b);
-        const vel = b < 64 ? 0.7 : b >= 512 ? 0.75 : 1.0;
+        const vel = (() => {
+            if (b < 64) return 0.7;
+            if (b >= 512) return 0.75;
+            return 1.0;
+        })();
 
         // Dense 16th-note pattern in dance section
         if (b >= 384 && b < 512) {
@@ -1176,7 +1180,11 @@ export async function demo1_TheCompleteMix(): Promise<void> {
             continue;
         }
         const context = ch(b);
-        const vel = b < 128 ? 52 : b >= 224 ? 65 : 58;
+        const vel = (() => {
+            if (b < 128) return 52;
+            if (b >= 224) return 65;
+            return 58;
+        })();
         rhodesN.push(note(context.root + 12, b + 0.05, 7.5, hv(vel, 6)));
         rhodesN.push(note(context.third + 12, b + 0.08, 7.5, hv(vel - 4, 6)));
         rhodesN.push(note(context.fifth + 12, b + 0.12, 7.5, hv(vel - 8, 8)));
@@ -1245,7 +1253,11 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const darkN: MidiNote[] = [];
     for (let b = 192; b < 384; b += 8) {
         const context = ch(b);
-        const vel = b < 224 ? 35 + Math.floor((b - 192) * 1.5) : b >= 320 ? 45 : 55;
+        const vel = (() => {
+            if (b < 224) return 35 + Math.floor((b - 192) * 1.5);
+            if (b >= 320) return 45;
+            return 55;
+        })();
         darkN.push(note(context.root, b, 7.5, hv(vel, 8)));
         darkN.push(note(context.fifth, b, 7.5, hv(vel - 10, 8)));
     }
@@ -1267,7 +1279,11 @@ export async function demo1_TheCompleteMix(): Promise<void> {
             continue;
         }
         const context = ch(b);
-        const vel = b < 128 ? 48 : b >= 384 ? 58 : 62;
+        const vel = (() => {
+            if (b < 128) return 48;
+            if (b >= 384) return 58;
+            return 62;
+        })();
         strSoftN.push(note(context.fifth + 12, b + 0.5, 15, hv(vel, 8)));
         strSoftN.push(note(context.ninth + 12, b + 0.5, 15, hv(vel - 6, 8)));
         strSoftN.push(note(context.root + 24, b + 8, 7, hv(vel - 10, 10)));
@@ -1385,7 +1401,11 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         const chordIdx = Math.floor(b / 16) % 4;
         const pool = ARP_POOLS[chordIdx]!;
         const pitch = pool[ARP_STEPS[arpStep % ARP_STEPS.length]! % pool.length]!;
-        const vel = b < 128 ? 42 : b >= 224 && b < 320 ? 55 : 48;
+        const vel = (() => {
+            if (b < 128) return 42;
+            if (b >= 224 && b < 320) return 55;
+            return 48;
+        })();
         const acc = b % 2 === 0; // accent on beats
         arpN.push(note(pitch, b, 0.4, hv(acc ? vel : vel - 12, 8)));
         arpStep++;
@@ -1437,7 +1457,11 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         if (start >= 320 && start < 384) {
             continue;
         }
-        const mel = ph % 3 === 0 ? fluteA : ph % 3 === 1 ? fluteB : fluteC;
+        const mel = (() => {
+            if (ph % 3 === 0) return fluteA;
+            if (ph % 3 === 1) return fluteB;
+            return fluteC;
+        })();
         for (const [off, pitch, dur, vel] of mel) {
             fluteN.push(note(pitch, start + off, dur, hv(vel)));
         }
@@ -1473,7 +1497,11 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         const ci = Math.floor(b / 16) % 4;
         const pool = crystalPool[ci]!;
         const pitch = pool[cStep % pool.length]! + 12;
-        const baseVel = b >= 224 && b < 320 ? 48 : b >= 384 ? 42 : 35;
+        const baseVel = (() => {
+            if (b >= 224 && b < 320) return 48;
+            if (b >= 384) return 42;
+            return 35;
+        })();
         const vel = cStep % 4 === 0 ? baseVel + 15 : baseVel;
         crystalN.push(note(pitch, b, 0.4, hv(vel)));
         cStep++;
@@ -1497,7 +1525,11 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     for (let b = 64; b < TB; b += 32) {
         const context = ch(b);
         const inBD = b >= 320 && b < 384;
-        const vel = inBD ? 28 : b >= 512 ? 35 : 48;
+        const vel = (() => {
+            if (inBD) return 28;
+            if (b >= 512) return 35;
+            return 48;
+        })();
         wideN.push(note(context.root + 12, b, 31, hv(vel)));
         wideN.push(note(context.fifth + 12, b, 31, hv(vel - 5)));
         if (!inBD) {

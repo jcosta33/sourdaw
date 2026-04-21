@@ -670,7 +670,13 @@ export async function demo4_NativeShowcase(): Promise<void> {
             [0, 0.75, 2, 3.25], // pattern 1
             [0.5, 1.5, 3], // pattern 2
             [0, 1, 2.25, 3.5], // pattern 3
-        ][sec.name === 'Fog' ? 0 : sec.name === 'Dust' ? 2 : patIdx]!;
+        ][
+            (() => {
+                if (sec.name === 'Fog') return 0;
+                if (sec.name === 'Dust') return 2;
+                return patIdx;
+            })()
+        ]!;
 
         if (kickHits.includes(param) && !R(b, 720, 816)) {
             N[ck808.id]!.push(note(36, b, 0.4, hv(110)));
@@ -710,8 +716,16 @@ export async function demo4_NativeShowcase(): Promise<void> {
         // Closed HH: complex swung 16ths with velocity curves
         if (param % 0.25 === 0) {
             const swing = state % 2 === 1 ? 0.03 : 0;
-            const accent = param % 1 === 0 ? 70 : param % 0.5 === 0 ? 50 : 30;
-            const secVel = sec.name === 'Fog' ? 0.5 : sec.name === 'Dust' ? 0.4 : 1;
+            const accent = (() => {
+                if (param % 1 === 0) return 70;
+                if (param % 0.5 === 0) return 50;
+                return 30;
+            })();
+            const secVel = (() => {
+                if (sec.name === 'Fog') return 0.5;
+                if (sec.name === 'Dust') return 0.4;
+                return 1;
+            })();
             const value = Math.round(accent * secVel);
             if (value > 10) {
                 N[chc.id]!.push(note(42, b + swing, 0.1, hv(value)));

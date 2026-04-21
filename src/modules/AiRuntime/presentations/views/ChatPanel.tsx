@@ -180,19 +180,20 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                                         )}
                                     >
                                         <div className="flex items-center gap-1.5 mb-1 opacity-70">
-                                            {msg.isDsoAction ? (
-                                                <Zap className="size-3 text-emerald-400" />
-                                            ) : msg.role === 'assistant' ? (
-                                                <Bot className="size-3 text-[var(--color-accent-lavender)]" />
-                                            ) : (
-                                                <User className="size-3" />
-                                            )}
+                                            {(() => {
+                                                if (msg.isDsoAction) return <Zap className="size-3 text-emerald-400" />;
+                                                if (msg.role === 'assistant')
+                                                    return (
+                                                        <Bot className="size-3 text-[var(--color-accent-lavender)]" />
+                                                    );
+                                                return <User className="size-3" />;
+                                            })()}
                                             <span className="text-[10px] font-medium tracking-wide">
-                                                {msg.isDsoAction
-                                                    ? 'Action'
-                                                    : msg.role === 'assistant'
-                                                      ? 'Assistant'
-                                                      : 'You'}
+                                                {(() => {
+                                                    if (msg.isDsoAction) return 'Action';
+                                                    if (msg.role === 'assistant') return 'Assistant';
+                                                    return 'You';
+                                                })()}
                                             </span>
                                         </div>
                                         {/* Reasoning (collapsible) */}
@@ -205,11 +206,13 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                                         <div
                                             className={cn(
                                                 'text-xs px-3 py-2.5 rounded-lg max-w-[92%] leading-relaxed',
-                                                msg.role === 'user'
-                                                    ? 'bg-primary text-primary-foreground rounded-tr-sm'
-                                                    : msg.isDsoAction
-                                                      ? 'bg-emerald-500/10 text-foreground border border-emerald-500/20 rounded-tl-sm w-full'
-                                                      : 'bg-surface-raised text-foreground border border-border/50 rounded-tl-sm w-full',
+                                                (() => {
+                                                    if (msg.role === 'user')
+                                                        return 'bg-primary text-primary-foreground rounded-tr-sm';
+                                                    if (msg.isDsoAction)
+                                                        return 'bg-emerald-500/10 text-foreground border border-emerald-500/20 rounded-tl-sm w-full';
+                                                    return 'bg-surface-raised text-foreground border border-border/50 rounded-tl-sm w-full';
+                                                })(),
                                                 msg.error &&
                                                     'bg-destructive/10 border-destructive/30 text-destructive-foreground'
                                             )}
