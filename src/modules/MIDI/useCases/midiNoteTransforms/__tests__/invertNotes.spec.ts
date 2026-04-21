@@ -3,13 +3,15 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { midiStore } from '../../../stores/midiStore';
 import { invertNotes } from '../invertNotes';
 
-const note = (id: string, pitch: number) => ({
-    id,
-    pitch,
-    startBeat: 0,
-    duration: 0.25,
-    velocity: 100,
-});
+function note(id: string, pitch: number) {
+    return {
+        id,
+        pitch,
+        startBeat: 0,
+        duration: 0.25,
+        velocity: 100,
+    };
+}
 
 describe('invertNotes', () => {
     beforeEach(() => {

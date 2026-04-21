@@ -3,13 +3,15 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { midiStore } from '../../../stores/midiStore';
 import { legatoNotes } from '../legatoNotes';
 
-const note = (id: string, pitch: number, startBeat: number, duration: number) => ({
-    id,
-    pitch,
-    startBeat,
-    duration,
-    velocity: 100,
-});
+function note(id: string, pitch: number, startBeat: number, duration: number) {
+    return {
+        id,
+        pitch,
+        startBeat,
+        duration,
+        velocity: 100,
+    };
+}
 
 describe('legatoNotes', () => {
     beforeEach(() => {

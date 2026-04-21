@@ -4,13 +4,15 @@ import { type MidiNote } from '#/modules/Plugin/models/MidiEffectTypes';
 
 import { createMidiDelay } from '../createMidiDelay';
 
-const n = (startBeat: number, velocity = 100): MidiNote => ({
-    pitch: 60,
-    velocity,
-    startBeat,
-    durationBeats: 0.25,
-    channel: 0,
-});
+function n(startBeat: number, velocity = 100): MidiNote {
+    return {
+        pitch: 60,
+        velocity,
+        startBeat,
+        durationBeats: 0.25,
+        channel: 0,
+    };
+}
 
 describe('createMidiDelay', () => {
     it('should append delayed repeats with decaying velocity', () => {

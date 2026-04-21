@@ -3,16 +3,18 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { midiStore } from '../../../stores/midiStore';
 import { splitNoteAtBeat } from '../splitNoteAtBeat';
 
-const note = (id: string, pitch: number, startBeat: number, duration: number) => ({
-    id,
-    pitch,
-    startBeat,
-    duration,
-    velocity: 100,
-    pressure: 50,
-    slide: 60,
-    pitchBend: 1000,
-});
+function note(id: string, pitch: number, startBeat: number, duration: number) {
+    return {
+        id,
+        pitch,
+        startBeat,
+        duration,
+        velocity: 100,
+        pressure: 50,
+        slide: 60,
+        pitchBend: 1000,
+    };
+}
 
 describe('splitNoteAtBeat', () => {
     beforeEach(() => {

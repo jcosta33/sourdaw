@@ -3,13 +3,15 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { midiStore } from '../../../stores/midiStore';
 import { quantizeNoteLengths } from '../quantizeNoteLengths';
 
-const note = (id: string, duration: number) => ({
-    id,
-    pitch: 60,
-    startBeat: 0,
-    duration,
-    velocity: 100,
-});
+function note(id: string, duration: number) {
+    return {
+        id,
+        pitch: 60,
+        startBeat: 0,
+        duration,
+        velocity: 100,
+    };
+}
 
 describe('quantizeNoteLengths', () => {
     beforeEach(() => {

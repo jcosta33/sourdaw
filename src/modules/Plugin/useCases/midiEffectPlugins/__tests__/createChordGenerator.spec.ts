@@ -4,13 +4,15 @@ import { type MidiNote } from '#/modules/Plugin/models/MidiEffectTypes';
 
 import { createChordGenerator } from '../createChordGenerator';
 
-const n = (pitch: number): MidiNote => ({
-    pitch,
-    velocity: 100,
-    startBeat: 0,
-    durationBeats: 0.25,
-    channel: 0,
-});
+function n(pitch: number): MidiNote {
+    return {
+        pitch,
+        velocity: 100,
+        startBeat: 0,
+        durationBeats: 0.25,
+        channel: 0,
+    };
+}
 
 describe('createChordGenerator', () => {
     it('should expand one note into a major triad by default', () => {
