@@ -38,6 +38,7 @@ import { getTrackTemplates, loadTrackTemplate } from '../../useCases/trackTempla
 import { useTracks } from '../hooks/useTracks';
 
 import { MiniMasterSpectrum } from './MiniMasterSpectrum';
+import { TakeLanePanel } from './TakeLanesView';
 import { TrackHeader } from './TrackHeader';
 
 const HEIGHT_CYCLE: Preferences['trackHeight'][] = ['compact', 'normal', 'large'];
@@ -174,7 +175,11 @@ export const TrackListView = ({
     };
 
     return (
-        <div className="flex h-full shrink-0 flex-col border-r border-border/30 bg-surface-well" style={style}>
+        <div
+            className="flex h-full shrink-0 flex-col border-r border-border/30 bg-surface-well"
+            style={style}
+            data-onboarding="track-list"
+        >
             <DawHeaderBand
                 className="group relative shrink-0 items-end px-2 pb-1 pt-2"
                 style={{ height: extraHeaderHeight }}
@@ -275,6 +280,15 @@ export const TrackListView = ({
                                 }
                             >
                                 <TrackHeader track={track} isSelected={track.id === selectedTrackId} />
+                                {track.showVariationLanes === true &&
+                                track.kind !== 'folder' &&
+                                track.kind !== 'master' ? (
+                                    <TakeLanePanel
+                                        trackId={track.id}
+                                        trackName={track.name}
+                                        trackColor={track.color}
+                                    />
+                                ) : null}
                             </div>
                         );
                     })}

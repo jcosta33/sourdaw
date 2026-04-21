@@ -1,8 +1,9 @@
-import { trackStore, markerStore } from '#/modules/Arrangement/stores';
+import { trackStore, markerStore, vcaGroupStore, grooveStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane } from '#/modules/Automation/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import { chordTrackStore, midiStore } from '#/modules/MIDI/stores';
+import { addSidechainRoute } from '#/modules/Routing/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 
@@ -30,6 +31,42 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     ];
     const ch = (beat: number) => CHORDS[Math.floor(beat / 16) % 4]!;
     const hv = (base: number, r = 8) => Math.max(10, Math.min(127, Math.round(base + (Math.random() - 0.5) * r * 2)));
+
+    // ── GROOVE TEMPLATE (MPC-60 swing ~57%, subtle) ──────────────────────────
+    // Registers a project-wide swing groove so drum timing has a natural human feel.
+    // 16th-note resolution; odd 16ths push back ~0.07 beat (≈ 57% swing).
+    const mpc60Groove = {
+        id: 'mpc60-57',
+        name: 'MPC-60 Swing 57%',
+        offsets: [0, 0.07, 0, 0.07],
+        resolution: 0.25,
+    };
+    grooveStore.set({
+        templates: [
+            ...((grooveStore.value?.templates ?? []).filter((t) => t.id !== mpc60Groove.id)),
+            mpc60Groove,
+        ],
+        projectGrooveId: mpc60Groove.id,
+        projectGrooveIntensity: 0.4,
+    });
+
+    // ── CHORD TRACK — populate with the 4-chord progression ─────────────────
+    // Dm7 → Gm7 → Am7 → Bbmaj7, 16 beats each, repeating every 64 beats.
+    // Root values are 0–11 (C=0 … B=11): D=2, G=7, A=9, Bb=10.
+    const chordRoots = [2, 7, 9, 10] as const;
+    const chordQualities = ['min7', 'min7', 'min7', 'maj7'] as const;
+    const chordEvents = [];
+    for (let bar16 = 0; bar16 < TB; bar16 += 16) {
+        const idx = Math.floor(bar16 / 16) % 4;
+        chordEvents.push({
+            id: `chord-${crypto.randomUUID().slice(0, 8)}`,
+            beat: bar16,
+            root: chordRoots[idx]!,
+            quality: chordQualities[idx]!,
+            duration: 16,
+        });
+    }
+    chordTrackStore.set({ enabled: true, events: chordEvents });
 
     // ── TRACKS: 36 tracks in 7 folders ────────────────────────────────────
     const masterTrack = createTrack({ name: 'Master', kind: 'master' });
@@ -96,6 +133,13 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const riserTrack = createTrack({ name: 'Riser', kind: 'midi', parentId: fxFolder.id });
     const noiseSweepTrack = createTrack({ name: 'Noise Sweep', kind: 'midi', parentId: fxFolder.id });
     const reverbBusTrack = createTrack({ name: 'Reverb Bus', kind: 'bus' });
+    const delaySendBusTrack = createTrack({ name: 'Delay Send', kind: 'bus' });
+    const scKickBusTrack = createTrack({ name: 'SC Kick', kind: 'bus' });
+
+    // 🎹 Additional instrument showcases (physical-model piano, granular pad, Knead demo)
+    const grandPianoTrack = createTrack({ name: 'Grand Piano', kind: 'midi', parentId: keysFolder.id });
+    const crumbsPadTrack = createTrack({ name: 'Crumbs Pad', kind: 'midi', parentId: strPadFolder.id });
+    const vocalPadTrack = createTrack({ name: 'Vocal Pad', kind: 'midi', parentId: strPadFolder.id });
 
     // 🌊 Deep Layers folder — 10 subliminal texture/depth tracks
     const deepFolder = createTrack({ name: '🌊 Deep Layers', kind: 'folder' });
@@ -192,6 +236,45 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         },
     ];
     applyPreset(harmWashTrack, 'factory-faust-additive-glass');
+
+    // ── NEW INSTRUMENT SHOWCASES ──────────────────────────────────────────
+    // Grand Boule — physical-modeling piano for sparse chord-root notes
+    grandPianoTrack.devices = [
+        {
+            id: `dev-${crypto.randomUUID()}`,
+            name: 'Grand Boule',
+            type: 'grand-boule',
+            bypassed: false,
+            parameterValues: { masterGain: 0.7, soundboardSend: 0.6, sympatheticSend: 0.25 },
+        },
+    ];
+    // Crumbs — granular pad-layer for texture
+    crumbsPadTrack.devices = [
+        {
+            id: `dev-${crypto.randomUUID()}`,
+            name: 'Crumbs',
+            type: 'builtin-crumbs',
+            bypassed: false,
+            parameterValues: {},
+        },
+    ];
+    // Vocal Pad — builtin synth + Knead pitch correction (demonstrates kneadState on clips)
+    vocalPadTrack.devices = [
+        {
+            id: `dev-${crypto.randomUUID()}`,
+            name: 'Vocal Synth',
+            type: 'builtin-synth',
+            bypassed: false,
+            parameterValues: {},
+        },
+        {
+            id: `dev-${crypto.randomUUID()}`,
+            name: 'Knead',
+            type: 'knead',
+            bypassed: false,
+            parameterValues: {},
+        },
+    ];
     // ── EFFECTS on tracks (web-compatible only) ──────────────────────────
     const addDev = (t: any, type: string, name: string, params: Record<string, number>) => {
         t.devices = [
@@ -220,13 +303,19 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         'eq-high-freq': 10000,
         'eq-high-q': 0.7,
     });
-    addDev(masterTrack, 'builtin-compressor', 'Glue Comp', {
-        'comp-threshold': -12,
-        'comp-ratio': 2.5,
-        'comp-attack': 30,
-        'comp-release': 200,
-        'comp-knee': 10,
-        'comp-makeup': 2,
+    // Gluten — multi-topology glue compressor (replaces builtin-compressor)
+    addDev(masterTrack, 'gluten', 'Glue Bus Comp', {
+        topology: 3, // VCA
+        amount: 55,
+        threshold: -14,
+        ratio: 2.5,
+        attack: 30,
+        release: 200,
+        knee: 8,
+        makeup: 0,
+        mix: 1,
+        autoMakeup: 1,
+        autoRelease: 1,
     });
     addDev(masterTrack, 'builtin-stereo-widener', 'Width', {
         'width-amount': 1.15,
@@ -234,7 +323,12 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         'width-side': 1.5,
         'width-mono-bass': 180,
     });
-    addDev(masterTrack, 'builtin-limiter', 'Brickwall', { 'lim-threshold': -1 });
+    // Proof — mastering suite (replaces builtin-limiter)
+    addDev(masterTrack, 'proof', 'Proof Mastering', {
+        input_gain: 0,
+        output_gain: 0,
+        lim_ceiling: -1,
+    });
     addDev(masterTrack, 'builtin-lufs-meter', 'LUFS', { 'lufs-target': -14 });
 
     // ╔═══════════════════════════════════════════════════════════════╗
@@ -260,6 +354,15 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         'conv-lowcut': 80,
         'conv-highcut': 10000,
     });
+    // Delay Send bus: faust tape-delay for dub-style sends (fallback to builtin-delay below)
+    addDev(delaySendBusTrack, 'faust-tape-delay', 'Tape Delay', {
+        delay: 0.375,
+        feedback: 0.5,
+        dry_wet: 1,
+    });
+    // SC Kick bus: receives pre-fader sends from the 808 Kit for sidechain triggering.
+    // No devices — acts as a pure routing hub whose output feeds the sidechain inputs of
+    // compressors on Sub Bass and Warm Pad via sidechainStore routes (wired later).
     // Warm Pad: EQ for warmth and air (boost low-mids + gentle high shelf)
     addDev(warmPadTrack, 'builtin-eq', 'Pad Warmth', {
         'eq-low-gain': 2,
@@ -272,6 +375,44 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         'eq-high-freq': 8000,
         'eq-high-q': 0.6,
     });
+    // Warm Pad: sidechain compressor driven by kick for pumping feel (device id captured for routing)
+    const warmPadScId = `dev-${crypto.randomUUID()}`;
+    warmPadTrack.devices = [
+        ...(warmPadTrack.devices || []),
+        {
+            id: warmPadScId,
+            name: 'SC Pump',
+            type: 'builtin-sidechain-compressor',
+            bypassed: false,
+            parameterValues: {
+                'sc-comp-threshold': -24,
+                'sc-comp-ratio': 4,
+                'sc-comp-attack': 5,
+                'sc-comp-release': 180,
+                'sc-comp-knee': 6,
+                'sc-comp-makeup': 2,
+            },
+        },
+    ];
+    // Sub Bass: sidechain compressor driven by kick for tight low-end carving
+    const subBassScId = `dev-${crypto.randomUUID()}`;
+    subBassTrack.devices = [
+        ...(subBassTrack.devices || []),
+        {
+            id: subBassScId,
+            name: 'SC Duck',
+            type: 'builtin-sidechain-compressor',
+            bypassed: false,
+            parameterValues: {
+                'sc-comp-threshold': -22,
+                'sc-comp-ratio': 6,
+                'sc-comp-attack': 2,
+                'sc-comp-release': 140,
+                'sc-comp-knee': 4,
+                'sc-comp-makeup': 1,
+            },
+        },
+    ];
 
     // ╔═══════════════════════════════════════════════════════════════╗
     // ║  PER-TRACK EFFECTS — character, space, movement            ║
@@ -334,7 +475,15 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         'conv-lowcut': 100,
         'conv-highcut': 12000,
     });
-    // Arp: phaser + ping-pong delay for spatial movement
+    // Arp: Yeast MIDI FX (arpeggiator: up-down 1/16, 75% gate, 15% swing) + spatial effects
+    // Yeast lives in the track.devices array; scheduleMidiNotes detects `type: 'yeast'` and
+    // routes notes through the Yeast rack at runtime.
+    addDev(arpTrack, 'yeast', 'Arp Yeast', {
+        arp_mode: 2, // upDown
+        arp_rate: 16, // 1/16
+        arp_gate: 0.75,
+        arp_swing: 0.15,
+    });
     addDev(arpTrack, 'builtin-phaser', 'Arp Phase', {
         'phaser-rate': 0.3,
         'phaser-depth': 0.5,
@@ -690,6 +839,40 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         'rev-mix': 0.7,
     });
 
+    // ── SEND/RETURN ARCHITECTURE ────────────────────────────────────────
+    // A mix of tracks now use post-fader sends to the shared Reverb Bus (convolution room)
+    // instead of per-instance reverbs. This demonstrates proper bus/return routing and
+    // shared space — tracks sit in the same room rather than each having their own.
+    rhodesTrack.sends = [{ busId: reverbBusTrack.id, level: 0.35, preFader: false }];
+    pianoTrack.sends = [{ busId: reverbBusTrack.id, level: 0.28, preFader: false }];
+    warmPadTrack.sends = [{ busId: reverbBusTrack.id, level: 0.4, preFader: false }];
+    shimmerPadTrack.sends = [{ busId: reverbBusTrack.id, level: 0.45, preFader: false }];
+    stringsSoftTrack.sends = [{ busId: reverbBusTrack.id, level: 0.4, preFader: false }];
+    stringsBrightTrack.sends = [{ busId: reverbBusTrack.id, level: 0.3, preFader: false }];
+    leadClassicTrack.sends = [
+        { busId: reverbBusTrack.id, level: 0.3, preFader: false },
+        { busId: delaySendBusTrack.id, level: 0.25, preFader: false },
+    ];
+    leadSoftTrack.sends = [
+        { busId: reverbBusTrack.id, level: 0.35, preFader: false },
+        { busId: delaySendBusTrack.id, level: 0.2, preFader: false },
+    ];
+    grandPianoTrack.sends = [{ busId: reverbBusTrack.id, level: 0.45, preFader: false }];
+    vocalPadTrack.sends = [{ busId: reverbBusTrack.id, level: 0.5, preFader: false }];
+    // Delay Send bus — ~4 tracks sending to it (dub-style)
+    arpTrack.sends = [{ busId: delaySendBusTrack.id, level: 0.3, preFader: false }];
+    bellAccentTrack.sends = [{ busId: delaySendBusTrack.id, level: 0.25, preFader: false }];
+    percHitsTrack.sends = [{ busId: delaySendBusTrack.id, level: 0.2, preFader: false }];
+    // 808 Kit sends pre-fader to SC Kick bus so sidechain follows kick regardless of fader automation.
+    drumKitTrack.sends = [{ busId: scKickBusTrack.id, level: 1, preFader: true }];
+
+    // ── CHORD-TRACK FOLLOW ───────────────────────────────────────────────
+    // Enables automatic transposition on these tracks when the chord-track chord changes.
+    // Notes already follow the progression — this flag demonstrates the feature is wired.
+    rhodesTrack.followChordTrack = true;
+    warmPadTrack.followChordTrack = true;
+    stringsSoftTrack.followChordTrack = true;
+
     // ── GAIN / PAN — stereo field (rebalanced for ambient clarity) ─────
     drumKitTrack.gain = 0.55;
     drumKitTrack.pan = 0;
@@ -743,6 +926,17 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     impactFxTrack.pan = 0;
     texChirpTrack.gain = 0.15;
     texChirpTrack.pan = -48;
+    // New tracks — grand piano (sparse), crumbs granular pad, vocal pad + knead demo, bus sends
+    grandPianoTrack.gain = 0.45;
+    grandPianoTrack.pan = -15;
+    crumbsPadTrack.gain = 0.18;
+    crumbsPadTrack.pan = 20;
+    vocalPadTrack.gain = 0.32;
+    vocalPadTrack.pan = 0;
+    delaySendBusTrack.gain = 0.7;
+    delaySendBusTrack.pan = 0;
+    scKickBusTrack.gain = 0;
+    scKickBusTrack.pan = 0;
     // Texture tracks — very low gain, wide stereo field
     pluckArpATrack.gain = 0.06;
     pluckArpATrack.pan = -40;
@@ -865,8 +1059,56 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const brassClip = createMidiClip(brassTrack.id, 'Brass Fanfare', 224, 320, brassTrack.color);
     brassTrack.clips = [brassClip];
 
-    const arpClip = createMidiClip(arpTrack.id, 'Arp 16th', 64, TB, arpTrack.color);
-    arpTrack.clips = [arpClip];
+    // Arp: parent clip 64–512 + a linked-instance clip 512–TB (demonstrates non-destructive
+    // linked copies — shared notes, localized overrides allowed)
+    const arpClip = createMidiClip(arpTrack.id, 'Arp 16th', 64, 512, arpTrack.color);
+    const arpClipLinked = createMidiClip(arpTrack.id, 'Arp 16th (linked)', 512, TB, arpTrack.color);
+    arpClipLinked.parentClipId = arpClip.id;
+    arpClipLinked.isLinkedInstance = true;
+    arpTrack.clips = [arpClip, arpClipLinked];
+
+    // Grand Piano: sparse chord-root hits (one clip spanning the groove/catharsis sections)
+    const grandPianoClip = createMidiClip(grandPianoTrack.id, 'Grand Piano Chords', 64, 512, grandPianoTrack.color);
+    grandPianoTrack.clips = [grandPianoClip];
+
+    // Crumbs Pad: granular texture layer across the groove arc
+    const crumbsPadClip = createMidiClip(crumbsPadTrack.id, 'Crumbs Texture', 128, 512, crumbsPadTrack.color);
+    crumbsPadTrack.clips = [crumbsPadClip];
+
+    // Vocal Pad: single clip with example Knead correction blobs demonstrating pitch regions
+    const vocalPadClip = createMidiClip(vocalPadTrack.id, 'Vocal Pad', 128, 384, vocalPadTrack.color);
+    vocalPadClip.kneadState = {
+        blobs: [
+            {
+                id: `knead-${crypto.randomUUID().slice(0, 8)}`,
+                startTime: 0,
+                endTime: 16,
+                pitchCenterCents: 0,
+                pitchCurveCents: [0, 5, -3, 0],
+                voicedConfidence: 0.85,
+            },
+            {
+                id: `knead-${crypto.randomUUID().slice(0, 8)}`,
+                startTime: 16,
+                endTime: 48,
+                pitchCenterCents: 700,
+                pitchCurveCents: [0, 12, 6, -2, 0],
+                voicedConfidence: 0.92,
+            },
+            {
+                id: `knead-${crypto.randomUUID().slice(0, 8)}`,
+                startTime: 48,
+                endTime: 128,
+                pitchCenterCents: 200,
+                pitchCurveCents: [0, -6, 3, 8, 0],
+                voicedConfidence: 0.78,
+            },
+        ],
+        retuneSpeedMs: 25,
+        humanizePercent: 12,
+        formantPreserve: true,
+    };
+    vocalPadTrack.clips = [vocalPadClip];
 
     // FX clips
     const riserClip1 = createMidiClip(riserTrack.id, 'Pre-Catharsis Rise', 192, 224, riserTrack.color);
@@ -1500,6 +1742,36 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         }
     }
 
+    // GRAND PIANO — sparse chord-root + fifth hits at each chord change (~16 notes)
+    const grandPianoN: MidiNote[] = [];
+    for (let b = 64; b < 512; b += 32) {
+        if (b >= 320 && b < 384) {
+            continue;
+        }
+        const c = ch(b);
+        grandPianoN.push(note(c.root, b, 3.5, hv(70, 6)));
+        grandPianoN.push(note(c.fifth + 12, b + 1, 2.5, hv(56, 8)));
+    }
+
+    // CRUMBS PAD — granular texture, sustained root + ninth every 32 beats
+    const crumbsN: MidiNote[] = [];
+    for (let b = 128; b < 512; b += 32) {
+        if (b >= 320 && b < 384) {
+            continue;
+        }
+        const c = ch(b);
+        crumbsN.push(note(c.root + 24, b, 30, hv(52, 6)));
+        crumbsN.push(note(c.ninth + 24, b + 4, 26, hv(45, 6)));
+    }
+
+    // VOCAL PAD — sustained tones that demonstrate Knead pitch-correction regions
+    const vocalPadN: MidiNote[] = [];
+    for (let b = 128; b < 320; b += 32) {
+        const c = ch(b);
+        vocalPadN.push(note(c.root + 12, b, 30, hv(60, 5)));
+        vocalPadN.push(note(c.fifth + 12, b + 2, 28, hv(50, 5)));
+    }
+
     // ── DEEP LAYERS MIDI NOTES ─────────────────────────────────────────
 
     // 2. GRANULAR STUTTER — rapid 32nd-note repeated root tones at transitions
@@ -1668,8 +1940,66 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         metalRingTrack,
         ghostSnareTrack,
         harmWashTrack,
+        // New instruments in the keys / strings & pads folders
+        grandPianoTrack,
+        crumbsPadTrack,
+        vocalPadTrack,
+        // New buses
+        delaySendBusTrack,
+        scKickBusTrack,
     ];
     trackStore.set({ tracks, selectedTrackId: warmPadTrack.id });
+
+    // ── VCA GROUPS (Drums / Leads / Pads) ─────────────────────────────────
+    // Three VCA groups demonstrate grouped gain control without breaking routing.
+    const drumsVca = {
+        id: `vca-${crypto.randomUUID().slice(0, 8)}`,
+        name: 'Drums VCA',
+        gain: 1,
+        muted: false,
+        trackIds: [drumKitTrack.id, drumFillTrack.id, ghostSnareTrack.id, percShakerTrack.id, percHitsTrack.id],
+    };
+    const leadsVca = {
+        id: `vca-${crypto.randomUUID().slice(0, 8)}`,
+        name: 'Leads VCA',
+        gain: 1,
+        muted: false,
+        trackIds: [leadClassicTrack.id, leadSoftTrack.id, brassTrack.id, arpTrack.id],
+    };
+    const padsVca = {
+        id: `vca-${crypto.randomUUID().slice(0, 8)}`,
+        name: 'Pads VCA',
+        gain: 1,
+        muted: false,
+        trackIds: [
+            warmPadTrack.id,
+            shimmerPadTrack.id,
+            darkPadTrack.id,
+            widePadTrack.id,
+            breathPadTrack.id,
+            crumbsPadTrack.id,
+            vocalPadTrack.id,
+        ],
+    };
+    vcaGroupStore.set({ groups: [drumsVca, leadsVca, padsVca] });
+    for (const t of drumsVca.trackIds) {
+        const tr = tracks.find((x) => x.id === t);
+        if (tr) {
+            tr.vcaGroupId = drumsVca.id;
+        }
+    }
+    for (const t of leadsVca.trackIds) {
+        const tr = tracks.find((x) => x.id === t);
+        if (tr) {
+            tr.vcaGroupId = leadsVca.id;
+        }
+    }
+    for (const t of padsVca.trackIds) {
+        const tr = tracks.find((x) => x.id === t);
+        if (tr) {
+            tr.vcaGroupId = padsVca.id;
+        }
+    }
 
     midiStore.set({
         notesByClipId: {
@@ -1706,7 +2036,14 @@ export async function demo1_TheCompleteMix(): Promise<void> {
             [leadClip.id]: leadN.map((n) => ({ ...n, startBeat: n.startBeat - 160 })),
             [leadSoftClip.id]: leadSoftN.map((n) => ({ ...n, startBeat: n.startBeat - 224 })),
             [brassClip.id]: brassN.map((n) => ({ ...n, startBeat: n.startBeat - 224 })),
-            [arpClip.id]: arpN.map((n) => ({ ...n, startBeat: n.startBeat - 64 })),
+            // arpClip is the parent; arpClipLinked is a linked instance (same underlying notes).
+            // Notes < 512 land in the parent; notes ≥ 512 land in the linked instance offset to 0.
+            [arpClip.id]: arpN
+                .filter((n) => n.startBeat < 512)
+                .map((n) => ({ ...n, startBeat: n.startBeat - 64 })),
+            [arpClipLinked.id]: arpN
+                .filter((n) => n.startBeat >= 512)
+                .map((n) => ({ ...n, startBeat: n.startBeat - 512 })),
             [riserClip1.id]: riserN
                 .filter((n) => n.startBeat < 224)
                 .map((n) => ({ ...n, startBeat: n.startBeat - 192 })),
@@ -1747,6 +2084,10 @@ export async function demo1_TheCompleteMix(): Promise<void> {
             [metalRingClip.id]: metalRingN,
             [ghostSnareClip.id]: ghostSnareN,
             [harmWashClip.id]: harmWashN,
+            // New instrument showcase tracks (clip-relative offsets)
+            [grandPianoClip.id]: grandPianoN.map((n) => ({ ...n, startBeat: n.startBeat - 64 })),
+            [crumbsPadClip.id]: crumbsN.map((n) => ({ ...n, startBeat: n.startBeat - 128 })),
+            [vocalPadClip.id]: vocalPadN.map((n) => ({ ...n, startBeat: n.startBeat - 128 })),
         },
         ccByClipId: {},
         pitchBendByClipId: {},
@@ -2270,6 +2611,13 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // Await all internal async device creations (e.g. Faust WASM compilation)
     const { waitForDevices } = await import('#/modules/AudioEngine/useCases');
     await waitForDevices();
+
+    // ── SIDECHAIN ROUTING ──────────────────────────────────────────────────
+    // Wire the 808 Kit as the trigger source for the sidechain compressors on Sub Bass and
+    // Warm Pad. addSidechainRoute updates the sidechainStore AND wires the engine node graph,
+    // so it must run after ensureTrackStrips + waitForDevices so the target device nodes exist.
+    addSidechainRoute(drumKitTrack.id, subBassTrack.id, subBassScId, 'sc-comp-threshold');
+    addSidechainRoute(drumKitTrack.id, warmPadTrack.id, warmPadScId, 'sc-comp-threshold');
 
     projectStore.set({
         name: 'Resonance (Demo)',

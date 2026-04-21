@@ -1,65 +1,78 @@
-import { readFileSync, writeFileSync, renameSync, existsSync, readdirSync, unlinkSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
 /**
- * Read a state file for a slug.
- * @param {string} slug
- * @param {string} stateDir  - absolute path to agents/state/
- * @returns {object|null}
+ * Returns the path to the state file. Creates `.agents` dir if missing.
+ * @param {string} repoRoot
+ * @returns {string}
  */
-export function readState(slug, stateDir) {
-    const file = join(stateDir, `${slug}.json`);
-    if (!existsSync(file)) return null;
+function getStateFilePath(repoRoot) {
+    const agentsDir = join(repoRoot, '.agents');
+    if (!existsSync(agentsDir)) {
+        mkdirSync(agentsDir, { recursive: true });
+    }
+    return join(agentsDir, 'state.json');
+}
+
+/**
+ * Read the entire state registry.
+ * @param {string} repoRoot
+ * @returns {object} Map of slug -> state data
+ */
+export function readState(repoRoot) {
+    const statePath = getStateFilePath(repoRoot);
+    if (!existsSync(statePath)) return {};
     try {
-        return JSON.parse(readFileSync(file, 'utf8'));
+        return JSON.parse(readFileSync(statePath, 'utf8'));
     } catch (e) {
-        console.warn(`Warning: could not parse state file for "${slug}": ${e.message}`);
-        return null;
+        console.warn(`Warning: could not read state.json: ${e.message}`);
+        return {};
     }
 }
 
 /**
- * Write/update a state file.
+ * Update the state for a specific agent slug.
+ * @param {string} repoRoot
  * @param {string} slug
- * @param {string} stateDir
  * @param {object} data
  */
-export function writeState(slug, stateDir, data) {
-    const file = join(stateDir, `${slug}.json`);
-    const tmp = `${file}.tmp`;
-    writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n', 'utf8');
-    renameSync(tmp, file); // atomic on same filesystem
+export function writeState(repoRoot, slug, data) {
+    const statePath = getStateFilePath(repoRoot);
+    const currentState = readState(repoRoot);
+    currentState[slug] = {
+        ...(currentState[slug] || {}),
+        ...data,
+        lastUpdated: new Date().toISOString()
+    };
+    writeFileSync(statePath, JSON.stringify(currentState, null, 2), 'utf8');
 }
 
 /**
- * List all known slugs from state files.
- * @param {string} stateDir
- * @returns {string[]}
- */
-export function listSlugs(stateDir) {
-    if (!existsSync(stateDir)) return [];
-    return readdirSync(stateDir)
-        .filter((f) => f.endsWith('.json') && f !== 'registry.json')
-        .map((f) => f.slice(0, -5));
-}
-
-/**
- * List all state objects.
- * @param {string} stateDir
- * @returns {object[]}
- */
-export function listStates(stateDir) {
-    return listSlugs(stateDir)
-        .map((slug) => readState(slug, stateDir))
-        .filter(Boolean);
-}
-
-/**
- * Remove a state file.
+ * Remove an agent from the state registry.
+ * @param {string} repoRoot
  * @param {string} slug
- * @param {string} stateDir
  */
-export function removeState(slug, stateDir) {
-    const file = join(stateDir, `${slug}.json`);
-    if (existsSync(file)) unlinkSync(file);
+export function removeState(repoRoot, slug) {
+    const statePath = getStateFilePath(repoRoot);
+    const currentState = readState(repoRoot);
+    if (currentState[slug]) {
+        delete currentState[slug];
+        writeFileSync(statePath, JSON.stringify(currentState, null, 2), 'utf8');
+    }
+}
+
+/**
+ * Check if a PID is currently running.
+ * @param {number} pid
+ * @returns {boolean}
+ */
+export function isProcessRunning(pid) {
+    if (!pid) return false;
+    try {
+        // kill(pid, 0) checks for existence without sending a signal
+        process.kill(pid, 0);
+        return true;
+    } catch (e) {
+        return false;
+    }
 }

@@ -7,7 +7,7 @@ export function note(pitch: number, start: number, duration: number, vel = 100):
         startBeat: start,
         duration,
         velocity: vel,
-        probability: 1.0,
+        probability: 100,
         pressure: 0,
         slide: 0,
         pitchBend: 0,

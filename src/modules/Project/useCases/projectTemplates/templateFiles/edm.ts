@@ -1,0 +1,196 @@
+import {
+    addDeviceChain,
+    addMarkers,
+    addSections,
+    addSend,
+    attachSidechainCompressor,
+    createBus,
+    createFolder,
+    createInstrumentTrack,
+    createVca,
+    finalizeTemplate,
+    initProject,
+    setChordProgression,
+    setMasterChain,
+} from '../templateHelpers/builder';
+
+export async function createEdmTemplate(): Promise<void> {
+    const totalBeats = 128;
+    const masterTrack = initProject({
+        name: 'EDM',
+        bpm: 128,
+        timeSig: [4, 4],
+        keyRoot: 0,
+        scaleName: 'minor',
+        loopEnd: totalBeats,
+    });
+
+    const reverbPlate = createBus({
+        name: 'Reverb Plate',
+        devices: [{ type: 'faust-zita-rev1-reverb', name: 'Plate', params: { dry_wet: 1 } }],
+    });
+    const reverbHall = createBus({
+        name: 'Reverb Hall',
+        devices: [{ type: 'builtin-reverb', name: 'Big Hall', params: { 'rev-size': 0.95, 'rev-decay': 5, 'rev-damping': 0.2, 'rev-mix': 1 } }],
+    });
+    const tapeDelay = createBus({
+        name: 'Tape Delay',
+        devices: [{ type: 'faust-tape-delay', name: 'Tape Delay', params: { delay: 0.1875, feedback: 0.45, dry_wet: 1 } }],
+    });
+    const parallelComp = createBus({
+        name: 'Parallel Comp',
+        devices: [
+            { type: 'builtin-compressor', name: 'NY Comp', params: { 'comp-threshold': -30, 'comp-ratio': 10, 'comp-attack': 1, 'comp-release': 80, 'comp-knee': 0, 'comp-makeup': 8 } },
+            { type: 'builtin-eq', name: 'Parallel EQ', params: { 'eq-low-gain': 3, 'eq-low-freq': 80, 'eq-low-q': 0.9, 'eq-mid-gain': -2, 'eq-mid-freq': 500, 'eq-mid-q': 1.2, 'eq-high-gain': 3, 'eq-high-freq': 10000, 'eq-high-q': 0.7 } },
+        ],
+    });
+
+    const drumFolder = createFolder({ name: 'Drums' });
+    const edmKick = createInstrumentTrack({
+        name: 'Kick',
+        parentId: drumFolder.id,
+        deviceType: 'builtin-drum-kit',
+        deviceName: 'Electronic',
+        deviceParams: { kit: 2, gain: 0.95 },
+    });
+    const edmClap = createInstrumentTrack({
+        name: 'Clap',
+        parentId: drumFolder.id,
+        deviceType: 'builtin-drum-kit',
+        deviceName: 'Electronic',
+        deviceParams: { kit: 2, gain: 0.85 },
+    });
+    const edmHat = createInstrumentTrack({
+        name: 'Hat',
+        parentId: drumFolder.id,
+        deviceType: 'builtin-drum-kit',
+        deviceName: 'Electronic',
+        deviceParams: { kit: 2, gain: 0.75 },
+    });
+    const edmRide = createInstrumentTrack({
+        name: 'Ride / Cymbal',
+        parentId: drumFolder.id,
+        deviceType: 'builtin-drum-kit',
+        deviceName: 'Electronic',
+        deviceParams: { kit: 2, gain: 0.6 },
+    });
+    for (const drum of [edmKick, edmClap, edmHat, edmRide]) {
+        addSend({ from: drum, to: parallelComp, level: 0.45 });
+    }
+    addSend({ from: edmClap, to: reverbPlate, level: 0.35 });
+    addSend({ from: edmRide, to: reverbHall, level: 0.3 });
+
+    const edmBass = createInstrumentTrack({
+        name: 'Bass',
+        deviceType: 'factory-bass-sub',
+        deviceName: 'Sub Bass',
+        extraDevices: [
+            { type: 'builtin-eq', name: 'Bass EQ', params: { 'eq-low-gain': 3, 'eq-low-freq': 60, 'eq-low-q': 0.9, 'eq-mid-gain': -1, 'eq-mid-freq': 300, 'eq-mid-q': 1, 'eq-high-gain': 0, 'eq-high-freq': 6000, 'eq-high-q': 0.7 } },
+        ],
+    });
+    const bassSidechainId = attachSidechainCompressor({ track: edmBass, name: 'SC Pump', threshold: -20, ratio: 8, attack: 1, release: 120, makeup: 3 });
+
+    const leadsFolder = createFolder({ name: 'Leads' });
+    const supersawLead = createInstrumentTrack({
+        name: 'Supersaw Lead',
+        parentId: leadsFolder.id,
+        deviceType: 'factory-faust-supersaw-pad',
+        deviceName: 'Supersaw',
+    });
+    const pluck = createInstrumentTrack({
+        name: 'Pluck',
+        parentId: leadsFolder.id,
+        deviceType: 'factory-keys-pluck',
+        deviceName: 'Pluck',
+    });
+    const arp = createInstrumentTrack({
+        name: 'Arp',
+        parentId: leadsFolder.id,
+        deviceType: 'builtin-synth',
+        deviceName: 'Arp Synth',
+        deviceParams: { waveform: 2, attack: 0.005, release: 0.15, filterCutoff: 4000, filterResonance: 4, gain: 0.4 },
+        extraDevices: [
+            { type: 'yeast', name: 'Arpeggiator', params: { arp_mode: 2, arp_rate: 16, arp_gate: 0.7, arp_swing: 0.1 } },
+        ],
+    });
+    addSend({ from: supersawLead, to: reverbHall, level: 0.35 });
+    addSend({ from: supersawLead, to: tapeDelay, level: 0.2 });
+    addSend({ from: pluck, to: tapeDelay, level: 0.35 });
+    addSend({ from: pluck, to: reverbPlate, level: 0.25 });
+    addSend({ from: arp, to: tapeDelay, level: 0.4 });
+    addSend({ from: arp, to: reverbHall, level: 0.2 });
+
+    const padsFolder = createFolder({ name: 'Pads' });
+    const widePad = createInstrumentTrack({
+        name: 'Wide Pad',
+        parentId: padsFolder.id,
+        deviceType: 'factory-pad-warm',
+        deviceName: 'Warm Pad',
+    });
+    addDeviceChain(widePad, [
+        { type: 'builtin-stereo-widener', name: 'Widener', params: { 'width-amount': 1.4, 'width-mid': 0, 'width-side': 2, 'width-mono-bass': 200 } },
+    ]);
+    const atmos = createInstrumentTrack({
+        name: 'Atmos',
+        parentId: padsFolder.id,
+        deviceType: 'fermenter',
+        deviceName: 'Granular Atmos',
+    });
+    addSend({ from: widePad, to: reverbHall, level: 0.45 });
+    addSend({ from: atmos, to: reverbHall, level: 0.5 });
+
+    const padSidechainId = attachSidechainCompressor({ track: widePad, name: 'SC Pump', threshold: -22, ratio: 5, attack: 2, release: 160, makeup: 2 });
+
+    const drumsVca = createVca({ name: 'Drums VCA', members: [edmKick, edmClap, edmHat, edmRide] });
+    const bassVca = createVca({ name: 'Bass VCA', members: [edmBass] });
+    const leadsVca = createVca({ name: 'Leads VCA', members: [supersawLead, pluck, arp] });
+    const padsVca = createVca({ name: 'Pads VCA', members: [widePad, atmos] });
+
+    setChordProgression({
+        chords: [
+            { root: 0, quality: 'minor', duration: 16 },
+            { root: 8, quality: 'major', duration: 16 },
+            { root: 3, quality: 'major', duration: 16 },
+            { root: 10, quality: 'major', duration: 16 },
+        ],
+        repeatUntilBeat: totalBeats,
+    });
+
+    addSections([
+        { startBeat: 0, endBeat: 16, name: 'Intro', color: 'oklch(0.38 0.08 270)' },
+        { startBeat: 16, endBeat: 48, name: 'Build', color: 'oklch(0.40 0.08 70)' },
+        { startBeat: 48, endBeat: 80, name: 'Drop', color: 'oklch(0.38 0.09 0)' },
+        { startBeat: 80, endBeat: 96, name: 'Breakdown', color: 'oklch(0.38 0.08 300)' },
+        { startBeat: 96, endBeat: 120, name: 'Drop', color: 'oklch(0.38 0.09 0)' },
+        { startBeat: 120, endBeat: totalBeats, name: 'Outro', color: 'oklch(0.38 0.08 270)' },
+    ]);
+    addMarkers([
+        { beat: 0, name: 'Intro' },
+        { beat: 16, name: 'Build' },
+        { beat: 48, name: 'Drop' },
+        { beat: 80, name: 'Breakdown' },
+        { beat: 96, name: 'Drop 2' },
+        { beat: 120, name: 'Outro' },
+    ]);
+
+    setMasterChain(masterTrack, 'edm');
+
+    const tracks = [
+        masterTrack,
+        reverbPlate, reverbHall, tapeDelay, parallelComp,
+        drumFolder, edmKick, edmClap, edmHat, edmRide,
+        edmBass,
+        leadsFolder, supersawLead, pluck, arp,
+        padsFolder, widePad, atmos,
+    ];
+
+    await finalizeTemplate({
+        tracks,
+        selectTrackId: supersawLead.id,
+        vcaGroups: [drumsVca, bassVca, leadsVca, padsVca],
+        sidechainRoutes: [
+            { trigger: edmKick, target: edmBass, deviceId: bassSidechainId },
+            { trigger: edmKick, target: widePad, deviceId: padSidechainId },
+        ],
+    });
+}

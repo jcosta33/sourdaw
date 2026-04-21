@@ -31,20 +31,28 @@ What this session must accomplish. One paragraph maximum. Be specific — vague 
 
 ## Acceptance criteria
 
+<acceptance_criteria>
+
 Derived from the spec. Each criterion is a checkbox — all must be checked before this task is done.
 
 - [ ]
 - [ ]
 
+</acceptance_criteria>
+
 ---
 
 ## Module plan
+
+<module_plan>
 
 Which modules will be touched and what changes in each.
 
 | Module | Change |
 | ------ | ------ |
 |        |        |
+
+</module_plan>
 
 ---
 
@@ -53,8 +61,8 @@ Which modules will be touched and what changes in each.
 - Work only inside this worktree
 - Do not switch branches unless explicitly instructed
 - Do not merge, rebase, or push unless explicitly instructed
-- Run `pnpm i` to install dependencies
-- Run `pnpm deps:validate` and `pnpm typecheck` after every batch of changes
+- Run `{{cmdInstall}}` to install dependencies
+- Run `pnpm agents:validate` after every batch of changes
 - **Proactively research and read related docs.** If context from another spec, research, or bug file is needed, you are empowered to browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own to confirm your hypotheses and make informed decisions. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are also fair game.
 
 ---
@@ -65,8 +73,7 @@ Which modules will be touched and what changes in each.
 - [ ] Fill in acceptance criteria above
 - [ ] Fill in module plan above
 - [ ] Implement
-- [ ] `pnpm deps:validate` passes with zero violations
-- [ ] `pnpm typecheck` passes
+- [ ] `pnpm agents:validate` passes
 - [ ] Self-review: Verification outputs pasted
 - [ ] Self-review: Correctness answered
 - [ ] Self-review: Architecture answered
@@ -110,6 +117,8 @@ Concrete starting points for the next session if this one ends incomplete.
 
 ## Self-review
 
+<self_review>
+
 Stop. Act as a senior engineer doing an adversarial review of this implementation — someone who is looking for a reason to reject it. Read every diff as if you didn't write it. Be the critic.
 
 > **Hard gate.** The task is not complete until every question below has a written answer directly beneath it. An unanswered question is a skipped check. Incomplete Self-review is an invalid session output. If you cannot point to a specific file/line/requirement for a finding, do not pad the list.
@@ -117,8 +126,7 @@ Stop. Act as a senior engineer doing an adversarial review of this implementatio
 ### Verification outputs (paste actual command output — do not paraphrase)
 
 - `git status` →
-- `pnpm deps:validate` (last line):
-- `pnpm typecheck` (last line):
+- `pnpm agents:validate` (last 2 lines):
 
 ### Correctness
 
@@ -127,12 +135,12 @@ Stop. Act as a senior engineer doing an adversarial review of this implementatio
 
 ### Architecture
 
-- Zero `pnpm deps:validate` violations (see pasted output above)? Did you introduce any cross-module imports through internals (`models/`, `repositories/`, `engine/`, `presentations/components/`, `presentations/hooks/`)? Any barrel files other than a module root `index.ts` (or pseudo-barrels like `contracts.ts`)?
+- Zero validation errors (see pasted output above)? Did you introduce any cross-module imports through internals (`models/`, `repositories/`, `engine/`, `presentations/components/`, `presentations/hooks/`)? Any barrel files other than a module root `index.ts` (or pseudo-barrels like `contracts.ts`)?
   Answer:
 
 ### React and TypeScript conventions
 
-- Did you use `useMemo`, `useCallback`, or `React.memo`? Did you use `&&` for conditional rendering? Did you use `interface` instead of `type`, or `enum` instead of `as const`? Does `pnpm typecheck` pass cleanly?
+- Did you use `useMemo`, `useCallback`, or `React.memo`? Did you use `&&` for conditional rendering? Did you use `interface` instead of `type`, or `enum` instead of `as const`? Does `pnpm agents:validate` pass cleanly?
   Answer:
 
 ### Primary deliverable and related work
@@ -151,3 +159,5 @@ Stop. Act as a senior engineer doing an adversarial review of this implementatio
   Answer:
 
 Only when every answer above is written is this task complete.
+
+</self_review>

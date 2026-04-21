@@ -14,8 +14,19 @@ export { setMasterGain } from './setMasterGain';
 export { setTempo } from './setTempo';
 export { setTimeSignature } from './setTimeSignature';
 
+export { addSetlistItem } from './setlist/addSetlistItem';
+export { getCurrentItem } from './setlist/getCurrentItem';
+export { getRemainingDuration } from './setlist/getRemainingDuration';
+export { getSetlistProgress } from './setlist/getSetlistProgress';
+export { goToItem } from './setlist/goToItem';
 export { nextItem } from './setlist/nextItem';
 export { previousItem } from './setlist/previousItem';
+export { removeSetlistItem } from './setlist/removeSetlistItem';
+export { renameSetlist } from './setlist/renameSetlist';
+export { reorderSetlistItems } from './setlist/reorderSetlistItems';
+export { setCountIn } from './setlist/setCountIn';
+export { toggleAutoAdvance } from './setlist/toggleAutoAdvance';
+export { updateSetlistItem } from './setlist/updateSetlistItem';
 
 export { addTempoChange } from './tempoMap/addTempoChange';
 export { removeTempoChange } from './tempoMap/removeTempoChange';

@@ -66,7 +66,8 @@ export function applyAutomation(currentBeat: number): void {
         }
 
         if (lane.parameterId === 'gain') {
-            engineSetTrackGain(lane.trackId, value);
+            const linearGain = lane.minValue < 0 ? 10 ** (value / 20) : value;
+            engineSetTrackGain(lane.trackId, linearGain);
         } else if (lane.parameterId === 'pan') {
             engineSetTrackPan(lane.trackId, value * 100 - 50);
         } else {
