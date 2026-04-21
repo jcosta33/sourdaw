@@ -15,7 +15,7 @@ type SetGrandBouleSostenutoInput = {
     store: Store<GrandBouleState>;
 };
 
-export const setGrandBouleSostenuto = (input: SetGrandBouleSostenutoInput): void => {
+export function setGrandBouleSostenuto(input: SetGrandBouleSostenutoInput): void {
     const state = input.store.value;
     if (state === null) {
         return;
@@ -25,4 +25,4 @@ export const setGrandBouleSostenuto = (input: SetGrandBouleSostenutoInput): void
         pedals: { ...state.pedals, sostenuto: input.engaged },
     });
     input.engine.setSostenuto({ engaged: input.engaged });
-};
+}

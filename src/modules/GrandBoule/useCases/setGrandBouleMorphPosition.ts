@@ -21,12 +21,14 @@ type SetGrandBouleMorphPositionInput = {
 /**
  * Linearly interpolate a single value between `a` and `b` by `t` (0..1).
  */
-const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
+function lerp(a: number, b: number, t: number): number {
+    return a + (b - a) * t;
+}
 
 /**
  * Interpolate all numeric physical-modeling parameters between two models.
  */
-const interpolateModels = (
+function interpolateModels(
     modelA: GrandBoulePianoModel,
     modelB: GrandBoulePianoModel,
     t: number
@@ -37,31 +39,33 @@ const interpolateModels = (
     sympatheticLevel: number;
     bodyResonance: number;
     toneColor: number;
-} => ({
-    hammerHardnessScale: lerp(modelA.hammerHardnessScale, modelB.hammerHardnessScale, t),
-    hammerMassScale: lerp(modelA.hammerMassScale, modelB.hammerMassScale, t),
-    soundboardBrightness: lerp(modelA.soundboardBrightness, modelB.soundboardBrightness, t),
-    sympatheticLevel: lerp(modelA.sympatheticLevel, modelB.sympatheticLevel, t),
-    bodyResonance: lerp(modelA.bodyResonance, modelB.bodyResonance, t),
-    toneColor: lerp(modelA.toneColor, modelB.toneColor, t),
-});
+} {
+    return {
+        hammerHardnessScale: lerp(modelA.hammerHardnessScale, modelB.hammerHardnessScale, t),
+        hammerMassScale: lerp(modelA.hammerMassScale, modelB.hammerMassScale, t),
+        soundboardBrightness: lerp(modelA.soundboardBrightness, modelB.soundboardBrightness, t),
+        sympatheticLevel: lerp(modelA.sympatheticLevel, modelB.sympatheticLevel, t),
+        bodyResonance: lerp(modelA.bodyResonance, modelB.bodyResonance, t),
+        toneColor: lerp(modelA.toneColor, modelB.toneColor, t),
+    };
+}
 
 /**
  * Push a complete set of interpolated model parameters to the engine.
  */
-const dispatchInterpolatedParams = (
+function dispatchInterpolatedParams(
     engine: GrandBouleEngineHandle,
     params: ReturnType<typeof interpolateModels>
-): void => {
+): void {
     engine.setParam({ name: 'hammer_hardness_scale', value: params.hammerHardnessScale });
     engine.setParam({ name: 'hammer_mass_scale', value: params.hammerMassScale });
     engine.setParam({ name: 'soundboard_brightness', value: params.soundboardBrightness });
     engine.setParam({ name: 'sympathetic_level', value: params.sympatheticLevel });
     engine.setParam({ name: 'body_resonance', value: params.bodyResonance });
     engine.setParam({ name: 'tone_color', value: params.toneColor });
-};
+}
 
-export const setGrandBouleMorphPosition = (input: SetGrandBouleMorphPositionInput): void => {
+export function setGrandBouleMorphPosition(input: SetGrandBouleMorphPositionInput): void {
     const state = input.store.value;
     if (state === null) {
         return;
@@ -105,4 +109,4 @@ export const setGrandBouleMorphPosition = (input: SetGrandBouleMorphPositionInpu
         ...state,
         morph: { ...morph, morphPosition: clamped },
     });
-};
+}

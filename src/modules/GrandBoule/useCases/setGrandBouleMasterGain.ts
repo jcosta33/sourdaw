@@ -14,7 +14,7 @@ type SetGrandBouleMasterGainInput = {
     store: Store<GrandBouleState>;
 };
 
-export const setGrandBouleMasterGain = (input: SetGrandBouleMasterGainInput): void => {
+export function setGrandBouleMasterGain(input: SetGrandBouleMasterGainInput): void {
     const state = input.store.value;
     if (state === null) {
         return;
@@ -25,4 +25,4 @@ export const setGrandBouleMasterGain = (input: SetGrandBouleMasterGainInput): vo
         config: { ...state.config, masterGain: clamped },
     });
     input.engine.setParam({ name: 'master_gain', value: clamped });
-};
+}

@@ -17,7 +17,7 @@ type TriggerGrandBouleMicrotunedNoteInput = {
 
 const Q24_PER_SEMITONE = 1 << 24;
 
-export const triggerGrandBouleMicrotunedNote = (input: TriggerGrandBouleMicrotunedNoteInput): void => {
+export function triggerGrandBouleMicrotunedNote(input: TriggerGrandBouleMicrotunedNoteInput): void {
     const velocity = Math.max(0, Math.min(0xffff, Math.round(input.velocity16bit)));
     const semitones = input.offsetCents / 100;
     const pitchOffsetQ24 = Math.round(semitones * Q24_PER_SEMITONE);
@@ -26,4 +26,4 @@ export const triggerGrandBouleMicrotunedNote = (input: TriggerGrandBouleMicrotun
         velocity16bit: velocity,
         pitchOffsetQ24,
     });
-};
+}

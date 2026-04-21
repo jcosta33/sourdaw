@@ -119,7 +119,9 @@ export async function loadInstrumentFromManifest(
         }
     }
 
-    const encodePath = (path: string): string => path.split('/').map(encodeURIComponent).join('/');
+    function encodePath(path: string): string {
+        return path.split('/').map(encodeURIComponent).join('/');
+    }
 
     let completed = 0;
     const total = uniqueFiles.length;

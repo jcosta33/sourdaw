@@ -17,7 +17,7 @@ type SetGrandBouleVelocityCurveInput = {
     store: Store<GrandBouleState>;
 };
 
-export const setGrandBouleVelocityCurve = (input: SetGrandBouleVelocityCurveInput): void => {
+export function setGrandBouleVelocityCurve(input: SetGrandBouleVelocityCurveInput): void {
     const state = input.store.value;
     if (state === null) {
         return;
@@ -34,4 +34,4 @@ export const setGrandBouleVelocityCurve = (input: SetGrandBouleVelocityCurveInpu
     });
 
     input.engine.setParam({ name: 'velocity_curve', value: clamped });
-};
+}

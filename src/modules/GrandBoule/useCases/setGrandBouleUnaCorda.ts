@@ -16,7 +16,7 @@ type SetGrandBouleUnaCordaInput = {
     store: Store<GrandBouleState>;
 };
 
-export const setGrandBouleUnaCorda = (input: SetGrandBouleUnaCordaInput): void => {
+export function setGrandBouleUnaCorda(input: SetGrandBouleUnaCordaInput): void {
     const state = input.store.value;
     if (state === null) {
         return;
@@ -26,4 +26,4 @@ export const setGrandBouleUnaCorda = (input: SetGrandBouleUnaCordaInput): void =
         pedals: { ...state.pedals, unaCorda: input.engaged },
     });
     input.engine.setUnaCorda({ engaged: input.engaged });
-};
+}

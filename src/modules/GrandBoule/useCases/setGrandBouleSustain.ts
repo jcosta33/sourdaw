@@ -15,7 +15,7 @@ type SetGrandBouleSustainInput = {
     store: Store<GrandBouleState>;
 };
 
-export const setGrandBouleSustain = (input: SetGrandBouleSustainInput): void => {
+export function setGrandBouleSustain(input: SetGrandBouleSustainInput): void {
     const state = input.store.value;
     if (state === null) {
         return;
@@ -26,4 +26,4 @@ export const setGrandBouleSustain = (input: SetGrandBouleSustainInput): void => 
         pedals: { ...state.pedals, sustain: clamped },
     });
     input.engine.setSustain({ position: clamped });
-};
+}

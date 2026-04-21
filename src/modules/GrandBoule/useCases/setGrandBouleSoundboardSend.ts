@@ -15,7 +15,7 @@ type SetGrandBouleSoundboardSendInput = {
     store: Store<GrandBouleState>;
 };
 
-export const setGrandBouleSoundboardSend = (input: SetGrandBouleSoundboardSendInput): void => {
+export function setGrandBouleSoundboardSend(input: SetGrandBouleSoundboardSendInput): void {
     const state = input.store.value;
     if (state === null) {
         return;
@@ -26,4 +26,4 @@ export const setGrandBouleSoundboardSend = (input: SetGrandBouleSoundboardSendIn
         config: { ...state.config, soundboardSend: clamped },
     });
     input.engine.setParam({ name: 'soundboard_send', value: clamped });
-};
+}
