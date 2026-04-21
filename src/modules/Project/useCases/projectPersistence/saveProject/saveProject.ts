@@ -18,9 +18,11 @@ export function saveProject(): void {
             if (current) {
                 projectStore.set({ ...current, updatedAt, dirty: false });
             }
+            return null;
         })
         .catch((error) => {
             logger.warn('[saveProject] CRDT persistence failed:', error);
+            return null;
         });
 
     addToRecentProjects(project.name, `sourdaw:project:${project.name}`);

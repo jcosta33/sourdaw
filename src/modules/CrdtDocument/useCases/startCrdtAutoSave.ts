@@ -33,6 +33,7 @@ export function startCrdtAutoSave(): () => void {
             persistCrdtProject()
                 .then(() => {
                     autoSaveHealth.consecutiveFailures = 0;
+                    return null;
                 })
                 .catch((error) => {
                     autoSaveHealth.consecutiveFailures++;
@@ -46,6 +47,7 @@ export function startCrdtAutoSave(): () => void {
                             )
                         );
                     }
+                    return null;
                 });
         }, DEBOUNCE_MS);
     }

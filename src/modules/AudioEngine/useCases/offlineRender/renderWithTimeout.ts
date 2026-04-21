@@ -12,10 +12,12 @@ export function renderWithTimeout(offlineCtx: OfflineAudioContext, timeoutMs: nu
             (buffer) => {
                 clearTimeout(timer);
                 resolve(buffer);
+                return null;
             },
             (error: unknown) => {
                 clearTimeout(timer);
                 reject(error instanceof Error ? error : new Error(String(error)));
+                return null;
             }
         );
     });

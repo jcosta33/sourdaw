@@ -12,9 +12,11 @@ export const handleImportMidiFile = createHandler<'importMidiFile'>({
                         void importMidiFile(file);
                     }
                 }
+                return null;
             })
             .catch(() => {
                 notifyUser('Failed to open file dialog', 'error');
+                return null;
             });
     },
     describe: () => ({ label: 'Import MIDI file' }),

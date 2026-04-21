@@ -52,6 +52,7 @@ function beginActualRecording(): void {
                             startBeat: newStartBeat,
                             endBeat: exactEndBeat,
                         }));
+                        return null;
                     });
                 }
             });

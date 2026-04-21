@@ -145,6 +145,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             } else {
                                 next();
                             }
+                            return null;
                         })
                         .catch(reject);
                 }

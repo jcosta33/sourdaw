@@ -94,10 +94,12 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                             'info'
                         );
                     }
+                    return null;
                 })
                 .catch((error) => {
                     logger.error(error);
                     notifyUser('Pitch analysis failed. See logs for details.', 'error');
+                    return null;
                 });
         }
     }, [hasKnead, kneadState, clipId]);

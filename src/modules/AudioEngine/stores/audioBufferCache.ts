@@ -365,9 +365,11 @@ export const audioBufferCache = {
             .then((db) => {
                 const tx = db.transaction(STORE_NAME, 'readwrite');
                 tx.objectStore(STORE_NAME).clear();
+                return null;
             })
             .catch(() => {
                 /* ignore */
+                return null;
             });
     },
 

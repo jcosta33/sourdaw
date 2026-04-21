@@ -142,6 +142,7 @@ self.onmessage = ({ data }: MessageEvent): void => {
         case 'init':
             void initWorker(data.sab as SharedArrayBuffer, data.sampleRate as number).then(() => {
                 self.postMessage({ type: 'ready' });
+                return null;
             });
             break;
         case 'start':

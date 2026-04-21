@@ -30,6 +30,7 @@ export const MidiDevicePicker = (): ReactElement => {
         }
         void initWebMidi().then(() => {
             setInitialised(true);
+            return null;
         });
     }, [state.isSupported]);
 
