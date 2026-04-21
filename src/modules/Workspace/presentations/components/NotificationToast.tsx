@@ -17,20 +17,21 @@ export const NotificationToast = (): ReactElement | null => {
     }
 
     const latest = items[0]!;
+    const renderIife_1 = () => {
+        if (latest.level === 'error') {
+            return 'border-[var(--color-state-danger)]/40 bg-[var(--color-state-danger)]/10';
+        }
+        if (latest.level === 'warning') {
+            return 'border-[var(--color-state-warning)]/40 bg-[var(--color-state-warning)]/10';
+        }
+        return 'border-border bg-surface-raised';
+    };
 
     return (
         <div
             className={cn(
                 'fixed bottom-16 left-4 z-50 w-80 rounded-lg border p-3 shadow-xl animate-in slide-in-from-left-5',
-                (() => {
-                    if (latest.level === 'error') {
-                        return 'border-[var(--color-state-danger)]/40 bg-[var(--color-state-danger)]/10';
-                    }
-                    if (latest.level === 'warning') {
-                        return 'border-[var(--color-state-warning)]/40 bg-[var(--color-state-warning)]/10';
-                    }
-                    return 'border-border bg-surface-raised';
-                })()
+                renderIife_1()
             )}
             role="alert"
             aria-live="assertive"

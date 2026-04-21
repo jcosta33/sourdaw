@@ -119,28 +119,32 @@ export const PianoRollToolbar = ({
 }: PianoRollToolbarProps): ReactElement => (
     <DawControlStrip>
         <span className="text-[10px] text-muted-foreground">Snap:</span>
-        {[1, 0.5, 0.25, 0.125].map((value) => (
-            <Button
-                key={value}
-                variant={gridSnap === value ? 'secondary' : 'ghost'}
-                size="icon-xs"
-                onClick={() => onGridSnapChange(value)}
-                className="text-[9px] w-6 h-5"
-            >
-                {(() => {
-                    if (value === 1) {
-                        return '1';
-                    }
-                    if (value === 0.5) {
-                        return '1/2';
-                    }
-                    if (value === 0.25) {
-                        return '1/4';
-                    }
-                    return '1/8';
-                })()}
-            </Button>
-        ))}
+        {[1, 0.5, 0.25, 0.125].map((value) => {
+            const renderIife_11 = () => {
+                if (value === 1) {
+                    return '1';
+                }
+                if (value === 0.5) {
+                    return '1/2';
+                }
+                if (value === 0.25) {
+                    return '1/4';
+                }
+                return '1/8';
+            };
+
+            return (
+                <Button
+                    key={value}
+                    variant={gridSnap === value ? 'secondary' : 'ghost'}
+                    size="icon-xs"
+                    onClick={() => onGridSnapChange(value)}
+                    className="text-[9px] w-6 h-5"
+                >
+                    {renderIife_11()}
+                </Button>
+            );
+        })}
 
         <ToolbarDivider />
 

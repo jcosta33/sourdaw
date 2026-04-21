@@ -34,6 +34,44 @@ export const WarpSection = ({
         audioModRateStr = `${(audioModRate / 1000).toFixed(1)}kHz`;
     }
 
+    const renderIife_1 = () => {
+        if (audioModTarget > 0) {
+            return (
+                <div className="flex items-end gap-2 px-1">
+                    <div className="flex flex-col items-center gap-0.5">
+                        <RotaryKnob
+                            value={audioModRate}
+                            onChange={(v) => onParam('audioModRate', v)}
+                            min={0}
+                            max={5000}
+                            step={1}
+                            defaultValue={0}
+                            size="lg"
+                            tone="sage"
+                        />
+                        <span className="text-[7px] text-muted-foreground">Rate</span>
+                        <span className="text-[6px] text-muted-foreground/50 font-mono">{audioModRateStr}</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-0.5">
+                        <RotaryKnob
+                            value={audioModDepth}
+                            onChange={(v) => onParam('audioModDepth', v)}
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            defaultValue={0}
+                            size="lg"
+                            tone="sage"
+                        />
+                        <span className="text-[7px] text-muted-foreground">Depth</span>
+                    </div>
+                </div>
+            );
+        } else {
+            return null;
+        }
+    };
+
     return (
         <div className="space-y-2">
             <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-1">
@@ -91,45 +129,7 @@ export const WarpSection = ({
                         </DawPluginChip>
                     ))}
                 </div>
-                {(() => {
-                    if (audioModTarget > 0) {
-                        return (
-                            <div className="flex items-end gap-2 px-1">
-                                <div className="flex flex-col items-center gap-0.5">
-                                    <RotaryKnob
-                                        value={audioModRate}
-                                        onChange={(v) => onParam('audioModRate', v)}
-                                        min={0}
-                                        max={5000}
-                                        step={1}
-                                        defaultValue={0}
-                                        size="lg"
-                                        tone="sage"
-                                    />
-                                    <span className="text-[7px] text-muted-foreground">Rate</span>
-                                    <span className="text-[6px] text-muted-foreground/50 font-mono">
-                                        {audioModRateStr}
-                                    </span>
-                                </div>
-                                <div className="flex flex-col items-center gap-0.5">
-                                    <RotaryKnob
-                                        value={audioModDepth}
-                                        onChange={(v) => onParam('audioModDepth', v)}
-                                        min={0}
-                                        max={1}
-                                        step={0.01}
-                                        defaultValue={0}
-                                        size="lg"
-                                        tone="sage"
-                                    />
-                                    <span className="text-[7px] text-muted-foreground">Depth</span>
-                                </div>
-                            </div>
-                        );
-                    } else {
-                        return null;
-                    }
-                })()}
+                {renderIife_1()}
             </div>
         </div>
     );

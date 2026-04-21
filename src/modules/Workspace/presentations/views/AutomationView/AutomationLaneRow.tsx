@@ -474,6 +474,15 @@ export const AutomationLaneRow = ({
                         }
                         return 4;
                     })();
+                    const renderIife_2 = () => {
+                        if (isDragging) {
+                            return `drop-shadow(0 0 8px ${curveColor})`;
+                        }
+                        if (isHovered || isSelected) {
+                            return `drop-shadow(0 0 4px ${curveColor})`;
+                        }
+                        return `drop-shadow(0 0 2px ${curveColor})`;
+                    };
 
                     return (
                         <g key={`pt-${String(ptIdx)}-${point.beat}`} data-auto-point="true">
@@ -517,15 +526,7 @@ export const AutomationLaneRow = ({
                                 strokeWidth={isDragging || isSelected ? 2 : 1.5}
                                 pointerEvents="none"
                                 style={{
-                                    filter: (() => {
-                                        if (isDragging) {
-                                            return `drop-shadow(0 0 8px ${curveColor})`;
-                                        }
-                                        if (isHovered || isSelected) {
-                                            return `drop-shadow(0 0 4px ${curveColor})`;
-                                        }
-                                        return `drop-shadow(0 0 2px ${curveColor})`;
-                                    })(),
+                                    filter: renderIife_2(),
                                 }}
                             />
                             {point.curve !== 'linear' && !isDragging ? (

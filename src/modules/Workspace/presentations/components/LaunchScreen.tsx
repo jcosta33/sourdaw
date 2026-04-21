@@ -257,6 +257,167 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     };
 
     // ── Render ──
+    const renderIife_2 = () => {
+        if (view === 'home') {
+            return (
+                <div
+                    key="home"
+                    className={`animate-in fade-in zoom-in-95 duration-500 relative flex flex-col items-center gap-8 rounded-2xl border shadow-[0_24px_80px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.05)] max-w-[440px] w-full p-10 transition-all duration-300 ${
+                        isDragOver
+                            ? 'border-[var(--color-accent-orange)]/60 bg-[var(--color-accent-orange)]/5 scale-[1.01]'
+                            : 'border-white/[0.07] bg-white/[0.03] backdrop-blur-xl'
+                    }`}
+                >
+                    <LogoBlock />
+                    <div className="grid grid-cols-3 gap-3 w-full">
+                        <ActionCard
+                            id="launch-new-project"
+                            label="New Project"
+                            sub="Blank canvas"
+                            icon={<FolderOpen className="size-5" aria-hidden="true" />}
+                            colorVar="--color-accent-orange"
+                            onClick={handleNewProject}
+                        />
+                        <ActionCard
+                            id="launch-from-template"
+                            label="Templates"
+                            sub="Pre-baked recipes"
+                            icon={<LayoutTemplate className="size-5" aria-hidden="true" />}
+                            colorVar="--color-accent-lavender"
+                            onClick={() => handleOpenGrid('all')}
+                        />
+                        <ActionCard
+                            id="launch-demo-project"
+                            label="Demos"
+                            sub="Hear what's cooking"
+                            icon={<Sparkles className="size-5" aria-hidden="true" />}
+                            colorVar="--color-accent-mint"
+                            onClick={() => handleOpenGrid('demo')}
+                        />
+                    </div>
+                    <div
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed transition-all w-full justify-center ${
+                            isDragOver
+                                ? 'border-[var(--color-accent-orange)] bg-[var(--color-accent-orange)]/10 text-[var(--color-accent-orange)]'
+                                : 'border-white/[0.10] text-white/20'
+                        }`}
+                    >
+                        <Upload className="size-3.5 shrink-0" aria-hidden="true" />
+                        <span className="text-[11px]">Drop audio or MIDI to start instantly</span>
+                    </div>
+                    <p className="text-[9px] text-white/12 tracking-wider">Sourdaw Studio · Time to cook</p>
+                </div>
+            );
+        } else {
+            return null;
+        }
+    };
+    const renderIife_3 = () => {
+        if (view === 'grid') {
+            return (
+                <div
+                    key="grid"
+                    className="animate-in fade-in slide-in-from-bottom-3 duration-400 flex flex-col gap-4 max-w-[620px] w-full"
+                >
+                    {/* Header */}
+                    <div className="flex items-center gap-3">
+                        <button
+                            type="button"
+                            aria-label="Back to home"
+                            className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-colors cursor-pointer"
+                            onClick={() => setView('home')}
+                        >
+                            <ArrowLeft className="size-3.5" aria-hidden="true" />
+                            Back
+                        </button>
+                        <div className="h-3 w-px bg-white/10" />
+                        <p className="text-xs text-white/50 font-medium">Start a new project</p>
+                    </div>
+                    {/* Category pills */}
+                    <div className="flex gap-1.5 flex-wrap">
+                        {CATEGORY_ORDER.map((cat) => {
+                            const colors = CATEGORY_COLORS[cat] ?? CATEGORY_COLORS.all!;
+                            const isActive = activeCategory === cat;
+                            const renderIife_4 = () => {
+                                if (cat === 'all') {
+                                    return <Layers className="size-3" aria-hidden="true" />;
+                                } else {
+                                    if (cat === 'demo') {
+                                        return <Sparkles className="size-3" aria-hidden="true" />;
+                                    } else {
+                                        if (cat === 'music') {
+                                            return <Music className="size-3" aria-hidden="true" />;
+                                        } else {
+                                            if (cat === 'podcast') {
+                                                return <Mic className="size-3" aria-hidden="true" />;
+                                            } else {
+                                                return <Film className="size-3" aria-hidden="true" />;
+                                            }
+                                        }
+                                    }
+                                }
+                            };
+
+                            return (
+                                <button
+                                    key={cat}
+                                    type="button"
+                                    onClick={() => setActiveCategory(cat)}
+                                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all cursor-pointer ${
+                                        isActive
+                                            ? `${colors.activeBg} ${colors.text} ${colors.border}`
+                                            : 'bg-white/[0.03] text-white/35 border-white/[0.06] hover:bg-white/[0.06] hover:text-white/60'
+                                    }`}
+                                >
+                                    {renderIife_4()}
+                                    {CATEGORY_LABELS[cat]}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    {/* Template grid */}
+                    <div className="grid grid-cols-2 gap-2.5 max-h-[400px] overflow-y-auto pr-1 scrollbar-thin">
+                        {filteredTemplates.map((template) => {
+                            const colors = CATEGORY_COLORS[template.category] ?? CATEGORY_COLORS.empty!;
+                            const icon = TEMPLATE_ICONS[template.id] ?? (
+                                <FileText className="size-4" aria-hidden="true" />
+                            );
+                            return (
+                                <button
+                                    key={template.id}
+                                    type="button"
+                                    onClick={() => handleTemplateSelect(template)}
+                                    className={`group flex items-start gap-3 p-4 rounded-xl border transition-all duration-150 cursor-pointer text-left hover:shadow-[0_4px_16px_rgba(0,0,0,0.4)] hover:brightness-110 ${colors.border} bg-white/[0.03] hover:bg-white/[0.06] backdrop-blur-sm`}
+                                >
+                                    <div
+                                        className={`mt-0.5 shrink-0 size-8 rounded-lg ${colors.bg} flex items-center justify-center ${colors.text} transition-colors group-hover:${colors.activeBg}`}
+                                    >
+                                        {icon}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className={`text-xs font-semibold text-white/80 truncate`}>
+                                            {template.name}
+                                        </p>
+                                        <p className={`text-[10px] mt-0.5 ${colors.text}/70 capitalize`}>
+                                            {template.category === 'empty' ? 'Blank' : template.category}
+                                        </p>
+                                        <p className="text-[10px] text-white/30 mt-1 leading-relaxed line-clamp-2">
+                                            {template.description}
+                                        </p>
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <p className="text-[9px] text-white/15 text-center">
+                        Or drop audio / MIDI files on the home screen to import instantly
+                    </p>
+                </div>
+            );
+        } else {
+            return null;
+        }
+    };
 
     return (
         <div
@@ -295,171 +456,10 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
             <AmbientGlows />
             <div className="flex h-full items-center justify-center p-6">
                 {/* ── HOME ── */}
-                {(() => {
-                    if (view === 'home') {
-                        return (
-                            <div
-                                key="home"
-                                className={`animate-in fade-in zoom-in-95 duration-500 relative flex flex-col items-center gap-8 rounded-2xl border shadow-[0_24px_80px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.05)] max-w-[440px] w-full p-10 transition-all duration-300 ${
-                                    isDragOver
-                                        ? 'border-[var(--color-accent-orange)]/60 bg-[var(--color-accent-orange)]/5 scale-[1.01]'
-                                        : 'border-white/[0.07] bg-white/[0.03] backdrop-blur-xl'
-                                }`}
-                            >
-                                <LogoBlock />
-                                <div className="grid grid-cols-3 gap-3 w-full">
-                                    <ActionCard
-                                        id="launch-new-project"
-                                        label="New Project"
-                                        sub="Blank canvas"
-                                        icon={<FolderOpen className="size-5" aria-hidden="true" />}
-                                        colorVar="--color-accent-orange"
-                                        onClick={handleNewProject}
-                                    />
-                                    <ActionCard
-                                        id="launch-from-template"
-                                        label="Templates"
-                                        sub="Pre-baked recipes"
-                                        icon={<LayoutTemplate className="size-5" aria-hidden="true" />}
-                                        colorVar="--color-accent-lavender"
-                                        onClick={() => handleOpenGrid('all')}
-                                    />
-                                    <ActionCard
-                                        id="launch-demo-project"
-                                        label="Demos"
-                                        sub="Hear what's cooking"
-                                        icon={<Sparkles className="size-5" aria-hidden="true" />}
-                                        colorVar="--color-accent-mint"
-                                        onClick={() => handleOpenGrid('demo')}
-                                    />
-                                </div>
-                                <div
-                                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed transition-all w-full justify-center ${
-                                        isDragOver
-                                            ? 'border-[var(--color-accent-orange)] bg-[var(--color-accent-orange)]/10 text-[var(--color-accent-orange)]'
-                                            : 'border-white/[0.10] text-white/20'
-                                    }`}
-                                >
-                                    <Upload className="size-3.5 shrink-0" aria-hidden="true" />
-                                    <span className="text-[11px]">Drop audio or MIDI to start instantly</span>
-                                </div>
-                                <p className="text-[9px] text-white/12 tracking-wider">Sourdaw Studio · Time to cook</p>
-                            </div>
-                        );
-                    } else {
-                        return null;
-                    }
-                })()}
+                {renderIife_2()}
 
                 {/* ── GRID (Templates / Demos) ── */}
-                {(() => {
-                    if (view === 'grid') {
-                        return (
-                            <div
-                                key="grid"
-                                className="animate-in fade-in slide-in-from-bottom-3 duration-400 flex flex-col gap-4 max-w-[620px] w-full"
-                            >
-                                {/* Header */}
-                                <div className="flex items-center gap-3">
-                                    <button
-                                        type="button"
-                                        aria-label="Back to home"
-                                        className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-colors cursor-pointer"
-                                        onClick={() => setView('home')}
-                                    >
-                                        <ArrowLeft className="size-3.5" aria-hidden="true" />
-                                        Back
-                                    </button>
-                                    <div className="h-3 w-px bg-white/10" />
-                                    <p className="text-xs text-white/50 font-medium">Start a new project</p>
-                                </div>
-                                {/* Category pills */}
-                                <div className="flex gap-1.5 flex-wrap">
-                                    {CATEGORY_ORDER.map((cat) => {
-                                        const colors = CATEGORY_COLORS[cat] ?? CATEGORY_COLORS.all!;
-                                        const isActive = activeCategory === cat;
-                                        return (
-                                            <button
-                                                key={cat}
-                                                type="button"
-                                                onClick={() => setActiveCategory(cat)}
-                                                className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all cursor-pointer ${
-                                                    isActive
-                                                        ? `${colors.activeBg} ${colors.text} ${colors.border}`
-                                                        : 'bg-white/[0.03] text-white/35 border-white/[0.06] hover:bg-white/[0.06] hover:text-white/60'
-                                                }`}
-                                            >
-                                                {(() => {
-                                                    if (cat === 'all') {
-                                                        return <Layers className="size-3" aria-hidden="true" />;
-                                                    } else {
-                                                        if (cat === 'demo') {
-                                                            return <Sparkles className="size-3" aria-hidden="true" />;
-                                                        } else {
-                                                            if (cat === 'music') {
-                                                                return <Music className="size-3" aria-hidden="true" />;
-                                                            } else {
-                                                                if (cat === 'podcast') {
-                                                                    return (
-                                                                        <Mic className="size-3" aria-hidden="true" />
-                                                                    );
-                                                                } else {
-                                                                    return (
-                                                                        <Film className="size-3" aria-hidden="true" />
-                                                                    );
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                })()}
-                                                {CATEGORY_LABELS[cat]}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                                {/* Template grid */}
-                                <div className="grid grid-cols-2 gap-2.5 max-h-[400px] overflow-y-auto pr-1 scrollbar-thin">
-                                    {filteredTemplates.map((template) => {
-                                        const colors = CATEGORY_COLORS[template.category] ?? CATEGORY_COLORS.empty!;
-                                        const icon = TEMPLATE_ICONS[template.id] ?? (
-                                            <FileText className="size-4" aria-hidden="true" />
-                                        );
-                                        return (
-                                            <button
-                                                key={template.id}
-                                                type="button"
-                                                onClick={() => handleTemplateSelect(template)}
-                                                className={`group flex items-start gap-3 p-4 rounded-xl border transition-all duration-150 cursor-pointer text-left hover:shadow-[0_4px_16px_rgba(0,0,0,0.4)] hover:brightness-110 ${colors.border} bg-white/[0.03] hover:bg-white/[0.06] backdrop-blur-sm`}
-                                            >
-                                                <div
-                                                    className={`mt-0.5 shrink-0 size-8 rounded-lg ${colors.bg} flex items-center justify-center ${colors.text} transition-colors group-hover:${colors.activeBg}`}
-                                                >
-                                                    {icon}
-                                                </div>
-                                                <div className="min-w-0">
-                                                    <p className={`text-xs font-semibold text-white/80 truncate`}>
-                                                        {template.name}
-                                                    </p>
-                                                    <p className={`text-[10px] mt-0.5 ${colors.text}/70 capitalize`}>
-                                                        {template.category === 'empty' ? 'Blank' : template.category}
-                                                    </p>
-                                                    <p className="text-[10px] text-white/30 mt-1 leading-relaxed line-clamp-2">
-                                                        {template.description}
-                                                    </p>
-                                                </div>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                                <p className="text-[9px] text-white/15 text-center">
-                                    Or drop audio / MIDI files on the home screen to import instantly
-                                </p>
-                            </div>
-                        );
-                    } else {
-                        return null;
-                    }
-                })()}
+                {renderIife_3()}
 
                 {/* ── LOADING ── */}
                 {view === 'loading' ? (

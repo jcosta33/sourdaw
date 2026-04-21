@@ -301,6 +301,113 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return undefined;
     }, [project.initialized, project.loading, showLaunch, launchExiting]);
 
+    const renderIife_5 = () => {
+        if (mixerOpen) {
+            const renderIife_6 = () => {
+                if (bottomTab === 'editor') {
+                    return <ClipView />;
+                } else {
+                    if (bottomTab === 'mixer') {
+                        return <MixerPanel style={{ height: '100%' }} />;
+                    } else {
+                        if (bottomTab === 'automation') {
+                            return <AutomationBottomPanel />;
+                        } else {
+                            if (bottomTab === 'session') {
+                                return <SessionView />;
+                            } else {
+                                if (bottomTab === 'analysis') {
+                                    return <AnalysisPanel />;
+                                } else {
+                                    return <RoutingMatrix />;
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            return (
+                <>
+                    <DragResizeHandle side="top" onResize={(data) => setMixerHeight((h) => Math.max(120, h + data))} />
+                    <div
+                        className="contain-strict flex flex-col bg-surface-base overflow-hidden shrink-0"
+                        style={{ height: mixerHeight }}
+                    >
+                        {/* Bottom panel tab bar */}
+                        <div
+                            className="flex items-center gap-0.5 px-2 py-0.5 shrink-0"
+                            style={{
+                                background: 'linear-gradient(180deg, #0c0c0c 0%, #0a0a0a 100%)',
+                                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.4)',
+                                borderBottom: '1px solid rgba(0,0,0,0.4)',
+                            }}
+                        >
+                            <Button
+                                variant={bottomTab === 'mixer' ? 'secondary' : 'ghost'}
+                                size="xs"
+                                className={bottomTab === 'mixer' ? 'text-primary' : ''}
+                                onClick={() => setBottomTab('mixer')}
+                            >
+                                Mixer
+                            </Button>
+                            <Button
+                                variant={bottomTab === 'editor' ? 'secondary' : 'ghost'}
+                                size="xs"
+                                className={bottomTab === 'editor' ? 'text-[var(--color-accent-cyan)]' : ''}
+                                onClick={() => setBottomTab('editor')}
+                            >
+                                Editor
+                            </Button>
+                            <Button
+                                variant={bottomTab === 'automation' ? 'secondary' : 'ghost'}
+                                size="xs"
+                                className={bottomTab === 'automation' ? 'text-[var(--color-accent-lavender)]' : ''}
+                                onClick={() => setBottomTab('automation')}
+                            >
+                                Automation
+                            </Button>
+                            <Button
+                                variant={bottomTab === 'session' ? 'secondary' : 'ghost'}
+                                size="xs"
+                                className={bottomTab === 'session' ? 'text-[var(--color-accent-mint)]' : ''}
+                                onClick={() => setBottomTab('session')}
+                            >
+                                Session
+                            </Button>
+                            <Button
+                                variant={bottomTab === 'routing' ? 'secondary' : 'ghost'}
+                                size="xs"
+                                className={bottomTab === 'routing' ? 'text-[var(--color-accent-peach)]' : ''}
+                                onClick={() => setBottomTab('routing')}
+                            >
+                                Routing
+                            </Button>
+                            <Button
+                                variant={bottomTab === 'analysis' ? 'secondary' : 'ghost'}
+                                size="xs"
+                                className={bottomTab === 'analysis' ? 'text-[var(--color-accent-lavender)]' : ''}
+                                onClick={() => setBottomTab('analysis')}
+                            >
+                                Analysis
+                            </Button>
+
+                            <div className="flex-1" />
+
+                            <Button variant="ghost" size="icon-xs" onClick={toggleMixer} aria-label="Close bottom dock">
+                                <X className="size-3.5" />
+                            </Button>
+                        </div>
+                        {/* Panel content */}
+                        <div className="flex-1 overflow-hidden">{renderIife_6()}</div>
+                    </div>
+                </>
+            );
+        } else {
+            return null;
+        }
+    };
+
     return (
         <MobileGate>
             <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app" data-testid="app-shell">
@@ -503,137 +610,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         ) : null}
 
                         {/* Mixer bottom panel */}
-                        {(() => {
-                            if (mixerOpen) {
-                                return (
-                                    <>
-                                        <DragResizeHandle
-                                            side="top"
-                                            onResize={(data) => setMixerHeight((h) => Math.max(120, h + data))}
-                                        />
-                                        <div
-                                            className="contain-strict flex flex-col bg-surface-base overflow-hidden shrink-0"
-                                            style={{ height: mixerHeight }}
-                                        >
-                                            {/* Bottom panel tab bar */}
-                                            <div
-                                                className="flex items-center gap-0.5 px-2 py-0.5 shrink-0"
-                                                style={{
-                                                    background: 'linear-gradient(180deg, #0c0c0c 0%, #0a0a0a 100%)',
-                                                    boxShadow:
-                                                        'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.4)',
-                                                    borderBottom: '1px solid rgba(0,0,0,0.4)',
-                                                }}
-                                            >
-                                                <Button
-                                                    variant={bottomTab === 'mixer' ? 'secondary' : 'ghost'}
-                                                    size="xs"
-                                                    className={bottomTab === 'mixer' ? 'text-primary' : ''}
-                                                    onClick={() => setBottomTab('mixer')}
-                                                >
-                                                    Mixer
-                                                </Button>
-                                                <Button
-                                                    variant={bottomTab === 'editor' ? 'secondary' : 'ghost'}
-                                                    size="xs"
-                                                    className={
-                                                        bottomTab === 'editor' ? 'text-[var(--color-accent-cyan)]' : ''
-                                                    }
-                                                    onClick={() => setBottomTab('editor')}
-                                                >
-                                                    Editor
-                                                </Button>
-                                                <Button
-                                                    variant={bottomTab === 'automation' ? 'secondary' : 'ghost'}
-                                                    size="xs"
-                                                    className={
-                                                        bottomTab === 'automation'
-                                                            ? 'text-[var(--color-accent-lavender)]'
-                                                            : ''
-                                                    }
-                                                    onClick={() => setBottomTab('automation')}
-                                                >
-                                                    Automation
-                                                </Button>
-                                                <Button
-                                                    variant={bottomTab === 'session' ? 'secondary' : 'ghost'}
-                                                    size="xs"
-                                                    className={
-                                                        bottomTab === 'session' ? 'text-[var(--color-accent-mint)]' : ''
-                                                    }
-                                                    onClick={() => setBottomTab('session')}
-                                                >
-                                                    Session
-                                                </Button>
-                                                <Button
-                                                    variant={bottomTab === 'routing' ? 'secondary' : 'ghost'}
-                                                    size="xs"
-                                                    className={
-                                                        bottomTab === 'routing'
-                                                            ? 'text-[var(--color-accent-peach)]'
-                                                            : ''
-                                                    }
-                                                    onClick={() => setBottomTab('routing')}
-                                                >
-                                                    Routing
-                                                </Button>
-                                                <Button
-                                                    variant={bottomTab === 'analysis' ? 'secondary' : 'ghost'}
-                                                    size="xs"
-                                                    className={
-                                                        bottomTab === 'analysis'
-                                                            ? 'text-[var(--color-accent-lavender)]'
-                                                            : ''
-                                                    }
-                                                    onClick={() => setBottomTab('analysis')}
-                                                >
-                                                    Analysis
-                                                </Button>
-
-                                                <div className="flex-1" />
-
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon-xs"
-                                                    onClick={toggleMixer}
-                                                    aria-label="Close bottom dock"
-                                                >
-                                                    <X className="size-3.5" />
-                                                </Button>
-                                            </div>
-                                            {/* Panel content */}
-                                            <div className="flex-1 overflow-hidden">
-                                                {(() => {
-                                                    if (bottomTab === 'editor') {
-                                                        return <ClipView />;
-                                                    } else {
-                                                        if (bottomTab === 'mixer') {
-                                                            return <MixerPanel style={{ height: '100%' }} />;
-                                                        } else {
-                                                            if (bottomTab === 'automation') {
-                                                                return <AutomationBottomPanel />;
-                                                            } else {
-                                                                if (bottomTab === 'session') {
-                                                                    return <SessionView />;
-                                                                } else {
-                                                                    if (bottomTab === 'analysis') {
-                                                                        return <AnalysisPanel />;
-                                                                    } else {
-                                                                        return <RoutingMatrix />;
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                })()}
-                                            </div>
-                                        </div>
-                                    </>
-                                );
-                            } else {
-                                return null;
-                            }
-                        })()}
+                        {renderIife_5()}
 
                         {/* Virtual Keyboard panel */}
                         {virtualKeyboardOpen ? (

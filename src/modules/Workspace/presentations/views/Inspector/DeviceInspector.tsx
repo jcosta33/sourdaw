@@ -90,6 +90,19 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
     const parameters = plugin?.parameters ?? deriveParamsFromValues(device);
 
     const LayoutComponent = resolveDeviceLayout(device.type ?? '');
+    const renderIife_15 = () => {
+        if (LayoutComponent) {
+            return <LayoutComponent device={device} trackId={trackId} parameters={parameters} />;
+        }
+        if (parameters.length > 0) {
+            return <GenericDeviceLayout device={device} trackId={trackId} parameters={parameters} />;
+        }
+        return (
+            <div className="px-1">
+                <MetaText>No parameters available for this device.</MetaText>
+            </div>
+        );
+    };
 
     return (
         <div className="space-y-4 p-3">
@@ -106,19 +119,7 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                 }
             />
             {/* ── Registry-based layout ── */}
-            {(() => {
-                if (LayoutComponent) {
-                    return <LayoutComponent device={device} trackId={trackId} parameters={parameters} />;
-                }
-                if (parameters.length > 0) {
-                    return <GenericDeviceLayout device={device} trackId={trackId} parameters={parameters} />;
-                }
-                return (
-                    <div className="px-1">
-                        <MetaText>No parameters available for this device.</MetaText>
-                    </div>
-                );
-            })()}
+            {renderIife_15()}
         </div>
     );
 };
