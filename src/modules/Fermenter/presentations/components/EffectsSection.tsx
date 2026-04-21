@@ -462,6 +462,8 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                     </div>
                 );
         }
+
+        return <></>;
     };
 
     return (

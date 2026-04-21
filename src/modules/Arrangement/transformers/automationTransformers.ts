@@ -198,6 +198,8 @@ export function generateShapePoints(
             return pts;
         }
     }
+
+    return [];
 }
 
 /**

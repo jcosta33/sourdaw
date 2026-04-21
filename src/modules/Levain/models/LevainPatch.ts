@@ -434,4 +434,6 @@ function getDefaultArticulations(family: InstrumentFamily): ArticulationEntry[] 
                 { type: 'staccato', keyswitch: 26, name: 'Staccato', enabled: true },
             ];
     }
+
+    return [];
 }

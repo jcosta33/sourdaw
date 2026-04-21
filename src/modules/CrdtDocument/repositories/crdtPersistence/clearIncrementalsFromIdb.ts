@@ -9,7 +9,7 @@ export async function clearIncrementalsFromIdb(id: DocId): Promise<void> {
         return;
     }
 
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
         const tx = database.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
         const prefix = `${id}:incremental:`;
