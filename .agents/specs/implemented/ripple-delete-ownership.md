@@ -100,17 +100,21 @@ Toggling ripple editing in the transport bar still enables and disables ripple d
 ## Implementation Status
 
 **What is implemented:**
+
 - The refactor is complete. `src/modules/Arrangement/useCases/rippleDelete/` now owns `planRippleDelete`, `rippleDeleteClips`, and `undoRippleDelete`.
 - Handlers in `src/modules/Arrangement/handlers/` use these use cases via relative imports.
 - Workspace module only owns the toggle state.
 - Full unit test coverage exists for the new use cases.
 
 **What is not implemented:**
+
 - None.
 
 **What is done well:**
+
 - Strict adherence to the ownership model.
 - Clean separation of concerns between Arrangement (write path) and Workspace (UI state).
 
 **What needs refactoring:**
+
 - None.

@@ -29,13 +29,13 @@ Runtime-only working notes for an active agent session. Task files are local, gi
 
 All working documents live under `.agents/`. Each subdirectory has a specific role:
 
-| Directory           | Type     | Tier                                      |
-| ------------------- | -------- | ----------------------------------------- |
-| `.agents/audits/`   | Audit    | Durable work product                      |
-| `.agents/specs/`    | Spec     | Durable work product                      |
+| Directory           | Type     | Tier                                               |
+| ------------------- | -------- | -------------------------------------------------- |
+| `.agents/audits/`   | Audit    | Durable work product                               |
+| `.agents/specs/`    | Spec     | Durable work product                               |
 | `.agents/research/` | Research | Durable work product (agent or developer-authored) |
-| `.agents/skills/`   | Skill    | Durable work product                      |
-| `.agents/tasks/`    | Task     | Local execution scaffolding               |
+| `.agents/skills/`   | Skill    | Durable work product                               |
+| `.agents/tasks/`    | Task     | Local execution scaffolding                        |
 
 Full definitions, required sections, and what "done" looks like for each type: see `docs/agents/02-file-types.md`.
 

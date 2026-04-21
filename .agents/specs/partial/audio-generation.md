@@ -100,9 +100,9 @@ After implementation, Sourdaw can generate singing voice audio from MIDI notes +
 8. **Acoustic model inference** — Takes variance model output (F0, energy, breathiness, phoneme embeddings) and generates a mel-spectrogram via shallow diffusion. Configurable diffusion depth: fewer steps for preview (e.g., 20 steps), more for final quality (e.g., 100 steps). Runs via `ort` ONNX session. The shallow diffusion approach is what makes DiffSinger fast enough for interactive use (50x speedup factor per the research).
 
 9. **Vocoder inference** — Converts mel-spectrogram to waveform audio. Two vocoders:
-   - **Vocos** (MIT, ~50 MB) — 6,700x realtime, used for Preview renders. Optimized for speed.
-   - **BigVGAN v2 44 kHz** (MIT, ~400 MB) — 45-135x realtime, used for Final renders. Optimized for quality across music, speech, and effects.
-   Both run via `ort` ONNX sessions. Output: 44.1 kHz float32 PCM audio buffer.
+    - **Vocos** (MIT, ~50 MB) — 6,700x realtime, used for Preview renders. Optimized for speed.
+    - **BigVGAN v2 44 kHz** (MIT, ~400 MB) — 45-135x realtime, used for Final renders. Optimized for quality across music, speech, and effects.
+      Both run via `ort` ONNX sessions. Output: 44.1 kHz float32 PCM audio buffer.
 
 10. **Pipeline orchestration** — The full pipeline runs as an async task on Tokio, not on the audio thread. Steps are sequential within a phrase but parallelizable across phrases. Each step emits a progress event to the frontend. The pipeline:
     1. Phonemize lyrics for the phrase
@@ -277,6 +277,7 @@ After implementation, Sourdaw can generate singing voice audio from MIDI notes +
 ### Porting DiffSinger from OpenUtau
 
 The primary reference implementation is OpenUtau's `DiffSingerRenderer.cs`. Key classes to port:
+
 - `DiffSingerSinger` — model loading, phoneme inventory parsing, voicebank metadata
 - `DiffSingerRenderer` — the render pipeline orchestration
 - `DiffSingerVariance` — variance model inference (duration, F0, energy, breathiness)
@@ -287,6 +288,7 @@ OpenUtau uses ONNX Runtime in C# — the `ort` Rust crate provides the same API 
 ### Phonemizer implementation
 
 DiffSinger voicebanks include a `dsdict.txt` mapping graphemes to phonemes. The phonemizer must:
+
 1. Tokenize lyrics into words
 2. Look up each word in the dictionary
 3. Fall back to rule-based g2p for unknown words
@@ -298,9 +300,11 @@ For English, the CMU Pronouncing Dictionary (~134k words) covers most cases. For
 ### ONNX session management
 
 Follow the existing pattern from `ai_audio.rs`:
+
 ```rust
 static DIFF_SINGER_SESSION: OnceLock<ort::Session> = OnceLock::new();
 ```
+
 But extend to support multiple sessions (variance, acoustic, vocoder) and multiple voicebanks. A `ModelSessionCache` struct maps `(model_id, model_type)` to loaded `ort::Session` instances with LRU eviction.
 
 ### Integration with existing audio engine
@@ -310,6 +314,7 @@ Rendered singing clips are standard WAV files. They integrate with the existing 
 ### Python sidecar extension for RVC
 
 The existing `audio_gen.py` sidecar handles Stable Audio Open. RVC support can be added as a new backend class alongside `StableAudioBackend`:
+
 ```python
 class RvcBackend:
     def __init__(self, model_path, device):
@@ -317,11 +322,13 @@ class RvcBackend:
     def convert(self, input_wav_path, pitch_shift=0, index_ratio=0.75):
         # Run voice conversion, return output path
 ```
+
 The sidecar's main loop already dispatches on `command` field — add `rvc_load` and `rvc_convert` commands.
 
 ### Tensor format reference
 
 DiffSinger ONNX models expect (from OpenUtau's implementation):
+
 - **Variance model input**: `phoneme_ids` [1, T_phoneme], `note_midi` [1, T_phoneme], `note_duration` [1, T_phoneme], `note_rest` [1, T_phoneme]
 - **Variance model output**: `duration` [1, T_phoneme], `f0` [1, T_frame], `energy` [1, T_frame], `breathiness` [1, T_frame]
 - **Acoustic model input**: `f0` [1, T_frame], `energy` [1, T_frame], `breathiness` [1, T_frame], `phoneme_ids` [1, T_frame], `speed` [1]

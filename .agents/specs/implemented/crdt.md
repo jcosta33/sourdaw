@@ -114,13 +114,17 @@ The following items were implemented in a way that is actively worse than what t
 ## Implementation Status
 
 **What is implemented:**
+
 - Underlying `semanticChangeContext.ts` and Automerge integration exist.
 
 **What is not implemented:**
+
 - Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
 
 **What is done well:**
+
 - Solid substrate with Automerge and semantic change context.
 
 **What needs refactoring:**
+
 - Moved to `.agents/specs/missing/spec-of-the-gaps.md`.

@@ -70,6 +70,28 @@ export const StatusBar = (): ReactElement => {
         engineState: engineStateRef,
     });
 
+    const renderIife_13 = () => {
+        if (llmStatus?.state === 'generating') {
+            return (
+                <span className="animate-pulse font-mono text-[10px] text-[var(--color-accent-lavender)]">active</span>
+            );
+        } else {
+            if (llmStatus?.state === 'loading') {
+                return (
+                    <span className="font-mono text-[10px] text-[var(--color-state-warning)]">
+                        {Math.round(llmStatus.progress * 100)}%
+                    </span>
+                );
+            } else {
+                if (llmStatus?.state === 'ready') {
+                    return <span className="font-mono text-[10px] text-[var(--color-state-success)]/70">ready</span>;
+                } else {
+                    return <span className="font-mono text-[10px] text-muted-foreground/50">idle</span>;
+                }
+            }
+        }
+    };
+
     return (
         <footer role="status" aria-label="Application status">
             <DawControlStrip className="h-6 justify-between rounded-none border-t border-black/50 px-3">
@@ -98,38 +120,7 @@ export const StatusBar = (): ReactElement => {
                         }
                     />
 
-                    <DawMetricCluster
-                        label="GPU"
-                        value={(() => {
-                            if (llmStatus?.state === 'generating') {
-                                return (
-                                    <span className="animate-pulse font-mono text-[10px] text-[var(--color-accent-lavender)]">
-                                        active
-                                    </span>
-                                );
-                            } else {
-                                if (llmStatus?.state === 'loading') {
-                                    return (
-                                        <span className="font-mono text-[10px] text-[var(--color-state-warning)]">
-                                            {Math.round(llmStatus.progress * 100)}%
-                                        </span>
-                                    );
-                                } else {
-                                    if (llmStatus?.state === 'ready') {
-                                        return (
-                                            <span className="font-mono text-[10px] text-[var(--color-state-success)]/70">
-                                                ready
-                                            </span>
-                                        );
-                                    } else {
-                                        return (
-                                            <span className="font-mono text-[10px] text-muted-foreground/50">idle</span>
-                                        );
-                                    }
-                                }
-                            }
-                        })()}
-                    />
+                    <DawMetricCluster label="GPU" value={renderIife_13()} />
 
                     {activeRenderCount > 0 ? (
                         <DawMetricCluster

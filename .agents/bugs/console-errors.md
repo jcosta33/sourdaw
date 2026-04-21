@@ -222,6 +222,7 @@ createConsoleWriter.ts:5 [DEV][WARN] [WebAudioEngine] Toaster failed: AbortError
 ```
 
 ## 4. Production Build Unresolved Import Error
+
 **Error:** `[UNRESOLVED_IMPORT] Error: Could not resolve '../wasm/workletPolyfill.js' in src/modules/AudioEngine/services/glutenProcessor.ts`
 
 **Likely Cause:**

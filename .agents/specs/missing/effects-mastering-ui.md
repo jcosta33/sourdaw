@@ -12,13 +12,13 @@ All DSP math, topology descriptions, analysis features, and IR/ONNX model refere
 
 The DSP for all five effects and mastering plugins is implemented and shipping:
 
-| Plugin | Codename | Category | DSP location | Current UI surface |
-| ------------ | ---------- | ------------------ | -------------------------------------- | ------------------------------------------------------ |
-| Gluten | Gluten | Bus compressor | `crates/daw-dsp/src/gluten/` | `src/modules/Gluten/presentations/views/GlutenPanel.tsx` |
-| Grinder | Grinder | Amp simulator | `crates/daw-dsp/src/grinder/` | `src/modules/Grinder/presentations/views/GrinderPanel.tsx` |
-| Crust | Crust | Brickwall limiter | `crates/daw-dsp/src/proof/limiter.rs` | `src/modules/Crust/presentations/views/CrustPanel.tsx` |
-| Proof | Proof | Mastering suite | `crates/daw-dsp/src/proof/` | `src/modules/Proof/presentations/views/ProofPanel.tsx` |
-| Dutch Oven | Dutch Oven | Reverb | `crates/proof-chamber/` | `src/modules/Plugin/presentations/views/ProofChamberPanel.tsx` |
+| Plugin     | Codename   | Category          | DSP location                          | Current UI surface                                             |
+| ---------- | ---------- | ----------------- | ------------------------------------- | -------------------------------------------------------------- |
+| Gluten     | Gluten     | Bus compressor    | `crates/daw-dsp/src/gluten/`          | `src/modules/Gluten/presentations/views/GlutenPanel.tsx`       |
+| Grinder    | Grinder    | Amp simulator     | `crates/daw-dsp/src/grinder/`         | `src/modules/Grinder/presentations/views/GrinderPanel.tsx`     |
+| Crust      | Crust      | Brickwall limiter | `crates/daw-dsp/src/proof/limiter.rs` | `src/modules/Crust/presentations/views/CrustPanel.tsx`         |
+| Proof      | Proof      | Mastering suite   | `crates/daw-dsp/src/proof/`           | `src/modules/Proof/presentations/views/ProofPanel.tsx`         |
+| Dutch Oven | Dutch Oven | Reverb            | `crates/proof-chamber/`               | `src/modules/Plugin/presentations/views/ProofChamberPanel.tsx` |
 
 Every plugin has DSP-complete feature coverage. The audited gap is the **UI/UX progressive-disclosure contract**: each panel currently exposes some of its parameters in an ad-hoc layout, without a consistent hierarchy of tiers, without a shared metering bridge from DSP to UI, and without a common A/B discipline. Users asked to "tweak the compressor" see either too much or too little depending on the panel they opened.
 
@@ -65,7 +65,7 @@ Ship a single progressive-disclosure UI framework — with a shared lock-free me
 
 ### Non-goals (explicitly out of scope)
 
-- **Any change to the DSP in `crates/daw-dsp/**`, `crates/proof-chamber/**`, or `src-tauri/**`.** DSP is frozen for this spec. If an implementer believes a DSP change is required to satisfy a UI requirement, that is a blocker — escalate rather than mutate the DSP.
+- **Any change to the DSP in `crates/daw-dsp/**`, `crates/proof-chamber/**`, or `src-tauri/**`.\*\* DSP is frozen for this spec. If an implementer believes a DSP change is required to satisfy a UI requirement, that is a blocker — escalate rather than mutate the DSP.
 - **New effects or plugin categories** — only the five listed above are in scope.
 - **VST3/CLAP/AU packaging** of any of these plugins.
 - **User-authored tier customization** (reassigning which parameter sits at which tier). Tier assignments are fixed in code for v1.
@@ -99,13 +99,13 @@ Meter values (GR, input level, output level, ISP peaks, spectrum frames) cross t
 
 The metering schema supports five frame types used across the five plugins:
 
-| Frame type | Plugins | Rate | Fields |
-| --------------- | ----------------------- | --------------- | ------------------------------------------------- |
-| `GainReduction` | Gluten, Crust, Proof | ~30 Hz | `{ gr_db: f32, input_db: f32, output_db: f32 }` |
-| `Levels` | all five | ~30 Hz | `{ input_db: f32, output_db: f32, lufs_s: f32 }` |
-| `IspPeaks` | Crust, Proof | per block | `{ peak_dbtp: f32, occurrences: u32 }` |
-| `Spectrum` | Grinder, Proof, Gluten | 10 Hz | `{ bins: [f32; N], smoothing: f32 }` — N is fixed |
-| `History` | Gluten (GR waveform) | ~30 Hz | `{ sample: f32 }` (appended to a scroll buffer) |
+| Frame type      | Plugins                | Rate      | Fields                                            |
+| --------------- | ---------------------- | --------- | ------------------------------------------------- |
+| `GainReduction` | Gluten, Crust, Proof   | ~30 Hz    | `{ gr_db: f32, input_db: f32, output_db: f32 }`   |
+| `Levels`        | all five               | ~30 Hz    | `{ input_db: f32, output_db: f32, lufs_s: f32 }`  |
+| `IspPeaks`      | Crust, Proof           | per block | `{ peak_dbtp: f32, occurrences: u32 }`            |
+| `Spectrum`      | Grinder, Proof, Gluten | 10 Hz     | `{ bins: [f32; N], smoothing: f32 }` — N is fixed |
+| `History`       | Gluten (GR waveform)   | ~30 Hz    | `{ sample: f32 }` (appended to a scroll buffer)   |
 
 Sample rate for each frame type is fixed at compile time; the producer writes at that rate regardless of the UI consumer's frame rate. Frame type is a discriminated union carried in the queue payload.
 
@@ -374,13 +374,7 @@ The spec is considered shippable when ALL of the following are true:
 ```ts
 export type DisclosureTier = 'play' | 'shape' | 'build' | 'route' | 'lab';
 
-export const TIER_ORDER: readonly DisclosureTier[] = [
-    'play',
-    'shape',
-    'build',
-    'route',
-    'lab',
-] as const;
+export const TIER_ORDER: readonly DisclosureTier[] = ['play', 'shape', 'build', 'route', 'lab'] as const;
 
 export function isVisibleAtTier(controlTier: DisclosureTier, currentTier: DisclosureTier): boolean {
     return TIER_ORDER.indexOf(controlTier) <= TIER_ORDER.indexOf(currentTier);
@@ -505,13 +499,17 @@ Every test lives at `src/modules/<Plugin>/presentations/views/__tests__/<Panel>.
 ## Implementation Status
 
 **What is implemented:**
+
 - None. This spec describes a future unified refactor of the plugin UI system.
 
 **What is not implemented:**
+
 - Disclosure Tiers (Play/Shape/Build/Route/Lab), LUFS-matched bypass, shared metering bridge, and the specific Proof/Dutch Oven enhancements.
 
 **What is done well:**
+
 - Strong focus on consistency and professional UX standards.
 
 **What needs refactoring:**
+
 - N/A

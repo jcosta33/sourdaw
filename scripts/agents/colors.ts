@@ -25,7 +25,7 @@ export const colors = {
     bgBlue: tty ? '\x1b[44m' : '',
     bgMagenta: tty ? '\x1b[45m' : '',
     bgCyan: tty ? '\x1b[46m' : '',
-    bgWhite: tty ? '\x1b[47m' : ''
+    bgWhite: tty ? '\x1b[47m' : '',
 };
 
 export function c(text, colorFn) {
@@ -33,19 +33,43 @@ export function c(text, colorFn) {
     return `${colorFn}${text}${colors.reset}`;
 }
 
-export function red(text) { return c(text, colors.red); }
-export function green(text) { return c(text, colors.green); }
-export function yellow(text) { return c(text, colors.yellow); }
-export function blue(text) { return c(text, colors.blue); }
-export function magenta(text) { return c(text, colors.magenta); }
-export function cyan(text) { return c(text, colors.cyan); }
-export function dim(text) { return c(text, colors.dim); }
-export function bold(text) { return c(text, colors.bold); }
+export function red(text) {
+    return c(text, colors.red);
+}
+export function green(text) {
+    return c(text, colors.green);
+}
+export function yellow(text) {
+    return c(text, colors.yellow);
+}
+export function blue(text) {
+    return c(text, colors.blue);
+}
+export function magenta(text) {
+    return c(text, colors.magenta);
+}
+export function cyan(text) {
+    return c(text, colors.cyan);
+}
+export function dim(text) {
+    return c(text, colors.dim);
+}
+export function bold(text) {
+    return c(text, colors.bold);
+}
 
-export function success(msg) { console.log(`\n${green('✔')} ${bold(msg)}`); }
-export function info(msg) { console.log(`\n${blue('i')} ${msg}`); }
-export function warn(msg) { console.warn(`\n${yellow('⚠')} ${msg}`); }
-export function error(msg) { console.error(`\n${red('✖')} ${bold(red('Error:'))} ${msg}\n`); }
+export function success(msg) {
+    console.log(`\n${green('✔')} ${bold(msg)}`);
+}
+export function info(msg) {
+    console.log(`\n${blue('i')} ${msg}`);
+}
+export function warn(msg) {
+    console.warn(`\n${yellow('⚠')} ${msg}`);
+}
+export function error(msg) {
+    console.error(`\n${red('✖')} ${bold(red('Error:'))} ${msg}\n`);
+}
 
 export function box(title, lines) {
     const content = lines.join('\n');

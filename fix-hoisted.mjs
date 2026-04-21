@@ -1,9 +1,7 @@
 import fs from 'fs';
 import { globSync } from 'glob';
 
-const files = globSync('src/modules/Workspace/**/*.spec.ts').concat(
-    globSync('src/modules/Project/**/*.spec.ts')
-);
+const files = globSync('src/modules/Workspace/**/*.spec.ts').concat(globSync('src/modules/Project/**/*.spec.ts'));
 
 for (const file of files) {
     let content = fs.readFileSync(file, 'utf-8');
@@ -13,7 +11,10 @@ for (const file of files) {
         // fix the definition inside hoisted where it now looks like mocks.mockEventBus:
         content = content.replace(/mocks\.mockEventBus\s*:\s*\{/g, 'mockEventBus: {');
         // fix the const declaration since we replaced mockEventBus with mocks.mockEventBus inside the regex:
-        content = content.replace(/const\s+mocks\s*=\s*vi\.hoisted\(\(\)\s*=>\s*\(\{\s*mockEventBus:\s*\{/g, 'const mocks = vi.hoisted(() => ({\n    mockEventBus: {');
+        content = content.replace(
+            /const\s+mocks\s*=\s*vi\.hoisted\(\(\)\s*=>\s*\(\{\s*mockEventBus:\s*\{/g,
+            'const mocks = vi.hoisted(() => ({\n    mockEventBus: {'
+        );
         fs.writeFileSync(file, content);
         console.log(`Fixed mockEventBus hoisting in ${file}`);
     }

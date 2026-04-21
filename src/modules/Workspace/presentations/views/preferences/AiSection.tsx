@@ -16,6 +16,30 @@ export const AiSection = (): ReactElement => {
     const [apiKey, setApiKey] = useState('');
     const [showKey, setShowKey] = useState(false);
     const backend = resolveBackend();
+    const renderIife_16 = () => {
+        if (backend === 'native') {
+            return 'success';
+        }
+        if (backend === 'webllm') {
+            return 'cyan';
+        }
+        if (backend === 'cloud') {
+            return 'primary';
+        }
+        return 'muted';
+    };
+    const renderIife_17 = () => {
+        if (backend === 'native') {
+            return 'Native (in-process)';
+        }
+        if (backend === 'cloud') {
+            return 'Cloud (Claude)';
+        }
+        if (backend === 'webllm') {
+            return 'Browser (WebLLM)';
+        }
+        return 'None';
+    };
 
     return (
         <>
@@ -33,32 +57,8 @@ export const AiSection = (): ReactElement => {
                             backend === 'none' && 'bg-muted text-muted-foreground'
                         )}
                     >
-                        <DawStatusDot
-                            tone={(() => {
-                                if (backend === 'native') {
-                                    return 'success';
-                                }
-                                if (backend === 'webllm') {
-                                    return 'cyan';
-                                }
-                                if (backend === 'cloud') {
-                                    return 'primary';
-                                }
-                                return 'muted';
-                            })()}
-                        />
-                        {(() => {
-                            if (backend === 'native') {
-                                return 'Native (in-process)';
-                            }
-                            if (backend === 'cloud') {
-                                return 'Cloud (Claude)';
-                            }
-                            if (backend === 'webllm') {
-                                return 'Browser (WebLLM)';
-                            }
-                            return 'None';
-                        })()}
+                        <DawStatusDot tone={renderIife_16()} />
+                        {renderIife_17()}
                     </span>
                 </div>
             </FieldGroup>

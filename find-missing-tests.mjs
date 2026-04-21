@@ -33,4 +33,4 @@ for (const source of allSources) {
         missingTests.push(source);
     }
 }
-missingTests.forEach(f => console.log(f));
+missingTests.forEach((f) => console.log(f));

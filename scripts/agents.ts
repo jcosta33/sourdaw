@@ -31,7 +31,22 @@ import {
 } from './agents/git.ts';
 import { createOrUpdateTaskFile } from './agents/template.ts';
 import { resolveBackend, launch, checkBackend } from './agents/terminal.ts';
-import { colors, c, red, green, yellow, blue, cyan, dim, bold, success, info, warn as printWarn, error as printError, box } from './agents/colors.ts';
+import {
+    colors,
+    c,
+    red,
+    green,
+    yellow,
+    blue,
+    cyan,
+    dim,
+    bold,
+    success,
+    info,
+    warn as printWarn,
+    error as printError,
+    box,
+} from './agents/colors.ts';
 
 // ─── Argument parser ─────────────────────────────────────────────────────────
 

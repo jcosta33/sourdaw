@@ -4,13 +4,13 @@
 
 Reference research: `.agents/research/features/retrospective-capture.md`.
 
-Retrospective capture is an always-on background buffer that lets the user recover what they *just played* after the fact — without having armed a track or pressed Record first. When transport is stopped (or even running on an un-armed track), the user noodles on a controller, plays something good, realises it wasn't recorded, and presses a single **Capture** button (or hotkey). The last N seconds / bars of MIDI (and optionally the input bus audio) are materialised as a new clip on the timeline, with inferred tempo and loop boundaries where applicable.
+Retrospective capture is an always-on background buffer that lets the user recover what they _just played_ after the fact — without having armed a track or pressed Record first. When transport is stopped (or even running on an un-armed track), the user noodles on a controller, plays something good, realises it wasn't recorded, and presses a single **Capture** button (or hotkey). The last N seconds / bars of MIDI (and optionally the input bus audio) are materialised as a new clip on the timeline, with inferred tempo and loop boundaries where applicable.
 
-The goal is to eliminate the "psychological tax of recording" — the creative inhibition caused by needing to arm a track, set up a cue, and hit Record before playing. Ableton's *Capture MIDI* is the reference UX; the research file documents how it and other DAWs implement this pattern, and the real-time constraints that make it non-trivial.
+The goal is to eliminate the "psychological tax of recording" — the creative inhibition caused by needing to arm a track, set up a cue, and hit Record before playing. Ableton's _Capture MIDI_ is the reference UX; the research file documents how it and other DAWs implement this pattern, and the real-time constraints that make it non-trivial.
 
 **How this differs from neighbouring features:**
 
-- **Retroactive punch recording** (existing partial implementation in `Transport`) overlaps with this feature only in that both materialise MIDI/audio that wasn't explicitly recorded. Punch recording assumes the track *is* armed and the transport *is* running, and it replaces a region on the timeline defined by punch-in/punch-out markers. Retrospective capture has no punch region, no arming requirement, and typically runs while the transport is stopped. Both may share the underlying MIDI input FIFO, but the trigger, UI, and destination are different.
+- **Retroactive punch recording** (existing partial implementation in `Transport`) overlaps with this feature only in that both materialise MIDI/audio that wasn't explicitly recorded. Punch recording assumes the track _is_ armed and the transport _is_ running, and it replaces a region on the timeline defined by punch-in/punch-out markers. Retrospective capture has no punch region, no arming requirement, and typically runs while the transport is stopped. Both may share the underlying MIDI input FIFO, but the trigger, UI, and destination are different.
 - **Capture Inbox** (see `.agents/specs/global/future-spec.md`) is a completely separate concept: a docked panel collecting AI-generated ideas, voice prompts, and intent artifacts. It has nothing to do with MIDI/audio buffers. The name overlap is unfortunate but intentional elsewhere — this spec does not touch Capture Inbox.
 
 ---
@@ -25,11 +25,11 @@ Provide an always-on MIDI (and optional input-bus audio) rolling capture that le
 
 - While the app is running, every incoming MIDI event on every active port is continuously recorded into a rolling buffer. The user never arms anything.
 - If an input audio bus is selected for retrospective capture, the last N seconds of raw PCM on that bus are also held in a rolling buffer.
-- At any time (transport stopped or running), the user presses **Capture** (button in the transport bar, global hotkey bindable, default `Shift+C`). A modal affordance briefly appears: *"Captured: 7.8 bars @ 118 BPM → snapped to 8 bars. [Accept] [Adjust window] [Discard]"*.
+- At any time (transport stopped or running), the user presses **Capture** (button in the transport bar, global hotkey bindable, default `Shift+C`). A modal affordance briefly appears: _"Captured: 7.8 bars @ 118 BPM → snapped to 8 bars. [Accept] [Adjust window] [Discard]"_.
 - On Accept, a new MIDI (or audio) clip appears on the timeline:
-  - If the transport was stopped and no tempo was set by the user, the inferred tempo is applied to the newly-created clip (the project tempo is not silently changed).
-  - Clip length is snapped to the nearest power-of-two bar count.
-  - Playhead position: at the current edit cursor by default, overridable via the Adjust control.
+    - If the transport was stopped and no tempo was set by the user, the inferred tempo is applied to the newly-created clip (the project tempo is not silently changed).
+    - Clip length is snapped to the nearest power-of-two bar count.
+    - Playhead position: at the current edit cursor by default, overridable via the Adjust control.
 - Captured clips are ordinary timeline clips from that point on — they save, reload, edit, and render like any other clip.
 - The capture window (seconds / bars) is user-configurable: `Last 30 seconds`, `Last 8 bars`, `Last loop iteration`, or a custom value.
 
@@ -73,9 +73,9 @@ A fixed-size, lock-free, allocation-free MIDI event ring buffer with eviction:
 - Alongside the ring: a **128 × 16 active-note tracking table** (note × channel) for orphaned-note recovery at capture time. Every Note-On updates the table; every Note-Off clears it. Sustain-pedal state (CC #64) tracked analogously.
 - **Capture-time synthesis of orphaned events:** when the captured window begins with a note whose original Note-On fell outside the ring (evicted), inject a **synthetic Note-On at the window start** so the clip starts cleanly. Symmetrically, inject a **synthetic Note-Off at the window end** for any note still held at capture time. Both behaviors use the active-note table above.
 - **Acceptance:**
-  - Fills and evicts correctly under a 30-minute idle-then-burst synthetic load (30 min no events, then a fixture-driven burst exceeding 16,384 events in < 1 s).
-  - The MIDI input callback path allocates zero bytes — verified by `assert_no_alloc`-style guard in debug builds.
-  - Orphaned notes are recovered at capture time (held-note fixture: 4 s held chord, capture mid-hold → captured clip contains the chord with a synthetic Note-Off at the capture boundary).
+    - Fills and evicts correctly under a 30-minute idle-then-burst synthetic load (30 min no events, then a fixture-driven burst exceeding 16,384 events in < 1 s).
+    - The MIDI input callback path allocates zero bytes — verified by `assert_no_alloc`-style guard in debug builds.
+    - Orphaned notes are recovered at capture time (held-note fixture: 4 s held chord, capture mid-hold → captured clip contains the chord with a synthetic Note-Off at the capture boundary).
 
 ### R2 — Rolling input-bus audio SPSC ring
 
@@ -86,9 +86,9 @@ An overwriting, lock-free SPSC ring buffer for PCM on the selected input bus:
 - Monotonic `AtomicU64` write position; consumer snapshot uses an acquire load and computes `start = write_pos - window_frames`.
 - Memory pre-allocated at startup; pages pre-faulted; `mlock` / `VirtualLock` on platforms where available.
 - **Acceptance:**
-  - The CPAL input callback performs zero allocations and acquires no locks — verified by `assert_no_alloc` in debug and by a dedicated RT-safety test (see Test plan).
-  - Snapshot read from a non-RT worker thread produces byte-exact PCM for a known-input fixture (sine-wave generator feeding the bus for 10 s, capture `last 5 s` → snapshot matches the reference buffer modulo the wrap boundary).
-  - A 2–3 s **safety margin** is enforced: a capture spanning more than `capacity − margin_frames` is flagged partial and truncated rather than silently returning corrupted data.
+    - The CPAL input callback performs zero allocations and acquires no locks — verified by `assert_no_alloc` in debug and by a dedicated RT-safety test (see Test plan).
+    - Snapshot read from a non-RT worker thread produces byte-exact PCM for a known-input fixture (sine-wave generator feeding the bus for 10 s, capture `last 5 s` → snapshot matches the reference buffer modulo the wrap boundary).
+    - A 2–3 s **safety margin** is enforced: a capture spanning more than `capacity − margin_frames` is flagged partial and truncated rather than silently returning corrupted data.
 
 ### R3 — Capture command
 
@@ -97,15 +97,15 @@ The user-facing trigger that materialises a clip from the rolling buffers:
 - Invocation: button in the transport bar, plus a bindable global hotkey (default `Shift+C`).
 - User-selectable capture window: `Last 30 seconds`, `Last 60 seconds`, `Last 8 bars`, `Last 4 bars`, `Last loop iteration`, or a custom value (seconds or bars).
 - Behavior:
-  - If the window is expressed in **bars**, it is resolved against the current project tempo if set, or against the inferred tempo (R4) if unset.
-  - If the window is expressed in **seconds**, resolution is direct.
+    - If the window is expressed in **bars**, it is resolved against the current project tempo if set, or against the inferred tempo (R4) if unset.
+    - If the window is expressed in **seconds**, resolution is direct.
 - Output:
-  - A new clip is created at the current edit cursor (default) or at an inferred start time (user-selectable via Adjust affordance).
-  - For MIDI captures, the clip contains the exact event window with orphaned-note recovery applied (R1).
-  - For audio captures, the clip references a newly-written audio file (worker thread, R6).
+    - A new clip is created at the current edit cursor (default) or at an inferred start time (user-selectable via Adjust affordance).
+    - For MIDI captures, the clip contains the exact event window with orphaned-note recovery applied (R1).
+    - For audio captures, the clip references a newly-written audio file (worker thread, R6).
 - **Acceptance:**
-  - Given a MIDI fixture replayed via a virtual port (192 events over 8 bars at a fixed tempo), `Capture last 8 bars` produces a clip whose MIDI event stream is **byte-equal** to the reference fixture (after orphaned-note recovery is applied deterministically to both sides of the comparison).
-  - The Capture button is disabled (with tooltip) when the ring buffer is empty — no silent no-op.
+    - Given a MIDI fixture replayed via a virtual port (192 events over 8 bars at a fixed tempo), `Capture last 8 bars` produces a clip whose MIDI event stream is **byte-equal** to the reference fixture (after orphaned-note recovery is applied deterministically to both sides of the comparison).
+    - The Capture button is disabled (with tooltip) when the ring buffer is empty — no silent no-op.
 
 ### R4 — Tempo inference from MIDI IOI histogram
 
@@ -113,13 +113,13 @@ When transport is stopped and no enclosing clip imposes a tempo, infer tempo fro
 
 - Algorithm: **IOI histogram** over consecutive Note-On events, 1 ms bins, with velocity weighting (louder notes receive greater histogram weight).
 - Valid tempo range: **80–160 BPM** (octave-ambiguity resolution matches Ableton — see Design decisions). Out-of-range estimates are folded by doubling or halving until in range.
-- Minimum sample size: **≥ 16 Note-On events** in the capture window. Below this, tempo is not inferred — the project tempo is used and the UI surfaces *"not enough notes to infer tempo"*.
+- Minimum sample size: **≥ 16 Note-On events** in the capture window. Below this, tempo is not inferred — the project tempo is used and the UI surfaces _"not enough notes to infer tempo"_.
 - Optional refinement: log-Gaussian-weighted autocorrelation peak search centred at 120 BPM, applied only when histogram analysis is ambiguous (multiple peaks within 5% of each other).
 - **Velocity weighting improves downbeat detection** (separate from tempo estimation). Louder notes are more likely to fall on strong beats; using velocity to weight IOI histogram contributions helps phrase-start inference even when tempo is already known.
 - **Acceptance:**
-  - Given a MIDI fixture played at a known tempo (e.g. 110 BPM) with ±5 BPM of human jitter, the inferred tempo is within **±2 BPM** of the reference over ≥ 16 notes. Fixture set must cover 90, 110, 130, 150 BPM at minimum.
-  - A fixture played at 70 BPM is reported as 140 BPM (octave fold), confirmed by unit test.
-  - Fewer than 16 notes returns `None` / no inference, not a confident wrong answer.
+    - Given a MIDI fixture played at a known tempo (e.g. 110 BPM) with ±5 BPM of human jitter, the inferred tempo is within **±2 BPM** of the reference over ≥ 16 notes. Fixture set must cover 90, 110, 130, 150 BPM at minimum.
+    - A fixture played at 70 BPM is reported as 140 BPM (octave fold), confirmed by unit test.
+    - Fewer than 16 notes returns `None` / no inference, not a confident wrong answer.
 
 ### R5 — Power-of-two bar-length inference
 
@@ -127,32 +127,32 @@ Captured clips snap to a clean bar length:
 
 - Candidate lengths: **1, 2, 4, 8, 16 bars**.
 - Given the event span in bars `span_bars = note_span_frames / (frames_per_bar)`, pick the closest candidate by the following rule:
-  - If `span_bars ≥ 0.875 × candidate` and `span_bars ≤ 1.25 × candidate`, snap to that candidate.
-  - Otherwise, snap to the next larger candidate.
-  - Ties (equidistant between two candidates) resolve **upward** — a 6-bar phrase snaps to 8, not 4, to avoid truncating the tail.
+    - If `span_bars ≥ 0.875 × candidate` and `span_bars ≤ 1.25 × candidate`, snap to that candidate.
+    - Otherwise, snap to the next larger candidate.
+    - Ties (equidistant between two candidates) resolve **upward** — a 6-bar phrase snaps to 8, not 4, to avoid truncating the tail.
 - Any material preceding the inferred phrase start sits before the clip's start marker (accessible but not part of the loop region).
 - **Phrase anchoring (informative).** When ambiguous, prefer the longest phrase that fits a power-of-two bar count **anchored at the most likely downbeat**. User guidance to end phrases on the downbeat (Ableton convention: "end on the first beat of the next bar") improves anchoring; the algorithm may use the final Note-On as a downbeat anchor and search backward.
 - **Acceptance:**
-  - A 7.8-bar phrase snaps to 8 bars.
-  - A 3.1-bar phrase snaps to 4 bars (3.1 / 4 = 0.775 < 0.875 ratio → snap upward).
-  - A 2.25-bar phrase snaps to 2 bars (2.25 / 2 = 1.125 ≤ 1.25 → 2 wins).
-  - A 5.0-bar phrase snaps to 8 bars (ties-upward rule).
+    - A 7.8-bar phrase snaps to 8 bars.
+    - A 3.1-bar phrase snaps to 4 bars (3.1 / 4 = 0.775 < 0.875 ratio → snap upward).
+    - A 2.25-bar phrase snaps to 2 bars (2.25 / 2 = 1.125 ≤ 1.25 → 2 wins).
+    - A 5.0-bar phrase snaps to 8 bars (ties-upward rule).
 
 ### R6 — Non-RT snapshot pipeline
 
 All file I/O, clip creation, and project-tree mutations occur off the RT audio / MIDI threads:
 
 - A dedicated **worker thread** (`std::thread::spawn`, not Tokio) owns:
-  - A secondary rolling copy of audio (drained from the RT ring via `rtrb`) — the authoritative capture source.
-  - The capture request queue (SPSC from UI thread).
-  - The pre-allocated pool of linear snapshot buffers (4 × max capture duration, configurable).
+    - A secondary rolling copy of audio (drained from the RT ring via `rtrb`) — the authoritative capture source.
+    - The capture request queue (SPSC from UI thread).
+    - The pre-allocated pool of linear snapshot buffers (4 × max capture duration, configurable).
 - On capture:
-  - UI thread reads `write_position`, sends a `CaptureRequest` to the worker.
-  - Worker copies from its rolling buffer into a pool-acquired linear buffer, writes a WAV via `hound`, constructs clip metadata.
-  - Clip metadata is handed to the frontend via a Tauri event; the Arrangement module's existing clip-creation use case ingests it.
+    - UI thread reads `write_position`, sends a `CaptureRequest` to the worker.
+    - Worker copies from its rolling buffer into a pool-acquired linear buffer, writes a WAV via `hound`, constructs clip metadata.
+    - Clip metadata is handed to the frontend via a Tauri event; the Arrangement module's existing clip-creation use case ingests it.
 - **Acceptance:**
-  - Audio xrun counter (reported by CPAL / the engine) remains **zero** during a capture operation under a synthetic stress load (64-sample buffer, 10 simultaneous tracks playing, capture triggered mid-playback). Repeatable in CI under the engine integration harness.
-  - The MIDI input callback's measured p99.9 latency does not regress during a capture vs. a non-capture baseline (measured in a dedicated bench; threshold: no more than 5% regression).
+    - Audio xrun counter (reported by CPAL / the engine) remains **zero** during a capture operation under a synthetic stress load (64-sample buffer, 10 simultaneous tracks playing, capture triggered mid-playback). Repeatable in CI under the engine integration harness.
+    - The MIDI input callback's measured p99.9 latency does not regress during a capture vs. a non-capture baseline (measured in a dedicated bench; threshold: no more than 5% regression).
 
 ### R7 — Persistence
 
@@ -160,8 +160,8 @@ All file I/O, clip creation, and project-tree mutations occur off the RT audio /
 - Captured audio clips reference WAV files written into the project's audio assets directory, under `captures/<iso-timestamp>-<short-id>.wav`.
 - Ring buffers themselves are **ephemeral** — never persisted. On app restart, the buffers are empty.
 - **Acceptance:**
-  - Capture → save project → close → reopen → the captured clip is present with identical MIDI/audio content (byte-equal MIDI, byte-equal audio file reference).
-  - Deleting the project's captures directory orphans the audio clip but does not crash — the clip surfaces as a missing-asset placeholder using the existing missing-asset path.
+    - Capture → save project → close → reopen → the captured clip is present with identical MIDI/audio content (byte-equal MIDI, byte-equal audio file reference).
+    - Deleting the project's captures directory orphans the audio clip but does not crash — the clip surfaces as a missing-asset placeholder using the existing missing-asset path.
 
 ---
 
@@ -205,7 +205,7 @@ All file I/O, clip creation, and project-tree mutations occur off the RT audio /
 
 **Considered and rejected:**
 
-- **Autocorrelation of the onset train.** Rejected as the *primary* method: the research identifies it as a refinement that disambiguates ties, not a first-pass estimator. Keeping it as an optional refinement inside R4 preserves the tool.
+- **Autocorrelation of the onset train.** Rejected as the _primary_ method: the research identifies it as a refinement that disambiguates ties, not a first-pass estimator. Keeping it as an optional refinement inside R4 preserves the tool.
 - **Beat-tracking on audio.** Rejected: out of scope for v1, and substantially harder than MIDI IOI analysis per the research.
 - **Widening the valid tempo range** (e.g. 60–200 BPM). Rejected: reintroduces the octave-ambiguity failure mode Ableton specifically solved by narrowing the range to 80–160. A user whose genuine tempo is 70 BPM gets a clip at 140 BPM and can halve it with one click; a user whose ambiguous 120 BPM gets mis-folded to 60 has no obvious fix.
 

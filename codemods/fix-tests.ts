@@ -2,11 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import glob from 'glob';
 
-const files = glob.sync('src/modules/Transport/**/__tests__/*.spec.ts').concat(
-              glob.sync('src/modules/Arrangement/**/__tests__/*.spec.ts'),
-              glob.sync('src/modules/Arrangement/**/__tests__/*.spec.tsx'),
-              glob.sync('src/modules/Transport/**/__tests__/*.spec.tsx')
-);
+const files = glob
+    .sync('src/modules/Transport/**/__tests__/*.spec.ts')
+    .concat(
+        glob.sync('src/modules/Arrangement/**/__tests__/*.spec.ts'),
+        glob.sync('src/modules/Arrangement/**/__tests__/*.spec.tsx'),
+        glob.sync('src/modules/Transport/**/__tests__/*.spec.tsx')
+    );
 
 for (const file of files) {
     let content = fs.readFileSync(file, 'utf8');
@@ -23,7 +25,7 @@ for (const file of files) {
 
     while ((match = regex.exec(content)) !== null) {
         const [fullMatch, fnName, depsString] = match;
-        
+
         // Remove the injectDependencies call
         newContent = newContent.replace(fullMatch, '');
 

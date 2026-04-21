@@ -477,6 +477,7 @@ The following DAW behaviors inform this spec and are captured here so implemente
 ## Implementation Status
 
 **What is implemented:**
+
 - `FreezeState` type on the `Track` model (CRDT schema).
 - Freeze operations state machine (`freezeTrack`, `unfreezeTrack`, `flattenTrack`).
 - Staleness detection using content hashing (`initStalenessDetection`, `computeTrackHash`).
@@ -485,12 +486,15 @@ The following DAW behaviors inform this spec and are captured here so implemente
 - Basic bounce operations (`bounceInPlace`, `bounceToNewTrack`).
 
 **What is not implemented:**
+
 - Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
 
 **What is done well:**
+
 - Strong separation of concerns with domain-driven `useCases` (`freezeTrack`, `unfreezeTrack`, `flattenTrack`).
 - Content hashing strategy for staleness is well-implemented and isolated.
 - The CRDT integration uses the `Track` state naturally without creating a parallel structure.
 
 **What needs refactoring:**
+
 - Moved to `.agents/specs/missing/spec-of-the-gaps.md`.

@@ -1,4 +1,4 @@
-module.exports = function(fileInfo, api) {
+module.exports = function (fileInfo, api) {
     const j = api.jscodeshift;
     const root = j(fileInfo.source);
 
@@ -12,14 +12,14 @@ module.exports = function(fileInfo, api) {
                     expr.test,
                     j.blockStatement([j.returnStatement(expr.consequent)]),
                     j.blockStatement(createIfStatements(expr.alternate))
-                )
+                ),
             ];
         }
         return [j.returnStatement(expr)];
     }
 
     // Find all ConditionalExpressions that have another ConditionalExpression inside their consequent or alternate
-    root.find(j.ConditionalExpression).forEach(path => {
+    root.find(j.ConditionalExpression).forEach((path) => {
         // Only process the outermost ConditionalExpression
         let isOutermost = true;
         let parent = path.parent;
@@ -39,13 +39,7 @@ module.exports = function(fileInfo, api) {
 
         // Convert the nested ternary to an IIFE with if statements
         const ifStatements = createIfStatements(path.node);
-        const iife = j.callExpression(
-            j.arrowFunctionExpression(
-                [],
-                j.blockStatement(ifStatements)
-            ),
-            []
-        );
+        const iife = j.callExpression(j.arrowFunctionExpression([], j.blockStatement(ifStatements)), []);
 
         // If it's a JSXExpressionContainer child, we might need to wrap it carefully,
         // but replacing the ConditionalExpression itself with an IIFE works in JSX as well.

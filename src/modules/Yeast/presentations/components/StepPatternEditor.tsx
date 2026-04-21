@@ -50,6 +50,41 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                     const isPlaying = index === currentStep;
                     const velNorm = step.velocity / 127;
                     const probOpacity = step.probability;
+                    const renderIife_21 = () => {
+                        if (!step.active) {
+                            return 'bg-muted-foreground/10';
+                        }
+                        if (step.stepType === 'rest') {
+                            return 'bg-muted-foreground/20';
+                        }
+                        if (step.stepType === 'tie') {
+                            return 'bg-[var(--color-accent-cyan)]/50';
+                        }
+                        return 'bg-[var(--color-accent-peach)]';
+                    };
+                    const renderIife_22 = () => {
+                        if (step.octaveOffset !== 0) {
+                            return (
+                                <div
+                                    className="absolute bottom-0.5 left-0.5 text-[5px] font-bold cursor-pointer"
+                                    style={{
+                                        color:
+                                            step.octaveOffset > 0
+                                                ? 'var(--color-accent-cyan)'
+                                                : 'var(--color-accent-lavender)',
+                                    }}
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        cycleOctave(index);
+                                    }}
+                                >
+                                    {step.octaveOffset > 0 ? `+${step.octaveOffset}` : step.octaveOffset}
+                                </div>
+                            );
+                        } else {
+                            return null;
+                        }
+                    };
 
                     return (
                         <div
@@ -69,18 +104,7 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                             >
                                 {/* Fill */}
                                 <div
-                                    className={`absolute bottom-0 left-0 right-0 rounded-sm transition-all ${(() => {
-                                        if (!step.active) {
-                                            return 'bg-muted-foreground/10';
-                                        }
-                                        if (step.stepType === 'rest') {
-                                            return 'bg-muted-foreground/20';
-                                        }
-                                        if (step.stepType === 'tie') {
-                                            return 'bg-[var(--color-accent-cyan)]/50';
-                                        }
-                                        return 'bg-[var(--color-accent-peach)]';
-                                    })()}`}
+                                    className={`absolute bottom-0 left-0 right-0 rounded-sm transition-all ${renderIife_21()}`}
                                     style={{
                                         height: `${velNorm * 100}%`,
                                         width: `${Math.min(100, step.gateMul * 100)}%`,
@@ -95,29 +119,7 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                                 ) : null}
 
                                 {/* Octave badge */}
-                                {(() => {
-                                    if (step.octaveOffset !== 0) {
-                                        return (
-                                            <div
-                                                className="absolute bottom-0.5 left-0.5 text-[5px] font-bold cursor-pointer"
-                                                style={{
-                                                    color:
-                                                        step.octaveOffset > 0
-                                                            ? 'var(--color-accent-cyan)'
-                                                            : 'var(--color-accent-lavender)',
-                                                }}
-                                                onClick={(event) => {
-                                                    event.stopPropagation();
-                                                    cycleOctave(index);
-                                                }}
-                                            >
-                                                {step.octaveOffset > 0 ? `+${step.octaveOffset}` : step.octaveOffset}
-                                            </div>
-                                        );
-                                    } else {
-                                        return null;
-                                    }
-                                })()}
+                                {renderIife_22()}
                             </div>
                             {/* Step number */}
                             <span

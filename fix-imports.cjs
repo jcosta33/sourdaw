@@ -2,12 +2,21 @@ const fs = require('fs');
 
 function fixImports(filePath) {
     let content = fs.readFileSync(filePath, 'utf-8');
-    
+
     // For factoryPresets.ts, let's just strip the comments between imports manually via replace in the script
     if (filePath.includes('factoryPresets.ts')) {
-        content = content.replace(/\/\/ ── Category sub-modules ───────────────────────────────────────────────────\n/g, '');
-        content = content.replace(/\/\/ ── Standalone data files \(unchanged — each already < 300 lines\) ──────────\n/g, '');
-        content = content.replace(/\/\/ ── Drum Kit presets ────────────────────────────────────────────────────────\n\/\/ Small enough to stay inline here \(< 60 lines\)\.\n/g, '');
+        content = content.replace(
+            /\/\/ ── Category sub-modules ───────────────────────────────────────────────────\n/g,
+            ''
+        );
+        content = content.replace(
+            /\/\/ ── Standalone data files \(unchanged — each already < 300 lines\) ──────────\n/g,
+            ''
+        );
+        content = content.replace(
+            /\/\/ ── Drum Kit presets ────────────────────────────────────────────────────────\n\/\/ Small enough to stay inline here \(< 60 lines\)\.\n/g,
+            ''
+        );
         fs.writeFileSync(filePath, content);
         return;
     }
@@ -15,7 +24,7 @@ function fixImports(filePath) {
     const lines = content.split('\n');
     const importLines = [];
     const otherLines = [];
-    
+
     let inImport = false;
     let importBuffer = [];
 
@@ -41,7 +50,7 @@ function fixImports(filePath) {
             otherLines.push(line);
         }
     }
-    
+
     const newContent = importLines.join('\n') + '\n\n' + otherLines.join('\n');
     fs.writeFileSync(filePath, newContent);
 }
@@ -71,7 +80,7 @@ const files = [
     'src/modules/Toaster/useCases/__tests__/loadToasterKit.spec.ts',
     'src/modules/Transport/handlers/transport/__tests__/handleSetTempo.spec.ts',
     'src/modules/Workspace/handlers/workspace/__tests__/handleSetWorkspaceMode.spec.ts',
-    'src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/dualView.spec.ts'
+    'src/modules/Workspace/useCases/togglePanel/panelToggles/__tests__/dualView.spec.ts',
 ];
 
 files.forEach(fixImports);

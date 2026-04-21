@@ -79,15 +79,15 @@ The research establishes that the winning UI strategy is **producer-first UI wit
 2. **Pipeline-aware system status** — Because browser synthesis takes seconds, the UI must show render state per phrase on the canvas, not just a generic spinner. Required render states: **Queued** → **Preparing** (phonemizing/tensor building) → **Synthesizing expression** (variance pass) → **Rendering audio** (acoustic + vocoder) → **Ready** (cached, playable) → **Stale** (edit invalidated cache). Also: **Preview quality** vs **Final quality** labels. Show phrase-level progress bars on the canvas, a global render queue panel, cache badges, "stale after edit" indicators, and explicit cancel/reprioritize actions.
 
 3. **Three-layer progressive disclosure** — Never show every control at once:
-   - **Layer 1 (fast composition)**: arrangement timeline, piano roll, lyrics on notes, playback/loop controls, voice selector, one-click render, macro sliders (naturalness, energy, brightness, gender, breathiness)
-   - **Layer 2 (guided vocal shaping)**: pitch deviation lane, vibrato lane, phoneme timing view, phrase retakes, note properties, language/pronunciation assist, parameter lane chooser
-   - **Layer 3 (expert surgery)**: per-phoneme duration table, raw variance curves, seed control, retake masks, model quality/speed selector, speaker-blend curves, debug/provenance panel
+    - **Layer 1 (fast composition)**: arrangement timeline, piano roll, lyrics on notes, playback/loop controls, voice selector, one-click render, macro sliders (naturalness, energy, brightness, gender, breathiness)
+    - **Layer 2 (guided vocal shaping)**: pitch deviation lane, vibrato lane, phoneme timing view, phrase retakes, note properties, language/pronunciation assist, parameter lane chooser
+    - **Layer 3 (expert surgery)**: per-phoneme duration table, raw variance curves, seed control, retake masks, model quality/speed selector, speaker-blend curves, debug/provenance panel
 
 4. **AI as auditionable variation engine** — AI must be controllable, transparent, and reversible:
-   - **Retake trays**: 3-5 retakes as mini-cards per phrase (waveform thumbnail, pitch contour, tags, seed metadata, one-click apply/pin)
-   - **Change overlays**: old pitch in gray, new pitch in color, changed phoneme durations as highlighted splits, parameter deltas as shaded areas
-   - **Locks and scopes**: users can lock note timing, pitch, lyrics, phoneme timing, voice identity, selected parameter lanes. "Regenerate" works only on unlocked scope.
-   - **Provenance chips**: every generated phrase exposes voice, language, seed, render quality, model version, timestamp, cache status
+    - **Retake trays**: 3-5 retakes as mini-cards per phrase (waveform thumbnail, pitch contour, tags, seed metadata, one-click apply/pin)
+    - **Change overlays**: old pitch in gray, new pitch in color, changed phoneme durations as highlighted splits, parameter deltas as shaded areas
+    - **Locks and scopes**: users can lock note timing, pitch, lyrics, phoneme timing, voice identity, selected parameter lanes. "Regenerate" works only on unlocked scope.
+    - **Provenance chips**: every generated phrase exposes voice, language, seed, render quality, model version, timestamp, cache status
 
 5. **Linked parameter controls** — Every vocal parameter supports three editing modes: macro slider/preset chip, precise numeric input, and temporal curve/automation lane. E.g., breathiness: global track slider for exploration, note-level number for precision, automation lane for phrase shaping.
 
@@ -98,6 +98,7 @@ Long-running synthesis in the browser typically falls in the 1–30 s band. Per 
 While a phrase renders (5-30 seconds in browser), the user must be able to: edit another track, type lyrics, scrub existing audio, queue another render, inspect retakes, continue arranging. The UI thread must never block during inference (Web Worker isolation ensures this).
 
 **Latency patterns**:
+
 - **Two-tier rendering**: draft preview renders automatically; final-quality renders are explicit and batchable
 - **Phrase-local invalidation**: only the edited phrase becomes stale; everything else remains playable
 - **Predictive pre-render**: when the user stops editing briefly, pre-render current phrase, neighboring phrase, and selected retake candidate
@@ -116,6 +117,7 @@ These micro-loops are repeated hundreds of times per session — they must be fr
 ### Empty states
 
 Browser-specific opportunities for guiding new users:
+
 - **No voice installed**: explain voice packs, offer one-click starter voice download
 - **No phrase selected**: show quick actions for the current track
 - **No render yet**: explain preview vs final rendering
@@ -124,6 +126,7 @@ Browser-specific opportunities for guiding new users:
 ### Workspace layout for singing synthesis
 
 The research recommends a **three-region pro-app layout** for singing synthesis, which aligns with Sourdaw's existing DAW layout:
+
 - **Region 1 — Arrangement strip** (top): project overview, phrase boundaries, loop range, section naming
 - **Region 2 — Piano roll** (center, largest): note placement, lyric entry, pitch/timing editing, overlays for generated pitch and expression. This must remain the visual center.
 - **Region 3 — Contextual inspector** (right, collapsible): tabbed panels for Voice, Note, Pronunciation, Retakes, Render
@@ -134,6 +137,7 @@ Layout rule: the center canvas must never get visually bullied by chrome.
 ### UX phased roadmap (from research)
 
 The UI/UX work phases separately from the technical pipeline phases:
+
 1. **Browser proof of workflow**: one voice, one language, piano roll, lyric entry, phrase preview, progress states, undo/redo
 2. **Serious editing**: pronunciation editor, direct pitch drawing, note properties, parameter lanes, keyboard shortcuts, looped audition
 3. **AI trust layer**: retake tray, scoped regeneration, locks, A/B compare, provenance chips, preview/final quality distinction
@@ -181,18 +185,18 @@ The UI/UX work phases separately from the technical pipeline phases:
 
 ### UX risk register (from research)
 
-| Risk                                               | Severity | UX mitigation                                                  |
-| -------------------------------------------------- | -------- | -------------------------------------------------------------- |
-| Interface feels like a research demo, not a DAW    | High     | Anchor everything in arrangement + piano roll                  |
-| Too many visible controls overwhelm users          | High     | Three-layer progressive disclosure                             |
-| AI output feels random or untrustworthy            | High     | Retakes, locks, change overlays, provenance                    |
-| Browser rendering delays feel like freezing        | High     | Detailed system-status feedback and queue control              |
-| Repeat tasks become tedious                        | High     | Copy/paste attributes, presets, linked phrases, shortcuts      |
-| Accidental edits break trust                       | Medium   | Strong undo, object locking, non-destructive operations        |
-| Users cannot learn why a phrase sounds wrong       | Medium   | Pronunciation guidance, visible phoneme timing, smart warnings |
-| Advanced controls become form-heavy and slow       | Medium   | Keep editing on-canvas; inspector for precision only           |
-| Large workspace feels cramped in browser           | Medium   | Collapsible panels, focus modes, bottom drawers                |
-| Product excludes keyboard-only / low-vision users  | Medium   | Shortcut parity, high contrast, accessible labels              |
+| Risk                                              | Severity | UX mitigation                                                  |
+| ------------------------------------------------- | -------- | -------------------------------------------------------------- |
+| Interface feels like a research demo, not a DAW   | High     | Anchor everything in arrangement + piano roll                  |
+| Too many visible controls overwhelm users         | High     | Three-layer progressive disclosure                             |
+| AI output feels random or untrustworthy           | High     | Retakes, locks, change overlays, provenance                    |
+| Browser rendering delays feel like freezing       | High     | Detailed system-status feedback and queue control              |
+| Repeat tasks become tedious                       | High     | Copy/paste attributes, presets, linked phrases, shortcuts      |
+| Accidental edits break trust                      | Medium   | Strong undo, object locking, non-destructive operations        |
+| Users cannot learn why a phrase sounds wrong      | Medium   | Pronunciation guidance, visible phoneme timing, smart warnings |
+| Advanced controls become form-heavy and slow      | Medium   | Keep editing on-canvas; inspector for precision only           |
+| Large workspace feels cramped in browser          | Medium   | Collapsible panels, focus modes, bottom drawers                |
+| Product excludes keyboard-only / low-vision users | Medium   | Shortcut parity, high contrast, accessible labels              |
 
 ### MVP UX validation gate
 
@@ -238,17 +242,17 @@ The first session must let a new user: (1) load a template, (2) enter or import 
 ### Browser inference infrastructure
 
 1. **Inference workers** — Two dedicated Web Workers, one per runtime:
-   - **ONNX Worker** (`src/modules/BrowserAi/workers/onnxInferenceWorker.ts`) — loads `onnxruntime-web` (via Transformers.js for Kokoro, directly for DiffSinger), handles all ONNX-based inference. Always initialized when browser AI features are active.
-   - **TF.js Worker** (`src/modules/BrowserAi/workers/tfjsInferenceWorker.ts`) — loads `@tensorflow/tfjs` + `@tensorflow/tfjs-backend-webgpu`, handles DDSP instrument inference. Lazily spawned only when a DDSP instrument is first used; destroyed when no DDSP sessions remain active.
+    - **ONNX Worker** (`src/modules/BrowserAi/workers/onnxInferenceWorker.ts`) — loads `onnxruntime-web` (via Transformers.js for Kokoro, directly for DiffSinger), handles all ONNX-based inference. Always initialized when browser AI features are active.
+    - **TF.js Worker** (`src/modules/BrowserAi/workers/tfjsInferenceWorker.ts`) — loads `@tensorflow/tfjs` + `@tensorflow/tfjs-backend-webgpu`, handles DDSP instrument inference. Lazily spawned only when a DDSP instrument is first used; destroyed when no DDSP sessions remain active.
 
-   Both workers communicate with the main thread via `postMessage` with the same typed request/response protocol. A session manager on the main thread routes requests to the correct worker by model type (`onnx` vs `tfjs`). This isolates runtimes, prevents namespace conflicts, and allows independent memory management. The pattern extends the existing `browserStemSeparation.ts` approach but generalizes it for multiple model types and runtimes.
+    Both workers communicate with the main thread via `postMessage` with the same typed request/response protocol. A session manager on the main thread routes requests to the correct worker by model type (`onnx` vs `tfjs`). This isolates runtimes, prevents namespace conflicts, and allows independent memory management. The pattern extends the existing `browserStemSeparation.ts` approach but generalizes it for multiple model types and runtimes.
 
 2. **Execution provider selection** — On worker initialization, detect WebGPU availability via `navigator.gpu`. If available (Chrome latest), create ONNX sessions with `executionProviders: ['webgpu', 'wasm']` (WebGPU primary, WASM fallback for operators without WebGPU kernels). If WebGPU is unavailable, the feature should have been disabled at the UI level — but as a safety net, fall back to `['wasm']` with a warning toast. Log the selected provider for diagnostics.
 
 3. **Session management** — ONNX sessions are created per model and cached in the worker's memory. A session manager tracks loaded sessions by `model_id` and enforces a memory budget (configurable, default: 1 GB of model weights in memory). When the budget is exceeded, the least-recently-used session is released. Session creation is async and reports progress (model loading from cache/network → session initialization → warm-up inference).
 
 4. **Model storage** — Models are stored using **OPFS** (Origin Private File System) as the sole browser storage backend. Chrome has full OPFS support with synchronous access handles in workers (fastest reads, 2-4x faster than IndexedDB). Use `navigator.storage.persist()` to prevent eviction. Chrome allows up to ~60% of available disk space per origin.
-   - **Tauri app data directory** — when running in Tauri on Windows, bypass browser storage entirely. Use the Rust backend's `model_download.rs` for downloads and serve models to the webview via `register_uri_scheme_protocol` or direct file reads. This eliminates browser quota limits. On macOS/Linux Tauri, browser AI features are disabled (route to native pipeline).
+    - **Tauri app data directory** — when running in Tauri on Windows, bypass browser storage entirely. Use the Rust backend's `model_download.rs` for downloads and serve models to the webview via `register_uri_scheme_protocol` or direct file reads. This eliminates browser quota limits. On macOS/Linux Tauri, browser AI features are disabled (route to native pipeline).
 
 5. **Model download manager** — A frontend service that handles model downloads with: progress reporting (bytes downloaded / total bytes) via `BroadcastChannel` for cross-context updates (Service Worker → main thread), resumable downloads (Range headers where CDN supports it), SHA256 integrity verification after download, automatic retry (3 attempts with exponential backoff), and cancellation. Downloads are initiated from the main thread, executed via `fetch()` in a Service Worker or the inference worker, and stored via the tiered strategy above. The manager maintains a registry of all known models and their local status (not-downloaded / downloading / ready / error / stale). For large downloads (>100 MB, e.g., Kokoro ~160 MB, DiffSinger voicebanks ~115-160 MB), use the **Background Fetch API** where available — it survives tab navigation, provides OS-level download progress, and handles network interruptions. Background Fetch requires Service Worker registration and is supported in Chrome/Edge (not Firefox/Safari); fall back to standard `fetch()` where unavailable. Where a Service Worker is used, the manager MUST follow a **cache-first** fetch strategy for model shards (OPFS → CDN on miss, then persist to OPFS), matching the research packaging pattern (research §5) so a re-load never re-downloads an intact model.
 
@@ -272,9 +276,9 @@ The first session must let a new user: (1) load a template, (2) enter or import 
     For MIDI-to-audio (as opposed to audio-to-audio timbre transfer), DDSP can run in **synthesis-only mode**: skip the encoder, feed pitch (F0 in Hz) and loudness (in dB) directly to the decoder at 250 Hz frame rate. This is the mode relevant for MIDI instrument rendering.
 
 9. **MIDI to DDSP input conversion** — MIDI note data is converted to frame-level pitch and loudness sequences:
-   - **Pitch**: MIDI note number → frequency in Hz. Interpolate between notes for legato/portamento. Insert silence (pitch = 0) for rests.
-   - **Loudness**: MIDI velocity → dB scale (velocity 0 = silence, velocity 127 = 0 dB reference). Apply a simple envelope (attack/release) at note boundaries.
-   - **Frame rate**: Resample the pitch/loudness contours to the model's expected frame rate (typically 250 Hz).
+    - **Pitch**: MIDI note number → frequency in Hz. Interpolate between notes for legato/portamento. Insert silence (pitch = 0) for rests.
+    - **Loudness**: MIDI velocity → dB scale (velocity 0 = silence, velocity 127 = 0 dB reference). Apply a simple envelope (attack/release) at note boundaries.
+    - **Frame rate**: Resample the pitch/loudness contours to the model's expected frame rate (typically 250 Hz).
 
 10. **DDSP render pipeline** — For a given MIDI region + instrument selection:
     1. Convert MIDI to pitch/loudness frame sequences
@@ -507,6 +511,7 @@ The first session must let a new user: (1) load a template, (2) enter or import 
 ### Inference worker architecture
 
 Two Web Workers, one per runtime:
+
 - **ONNX Worker** (`onnxInferenceWorker.ts`) — handles DiffSinger and Kokoro (via Transformers.js, which uses ONNX Runtime Web internally). This is the primary worker, always initialized.
 - **TF.js Worker** (`tfjsInferenceWorker.ts`) — handles DDSP instrument models via TensorFlow.js. Lazily spawned only when a DDSP instrument is first used. Destroyed when no DDSP sessions are active.
 
@@ -538,6 +543,7 @@ DDSP models are **only available as TFLite and TF.js** (confirmed — no ONNX ex
 **Recommended approach**: Use TensorFlow.js directly for DDSP inference. This is the proven path — Google shipped Tone Transfer, Sounds of India, and Paint with Music using TF.js in production browsers. Reserve ONNX Runtime Web for DiffSinger and Kokoro.
 
 This means the inference worker must support **two runtimes**:
+
 - `@tensorflow/tfjs` + `@tensorflow/tfjs-backend-webgpu` for DDSP models
 - `onnxruntime-web` for DiffSinger and Kokoro models
 
@@ -596,10 +602,11 @@ The `dsconfig.yaml` contains critical rendering parameters: `sample_rate`, `hop_
 ### DiffSinger tensor preparation reference
 
 The TypeScript tensor preparation must replicate OpenUtau's C# logic (primarily `DiffSingerRenderer.cs`, `DiffSingerVariance.cs`, `DiffSingerPitch.cs`). Key operations:
+
 1. Parse `phonemes.txt` or `phonemes.json` to build a phoneme string → integer token ID map
 2. Map lyrics to phoneme token IDs using the voicebank's `dsdict.yaml` inventory
 3. Convert MIDI note numbers to MIDI pitch float values for `note_midi` tensor
-4. Convert note durations from beats/ticks to frames (frame_count = duration_seconds * sample_rate / hop_size, where hop_size is from dsconfig, typically 512)
+4. Convert note durations from beats/ticks to frames (frame_count = duration_seconds \* sample_rate / hop_size, where hop_size is from dsconfig, typically 512)
 5. Build `word_div` (phonemes per word) and `word_dur` (frames per word) for the linguistic encoder
 6. For multi-speaker models: load `.emb` files (256 float32 values per speaker), expand to `[1, n_frames, 256]` via weighted combination if blending speakers
 7. Set `depth` from `dsconfig.yaml`'s `max_depth` (typically 0.6) and `steps` based on quality setting
@@ -629,6 +636,7 @@ readHandle.close();
 ### Resampling pattern
 
 Follow the existing `browserStemSeparation.ts` pattern using OfflineAudioContext:
+
 ```typescript
 async function resampleToDAWRate(buffer: AudioBuffer): Promise<AudioBuffer> {
     if (buffer.sampleRate === 44100) return buffer;
@@ -659,6 +667,7 @@ If a browser tab is killed during a multi-step DiffSinger render, the work is lo
 ### Rust-to-WASM inference alternatives
 
 If ONNX Runtime Web proves insufficient (operator coverage gaps, overhead for specific models), alternative Rust-to-WASM inference engines exist:
+
 - **WONNX** — 100% Rust WebGPU ONNX engine, available as npm package. Direct WebGPU access without ONNX Runtime overhead.
 - **Tract** — lightweight pure-Rust ONNX inference, ideal for WASM deployment (no GPU, CPU-only).
 - **Candle** (HuggingFace) — compiles to wasm32 with working browser demos for Whisper/LLaMA.
@@ -669,6 +678,7 @@ These are contingency options, not first-choice. ONNX Runtime Web is the recomme
 ### Reference implementations
 
 Proven browser AI audio demos for implementer reference:
+
 - **Kokoro TTS**: `kokoro-web` (kokoro-js npm package) — 82M params, WebGPU, ~1s for 10s of speech
 - **DDSP Tone Transfer**: `g.co/tonetransfer` — Google's TF.js browser demo, 13 instruments
 - **RAVE.js**: `caillonantoine.github.io/ravejs/` — real-time timbre transfer via ONNX.js
@@ -680,6 +690,7 @@ Proven browser AI audio demos for implementer reference:
 ### Future phases beyond this spec
 
 Per `.agents/research/pipelines/audio-generation-browser.md` section 11 build-vs-wait verdicts:
+
 - **Audio-to-MIDI transcription** (Basic Pitch) — **Build now**, TypeScript package ready, Spotify-maintained
 - **Timbre transfer** (RAVE.js) — **Build now**, proven browser demo, 4-20 MB models, unique creative feature
 - **Voice cloning** — **Wait 6-12 months**, Chatterbox-Turbo (Apache 2.0) needs browser optimization

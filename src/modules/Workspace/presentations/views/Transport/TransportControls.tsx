@@ -66,19 +66,29 @@ export const TransportControls = ({
         }
         setCountInBars(next);
     };
+    const renderIife_14 = () => {
+        if (isRecording) {
+            return 'Recording';
+        }
+        if (isPlaying) {
+            return 'Playing';
+        }
+        return 'Stopped';
+    };
+    const renderIife_15 = () => {
+        if (isRecording) {
+            return 'Stop Recording';
+        }
+        if (anyTrackArmed) {
+            return 'Record (tracks armed)';
+        }
+        return 'Record';
+    };
 
     return (
         <DawTransportCluster tone="well" role="group" aria-label="Playback controls">
             <span className="sr-only" aria-live="polite" role="status">
-                {(() => {
-                    if (isRecording) {
-                        return 'Recording';
-                    }
-                    if (isPlaying) {
-                        return 'Playing';
-                    }
-                    return 'Stopped';
-                })()}
+                {renderIife_14()}
             </span>
             <Tooltip>
                 <TooltipTrigger asChild>
@@ -125,18 +135,7 @@ export const TransportControls = ({
                         />
                     </LatchButton>
                 </TooltipTrigger>
-                <TooltipContent>
-                    {(() => {
-                        if (isRecording) {
-                            return 'Stop Recording';
-                        }
-                        if (anyTrackArmed) {
-                            return 'Record (tracks armed)';
-                        }
-                        return 'Record';
-                    })()}{' '}
-                    (R)
-                </TooltipContent>
+                <TooltipContent>{renderIife_15()} (R)</TooltipContent>
             </Tooltip>
             <LED on={isAudioRecording} variant="red" size="sm" />
 

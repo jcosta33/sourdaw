@@ -110,6 +110,16 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
 
     // ── Idle: model selector + load button ─────────────────────────────────
     if (!status || status.state === 'idle') {
+        const renderIife_3 = () => {
+            if (backend === 'native') {
+                return 'Start Native Engine';
+            }
+            if (backend === 'cloud') {
+                return 'Connect Cloud AI';
+            }
+            return `Load ${WEBLLM_MODELS.find((message) => message.id === selectedModelId)?.displayName ?? 'Model'}`;
+        };
+
         return (
             <div className="relative">
                 <Button
@@ -180,15 +190,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                 }}
                             >
                                 <HardDrive className="size-3 mr-1.5" aria-hidden="true" />
-                                {(() => {
-                                    if (backend === 'native') {
-                                        return 'Start Native Engine';
-                                    }
-                                    if (backend === 'cloud') {
-                                        return 'Connect Cloud AI';
-                                    }
-                                    return `Load ${WEBLLM_MODELS.find((message) => message.id === selectedModelId)?.displayName ?? 'Model'}`;
-                                })()}
+                                {renderIife_3()}
                             </Button>
                         </div>
                     </DropdownPanel>

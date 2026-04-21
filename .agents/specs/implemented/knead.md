@@ -3,7 +3,7 @@
 ## Reference research
 
 - `.agents/research/factory/special-effects.md` §2 — Knead gap analysis. Identifies the delta between the shipped monophonic MVP (YIN + PSOLA + basic UI) and the real-time, polyphonic, formant-aware engine this spec targets.
-- `.agents/research/factory/active/clip-pitch-editing.md` — underlying research for the monophonic clip-pitch editor (referenced only to make clear what this spec does *not* touch).
+- `.agents/research/factory/active/clip-pitch-editing.md` — underlying research for the monophonic clip-pitch editor (referenced only to make clear what this spec does _not_ touch).
 
 All DSP derivations (pYIN transition costs, LPC / cepstral envelope math, STFT window/hop recommendations, phase-vocoder phase-locking rules, transient-detection thresholds, neural multipitch prior architectures, Basic Pitch / `ort` integration) live in the research file. This spec references them by topic and does not re-embed the math.
 
@@ -13,21 +13,21 @@ All DSP derivations (pYIN transition costs, LPC / cepstral envelope math, STFT w
 
 Sourdaw currently ships **two distinct pitch systems**. This spec is exclusively about the second.
 
-1. **Clip pitch editor** (`.agents/specs/factory/active/clip-pitch-editing.md`). Offline analysis + render on an *audio clip* on the timeline. pYIN analysis runs once, produces `NoteSegment` blobs overlaid on the waveform, and TD-PSOLA applies non-destructive edits at ±700 cents. **Monophonic only.** **Clip-scoped.** **Out of scope here.**
-2. **Knead real-time engine** (this spec). A *track insert* that analyzes and corrects pitch **while audio flows through it**, per audio block, with sub-20 ms latency. **Monophonic MVP already shipped** (`crates/daw-dsp/src/knead/{yin,psola,voicing,engine,utils}.rs`, `src/modules/Knead/`). **Polyphonic, formant-aware, and production-workflow features are missing.** Those are the gaps this spec closes.
+1. **Clip pitch editor** (`.agents/specs/factory/active/clip-pitch-editing.md`). Offline analysis + render on an _audio clip_ on the timeline. pYIN analysis runs once, produces `NoteSegment` blobs overlaid on the waveform, and TD-PSOLA applies non-destructive edits at ±700 cents. **Monophonic only.** **Clip-scoped.** **Out of scope here.**
+2. **Knead real-time engine** (this spec). A _track insert_ that analyzes and corrects pitch **while audio flows through it**, per audio block, with sub-20 ms latency. **Monophonic MVP already shipped** (`crates/daw-dsp/src/knead/{yin,psola,voicing,engine,utils}.rs`, `src/modules/Knead/`). **Polyphonic, formant-aware, and production-workflow features are missing.** Those are the gaps this spec closes.
 
 The existing `kneadStore` (`src/modules/Knead/stores/kneadStore.ts`) holds per-clip UI state (blobs, retune speed, tolerance, humanize, formant preserve toggle). Its shape is public contract and is preserved — persistence integration consists of wiring new fields through the same store, not replacing it.
 
 **How Knead differs from the clip-pitch editor:**
 
-| Dimension | Clip-pitch editor | Knead (this spec) |
-| --- | --- | --- |
-| Processing model | Offline analysis → non-destructive blob edits → optional freeze/render | Per-block streaming analysis + synthesis on a live track |
-| Latency | Not latency-bound (preview via triple buffer, but analysis is one-shot) | Hard-bounded ≤ 20 ms |
-| Polyphony | Monophonic only | Polyphonic in scope (STFT / partial tracking) |
-| Scope | One audio clip | A track insert; any live audio source |
-| Shifting | TD-PSOLA clamped to ±700 ¢ | PSOLA for small shifts, phase vocoder for large/polyphonic |
-| Use case | "Tune this take" | Live pitch correction, harmonizer, pitch-to-MIDI, Revoice |
+| Dimension        | Clip-pitch editor                                                       | Knead (this spec)                                          |
+| ---------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Processing model | Offline analysis → non-destructive blob edits → optional freeze/render  | Per-block streaming analysis + synthesis on a live track   |
+| Latency          | Not latency-bound (preview via triple buffer, but analysis is one-shot) | Hard-bounded ≤ 20 ms                                       |
+| Polyphony        | Monophonic only                                                         | Polyphonic in scope (STFT / partial tracking)              |
+| Scope            | One audio clip                                                          | A track insert; any live audio source                      |
+| Shifting         | TD-PSOLA clamped to ±700 ¢                                              | PSOLA for small shifts, phase vocoder for large/polyphonic |
+| Use case         | "Tune this take"                                                        | Live pitch correction, harmonizer, pitch-to-MIDI, Revoice  |
 
 ---
 
@@ -75,7 +75,7 @@ Ship a real-time, low-latency, optionally polyphonic pitch-correction engine as 
 - **De-esser, vocal strip, and vocal FX preset chain** from research §2.4. Knead is the pitch engine; the larger vocal suite is a separate workstream.
 - **VST3/CLAP/AU packaging.** Internal insert only, same as other Sourdaw first-party processors.
 - **Supporting ARA 2 host integration.**
-- **Pitch-to-MIDI output into a *new* track** (auto-track creation). v1 routes MIDI to a user-selected existing MIDI track.
+- **Pitch-to-MIDI output into a _new_ track** (auto-track creation). v1 routes MIDI to a user-selected existing MIDI track.
 - **Harmonizer voices beyond 4** (research cap of 4 is honored).
 
 ---
@@ -135,7 +135,7 @@ A transient detector based on spectral flux + energy slope marks transient frame
 **Acceptance criteria:**
 
 - A percussive fixture (`kick-drum-impulse.wav`) fed through Knead with shift = 0 cents and `Preserve` formants produces output whose peak sample amplitude is within **±0.5 dB** of the input over a 10 ms window centered on the transient, and the transient onset time (10% of peak) matches the input within **±1 sample**.
-- With shift ≠ 0, transients are still preserved in *timing*: the 10%-of-peak onset time matches the input within **±3 samples** (timing of the transient passthrough does not drift with shift amount).
+- With shift ≠ 0, transients are still preserved in _timing_: the 10%-of-peak onset time matches the input within **±3 samples** (timing of the transient passthrough does not drift with shift amount).
 - Transient detection thresholds are exposed as debug parameters; default behavior matches the research §2.2 recommendation.
 
 ### R6. Assignment / repair Lab tools
@@ -305,15 +305,13 @@ All Knead insert state persists through the existing `kneadStore` plumbing (whic
     - Enable pitch-to-MIDI, sing a melody, confirm MIDI notes land on the target track matching the sung pitches.
     - [ ] Manual: Enable Revoice with a guide track, confirm timing/pitch transfer with the sliders.
 
-    ---
+    ***
 
     ## Implementation Status
-
     - **What is implemented:** The monophonic MVP is implemented in `crates/daw-dsp/src/knead/`. This includes YIN pitch detection (`yin.rs`), PSOLA synthesis (`psola.rs`), voicing detection, and the basic engine orchestration. The `kneadStore` also exists in the frontend.
     - **What is not implemented:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
     - **What is done well:** The monophonic MVP is correctly isolated in the DSP crate and follows real-time safety principles.
     - **What needs refactoring:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
-
 
 ---
 

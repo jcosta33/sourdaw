@@ -122,12 +122,12 @@ Each module exposes **four independently-importable contract surfaces**. Other m
 
 ### Contract folder roles
 
-| Contract folder        | Role                              | Import target |
-| ---------------------- | --------------------------------- | ------------- |
+| Contract folder        | Role                              | Import target                                                                                                                          |
+| ---------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `useCases/`            | public write boundary (functions) | `#/modules/<M>/useCases` — `export { fn }` only, **no** `export type` from `useCases/`. Includes **`get<Module>Handlers`** (see §4.5). |
-| `events/`              | domain event payload types        | `#/modules/<M>/events` — `export type` / values as needed |
-| `stores/`              | shared business/read state        | `#/modules/<M>/stores` |
-| `presentations/views/` | composable UI entry points        | `#/modules/<M>/presentations/views` |
+| `events/`              | domain event payload types        | `#/modules/<M>/events` — `export type` / values as needed                                                                              |
+| `stores/`              | shared business/read state        | `#/modules/<M>/stores`                                                                                                                 |
+| `presentations/views/` | composable UI entry points        | `#/modules/<M>/presentations/views`                                                                                                    |
 
 Modules with no events do not need an `events/index.ts`. Modules with no cross-module views do not need a `presentations/views/index.ts`.
 
@@ -439,12 +439,12 @@ What a use case file **must never** export, under any circumstance:
 
 Acceptable type exports from a module's public surface:
 
-| Type origin                  | Cross-module export?                                                                                                                                                |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `events/` event payloads     | **Yes.** Re-export via `index.ts` as `export type { FooEvent } from './events/...'`. This is the canonical shared-type surface across modules.                     |
-| `stores/` store value types  | **Yes.** A `Store<T>` instance is part of the public contract; the `T` shape is naturally part of that. Re-export the store's value type via `index.ts` if needed. |
-| `useCases/` local types      | **Intra-module only by default.** Other modules prefer `ReturnType<typeof fn>` / `Parameters<typeof fn>` or define a local shape. If a use-case input/output type genuinely must be shared cross-module (rare), the only legal way is an `export type { … }` line on the module's root `index.ts` — never a deep import of `#/modules/<X>/useCases/...`. |
-| `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `engine/`, `errors/`, `handlers/` | **Never.** Not from `index.ts`, not from a use case file, not from anywhere. |
+| Type origin                                                                                                | Cross-module export?                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `events/` event payloads                                                                                   | **Yes.** Re-export via `index.ts` as `export type { FooEvent } from './events/...'`. This is the canonical shared-type surface across modules.                                                                                                                                                                                                           |
+| `stores/` store value types                                                                                | **Yes.** A `Store<T>` instance is part of the public contract; the `T` shape is naturally part of that. Re-export the store's value type via `index.ts` if needed.                                                                                                                                                                                       |
+| `useCases/` local types                                                                                    | **Intra-module only by default.** Other modules prefer `ReturnType<typeof fn>` / `Parameters<typeof fn>` or define a local shape. If a use-case input/output type genuinely must be shared cross-module (rare), the only legal way is an `export type { … }` line on the module's root `index.ts` — never a deep import of `#/modules/<X>/useCases/...`. |
+| `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `engine/`, `errors/`, `handlers/` | **Never.** Not from `index.ts`, not from a use case file, not from anywhere.                                                                                                                                                                                                                                                                             |
 
 The hard rule: **cross-module type consumption goes through the module's root `index.ts` or it does not happen.** A use case file is allowed to declare and export types that describe its own contract, but it is never a back door for promoting model, repository, or other private types to a cross-module surface.
 

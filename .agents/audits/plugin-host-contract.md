@@ -53,6 +53,7 @@ Every new plugin type adds branches to all 4 methods + 2 cross-module imports at
 **Problem:** 567-line file with growing per-plugin branches.
 
 **Needed:** Define a `DeviceController` interface:
+
 ```
 interface DeviceController {
     setParam(name: string, value: number, sampleFrame?: number): void;
@@ -61,6 +62,7 @@ interface DeviceController {
     destroy(): void;
 }
 ```
+
 Each plugin node class implements this. TrackNode stores `dn.controller: DeviceController` and delegates to it — one code path for all devices.
 
 ### 2. Toaster and Levain singletons (N-18 / I-03)

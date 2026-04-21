@@ -14,7 +14,7 @@
 ---
 
 > 🔒 **SPEC WRITING SESSION** — This session produces a spec document, not code. You may NOT modify any source files, configuration files, or dependencies. Output: `.agents/specs/{{slug}}.md`.
-> 
+>
 > **PERSONA:** Load `.agents/skills/personas/SKILL.md` and adopt **The Architect** persona.
 
 ---

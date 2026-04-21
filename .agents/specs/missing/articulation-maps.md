@@ -101,13 +101,7 @@ type ExclusionGroupId = string;
 type ArticulationMapId = string;
 
 type OutputEvent = {
-    type:
-        | 'keyswitch'
-        | 'cc'
-        | 'program_change'
-        | 'channel_pressure'
-        | 'pitch_bend'
-        | 'note_expression';
+    type: 'keyswitch' | 'cc' | 'program_change' | 'channel_pressure' | 'pitch_bend' | 'note_expression';
     noteOrCc: number;
     value: number;
     bank?: number; // program_change only

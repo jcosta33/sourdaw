@@ -6,23 +6,7 @@ const project = new Project({
     tsConfigFilePath: 'tsconfig.json',
 });
 
-const filesToProcess = [
-    'src/modules/Fermenter/presentations/components/WarpSection.tsx',
-    'src/modules/Workspace/presentations/components/LaunchScreen.tsx',
-    'src/modules/Workspace/presentations/components/NotificationToast.tsx',
-    'src/modules/Workspace/presentations/views/AppShell.tsx',
-    'src/modules/Workspace/presentations/views/AutomationBottomPanel.tsx',
-    'src/modules/Workspace/presentations/views/AutomationView/AutomationLaneRow.tsx',
-    'src/modules/Workspace/presentations/views/ClipView.tsx',
-    'src/modules/Workspace/presentations/views/ClipView/KneadEditor.tsx',
-    'src/modules/Workspace/presentations/views/ClipView/PianoRollToolbar.tsx',
-    'src/modules/Workspace/presentations/views/Inspector/ClipMidiAiSection.tsx',
-    'src/modules/Workspace/presentations/views/Inspector/DeviceInspector.tsx',
-    'src/modules/Workspace/presentations/views/Inspector/TrackHeaderSection.tsx',
-    'src/modules/Workspace/presentations/views/Inspector/TrackLevelSection.tsx',
-    'src/modules/Workspace/presentations/views/Inspector/layouts/ChorusLayout.tsx',
-    'src/modules/Workspace/presentations/views/InspectorPanel.tsx',
-];
+const filesToProcess = process.argv.slice(2);
 
 let iifeCounter = 0;
 

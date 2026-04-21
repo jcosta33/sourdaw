@@ -465,15 +465,12 @@ export const AutomationLaneRow = ({
                     const isDragging = dragPointBeat === point.beat;
                     const isHovered = hoveredBeat === point.beat;
                     const isSelected = selectedSet.has(point.beat);
-                    const nodeSize = (() => {
-                        if (isDragging) {
-                            return 6;
-                        }
-                        if (isHovered || isSelected) {
-                            return 5;
-                        }
-                        return 4;
-                    })();
+                    let nodeSize = 4;
+                    if (isDragging) {
+                        nodeSize = 6;
+                    } else if (isHovered || isSelected) {
+                        nodeSize = 5;
+                    }
                     const renderIife_2 = () => {
                         if (isDragging) {
                             return `drop-shadow(0 0 8px ${curveColor})`;

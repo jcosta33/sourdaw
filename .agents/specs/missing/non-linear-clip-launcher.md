@@ -151,7 +151,7 @@ The editor MAY replace clip content (audio buffer, warp map, note list) while th
 - **Stretcher state on content / warp change (implementation-agnostic)**: when a clip's warp map or time-stretch algorithm changes under a playing voice, the scheduler chooses one of two strategies per research § advanced-8:
     - **Strategy A (reset + re-prime)** — required when the algorithm is replaced, when the warp-map delta at the current play position is "large" (product-tunable threshold, default ~20 % ratio change), or when the stretch engine cannot update its ratio without artefacts. The stretcher is reset at the current `clip_content_offset` and primed with silence equal to its reported **group delay** so the splice is silent.
     - **Strategy B (smooth ratio update)** — permitted when the change is small (below threshold) AND the engine exposes glitch-free ratio updates. No reset; the engine's smoothing absorbs the change.
-    Strategy A is the safe default; Strategy B is opt-in per engine. No reference to the GPL Rubber Band Library — this requirement is implementation-agnostic and compatible with the permissive-license scope (§ Scope).
+      Strategy A is the safe default; Strategy B is opt-in per engine. No reference to the GPL Rubber Band Library — this requirement is implementation-agnostic and compatible with the permissive-license scope (§ Scope).
 - **Clip length change while looping**: if the new clip length L' is less than the current `clip_content_offset`, the voice immediately wraps using `clip_content_offset mod L'`; if L' is greater, the voice continues from the current offset (no seek).
 
 ### 9. Timing edge-case contracts (research § advanced-9)
