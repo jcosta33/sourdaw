@@ -236,12 +236,12 @@ function generateSessionId(): string {
 }
 
 /** Pick the first color from PEER_COLORS not already in use. */
-const pickPeerColor = (excludeColors: string[]): string => {
+function pickPeerColor(excludeColors: string[]): string {
     const used = new Set(excludeColors);
     return PEER_COLORS.find((context) => !used.has(context)) ?? PEER_COLORS[0]!;
-};
+}
 
-const getLocalPeerInfo = (): CollaborationPeer => {
+function getLocalPeerInfo(): CollaborationPeer {
     const state = collaborationStore.value!;
     return {
         id: state.localPeerId!,
@@ -252,7 +252,7 @@ const getLocalPeerInfo = (): CollaborationPeer => {
         lastSeen: Date.now(),
         latencyMs: null,
     };
-};
+}
 
 /**
  * Create a new collaboration session as host.
@@ -422,7 +422,7 @@ export async function joinSession(inviteString: string, name: string): Promise<s
 /**
  * Accept an answer from a joiner (host side, completes the connection).
  */
-export const acceptAnswer = async (answerString: string): Promise<void> => {
+export async function acceptAnswer(answerString: string): Promise<void> {
     const json = await decompressInvite(answerString);
     const answer = JSON.parse(json) as SignalingMessage;
     if (answer.type !== 'answer') {
@@ -458,7 +458,7 @@ export const acceptAnswer = async (answerString: string): Promise<void> => {
             peers: [...state.peers, joinerInfo],
         });
     }
-};
+}
 
 /** Tear down all subsystems without changing store state. */
 function cleanupSubsystems(): void {
@@ -531,7 +531,7 @@ async function resolveAssetForClips(hash: string): Promise<void> {
 
 // -- Playhead broadcast --
 
-const startPlayheadBroadcast = (): void => {
+function startPlayheadBroadcast(): void {
     sessionState.playheadBroadcastInterval = setInterval(() => {
         if (!sessionState.peerManager || sessionState.peerManager.getConnectedPeerIds().length === 0) {
             return;
@@ -560,7 +560,7 @@ const startPlayheadBroadcast = (): void => {
             },
         });
     }, 1000 / PLAYHEAD_BROADCAST_HZ);
-};
+}
 
 function stopPlayheadBroadcast(): void {
     if (sessionState.playheadBroadcastInterval !== null) {
@@ -598,7 +598,7 @@ export function leaveSession(): void {
 /**
  * Broadcast local presence data to all peers.
  */
-export const broadcastPresence = (data: Omit<PresenceData, 'peerId' | 'name' | 'color'>): void => {
+export function broadcastPresence(data: Omit<PresenceData, 'peerId' | 'name' | 'color'>): void {
     if (!sessionState.peerManager) {
         return;
     }
@@ -617,28 +617,32 @@ export const broadcastPresence = (data: Omit<PresenceData, 'peerId' | 'name' | '
             color: state.localColor,
         },
     });
-};
+}
 
 /**
  * Subscribe to incoming presence data from peers.
  */
-export const onPresence = (listener: (data: PresenceData) => void): (() => void) => {
+export function onPresence(listener: (data: PresenceData) => void): () => void {
     sessionState.presenceListeners.add(listener);
     return () => {
         sessionState.presenceListeners.delete(listener);
     };
-};
+}
 
 /** Get the asset transfer instance (for requesting/providing assets). */
-export const getAssetTransfer = (): AssetTransfer | null => sessionState.assetTransfer;
+export function getAssetTransfer(): AssetTransfer | null {
+    return sessionState.assetTransfer;
+}
 
 /** Get the permission manager instance (for role checks). */
-export const getPermissionManager = (): PermissionManager | null => sessionState.permissionManager;
+export function getPermissionManager(): PermissionManager | null {
+    return sessionState.permissionManager;
+}
 
 // -- Internal handlers --
 
 type HandlePeerMessageInput = { peerId: PeerId; message: PeerMessage };
-const handlePeerMessage = ({ peerId, message }: HandlePeerMessageInput): void => {
+function handlePeerMessage({ peerId, message }: HandlePeerMessageInput): void {
     if (message.type === 'crdt-sync') {
         // Route by docId to the appropriate subsystem
         if (message.docId === DOC_ID_ASSET) {
@@ -658,9 +662,9 @@ const handlePeerMessage = ({ peerId, message }: HandlePeerMessageInput): void =>
     } else if (message.type === 'peer-leave') {
         removePeer(message.peerId);
     }
-};
+}
 
-const handlePeerConnected = (peerId: PeerId): void => {
+function handlePeerConnected(peerId: PeerId): void {
     // Cancel any pending cleanup from a prior disconnect.
     const existing = peerCleanupTimers.get(peerId);
     if (existing !== undefined) {
@@ -684,7 +688,7 @@ const handlePeerConnected = (peerId: PeerId): void => {
     if (state) {
         collaborationStore.set({ ...state, connectionStatus: 'connected' });
     }
-};
+}
 
 function handlePeerDisconnected(peerId: PeerId): void {
     sessionState.automergeSync?.removePeer(peerId);
@@ -706,7 +710,7 @@ function handlePeerDisconnected(peerId: PeerId): void {
     }
 }
 
-const addOrUpdatePeer = (peer: CollaborationPeer): void => {
+function addOrUpdatePeer(peer: CollaborationPeer): void {
     const state = collaborationStore.value;
     if (!state) {
         return;
@@ -722,9 +726,9 @@ const addOrUpdatePeer = (peer: CollaborationPeer): void => {
             peers: [...state.peers, { ...peer, isConnected: true, lastSeen: Date.now() }],
         });
     }
-};
+}
 
-const removePeer = (peerId: PeerId): void => {
+function removePeer(peerId: PeerId): void {
     const state = collaborationStore.value;
     if (!state) {
         return;
@@ -734,9 +738,9 @@ const removePeer = (peerId: PeerId): void => {
         peers: state.peers.filter((param) => param.id !== peerId),
     });
     sessionState.peerManager?.removePeer(peerId);
-};
+}
 
-const updatePeerLastSeen = (peerId: PeerId): void => {
+function updatePeerLastSeen(peerId: PeerId): void {
     const state = collaborationStore.value;
     if (!state) {
         return;
@@ -745,9 +749,9 @@ const updatePeerLastSeen = (peerId: PeerId): void => {
         ...state,
         peers: state.peers.map((param) => (param.id === peerId ? { ...param, lastSeen: Date.now() } : param)),
     });
-};
+}
 
-const updatePeerConnectionState = (peerId: PeerId, isConnected: boolean): void => {
+function updatePeerConnectionState(peerId: PeerId, isConnected: boolean): void {
     const state = collaborationStore.value;
     if (!state) {
         return;
@@ -758,7 +762,7 @@ const updatePeerConnectionState = (peerId: PeerId, isConnected: boolean): void =
             param.id === peerId ? { ...param, isConnected, lastSeen: Date.now() } : param
         ),
     });
-};
+}
 
 // -- Invite compression --
 // Invites embed a full ICE-complete SDP, which can be several KB.
