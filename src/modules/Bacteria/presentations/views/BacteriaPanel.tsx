@@ -1519,7 +1519,11 @@ const RouteDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                         active={state.patch.globalRouting === mode}
                         onClick={() => setGlobalParam(deviceId, 'globalRouting', mode)}
                     >
-                        {mode === 'serial' ? 'Serial' : mode === 'parallel' ? 'Parallel' : 'Mid/side'}
+                        {(() => {
+                            if (mode === 'serial') return 'Serial';
+                            if (mode === 'parallel') return 'Parallel';
+                            return 'Mid/side';
+                        })()}
                     </BChip>
                 ))}
             </Row>

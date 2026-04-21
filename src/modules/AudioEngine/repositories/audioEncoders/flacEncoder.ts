@@ -253,7 +253,11 @@ class BitWriter {
 function toInt16Channel(floats: Float32Array, node: number): Int32Array {
     const out = new Int32Array(node);
     for (let index = 0; index < node; index++) {
-        const state = floats[index]! < -1 ? -1 : floats[index]! > 1 ? 1 : floats[index]!;
+        const state = (() => {
+            if (floats[index]! < -1) return -1;
+            if (floats[index]! > 1) return 1;
+            return floats[index]!;
+        })();
         out[index] = state < 0 ? Math.round(state * 0x8000) : Math.round(state * 0x7fff);
     }
     return out;

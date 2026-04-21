@@ -69,7 +69,11 @@ function drawCurve(ctx: CanvasRenderingContext2D, algo: CrustSatAlgorithm, drive
                 break;
             case 'fold': {
                 const s = inSig;
-                outSig = s > 1 ? 2 - s : s < -1 ? -2 - s : s;
+                outSig = (() => {
+                    if (s > 1) return 2 - s;
+                    if (s < -1) return -2 - s;
+                    return s;
+                })();
                 outSig = Math.max(-1, Math.min(1, outSig));
                 break;
             }

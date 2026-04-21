@@ -96,11 +96,11 @@ export const WarpSection = ({
                                 />
                                 <span className="text-[7px] text-muted-foreground">Rate</span>
                                 <span className="text-[6px] text-muted-foreground/50 font-mono">
-                                    {audioModRate < 20
-                                        ? `${audioModRate.toFixed(1)}Hz`
-                                        : audioModRate < 1000
-                                          ? `${Math.round(audioModRate)}Hz`
-                                          : `${(audioModRate / 1000).toFixed(1)}kHz`}
+                                    {(() => {
+                                        if (audioModRate < 20) return `${audioModRate.toFixed(1)}Hz`;
+                                        if (audioModRate < 1000) return `${Math.round(audioModRate)}Hz`;
+                                        return `${(audioModRate / 1000).toFixed(1)}kHz`;
+                                    })()}
                                 </span>
                             </div>
                             <div className="flex flex-col items-center gap-0.5">

@@ -218,13 +218,11 @@ export const CrumbsControls = ({
                         max={1}
                         step={0.01}
                         defaultValue={0}
-                        readout={
-                            pan === 0
-                                ? 'C'
-                                : pan < 0
-                                  ? `L${Math.abs(Math.round(pan * 100))}`
-                                  : `R${Math.round(pan * 100)}`
-                        }
+                        readout={(() => {
+                            if (pan === 0) return 'C';
+                            if (pan < 0) return `L${Math.abs(Math.round(pan * 100))}`;
+                            return `R${Math.round(pan * 100)}`;
+                        })()}
                     />
                 </div>
             </div>

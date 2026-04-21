@@ -108,13 +108,11 @@ export const PresetBrowser = ({
                         className={`px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${
                             category === cat.id ? 'text-white' : 'text-muted-foreground/60 hover:text-foreground'
                         }`}
-                        style={
-                            category === cat.id && cat.color
-                                ? { backgroundColor: cat.color }
-                                : category === cat.id
-                                  ? { backgroundColor: 'var(--color-accent-lavender)' }
-                                  : undefined
-                        }
+                        style={(() => {
+                            if (category === cat.id && cat.color) return { backgroundColor: cat.color };
+                            if (category === cat.id) return { backgroundColor: 'var(--color-accent-lavender)' };
+                            return undefined;
+                        })()}
                         onClick={() => {
                             setCategory(cat.id);
                             setSelectedTag(null);

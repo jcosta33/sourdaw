@@ -394,7 +394,11 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
             return true;
         }
 
-        const ids = ws.selectedClipIds.length > 0 ? ws.selectedClipIds : ws.selectedClipId ? [ws.selectedClipId] : [];
+        const ids = (() => {
+            if (ws.selectedClipIds.length > 0) return ws.selectedClipIds;
+            if (ws.selectedClipId) return [ws.selectedClipId];
+            return [];
+        })();
         if (ids.length === 0) {
             return false;
         }

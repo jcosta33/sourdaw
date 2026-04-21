@@ -142,7 +142,11 @@ class LevainProcessor extends AudioWorkletProcessor {
                 inst.add_sample(msg.data, msg.frameCount, msg.channels, msg.sampleRate);
                 break;
             case 'addZone': {
-                const loopMode = msg.loopMode === 'forward' ? 1 : msg.loopMode === 'pingpong' ? 2 : 0;
+                const loopMode = (() => {
+                    if (msg.loopMode === 'forward') return 1;
+                    if (msg.loopMode === 'pingpong') return 2;
+                    return 0;
+                })();
                 inst.add_zone(
                     msg.zoneId,
                     msg.sampleId,
