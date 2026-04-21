@@ -44,12 +44,12 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
         const canvas = canvasRef.current;
         const container = containerRef.current;
         if (!canvas || !container) {
-            return;
+            return () => {};
         }
 
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return () => {};
         }
 
         let w = container.clientWidth;

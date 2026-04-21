@@ -83,7 +83,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
 
     useEffect(() => {
         if (contextMenu.kind === 'none') {
-            return;
+            return () => {};
         }
         const handleClick = (e: globalThis.MouseEvent) => {
             if (menuRef.current && !menuRef.current.contains(e.target as Node)) {

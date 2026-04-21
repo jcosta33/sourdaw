@@ -22,11 +22,11 @@ export const Spectrogram = ({ trackId, width = 300, height = 100 }: SpectrogramP
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return () => {};
         }
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return () => {};
         }
 
         // Pre-build color LUT (256 entries) — rich blue→cyan→green→yellow→red

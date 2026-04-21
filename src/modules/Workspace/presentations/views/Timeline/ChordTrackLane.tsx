@@ -109,7 +109,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
     // ── Close menus on outside click ──────────────────────────────────
     useEffect(() => {
         if (contextMenu.kind === 'none' && !showAddMenu) {
-            return;
+            return () => {};
         }
         const handleClick = (e: globalThis.MouseEvent) => {
             if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
