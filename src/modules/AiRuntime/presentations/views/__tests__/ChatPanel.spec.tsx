@@ -42,7 +42,17 @@ vi.mock('remark-gfm', () => ({
 }));
 
 vi.mock('../../components/ChatComposer', () => ({
-    ChatComposer: ({ onSend, onStop, isGenerating, isLlmAvailable }: any) => (
+    ChatComposer: ({
+        onSend,
+        onStop,
+        isGenerating,
+        isLlmAvailable,
+    }: {
+        onSend: () => void;
+        onStop: () => void;
+        isGenerating: boolean;
+        isLlmAvailable: boolean;
+    }) => (
         <div data-testid="chat-composer">
             <button onClick={onSend} disabled={!isLlmAvailable}>
                 Send
