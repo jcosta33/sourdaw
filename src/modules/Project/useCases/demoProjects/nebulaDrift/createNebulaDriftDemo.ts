@@ -903,7 +903,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
 
     const padSegNotes: MidiNote[][][] = Array.from({ length: 16 }, () => toasterSegRanges.map(() => [] as MidiNote[]));
 
-    const pushToast = (pad: number, absBeat: number, vel: number, dur = 0.12) => {
+    function pushToast(pad: number, absBeat: number, vel: number, dur = 0.12) {
         const si = toasterSegmentIndex(absBeat);
         const [segStart, segEnd] = toasterSegRanges[si]!;
         if (absBeat < segStart || absBeat >= segEnd) {
@@ -911,7 +911,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
         }
         const rel = absBeat - segStart;
         padSegNotes[pad]![si]!.push(note(36 + pad, rel, dur, vel));
-    };
+    }
 
     // Intro — almost no drums, just occasional distant texture
     // Pad 5 = metallic shimmer, Pad 13 = subtle click
@@ -1123,8 +1123,9 @@ export async function demo5_NebulaDrift(): Promise<void> {
 
     transportStore.set({ ...defaultTransportState, tempo: bpm, loopEnd: TB, isLooping: true });
 
-    const mkLane = (trackId: string, param: string, label: string, min: number, max: number) =>
-        createAutomationLane(trackId, param, label, min, max);
+    function mkLane(trackId: string, param: string, label: string, min: number, max: number) {
+        return createAutomationLane(trackId, param, label, min, max);
+    }
 
     const dim = 0.07;
     const hero = 0.84;

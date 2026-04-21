@@ -28,8 +28,12 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         { sub: 33, root: 45, third: 48, fifth: 52, seventh: 55, ninth: 57 }, // Am7(9)
         { sub: 34, root: 46, third: 50, fifth: 53, seventh: 57, ninth: 60 }, // Bbmaj7(9)
     ];
-    const ch = (beat: number) => CHORDS[Math.floor(beat / 16) % 4]!;
-    const hv = (base: number, r = 8) => Math.max(10, Math.min(127, Math.round(base + (Math.random() - 0.5) * r * 2)));
+    function ch(beat: number) {
+        return CHORDS[Math.floor(beat / 16) % 4]!;
+    }
+    function hv(base: number, r = 8) {
+        return Math.max(10, Math.min(127, Math.round(base + (Math.random() - 0.5) * r * 2)));
+    }
 
     // ── TRACKS: 36 tracks in 7 folders ────────────────────────────────────
     const masterTrack = createTrack({ name: 'Master', kind: 'master' });
@@ -193,7 +197,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     ];
     applyPreset(harmWashTrack, 'factory-faust-additive-glass');
     // ── EFFECTS on tracks (web-compatible only) ──────────────────────────
-    const addDev = (t: any, type: string, name: string, params: Record<string, number>) => {
+    function addDev(t: any, type: string, name: string, params: Record<string, number>) {
         t.devices = [
             ...(t.devices || []),
             {
@@ -204,7 +208,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
                 parameterValues: params,
             },
         ];
-    };
+    }
 
     // ╔═══════════════════════════════════════════════════════════════╗
     // ║  MASTER CHAIN — Kiasmos/Jon Hopkins style mastering        ║
@@ -1755,8 +1759,9 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     transportStore.set({ ...defaultTransportState, tempo: bpm, loopEnd: TB, isLooping: true });
 
     // ── AUTOMATION (15+ lanes) ────────────────────────────────────────────
-    const mkLane = (trackId: string, param: string, label: string, min: number, max: number) =>
-        createAutomationLane(trackId, param, label, min, max);
+    function mkLane(trackId: string, param: string, label: string, min: number, max: number) {
+        return createAutomationLane(trackId, param, label, min, max);
+    }
 
     const subVol = mkLane(subBassTrack.id, 'volume', 'Volume', 0, 1);
     subVol.points = [

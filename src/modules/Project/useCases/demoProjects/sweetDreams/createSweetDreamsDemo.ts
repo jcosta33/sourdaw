@@ -84,8 +84,9 @@ function addDev(t: { devices?: unknown[] }, type: string, name: string, params: 
 }
 
 /** Slight humanization for velocity */
-const hv = (base: number, range = 6) =>
-    Math.max(1, Math.min(127, Math.round(base + (Math.random() - 0.5) * range * 2)));
+function hv(base: number, range = 6) {
+    return Math.max(1, Math.min(127, Math.round(base + (Math.random() - 0.5) * range * 2)));
+}
 
 // ═════════════════════════════════════════════════════════════════════════
 // MAIN EXPORT
@@ -368,7 +369,9 @@ export async function demo_SweetDreams(): Promise<void> {
     // ══════════════════════════════════════════════════════════════════════
     // MIDI CLIPS
     // ══════════════════════════════════════════════════════════════════════
-    const clip = (trackId: string, name: string) => createMidiClip(trackId, name, 0, TB);
+    function clip(trackId: string, name: string) {
+        return createMidiClip(trackId, name, 0, TB);
+    }
 
     const cRiffR = clip(tRiffR.id, 'Riff R');
     const cRiffL = clip(tRiffL.id, 'Riff L');
@@ -827,18 +830,18 @@ export async function demo_SweetDreams(): Promise<void> {
         [S.outro, S.end],
     ];
 
-    const toasterSegmentIndex = (absBeat: number): number => {
+    function toasterSegmentIndex(absBeat: number) {
         for (let i = toasterSegRanges.length - 1; i >= 0; i--) {
             if (absBeat >= toasterSegRanges[i]![0]) {
                 return i;
             }
         }
         return 0;
-    };
+    }
 
     const padSegNotes: MidiNote[][][] = Array.from({ length: 16 }, () => toasterSegRanges.map(() => [] as MidiNote[]));
 
-    const pushToast = (pad: number, absBeat: number, vel: number, dur = 0.12) => {
+    function pushToast(pad: number, absBeat: number, vel: number, dur = 0.12) {
         const si = toasterSegmentIndex(absBeat);
         const [segStart, segEnd] = toasterSegRanges[si]!;
         if (absBeat < segStart || absBeat >= segEnd) {
@@ -846,7 +849,7 @@ export async function demo_SweetDreams(): Promise<void> {
         }
         const rel = absBeat - segStart;
         padSegNotes[pad]![si]!.push(note(36 + pad, rel, dur, vel));
-    };
+    }
 
     // Drums enter at verse 1 (beat 32), build throughout
     // Kick: beats 1 and 3 (half-time feel, NOT 4-on-the-floor)
@@ -1018,8 +1021,9 @@ export async function demo_SweetDreams(): Promise<void> {
     // ══════════════════════════════════════════════════════════════════════
     // AUTOMATION — gain, filter, reverb curves per section
     // ══════════════════════════════════════════════════════════════════════
-    const mkLane = (trackId: string, param: string, label: string, min: number, max: number) =>
-        createAutomationLane(trackId, param, label, min, max);
+    function mkLane(trackId: string, param: string, label: string, min: number, max: number) {
+        return createAutomationLane(trackId, param, label, min, max);
+    }
 
     const riffGainPoints = [
         { beat: 0, value: 0.6, curve: 'linear' as const, tension: 0 },
