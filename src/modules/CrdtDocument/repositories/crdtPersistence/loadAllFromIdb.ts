@@ -3,7 +3,7 @@ import { type DocumentBundle } from '../../models/CrdtDocumentTypes';
 import { STORE_NAME, openDatabase } from './helpers';
 
 /** Load all documents from IndexedDB. */
-export const loadAllFromIdb = async (): Promise<DocumentBundle | null> => {
+export async function loadAllFromIdb(): Promise<DocumentBundle | null> {
     const database = await openDatabase();
     if (!database) {
         return null;
@@ -37,4 +37,4 @@ export const loadAllFromIdb = async (): Promise<DocumentBundle | null> => {
 
         tx.onerror = () => reject(tx.error);
     });
-};
+}
