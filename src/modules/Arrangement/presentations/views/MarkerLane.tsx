@@ -61,7 +61,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
 
     useEffect(() => {
         if (contextMenu.kind === 'none') {
-            return;
+            return undefined;
         }
         const handleClick = (e: globalThis.MouseEvent) => {
             if (menuRef.current && !menuRef.current.contains(e.target as Node)) {

@@ -152,6 +152,8 @@ function applyVoicing(intervals: readonly number[], rootMidi: number, voicing: C
             return [root, fifth];
         }
     }
+
+    return [];
 }
 
 type RhythmEvent = { offsetBeat: number; durationBeats: number };
@@ -182,6 +184,8 @@ function buildRhythmEvents(rhythm: 'whole' | 'half' | 'quarter' | 'syncopated', 
             ];
         }
     }
+
+    return [];
 }
 
 export function generateChordProgression(options: GenerateChordProgressionOptions & { seed?: number }): {

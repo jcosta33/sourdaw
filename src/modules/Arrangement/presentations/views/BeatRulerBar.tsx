@@ -226,7 +226,7 @@ export const BeatRulerBar = (): React.ReactElement => {
     // Continuous playhead redraw via rAF — reads from the non-reactive ref
     useEffect(() => {
         if (!isPlaying) {
-            return;
+            return undefined;
         }
         const id = crypto.randomUUID();
         const loop = () => {

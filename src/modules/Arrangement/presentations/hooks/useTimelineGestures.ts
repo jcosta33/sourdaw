@@ -16,7 +16,7 @@ export const useTimelineGestures = (canvasRef: RefObject<HTMLCanvasElement | nul
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
 
         let lastScale = 1;

@@ -16,12 +16,12 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
 
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return undefined;
         }
 
         // Try getting the master analyser. Might be null if engine isn't ready.
@@ -29,11 +29,11 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
         try {
             analyser = getMasterAnalyser();
         } catch {
-            return;
+            return undefined;
         }
 
         if (!analyser) {
-            return;
+            return undefined;
         }
 
         const bufferLength = analyser.frequencyBinCount;
