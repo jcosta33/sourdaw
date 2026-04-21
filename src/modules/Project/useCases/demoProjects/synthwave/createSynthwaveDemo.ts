@@ -57,16 +57,26 @@ export async function demo4_NativeShowcase(): Promise<void> {
         { start: 576, end: 720, name: 'Hyperspace', prog: PROG_HYPER },
         { start: 720, end: 816, name: 'Dust', prog: PROG_MAIN },
     ];
-    const getSec = (b: number): Sec => SECTIONS.find((s) => b >= s.start && b < s.end) ?? SECTIONS[0]!;
-    const getChord = (b: number): string => {
+    function getSec(b: number): Sec {
+        return SECTIONS.find((s) => b >= s.start && b < s.end) ?? SECTIONS[0]!;
+    }
+    function getChord(b: number): string {
         const sec = getSec(b);
         const idx = Math.floor((b - sec.start) / 8) % sec.prog.length;
         return sec.prog[idx]!;
-    };
-    const cv = (b: number) => CHORDS[getChord(b)]!;
-    const broot = (b: number) => BASS[getChord(b)]!;
-    const hv = (base: number, r = 8) => Math.max(10, Math.min(127, Math.round(base + (Math.random() - 0.5) * r * 2)));
-    const R = (b: number, lo: number, hi: number) => b >= lo && b < hi;
+    }
+    function cv(b: number) {
+        return CHORDS[getChord(b)]!;
+    }
+    function broot(b: number) {
+        return BASS[getChord(b)]!;
+    }
+    function hv(base: number, r = 8) {
+        return Math.max(10, Math.min(127, Math.round(base + (Math.random() - 0.5) * r * 2)));
+    }
+    function R(b: number, lo: number, hi: number) {
+        return b >= lo && b < hi;
+    }
 
     // ── TRACKS (50 tracks in 10 folders) ─────────────────────────────────
     const masterTrack = createTrack({ name: 'Master', kind: 'master' });
@@ -200,12 +210,12 @@ export async function demo4_NativeShowcase(): Promise<void> {
     applyPreset(nebulaArp, 'factory-faust-additive-glass');
 
     // ── FX HELPER ─────────────────────────────────────────────────────────
-    const addDev = (t: any, type: string, name: string, params: Record<string, number>) => {
+    function addDev(t: any, type: string, name: string, params: Record<string, number>) {
         t.devices = [
             ...(t.devices ?? []),
             { id: `dev-${crypto.randomUUID()}`, name, type, bypassed: false, parameterValues: params },
         ];
-    };
+    }
 
     // Master chain
     addDev(masterTrack, 'builtin-eq', 'Master EQ', {
@@ -544,11 +554,11 @@ export async function demo4_NativeShowcase(): Promise<void> {
     nebulaArp.pan = 38;
 
     // ── CLIPS ────────────────────────────────────────────────────────────
-    const mkClip = (t: any, name: string, s: number, e: number) => {
+    function mkClip(t: any, name: string, s: number, e: number) {
         const c = createMidiClip(t.id, name, s, e, t.color);
         t.clips = [...(t.clips || []), c];
         return c;
-    };
+    }
 
     const ck808 = mkClip(kick808, 'Kick 808', 0, TB);
     const cksub = mkClip(kickSub, 'Sub Kick', 64, TB);
@@ -636,8 +646,12 @@ export async function demo4_NativeShowcase(): Promise<void> {
         N[c.id] = [];
     }
 
-    const isDense = (b: number) => R(b, 160, 288) || R(b, 384, 480) || R(b, 576, 720);
-    const isBreak = (b: number) => R(b, 288, 384) || R(b, 480, 576);
+    function isDense(b: number) {
+        return R(b, 160, 288) || R(b, 384, 480) || R(b, 576, 720);
+    }
+    function isBreak(b: number) {
+        return R(b, 288, 384) || R(b, 480, 576);
+    }
 
     // ── KICK LAYERS ──────────────────────────────────────────────────────
     for (let s = 0; s < TB * 4; s++) {
@@ -1093,11 +1107,11 @@ export async function demo4_NativeShowcase(): Promise<void> {
     }
 
     // Deep Space clip/note generation
-    const mkC2 = (t: any, name: string, s: number, e: number) => {
+    function mkC2(t: any, name: string, s: number, e: number) {
         const c = createMidiClip(t.id, name, s, e, t.color);
-        t.clips = [...(t.clips ?? []), c];
+        t.clips = [...(t.clips || []), c];
         return c;
-    };
+    }
     const cCosmic = mkC2(cosmicDrone, 'Cosmic Drone', 0, TB);
     const cSpace = mkC2(spaceWash, 'Space Wash', 0, TB);
     const cNebula = mkC2(nebulaArp, 'Nebula Arp', 288, 720);
@@ -1189,8 +1203,9 @@ export async function demo4_NativeShowcase(): Promise<void> {
     transportStore.set({ ...defaultTransportState, tempo: bpm, loopEnd: TB, isLooping: true });
 
     // ── AUTOMATION (12 lanes — go crazy) ─────────────────────────────────
-    const mkLane = (trackId: string, param: string, name: string, min: number, max: number) =>
-        createAutomationLane(trackId, param, name, min, max);
+    function mkLane(trackId: string, param: string, name: string, min: number, max: number) {
+        return createAutomationLane(trackId, param, name, min, max);
+    }
 
     const kickVol = mkLane(kick808.id, 'volume', 'Volume', 0, 1);
     kickVol.points = [

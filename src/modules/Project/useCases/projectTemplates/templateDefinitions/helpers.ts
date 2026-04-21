@@ -39,12 +39,12 @@ export function attachSynthDevice(trackId: string): void {
     });
 }
 
-export const addTrackWithDevices = (
+export function addTrackWithDevices(
     name: string,
     kind: 'audio' | 'midi',
     devices: string[],
     options?: { withSynth?: boolean }
-): void => {
+): void {
     const track = addTrack({ name, kind });
     if (!track) {
         return;
@@ -57,7 +57,7 @@ export const addTrackWithDevices = (
     for (const deviceType of devices) {
         addDevice(track.id, deviceType);
     }
-};
+}
 
 export const templates: ProjectTemplate[] = [
     {
