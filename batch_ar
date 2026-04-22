@@ -1,5 +1,0 @@
-src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
-src/modules/Transport/useCases/__tests__/transportQueries.spec.ts
-src/modules/Transport/useCases/loopStation/__tests__/clearSlot.spec.ts
-src/modules/Transport/useCases/loopStation/__tests__/createSlot.spec.ts
-src/modules/Transport/useCases/loopStation/__tests__/setFixedLoopLength.spec.ts

@@ -5,7 +5,10 @@ import { loopStationStore } from '../../../stores/loopStationStore';
 import { toggleArm } from '../toggleArm';
 
 vi.mock('../../../stores/loopStationStore', () => ({
-    loopStationStore: { value: null, set: vi.fn() },
+    loopStationStore: {
+        value: null,
+        set: vi.fn<(state: import('../../../stores/loopStationStore').LoopStationState) => void>(),
+    },
 }));
 
 function emptyLoopState(): LoopStationState {
@@ -25,7 +28,7 @@ describe('toggleArm', () => {
     });
 
     it('flips armed via injected store', () => {
-        loopStationStore.value = { ...emptyLoopState(), armed: false } as any;
+        loopStationStore.value = { ...emptyLoopState(), armed: false } as LoopStationState;
 
         toggleArm();
 
