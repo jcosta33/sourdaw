@@ -1,5 +1,0 @@
-src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
-src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
-src/modules/CrdtDocument/repositories/crdtPersistence/__tests__/crdtPersistence.spec.ts
-src/modules/Yeast/services/yeastWorkletProcessor.ts
-src/modules/AiRuntime/useCases/dsoEditor/__tests__/serializeLogicalState.spec.ts
