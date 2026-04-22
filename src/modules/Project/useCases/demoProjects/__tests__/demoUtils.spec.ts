@@ -8,7 +8,7 @@ import { applyPreset } from '../demoUtils/applyPreset';
 import { syncArrangement } from '../demoUtils/syncArrangement';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    getFactoryPresets: vi.fn(),
+    getFactoryPresets: vi.fn<typeof getFactoryPresets>(),
 }));
 
 vi.mock('../../../stores/arrangementStore', () => ({
@@ -48,7 +48,7 @@ describe('applyPreset', () => {
                         parameterValues: { gain: 0.8 },
                     },
                 ],
-            } as any,
+            } as unknown as ReturnType<typeof getFactoryPresets>[number],
         ]);
         const track: { devices?: unknown[] } = {};
         applyPreset(track, 'preset-a');

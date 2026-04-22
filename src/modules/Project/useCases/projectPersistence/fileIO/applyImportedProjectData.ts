@@ -4,7 +4,7 @@ import { getAudioContext, resetAudioGraph } from '#/modules/AudioEngine/useCases
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
-import { type ProjectData } from '../../../models/ProjectData';
+import { type ProjectData, type ProjectMidiNote } from '../../../models/ProjectData';
 import { arrangementStore, defaultArrangementId } from '../../../stores/arrangementStore';
 import { projectStore } from '../../../stores/projectStore';
 import { hydrateModuleStoresFromProjectData } from '../helpers/hydrateModuleStoresFromProjectData';
@@ -55,7 +55,7 @@ export async function applyImportedProjectData(data: ProjectData): Promise<boole
                             }
                             return acc;
                         },
-                        {} as Record<string, any[]>
+                        {} as Record<string, ProjectMidiNote[]>
                     ),
                     ccByClipId: {},
                     pitchBendByClipId: {},

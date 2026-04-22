@@ -175,7 +175,7 @@ describe('verifyAudioBufferReferences', () => {
                 },
             ],
             selectedTrackId: null,
-        } as any;
+        } as unknown as typeof trackStore.value;
 
         verifyAudioBufferReferences();
 

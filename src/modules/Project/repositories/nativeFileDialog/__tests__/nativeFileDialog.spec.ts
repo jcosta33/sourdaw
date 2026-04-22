@@ -83,7 +83,7 @@ describe('nativeFileDialog', () => {
                 addEventListener: vi.fn(),
                 type: '',
             };
-            vi.spyOn(document, 'createElement').mockReturnValue(mockInput as any);
+            vi.spyOn(document, 'createElement').mockReturnValue(mockInput as unknown as HTMLInputElement);
 
             void pickFiles();
             expect(mockInput.click).toHaveBeenCalled();
