@@ -22,7 +22,15 @@ export const setGrinderMicParamWithAudio = inject(grinderParamBridgeDependencies
     ): void {
         // Note: GrinderMic values are all numeric in the model except 'type' and 'enabled'
         // But they are passed as number to the audio engine
-        setGrinderMicParam(deviceId, micIndex, key, value as any);
+        let finalValue: unknown = value;
+        if (key === 'enabled') {
+            finalValue = value >= 0.5;
+        } else if (key === 'type') {
+            const types = ['dynamic', 'ribbon', 'condenser', 'room'] as const;
+            finalValue = types[Math.floor(value)] ?? 'dynamic';
+        }
+
+        setGrinderMicParam(deviceId, micIndex, key, finalValue as GrinderMic[Key]);
 
         const ref = findDeviceRef(deviceId);
         if (!ref) {

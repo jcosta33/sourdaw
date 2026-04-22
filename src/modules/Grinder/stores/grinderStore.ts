@@ -13,7 +13,7 @@ import {
     migrateGrinderPatch,
 } from '../models/GrinderPatch';
 
-import { updateGrinderTelemetry } from './grinderTelemetryStore';
+import { updateGrinderTelemetry, type GrinderTelemetry } from './grinderTelemetryStore';
 
 export type GrinderState = {
     patch: GrinderPatch;
@@ -123,6 +123,6 @@ export function setGrinderMicParam<Key extends keyof GrinderMic>(
     });
 }
 
-export function updateGrinderMeters(deviceId: string, meters: any): void {
+export function updateGrinderMeters(deviceId: string, meters: Partial<GrinderTelemetry>): void {
     updateGrinderTelemetry(deviceId, meters);
 }

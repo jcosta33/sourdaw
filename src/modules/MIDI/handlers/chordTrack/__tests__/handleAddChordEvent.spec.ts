@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleAddChordEvent } from '../handleAddChordEvent';
 
 const mocks = vi.hoisted(() => ({
-    addChordEvent: vi.fn(),
+    addChordEvent: vi.fn<typeof import('../../../useCases/chordTrack/addChordEvent').addChordEvent>(),
 }));
 
 vi.mock('../../../useCases/chordTrack/addChordEvent', () => ({
@@ -25,7 +25,7 @@ describe('handleAddChordEvent', () => {
     it('falls back to default quality if invalid', () => {
         void handleAddChordEvent.execute({
             type: 'addChordEvent',
-            payload: { beat: 0, root: 2, quality: 'garbage' as any },
+            payload: { beat: 0, root: 2, quality: 'garbage' as unknown as 'minor' },
         });
 
         expect(mocks.addChordEvent).toHaveBeenCalledWith(0, 2, 'major', 4);
