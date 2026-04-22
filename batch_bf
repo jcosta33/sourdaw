@@ -1,5 +1,0 @@
-src/modules/AiRuntime/useCases/sendChatMessage.ts
-src/modules/Arrangement/handlers/trackAlternative/__tests__/handleRenameTrackAlternative.spec.ts
-src/modules/Arrangement/presentations/views/TrackHeader/LevainLoadingSpinner.tsx
-src/modules/Arrangement/presentations/views/__tests__/TimelineMinimap.spec.tsx
-src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx

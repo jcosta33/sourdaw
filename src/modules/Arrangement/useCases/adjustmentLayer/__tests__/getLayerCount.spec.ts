@@ -2,15 +2,15 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { getLayerCount } from '../getLayerCount';
 
-const mockSet = vi.fn();
-let mockValue: any = null;
+const mockSet = vi.fn<(value: { layers: { id: string }[] } | null) => void>();
+let mockValue: { layers: { id: string }[] } | null = null;
 
 vi.mock('../../../stores/adjustmentLayer', () => ({
     adjustmentLayerStore: {
         get value() {
             return mockValue;
         },
-        set: (value: any) => mockSet(value),
+        set: (value: { layers: { id: string }[] } | null) => mockSet(value),
     },
 }));
 
