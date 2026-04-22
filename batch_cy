@@ -1,5 +1,0 @@
-src/modules/MIDI/useCases/__tests__/arpeggiator.spec.ts
-src/modules/Transport/workers/__tests__/schedulerWorker.spec.ts
-src/modules/AiGeneration/useCases/grooveTemplate/operations/__tests__/applyGroove.spec.ts
-src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
-src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts
