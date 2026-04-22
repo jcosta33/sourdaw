@@ -4,7 +4,10 @@ import { type ExtensionMarketplaceState } from '../../../stores/extension';
 import { toggleScriptEditor } from '../toggleScriptEditor';
 
 const mocks = vi.hoisted(() => ({
-    extensionStore: { value: null as any, set: vi.fn() },
+    extensionStore: {
+        value: null as import('../../../stores/extension').ExtensionMarketplaceState | null,
+        set: vi.fn(),
+    },
 }));
 
 vi.mock('../../../stores/extension', async (importOriginal) => {
