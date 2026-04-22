@@ -17,8 +17,9 @@ import { setEngineReady } from '#/modules/Levain/stores';
 import { registerLevainDevice, unregisterLevainDevice as _unregisterLevainDevice } from '#/modules/Levain/useCases';
 import { isFaustModule } from '#/modules/Plugin/useCases';
 import { updateProofMeters } from '#/modules/Proof/stores';
-import { registerProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
+import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
 import { updateTunerTelemetry } from '#/modules/Scoring/stores';
+import { unregisterToasterDevice } from '#/modules/Toaster';
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
 import { createFaustDeviceNode } from '../useCases/deviceResolvers/createFaustDeviceNode';
@@ -93,6 +94,14 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: {
+                        ready: true,
+                        noteOn: result.noteOn,
+                        noteOff: result.noteOff,
+                        setParam: result.setParam,
+                        setBypass: result.setBypass,
+                        destroy: result.destroy,
+                    },
                     fermenterControls: {
                         ready: true,
                         noteOn: result.noteOn,
@@ -136,6 +145,18 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: {
+                        ready: true,
+                        noteOn: result.noteOn,
+                        noteOff: result.noteOff,
+                        setParam: result.setParam,
+                        setPadParam: result.setPadParam,
+                        setBypass: result.setBypass,
+                        destroy: () => {
+                            result.destroy();
+                            try { unregisterToasterDevice(deviceId); } catch {}
+                        },
+                    },
                     toasterControls: {
                         ready: true,
                         noteOn: result.noteOn,
@@ -182,6 +203,19 @@ const levainDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: {
+                        ready: true,
+                        noteOn: result.noteOn,
+                        noteOff: result.noteOff,
+                        allNotesOff: result.allNotesOff,
+                        handleCc: result.handleCc,
+                        setParam: result.setParam,
+                        setBypass: result.setBypass,
+                        destroy: () => {
+                            result.destroy();
+                            try { _unregisterLevainDevice(deviceId); } catch {}
+                        },
+                    },
                     levainControls: {
                         ready: true,
                         noteOn: result.noteOn,
@@ -194,6 +228,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
                     },
                 });
                 registerLevainDevice(
+                    deviceId,
                     {
                         setParam: result.setParam,
                         handleCc: result.handleCc,
@@ -201,7 +236,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
                     },
                     result.workletNode.port
                 );
-                setEngineReady(true);
+                setEngineReady(deviceId, true);
             })
             .catch((error) => logger.warn(`[WebAudioEngine] Levain failed: ${error}`));
         return { placeholder, loadPromise };
@@ -231,6 +266,7 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
             })
@@ -272,6 +308,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
             })
@@ -306,6 +343,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
             })
@@ -357,6 +395,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
             })
@@ -396,6 +435,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: () => { result.destroy(); try { unregisterProofDevice(deviceId); } catch {} } },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 syncFullPatch(deviceId);
@@ -431,6 +471,7 @@ const scoringDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
             })
@@ -473,6 +514,21 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: {
+                        ready: true,
+                        noteOn: result.noteOn,
+                        noteOff: result.noteOff,
+                        setParam: result.setParam,
+                        setSustain: result.setSustain,
+                        setUnaCorda: result.setUnaCorda,
+                        setSostenuto: result.setSostenuto,
+                        noteOnMidi2: result.noteOnMidi2,
+                        setTemperament: result.setTemperament,
+                        loadAttackClip: result.loadAttackClip,
+                        allNotesOff: result.allNotesOff,
+                        setBypass: result.setBypass,
+                        destroy: result.destroy,
+                    },
                     grandBouleControls: {
                         ready: true,
                         noteOn: result.noteOn,
@@ -509,6 +565,12 @@ const faustDescriptor: WasmDeviceDescriptor = {
         };
         const pending: Array<PendingParam | PendingKey> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
+        placeholder.controller = {
+            setParam: (name, value) => pending.push({ kind: 'param', name, value }),
+            scheduleParam: (name, value, time) => pending.push({ kind: 'param', name, value, time }),
+            setBypass: () => {},
+            destroy: () => {},
+        };
         placeholder.wamControls = {
             setParam: (name, value) => pending.push({ kind: 'param', name, value }),
             scheduleParam: (name, value, time) => pending.push({ kind: 'param', name, value, time }),
@@ -543,6 +605,12 @@ const faustDescriptor: WasmDeviceDescriptor = {
                     nodes: result.nodes,
                     inputNode: result.inputNode,
                     outputNode: result.outputNode,
+                    controller: {
+                        setParam: controls?.setParam ?? (() => {}),
+                        scheduleParam: controls?.scheduleParam,
+                        destroy: controls?.destroy,
+                        setBypass: () => {},
+                    },
                     wamControls: controls,
                 });
                 eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
@@ -578,6 +646,18 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: {
+                        ready: true,
+                        updateState: result.updateState,
+                        setParam: result.setParam,
+                        setBypass: result.setBypass,
+                        destroy: () => {
+                            try {
+                                result.workletNode.disconnect();
+                            } catch {}
+                            result.workletNode.port.close();
+                        },
+                    },
                     kneadControls: {
                         ready: true,
                         updateState: result.updateState,

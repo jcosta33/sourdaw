@@ -45,67 +45,67 @@ vi.mock('../../stores/undoStore', () => ({
 vi.mock('../macro/recording/recordAction', () => ({ recordAction: mocks.recordAction }));
 
 // Mock all the individual re-exports that executeAppAction might call via its lazy registry
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+vi.mock('#/modules/Arrangement', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getArrangementHandlers: () => ({ testAction: mocks.mockHandler }),
 }));
 
-vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
+vi.mock('#/modules/Transport', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getTransportHandlers: () => ({}),
 }));
 
-vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
+vi.mock('#/modules/Workspace', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getWorkspaceHandlers: () => ({}),
     getScratchPadHandlers: () => ({}),
 }));
 
-vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
+vi.mock('#/modules/Automation', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getAutomationHandlers: () => ({}),
 }));
 
-vi.mock('#/modules/AiGeneration/useCases', async (importOriginal) => ({
+vi.mock('#/modules/AiGeneration', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getGenerationHandlers: () => ({}),
     getAiMidiHandlers: () => ({}),
 }));
 
-vi.mock('#/modules/AudioAnalysis/useCases', async (importOriginal) => ({
+vi.mock('#/modules/AudioAnalysis', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getAnalysisHandlers: () => ({}),
 }));
 
-vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
+vi.mock('#/modules/Collaboration', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getCollaborationHandlers: () => ({}),
 }));
 
-vi.mock('#/modules/Plugin/useCases', async (importOriginal) => ({
+vi.mock('#/modules/Plugin', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getPluginHostHandlers: () => ({}),
 }));
 
-vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => ({
+vi.mock('#/modules/AiRuntime', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getAiOrganizationHandlers: () => ({}),
 }));
 
-vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+vi.mock('#/modules/MIDI', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getChordTrackHandlers: () => ({}),
     getMidiRoutingHandlers: () => ({}),
     getPatternInstanceHandlers: () => ({}),
 }));
 
-vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
+vi.mock('#/modules/Project', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getSongStructureHandlers: () => ({}),
     getVersionControlHandlers: () => ({}),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+vi.mock('#/modules/AudioEngine', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     getFinalFeatureHandlers: () => ({}),
 }));

@@ -67,9 +67,9 @@ export function getToasterControls(): {
     return dn?.toasterControls ?? null;
 }
 
-export function loadToasterKitPreset(kit: ToasterKit): void {
+export function loadToasterKitPreset(deviceId: string, kit: ToasterKit): void {
     // Update the UI store first
-    loadKit(kit);
+    loadKit(deviceId, kit);
 
     // Forward to the WASM engine
     const controls = getToasterControls();

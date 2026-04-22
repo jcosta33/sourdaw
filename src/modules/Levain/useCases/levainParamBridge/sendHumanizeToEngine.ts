@@ -1,5 +1,5 @@
 import { levainBridge } from './levainBridge';
 
-export const sendHumanizeToEngine = (amount: number): void => {
-    levainBridge().sendHumanizeToEngine(amount);
+export const sendHumanizeToEngine = (deviceId: string, amount: number): void => {
+    levainBridge().sendHumanizeToEngine(deviceId, amount);
 };

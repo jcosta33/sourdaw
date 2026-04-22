@@ -4,23 +4,41 @@ import { handleGenerateBassline } from '../handleGenerateBassline';
 
 const mocks = vi.hoisted(() => ({
     addTrack: vi.fn(),
+    addClip: vi.fn(),
     getNotesForClip: vi.fn(),
     addMidiNote: vi.fn(),
     generateToolCalls: vi.fn(),
     llmGenerateNotes: vi.fn(),
     info: vi.fn(),
+    trackStore: {
+        value: {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        { id: 'c1', startBeat: 4, endBeat: 8, name: 'Lead', type: 'midi' }
+                    ]
+                }
+            ]
+        }
+    }
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
     addTrack: mocks.addTrack,
+    addClip: mocks.addClip,
+    trackStore: mocks.trackStore,
 }));
 
-vi.mock('#/modules/MIDI/useCases', () => ({
+vi.mock('#/modules/MIDI', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
     getNotesForClip: mocks.getNotesForClip,
     addMidiNote: mocks.addMidiNote,
 }));
 
-vi.mock('#/modules/AiRuntime/useCases', () => ({
+vi.mock('#/modules/AiRuntime', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
     generateToolCalls: mocks.generateToolCalls,
 }));
 

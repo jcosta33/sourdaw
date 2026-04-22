@@ -161,7 +161,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const { activePanel, closeActivePanel } = useActiveDevicePanel();
     const fermenterDeviceId = activePanel?.kind === 'fermenter' ? activePanel.deviceId : null;
     const toasterDeviceId = activePanel?.kind === 'toaster' ? activePanel.deviceId : null;
-    const levainOpen = activePanel?.kind === 'levain';
+    const levainDeviceId = activePanel?.kind === 'levain' ? activePanel.deviceId : null;
     const proofChamberDeviceId = activePanel?.kind === 'proofChamber' ? activePanel.deviceId : null;
     const glutenDeviceId = activePanel?.kind === 'gluten' ? activePanel.deviceId : null;
     const bacteriaDeviceId = activePanel?.kind === 'bacteria' ? activePanel.deviceId : null;
@@ -421,7 +421,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             </InstrumentBottomPanel>
                         ) : null}
 
-                        {levainOpen ? (
+                        {levainDeviceId !== null ? (
                             <InstrumentBottomPanel
                                 label="Levain"
                                 labelColor="text-amber-400"
@@ -430,7 +430,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setLevainHeight}
                                 onClose={closeActivePanel}
                             >
-                                <LevainPanel />
+                                <LevainPanel deviceId={levainDeviceId} />
                             </InstrumentBottomPanel>
                         ) : null}
 
