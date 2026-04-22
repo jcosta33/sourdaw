@@ -1,5 +1,0 @@
-src/modules/Command/presentations/views/__tests__/UndoHistoryPanel.spec.tsx
-src/modules/CrdtDocument/useCases/projection/__tests__/projectProjection.spec.ts
-src/modules/Project/useCases/demoProjects/demoUtils/applyPreset.ts
-src/modules/Workspace/presentations/views/Inspector/__tests__/DeviceInspector.spec.tsx
-src/modules/Workspace/presentations/views/Mixer/MidiFxSection.tsx
