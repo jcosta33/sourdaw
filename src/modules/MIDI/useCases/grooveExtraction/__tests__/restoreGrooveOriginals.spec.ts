@@ -2,18 +2,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { restoreGrooveOriginals } from '../restoreGrooveOriginals';
 
+type MidiStoreValue = {
+    notesByClipId: Record<string, { id: string; pitch: number; startBeat: number; duration: number; velocity: number }[]>;
+    ccByClipId: Record<string, unknown>;
+    pitchBendByClipId: Record<string, unknown>;
+};
+
 const mocks = vi.hoisted(() => ({
     midiStoreValue: {
         value: {
-            notesByClipId: {} as Record<
-                string,
-                { id: string; pitch: number; startBeat: number; duration: number; velocity: number }[]
-            >,
+            notesByClipId: {},
             ccByClipId: {},
             pitchBendByClipId: {},
-        },
+        } as MidiStoreValue | null,
     },
-    midiStoreSet: vi.fn(),
+    midiStoreSet: vi.fn<(newState: MidiStoreValue) => void>(),
 }));
 
 vi.mock('../../../stores/midiStore', () => ({
@@ -38,7 +41,7 @@ describe('restoreGrooveOriginals', () => {
     });
 
     it('should not write when the MIDI store is null', () => {
-        mocks.midiStoreValue.value = null as any;
+        mocks.midiStoreValue.value = null;
 
         restoreGrooveOriginals('c1', new Map([['n1', { startBeat: 0, velocity: 100 }]]));
 
