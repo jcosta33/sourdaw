@@ -90,7 +90,12 @@ export function fzfSelect(items, { prompt = '> ', preview = '', multi = false } 
         stdio: ['pipe', 'pipe', 'inherit'],
     });
 
-    if (result.status !== 0 || !result.stdout.trim()) {
+    if (result.error || result.status !== 0 || !result.stdout?.trim()) {
+        if (result.error && result.error.code === 'ENOENT') {
+            console.error('\nError: fzf is not installed but is required for interactive selection.');
+            console.error('Please install it (e.g., brew install fzf, apt install fzf) or provide arguments directly.\n');
+            process.exit(1);
+        }
         return null;
     }
     

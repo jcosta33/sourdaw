@@ -14,6 +14,7 @@ import {
     AiActionHistoryPanel,
     MixAnalysisPanel,
 } from '#/modules/AiRuntime/presentations/views';
+import { ModulationMatrix } from '#/modules/Automation/presentations/views';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
 import { CommandPalette, useGlobalKeyboardShortcuts, UndoHistoryPanel } from '#/modules/Command/presentations/views';
 import { CrumbsPanel } from '#/modules/Crumbs/presentations/views';
@@ -143,7 +144,15 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [prefsOpen, setPrefsOpen] = useState(false);
     const [showAlphaNotice, setShowAlphaNotice] = useState(false);
     const [bottomTab, setBottomTab] = useState<
-        'editor' | 'mixer' | 'session' | 'routing' | 'analysis' | 'automation' | 'setlist' | 'loopStation'
+        | 'editor'
+        | 'mixer'
+        | 'session'
+        | 'routing'
+        | 'analysis'
+        | 'automation'
+        | 'setlist'
+        | 'loopStation'
+        | 'modulation'
     >('mixer');
     // One unified "active device panel" slot. The "only one panel open at a
     // time" invariant is enforced by the discriminated union in
@@ -191,6 +200,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         if (!project.initialized) {
             return;
         }
+        if (showAlphaNotice) {
+            return;
+        }
         if (isOnboardingCompleted()) {
             return;
         }
@@ -217,7 +229,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return () => {
             unsubscribe();
         };
-    }, [project.initialized]);
+    }, [project.initialized, showAlphaNotice]);
 
     // Auto-switch bottom tab when clip selected
     useEffect(() => {
@@ -645,6 +657,16 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                         >
                                             Loop Station
                                         </Button>
+                                        <Button
+                                            variant={bottomTab === 'modulation' ? 'secondary' : 'ghost'}
+                                            size="xs"
+                                            className={
+                                                bottomTab === 'modulation' ? 'text-[var(--color-accent-cyan)]' : ''
+                                            }
+                                            onClick={() => setBottomTab('modulation')}
+                                        >
+                                            Modulation
+                                        </Button>
 
                                         <div className="flex-1" />
 
@@ -673,6 +695,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                             <SetlistPanel />
                                         ) : bottomTab === 'loopStation' ? (
                                             <LoopStationPanel />
+                                        ) : bottomTab === 'modulation' ? (
+                                            <ModulationMatrix />
                                         ) : (
                                             <RoutingMatrix />
                                         )}

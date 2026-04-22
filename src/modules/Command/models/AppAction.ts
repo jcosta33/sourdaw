@@ -366,6 +366,16 @@ export type AppAction =
     | { type: 'nextSetlistItem'; payload?: undefined }
     | { type: 'previousSetlistItem'; payload?: undefined }
     | { type: 'createAdjustmentLayer'; payload: { name: string; effectType: string } }
+    | { type: 'removeAdjustmentLayer'; payload: { layerId: string } }
+    | { type: 'toggleAdjustmentLayer'; payload: { layerId: string } }
+    | { type: 'setLayerParameter'; payload: { layerId: string; paramName: string; value: number } }
+    | { type: 'setLayerMix'; payload: { layerId: string; mix: number } }
+    | { type: 'addAdjustmentRegion'; payload: { layerId: string; startBeat: number; endBeat: number; blend?: number } }
+    | { type: 'removeAdjustmentRegion'; payload: { layerId: string; regionId: string } }
+    | { type: 'moveAdjustmentRegion'; payload: { regionId: string; startBeat: number; endBeat: number } }
+    | { type: 'setLayerFades'; payload: { regionId: string; fadeInBeats: number; fadeOutBeats: number } }
+    | { type: 'setLayerAffectedTracks'; payload: { layerId: string; trackIds: string[] } }
+    | { type: 'setLayerInsertionIndex'; payload: { layerId: string; insertionIndex: number } }
     | { type: 'detectTransients'; payload: { clipId: string; sensitivity?: number } }
     | { type: 'quantizeTransients'; payload: { clipId: string } }
     | { type: 'toggleNodeView'; payload?: undefined }

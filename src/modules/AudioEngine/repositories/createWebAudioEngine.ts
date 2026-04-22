@@ -1,12 +1,20 @@
 import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { createAdjustmentLayerRuntime, type AdjustmentLayerRuntime } from '../engine/AdjustmentLayerRuntime';
 import { BusNode } from '../engine/BusNode';
 import { TrackNode } from '../engine/TrackNode';
 import meteringProcessorUrl from '../services/meteringProcessor.ts?worker&url';
 import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url';
 
-import type { AudioEngine, AudioEngineState, TrackChannelStrip, BusStrip, SendNode } from '../models/AudioEngineState';
+import type {
+    AdjustmentLayerTickInput,
+    AudioEngine,
+    AudioEngineState,
+    BusStrip,
+    SendNode,
+    TrackChannelStrip,
+} from '../models/AudioEngineState';
 
 class AudioEngineImpl implements AudioEngine {
     public context!: AudioContext;
@@ -26,6 +34,7 @@ class AudioEngineImpl implements AudioEngine {
     private transportSAB: SharedArrayBuffer;
     private transportView: Float64Array;
     private initPromise: Promise<void> | null = null;
+    private adjustmentRuntime: AdjustmentLayerRuntime;
 
     constructor(providedContext?: AudioContext) {
         // Transport SAB Layout (Float64Array):
@@ -54,6 +63,13 @@ class AudioEngineImpl implements AudioEngine {
             this.fallbackMode = true;
             this.setupNoopContext();
         }
+
+        this.adjustmentRuntime = createAdjustmentLayerRuntime({
+            getContext: () => this.context ?? null,
+            getTrackOutputNode: (trackId) => this.trackNodes.get(trackId)?.strip.analyserNode ?? null,
+            getTrackDefaultDestination: (trackId) => this.trackNodes.get(trackId)?.getDefaultDestination() ?? null,
+            rerouteTrack: (trackId) => this.trackNodes.get(trackId)?.routeOutput(),
+        });
     }
 
     private setupNoopContext() {
@@ -158,6 +174,7 @@ class AudioEngineImpl implements AudioEngine {
                     getTrackGainNode: () => undefined,
                     getSendsForTrack: () => [],
                     pendingDevicePromises: new Set(),
+                    getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
                 });
             } else {
                 node = new TrackNode(trackId, {
@@ -169,6 +186,7 @@ class AudioEngineImpl implements AudioEngine {
                         Array.from(this.sendNodes.values()).filter((s) => s.sourceTrackId === tId),
                     pendingDevicePromises: this.pendingDevicePromises,
                     transportSAB: this.transportSAB,
+                    getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
                 });
             }
             this.trackNodes.set(trackId, node);
@@ -507,6 +525,7 @@ class AudioEngineImpl implements AudioEngine {
         // sidechain routes) without closing the AudioContext, master nodes,
         // or already-loaded worklet modules. Used when switching projects.
         this.stopAllScheduled();
+        this.adjustmentRuntime.reset();
         for (const [, scGain] of this.sidechainConnections) {
             try {
                 scGain.disconnect();
@@ -526,6 +545,18 @@ class AudioEngineImpl implements AudioEngine {
             this.removeTrackStrip(id);
         }
         this.pendingDevicePromises.clear();
+    }
+
+    public applyAdjustmentLayerTick(records: AdjustmentLayerTickInput[]): void {
+        this.adjustmentRuntime.applyTick(records);
+    }
+
+    public resetAdjustmentLayers(): void {
+        this.adjustmentRuntime.reset();
+    }
+
+    public listLiveAdjustmentBusKeys(): string[] {
+        return this.adjustmentRuntime.listLiveBusKeys();
     }
 
     public dispose(): void {

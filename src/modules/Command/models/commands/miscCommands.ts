@@ -194,6 +194,55 @@ export const miscCommands: CommandEntry[] = [
         category: 'Mixing',
         action: { type: 'createAdjustmentLayer', payload: { name: 'Compressor Layer', effectType: 'compressor' } },
     },
+    {
+        id: 'create-adjustment-reverb',
+        label: 'Add Reverb Adjustment Layer',
+        description: 'Insert a non-destructive reverb layer that applies to tracks below',
+        category: 'Mixing',
+        action: { type: 'createAdjustmentLayer', payload: { name: 'Reverb Layer', effectType: 'reverb' } },
+    },
+    {
+        id: 'create-adjustment-delay',
+        label: 'Add Delay Adjustment Layer',
+        description: 'Insert a non-destructive delay layer that applies to tracks below',
+        category: 'Mixing',
+        action: { type: 'createAdjustmentLayer', payload: { name: 'Delay Layer', effectType: 'delay' } },
+    },
+    {
+        id: 'create-adjustment-saturation',
+        label: 'Add Saturation Adjustment Layer',
+        description: 'Insert a non-destructive saturation layer that applies to tracks below',
+        category: 'Mixing',
+        action: { type: 'createAdjustmentLayer', payload: { name: 'Saturation Layer', effectType: 'saturation' } },
+    },
+    {
+        id: 'create-adjustment-filter',
+        label: 'Add Filter Adjustment Layer',
+        description: 'Insert a non-destructive filter layer that applies to tracks below',
+        category: 'Mixing',
+        action: { type: 'createAdjustmentLayer', payload: { name: 'Filter Layer', effectType: 'filter' } },
+    },
+    {
+        id: 'create-adjustment-stereo-width',
+        label: 'Add Stereo Width Adjustment Layer',
+        description: 'Insert a non-destructive stereo-width layer that applies to tracks below',
+        category: 'Mixing',
+        action: { type: 'createAdjustmentLayer', payload: { name: 'Width Layer', effectType: 'stereo-width' } },
+    },
+    {
+        id: 'create-adjustment-volume',
+        label: 'Add Volume Adjustment Layer',
+        description: 'Insert a non-destructive volume layer that applies to tracks below',
+        category: 'Mixing',
+        action: { type: 'createAdjustmentLayer', payload: { name: 'Volume Layer', effectType: 'volume' } },
+    },
+    {
+        id: 'create-adjustment-pan',
+        label: 'Add Pan Adjustment Layer',
+        description: 'Insert a non-destructive pan layer that applies to tracks below',
+        category: 'Mixing',
+        action: { type: 'createAdjustmentLayer', payload: { name: 'Pan Layer', effectType: 'pan' } },
+    },
 
     // ── Elastic Audio ─────────────────────────────────────────
     {

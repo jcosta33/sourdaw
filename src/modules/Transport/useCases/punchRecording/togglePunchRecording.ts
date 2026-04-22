@@ -1,3 +1,5 @@
+import { pushUndoEntry } from '#/modules/Command/useCases';
+
 import { punchRecordingStore } from '../../stores/punchRecordingStore';
 
 export function togglePunchRecording(): void {
@@ -5,5 +7,25 @@ export function togglePunchRecording(): void {
     if (!state) {
         return;
     }
-    punchRecordingStore.set({ ...state, enabled: !state.enabled });
+    const previous = state.enabled;
+    const next = !previous;
+    punchRecordingStore.set({ ...state, enabled: next });
+
+    pushUndoEntry(
+        next ? 'Enable punch recording' : 'Disable punch recording',
+        () => {
+            const current = punchRecordingStore.value;
+            if (!current) {
+                return;
+            }
+            punchRecordingStore.set({ ...current, enabled: previous });
+        },
+        () => {
+            const current = punchRecordingStore.value;
+            if (!current) {
+                return;
+            }
+            punchRecordingStore.set({ ...current, enabled: next });
+        }
+    );
 }

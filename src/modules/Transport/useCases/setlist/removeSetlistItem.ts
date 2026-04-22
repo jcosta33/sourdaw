@@ -1,4 +1,6 @@
-import { setlistStore } from '../../stores/setlistStore';
+import { pushUndoEntry } from '#/modules/Command/useCases';
+
+import { setlistStore, type SetlistState } from '../../stores/setlistStore';
 
 export function removeSetlistItem(id: string): void {
     const state = setlistStore.value;
@@ -6,9 +8,20 @@ export function removeSetlistItem(id: string): void {
         return;
     }
     const removed = state.items.find((i) => i.id === id);
-    setlistStore.set({
+    if (!removed) {
+        return;
+    }
+    const previous: SetlistState = state;
+    const next: SetlistState = {
         ...state,
         items: state.items.filter((i) => i.id !== id),
-        totalDuration: state.totalDuration - (removed?.estimatedDuration ?? 0),
-    });
+        totalDuration: state.totalDuration - removed.estimatedDuration,
+    };
+    setlistStore.set(next);
+
+    pushUndoEntry(
+        `Remove setlist item: ${removed.name}`,
+        () => setlistStore.set(previous),
+        () => setlistStore.set(next)
+    );
 }

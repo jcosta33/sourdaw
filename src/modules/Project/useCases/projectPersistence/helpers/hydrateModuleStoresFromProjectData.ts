@@ -1,9 +1,15 @@
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
-import { markerStore, trackStore } from '#/modules/Arrangement/stores';
+import {
+    adjustmentLayerStore,
+    markerStore,
+    trackStore,
+    type AdjustmentEffectType,
+    type AdjustmentLayer,
+} from '#/modules/Arrangement/stores';
 import { type AutomationLane } from '#/modules/Automation/models/Automation';
 import { automationStore } from '#/modules/Automation/stores';
 
-import { type ProjectData } from '../../../models/ProjectData';
+import { type ProjectAdjustmentLayer, type ProjectData } from '../../../models/ProjectData';
 
 export function hydrateModuleStoresFromProjectData(data: ProjectData): void {
     if (data.arrangement?.tracks) {
@@ -46,4 +52,26 @@ export function hydrateModuleStoresFromProjectData(data: ProjectData): void {
             sections: [],
         });
     }
+
+    // 4. Adjustment layers — hydrate after tracks so affectedTrackIds can resolve.
+    const hydratedLayers = hydrateAdjustmentLayers(data.adjustmentLayers?.layers);
+    adjustmentLayerStore.set({ layers: hydratedLayers });
+}
+
+function hydrateAdjustmentLayers(layers: ProjectAdjustmentLayer[] | undefined): AdjustmentLayer[] {
+    if (!layers) {
+        return [];
+    }
+    return layers.map((layer) => ({
+        id: layer.id,
+        name: layer.name,
+        effectType: layer.effectType as AdjustmentEffectType,
+        parameters: layer.parameters.map((p) => ({ ...p })),
+        affectedTrackIds: [...layer.affectedTrackIds],
+        insertionIndex: layer.insertionIndex,
+        regions: layer.regions.map((r) => ({ ...r })),
+        enabled: layer.enabled,
+        mix: layer.mix,
+        color: layer.color,
+    }));
 }

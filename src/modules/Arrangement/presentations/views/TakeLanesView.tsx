@@ -7,7 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { useStore } from '#/infra/store/useStore';
 import { cn } from '#/utils/Styles/cn';
 
-import { type Take, type TakeLane, type CompRegion } from '../../models/TakeLane';
+import { type Take, type CompRegion } from '../../models/TakeLane';
 import { takeLaneStore, type TakeLaneStoreState } from '../../stores/takeLaneStore';
 import { trackStore, type TrackStoreState } from '../../stores/trackStore';
 import { addTake } from '../../useCases/comping/addTake';
@@ -16,6 +16,7 @@ import { flattenComp } from '../../useCases/comping/flattenComp';
 import { getTakeLaneForTrack } from '../../useCases/comping/getTakeLaneForTrack';
 import { selectTake } from '../../useCases/comping/selectTake';
 import { setCompRegion } from '../../useCases/comping/setCompRegion';
+import { removeCompRegion } from '../../useCases/comping/removeCompRegion';
 
 const DEFAULT_LANE_STATE: TakeLaneStoreState = { lanes: [] };
 const DEFAULT_TRACK_STATE: TrackStoreState = { tracks: [], selectedTrackId: null };
@@ -236,24 +237,6 @@ type TakeLanePanelProps = {
     trackColor: string;
 };
 
-const cloneLaneWithoutRegion = (lane: TakeLane, startBeat: number, endBeat: number): TakeLane => ({
-    ...lane,
-    activeCompRegions: lane.activeCompRegions.filter(
-        (region) => !(region.startBeat === startBeat && region.endBeat === endBeat)
-    ),
-});
-
-const removeCompRegion = (trackId: string, region: CompRegion): void => {
-    const state = takeLaneStore.value;
-    if (!state) {
-        return;
-    }
-    takeLaneStore.set({
-        lanes: state.lanes.map((lane) =>
-            lane.trackId === trackId ? cloneLaneWithoutRegion(lane, region.startBeat, region.endBeat) : lane
-        ),
-    });
-};
 
 export const TakeLanePanel = ({ trackId, trackName, trackColor }: TakeLanePanelProps): ReactElement => {
     const laneState = useStore(takeLaneStore, DEFAULT_LANE_STATE);
@@ -420,7 +403,7 @@ export const TakeLanePanel = ({ trackId, trackName, trackColor }: TakeLanePanelP
                                         laneWidthPx={laneWidthPx - 16}
                                         minBeat={minBeat}
                                         maxBeat={maxBeat}
-                                        onRemove={() => removeCompRegion(trackId, region)}
+                                        onRemove={() => removeCompRegion(trackId, region.startBeat)}
                                     />
                                 );
                             })}

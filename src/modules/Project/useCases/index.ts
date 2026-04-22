@@ -18,6 +18,8 @@ export { pickAndImportProjectFile } from './projectPersistence/fileIO/pickAndImp
 
 export { importDawProject } from './dawProject/importDawProject';
 export { pickAndImportDawProject } from './dawProject/pickAndImportDawProject';
+export { exportDawProject } from './dawProject/exportDawProject';
+export { renderToClip } from './renderToClip';
 
 export { verifyAudioBufferReferences } from './projectPersistence/helpers/verifyAudioBufferReferences';
 export { getSongStructureHandlers } from './getSongStructureHandlers';

@@ -44,12 +44,15 @@ const modules = new Map<string, FaustModule>();
 const compilationPromises = new Map<string, Promise<boolean>>();
 
 /**
- * Registration promise cache to prevent concurrent AudioWorklet registration
- * for the same module on the same AudioContext.
- *
- * WeakMap<AudioContext, Map<moduleId, Promise<void>>>
+ * Per-context serialization lock. Every `createNode` call on a given
+ * context chains onto this promise so no two faustwasm calls can interleave
+ * their internal `audioWorklet.addModule` + `new AudioWorkletNode(shaKey)`
+ * steps — the previous per-moduleId lock didn't help when two different
+ * modules compiled to different shaKeys but shared faustwasm's internal
+ * `gWorkletProcessors` registry, letting a later `new AudioWorkletNode`
+ * fire before the earlier `addModule`'s worklet-scope evaluation finished.
  */
-const registrationPromises = new WeakMap<BaseAudioContext, Map<string, Promise<void>>>();
+const contextCreateLock = new WeakMap<BaseAudioContext, Promise<unknown>>();
 
 // Compiler singleton (lazy init). §128.1 — coalesced into a single holder
 // so the module-level bindings can't be reassigned from outside this file.
@@ -202,83 +205,45 @@ export async function createFaustNode(
         return null;
     }
 
+    const previous = contextCreateLock.get(context) ?? Promise.resolve();
+    const self = previous.then(() => attemptCreateNode(mod, context));
+    contextCreateLock.set(
+        context,
+        self.catch(() => {})
+    );
+    return self;
+}
+
+async function attemptCreateNode(
+    mod: FaustModule,
+    context: BaseAudioContext
+): Promise<IFaustMonoWebAudioNode | IFaustPolyWebAudioNode | null> {
     const generator = mod.generator;
-    const callCreateNode = (): Promise<IFaustMonoWebAudioNode | IFaustPolyWebAudioNode | null> => {
-        return generator instanceof FaustPolyDspGenerator
+    if (!generator) {
+        return null;
+    }
+    const invoke = () =>
+        generator instanceof FaustPolyDspGenerator
             ? generator.createNode(context, POLY_VOICES_DEFAULT)
             : generator.createNode(context);
-    };
-
-    // Get or create the registration map for this context
-    let contextRegistrations = registrationPromises.get(context);
-    if (!contextRegistrations) {
-        contextRegistrations = new Map();
-        registrationPromises.set(context, contextRegistrations);
-    }
-
-    // Check if this module is already being registered in this context
-    const existingReg = contextRegistrations.get(moduleId);
-    if (existingReg) {
-        await existingReg;
-    }
-
-    // We use a manual promise to track the registration phase of createNode
-    let resolveReg: () => void;
-    const regPromise = new Promise<void>((resolve) => {
-        resolveReg = resolve;
-    });
-
-    // If no existing registration was in progress, we become the "primary" creator
-    // that performs the registration. Subsequent concurrent calls will await regPromise.
-    if (!existingReg) {
-        contextRegistrations.set(moduleId, regPromise);
-    }
-
     try {
-        const node = await callCreateNode();
-
-        // Registration successful (or was already done)
-        if (!existingReg) {
-            resolveReg!();
-        }
-
-        return node;
+        return await invoke();
     } catch (error) {
         const msg = isAppError(error) ? error.message : error instanceof Error ? error.message : String(error);
 
-        // If the error is "already registered", it means we collided despite the cache
-        // or faustwasm's internal state is out of sync. We can try to recover by
-        // assuming it's now registered and just trying again, but faustwasm's
-        // createNode is what performs both registration and node instantiation.
-
         if (msg.includes('already registered')) {
-            // Signal that registration is "done" (even if it failed with "already registered")
-            // so other waiters can try to create their nodes.
-            if (!existingReg) {
-                resolveReg!();
-            }
-
-            // Try one more time — if it was just a race, it might succeed now.
             try {
-                return await callCreateNode();
+                return await invoke();
             } catch (retryError) {
                 logger.warn(`[Faust] Node creation retry failed for "${mod.name}":`, retryError);
             }
         } else if (msg.includes('is not defined in AudioWorkletGlobalScope')) {
-            // Race condition in @grame/faustwasm: two concurrent createNode calls can both
-            // observe gWorkletProcessors.has(shaKey) === false, both call addModule, and
-            // the second AudioWorkletNode constructor fires before registerProcessor() has
-            // run in the worklet scope. A short delay lets the worklet finish evaluation.
-            if (!existingReg) {
-                resolveReg!();
-            }
-
             let backoff = 20;
             const maxRetries = 5;
             for (let i = 0; i < maxRetries; i++) {
                 await new Promise<void>((r) => setTimeout(r, backoff));
                 try {
-                    return await callCreateNode();
+                    return await invoke();
                 } catch (retryError) {
                     if (i === maxRetries - 1) {
                         logger.warn(`[Faust] Node creation retry failed for "${mod.name}":`, retryError);
@@ -286,11 +251,6 @@ export async function createFaustNode(
                         backoff *= 2;
                     }
                 }
-            }
-        } else {
-            // Real error, allow other waiters to fail too if they want
-            if (!existingReg) {
-                resolveReg!();
             }
         }
 

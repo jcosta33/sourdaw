@@ -22,7 +22,53 @@ export type ProjectData = {
     arrangements?: any[];
     activeArrangementId?: string;
     audioBuffers?: Record<string, any>;
+    adjustmentLayers?: ProjectAdjustmentLayers;
     history: ProjectHistory;
+};
+
+export type ProjectAdjustmentEffectType =
+    | 'eq'
+    | 'compressor'
+    | 'reverb'
+    | 'delay'
+    | 'saturation'
+    | 'filter'
+    | 'stereo-width'
+    | 'volume'
+    | 'pan';
+
+export type ProjectAdjustmentParameter = {
+    name: string;
+    value: number;
+    min: number;
+    max: number;
+    unit: string;
+};
+
+export type ProjectAdjustmentRegion = {
+    id: string;
+    startBeat: number;
+    endBeat: number;
+    blend: number;
+    fadeInBeats: number;
+    fadeOutBeats: number;
+};
+
+export type ProjectAdjustmentLayer = {
+    id: string;
+    name: string;
+    effectType: ProjectAdjustmentEffectType;
+    parameters: ProjectAdjustmentParameter[];
+    affectedTrackIds: string[];
+    insertionIndex: number;
+    regions: ProjectAdjustmentRegion[];
+    enabled: boolean;
+    mix: number;
+    color: string;
+};
+
+export type ProjectAdjustmentLayers = {
+    layers: ProjectAdjustmentLayer[];
 };
 
 export type ProjectMeta = {

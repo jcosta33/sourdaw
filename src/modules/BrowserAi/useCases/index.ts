@@ -6,7 +6,5 @@ export { downloadModel } from './downloadModel';
 export { removeModel } from './removeModel';
 export { renderKokoroTts } from './renderKokoroTts';
 export { renderDiffSingerPhrase } from './renderDiffSingerPhrase';
-export { renderDdspInstrument } from './renderDdspInstrument';
 export { cancelRender } from './cancelRender';
-export { renderAllStale } from './renderAllStale';
 export { detectCapabilities } from './detectCapabilities';

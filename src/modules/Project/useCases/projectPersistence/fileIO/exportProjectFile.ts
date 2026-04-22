@@ -1,4 +1,10 @@
-import { markerStore, takeLaneStore, trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
+import {
+    adjustmentLayerStore,
+    markerStore,
+    takeLaneStore,
+    trackStore,
+    type TrackStoreState,
+} from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -126,6 +132,7 @@ export async function exportProjectFile(): Promise<void> {
         arrangements: arrState.arrangements,
         activeArrangementId: arrState.activeArrangementId,
         audioBuffers: Object.keys(audioBuffers).length > 0 ? audioBuffers : undefined,
+        adjustmentLayers: { layers: adjustmentLayerStore.value?.layers ?? [] },
         history: { checkpoints: [] },
     };
 

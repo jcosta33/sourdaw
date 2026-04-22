@@ -1,5 +1,7 @@
+import { pushUndoEntry } from '#/modules/Command/useCases';
+
 import { createTakeLane } from '../../models/TakeLane';
-import { takeLaneStore } from '../../stores/takeLaneStore';
+import { takeLaneStore, type TakeLaneStoreState } from '../../stores/takeLaneStore';
 
 export function addTakeLane(trackId: string): void {
     const state = takeLaneStore.value;
@@ -12,7 +14,15 @@ export function addTakeLane(trackId: string): void {
         return;
     }
 
-    takeLaneStore.set({
+    const previous: TakeLaneStoreState = state;
+    const next: TakeLaneStoreState = {
         lanes: [...state.lanes, createTakeLane(trackId)],
-    });
+    };
+    takeLaneStore.set(next);
+
+    pushUndoEntry(
+        'Add take lane',
+        () => takeLaneStore.set(previous),
+        () => takeLaneStore.set(next)
+    );
 }

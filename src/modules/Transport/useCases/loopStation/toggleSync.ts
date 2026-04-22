@@ -1,3 +1,5 @@
+import { pushUndoEntry } from '#/modules/Command/useCases';
+
 import { loopStationStore } from '../../stores/loopStationStore';
 
 export function toggleSync(): void {
@@ -5,5 +7,25 @@ export function toggleSync(): void {
     if (!state) {
         return;
     }
-    loopStationStore.set({ ...state, syncToTransport: !state.syncToTransport });
+    const previous = state.syncToTransport;
+    const next = !previous;
+    loopStationStore.set({ ...state, syncToTransport: next });
+
+    pushUndoEntry(
+        next ? 'Enable loop sync' : 'Disable loop sync',
+        () => {
+            const current = loopStationStore.value;
+            if (!current) {
+                return;
+            }
+            loopStationStore.set({ ...current, syncToTransport: previous });
+        },
+        () => {
+            const current = loopStationStore.value;
+            if (!current) {
+                return;
+            }
+            loopStationStore.set({ ...current, syncToTransport: next });
+        }
+    );
 }

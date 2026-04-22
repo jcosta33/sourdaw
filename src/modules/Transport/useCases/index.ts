@@ -4,7 +4,10 @@
 export { ensureTrackStrips } from './ensureTrackStrips';
 
 export { toggleRecord } from './loopStation/toggleRecord';
+export { triggerPad } from './loopStation/triggerPad';
 export { triggerScene } from './loopStation/triggerScene';
+export { triggerSlot } from './loopStation/triggerSlot';
+export { stopAllSlots } from './loopStation/stopAllSlots';
 
 export { togglePunchRecording } from './punchRecording/togglePunchRecording';
 
