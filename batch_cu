@@ -1,5 +1,0 @@
-src/modules/Arrangement/useCases/scratchPad/__tests__/reorderScratchPadSection.spec.ts
-src/modules/AudioEngine/repositories/faustDeviceFactory.ts
-src/modules/AudioEngine/useCases/audioAnalysis/__tests__/analyzePitchForClip.spec.ts
-src/modules/SampleLibrary/useCases/__tests__/buildFolderTree.spec.ts
-src/modules/Workspace/presentations/views/Inspector/__tests__/MasterVisualizationsSection.spec.tsx
