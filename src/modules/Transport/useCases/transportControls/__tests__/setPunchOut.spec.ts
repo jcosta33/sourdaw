@@ -19,7 +19,7 @@ describe('setPunchOut', () => {
     });
 
     it('should clamp punch out beat and update transport', () => {
-        const update = vi.fn();
+        const update = vi.fn<typeof updateTransportState>();
         vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState });
         vi.mocked(updateTransportState).mockImplementation(update);
 
@@ -29,8 +29,8 @@ describe('setPunchOut', () => {
     });
 
     it('should not update when transport state is missing', () => {
-        const update = vi.fn();
-        vi.mocked(getTransportState).mockReturnValue(null as any);
+        const update = vi.fn<typeof updateTransportState>();
+        vi.mocked(getTransportState).mockReturnValue(null);
         vi.mocked(updateTransportState).mockImplementation(update);
 
         setPunchOut(8);
