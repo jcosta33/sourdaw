@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getPatternInstances } from '../getPatternInstances';
 
 const mocks = vi.hoisted(() => ({
-    getTrackStoreState: vi.fn(),
+    getTrackStoreState: vi.fn<typeof import('#/modules/Arrangement/useCases').getTrackStoreState>(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -31,7 +31,7 @@ describe('getPatternInstances', () => {
                     ],
                 },
             ],
-        } as any);
+        } as unknown as ReturnType<typeof import('#/modules/Arrangement/useCases').getTrackStoreState>);
 
         expect(getPatternInstances('parent')).toEqual(['b']);
     });

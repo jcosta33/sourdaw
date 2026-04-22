@@ -44,7 +44,15 @@ vi.mock('#/components/daw/DawKeycap', () => ({
 }));
 
 vi.mock('#/components/ui/button', () => ({
-    Button: ({ children, onClick, 'aria-label': ariaLabel }: any) => (
+    Button: ({
+        children,
+        onClick,
+        'aria-label': ariaLabel,
+    }: {
+        children: React.ReactNode;
+        onClick?: () => void;
+        'aria-label'?: string;
+    }) => (
         <button onClick={onClick} aria-label={ariaLabel}>
             {children}
         </button>
