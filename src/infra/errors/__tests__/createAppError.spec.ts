@@ -16,6 +16,6 @@ describe('AppError', () => {
     it('error data fields are accessible directly (no .details)', () => {
         const error = createAppError('MyError', 'Msg', { id: 42 });
         expect(error.id).toBe(42);
-        expect((error as any).details).toBeUndefined();
+        expect(error).not.toHaveProperty('details');
     });
 });

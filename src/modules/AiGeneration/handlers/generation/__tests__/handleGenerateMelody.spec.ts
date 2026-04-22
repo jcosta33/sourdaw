@@ -3,9 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleGenerateMelody } from '../handleGenerateMelody';
 
 const mocks = vi.hoisted(() => ({
-    applyMelodyToTrack: vi.fn(),
-    resolveOrCreateMidiTrack: vi.fn(() => 't1'),
-    getPlayheadBeat: vi.fn(() => 0),
+    applyMelodyToTrack: vi.fn<typeof import('../../../useCases/generateMelody/applyToTrack').applyMelodyToTrack>(),
+    resolveOrCreateMidiTrack: vi.fn<typeof import('../generationHandlerHelpers').resolveOrCreateMidiTrack>(() => 't1'),
+    getPlayheadBeat: vi.fn<typeof import('../generationHandlerHelpers').getPlayheadBeat>(() => 0),
 }));
 
 vi.mock('../../../useCases/generateMelody/applyToTrack', () => ({
@@ -63,8 +63,8 @@ describe('handleGenerateMelody', () => {
         void handleGenerateMelody.execute({
             type: 'generateMelody',
             payload: {
-                style: 'invalid-style' as any,
-                scale: 'invalid-scale' as any,
+                style: 'invalid-style' as unknown as 'simple',
+                scale: 'invalid-scale' as unknown as 'major',
                 key: -5,
                 bars: 2,
             },
