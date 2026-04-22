@@ -2,11 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createCompGroup } from '../createCompGroup';
 
-const mocks = vi.hoisted(() => ({
-    groupCompingStoreValue: { value: { groups: [], activeGroupId: null } },
-    groupCompingStoreSet: vi.fn(),
-    getNextGroupId: vi.fn(() => 'grp-123'),
-}));
+const mocks = vi.hoisted(() => {
+    type Group = { id: string; name: string; trackIds: string[] };
+    type State = { groups: Group[]; activeGroupId: string | null };
+    return {
+        groupCompingStoreValue: { value: { groups: [], activeGroupId: null } as State },
+        groupCompingStoreSet: vi.fn<(state: State) => void>(),
+        getNextGroupId: vi.fn<() => string>(() => 'grp-123'),
+    };
+});
 
 vi.mock('#/modules/Arrangement/stores/groupComping', () => ({
     groupCompingStore: {
