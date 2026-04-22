@@ -8,7 +8,10 @@ import {
 import { getInstalledExtensions } from '../getInstalledExtensions';
 
 const mocks = vi.hoisted(() => ({
-    extensionStore: { value: null as any, set: vi.fn() },
+    extensionStore: {
+        value: null as unknown as ExtensionMarketplaceState,
+        set: vi.fn<(state: ExtensionMarketplaceState) => void>(),
+    },
 }));
 
 vi.mock('../../../stores/extension', async (importOriginal) => {

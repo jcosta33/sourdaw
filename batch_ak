@@ -1,5 +1,0 @@
-src/modules/CrdtDocument/useCases/__tests__/replaceCrdtDoc.spec.ts
-src/modules/Crumbs/useCases/__tests__/handleFileDrop.spec.ts
-src/modules/Extension/useCases/extension/__tests__/clearConsole.spec.ts
-src/modules/Extension/useCases/extension/__tests__/executeCommand.spec.ts
-src/modules/Extension/useCases/extension/__tests__/getEnabledExtensions.spec.ts

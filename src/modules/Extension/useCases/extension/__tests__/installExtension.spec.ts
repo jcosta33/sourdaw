@@ -4,7 +4,10 @@ import { type ExtensionManifest, type ExtensionMarketplaceState } from '../../..
 import { installExtension } from '../installExtension';
 
 const mocks = vi.hoisted(() => ({
-    extensionStore: { value: null as any, set: vi.fn() },
+    extensionStore: {
+        value: null as unknown as ExtensionMarketplaceState,
+        set: vi.fn<(state: ExtensionMarketplaceState) => void>(),
+    },
 }));
 
 vi.mock('../../../stores/extension', async (importOriginal) => {
@@ -49,7 +52,7 @@ describe('installExtension', () => {
         installExtension(minimalManifest('ext-a'));
 
         expect(mocks.extensionStore.set).toHaveBeenCalledTimes(1);
-        const next = mocks.extensionStore.set.mock.calls[0]![0] as ExtensionMarketplaceState;
+        const next = mocks.extensionStore.set.mock.calls[0]![0];
         expect(next.installed).toHaveLength(1);
         expect(next.installed[0]!.manifest.id).toBe('ext-a');
     });
