@@ -1,5 +1,0 @@
-src/modules/Workspace/handlers/scratchPad/__tests__/scratchPadHandlers.spec.ts
-src/infra/di/internal/containerState.ts
-src/modules/AiGeneration/useCases/grooveTemplate/operations/__tests__/extractGroove.spec.ts
-src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
-src/modules/Arrangement/useCases/freezeBounce/renderOffline.ts
