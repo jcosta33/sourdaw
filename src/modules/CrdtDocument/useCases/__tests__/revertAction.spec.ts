@@ -2,15 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { revertAction } from '../revertAction/revertAction';
 
-const executeAppAction = vi.fn();
+const executeAppAction = vi.fn<(...args: unknown[]) => void>();
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: (...args: any[]) => executeAppAction(...args),
+    executeAppAction: (...args: unknown[]) => executeAppAction(...args),
 }));
 
-const markEntryReverted = vi.fn();
-const actionHistoryStore = { value: null as null | { entries: any[] } };
+const markEntryReverted = vi.fn<(...args: unknown[]) => void>();
+const actionHistoryStore = { value: null as null | { entries: unknown[] } };
 vi.mock('../../stores/actionHistoryStore', () => ({
-    markEntryReverted: (...args: any[]) => markEntryReverted(...args),
+    markEntryReverted: (...args: unknown[]) => markEntryReverted(...args),
     get actionHistoryStore() {
         return actionHistoryStore;
     },

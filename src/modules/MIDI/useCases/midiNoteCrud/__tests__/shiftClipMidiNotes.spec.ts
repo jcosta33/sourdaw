@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { shiftClipMidiNotes } from '../shiftClipMidiNotes';
 
+import type { MidiStoreState } from '../../../stores/midiStore';
+
 const mocks = vi.hoisted(() => ({
     midiStoreValue: { value: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} } },
     midiStoreSet: vi.fn(),
@@ -23,7 +25,7 @@ describe('shiftClipMidiNotes', () => {
             notesByClipId: {},
             ccByClipId: {},
             pitchBendByClipId: {},
-        } as any;
+        } as unknown as MidiStoreState;
     });
 
     it('should shift notes, CCs, and pitch bends by the same beat delta', () => {
@@ -31,7 +33,7 @@ describe('shiftClipMidiNotes', () => {
             notesByClipId: { c1: [{ startBeat: 0, pitch: 60 }] },
             ccByClipId: { c1: [{ beat: 0, controller: 1, value: 100 }] },
             pitchBendByClipId: { c1: [{ beat: 0, value: 0.5 }] },
-        } as any;
+        } as unknown as MidiStoreState;
 
         shiftClipMidiNotes('c1', 4);
 
@@ -50,7 +52,7 @@ describe('shiftClipMidiNotes', () => {
     });
 
     it('should not call set when the MIDI store is null', () => {
-        mocks.midiStoreValue.value = null as any;
+        mocks.midiStoreValue.value = null as unknown as MidiStoreState;
         shiftClipMidiNotes('c1', 1);
         expect(mocks.midiStoreSet).not.toHaveBeenCalled();
     });

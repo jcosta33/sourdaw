@@ -197,9 +197,9 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     ];
     applyPreset(harmWashTrack, 'factory-faust-additive-glass');
     // ── EFFECTS on tracks (web-compatible only) ──────────────────────────
-    function addDev(time: any, type: string, name: string, params: Record<string, number>) {
+    function addDev(time: ReturnType<typeof createTrack>, type: string, name: string, params: Record<string, number>) {
         time.devices = [
-            ...(time.devices || []),
+            ...time.devices,
             {
                 id: `dev-${crypto.randomUUID()}`,
                 name,
