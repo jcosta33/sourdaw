@@ -1,5 +1,0 @@
-src/modules/Arrangement/presentations/helpers/__tests__/timelineTools.spec.ts
-src/modules/Arrangement/services/__tests__/findClipById.spec.ts
-src/modules/Arrangement/useCases/__tests__/exportMidiClip.spec.ts
-src/modules/Arrangement/useCases/clipStretch/__tests__/fitClipToBeats.spec.ts
-src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
