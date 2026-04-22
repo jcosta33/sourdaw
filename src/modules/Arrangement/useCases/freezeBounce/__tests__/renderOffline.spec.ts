@@ -2,13 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type Track } from '../../../models/Track';
 import { renderTrackOffline } from '../renderOffline';
+import type { buildDeviceChain } from '#/modules/AudioEngine/useCases';
+import type { getAudioContext } from '#/modules/AudioEngine/useCases';
 
-const buildDeviceChain = vi.fn();
-const getAudioContext = vi.fn().mockReturnValue({ sampleRate: 44100 });
+const mockBuildDeviceChain = vi.fn<typeof buildDeviceChain>();
+const mockGetAudioContext = vi.fn<typeof getAudioContext>().mockReturnValue({ sampleRate: 44100 } as AudioContext);
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    buildDeviceChain: (...args: any[]) => buildDeviceChain(...args),
-    getAudioContext: (...args: any[]) => getAudioContext(...args),
+    buildDeviceChain: (...args: Parameters<typeof buildDeviceChain>) => mockBuildDeviceChain(...args),
+    getAudioContext: (...args: Parameters<typeof getAudioContext>) => mockGetAudioContext(...args),
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
@@ -37,8 +39,8 @@ vi.mock('../../services/getUpstreamSubgraph', () => ({
 
 describe('renderTrackOffline', () => {
     beforeEach(() => {
-        buildDeviceChain.mockReset();
-        getAudioContext.mockReturnValue({ sampleRate: 44100 });
+        mockBuildDeviceChain.mockReset();
+        mockGetAudioContext.mockReturnValue({ sampleRate: 44100 } as AudioContext);
     });
 
     it('does not build a device chain for non-audio non-midi tracks', async () => {
@@ -46,6 +48,6 @@ describe('renderTrackOffline', () => {
         const result = await renderTrackOffline(busTrack, 0, 4);
 
         expect(result).toBeNull();
-        expect(buildDeviceChain).not.toHaveBeenCalled();
+        expect(mockBuildDeviceChain).not.toHaveBeenCalled();
     });
 });

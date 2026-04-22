@@ -3,13 +3,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 
 import { trackStore } from '../../../stores/trackStore';
+import type { TrackStoreState } from '../../../stores/trackStore';
 import { cleanupUnusedFreezeFiles } from '../cleanupUnusedFreezeFiles';
+import type { Track } from '../../../models/Track';
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
     audioBufferCache: {
-        garbageCollectFreezeFiles: vi.fn().mockResolvedValue(undefined),
-        garbageCollectByAge: vi.fn().mockResolvedValue(undefined),
-        garbageCollectBySize: vi.fn().mockResolvedValue(undefined),
+        garbageCollectFreezeFiles: vi.fn<() => Promise<void>>().mockResolvedValue(),
+        garbageCollectByAge: vi.fn<() => Promise<void>>().mockResolvedValue(),
+        garbageCollectBySize: vi.fn<() => Promise<void>>().mockResolvedValue(),
     },
 }));
 
@@ -20,7 +22,7 @@ describe('cleanupUnusedFreezeFiles', () => {
     });
 
     it('does nothing if store state is missing', async () => {
-        trackStore.set(null as any);
+        trackStore.set(null as unknown as TrackStoreState);
         await cleanupUnusedFreezeFiles();
         expect(audioBufferCache.garbageCollectFreezeFiles).not.toHaveBeenCalled();
     });
@@ -32,7 +34,7 @@ describe('cleanupUnusedFreezeFiles', () => {
                 { id: 't2', freezeState: { status: 'frozen', frozenBufferId: 'buf-2' } },
                 { id: 't3', freezeState: { status: 'unfrozen' } },
                 { id: 't4', freezeState: { status: 'unfrozen' } },
-            ] as any,
+            ] as unknown as Track[],
             selectedTrackId: null,
         });
 
