@@ -460,55 +460,31 @@ export class TrackNode {
         if (!dn || !dn.controller) {
             return;
         }
-        
+
         if (dn.controller.scheduleParam) {
             dn.controller.scheduleParam(paramId, value, time);
-        } else if (dn.type.startsWith('faust-')) {
-            // Faust fallback for backwards compat if scheduleParam not on controller
-            const worklet = dn.nodes[0];
-            if (worklet && worklet instanceof AudioWorkletNode) {
-                let targetParam: AudioParam | null = null;
-                const exact = worklet.parameters.get(paramId);
-                if (exact) {
-                    targetParam = exact;
-                } else {
-                    for (const [key, param] of worklet.parameters) {
-                        if (key.endsWith(`/${paramId}`)) {
-                            targetParam = param;
-                            break;
-                        }
-                    }
-                }
-                if (targetParam) {
-                    targetParam.setValueAtTime(value, time);
-                }
-            }
-        } else {
-            const sampleFrame = Math.round(time * this.deps.context.sampleRate);
-            dn.controller.setParam(paramId, value, sampleFrame);
+            return;
         }
+
+        // MessagePort-based devices (Fermenter, Toaster, Grand Boule, etc.) schedule
+        // via their internal sample-frame queue — setParam's third arg is that hint.
+        const sampleFrame = Math.round(time * this.deps.context.sampleRate);
+        dn.controller.setParam(paramId, value, sampleFrame);
     }
 
     public scheduleDeviceKeyOn(deviceId: string, pitch: number, velocity: number, time?: number): void {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
-        if (dn?.wamControls?.keyOn) {
-            dn.wamControls.keyOn(0, pitch, velocity, time);
-        }
+        dn?.controller?.keyOn?.(0, pitch, velocity, time);
     }
 
     public scheduleDeviceKeyOff(deviceId: string, pitch: number, velocity: number, time?: number): void {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
-        if (dn?.wamControls?.keyOff) {
-            dn.wamControls.keyOff(0, pitch, velocity, time);
-        }
+        dn?.controller?.keyOff?.(0, pitch, velocity, time);
     }
 
     public updateBypass(deviceId: string, bypassed: boolean): void {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
-        if (!dn || !dn.controller) {
-            return;
-        }
-        dn.controller.setBypass(bypassed);
+        dn?.controller?.setBypass?.(bypassed);
     }
 
     public dispose(): void {

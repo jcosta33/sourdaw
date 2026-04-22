@@ -12,9 +12,9 @@ export interface DeviceController {
     setParam(name: string, value: number, sampleFrame?: number): void;
     scheduleParam?(name: string, value: number, time: number): void;
     setPatch?(patch: Record<string, unknown>): void;
-    setBypass(bypassed: boolean): void;
+    setBypass?(bypassed: boolean): void;
     destroy?(): void;
-    
+
     // Optional device-specific methods (Shims/Extensions)
     noteOn?(note: number, velocity: number, sampleFrame?: number): void;
     noteOff?(note: number, sampleFrame?: number): void;
@@ -28,6 +28,8 @@ export interface DeviceController {
     setTemperament?(index: number): void;
     loadAttackClip?(key: number, samples: Float32Array): void;
     updateState?(clips: Record<string, any>): void;
+    keyOn?(channel: number, pitch: number, velocity: number, time?: number): void;
+    keyOff?(channel: number, pitch: number, velocity: number, time?: number): void;
 }
 
 export type BuiltinDeviceNode = {
@@ -45,14 +47,6 @@ export type BuiltinDeviceNode = {
     nativeDspControls?: {
         setParam: (name: string, value: number) => void;
         setBypass: (bypassed: boolean) => void;
-    };
-    /** Generic controls for Web Audio Modules (WAM) / Faust */
-    wamControls?: {
-        setParam: (name: string, value: number) => void;
-        scheduleParam: (name: string, value: number, time: number) => void;
-        keyOn?: (channel: number, pitch: number, velocity: number, time?: number) => void;
-        keyOff?: (channel: number, pitch: number, velocity: number, time?: number) => void;
-        destroy?: () => void;
     };
     /** Controls for the Fermenter synthesizer (MIDI + param updates via MessagePort) */
     fermenterControls?: {

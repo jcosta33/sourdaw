@@ -568,12 +568,6 @@ const faustDescriptor: WasmDeviceDescriptor = {
         placeholder.controller = {
             setParam: (name, value) => pending.push({ kind: 'param', name, value }),
             scheduleParam: (name, value, time) => pending.push({ kind: 'param', name, value, time }),
-            setBypass: () => {},
-            destroy: () => {},
-        };
-        placeholder.wamControls = {
-            setParam: (name, value) => pending.push({ kind: 'param', name, value }),
-            scheduleParam: (name, value, time) => pending.push({ kind: 'param', name, value, time }),
             keyOn: (channel, pitch, velocity, time) =>
                 pending.push({ kind: 'keyOn', channel, pitch, velocity, time }),
             keyOff: (channel, pitch, velocity, time) =>
@@ -586,17 +580,20 @@ const faustDescriptor: WasmDeviceDescriptor = {
                     return;
                 }
                 const controls = result.wamControls;
+                if (!controls) {
+                    return;
+                }
                 for (const event of pending) {
                     if (event.kind === 'param') {
                         if (event.time !== undefined) {
-                            controls?.scheduleParam(event.name, event.value, event.time);
+                            controls.scheduleParam(event.name, event.value, event.time);
                         } else {
-                            controls?.setParam(event.name, event.value);
+                            controls.setParam(event.name, event.value);
                         }
                     } else if (event.kind === 'keyOn') {
-                        controls?.keyOn?.(event.channel, event.pitch, event.velocity, event.time);
+                        controls.keyOn?.(event.channel, event.pitch, event.velocity, event.time);
                     } else {
-                        controls?.keyOff?.(event.channel, event.pitch, event.velocity, event.time);
+                        controls.keyOff?.(event.channel, event.pitch, event.velocity, event.time);
                     }
                 }
                 onLoaded({
@@ -606,12 +603,12 @@ const faustDescriptor: WasmDeviceDescriptor = {
                     inputNode: result.inputNode,
                     outputNode: result.outputNode,
                     controller: {
-                        setParam: controls?.setParam ?? (() => {}),
-                        scheduleParam: controls?.scheduleParam,
-                        destroy: controls?.destroy,
-                        setBypass: () => {},
+                        setParam: controls.setParam,
+                        scheduleParam: controls.scheduleParam,
+                        keyOn: controls.keyOn,
+                        keyOff: controls.keyOff,
+                        destroy: controls.destroy,
                     },
-                    wamControls: controls,
                 });
                 eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
             })
