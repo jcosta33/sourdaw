@@ -25,7 +25,7 @@ vi.mock('../../../helpers/oklchColor', () => ({
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, fallback) => fallback || store.value),
+    useStore: vi.fn(<TData,>(store: { value: TData | null }, fallback?: TData) => fallback ?? store.value),
 }));
 
 describe('NotePropertyLane', () => {

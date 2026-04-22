@@ -1,5 +1,0 @@
-src/modules/Transport/useCases/transportControls/__tests__/toggleOverdub.spec.ts
-src/modules/Transport/useCases/transportControls/__tests__/togglePreRoll.spec.ts
-src/modules/Transport/useCases/transportControls/__tests__/togglePunchEnabled.spec.ts
-src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
-src/modules/Transport/useCases/transportQueries/__tests__/getTransportState.spec.ts

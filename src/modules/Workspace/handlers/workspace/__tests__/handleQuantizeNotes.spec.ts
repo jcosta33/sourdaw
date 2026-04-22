@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     quantizeNotes: mocks.quantizeNotes,
 }));
 

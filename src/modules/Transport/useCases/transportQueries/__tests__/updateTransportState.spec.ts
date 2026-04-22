@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { type TransportState } from '../../../models/TransportState';
 import { updateTransportState } from '../updateTransportState';
 
 const mocks = vi.hoisted(() => ({
@@ -7,7 +8,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../repositories/transport/updateTransportState', () => ({
-    updateTransportState: (patch: any) => mocks.updateTransportStateRepo(patch),
+    updateTransportState: (patch: Partial<TransportState>) => {
+        mocks.updateTransportStateRepo(patch);
+    },
 }));
 
 describe('updateTransportState', () => {
