@@ -81,10 +81,17 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
     }
 
     const handshake = createReadyHandshake({ pluginName: 'GrinderNode' });
-    node.port.onmessage = (event: MessageEvent) => {
+    node.port.onmessage = (event: MessageEvent<unknown>) => {
         const outcome = handshake.onMessage(event);
-        if (outcome === 'late' && event.data?.type === 'error') {
-            logger.warn('GrinderNode runtime fault (WASM panic — processor faulted):', event.data.message);
+        if (
+            outcome === 'late' &&
+            event.data &&
+            typeof event.data === 'object' &&
+            'type' in event.data &&
+            event.data.type === 'error'
+        ) {
+            const message = 'message' in event.data ? String(event.data.message) : 'Unknown error';
+            logger.warn('GrinderNode runtime fault (WASM panic — processor faulted):', message);
         }
     };
     const readyPromise = handshake.promise;

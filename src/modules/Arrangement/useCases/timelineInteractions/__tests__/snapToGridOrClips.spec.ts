@@ -2,7 +2,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { snapToGridOrClips } from '../snapToGridOrClips';
 
-let mockTrackValue: any = null;
+let mockTrackValue: {
+    tracks: { id: string; clips: { id: string; startBeat: number; endBeat: number }[] }[];
+    selectedTrackId: string | null;
+} | null = null;
 vi.mock('../../../stores/trackStore', () => ({
     trackStore: {
         get value() {
@@ -11,9 +14,9 @@ vi.mock('../../../stores/trackStore', () => ({
     },
 }));
 
-const mockSnapToGrid = vi.fn();
+const mockSnapToGrid = vi.fn<(beat: number) => number>();
 vi.mock('../snapToGrid', () => ({
-    snapToGrid: (...args: any[]) => mockSnapToGrid(...args),
+    snapToGrid: (beat: number) => mockSnapToGrid(beat),
 }));
 
 describe('snapToGridOrClips', () => {

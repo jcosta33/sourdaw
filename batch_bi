@@ -1,5 +1,0 @@
-src/modules/Arrangement/useCases/marker/markerOperations/__tests__/addMarker.spec.ts
-src/modules/Arrangement/useCases/marker/sectionOperations/__tests__/addSection.spec.ts
-src/modules/Arrangement/useCases/scratchPad/__tests__/addScratchPadSection.spec.ts
-src/modules/Arrangement/useCases/scratchPad/__tests__/scratchPadCrud.spec.ts
-src/modules/Arrangement/useCases/timelineInteractions/__tests__/hitTestClip.spec.ts
