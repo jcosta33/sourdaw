@@ -150,7 +150,7 @@ describe('panelToggles', () => {
             ['toggleCommandPalette', toggleCommandPalette, () => toggleCommandPalette(), { commandPaletteOpen: true }],
             ['toggleWorkspaceMode', toggleWorkspaceMode, () => toggleWorkspaceMode(), { mode: 'clip' }],
         ])('should patch state for %s', (_label, subject, invoke, expected) => {
-            vi.mocked(getWorkspaceState).mockReturnValue(base() as any);
+            vi.mocked(getWorkspaceState).mockReturnValue(base());
             vi.mocked(updateWorkspaceState).mockClear();
             invoke();
             expect(updateWorkspaceState).toHaveBeenCalledWith(expected);
@@ -160,7 +160,7 @@ describe('panelToggles', () => {
             vi.mocked(getWorkspaceState).mockReturnValue({
                 ...base(),
                 selectedClipIds: [],
-            } as any);
+            });
             vi.mocked(updateWorkspaceState).mockClear();
 
             toggleClipInSelection('n1');
@@ -175,7 +175,7 @@ describe('panelToggles', () => {
             vi.mocked(getWorkspaceState).mockReturnValue({
                 ...base(),
                 selectedClipIds: ['n1', 'n2'],
-            } as any);
+            });
             vi.mocked(updateWorkspaceState).mockClear();
 
             toggleClipInSelection('n1');

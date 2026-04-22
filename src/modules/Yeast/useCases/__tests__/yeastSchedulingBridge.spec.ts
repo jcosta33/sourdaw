@@ -4,7 +4,7 @@ import { processYeastMidi } from '../yeastSchedulingBridge/processRealtimeMidiIn
 
 const mocks = vi.hoisted(() => ({
     getYeastRack: vi.fn(),
-    transportStore: { value: null as any },
+    transportStore: { value: null as { tempo: number; isPlaying: boolean; timeSignatureNumerator: number; timeSignatureDenominator: number; loopStart: number; loopEnd: number } | null },
     getAudioContext: vi.fn(),
 }));
 
@@ -36,7 +36,7 @@ describe('processYeastMidi', () => {
         mocks.getYeastRack.mockReturnValue({
             getProcessorIds: () => [],
             processBlock: vi.fn(),
-        } as any);
+        });
         mocks.transportStore.value = {
             tempo: 120,
             isPlaying: true,
@@ -47,7 +47,7 @@ describe('processYeastMidi', () => {
         };
         mocks.getAudioContext.mockReturnValue({
             sampleRate: 48000,
-        } as any);
+        });
 
         const out = processYeastMidi(events, 0, 128);
 
