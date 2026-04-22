@@ -1,5 +1,0 @@
-src/modules/AudioEngine/services/__tests__/recordingProcessor.spec.ts
-src/modules/AudioEngine/useCases/audioWarping/__tests__/enableWarping.spec.ts
-src/modules/Automation/useCases/automation/__tests__/automationPoints.spec.ts
-src/modules/Command/useCases/__tests__/pushUndoEntry.spec.ts
-src/modules/GrandBoule/useCases/__tests__/grandBoule.spec.ts
