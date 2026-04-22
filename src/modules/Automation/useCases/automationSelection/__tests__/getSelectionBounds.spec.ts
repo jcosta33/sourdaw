@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type AutomationPoint, createAutomationLane } from '#/modules/Automation/models/Automation';
+
 import { getSelectionBounds } from '../getSelectionBounds';
 
 const mocks = vi.hoisted(() => ({
-    automationStoreValue: { value: { lanes: [] } },
+    automationStoreValue: { value: { lanes: [] as import('#/modules/Automation/models/Automation').AutomationLane[] } },
 }));
 
 vi.mock('../../../stores/automationStore', () => ({
@@ -20,13 +22,15 @@ describe('getSelectionBounds', () => {
     });
 
     it('calculates bounding box of selected points', () => {
-        const points = [
-            { beat: 0, value: 0 },
-            { beat: 4, value: 0.8 }, // Selected
-            { beat: 8, value: 0.2 }, // Selected
-            { beat: 12, value: 1.0 },
+        const points: AutomationPoint[] = [
+            { beat: 0, value: 0, curve: 'linear', tension: 0 },
+            { beat: 4, value: 0.8, curve: 'linear', tension: 0 }, // Selected
+            { beat: 8, value: 0.2, curve: 'linear', tension: 0 }, // Selected
+            { beat: 12, value: 1.0, curve: 'linear', tension: 0 },
         ];
-        mocks.automationStoreValue.value = { lanes: [{ id: 'l1', points }] } as any;
+        mocks.automationStoreValue.value = {
+            lanes: [{ ...createAutomationLane('t1', 'gain', 'Gain'), id: 'l1', points }],
+        };
 
         const bounds = getSelectionBounds('l1', [4, 8]);
 
@@ -39,12 +43,15 @@ describe('getSelectionBounds', () => {
     });
 
     it('returns null if lane not found', () => {
-        mocks.automationStoreValue.value = { lanes: [] } as any;
+        mocks.automationStoreValue.value = { lanes: [] };
         expect(getSelectionBounds('l1', [0])).toBeNull();
     });
 
     it('returns null if no points found at selected beats', () => {
-        mocks.automationStoreValue.value = { lanes: [{ id: 'l1', points: [{ beat: 10, value: 1 }] }] } as any;
+        const points: AutomationPoint[] = [{ beat: 10, value: 1, curve: 'linear', tension: 0 }];
+        mocks.automationStoreValue.value = {
+            lanes: [{ ...createAutomationLane('t1', 'gain', 'Gain'), id: 'l1', points }],
+        };
         expect(getSelectionBounds('l1', [0])).toBeNull();
     });
 });

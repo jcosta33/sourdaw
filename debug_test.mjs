@@ -1,4 +1,5 @@
-import fs from 'fs';
-let content = fs.readFileSync('src/modules/Automation/useCases/automationRecording/__tests__/stopAutomationRecording.spec.ts', 'utf8');
-content = content.replace('stopAutomationRecording();', 'console.log("BEFORE"); stopAutomationRecording(); console.log("AFTER");');
-fs.writeFileSync('src/modules/Automation/useCases/automationRecording/__tests__/stopAutomationRecording.spec.ts', content);
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { getTrackById } from '#/modules/Arrangement/useCases';
+import { isRecordingAutomation } from './src/modules/Automation/useCases/automationRecording/isRecordingAutomation';
+
+console.log("getTrackById is:", getTrackById);

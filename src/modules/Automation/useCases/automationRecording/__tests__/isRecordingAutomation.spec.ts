@@ -1,20 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { getTrackById } from '#/modules/Arrangement/useCases';
-
 import { isRecordingAutomation } from '../isRecordingAutomation';
 
-const { activeRecording, touchActive } = vi.hoisted(() => {
+import type { Track } from '#/modules/Arrangement/models/Track';
+
+const { activeRecording, touchActive, getTrackByIdMock } = vi.hoisted(() => {
     const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
     const touchActive = new Set<string>();
-    return { activeRecording, touchActive };
+    const getTrackByIdMock = vi.fn<(id: string) => import('#/modules/Arrangement/models/Track').Track | undefined>();
+    return { activeRecording, touchActive, getTrackByIdMock };
 });
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
         ...mod,
-        getTrackById: vi.fn(),
+        getTrackById: getTrackByIdMock,
     };
 });
 
@@ -42,7 +43,7 @@ describe('isRecordingAutomation', () => {
             startBeat: 0,
             lastValue: null,
         });
-        vi.mocked(getTrackById).mockReturnValue(undefined);
+        getTrackByIdMock.mockReturnValue(undefined);
 
         expect(isRecordingAutomation('t1', 'gain')).toBe(false);
     });
@@ -54,11 +55,11 @@ describe('isRecordingAutomation', () => {
             startBeat: 0,
             lastValue: null,
         });
-        vi.mocked(getTrackById).mockReturnValue({
+        getTrackByIdMock.mockReturnValue({
             id: 't1',
             kind: 'audio',
             automationMode: 'write',
-        } as any);
+        } as Track);
 
         expect(isRecordingAutomation('t1', 'gain')).toBe(true);
     });
@@ -70,11 +71,11 @@ describe('isRecordingAutomation', () => {
             startBeat: 0,
             lastValue: null,
         });
-        vi.mocked(getTrackById).mockReturnValue({
+        getTrackByIdMock.mockReturnValue({
             id: 't1',
             kind: 'audio',
             automationMode: 'touch',
-        } as any);
+        } as Track);
 
         expect(isRecordingAutomation('t1', 'gain')).toBe(false);
 
@@ -89,11 +90,11 @@ describe('isRecordingAutomation', () => {
             startBeat: 0,
             lastValue: null,
         });
-        vi.mocked(getTrackById).mockReturnValue({
+        getTrackByIdMock.mockReturnValue({
             id: 't1',
             kind: 'audio',
             automationMode: 'latch',
-        } as any);
+        } as Track);
 
         expect(isRecordingAutomation('t1', 'gain')).toBe(false);
 

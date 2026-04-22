@@ -1,5 +1,0 @@
-src/modules/AudioAnalysis/useCases/__tests__/mixHealthAnalysis.spec.ts
-src/modules/AudioEngine/repositories/devices/__tests__/reverbDelayFactories.spec.ts
-src/modules/AudioEngine/useCases/__tests__/conversions.spec.ts
-src/modules/AudioEngine/useCases/audioAnalysis/analyzePitchForClip.ts
-src/modules/AudioEngine/useCases/audioAnalysis/processPitchEditWasm.ts
