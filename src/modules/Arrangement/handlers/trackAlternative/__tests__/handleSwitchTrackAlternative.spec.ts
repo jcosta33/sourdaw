@@ -2,9 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleSwitchTrackAlternative } from '../handleSwitchTrackAlternative';
 
+type MockTrack = {
+    id: string;
+    activeAlternativeId: string;
+    clips?: Array<{ id: string }>;
+    alternatives: Array<{ id: string; clips?: Array<{ id: string }> }>;
+};
+
 const mocks = vi.hoisted(() => ({
-    getTrackStoreState: vi.fn(),
-    setTrackStoreState: vi.fn(),
+    getTrackStoreState: vi.fn<() => { tracks: MockTrack[] }>(),
+    setTrackStoreState: vi.fn<(state: { tracks: MockTrack[] }) => void>(),
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
