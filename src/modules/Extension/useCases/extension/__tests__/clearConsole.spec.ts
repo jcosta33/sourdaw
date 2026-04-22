@@ -4,7 +4,7 @@ import { type ExtensionMarketplaceState } from '../../../stores/extension';
 import { clearConsole } from '../clearConsole';
 
 const mocks = vi.hoisted(() => ({
-    extensionStore: { value: null as any, set: vi.fn() },
+    extensionStore: { value: null as unknown as ExtensionMarketplaceState | null, set: vi.fn<(...args: unknown[]) => void>() },
 }));
 
 vi.mock('../../../stores/extension', async (importOriginal) => {
@@ -29,7 +29,7 @@ describe('clearConsole', () => {
     });
 
     it('clears consoleLog', () => {
-        const set = vi.fn();
+        const set = vi.fn<(...args: unknown[]) => void>();
         mocks.extensionStore.value = baseState({
             consoleLog: [{ timestamp: '', level: 'info', message: 'x' }],
         });

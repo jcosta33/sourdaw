@@ -4,8 +4,8 @@ import { type ExtensionMarketplaceState, type ScriptCommand } from '../../../sto
 import { executeCommand } from '../executeCommand';
 
 const mocks = vi.hoisted(() => ({
-    extensionStore: { value: null as any, set: vi.fn() },
-    appendLog: vi.fn(),
+    extensionStore: { value: null as unknown as ExtensionMarketplaceState | null, set: vi.fn<(...args: unknown[]) => void>() },
+    appendLog: vi.fn<(...args: unknown[]) => void>(),
 }));
 
 vi.mock('../../../stores/extension', async (importOriginal) => {
@@ -34,7 +34,7 @@ describe('executeCommand', () => {
     });
 
     it('runs handler when command exists', () => {
-        const handler = vi.fn();
+        const handler = vi.fn<() => void | Promise<void>>();
         const cmds: ScriptCommand[] = [{ id: 'ext.cmd', extensionId: 'ext', label: 'C', description: '', handler }];
         mocks.extensionStore.value = baseState({ commands: cmds });
 

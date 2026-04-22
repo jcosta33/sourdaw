@@ -5,11 +5,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleCrumbsFileDrop } from '../handleFileDrop';
 
 const mocks = vi.hoisted(() => ({
-    isTauri: vi.fn(),
-    loadSampleFromPath: vi.fn(),
-    switchCrumbsMode: vi.fn(),
-    crumbsStore: { value: null as any },
-    logger: { warn: vi.fn() },
+    isTauri: vi.fn<() => boolean>(),
+    loadSampleFromPath: vi.fn<() => Promise<void>>(),
+    switchCrumbsMode: vi.fn<() => void>(),
+    crumbsStore: { value: null as unknown as Record<string, import('../../stores/crumbsStore').CrumbsState> | null },
+    logger: { warn: vi.fn<() => void>() },
 }));
 
 vi.mock('#/utils/tauriBridge', () => ({
@@ -43,9 +43,9 @@ describe('handleCrumbsFileDrop', () => {
 
         const file = new File([], 'clip.wav', { type: 'audio/wav' });
         const event = {
-            preventDefault: vi.fn(),
-            stopPropagation: vi.fn(),
-            dataTransfer: { files: [file] },
+            preventDefault: vi.fn<() => void>(),
+            stopPropagation: vi.fn<() => void>(),
+            dataTransfer: { files: [file] as unknown as FileList },
         } as unknown as DragEvent;
 
         await handleCrumbsFileDrop('instance-1', event);

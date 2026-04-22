@@ -1,5 +1,0 @@
-src/modules/Command/stores/__tests__/undoTree.spec.ts
-src/modules/Command/useCases/__tests__/deselectAllClips.spec.ts
-src/modules/Command/useCases/keyboardShortcutActions/workspaceShortcuts/__tests__/zoomToFit.spec.ts
-src/modules/CrdtDocument/useCases/__tests__/createCrdtDoc.spec.ts
-src/modules/CrdtDocument/useCases/__tests__/getCrdtDoc.spec.ts
