@@ -1,5 +1,0 @@
-src/modules/CrdtDocument/useCases/__tests__/revertAction.spec.ts
-src/modules/MIDI/useCases/midiNoteCrud/__tests__/shiftClipMidiNotes.spec.ts
-src/modules/MIDI/useCases/patternInstance/__tests__/createPatternInstance.spec.ts
-src/modules/Project/presentations/views/__tests__/ArrangementSelector.spec.tsx
-src/modules/Project/useCases/demoProjects/resonance/createResonanceDemo.ts

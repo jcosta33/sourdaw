@@ -1,5 +1,4 @@
 import { invoke } from '@tauri-apps/api/core';
-import { readTextFile } from '@tauri-apps/plugin-fs';
 
 import { registerTuningTable } from '#/modules/AudioEngine';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -19,10 +18,14 @@ export async function importSclFile(): Promise<void> {
     }
 
     try {
-        const path = typeof paths[0] === 'string' ? paths[0] : (paths[0] as any).path;
-        const content = await readTextFile(path);
+        const firstFile = paths[0];
+        if (!firstFile) {
+            return;
+        }
 
-        const result = (await (invoke as any)('parse_scl', {
+        const content = await firstFile.text();
+
+        const result = (await invoke('parse_scl', {
             content,
         })) as {
             name: string;

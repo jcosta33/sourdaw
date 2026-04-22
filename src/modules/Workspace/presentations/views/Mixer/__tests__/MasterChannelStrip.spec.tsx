@@ -5,19 +5,19 @@ import { MasterChannelStrip } from '../MasterChannelStrip';
 
 // Mock hooks
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn(() => ({
+    useStore: vi.fn<() => { masterGain: number }>(() => ({
         masterGain: 80,
     })),
 }));
 
 // Mock useCases
 vi.mock('#/modules/Transport/useCases/setMasterGain', () => ({
-    setMasterGain: vi.fn(),
+    setMasterGain: vi.fn<(gain: number) => void>(),
 }));
 
 // Mock child components
 vi.mock('#/components/daw/DawChannelStripShell', () => ({
-    DawChannelStripShell: ({ children, className }: any) => (
+    DawChannelStripShell: ({ children, className }: { children: React.ReactNode; className?: string }) => (
         <div data-testid="channel-strip-shell" className={className}>
             {children}
         </div>
@@ -25,7 +25,7 @@ vi.mock('#/components/daw/DawChannelStripShell', () => ({
 }));
 
 vi.mock('#/components/daw/Fader', () => ({
-    Fader: ({ value, onChange }: any) => (
+    Fader: ({ value, onChange }: { value: number; onChange: (val: number) => void }) => (
         <input
             type="range"
             data-testid="fader"
@@ -36,7 +36,7 @@ vi.mock('#/components/daw/Fader', () => ({
 }));
 
 vi.mock('../MixerLevelReadout', () => ({
-    MixerLevelReadout: ({ control, value }: any) => (
+    MixerLevelReadout: ({ control, value }: { control: React.ReactNode; value: React.ReactNode }) => (
         <div data-testid="mixer-level-readout">
             {control}
             <span data-testid="level-value">{value}</span>

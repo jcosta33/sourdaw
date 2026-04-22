@@ -5,7 +5,7 @@ import { ScoringPanel } from '../ScoringPanel';
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((_store, _defaultValue) => {
+    useStore: vi.fn((_store: unknown, _defaultValue: unknown) => {
         // Return a mock state for scoringStore
         return {
             'device-123': {
@@ -24,7 +24,7 @@ vi.mock('#/infra/store/useStore', () => ({
 
 vi.mock('../../../stores/scoringStore', () => ({
     scoringStore: { name: 'scoringStore' },
-    getScoringState: vi.fn((_deviceId) => ({
+    getScoringState: vi.fn((_deviceId: unknown) => ({
         noteName: 'A',
         octave: 4,
         cents: 0,
@@ -37,11 +37,11 @@ vi.mock('../../../stores/scoringStore', () => ({
 }));
 
 vi.mock('../../../useCases/setDisplayMode', () => ({
-    setDisplayMode: vi.fn(),
+    setDisplayMode: vi.fn<(...args: unknown[]) => unknown>(),
 }));
 
 vi.mock('../../../useCases/setA4Reference', () => ({
-    setA4Reference: vi.fn(),
+    setA4Reference: vi.fn<(...args: unknown[]) => unknown>(),
 }));
 
 // Mock UI components
@@ -50,7 +50,15 @@ vi.mock('#/components/daw/DawPluginLed', () => ({
 }));
 
 vi.mock('#/components/daw/DawPluginMetricTile', () => ({
-    DawPluginMetricTile: ({ label, value, detail }: any) => (
+    DawPluginMetricTile: ({
+        label,
+        value,
+        detail,
+    }: {
+        label: React.ReactNode;
+        value: React.ReactNode;
+        detail?: React.ReactNode;
+    }) => (
         <div data-testid="metric-tile">
             <span>{label}</span>
             <span>{value}</span>
@@ -60,7 +68,15 @@ vi.mock('#/components/daw/DawPluginMetricTile', () => ({
 }));
 
 vi.mock('#/components/daw/DawPluginSectionCard', () => ({
-    DawPluginSectionCard: ({ title, children, detail }: any) => (
+    DawPluginSectionCard: ({
+        title,
+        children,
+        detail,
+    }: {
+        title: React.ReactNode;
+        children?: React.ReactNode;
+        detail?: React.ReactNode;
+    }) => (
         <div data-testid="section-card">
             <h3>{title}</h3>
             <div>{detail}</div>
@@ -70,7 +86,7 @@ vi.mock('#/components/daw/DawPluginSectionCard', () => ({
 }));
 
 vi.mock('#/components/daw/RotaryKnob', () => ({
-    RotaryKnob: ({ value, onChange }: any) => (
+    RotaryKnob: ({ value, onChange }: { value: number; onChange: (val: number) => void }) => (
         <input
             type="range"
             value={value}
