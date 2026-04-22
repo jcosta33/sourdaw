@@ -11,7 +11,7 @@ vi.mock('../../repositories/workspace', () => ({
 describe('getWorkspaceState', () => {
     it('should forward to the workspace repository', () => {
         const snapshot = { ...defaultWorkspaceState };
-        vi.mocked(repoGetWorkspaceState).mockReturnValue(snapshot as any);
+        vi.mocked(repoGetWorkspaceState).mockReturnValue(snapshot);
 
         expect(getWorkspaceState()).toBe(snapshot);
         expect(repoGetWorkspaceState).toHaveBeenCalledTimes(1);

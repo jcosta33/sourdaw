@@ -1,5 +1,6 @@
+import type { ReactNode } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { useStore } from '#/infra/store/useStore';
 import { togglePlayback } from '#/modules/Transport/useCases/transportControls/togglePlayback';
@@ -8,7 +9,7 @@ import { TransportBar } from '../TransportBar';
 
 // Mock hooks
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn(),
+    useStore: vi.fn<typeof useStore>(),
 }));
 
 vi.mock('../../hooks/useTransportState', () => ({
@@ -17,16 +18,16 @@ vi.mock('../../hooks/useTransportState', () => ({
         isRecording: false,
         isLooping: false,
         playheadPosition: 0,
-        togglePlay: vi.fn(),
-        toggleRecord: vi.fn(),
-        toggleLoop: vi.fn(),
-        stop: vi.fn(),
-        seekToStart: vi.fn(),
+        togglePlay: vi.fn<() => void>(),
+        toggleRecord: vi.fn<() => void>(),
+        toggleLoop: vi.fn<() => void>(),
+        stop: vi.fn<() => void>(),
+        seekToStart: vi.fn<() => void>(),
     })),
 }));
 
 vi.mock('#/modules/Transport/useCases/transportControls/togglePlayback', () => ({
-    togglePlayback: vi.fn(),
+    togglePlayback: vi.fn<typeof togglePlayback>(),
 }));
 
 // Mock child components
@@ -47,14 +48,14 @@ vi.mock('../TempoEditor', () => ({
 }));
 
 vi.mock('#/components/daw/DawInlineHint', () => ({
-    DawInlineHint: ({ children }: any) => <div data-testid="inline-hint">{children}</div>,
+    DawInlineHint: ({ children }: { children: ReactNode }) => <div data-testid="inline-hint">{children}</div>,
 }));
 
 describe('TransportBar', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(useStore).mockImplementation((store, defaultValue) => {
-            return defaultValue || {};
+            return (defaultValue ?? {}) as typeof defaultValue;
         });
     });
 

@@ -1,5 +1,0 @@
-src/modules/Workspace/presentations/views/Inspector/ClipInspector.tsx
-src/modules/Workspace/presentations/views/Sidebar/SidebarTypes.ts
-src/modules/Workspace/presentations/views/Sidebar/__tests__/effectsTabHelpers.spec.tsx
-src/modules/Workspace/presentations/views/__tests__/ArrangeView.spec.tsx
-src/modules/Workspace/presentations/views/__tests__/AutomationBottomPanel.spec.tsx
