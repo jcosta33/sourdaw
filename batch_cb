@@ -1,5 +1,0 @@
-src/modules/Arrangement/useCases/clipEditing/__tests__/trimClipStart.spec.ts
-src/modules/Arrangement/useCases/device/setDeviceParameter/__tests__/setDeviceParameter.spec.ts
-src/modules/Arrangement/useCases/recording/__tests__/stopRecording.spec.ts
-src/modules/Arrangement/useCases/scratchPad/__tests__/captureCommit.spec.ts
-src/modules/AudioEngine/engine/FermenterNode.ts

@@ -1,5 +1,0 @@
-src/modules/AudioEngine/engine/TrackNode.ts
-src/modules/AudioEngine/repositories/audioDecoding/wasmDecoding/__tests__/wasmDecodedToAudioBuffer.spec.ts
-src/modules/AudioEngine/repositories/deviceStrategy/FaustDeviceStrategy.ts
-src/modules/AudioEngine/repositories/linkBridge/__tests__/linkBridge.spec.ts
-src/modules/AudioEngine/repositories/nativeAIBridge/__tests__/isTauri.spec.ts
