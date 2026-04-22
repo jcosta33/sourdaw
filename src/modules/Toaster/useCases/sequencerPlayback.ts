@@ -20,32 +20,50 @@ import { triggerToasterPad } from './triggerPad';
 // playback session lives behind one named handle. Mutation still happens
 // through named setters, so importers can't reassign \`running = true\`
 // from outside this module.
-const sequencerState = {
-    running: false,
-    fillActive: false,
-    playCount: 0,
-    /** AudioContext time of the next step tick. */
-    nextTickTime: 0,
-    timeoutId: null as ReturnType<typeof setTimeout> | null,
+type SequencerState = {
+    running: boolean;
+    fillActive: boolean;
+    playCount: number;
+    nextTickTime: number;
+    timeoutId: ReturnType<typeof setTimeout> | null;
 };
 
-export function setFillActive(active: boolean): void {
-    sequencerState.fillActive = active;
+const sequencerStates = new Map<string, SequencerState>();
+
+function getSeqState(deviceId: string): SequencerState {
+    let state = sequencerStates.get(deviceId);
+    if (!state) {
+        state = {
+            running: false,
+            fillActive: false,
+            playCount: 0,
+            nextTickTime: 0,
+            timeoutId: null,
+        };
+        sequencerStates.set(deviceId, state);
+    }
+    return state;
 }
 
-function shouldTrigger(step: Step, loopIndex: number): boolean {
+export function setFillActive(deviceId: string, active: boolean): void {
+    getSeqState(deviceId).fillActive = active;
+}
+
+function shouldTrigger(deviceId: string, step: Step, loopIndex: number): boolean {
     if (!step.active) {
         return false;
     }
 
+    const seqState = getSeqState(deviceId);
+
     switch (step.condition) {
         case 'fill':
-            if (!sequencerState.fillActive) {
+            if (!seqState.fillActive) {
                 return false;
             }
             break;
         case 'not-fill':
-            if (sequencerState.fillActive) {
+            if (seqState.fillActive) {
                 return false;
             }
             break;
@@ -70,12 +88,13 @@ function shouldTrigger(step: Step, loopIndex: number): boolean {
     return true;
 }
 
-function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
-    if (!sequencerState.running) {
+function tick(deviceId: string, currentStep: number, bpm: number, stepsPerBeat: number): void {
+    const seqState = getSeqState(deviceId);
+    if (!seqState.running) {
         return;
     }
 
-    const state = toasterStore.value;
+    const state = toasterStore.value?.[deviceId];
     if (!state) {
         return;
     }
@@ -105,7 +124,7 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
         if (!step) {
             continue;
         }
-        if (!shouldTrigger(step, sequencerState.playCount)) {
+        if (!shouldTrigger(deviceId, step, seqState.playCount)) {
             continue;
         }
 
@@ -137,7 +156,7 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
         const totalDelayMs = Math.max(0, swingMs + microOffsetMs);
 
         const fire = () => {
-            triggerToasterPad(track.padIndex, vel);
+            triggerToasterPad(deviceId, track.padIndex, vel);
             if (step.soundLock && pad && toasterDeviceId) {
                 const defaultIdx = TOASTER_ENGINE_MAP[pad.engineType] ?? 0;
                 setPadEngineImmediate(toasterDeviceId, track.padIndex, defaultIdx);
@@ -154,43 +173,45 @@ function tick(currentStep: number, bpm: number, stepsPerBeat: number): void {
             const subInterval = stepDurationMs / (step.retriggerCount + 1);
             for (let r = 1; r <= step.retriggerCount; r++) {
                 const retrigVel = Math.max(20, Math.round(vel * (1 - r * 0.12)));
-                setTimeout(() => triggerToasterPad(track.padIndex, retrigVel), totalDelayMs + subInterval * r);
+                setTimeout(() => triggerToasterPad(deviceId, track.padIndex, retrigVel), totalDelayMs + subInterval * r);
             }
         }
     }
 
-    toasterStore.set({ ...state, currentStep, isPlaying: true });
+    toasterStore.set({ ...toasterStore.value, [deviceId]: { ...state, currentStep, isPlaying: true } });
 
     const stepDurationSec = stepDurationMs / 1000;
     const nextStep = (currentStep + 1) % totalSteps;
     if (nextStep === 0) {
-        sequencerState.playCount++;
+        seqState.playCount++;
     }
 
-    sequencerState.nextTickTime += stepDurationSec;
+    seqState.nextTickTime += stepDurationSec;
     const now = getAudioTime();
-    const delayMs = Math.max(1, (sequencerState.nextTickTime - now) * 1000);
+    const delayMs = Math.max(1, (seqState.nextTickTime - now) * 1000);
 
-    sequencerState.timeoutId = setTimeout(() => tick(nextStep, bpm, stepsPerBeat), delayMs);
+    seqState.timeoutId = setTimeout(() => tick(deviceId, nextStep, bpm, stepsPerBeat), delayMs);
 }
 
-export function startSequencer(bpm: number, stepsPerBeat: number = 4): void {
-    stopSequencer();
-    sequencerState.running = true;
-    sequencerState.playCount = 0;
-    sequencerState.nextTickTime = getAudioTime();
-    tick(0, bpm, stepsPerBeat);
+export function startSequencer(deviceId: string, bpm: number, stepsPerBeat: number = 4): void {
+    stopSequencer(deviceId);
+    const seqState = getSeqState(deviceId);
+    seqState.running = true;
+    seqState.playCount = 0;
+    seqState.nextTickTime = getAudioTime();
+    tick(deviceId, 0, bpm, stepsPerBeat);
 }
 
-export function stopSequencer(): void {
-    sequencerState.running = false;
-    if (sequencerState.timeoutId !== null) {
-        clearTimeout(sequencerState.timeoutId);
-        sequencerState.timeoutId = null;
+export function stopSequencer(deviceId: string): void {
+    const seqState = getSeqState(deviceId);
+    seqState.running = false;
+    if (seqState.timeoutId !== null) {
+        clearTimeout(seqState.timeoutId);
+        seqState.timeoutId = null;
     }
-    const state = toasterStore.value;
+    const state = toasterStore.value?.[deviceId];
     if (state) {
-        toasterStore.set({ ...state, isPlaying: false, currentStep: 0 });
+        toasterStore.set({ ...toasterStore.value, [deviceId]: { ...state, isPlaying: false, currentStep: 0 } });
     }
-    sequencerState.playCount = 0;
+    seqState.playCount = 0;
 }

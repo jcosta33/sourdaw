@@ -35,7 +35,7 @@ import { onShowDevicePanel } from '../../useCases/panels/devicePanels/onShowDevi
 export type ActiveDevicePanel =
     | { kind: 'fermenter'; deviceId: string; trackId: string | null }
     | { kind: 'toaster'; deviceId: string; trackId: string | null }
-    | { kind: 'levain'; trackId: string | null }
+    | { kind: 'levain'; deviceId: string; trackId: string | null }
     | { kind: 'proofChamber'; deviceId: string; trackId: string | null }
     | { kind: 'gluten'; deviceId: string; trackId: string | null }
     | { kind: 'bacteria'; deviceId: string; trackId: string | null }
@@ -56,7 +56,7 @@ export function useActiveDevicePanel(): UseActiveDevicePanelResult {
     const [activePanel, setActivePanel] = useState<ActiveDevicePanel | null>(null);
 
     useEffect(() => {
-        type NeedsDeviceId = Exclude<ActiveDevicePanel, { kind: 'levain' } | { kind: 'yeast' }>['kind'];
+        type NeedsDeviceId = Exclude<ActiveDevicePanel, { kind: 'yeast' }>['kind'];
         const currentTrackId = (): string | null => trackStore.value?.selectedTrackId ?? null;
         const openForKind = (kind: NeedsDeviceId) => (p: { deviceId: string | null }) => {
             if (p.deviceId === null) {
@@ -68,7 +68,7 @@ export function useActiveDevicePanel(): UseActiveDevicePanelResult {
         const subs = [
             onPanelShowFermenter(openForKind('fermenter')),
             onPanelShowToaster(openForKind('toaster')),
-            onPanelShowLevain(() => setActivePanel({ kind: 'levain', trackId: currentTrackId() })),
+            onPanelShowLevain(openForKind('levain')),
             onPanelShowDutchOven(openForKind('proofChamber')),
             onPanelShowGluten(openForKind('gluten')),
             onPanelShowBacteria(openForKind('bacteria')),

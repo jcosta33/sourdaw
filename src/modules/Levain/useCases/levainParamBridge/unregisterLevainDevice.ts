@@ -1,5 +1,5 @@
 import { levainBridge } from './levainBridge';
 
-export const unregisterLevainDevice = (): void => {
-    levainBridge().unregisterLevainDevice();
+export const unregisterLevainDevice = (deviceId: string): void => {
+    levainBridge().unregisterLevainDevice(deviceId);
 };
