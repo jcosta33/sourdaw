@@ -1,5 +1,0 @@
-src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
-src/modules/Arrangement/presentations/views/__tests__/MarkerLane.spec.tsx
-src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx
-src/modules/Arrangement/services/__tests__/computeTrackHash.spec.ts
-src/modules/Arrangement/useCases/adjustmentLayer/__tests__/addAdjustmentRegion.spec.ts
