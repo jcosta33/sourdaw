@@ -257,7 +257,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 temperature: 0.7,
                 max_tokens: 2048,
                 stream: true,
-            })) as AsyncIterable<any>;
+            })) as AsyncIterable<{ choices: Array<{ delta: { content?: string } }> }>;
 
             for await (const chunk of asyncChunkGenerator) {
                 if (aborter.signal.aborted) {
