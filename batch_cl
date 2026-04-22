@@ -1,5 +1,0 @@
-src/modules/Arrangement/useCases/rippleMove/__tests__/planRippleMove.spec.ts
-src/modules/Arrangement/useCases/timelineInteractions/__tests__/hitTestClipEdge.spec.ts
-src/modules/AudioEngine/engine/__tests__/BusNode.spec.ts
-src/modules/AudioEngine/repositories/devices/__tests__/deviceFactories.spec.ts
-src/modules/AudioEngine/repositories/devices/__tests__/modulationFactories.spec.ts
