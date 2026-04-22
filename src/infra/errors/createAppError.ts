@@ -16,11 +16,9 @@ export const createAppError = <TTag extends string, TData extends Record<string,
     data?: TData,
     cause?: unknown
 ): AppError<TTag, TData> => {
-    const error = new Error(message) as any;
-    error._tag = tag;
-    Object.assign(error, data ?? {});
+    const error = Object.assign(new Error(message), { _tag: tag }, data ?? {}) as AppError<TTag, TData>;
     if (cause !== undefined) {
-        error.cause = cause;
+        Object.defineProperty(error, 'cause', { value: cause, writable: true, enumerable: false, configurable: true });
     }
-    return error as AppError<TTag, TData>;
+    return error;
 };
