@@ -17,7 +17,7 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { CLIP_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 
-import { type Clip } from '../../../models/TrackViewTypes';
+import { type Clip, type FollowAction } from '../../../models/TrackViewTypes';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
 import { InspectorDetailHeader } from '../../components/Inspector/InspectorDetailHeader';
@@ -242,7 +242,8 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                             className="border-border-hairline py-0.5 text-[10px]"
                             value={clip.followAction ?? 'none'}
                             onChange={(event) => {
-                                const val = event.target.value === 'none' ? undefined : (event.target.value as any);
+                                const val =
+                                    event.target.value === 'none' ? undefined : (event.target.value as FollowAction);
                                 setClipFollowAction(clip.id, val);
                             }}
                         >

@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ArrangeView } from '../ArrangeView';
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, fallback) => fallback || store.value),
+    useStore: vi.fn((store: { value: unknown }, fallback?: unknown) => fallback ?? store.value),
 }));
 
 vi.mock('#/modules/Arrangement/presentations/views/TimelineSurface', () => ({

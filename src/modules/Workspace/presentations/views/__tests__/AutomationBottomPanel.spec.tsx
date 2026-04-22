@@ -134,7 +134,7 @@ vi.mock('#/modules/Arrangement/useCases/toggleTrackState/setAutomationMode', () 
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, fallback) => fallback || store.value),
+    useStore: vi.fn((store: { value: unknown }, fallback?: unknown) => fallback ?? store.value),
 }));
 
 describe('AutomationBottomPanel', () => {
