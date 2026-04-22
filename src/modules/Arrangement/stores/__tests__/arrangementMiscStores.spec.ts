@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
+import type { Clip } from '../../models/Track';
+import type { TakeLane } from '../../models/TakeLane';
+import type { MidiNote } from '#/modules/MIDI/models/MidiNote';
+
 import { clipboardStore, setClipClipboard, setNoteClipboard } from '../clipboardStore';
 import { getEnvelope, setEnvelope, __resetGainEnvelopesForTest } from '../gainEnvelopeStore';
 import { markerStore } from '../markerStore';
@@ -13,14 +17,14 @@ describe('Arrangement Misc Stores', () => {
         });
 
         it('should manage clip clipboard', () => {
-            const entry = { clip: { id: 'c1' } as any, sourceTrackId: 't1' };
+            const entry = { clip: { id: 'c1' } as unknown as Clip, sourceTrackId: 't1' };
             setClipClipboard([entry]);
             expect(clipboardStore.value?.clipClipboard).toHaveLength(1);
             expect(clipboardStore.value?.clipClipboard[0]).toEqual(entry);
         });
 
         it('should manage note clipboard', () => {
-            const entry = { notes: [{ id: 'n1' } as any] };
+            const entry = { notes: [{ id: 'n1' } as unknown as MidiNote] };
             setNoteClipboard(entry);
             expect(clipboardStore.value?.noteClipboard).toEqual(entry);
 
@@ -61,7 +65,7 @@ describe('Arrangement Misc Stores', () => {
 
         it('should store take lanes', () => {
             const lane = { id: 'l1', trackId: 't1', takes: [] };
-            takeLaneStore.set({ lanes: [lane as any] });
+            takeLaneStore.set({ lanes: [lane as unknown as TakeLane] });
             expect(takeLaneStore.value?.lanes).toHaveLength(1);
         });
     });

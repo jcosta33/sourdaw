@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import type { AdjustmentLayerState } from '../../stores/adjustmentLayer';
 import { setLayerMix } from '../setLayerMix';
 
 const mocks = vi.hoisted(() => ({
@@ -22,7 +23,7 @@ describe('setLayerMix', () => {
     it('updates layer mix value clamped between 0 and 1', () => {
         mocks.adjustmentLayerStoreValue.value = {
             layers: [{ id: 'l1', mix: 1 }],
-        } as any;
+        } as unknown as AdjustmentLayerState;
 
         setLayerMix('l1', 0.5);
         expect(mocks.adjustmentLayerStoreSet.mock.calls[0][0].layers[0].mix).toBe(0.5);

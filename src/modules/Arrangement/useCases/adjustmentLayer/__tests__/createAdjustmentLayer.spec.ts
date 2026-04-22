@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import type { AdjustmentEffectType } from '../../stores/adjustmentLayer';
 import { createAdjustmentLayer } from '../createAdjustmentLayer';
 
 const mocks = vi.hoisted(() => ({
@@ -27,7 +28,7 @@ describe('createAdjustmentLayer', () => {
     });
 
     it('creates a new adjustment layer', () => {
-        createAdjustmentLayer('Master EQ', 'EQ' as any);
+        createAdjustmentLayer('Master EQ', 'EQ' as unknown as AdjustmentEffectType);
 
         expect(mocks.adjustmentLayerStoreSet).toHaveBeenCalledTimes(1);
         const newState = mocks.adjustmentLayerStoreSet.mock.calls[0][0];

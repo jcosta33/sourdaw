@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
+import { type SoundPreset } from '../../models/SoundPreset';
 import { bassPresets } from '../bassPresets';
 import { FACTORY_PRESETS } from '../factoryPresets';
 import { keysPresets } from '../keysPresets';
@@ -8,7 +9,7 @@ import { padPresets } from '../padPresets';
 import { stringsPresets } from '../stringsPresets';
 
 describe('Factory Presets', () => {
-    function checkPresets(presets: any[]) {
+    function checkPresets(presets: SoundPreset[]) {
         expect(presets.length).toBeGreaterThan(0);
         for (const param of presets) {
             expect(param).toHaveProperty('id');
