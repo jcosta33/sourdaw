@@ -1,5 +1,0 @@
-src/modules/Arrangement/useCases/clipEditing/__tests__/reverseClip.spec.ts
-src/modules/Arrangement/useCases/groupComping/compGroupOperations/__tests__/addGroupTakeSet.spec.ts
-src/modules/AudioAnalysis/useCases/__tests__/insertPolyphonicMidiNotes.spec.ts
-src/modules/AudioEngine/services/__tests__/beatConversion.spec.ts
-src/modules/AudioEngine/useCases/audioWarping/__tests__/addWarpMarker.spec.ts
