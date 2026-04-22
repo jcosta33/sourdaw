@@ -1,5 +1,0 @@
-src/modules/Transport/useCases/setlist/__tests__/reorderSetlistItems.spec.ts
-src/modules/Transport/useCases/setlist/__tests__/setCountIn.spec.ts
-src/modules/Transport/useCases/setlist/__tests__/toggleAutoAdvance.spec.ts
-src/modules/Transport/useCases/setlist/__tests__/updateSetlistItem.spec.ts
-src/modules/Transport/useCases/transportControls/__tests__/pausePlayback.spec.ts
