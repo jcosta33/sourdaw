@@ -11,6 +11,7 @@ type LiveBus = {
     bus: AdjustmentBusNode;
     lastParamSignature: string;
     lastBlend: number;
+    disposalTimer: ReturnType<typeof setTimeout> | null;
 };
 
 export type TrackRerouteDeps = {
@@ -31,9 +32,12 @@ type ApplyInput = {
 export type AdjustmentLayerRuntime = {
     applyTick: (records: ApplyInput[]) => void;
     getBusInputForTrack: (trackId: string) => AudioNode | null;
+    getBusChainInputForTrack: (trackId: string) => AudioNode | null;
     reset: () => void;
     listLiveBusKeys: () => string[];
 };
+
+const FADE_OUT_GRACE_MS = 300;
 
 function keyFor(layerId: string, trackId: string): RegionKey {
     return `${layerId}::${trackId}`;
@@ -50,14 +54,65 @@ function paramSignature(params: Record<string, number>): string {
 
 export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): AdjustmentLayerRuntime {
     const liveBuses = new Map<RegionKey, LiveBus>();
+    const busOrderByTrack = new Map<string, string[]>();
 
-    const getBusInputForTrack = (trackId: string): AudioNode | null => {
-        for (const live of liveBuses.values()) {
-            if (live.trackId === trackId) {
-                return live.bus.inputNode;
+    const chainedBusesForTrack = (trackId: string): AdjustmentBusNode[] => {
+        const order = busOrderByTrack.get(trackId) ?? [];
+        const chain: AdjustmentBusNode[] = [];
+        for (const layerId of order) {
+            const live = liveBuses.get(keyFor(layerId, trackId));
+            if (live) {
+                chain.push(live.bus);
             }
         }
-        return null;
+        return chain;
+    };
+
+    const getBusChainInputForTrack = (trackId: string): AudioNode | null => {
+        const chain = chainedBusesForTrack(trackId);
+        return chain.length > 0 ? chain[0]!.inputNode : null;
+    };
+
+    const wireChain = (trackId: string): void => {
+        const chain = chainedBusesForTrack(trackId);
+        const finalDest = deps.getTrackDefaultDestination(trackId);
+        for (let i = 0; i < chain.length; i++) {
+            const current = chain[i]!;
+            const next = chain[i + 1];
+            if (next) {
+                current.connectDestination(next.inputNode);
+            } else if (finalDest) {
+                current.connectDestination(finalDest);
+            } else {
+                current.disconnectDestination();
+            }
+        }
+    };
+
+    const addLayerToOrder = (trackId: string, layerId: string): void => {
+        const order = busOrderByTrack.get(trackId);
+        if (!order) {
+            busOrderByTrack.set(trackId, [layerId]);
+            return;
+        }
+        if (order.includes(layerId)) {
+            return;
+        }
+        order.push(layerId);
+    };
+
+    const removeLayerFromOrder = (trackId: string, layerId: string): void => {
+        const order = busOrderByTrack.get(trackId);
+        if (!order) {
+            return;
+        }
+        const idx = order.indexOf(layerId);
+        if (idx !== -1) {
+            order.splice(idx, 1);
+        }
+        if (order.length === 0) {
+            busOrderByTrack.delete(trackId);
+        }
     };
 
     const createBus = (input: ApplyInput): LiveBus | null => {
@@ -70,14 +125,6 @@ export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): Adjustment
             effectType: input.effectType,
             parameters: input.parameters,
         });
-        const dest = deps.getTrackDefaultDestination(input.trackId);
-        if (dest) {
-            bus.connectDestination(dest);
-        }
-        const source = deps.getTrackOutputNode(input.trackId);
-        if (source) {
-            bus.connectSource(source);
-        }
         bus.setBlend(input.blend);
         return {
             layerId: input.layerId,
@@ -86,18 +133,26 @@ export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): Adjustment
             bus,
             lastParamSignature: paramSignature(input.parameters),
             lastBlend: input.blend,
+            disposalTimer: null,
         };
     };
 
-    const disposeBus = (live: LiveBus): void => {
+    const finalizeDisposal = (key: RegionKey): void => {
+        const live = liveBuses.get(key);
+        if (!live) {
+            return;
+        }
         live.bus.dispose();
+        liveBuses.delete(key);
+        removeLayerFromOrder(live.trackId, live.layerId);
+        deps.rerouteTrack(live.trackId);
+        wireChain(live.trackId);
     };
 
     return {
         applyTick: (records): void => {
             const seen = new Set<RegionKey>();
-            const newlyCreated = new Set<string>();
-            const newlyRemoved = new Set<string>();
+            const touchedTracks = new Set<string>();
 
             for (const rec of records) {
                 if (rec.effectType === 'volume' || rec.effectType === 'pan') {
@@ -107,6 +162,10 @@ export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): Adjustment
                 seen.add(key);
                 const existing = liveBuses.get(key);
                 if (existing) {
+                    if (existing.disposalTimer) {
+                        clearTimeout(existing.disposalTimer);
+                        existing.disposalTimer = null;
+                    }
                     const sig = paramSignature(rec.parameters);
                     if (sig !== existing.lastParamSignature) {
                         existing.bus.setParams(rec.parameters);
@@ -121,7 +180,8 @@ export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): Adjustment
                 const live = createBus(rec);
                 if (live) {
                     liveBuses.set(key, live);
-                    newlyCreated.add(rec.trackId);
+                    addLayerToOrder(rec.trackId, rec.layerId);
+                    touchedTracks.add(rec.trackId);
                 }
             }
 
@@ -129,30 +189,36 @@ export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): Adjustment
                 if (seen.has(key)) {
                     continue;
                 }
-                live.bus.setBlend(0);
-                disposeBus(live);
-                liveBuses.delete(key);
-                newlyRemoved.add(live.trackId);
-            }
-
-            for (const trackId of newlyCreated) {
-                deps.rerouteTrack(trackId);
-            }
-            for (const trackId of newlyRemoved) {
-                if (newlyCreated.has(trackId)) {
+                if (live.disposalTimer) {
                     continue;
                 }
+                live.bus.setBlend(0);
+                live.lastBlend = 0;
+                live.disposalTimer = setTimeout(() => {
+                    live.disposalTimer = null;
+                    finalizeDisposal(key);
+                }, FADE_OUT_GRACE_MS);
+            }
+
+            for (const trackId of touchedTracks) {
+                wireChain(trackId);
                 deps.rerouteTrack(trackId);
             }
         },
-        getBusInputForTrack,
+        getBusInputForTrack: getBusChainInputForTrack,
+        getBusChainInputForTrack,
         reset: (): void => {
             const trackIds = new Set<string>();
             for (const live of liveBuses.values()) {
                 trackIds.add(live.trackId);
-                disposeBus(live);
+                if (live.disposalTimer) {
+                    clearTimeout(live.disposalTimer);
+                    live.disposalTimer = null;
+                }
+                live.bus.dispose();
             }
             liveBuses.clear();
+            busOrderByTrack.clear();
             for (const trackId of trackIds) {
                 deps.rerouteTrack(trackId);
             }

@@ -1,5 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
-import { addClip, addTrack } from '#/modules/Arrangement/useCases';
+import { addClip, addTrack, removeClip, removeTrack } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 
@@ -22,14 +21,9 @@ export function renderToClip(input: RenderToClipInput): RenderToClipOutput | nul
     const audioBufferId = `rendered-${crypto.randomUUID()}`;
     audioBufferCache.set(audioBufferId, input.buffer);
 
-    const stateBefore = trackStore.value;
-    if (!stateBefore) {
-        return null;
-    }
-    const tracksBefore = structuredClone(stateBefore.tracks);
-
+    const createdNewTrack = input.targetTrackId === 'new';
     let trackId: string;
-    if (input.targetTrackId === 'new') {
+    if (createdNewTrack) {
         const created = addTrack({ name: input.name, kind: 'audio' });
         if (!created) {
             return null;
@@ -49,24 +43,32 @@ export function renderToClip(input: RenderToClipInput): RenderToClipOutput | nul
     });
 
     if (!clip) {
+        if (createdNewTrack) {
+            removeTrack(trackId);
+        }
         return null;
     }
 
-    const stateAfter = trackStore.value;
-    const tracksAfter = structuredClone(stateAfter?.tracks ?? []);
     pushUndoEntry(
         'Render to clip',
         () => {
-            const s = trackStore.value;
-            if (s) {
-                trackStore.set({ ...s, tracks: tracksBefore });
+            removeClip(clip.id);
+            if (createdNewTrack) {
+                removeTrack(trackId);
             }
         },
         () => {
-            const s = trackStore.value;
-            if (s) {
-                trackStore.set({ ...s, tracks: tracksAfter });
+            if (createdNewTrack) {
+                addTrack({ id: trackId, name: input.name, kind: 'audio' });
             }
+            addClip({
+                trackId,
+                startBeat: input.startBeat,
+                endBeat: input.endBeat,
+                name: input.name,
+                type: 'audio',
+                audioBufferId,
+            });
         }
     );
 

@@ -47,7 +47,8 @@ describe('AdjustmentLayerRuntime', () => {
         expect(runtime.getBusInputForTrack('t1')).not.toBeNull();
     });
 
-    it('disposes the bus and reroutes the track when the region ends', () => {
+    it('disposes the bus and reroutes the track when the region ends (after fade grace)', () => {
+        vi.useFakeTimers();
         const runtime = createAdjustmentLayerRuntime(deps);
 
         runtime.applyTick([
@@ -56,10 +57,14 @@ describe('AdjustmentLayerRuntime', () => {
         rerouteTrack.mockClear();
 
         runtime.applyTick([]);
+        expect(runtime.listLiveBusKeys()).toEqual(['L1::t1']);
+
+        vi.advanceTimersByTime(500);
 
         expect(runtime.listLiveBusKeys()).toEqual([]);
         expect(runtime.getBusInputForTrack('t1')).toBeNull();
         expect(rerouteTrack).toHaveBeenCalledWith('t1');
+        vi.useRealTimers();
     });
 
     it('does not create buses for volume or pan effect types (those are MVP-handled)', () => {

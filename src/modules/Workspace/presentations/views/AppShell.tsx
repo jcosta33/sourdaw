@@ -200,6 +200,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         if (!project.initialized) {
             return;
         }
+        if (showAlphaNotice) {
+            return;
+        }
         if (isOnboardingCompleted()) {
             return;
         }
@@ -226,7 +229,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return () => {
             unsubscribe();
         };
-    }, [project.initialized]);
+    }, [project.initialized, showAlphaNotice]);
 
     // Auto-switch bottom tab when clip selected
     useEffect(() => {

@@ -32,6 +32,8 @@ type ApplierSingleton = {
     inner: CreateAdjustmentLayerApplierOutput;
     userGainByTrack: Map<string, number>;
     userPanByTrack: Map<string, number>;
+    gainOverridesByTrack: Map<string, Map<string, number>>;
+    panOverridesByTrack: Map<string, Map<string, number>>;
     batchAppliedRecords: AppliedLayerRecord[];
 };
 
@@ -40,6 +42,8 @@ let singleton: ApplierSingleton | null = null;
 function buildSingleton(): ApplierSingleton {
     const userGainByTrack = new Map<string, number>();
     const userPanByTrack = new Map<string, number>();
+    const gainOverridesByTrack = new Map<string, Map<string, number>>();
+    const panOverridesByTrack = new Map<string, Map<string, number>>();
     const batchAppliedRecords: AppliedLayerRecord[] = [];
 
     const rememberUserGain = (trackId: string): number => {
@@ -64,24 +68,78 @@ function buildSingleton(): ApplierSingleton {
         return pan;
     };
 
+    const composedGain = (trackId: string): number => {
+        const overrides = gainOverridesByTrack.get(trackId);
+        let combined = rememberUserGain(trackId);
+        if (overrides) {
+            for (const g of overrides.values()) {
+                combined *= g;
+            }
+        }
+        return combined;
+    };
+
+    const composedPan = (trackId: string): number => {
+        const overrides = panOverridesByTrack.get(trackId);
+        let sum = 0;
+        if (overrides) {
+            for (const p of overrides.values()) {
+                sum += p;
+            }
+        }
+        return Math.max(-50, Math.min(50, rememberUserPan(trackId) + sum * 50));
+    };
+
     const gainPanApplier: TrackGainPanApplier = {
-        setGainOverride: (trackId, _layerId, gainLinear) => {
+        setGainOverride: (trackId, layerId, gainLinear) => {
+            let overrides = gainOverridesByTrack.get(trackId);
+            if (!overrides) {
+                overrides = new Map();
+                gainOverridesByTrack.set(trackId, overrides);
+            }
+            overrides.set(layerId, gainLinear);
+            audioEngine.setTrackGain(trackId, composedGain(trackId));
+        },
+        clearGainOverride: (trackId, layerId) => {
+            const overrides = gainOverridesByTrack.get(trackId);
+            if (overrides) {
+                overrides.delete(layerId);
+                if (overrides.size === 0) {
+                    gainOverridesByTrack.delete(trackId);
+                }
+            }
             const base = rememberUserGain(trackId);
-            audioEngine.setTrackGain(trackId, base * gainLinear);
+            if (!gainOverridesByTrack.has(trackId)) {
+                audioEngine.setTrackGain(trackId, base);
+                userGainByTrack.delete(trackId);
+                return;
+            }
+            audioEngine.setTrackGain(trackId, composedGain(trackId));
         },
-        clearGainOverride: (trackId, _layerId) => {
-            const base = rememberUserGain(trackId);
-            audioEngine.setTrackGain(trackId, base);
-            userGainByTrack.delete(trackId);
+        setPanOverride: (trackId, layerId, pan) => {
+            let overrides = panOverridesByTrack.get(trackId);
+            if (!overrides) {
+                overrides = new Map();
+                panOverridesByTrack.set(trackId, overrides);
+            }
+            overrides.set(layerId, pan);
+            audioEngine.setTrackPan(trackId, composedPan(trackId));
         },
-        setPanOverride: (trackId, _layerId, pan) => {
+        clearPanOverride: (trackId, layerId) => {
+            const overrides = panOverridesByTrack.get(trackId);
+            if (overrides) {
+                overrides.delete(layerId);
+                if (overrides.size === 0) {
+                    panOverridesByTrack.delete(trackId);
+                }
+            }
             const base = rememberUserPan(trackId);
-            audioEngine.setTrackPan(trackId, base + pan * 50);
-        },
-        clearPanOverride: (trackId, _layerId) => {
-            const base = rememberUserPan(trackId);
-            audioEngine.setTrackPan(trackId, base);
-            userPanByTrack.delete(trackId);
+            if (!panOverridesByTrack.has(trackId)) {
+                audioEngine.setTrackPan(trackId, base);
+                userPanByTrack.delete(trackId);
+                return;
+            }
+            audioEngine.setTrackPan(trackId, composedPan(trackId));
         },
     };
 
@@ -93,7 +151,14 @@ function buildSingleton(): ApplierSingleton {
         },
     });
 
-    return { inner, userGainByTrack, userPanByTrack, batchAppliedRecords };
+    return {
+        inner,
+        userGainByTrack,
+        userPanByTrack,
+        gainOverridesByTrack,
+        panOverridesByTrack,
+        batchAppliedRecords,
+    };
 }
 
 function ensureSingleton(): ApplierSingleton {
@@ -134,6 +199,8 @@ export function getSharedAdjustmentLayerApplier(): CreateAdjustmentLayerApplierO
             holder.inner.reset();
             holder.userGainByTrack.clear();
             holder.userPanByTrack.clear();
+            holder.gainOverridesByTrack.clear();
+            holder.panOverridesByTrack.clear();
             holder.batchAppliedRecords.length = 0;
             adjustmentApplicationStore.set({ applied: [] });
             audioEngine.resetAdjustmentLayers?.();
