@@ -1,5 +1,0 @@
-src/modules/Grinder/useCases/grinderParamBridge/__tests__/setGrinderParamWithAudio.spec.ts
-src/modules/Grinder/useCases/grinderParamBridge/__tests__/setGrinderPedalParamWithAudio.spec.ts
-src/modules/Plugin/useCases/wamPluginHost/hostOperations/unloadWAMPlugin.ts
-src/modules/Project/repositories/project/__tests__/downloadProjectFile.spec.ts
-src/modules/Project/useCases/projectPersistence/fileIO/exportProjectFile.ts
