@@ -4,8 +4,8 @@ import { type PunchRecordingState } from '../../../stores/punchRecordingStore';
 import { commitPunchRegion } from '../commitPunchRegion';
 
 const mockPunchRecordingStore = vi.hoisted(() => ({
-    value: null as any,
-    set: vi.fn(),
+    value: null as import('../../../stores/punchRecordingStore').PunchRecordingState | null,
+    set: vi.fn<(state: import('../../../stores/punchRecordingStore').PunchRecordingState) => void>(),
 }));
 
 vi.mock('../../../stores/punchRecordingStore', () => ({
@@ -55,7 +55,7 @@ describe('commitPunchRegion', () => {
         });
 
         commitPunchRegion('cap1', 'r1');
-        const next = mockPunchRecordingStore.set.mock.calls[0]![0] as PunchRecordingState;
+        const next = mockPunchRecordingStore.set.mock.calls[0]![0];
         expect(next.captures[0]!.punchRegions[0]!.committed).toBe(true);
     });
 });

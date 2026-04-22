@@ -5,7 +5,10 @@ import { loopStationStore } from '../../../stores/loopStationStore';
 import { undoLastLayer } from '../undoLastLayer';
 
 vi.mock('../../../stores/loopStationStore', () => ({
-    loopStationStore: { value: null, set: vi.fn() },
+    loopStationStore: {
+        value: null as import('../../../stores/loopStationStore').LoopStationState | null,
+        set: vi.fn<(state: import('../../../stores/loopStationStore').LoopStationState) => void>(),
+    },
 }));
 
 function emptyLoopState(): LoopStationState {
@@ -50,7 +53,7 @@ describe('undoLastLayer', () => {
                     fadeBeats: 0.125,
                 },
             ],
-        } as any;
+        } as LoopStationState;
 
         undoLastLayer('s1');
 

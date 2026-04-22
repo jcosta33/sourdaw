@@ -59,7 +59,6 @@ const schedulerSession = {
 };
 
 const SCHEDULE_AHEAD_SECONDS = 0.1;
-const DEFAULT_SCHEDULE_GRAIN_MS = 10;
 
 export function startPlayheadScheduler(): void {
     const state = transportStore.value;
@@ -76,7 +75,7 @@ export function startPlayheadScheduler(): void {
     schedulerSession.lastScheduledBeat = state.playheadPosition - 0.0001;
     resetMetronomeBeat(state.playheadPosition);
 
-    const grainMs = state.scheduleGrainMs ?? DEFAULT_SCHEDULE_GRAIN_MS;
+    const grainMs = state.scheduleGrainMs;
 
     async function tick(): Promise<void> {
         const current = transportStore.value;
@@ -249,8 +248,8 @@ export function startPlayheadScheduler(): void {
         schedulerSession.worker = new Worker(new URL('../workers/schedulerWorker.ts', import.meta.url), {
             type: 'module',
         });
-        schedulerSession.worker.onmessage = (event) => {
-            if (event.data?.type === 'tick') {
+        schedulerSession.worker.onmessage = (event: MessageEvent<unknown>) => {
+            if (event.data && typeof event.data === 'object' && 'type' in event.data && event.data.type === 'tick') {
                 void tick();
             }
         };
