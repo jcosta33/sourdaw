@@ -1,5 +1,0 @@
-src/modules/AudioEngine/repositories/webMidi/lifecycle/__tests__/webMidiLifecycle.spec.ts
-src/modules/AudioEngine/services/meteringProcessor.ts
-src/modules/Automation/useCases/automationRecording/__tests__/recordAutomationValue.spec.ts
-src/modules/Command/useCases/pitch/__tests__/commitPitchEdit.spec.ts
-src/modules/Grinder/useCases/grinderParamBridge/__tests__/loadGrinderPatchWithAudio.spec.ts
