@@ -137,10 +137,15 @@ async function stopWorker(): Promise<void> {
     opfsFileHandle = null;
 }
 
-self.onmessage = ({ data }: MessageEvent): void => {
-    switch ((data as { type: string }).type) {
+type WorkerMessage =
+    | { type: 'init'; sab: SharedArrayBuffer; sampleRate: number }
+    | { type: 'start' }
+    | { type: 'stop' };
+
+self.onmessage = ({ data }: MessageEvent<WorkerMessage>): void => {
+    switch (data.type) {
         case 'init':
-            void initWorker(data.sab as SharedArrayBuffer, data.sampleRate as number).then(() => {
+            void initWorker(data.sab, data.sampleRate).then(() => {
                 self.postMessage({ type: 'ready' });
                 return null;
             });

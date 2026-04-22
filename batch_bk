@@ -1,5 +1,0 @@
-src/modules/AudioEngine/engine/NativePluginBridgeNode.ts
-src/modules/AudioEngine/models/AudioEngineState.ts
-src/modules/AudioEngine/repositories/audioEncoders/__tests__/mp3Encoder.spec.ts
-src/modules/AudioEngine/useCases/engineAccess/__tests__/getAudioSampleRate.spec.ts
-src/modules/AudioEngine/useCases/engineAccess/__tests__/getAudioTime.spec.ts
