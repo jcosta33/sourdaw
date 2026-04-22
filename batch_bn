@@ -1,5 +1,0 @@
-src/modules/Project/useCases/demoProjects/demoUtils/syncArrangement.ts
-src/modules/Project/useCases/projectPersistence/fileIO/pickAndImportProjectFile.ts
-src/modules/Toaster/useCases/__tests__/loadToasterKit.spec.ts
-src/modules/Workspace/handlers/workspace/__tests__/workspaceMiscHandlers.spec.ts
-src/modules/Workspace/presentations/hooks/usePromptExecution.ts

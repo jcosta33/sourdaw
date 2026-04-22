@@ -130,9 +130,12 @@ export const BounceOptionsDialog = ({
                             <select
                                 className="w-full bg-surface-inset border border-border/30 rounded px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
                                 value={options.normalization}
-                                onChange={(event) =>
-                                    setOptions({ ...options, normalization: event.target.value as any })
-                                }
+                                onChange={(event) => {
+                                    const val = event.target.value;
+                                    if (val === 'off' || val === 'protection' || val === 'full') {
+                                        setOptions({ ...options, normalization: val });
+                                    }
+                                }}
                             >
                                 <option value="off">Off</option>
                                 <option value="protection">Peak Protection</option>
@@ -144,9 +147,12 @@ export const BounceOptionsDialog = ({
                             <select
                                 className="w-full bg-surface-inset border border-border/30 rounded px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
                                 value={options.tailHandling}
-                                onChange={(event) =>
-                                    setOptions({ ...options, tailHandling: event.target.value as any })
-                                }
+                                onChange={(event) => {
+                                    const val = event.target.value;
+                                    if (val === 'auto' || val === 'manual' || val === 'off') {
+                                        setOptions({ ...options, tailHandling: val });
+                                    }
+                                }}
                             >
                                 <option value="auto">Auto (Detect)</option>
                                 <option value="manual">Fixed (5s)</option>

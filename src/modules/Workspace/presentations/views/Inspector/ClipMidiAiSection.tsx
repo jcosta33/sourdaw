@@ -228,7 +228,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             // calls would serialize anyway, just with noisier logs.
             const results: RenderResult[] = [];
             for (let index = 0; index < SVS_SEED_VARIANTS.length; index++) {
-                const result = await renderDiffSingerPhrase({
+                const rawResult: unknown = await renderDiffSingerPhrase({
                     phraseId: `${clip.id}-svs-${VARIANT_LABELS[index]}`,
                     voicebankId: selectedVoicebankId,
                     lyrics,
@@ -236,9 +236,21 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                     renderQuality: svsRenderQuality,
                     seed: SVS_SEED_VARIANTS[index],
                 });
+
+                if (
+                    !rawResult ||
+                    typeof rawResult !== 'object' ||
+                    !('audio' in rawResult) ||
+                    !('sampleRate' in rawResult) ||
+                    !(rawResult.audio instanceof Float32Array) ||
+                    typeof rawResult.sampleRate !== 'number'
+                ) {
+                    throw new Error('Invalid output from rendering engine');
+                }
+
                 results.push({
-                    audio: result.audio,
-                    sampleRate: result.sampleRate,
+                    audio: rawResult.audio,
+                    sampleRate: rawResult.sampleRate,
                     label: VARIANT_LABELS[index]!,
                     name: `${voiceName} · ${lyricsPreview}`,
                 });

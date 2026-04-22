@@ -6,7 +6,7 @@ import { TooltipProvider } from '#/components/ui/tooltip';
 import { AutomationContextMenu } from '../AutomationContextMenu';
 
 vi.mock('#/utils/Styles/cn', () => ({
-    cn: (...inputs: any[]) => inputs.filter(Boolean).join(' '),
+    cn: (...inputs: unknown[]) => inputs.filter(Boolean).join(' '),
 }));
 
 const renderWithTooltip = (ui: React.ReactElement) => {
@@ -18,7 +18,7 @@ describe('AutomationContextMenu', () => {
         x: 100,
         y: 100,
         beat: 4,
-        section: null as any,
+        section: null as 'shape' | 'curve' | null,
         points: [],
         onCurveSelect: vi.fn(),
         onShapeInsert: vi.fn(),
