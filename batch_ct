@@ -1,5 +1,0 @@
-src/modules/AudioEngine/services/recordingProcessor.ts
-src/modules/AiRuntime/presentations/views/__tests__/AiChangeToast.spec.tsx
-src/modules/Arrangement/handlers/restore/__tests__/handleRestoreClip.spec.ts
-src/modules/Arrangement/useCases/marker/sectionOperations/__tests__/reorderSection.spec.ts
-src/modules/Arrangement/useCases/rippleInsert/__tests__/planRippleInsert.spec.ts
