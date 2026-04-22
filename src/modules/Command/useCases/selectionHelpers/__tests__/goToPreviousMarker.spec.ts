@@ -2,10 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { goToPreviousMarker } from '../goToPreviousMarker';
 
+import type { getMarkerState } from '#/modules/Arrangement/useCases';
+import type { getTransportStoreValue, seekPlayhead } from '#/modules/Transport/useCases';
+
 const mocks = vi.hoisted(() => ({
-    getMarkerState: vi.fn(),
-    getTransportStoreValue: vi.fn(),
-    seekPlayhead: vi.fn(),
+    getMarkerState: vi.fn<typeof getMarkerState>(),
+    getTransportStoreValue: vi.fn<typeof getTransportStoreValue>(),
+    seekPlayhead: vi.fn<typeof seekPlayhead>(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
@@ -55,7 +58,9 @@ describe('goToPreviousMarker', () => {
             ],
             sections: [],
         });
-        mocks.getTransportStoreValue.mockReturnValue({ playheadPosition: 10 } as any);
+        mocks.getTransportStoreValue.mockReturnValue({ playheadPosition: 10 } as ReturnType<
+            typeof getTransportStoreValue
+        >);
 
         goToPreviousMarker();
 
@@ -70,7 +75,9 @@ describe('goToPreviousMarker', () => {
             ],
             sections: [],
         });
-        mocks.getTransportStoreValue.mockReturnValue({ playheadPosition: 4 } as any);
+        mocks.getTransportStoreValue.mockReturnValue({ playheadPosition: 4 } as ReturnType<
+            typeof getTransportStoreValue
+        >);
 
         goToPreviousMarker();
 

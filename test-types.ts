@@ -1,3 +1,9 @@
-import { runAppAction } from './src/modules/AiRuntime/useCases/aiPanelActions/runAppAction';
-type T = Parameters<typeof runAppAction>[0];
-export const x: T = { type: 'test' } as unknown as T;
+import { vi } from 'vitest';
+import type { getMarkerState } from '#/modules/Arrangement/useCases';
+import type { getTransportStoreValue, seekPlayhead } from '#/modules/Transport/useCases';
+
+const mocks = vi.hoisted(() => ({
+    getMarkerState: vi.fn<typeof getMarkerState>(),
+    getTransportStoreValue: vi.fn<typeof getTransportStoreValue>(),
+    seekPlayhead: vi.fn<typeof seekPlayhead>(),
+}));

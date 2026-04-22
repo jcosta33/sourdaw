@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { extractGrooveFromClip } from '../extractGrooveFromClip';
 
+import type { MidiStoreState } from '../../../stores/midiStore';
+
 const mocks = vi.hoisted(() => ({
-    midiStoreValue: { value: { notesByClipId: {} } },
+    midiStoreValue: { value: { notesByClipId: {} } as unknown as MidiStoreState },
 }));
 
 vi.mock('../../../stores/midiStore', () => ({
@@ -30,7 +32,7 @@ describe('extractGrooveFromClip', () => {
                     { startBeat: 0.45, duration: 1, velocity: 80 },
                 ],
             },
-        } as any;
+        } as unknown as MidiStoreState;
 
         const groove = extractGrooveFromClip('c1', 0.25);
 
@@ -58,7 +60,7 @@ describe('extractGrooveFromClip', () => {
     });
 
     it('bails if no notes in clip', () => {
-        mocks.midiStoreValue.value = { notesByClipId: { c1: [] } } as any;
+        mocks.midiStoreValue.value = { notesByClipId: { c1: [] } } as unknown as MidiStoreState;
         expect(extractGrooveFromClip('c1')).toBeNull();
     });
 });

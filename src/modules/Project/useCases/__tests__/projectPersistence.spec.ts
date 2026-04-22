@@ -4,16 +4,18 @@ import { loadProject } from '../projectPersistence/loadProject';
 import { renameProject } from '../projectPersistence/saveProject/renameProject';
 import { saveProject } from '../projectPersistence/saveProject/saveProject';
 
+import type { ProjectStoreState } from '../../stores/projectStore';
+
 const mocks = vi.hoisted(() => ({
-    projectStoreValue: { value: { loading: false, dirty: false, name: 'Initial' } },
-    projectStoreSet: vi.fn(),
-    createCrdtProject: vi.fn(),
-    loadCrdtProject: vi.fn(),
-    projectCrdtToStores: vi.fn(),
-    startCrdtAutoSave: vi.fn(() => vi.fn()),
-    clearUndoHistory: vi.fn(),
-    persistCrdtProject: vi.fn().mockResolvedValue(undefined),
-    addToRecentProjects: vi.fn(),
+    projectStoreValue: { value: { loading: false, dirty: false, name: 'Initial' } as unknown as ProjectStoreState },
+    projectStoreSet: vi.fn<(...args: unknown[]) => void>(),
+    createCrdtProject: vi.fn<() => void>(),
+    loadCrdtProject: vi.fn<() => Promise<boolean>>(),
+    projectCrdtToStores: vi.fn<() => void>(),
+    startCrdtAutoSave: vi.fn<() => () => void>(() => vi.fn<() => void>()),
+    clearUndoHistory: vi.fn<() => void>(),
+    persistCrdtProject: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    addToRecentProjects: vi.fn<(...args: unknown[]) => void>(),
 }));
 
 // Mock the dependencies of the use cases we are testing
@@ -51,7 +53,7 @@ vi.mock('../recentProjects/addToRecentProjects', () => ({
 describe('Project Persistence Use Cases', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.projectStoreValue.value = { loading: false, dirty: false, name: 'Initial' } as any;
+        mocks.projectStoreValue.value = { loading: false, dirty: false, name: 'Initial' } as unknown as ProjectStoreState;
     });
 
     describe('loadProject', () => {
@@ -70,7 +72,7 @@ describe('Project Persistence Use Cases', () => {
 
     describe('saveProject', () => {
         it('persists CRDT and updates store metadata', async () => {
-            mocks.projectStoreValue.value = { name: 'My Song', dirty: true } as any;
+            mocks.projectStoreValue.value = { name: 'My Song', dirty: true } as unknown as ProjectStoreState;
 
             saveProject();
 
