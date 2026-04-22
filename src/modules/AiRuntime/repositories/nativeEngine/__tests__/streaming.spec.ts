@@ -109,7 +109,7 @@ describe('streamNativeCompletion', () => {
                 text: async () => 'Not Found',
             });
 
-            await expect(streamNativeCompletion([], vi.fn())).rejects.toThrow('llama-server error 404: Not Found');
+            await expect(streamNativeCompletion([], vi.fn<(...args: unknown[]) => void>())).rejects.toThrow('llama-server error 404: Not Found');
         });
 
         it('throws if no body is returned', async () => {
@@ -118,7 +118,7 @@ describe('streamNativeCompletion', () => {
                 body: null,
             });
 
-            await expect(streamNativeCompletion([], vi.fn())).rejects.toThrow('No response body');
+            await expect(streamNativeCompletion([], vi.fn<(...args: unknown[]) => void>())).rejects.toThrow('No response body');
         });
     });
 });

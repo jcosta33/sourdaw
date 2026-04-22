@@ -1,23 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { streamCloudChatCompletionMock } = vi.hoisted(() => ({
-    streamCloudChatCompletionMock: vi.fn(),
+    streamCloudChatCompletionMock: vi.fn<(...args: unknown[]) => unknown>(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getTrackStoreState: vi.fn().mockReturnValue(null),
-    createAlternativeClips: vi.fn(),
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+    getTrackStoreState: vi.fn<(...args: unknown[]) => unknown>().mockReturnValue(null),
+    createAlternativeClips: vi.fn<(...args: unknown[]) => unknown>(),
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+    ...(await importOriginal<typeof import('#/modules/AiRuntime/useCases')>()),
     streamCloudChatCompletion: streamCloudChatCompletionMock,
 }));
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getNotesForClip: vi.fn(),
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
+    getNotesForClip: vi.fn<(...args: unknown[]) => unknown>(),
 }));
 
 import { generateMidiVariations } from '../generateMidiVariations';
