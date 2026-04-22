@@ -1,5 +1,0 @@
-src/modules/Arrangement/useCases/setTrackGainPan/__tests__/setTrackGain.spec.ts
-src/modules/Arrangement/useCases/setTrackGainPan/__tests__/setTrackPan.spec.ts
-src/modules/Arrangement/useCases/timelineInteractions/__tests__/beginClipDrag.spec.ts
-src/modules/Arrangement/useCases/toggleTrackState/__tests__/selectTrack.spec.ts
-src/modules/Arrangement/useCases/toggleTrackState/__tests__/toggleInputMonitoring.spec.ts

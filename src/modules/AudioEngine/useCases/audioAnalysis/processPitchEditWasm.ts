@@ -1,12 +1,13 @@
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { audioBufferCache } from '../../stores/audioBufferCache';
-// @ts-ignore
+// @ts-expect-error - generated wasm-bindgen glue, no type declarations
 import { commit_pitch_edit_wasm } from '../../wasm/daw_dsp.js';
+import type { PitchContour, PitchSegment } from './analyzePitchForClip';
 
 export function processPitchEditWasm(
     originalBuffer: AudioBuffer,
-    segments: any[],
-    contour: any,
+    segments: PitchSegment[],
+    contour: PitchContour,
     outputAudioPath: string
 ): void {
     const channelData = originalBuffer.getChannelData(0);
