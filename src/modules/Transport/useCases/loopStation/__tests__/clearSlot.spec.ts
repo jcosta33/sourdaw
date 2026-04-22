@@ -5,7 +5,7 @@ import { loopStationStore } from '../../../stores/loopStationStore';
 import { clearSlot } from '../clearSlot';
 
 vi.mock('../../../stores/loopStationStore', () => ({
-    loopStationStore: { value: null, set: vi.fn() },
+    loopStationStore: { value: null as import('../../../stores/loopStationStore').LoopStationState | null, set: vi.fn() },
 }));
 
 describe('clearSlot', () => {
@@ -36,7 +36,7 @@ describe('clearSlot', () => {
             fixedLoopLength: 0,
         };
 
-        loopStationStore.value = baseState as any;
+        loopStationStore.value = baseState;
 
         clearSlot('slot-a');
 

@@ -4,6 +4,7 @@ import { defaultTransportState } from '../../models/TransportState';
 import { type TransportState } from '../../models/TransportState';
 import { getTransportState as repoGetTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState as repoUpdateTransportState } from '../../repositories/transport/updateTransportState';
+import type { TempoMapStoreState } from '../../stores/tempoMapStore';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { getTempoMapState } from '../transportQueries/getTempoMapState';
 import { getTransportState } from '../transportQueries/getTransportState';
@@ -13,7 +14,7 @@ import { updateTransportState } from '../transportQueries/updateTransportState';
 vi.mock('../../repositories/transport/getTransportState');
 vi.mock('../../repositories/transport/updateTransportState');
 vi.mock('../../stores/tempoMapStore', () => ({
-    tempoMapStore: { value: null },
+    tempoMapStore: { value: null as TempoMapStoreState | null },
 }));
 
 describe('transportQueries injectables', () => {
@@ -44,8 +45,8 @@ describe('transportQueries injectables', () => {
     });
 
     it('should forward getTempoMapState to the tempo map store', () => {
-        const snapshot = { changes: [{ beat: 0, bpm: 120 }] };
-        tempoMapStore.value = snapshot as any;
+        const snapshot: TempoMapStoreState = { changes: [{ id: '1', beat: 0, tempo: 120, curve: 'instant' }] };
+        tempoMapStore.value = snapshot;
 
         expect(getTempoMapState()).toBe(snapshot);
     });

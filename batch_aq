@@ -1,5 +1,0 @@
-src/modules/Project/repositories/nativeFileDialog/__tests__/nativeFileDialog.spec.ts
-src/modules/Project/useCases/demoProjects/__tests__/demoUtils.spec.ts
-src/modules/Project/useCases/projectPersistence/__tests__/helpers.spec.ts
-src/modules/Project/useCases/projectPersistence/fileIO/applyImportedProjectData.ts
-src/modules/Proof/useCases/__tests__/proofParamBridge.spec.ts

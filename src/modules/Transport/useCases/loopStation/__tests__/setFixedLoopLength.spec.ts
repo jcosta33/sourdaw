@@ -5,7 +5,7 @@ import { loopStationStore } from '../../../stores/loopStationStore';
 import { setFixedLoopLength } from '../setFixedLoopLength';
 
 vi.mock('../../../stores/loopStationStore', () => ({
-    loopStationStore: { value: null, set: vi.fn() },
+    loopStationStore: { value: null as import('../../../stores/loopStationStore').LoopStationState | null, set: vi.fn() },
 }));
 
 function emptyLoopState(): LoopStationState {
@@ -25,7 +25,7 @@ describe('setFixedLoopLength', () => {
     });
 
     it('writes fixedLoopLength', () => {
-        loopStationStore.value = emptyLoopState() as any;
+        loopStationStore.value = emptyLoopState();
 
         setFixedLoopLength(8);
 

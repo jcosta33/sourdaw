@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { createTrack } from '#/modules/Arrangement/models/Track';
+import type { TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
+
 import { ensureTrackStrips } from '../ensureTrackStrips';
 
 const mocks = vi.hoisted(() => ({
-    trackStoreValue: { value: null },
+    trackStoreValue: { value: null as TrackStoreState | null },
     ensureTrackStrip: vi.fn(),
     setTrackOutput: vi.fn(),
     setTrackGain: vi.fn(),
@@ -71,21 +74,20 @@ describe('ensureTrackStrips', () => {
 
     it('bootstraps tracks and their components in the engine', () => {
         mocks.trackStoreValue.value = {
+            selectedTrackId: null,
             tracks: [
                 {
-                    id: 't1',
-                    kind: 'audio',
+                    ...createTrack({ id: 't1', name: 't1', kind: 'audio' }),
                     gain: 0.8,
                     pan: -10,
                     muted: false,
                     soloed: false,
                     outputId: 'main',
-                    devices: [{ id: 'd1', type: 'reverb', parameterValues: { room: 0.5 } }],
+                    devices: [{ id: 'd1', name: 'reverb', type: 'reverb', bypassed: false, parameterValues: { room: 0.5 } }],
                     sends: [{ busId: 'b1', level: 0.1, preFader: false }],
                 },
                 {
-                    id: 'b1',
-                    kind: 'bus',
+                    ...createTrack({ id: 'b1', name: 'b1', kind: 'bus' }),
                     gain: 1.0,
                     pan: 0,
                     muted: false,
@@ -95,7 +97,7 @@ describe('ensureTrackStrips', () => {
                     sends: [],
                 },
             ],
-        } as any;
+        };
 
         ensureTrackStrips();
 
