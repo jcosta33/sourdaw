@@ -1,5 +1,0 @@
-src/modules/Arrangement/handlers/trackAlternative/__tests__/handleCreateTrackAlternative.spec.ts
-src/modules/Arrangement/useCases/__tests__/buildTimelineRenderModel.spec.ts
-src/modules/AudioEngine/repositories/devices/__tests__/deviceParameterAppliers.spec.ts
-src/modules/AudioEngine/workers/grandBouleEngineWorker.ts
-src/modules/Command/useCases/pitch/commitPitchEdit.ts
