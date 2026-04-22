@@ -1,5 +1,0 @@
-src/modules/Transport/useCases/punchRecording/__tests__/setPostRoll.spec.ts
-src/modules/Transport/useCases/punchRecording/__tests__/setPreRoll.spec.ts
-src/modules/Transport/useCases/punchRecording/__tests__/startBackgroundCapture.spec.ts
-src/modules/Transport/useCases/punchRecording/__tests__/stopBackgroundCapture.spec.ts
-src/modules/Transport/useCases/punchRecording/__tests__/togglePunchRecording.spec.ts
