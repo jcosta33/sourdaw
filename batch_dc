@@ -1,5 +1,0 @@
-src/modules/AudioEngine/services/proofChamberProcessor.ts
-src/modules/AudioEngine/services/toasterProcessor.ts
-src/modules/AudioEngine/services/scoringProcessor.ts
-src/modules/AudioEngine/services/bacteriaProcessor.ts
-src/modules/AudioEngine/services/grinderProcessor.ts
