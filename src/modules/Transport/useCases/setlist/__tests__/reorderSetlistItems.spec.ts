@@ -4,8 +4,8 @@ import { type SetlistItem, type SetlistState } from '../../../stores/setlistStor
 import { reorderSetlistItems } from '../reorderSetlistItems';
 
 const mockSetlistStore = vi.hoisted(() => ({
-    value: null as any,
-    set: vi.fn(),
+    value: null as SetlistState | null,
+    set: vi.fn<(state: SetlistState) => void>(),
 }));
 
 vi.mock('../../../stores/setlistStore', () => ({
@@ -46,7 +46,7 @@ describe('reorderSetlistItems', () => {
         mockSetlistStore.value = state;
 
         reorderSetlistItems(0, 1);
-        const next = mockSetlistStore.set.mock.calls[0]![0] as SetlistState;
+        const next = mockSetlistStore.set.mock.calls[0]![0];
         expect(next.items.map((index) => index.id)).toEqual(['b', 'a']);
     });
 });

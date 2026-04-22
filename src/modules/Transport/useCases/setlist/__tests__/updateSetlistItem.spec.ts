@@ -4,8 +4,8 @@ import { type SetlistItem, type SetlistState } from '../../../stores/setlistStor
 import { updateSetlistItem } from '../updateSetlistItem';
 
 const mockSetlistStore = vi.hoisted(() => ({
-    value: null as any,
-    set: vi.fn(),
+    value: null as SetlistState | null,
+    set: vi.fn<(state: SetlistState) => void>(),
 }));
 
 vi.mock('../../../stores/setlistStore', () => ({
@@ -46,7 +46,7 @@ describe('updateSetlistItem', () => {
         mockSetlistStore.value = state;
 
         updateSetlistItem('x', { name: 'New' });
-        const next = mockSetlistStore.set.mock.calls[0]![0] as SetlistState;
+        const next = mockSetlistStore.set.mock.calls[0]![0];
         expect(next.items[0]!.name).toBe('New');
     });
 });
