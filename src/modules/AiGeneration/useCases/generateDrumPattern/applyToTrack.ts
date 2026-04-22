@@ -36,7 +36,7 @@ export function applyDrumPatternToTrack(
         clip.id,
         notes.map((note) => ({
             pitch: note.pitch,
-            startBeat: startBeat + note.startBeat,
+            startBeat: note.startBeat,
             duration: note.duration,
             velocity: note.velocity,
         }))
