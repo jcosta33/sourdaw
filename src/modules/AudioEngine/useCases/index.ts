@@ -1,3 +1,7 @@
+export { detectTransients, type TransientHit } from './elasticAudio/detectTransients';
+export { detectTransientsForClip, type DetectTransientsResult } from './elasticAudio/detectTransientsForClip';
+export { quantizeTransients, type QuantizeTransientsResult } from './elasticAudio/quantizeTransients';
+
 export { computeMomentaryLUFS } from './advancedMetering/lufs/computeMomentaryLUFS';
 export { ShortTermLUFS } from './advancedMetering/lufs/ShortTermLUFS';
 export { IntegratedLUFS } from './advancedMetering/lufs/IntegratedLUFS';
