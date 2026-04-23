@@ -35,6 +35,7 @@ type ApplierSingleton = {
     gainOverridesByTrack: Map<string, Map<string, number>>;
     panOverridesByTrack: Map<string, Map<string, number>>;
     batchAppliedRecords: AppliedLayerRecord[];
+    trackStoreUnsubscribe: () => void;
 };
 
 let singleton: ApplierSingleton | null = null;
@@ -45,6 +46,34 @@ function buildSingleton(): ApplierSingleton {
     const gainOverridesByTrack = new Map<string, Map<string, number>>();
     const panOverridesByTrack = new Map<string, Map<string, number>>();
     const batchAppliedRecords: AppliedLayerRecord[] = [];
+
+    // Watch trackStore for user fader/pan moves while a layer is active.
+    // The applier writes engine-side gains via `audioEngine.setTrackGain` but
+    // never mutates `trackStore` itself, so any change to `track.gain`/`track.pan`
+    // observed through the store reflects a user action. Evict the cached base
+    // for that track so the next composition reads the user's new value.
+    const trackStoreUnsubscribe = trackStore.subscribe(() => {
+        const tracks = trackStore.value?.tracks;
+        if (!tracks) {
+            return;
+        }
+        for (const track of tracks) {
+            const cachedGain = userGainByTrack.get(track.id);
+            if (cachedGain !== undefined && cachedGain !== track.gain) {
+                userGainByTrack.delete(track.id);
+                if (gainOverridesByTrack.has(track.id)) {
+                    audioEngine.setTrackGain(track.id, composedGain(track.id));
+                }
+            }
+            const cachedPan = userPanByTrack.get(track.id);
+            if (cachedPan !== undefined && cachedPan !== track.pan) {
+                userPanByTrack.delete(track.id);
+                if (panOverridesByTrack.has(track.id)) {
+                    audioEngine.setTrackPan(track.id, composedPan(track.id));
+                }
+            }
+        }
+    });
 
     const rememberUserGain = (trackId: string): number => {
         const existing = userGainByTrack.get(trackId);
@@ -158,6 +187,7 @@ function buildSingleton(): ApplierSingleton {
         gainOverridesByTrack,
         panOverridesByTrack,
         batchAppliedRecords,
+        trackStoreUnsubscribe,
     };
 }
 
@@ -209,6 +239,9 @@ export function getSharedAdjustmentLayerApplier(): CreateAdjustmentLayerApplierO
 }
 
 export function resetSharedAdjustmentLayerApplierForTest(): void {
+    if (singleton) {
+        singleton.trackStoreUnsubscribe();
+    }
     singleton = null;
     adjustmentApplicationStore.set({ applied: [] });
 }
