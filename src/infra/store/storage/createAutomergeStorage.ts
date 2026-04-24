@@ -11,8 +11,8 @@ import { type DocId } from '#/modules/CrdtDocument/models/CrdtDocumentTypes';
 // `repositories/` path the previous revision of this file reached into).
 import { getCrdtDoc } from '#/modules/CrdtDocument/useCases/getCrdtDoc';
 import { hasCrdtDoc } from '#/modules/CrdtDocument/useCases/hasCrdtDoc';
+import { getSemanticContext } from '#/modules/CrdtDocument/stores';
 import { mutateCrdtDoc } from '#/modules/CrdtDocument/useCases/mutateCrdtDoc';
-import { getSemanticContext } from '#/modules/CrdtDocument/useCases/semanticChangeContext';
 
 import { type StorageAdapter } from './types';
 

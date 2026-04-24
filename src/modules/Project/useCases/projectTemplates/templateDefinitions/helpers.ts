@@ -1,12 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { addTrack, addDevice } from '#/modules/Arrangement/useCases';
 
-import { demo5_NebulaDrift } from '../../demoProjects/nebulaDrift/createNebulaDriftDemo';
-import { demo1_TheCompleteMix } from '../../demoProjects/resonance/createResonanceDemo';
-import { demo_SweetDreams } from '../../demoProjects/sweetDreams/createSweetDreamsDemo';
-import { demo4_NativeShowcase } from '../../demoProjects/synthwave/createSynthwaveDemo';
-import { newProject } from '../../projectPersistence/newProject';
-
 export type TemplateCategory = 'empty' | 'music' | 'podcast' | 'film' | 'demo';
 
 export type ProjectTemplate = {
@@ -17,6 +11,36 @@ export type ProjectTemplate = {
     platform?: 'web' | 'native';
     create: () => void | Promise<void>;
 };
+
+type CreateBaseProjectInput = {
+    name: string;
+};
+type CreateBaseProjectOutput = Promise<void>;
+
+async function createBaseProject({ name }: CreateBaseProjectInput): CreateBaseProjectOutput {
+    const { newProject } = await import('../../projectPersistence/newProject');
+    newProject(name);
+}
+
+async function createResonanceDemoProject(): Promise<void> {
+    const { demo1_TheCompleteMix } = await import('../../demoProjects/resonance/createResonanceDemo');
+    await demo1_TheCompleteMix();
+}
+
+async function createSweetDreamsDemoProject(): Promise<void> {
+    const { demo_SweetDreams } = await import('../../demoProjects/sweetDreams/createSweetDreamsDemo');
+    await demo_SweetDreams();
+}
+
+async function createNativeShowcaseDemoProject(): Promise<void> {
+    const { demo4_NativeShowcase } = await import('../../demoProjects/synthwave/createSynthwaveDemo');
+    await demo4_NativeShowcase();
+}
+
+async function createNebulaDriftDemoProject(): Promise<void> {
+    const { demo5_NebulaDrift } = await import('../../demoProjects/nebulaDrift/createNebulaDriftDemo');
+    await demo5_NebulaDrift();
+}
 
 export function attachSynthDevice(trackId: string): void {
     const state = trackStore.value;
@@ -65,8 +89,8 @@ export const templates: ProjectTemplate[] = [
         name: 'Empty Project',
         description: 'A blank canvas — no tracks, no devices.',
         category: 'empty',
-        create: () => {
-            newProject('Untitled');
+        create: async () => {
+            await createBaseProject({ name: 'Untitled' });
         },
     },
     {
@@ -74,8 +98,8 @@ export const templates: ProjectTemplate[] = [
         name: 'Basic Band',
         description: 'Drums, bass, guitar, and vocals with EQ on each track.',
         category: 'music',
-        create: () => {
-            newProject('Basic Band');
+        create: async () => {
+            await createBaseProject({ name: 'Basic Band' });
             addTrackWithDevices('Drums', 'audio', ['EQ']);
             addTrackWithDevices('Bass', 'midi', ['EQ'], { withSynth: true });
             addTrackWithDevices('Guitar', 'audio', ['EQ']);
@@ -87,8 +111,8 @@ export const templates: ProjectTemplate[] = [
         name: 'Electronic',
         description: 'Drums, synth lead, synth pad, and bass — ready for electronic production.',
         category: 'music',
-        create: () => {
-            newProject('Electronic');
+        create: async () => {
+            await createBaseProject({ name: 'Electronic' });
             addTrackWithDevices('Drums', 'audio', ['Compressor']);
             addTrackWithDevices('Synth Lead', 'midi', ['EQ'], { withSynth: true });
             addTrackWithDevices('Synth Pad', 'midi', ['EQ'], { withSynth: true });
@@ -100,8 +124,8 @@ export const templates: ProjectTemplate[] = [
         name: 'Podcast',
         description: 'Host, guest, and music bed tracks with compressor and EQ.',
         category: 'podcast',
-        create: () => {
-            newProject('Podcast');
+        create: async () => {
+            await createBaseProject({ name: 'Podcast' });
             addTrackWithDevices('Host', 'audio', ['Compressor', 'EQ']);
             addTrackWithDevices('Guest', 'audio', ['Compressor', 'EQ']);
             addTrackWithDevices('Music Bed', 'audio', ['Compressor', 'EQ']);
@@ -112,8 +136,8 @@ export const templates: ProjectTemplate[] = [
         name: 'Film Score',
         description: 'Strings, brass, woodwinds, percussion, and dialog for scoring to picture.',
         category: 'film',
-        create: () => {
-            newProject('Film Score');
+        create: async () => {
+            await createBaseProject({ name: 'Film Score' });
             addTrackWithDevices('Strings', 'midi', ['Reverb'], { withSynth: true });
             addTrackWithDevices('Brass', 'midi', ['Reverb'], { withSynth: true });
             addTrackWithDevices('Woodwinds', 'midi', ['Reverb'], { withSynth: true });
@@ -126,8 +150,8 @@ export const templates: ProjectTemplate[] = [
         name: 'Singer-Songwriter',
         description: 'Acoustic guitar, vocals, and piano — simple and intimate.',
         category: 'music',
-        create: () => {
-            newProject('Singer-Songwriter');
+        create: async () => {
+            await createBaseProject({ name: 'Singer-Songwriter' });
             addTrackWithDevices('Acoustic Guitar', 'audio', ['EQ']);
             addTrackWithDevices('Vocals', 'audio', ['Compressor', 'EQ']);
             addTrackWithDevices('Piano', 'midi', ['Reverb'], { withSynth: true });
@@ -139,7 +163,7 @@ export const templates: ProjectTemplate[] = [
         description:
             'A fully arranged 5-minute ambient/IDM production in D minor with 28 tracks, automation, markers, and detailed MIDI patterns.',
         category: 'demo',
-        create: () => demo1_TheCompleteMix(),
+        create: createResonanceDemoProject,
     },
     {
         id: 'demo-sweet-dreams',
@@ -147,7 +171,7 @@ export const templates: ProjectTemplate[] = [
         description:
             'An incredible faithful cover of "Sweet Dreams (Are Made of This)" by Eurythmics — showcasing Fermenter synths, Toaster drums, and the full Sourdaw mixing chain.',
         category: 'demo',
-        create: () => demo_SweetDreams(),
+        create: createSweetDreamsDemoProject,
     },
     {
         id: 'demo-native-showcase',
@@ -156,7 +180,7 @@ export const templates: ProjectTemplate[] = [
             'A 50-track Flying Lotus-style experimental beat showcase using native DSP effects. Only available in the native app.',
         category: 'demo',
         platform: 'native',
-        create: () => demo4_NativeShowcase(),
+        create: createNativeShowcaseDemoProject,
     },
     {
         id: 'demo-nebula-drift',
@@ -164,6 +188,6 @@ export const templates: ProjectTemplate[] = [
         description:
             'A ~5-minute Tangerine Dream–style journey: Fermenter drones, pluck/grain textures, Levain lines, Naan Sitar lead, Pullman Organ lead, Rye Reese bass, and a full 16-pad Toaster kit (folder-hosted) with heavy automation and spatial FX.',
         category: 'demo',
-        create: () => demo5_NebulaDrift(),
+        create: createNebulaDriftDemoProject,
     },
 ];

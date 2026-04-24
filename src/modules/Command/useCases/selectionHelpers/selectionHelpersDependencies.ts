@@ -1,11 +1,11 @@
 import { getMarkerState, getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { getTransportStoreValue, seekPlayhead } from '#/modules/Transport/useCases';
-import { getWorkspaceState } from '#/modules/Workspace/useCases';
+import { workspaceStore } from '#/modules/Workspace/stores';
 
 export const selectionHelpersDependencies = {
     getTrackStoreState,
     getMarkerState,
     getTransportStoreValue,
     seekPlayhead,
-    getWorkspaceState,
+    getWorkspaceState: () => workspaceStore.value,
 } as const;

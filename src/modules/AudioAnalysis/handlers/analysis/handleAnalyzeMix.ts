@@ -1,22 +1,22 @@
-import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime/useCases';
+import { mixAnalysisStore } from '#/modules/AiRuntime/stores';
 import { createHandler } from '#/utils/createHandler';
 
 import { analyzeMix } from '../../useCases/analyzeMix';
 
 export const handleAnalyzeMix = createHandler<'analyzeMix'>({
     execute: async () => {
-        const state = getMixAnalysisStoreValue();
+        const state = mixAnalysisStore.value;
         if (!state) {
             return;
         }
 
-        setMixAnalysisStoreValue({ ...state, isAnalyzing: true });
+        mixAnalysisStore.set({ ...state, isAnalyzing: true });
 
         try {
             const result = await analyzeMix();
-            setMixAnalysisStoreValue({ result, isAnalyzing: false, panelOpen: true });
+            mixAnalysisStore.set({ result, isAnalyzing: false, panelOpen: true });
         } catch {
-            setMixAnalysisStoreValue({ ...state, isAnalyzing: false });
+            mixAnalysisStore.set({ ...state, isAnalyzing: false });
         }
     },
     describe: () => ({ label: 'Analyze mix' }),

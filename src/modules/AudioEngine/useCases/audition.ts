@@ -1,14 +1,19 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { getTrackById, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
-import { scheduleNote, startFaustNote, getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases';
+import {
+    scheduleNote,
+    getDrumKitDefByIndex,
+    scheduleDrumKitNote,
+    getSynthParamsFromDevices,
+} from '#/modules/Synth/useCases';
 
 import { audioEngine } from '../repositories/createWebAudioEngine';
+import { startFaustNote } from './faustScheduler/startFaustNote';
 
 export function playAuditionNote(trackId: string, pitch: number, velocity: number = 100): () => void {
     const strip = audioEngine.ensureTrackStrip(trackId);
     const now = audioEngine.context.currentTime;
 
-    const track = getTrackById(trackId);
+    const track = trackStore.value?.tracks.find((t) => t.id === trackId);
     const drumDevice = track?.devices.find(
         (d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit' || d.type.startsWith('builtin-drum-machine')
     );
@@ -37,7 +42,7 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
     let isToasterChild = false;
     let toasterParentTrack;
     if (track?.parentId) {
-        toasterParentTrack = getTrackById(track.parentId);
+        toasterParentTrack = trackStore.value?.tracks.find((t) => t.id === track.parentId);
         if (toasterParentTrack?.devices.some((d) => d.type === 'toaster')) {
             isToasterChild = true;
         }
@@ -101,7 +106,7 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         return startFaustNote(trackId, faustDevice.id, pitch, velocity, now);
     }
 
-    const synthParams = getSynthParamsForTrack(trackId);
+    const synthParams = getSynthParamsFromDevices(track?.devices ?? []);
     const osc = scheduleNote(
         audioEngine.context,
         strip.gainNode,

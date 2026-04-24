@@ -47,13 +47,11 @@ describe('clipHandlers', () => {
             'consolidateSelection',
             'bounceSelection',
             'muteClip',
-            'audioToMidi',
             'deleteTime',
             'insertTime',
             'duplicateTimeRange',
+            'exportMidi',
             'stripSilence',
-            'detectTempo',
-            'detectKey',
             'arpeggiate',
         ];
 

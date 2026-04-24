@@ -1,4 +1,4 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { pushUndoEntry } from '#/modules/Command/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { splitMidiNotesAtBeat } from '#/modules/MIDI/useCases';
 

@@ -1,11 +1,6 @@
 import { handleCreateAdjustmentLayer } from '../handlers/batchFeature/handleCreateAdjustmentLayer';
 import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateCompGroup';
-import { handleNextSetlistItem } from '../handlers/batchFeature/handleNextSetlistItem';
-import { handlePreviousSetlistItem } from '../handlers/batchFeature/handlePreviousSetlistItem';
 import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSamples';
-import { handleToggleLoopRecord } from '../handlers/batchFeature/handleToggleLoopRecord';
-import { handleTogglePunchRecording } from '../handlers/batchFeature/handleTogglePunchRecording';
-import { handleTriggerScene } from '../handlers/batchFeature/handleTriggerScene';
 import { clipHandlers } from '../handlers/clip/clipHandlers';
 import { handleUnfreezeTrack } from '../handlers/track/unfreezeTrack';
 import { handleFlattenTrack } from '../handlers/track/flattenTrack';
@@ -24,6 +19,8 @@ import { handleSetTrackHeight } from '../handlers/track/setTrackHeight';
 import { handleSetTrackInput } from '../handlers/track/handleSetTrackInput';
 import { handleSetTrackNotes } from '../handlers/track/setTrackNotes';
 import { handleSetTrackOutput } from '../handlers/track/setTrackOutput';
+import { handleSetMidiOutput } from '../handlers/track/handleSetMidiOutput';
+import { handleClearMidiOutput } from '../handlers/track/handleClearMidiOutput';
 import { handleSetTrackPan } from '../handlers/track/handleSetTrackPan';
 import { handleSoloTrack } from '../handlers/track/soloTrack';
 import { handleToggleSoloSafe } from '../handlers/track/toggleSoloSafe';
@@ -48,24 +45,25 @@ import { handleSavePreset } from '../handlers/preset/handleSavePreset';
 import { handleRestoreClip } from '../handlers/restore/handleRestoreClip';
 import { handleRestoreTrack } from '../handlers/restore/handleRestoreTrack';
 import { handleAddDevice } from '../handlers/device/handleAddDevice';
+import { handleLoadExternalPlugin } from '../handlers/device/handleLoadExternalPlugin';
 import { handleAddSend } from '../handlers/device/handleAddSend';
 import { handleAddSidechainRoute } from '../handlers/device/handleAddSidechainRoute';
 import { handleBypassDevice } from '../handlers/device/handleBypassDevice';
-import { handleDisableMpe } from '../handlers/device/handleDisableMpe';
-import { handleEnableMpe } from '../handlers/device/handleEnableMpe';
-import { handleGetLatencyReport } from '../handlers/device/handleGetLatencyReport';
 import { handleRemoveDevice } from '../handlers/device/handleRemoveDevice';
 import { handleRemoveSend } from '../handlers/device/handleRemoveSend';
 import { handleRemoveSidechainRoute } from '../handlers/device/handleRemoveSidechainRoute';
 import { handleSetDeviceParameter } from '../handlers/device/handleSetDeviceParameter';
 import { handleSetSend } from '../handlers/device/handleSetSend';
-import { handleCompareToReference } from '../handlers/newFeature/handleCompareToReference';
+import { handleAddMarker } from '../handlers/marker/handleAddMarker';
+import { handleAddSection } from '../handlers/marker/handleAddSection';
+import { handleRemoveMarker } from '../handlers/marker/handleRemoveMarker';
+import { handleRemoveSection } from '../handlers/marker/handleRemoveSection';
+import { handleRenameSection } from '../handlers/marker/handleRenameSection';
+import { handleSetMarkerColor } from '../handlers/marker/handleSetMarkerColor';
 import { handleGenerateAllTransitions } from '../handlers/newFeature/handleGenerateAllTransitions';
 import { handleGenerateFill } from '../handlers/newFeature/handleGenerateFill';
-import { handleGetMentorTips } from '../handlers/newFeature/handleGetMentorTips';
-import { handleSwitchMonitor } from '../handlers/newFeature/handleSwitchMonitor';
-import { handleToggleControlRoomDim } from '../handlers/newFeature/handleToggleControlRoomDim';
-import { handleToggleControlRoomMono } from '../handlers/newFeature/handleToggleControlRoomMono';
+import { handleClearScratchPad } from '../handlers/scratchPad/handleClearScratchPad';
+import { handleCommitScratchPad } from '../handlers/scratchPad/handleCommitScratchPad';
 import { handleArmTrack } from '../handlers/track/armTrack';
 import { handleBounceInPlace } from '../handlers/track/bounceInPlace';
 import { handleBounceToNewTrack } from '../handlers/track/bounceToNewTrack';
@@ -110,6 +108,8 @@ export function getArrangementHandlers() {
         disableTrack: handleDisableTrack,
         setTrackHeight: handleSetTrackHeight,
         setTrackOutput: handleSetTrackOutput,
+        setMidiOutput: handleSetMidiOutput,
+        clearMidiOutput: handleClearMidiOutput,
         setAutomationMode: handleSetAutomationMode,
         foldTrack: handleFoldTrack,
         groupTracks: handleGroupTracks,
@@ -119,6 +119,14 @@ export function getArrangementHandlers() {
         setTrackInput: handleSetTrackInput,
         clearSolos: handleClearSolos,
         zoomTracksVertical: handleZoomTracksVertical,
+        addMarker: handleAddMarker,
+        removeMarker: handleRemoveMarker,
+        setMarkerColor: handleSetMarkerColor,
+        addSection: handleAddSection,
+        removeSection: handleRemoveSection,
+        renameSection: handleRenameSection,
+        clearScratchPad: handleClearScratchPad,
+        commitScratchPad: handleCommitScratchPad,
         consolidateAllTracks: handleConsolidateAllTracks,
         bounceToNewTrack: handleBounceToNewTrack,
         createTrackAlternative: handleCreateTrackAlternative,
@@ -140,31 +148,19 @@ export function getArrangementHandlers() {
         restoreTrack: handleRestoreTrack,
         restoreClip: handleRestoreClip,
         addDevice: handleAddDevice,
+        loadExternalPlugin: handleLoadExternalPlugin,
         bypassDevice: handleBypassDevice,
         removeDevice: handleRemoveDevice,
         setDeviceParameter: handleSetDeviceParameter,
         setSend: handleSetSend,
         addSend: handleAddSend,
         removeSend: handleRemoveSend,
-        enableMpe: handleEnableMpe,
-        disableMpe: handleDisableMpe,
-        getLatencyReport: handleGetLatencyReport,
         addSidechainRoute: handleAddSidechainRoute,
         removeSidechainRoute: handleRemoveSidechainRoute,
         generateFill: handleGenerateFill,
         generateAllTransitions: handleGenerateAllTransitions,
-        compareToReference: handleCompareToReference,
-        toggleControlRoomMono: handleToggleControlRoomMono,
-        toggleControlRoomDim: handleToggleControlRoomDim,
-        switchMonitor: handleSwitchMonitor,
-        getMentorTips: handleGetMentorTips,
         searchSamples: handleSearchSamples,
         createCompGroup: handleCreateCompGroup,
-        togglePunchRecording: handleTogglePunchRecording,
-        toggleLoopRecord: handleToggleLoopRecord,
-        triggerScene: handleTriggerScene,
-        nextSetlistItem: handleNextSetlistItem,
-        previousSetlistItem: handlePreviousSetlistItem,
         createAdjustmentLayer: handleCreateAdjustmentLayer,
         ...clipHandlers,
     };

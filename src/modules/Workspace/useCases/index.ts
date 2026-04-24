@@ -1,17 +1,10 @@
 export { openExportDialog } from './dialogs/openExportDialog';
 export { openPreferencesDialog } from './dialogs/openPreferencesDialog';
-export { onDialogOpenExport } from './dialogs/onDialogOpenExport';
-export { onDialogOpenPreferences } from './dialogs/onDialogOpenPreferences';
-
-// ── Ripple Editing ────────────────────────────────────────────────────────────
-
-export { toggleRippleEditing } from './rippleEditing';
 
 // ── Scratch Pad ───────────────────────────────────────────────────────────────
 
 export { getScratchPadHandlers } from './getScratchPadHandlers';
 
-export { showDevicePanelForType } from './panels/devicePanels/showDevicePanelForType';
 export { showAutomationPanel } from './panels/devicePanels/showAutomationPanel';
 
 // ── Editing Tool ──────────────────────────────────────────────────────────────
@@ -27,43 +20,26 @@ export { setTrackHeight } from './setTrackHeight';
 
 export { setWorkspaceMode } from './setWorkspaceMode';
 
-export {
-    clearClipSelection,
-    closeBranchManager,
-    closeCollaborationPanel,
-    closeCommandPalette,
-    closeScratchPad,
-    closeUndoHistory,
-    cycleChannelStripWidth,
-    openInspector,
-    openMixer,
-    openVirtualKeyboard,
-    selectAllClips,
-    selectClip,
-    selectClipWithFocus,
-    setClipSelection,
-    setSessionViewWidth,
-    setSnapValue,
-    setSoloMode,
-    setTrackListWidth,
-    setVirtualKeyboardOctave,
-    setVirtualKeyboardVelocity,
-    toggleAutomationPanel,
-    toggleBranchManager,
-    toggleChatPanel,
-    toggleClipInSelection,
-    toggleCollaborationPanel,
-    toggleCommandPalette,
-    toggleDualView,
-    toggleInspector,
-    toggleMixer,
-    toggleSidebar,
-    toggleTimeDisplayMode,
-    toggleTrackList,
-    toggleUndoHistory,
-    toggleVirtualKeyboard,
-    toggleWorkspaceMode,
-} from './togglePanel/panelToggles';
+export { clearClipSelection } from './togglePanel/panelToggles/clearClipSelection';
+export { closeCollaborationPanel } from './togglePanel/panelToggles/closeCollaborationPanel';
+export { closeCommandPalette } from './togglePanel/panelToggles/closeCommandPalette';
+export { closeUndoHistory } from './togglePanel/panelToggles/closeUndoHistory';
+export { selectAllClips } from './togglePanel/panelToggles/selectAllClips';
+export { selectClip } from './togglePanel/panelToggles/selectClip';
+export { selectClipWithFocus } from './togglePanel/panelToggles/selectClipWithFocus';
+export { setClipSelection } from './togglePanel/panelToggles/setClipSelection';
+export { setVirtualKeyboardOctave } from './togglePanel/panelToggles/setVirtualKeyboardOctave';
+export { setVirtualKeyboardVelocity } from './togglePanel/panelToggles/setVirtualKeyboardVelocity';
+export { toggleAutomationPanel } from './togglePanel/panelToggles/toggleAutomationPanel';
+export { toggleChatPanel } from './togglePanel/panelToggles/toggleChatPanel';
+export { toggleClipInSelection } from './togglePanel/panelToggles/toggleClipInSelection';
+export { toggleCommandPalette } from './togglePanel/panelToggles/toggleCommandPalette';
+export { toggleInspector } from './togglePanel/panelToggles/toggleInspector';
+export { toggleMixer } from './togglePanel/panelToggles/toggleMixer';
+export { toggleSidebar } from './togglePanel/panelToggles/toggleSidebar';
+export { toggleTrackList } from './togglePanel/panelToggles/toggleTrackList';
+export { toggleVirtualKeyboard } from './togglePanel/panelToggles/toggleVirtualKeyboard';
+export { toggleWorkspaceMode } from './togglePanel/panelToggles/toggleWorkspaceMode';
 
 export { zoomToFit } from './togglePanel/zoomOperations/zoomToFit';
 export { zoomToSelection } from './togglePanel/zoomOperations/zoomToSelection';
@@ -78,7 +54,6 @@ export { getWorkspaceHandlers } from './getWorkspaceHandlers';
 
 export { gridSnapBeats } from './workspaceQueries/gridSnapBeats';
 export { TRACK_HEIGHT_VALUES, defaultPreferences, TOOL_SHORTCUTS } from './workspaceQueries/helpers';
-export { getWorkspaceState } from './workspaceQueries/getWorkspaceState';
 export type { Preferences, GridSnapOption, WorkspaceState, EditingTool } from './workspaceQueries/helpers';
 
 // ── Workspace State ───────────────────────────────────────────────────────────

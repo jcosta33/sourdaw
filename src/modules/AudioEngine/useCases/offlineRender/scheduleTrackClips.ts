@@ -1,7 +1,6 @@
-import { type Track } from '#/modules/Arrangement/models/Track';
-import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
-import { getAutomationLanes } from '#/modules/Automation/useCases';
-import { type getMidiStoreState } from '#/modules/MIDI/useCases';
+import { takeLaneStore, type Track } from '#/modules/Arrangement/stores';
+import { automationStore } from '#/modules/Automation/stores';
+import { type MidiStoreState } from '#/modules/MIDI/stores';
 import {
     getDrumKitDefByIndex,
     getSynthParamsFromDevices,
@@ -9,7 +8,7 @@ import {
     scheduleKitNote,
     scheduleNoteOffline,
 } from '#/modules/Synth/useCases';
-import { type TempoChange } from '#/modules/Transport/useCases';
+import { type TempoMapStoreState } from '#/modules/Transport/stores';
 
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
 import { beatToSeconds } from '../../services/beatConversion';
@@ -22,6 +21,84 @@ import { MICRO_FADE_SECONDS, YIELD_EVERY_N_NOTES } from './constants';
 import { type PendingWorkletEvent } from './types';
 import { yieldToMain } from './yieldToMain';
 
+type ResolvedClip = Track['clips'][number] & {
+    regionStartBeat: number;
+    regionEndBeat: number;
+};
+
+function resolveTrackClipsWithComping(trackId: string, clips: Track['clips']): ResolvedClip[] {
+    const laneState = takeLaneStore.value;
+    if (!laneState) {
+        return clips.map((clip) => ({ ...clip, regionStartBeat: clip.startBeat, regionEndBeat: clip.endBeat }));
+    }
+
+    const lane = laneState.lanes.find((takeLane) => takeLane.trackId === trackId);
+    if (!lane || lane.activeCompRegions.length === 0) {
+        return clips.map((clip) => ({ ...clip, regionStartBeat: clip.startBeat, regionEndBeat: clip.endBeat }));
+    }
+
+    const resolvedClips: ResolvedClip[] = [];
+
+    for (const region of lane.activeCompRegions) {
+        const take = lane.takes.find((candidateTake) => candidateTake.id === region.takeId);
+        if (!take) {
+            continue;
+        }
+
+        const sourceClip = clips.find((clip) => clip.id === take.clipId);
+        if (!sourceClip) {
+            continue;
+        }
+
+        const overlapStart = Math.max(region.startBeat, sourceClip.startBeat);
+        const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat);
+        if (overlapStart >= overlapEnd) {
+            continue;
+        }
+
+        resolvedClips.push({
+            ...sourceClip,
+            startBeat: overlapStart,
+            endBeat: overlapEnd,
+            regionStartBeat: overlapStart,
+            regionEndBeat: overlapEnd,
+        });
+    }
+
+    const sortedRegions = lane.activeCompRegions;
+
+    for (const clip of clips) {
+        const gaps: { start: number; end: number }[] = [];
+        let cursor = clip.startBeat;
+
+        for (const region of sortedRegions) {
+            if (region.endBeat <= clip.startBeat || region.startBeat >= clip.endBeat) {
+                continue;
+            }
+            const regionStart = Math.max(region.startBeat, clip.startBeat);
+            if (cursor < regionStart) {
+                gaps.push({ start: cursor, end: regionStart });
+            }
+            cursor = Math.max(cursor, Math.min(region.endBeat, clip.endBeat));
+        }
+        if (cursor < clip.endBeat) {
+            gaps.push({ start: cursor, end: clip.endBeat });
+        }
+
+        for (const gap of gaps) {
+            resolvedClips.push({
+                ...clip,
+                startBeat: gap.start,
+                endBeat: gap.end,
+                regionStartBeat: gap.start,
+                regionEndBeat: gap.end,
+            });
+        }
+    }
+
+    return resolvedClips.sort((leftClip, rightClip) => leftClip.startBeat - rightClip.startBeat);
+}
+
 /**
  * Schedule a single track's clips into the given OfflineAudioContext.
  * Shared between mixdown and stem paths to avoid duplication.
@@ -33,14 +110,14 @@ import { yieldToMain } from './yieldToMain';
 export async function scheduleTrackClips(
     offlineCtx: OfflineAudioContext,
     track: Track,
-    midi: NonNullable<ReturnType<typeof getMidiStoreState>>,
+    midi: NonNullable<MidiStoreState>,
     trackInputNode: GainNode,
     trackGainNode: GainNode,
     trackPanNode: StereoPannerNode,
     destination: AudioNode,
     durationSeconds: number,
     defaultTempo: number,
-    changes: TempoChange[],
+    changes: TempoMapStoreState['changes'],
     onWarning?: (message: string) => void,
     pendingWorkletEvents?: PendingWorkletEvent[],
     allTracks?: ReadonlyArray<Track>,
@@ -48,7 +125,7 @@ export async function scheduleTrackClips(
 ): Promise<void> {
     const compensationDelay = getCompensationDelay(track.id);
 
-    const automationLanes = getAutomationLanes();
+    const automationLanes = automationStore.value?.lanes ?? [];
     let deviceEntries: DeviceNodeEntry[] = [];
 
     if (track.freezeState.status === 'frozen' && track.freezeState.frozenBufferId) {
@@ -89,8 +166,8 @@ export async function scheduleTrackClips(
         return;
     }
 
-    const clipsToProcess: { clip: import('#/modules/Arrangement/models/Track').Clip; padIndex: number }[] = [];
-    clipsToProcess.push(...resolveClipsWithComping(track.id, track.clips).map((c) => ({ clip: c, padIndex: -1 })));
+    const clipsToProcess: { clip: Track['clips'][number]; padIndex: number }[] = [];
+    clipsToProcess.push(...resolveTrackClipsWithComping(track.id, track.clips).map((clip) => ({ clip, padIndex: -1 })));
 
     const instrumentEntry = deviceEntries.find((e) => e.instrumentControls);
     const instrumentControls = instrumentEntry?.instrumentControls ?? null;
@@ -104,8 +181,8 @@ export async function scheduleTrackClips(
             if (!childTrack) {
                 continue;
             }
-            const childClips = resolveClipsWithComping(childTrack.id, childTrack.clips);
-            clipsToProcess.push(...childClips.map((c) => ({ clip: c, padIndex: i })));
+            const childClips = resolveTrackClipsWithComping(childTrack.id, childTrack.clips);
+            clipsToProcess.push(...childClips.map((clip) => ({ clip, padIndex: i })));
         }
     }
 

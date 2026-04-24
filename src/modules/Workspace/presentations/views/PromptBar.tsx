@@ -27,7 +27,6 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { toggleAiHistoryPanel } from '#/modules/AiRuntime/stores';
-import { describeAction } from '#/modules/Command/useCases';
 
 import { usePromptExecution, type PromptFuzzyResult, type SelectionTag } from '../hooks/usePromptExecution';
 
@@ -131,9 +130,9 @@ export const PromptBar = (): ReactElement => {
                 <Sparkles className="size-3.5 shrink-0 text-[var(--color-accent-peach)]" aria-hidden="true" />
                 <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap gap-1">
-                        {prompt.preview.actions.map((a, i: number) => (
+                        {prompt.preview.actionLabels.map((label, i: number) => (
                             <DawMicroBadge key={i} className="text-[10px] text-foreground">
-                                {describeAction(a)}
+                                {label}
                             </DawMicroBadge>
                         ))}
                     </div>

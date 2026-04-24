@@ -4,7 +4,6 @@
 export { ArrangementBar } from './ArrangementBar';
 export { BeatRulerBar } from './BeatRulerBar';
 export { MarkerLane } from './MarkerLane';
-export { MidiLearnButton } from './MidiLearnButton';
 export { TimelineChromeSurface } from './TimelineChromeSurface';
 export { TimelineMinimap } from './TimelineMinimap';
 export { TimelineSurface } from './TimelineSurface';

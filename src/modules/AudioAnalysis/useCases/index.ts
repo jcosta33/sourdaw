@@ -20,15 +20,11 @@ export { insertPolyphonicMidiNotes } from './insertPolyphonicMidiNotes';
 
 export { detectKey } from './keyDetection';
 
-export { mixHealthAnalysis } from './mixHealthAnalysis';
-
 export type { PitchResult, PitchTrackingOptions } from './pitchDetection';
 export { trackPitch, detectDominantPitch } from './pitchDetection';
 
 export type { PolyphonicAudioToMidiOptions, PolyphonicAudioToMidiResult } from './polyphonicAudioToMidi';
 export { polyphonicAudioToMidi } from './polyphonicAudioToMidi';
-
-export { analyzeMix } from './analyzeMix';
 
 export { createReferenceAnalysis } from './referenceMixComparison/analyzeMix/createReferenceAnalysis';
 export { analyzeMix as analyzeMixFromTrackLayout } from './referenceMixComparison/analyzeMix/analyzeMix';

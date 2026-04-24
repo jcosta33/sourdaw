@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleAddTimeSignatureChange } from '../handleAddTimeSignatureChange';
+import { handleNextSetlistItem } from '../handleNextSetlistItem';
+import { handlePreviousSetlistItem } from '../handlePreviousSetlistItem';
 import { handleRemoveTimeSignatureChange } from '../handleRemoveTimeSignatureChange';
 import { handleSeekPlayhead } from '../handleSeekPlayhead';
 import { handleSetCountInBars } from '../handleSetCountInBars';
 import { handleSetLoopRegion } from '../handleSetLoopRegion';
-import { handleSetMasterGain } from '../handleSetMasterGain';
 import { handleSetMetronomeVolume } from '../handleSetMetronomeVolume';
 import { handleSetPreRollBars } from '../handleSetPreRollBars';
 import { handleSetPunchIn } from '../handleSetPunchIn';
@@ -17,9 +18,16 @@ import { handleToggleMetronome } from '../handleToggleMetronome';
 import { handleTogglePlayback } from '../handleTogglePlayback';
 import { handleTogglePreRoll } from '../handleTogglePreRoll';
 import { handleTogglePunch } from '../handleTogglePunch';
+import { handleToggleLoopRecord } from '../handleToggleLoopRecord';
+import { handleTogglePunchRecording } from '../handleTogglePunchRecording';
 import { handleToggleRecording } from '../handleToggleRecording';
+import { handleTriggerScene } from '../handleTriggerScene';
 
 const mocks = vi.hoisted(() => ({
+    nextItem: vi.fn(),
+    notifyUser: vi.fn(),
+    previousItem: vi.fn(),
+    togglePunchRecording: vi.fn(),
     togglePlayback: vi.fn(),
     stopPlayback: vi.fn(),
     seekPlayhead: vi.fn(),
@@ -28,7 +36,6 @@ const mocks = vi.hoisted(() => ({
     addTimeSignatureChange: vi.fn(),
     removeTimeSignatureChange: vi.fn(),
     setCountInBars: vi.fn(),
-    setMasterGain: vi.fn(),
     setMetronomeVolume: vi.fn(),
     setPreRollBars: vi.fn(),
     setPunchIn: vi.fn(),
@@ -37,9 +44,19 @@ const mocks = vi.hoisted(() => ({
     toggleMetronome: vi.fn(),
     togglePreRoll: vi.fn(),
     togglePunchEnabled: vi.fn(),
+    toggleRecord: vi.fn(),
     toggleRecording: vi.fn(),
+    triggerScene: vi.fn(),
 }));
 
+vi.mock('../../../useCases/setlist/nextItem', () => ({ nextItem: mocks.nextItem }));
+vi.mock('../../../useCases/setlist/previousItem', () => ({ previousItem: mocks.previousItem }));
+vi.mock('../../../useCases/punchRecording/togglePunchRecording', () => ({
+    togglePunchRecording: mocks.togglePunchRecording,
+}));
+vi.mock('../../../useCases/loopStation/toggleRecord', () => ({ toggleRecord: mocks.toggleRecord }));
+vi.mock('../../../useCases/loopStation/triggerScene', () => ({ triggerScene: mocks.triggerScene }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 vi.mock('../../../useCases/transportControls/togglePlayback', () => ({ togglePlayback: mocks.togglePlayback }));
 vi.mock('../../../useCases/transportControls/stopPlayback', () => ({ stopPlayback: mocks.stopPlayback }));
 vi.mock('../../../useCases/transportControls/seekPlayhead', () => ({ seekPlayhead: mocks.seekPlayhead }));
@@ -52,7 +69,6 @@ vi.mock('../../../useCases/timeSignatureChanges/removeTimeSignatureChange', () =
     removeTimeSignatureChange: mocks.removeTimeSignatureChange,
 }));
 vi.mock('../../../useCases/transportControls/setCountInBars', () => ({ setCountInBars: mocks.setCountInBars }));
-vi.mock('#/modules/AudioEngine/useCases', () => ({ setMasterGain: mocks.setMasterGain }));
 vi.mock('../../../useCases/transportControls/setMetronomeVolume', () => ({
     setMetronomeVolume: mocks.setMetronomeVolume,
 }));
@@ -113,11 +129,6 @@ describe('Transport Handlers', () => {
         expect(mocks.setCountInBars).toHaveBeenCalledWith(2);
     });
 
-    it('handleSetMasterGain delegates to use case', () => {
-        handleSetMasterGain.execute({ type: 'setMasterGain', payload: { gain: 0.8 } });
-        expect(mocks.setMasterGain).toHaveBeenCalledWith(0.8);
-    });
-
     it('handleSetMetronomeVolume delegates to use case', () => {
         handleSetMetronomeVolume.execute({ type: 'setMetronomeVolume', payload: { volume: 0.5 } });
         expect(mocks.setMetronomeVolume).toHaveBeenCalledWith(0.5);
@@ -161,5 +172,31 @@ describe('Transport Handlers', () => {
     it('handleToggleRecording delegates to use case', () => {
         handleToggleRecording.execute({ type: 'toggleRecording', payload: {} });
         expect(mocks.toggleRecording).toHaveBeenCalled();
+    });
+
+    it('handleTogglePunchRecording delegates to use case and notifies the user', () => {
+        handleTogglePunchRecording.execute({ type: 'togglePunchRecording', payload: {} });
+        expect(mocks.togglePunchRecording).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Punch recording toggled');
+    });
+
+    it('handleToggleLoopRecord delegates to use case with slot id', () => {
+        handleToggleLoopRecord.execute({ type: 'toggleLoopRecord', payload: { slotId: 'slot-1' } });
+        expect(mocks.toggleRecord).toHaveBeenCalledWith('slot-1');
+    });
+
+    it('handleTriggerScene delegates to use case with column', () => {
+        handleTriggerScene.execute({ type: 'triggerScene', payload: { column: 2 } });
+        expect(mocks.triggerScene).toHaveBeenCalledWith(2);
+    });
+
+    it('handleNextSetlistItem delegates to use case', () => {
+        handleNextSetlistItem.execute({ type: 'nextSetlistItem', payload: {} });
+        expect(mocks.nextItem).toHaveBeenCalledTimes(1);
+    });
+
+    it('handlePreviousSetlistItem delegates to use case', () => {
+        handlePreviousSetlistItem.execute({ type: 'previousSetlistItem', payload: {} });
+        expect(mocks.previousItem).toHaveBeenCalledTimes(1);
     });
 });

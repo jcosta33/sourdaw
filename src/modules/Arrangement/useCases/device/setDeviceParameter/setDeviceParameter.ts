@@ -1,6 +1,6 @@
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { recordAutomationValue } from '#/modules/Automation/useCases';
-import { getTransportState } from '#/modules/Transport/useCases';
+import { transportStore } from '#/modules/Transport/stores';
 
 import { getTrackState } from '../../../repositories/track/getTrackState';
 import { updateTrack } from '../../../repositories/track/updateTrack';
@@ -36,7 +36,7 @@ export function setDeviceParameter(deviceId: string, paramId: string, value: num
     }));
 
     // Record automation if playing in a recording mode
-    const transport = getTransportState();
+    const transport = transportStore.value;
     if (transport?.isPlaying && RECORDING_MODES.has(track.automationMode)) {
         recordAutomationValue(track.id, `${deviceId}:${paramId}`, value, transport.playheadPosition);
     }

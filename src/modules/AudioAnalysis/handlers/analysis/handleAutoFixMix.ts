@@ -1,21 +1,21 @@
-import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime/useCases';
+import { mixAnalysisStore } from '#/modules/AiRuntime/stores';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { analyzeMix } from '../../useCases/analyzeMix';
 
 export const handleAutoFixMix = createHandler<'autoFixMix'>({
     execute: async () => {
-        const { executeAppAction } = await import('#/modules/Command/useCases');
-        const state = getMixAnalysisStoreValue();
+        const state = mixAnalysisStore.value;
         if (!state) {
             return;
         }
 
-        setMixAnalysisStoreValue({ ...state, isAnalyzing: true });
+        mixAnalysisStore.set({ ...state, isAnalyzing: true });
 
         try {
             const result = await analyzeMix();
-            setMixAnalysisStoreValue({ result, isAnalyzing: false, panelOpen: true });
+            mixAnalysisStore.set({ result, isAnalyzing: false, panelOpen: true });
 
             for (const tl of result.trackLevels) {
                 if (tl.isClipping) {
@@ -39,9 +39,9 @@ export const handleAutoFixMix = createHandler<'autoFixMix'>({
             }
 
             const refreshed = await analyzeMix();
-            setMixAnalysisStoreValue({ result: refreshed, isAnalyzing: false, panelOpen: true });
+            mixAnalysisStore.set({ result: refreshed, isAnalyzing: false, panelOpen: true });
         } catch {
-            setMixAnalysisStoreValue({ ...state, isAnalyzing: false });
+            mixAnalysisStore.set({ ...state, isAnalyzing: false });
         }
     },
     describe: () => ({ label: 'Auto-fix mix issues' }),

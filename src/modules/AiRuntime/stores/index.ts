@@ -13,5 +13,8 @@ export type { AiActionEntry, AiActionGroup, AiActionHistoryState } from './aiAct
 export { llmStatusStore } from './llmStatusStore';
 export type { LlmEngineStatus } from './llmStatusStore';
 
+export { mixAnalysisStore, toggleMixAnalysisPanel } from './mixAnalysisStore';
+export type { MixAnalysisStoreState } from './mixAnalysisStore';
+
 export { voiceStatusStore } from './voiceStatusStore';
 export type { VoiceStatus } from './voiceStatusStore';

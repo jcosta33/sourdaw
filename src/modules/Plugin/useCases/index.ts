@@ -18,9 +18,6 @@ export type { FaustModule, FaustParamDescriptor } from './faustEngine/compilerEn
 
 export { toggleNodeView } from './nodeView/toggleNodeView';
 
-export { createTrackForPlugin } from './pluginBrowserActions/createTrackForPlugin';
-export { loadExternalPlugin } from './pluginBrowserActions/loadExternalPlugin';
-
 export { getPluginHostHandlers } from './getPluginHostHandlers';
 
 export { loadPlugin } from './pluginLifecycle/loadPlugin';
@@ -50,7 +47,6 @@ export { registerBuiltinPlugins } from './wamPluginHost/builtinDescriptors';
 export { registerChamberInstance } from './proofChamber/registerChamberInstance';
 export { updateChamberEngine } from './proofChamber/updateChamberEngine';
 export { setChamberUILevel } from './proofChamber/setChamberUILevel';
-export { updateProofChamberParam } from './proofChamberParamBridge';
 
 export type { WAMDescriptor, WAMInstance } from './wamPluginHost/hostOperations/helpers';
 export { initWAMEnvironment } from './wamPluginHost/hostOperations/initWAMEnvironment';

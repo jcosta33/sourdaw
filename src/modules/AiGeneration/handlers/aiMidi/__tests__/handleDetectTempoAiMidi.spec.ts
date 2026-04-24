@@ -7,7 +7,15 @@ const mocks = vi.hoisted(() => ({
     info: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: {
+        value: {
+            tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf1' }] }],
+        },
+    },
+}));
+
+vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     detectTempo: mocks.detectTempo,
 }));
 
@@ -21,14 +29,14 @@ describe('handleDetectTempoAiMidi', () => {
     });
 
     it('detects tempo and logs it', async () => {
-        mocks.detectTempo.mockResolvedValue(125);
+        mocks.detectTempo.mockReturnValue(125);
 
         await handleDetectTempoAiMidi.execute({
             type: 'detectTempo',
             payload: { clipId: 'c1' },
         });
 
-        expect(mocks.detectTempo).toHaveBeenCalledWith('c1');
+        expect(mocks.detectTempo).toHaveBeenCalledWith('buf1');
         expect(mocks.info).toHaveBeenCalledWith('[Analysis] Tempo detected for clip c1: ~125 BPM');
     });
 

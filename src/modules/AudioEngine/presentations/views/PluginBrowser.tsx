@@ -11,13 +11,10 @@ import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
+import { addTrack } from '#/modules/Arrangement/useCases';
+import { addExternalDevice } from '#/modules/Arrangement/useCases';
 import { pluginScanStore, defaultPluginScanState } from '#/modules/Plugin/stores';
-import {
-    startPluginScan,
-    createTrackForPlugin,
-    loadExternalPlugin,
-    type ScannedPlugin,
-} from '#/modules/Plugin/useCases';
+import { startPluginScan, type ScannedPlugin } from '#/modules/Plugin/useCases';
 import { getPlatformCapabilities, DISABLED_REASONS } from '#/utils/platformCapabilities';
 import { cn } from '#/utils/Styles/cn';
 
@@ -100,13 +97,13 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
         let trackId = selectedTrackId;
         if (!trackId) {
             const isInstrument = plugin.category.toLowerCase() === 'instrument';
-            const newTrack = createTrackForPlugin(plugin.name, isInstrument ? 'midi' : 'audio');
+            const newTrack = addTrack({ name: plugin.name, kind: isInstrument ? 'midi' : 'audio' });
             if (!newTrack) {
                 return;
             }
             trackId = newTrack.id;
         }
-        loadExternalPlugin(trackId, plugin.id, plugin.name);
+        addExternalDevice(trackId, plugin.id, plugin.name);
     };
 
     const handleScan = () => {

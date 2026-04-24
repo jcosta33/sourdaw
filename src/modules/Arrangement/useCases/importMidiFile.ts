@@ -1,4 +1,4 @@
-import { commitUndoEntry, createCallbackUndoEntry } from '#/modules/Command/useCases';
+import { pushUndoEntry } from '#/modules/Command/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { readMidiFile } from '#/modules/MIDI/useCases';
 
@@ -76,25 +76,23 @@ export async function importMidiFile(file: File): Promise<void> {
     const importedName =
         parsedTracks.length === 1 ? (parsedTracks[0]?.name ?? 'MIDI file') : `${parsedTracks.length} MIDI tracks`;
 
-    commitUndoEntry(
-        createCallbackUndoEntry(
-            `Import MIDI: ${importedName}`,
-            () => {
-                if (trackSnapshotBefore) {
-                    trackStore.set(trackSnapshotBefore);
-                }
-                if (midiSnapshotBefore) {
-                    midiStore.set(midiSnapshotBefore);
-                }
-            },
-            () => {
-                if (trackSnapshotAfter) {
-                    trackStore.set(trackSnapshotAfter);
-                }
-                if (midiSnapshotAfter) {
-                    midiStore.set(midiSnapshotAfter);
-                }
+    pushUndoEntry(
+        `Import MIDI: ${importedName}`,
+        () => {
+            if (trackSnapshotBefore) {
+                trackStore.set(trackSnapshotBefore);
             }
-        )
+            if (midiSnapshotBefore) {
+                midiStore.set(midiSnapshotBefore);
+            }
+        },
+        () => {
+            if (trackSnapshotAfter) {
+                trackStore.set(trackSnapshotAfter);
+            }
+            if (midiSnapshotAfter) {
+                midiStore.set(midiSnapshotAfter);
+            }
+        }
     );
 }

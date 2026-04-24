@@ -1,11 +1,62 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import * as subject from '../automationShapes';
+import { type AutomationLane } from '../../models/Automation';
+import { insertAutomationShape } from '../automationShapes';
+
+const storeCell = vi.hoisted(() => ({
+    state: null as { lanes: AutomationLane[] } | null,
+}));
+
+vi.mock('../../stores/automationStore', () => ({
+    automationStore: {
+        get value() {
+            return storeCell.state;
+        },
+        set(next: { lanes: AutomationLane[] }) {
+            storeCell.state = next;
+        },
+    },
+}));
+
+function makeLane(id: string): AutomationLane {
+    return {
+        id,
+        trackId: 'track-1',
+        parameterId: 'gain',
+        parameterName: 'Gain',
+        points: [],
+        objects: [],
+        visible: true,
+        enabled: true,
+        collapsed: false,
+        virginTerritory: false,
+        minValue: 0,
+        maxValue: 10,
+    };
+}
 
 describe('automationShapes', () => {
-    it('should export insertAutomationShape', () => {
-        expect(subject.insertAutomationShape).toBeDefined();
-        const t = typeof subject.insertAutomationShape;
-        expect(t === 'function' || t === 'object').toBe(true);
+    beforeEach(() => {
+        storeCell.state = { lanes: [makeLane('lane-a')] };
+    });
+
+    it('inserts scaled triangle points into the target lane', () => {
+        insertAutomationShape('lane-a', 'triangle', 0, 4);
+
+        expect(storeCell.state?.lanes[0]?.points).toEqual([
+            { beat: 0, value: 0, curve: 'linear', tension: 0 },
+            { beat: 2, value: 10, curve: 'linear', tension: 0 },
+            { beat: 4, value: 0, curve: 'linear', tension: 0 },
+        ]);
+    });
+
+    it('skips duplicate cycle boundary points', () => {
+        insertAutomationShape('lane-a', 'sawtooth-up', 0, 8, 2);
+
+        expect(storeCell.state?.lanes[0]?.points).toEqual([
+            { beat: 0, value: 0, curve: 'linear', tension: 0 },
+            { beat: 4, value: 0, curve: 'linear', tension: 0 },
+            { beat: 8, value: 10, curve: 'linear', tension: 0 },
+        ]);
     });
 });

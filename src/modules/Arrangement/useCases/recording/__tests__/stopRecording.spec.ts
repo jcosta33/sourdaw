@@ -5,7 +5,7 @@ import { stopRecording } from '../stopRecording';
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn(),
     setTrackState: vi.fn(),
-    getTransportState: vi.fn(),
+    transportStoreValue: null as unknown,
     takeLaneStoreValue: { value: { lanes: [] } },
     takeLaneStoreSet: vi.fn(),
     activeRecordingRef: { current: ['c1'] },
@@ -19,9 +19,13 @@ vi.mock('../../../repositories/track/setTrackState', () => ({
     setTrackState: mocks.setTrackState,
 }));
 
-vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getTransportState: mocks.getTransportState,
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
+    transportStore: {
+        get value() {
+            return mocks.transportStoreValue;
+        },
+    },
 }));
 
 vi.mock('#/modules/Arrangement/stores/takeLaneStore', () => ({
@@ -52,7 +56,7 @@ describe('stopRecording', () => {
                 },
             ],
         });
-        mocks.getTransportState.mockReturnValue({ playheadPosition: 8 });
+        mocks.transportStoreValue = { playheadPosition: 8 };
         mocks.takeLaneStoreValue.value = null;
 
         stopRecording();
@@ -67,7 +71,7 @@ describe('stopRecording', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ clips: [{ id: 'c1', type: 'midi', startBeat: 4, endBeat: 4 }] }],
         });
-        mocks.getTransportState.mockReturnValue({ playheadPosition: 4.1 });
+        mocks.transportStoreValue = { playheadPosition: 4.1 };
 
         stopRecording();
 
@@ -77,7 +81,7 @@ describe('stopRecording', () => {
 
     it('updates take lanes', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [{ clips: [] }] });
-        mocks.getTransportState.mockReturnValue({ playheadPosition: 10 });
+        mocks.transportStoreValue = { playheadPosition: 10 };
         mocks.takeLaneStoreValue.value = {
             lanes: [{ id: 'l1', takes: [{ clipId: 'c1', startBeat: 0, endBeat: 0 }] }],
         };

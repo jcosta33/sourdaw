@@ -23,6 +23,10 @@ export type { TimelineViewState } from './timelineViewStore';
 
 export { trackStore, defaultTrackState } from './trackStore';
 export type { TrackStoreState, Track } from './trackStore';
+export { persistDeviceParam } from './persistDeviceParam';
+export { updateClipInStore } from './updateClipInStore';
+export { appendClipToTrack } from './appendClipToTrack';
+export { appendTrack } from './appendTrack';
 
 export type { AdjustmentEffectType } from './adjustmentLayer';
 

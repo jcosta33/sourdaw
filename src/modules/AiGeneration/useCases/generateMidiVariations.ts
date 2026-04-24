@@ -8,7 +8,7 @@ import {
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createAlternativeClips, getTrackStoreState as getTrackState } from '#/modules/Arrangement/useCases';
 import { type VariationNote } from '#/modules/Arrangement/useCases';
-import { commitUndoEntry, createCallbackUndoEntry } from '#/modules/Command/useCases';
+import { pushUndoEntry } from '#/modules/Command/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getNotesForClip } from '#/modules/MIDI/useCases';
 
@@ -159,7 +159,7 @@ ONLY output raw JSON, no markdown blocks.`;
     const trackSnapshotAfter = trackStore.value;
     const midiSnapshotAfter = midiStore.value;
 
-    const undoEntry = createCallbackUndoEntry(
+    pushUndoEntry(
         `AI Variations: ${clipId}`,
         () => {
             if (trackSnapshotBefore) {
@@ -177,8 +177,7 @@ ONLY output raw JSON, no markdown blocks.`;
                 midiStore.set(midiSnapshotAfter);
             }
         },
-        'ai'
+        { source: 'ai' }
     );
-    commitUndoEntry(undoEntry);
     return variations.length;
 }

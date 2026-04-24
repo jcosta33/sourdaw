@@ -5,7 +5,7 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { stopPlayheadScheduler } from '../playheadScheduler';
 
-import { toggleRecording } from './toggleRecording';
+import { stopActiveRecording } from './recordingLifecycle';
 
 export function stopPlayback(): void {
     const state = getTransportState();
@@ -16,10 +16,10 @@ export function stopPlayback(): void {
     // §8.7 / N5 — Spacebar stop used to flip `isRecording: false` directly,
     // which bypassed `stopAudioRecording` + `stopRecording`: the media
     // recorder kept capturing, the audio buffer never flushed, and the clip
-    // stayed empty. Route through `toggleRecording` so the recording
+    // stayed empty. Route through `stopActiveRecording` so the recording
     // pipeline commits the buffer to the clip before we halt the transport.
     if (state.isRecording) {
-        toggleRecording();
+        stopActiveRecording();
     }
 
     stopPlayheadScheduler();

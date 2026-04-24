@@ -1,5 +1,4 @@
-import { rdpSimplify } from '#/modules/Arrangement/useCases';
-
+import { simplifyAutomationPoints } from '../../services/automationPointAlgorithms';
 import { automationStore } from '../../stores/automationStore';
 
 export function thinAutomationPoints(laneId: string, tolerance = 0.01): void {
@@ -15,7 +14,7 @@ export function thinAutomationPoints(laneId: string, tolerance = 0.01): void {
             if (lane.points.length <= 2) {
                 return lane;
             }
-            return { ...lane, points: rdpSimplify(lane.points, tolerance) };
+            return { ...lane, points: simplifyAutomationPoints({ points: lane.points, tolerance }) };
         }),
     });
 }

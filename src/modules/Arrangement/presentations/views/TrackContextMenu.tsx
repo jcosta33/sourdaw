@@ -4,8 +4,6 @@ import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuInlineEditor } from '#/components/daw/DawMenuInlineEditor';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
-import { type BounceOptions } from '#/modules/Arrangement';
-import { BounceOptionsDialog } from '#/modules/Workspace/presentations/views';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 import { cn } from '#/utils/Styles/cn';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
@@ -14,6 +12,7 @@ import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { addClip } from '../../useCases/clip/addClip';
 import { duplicateTrack } from '../../useCases/duplicateTrack';
+import { type BounceOptions } from '../../useCases/freezeBounce/bounceOperations';
 import { bounceTrack } from '../../useCases/freezeBounce/bounceOperations';
 import { flattenTrack } from '../../useCases/freezeBounce/flattenTrack';
 import { freezeTrack } from '../../useCases/freezeBounce/freezeTrack';
@@ -27,6 +26,8 @@ import { setInputMonitoring } from '../../useCases/setTrackGainPan/setInputMonit
 import { setTrackColor } from '../../useCases/setTrackGainPan/setTrackColor';
 import { toggleSoloSafe } from '../../useCases/toggleTrackState/toggleSoloSafe';
 import { saveTrackAsTemplate } from '../../useCases/trackTemplate';
+
+import { BounceOptionsDialog } from './BounceOptionsDialog';
 
 const INPUT_MON_OPTIONS: { value: InputMonitoring; label: string }[] = [
     { value: 'auto', label: 'Auto' },

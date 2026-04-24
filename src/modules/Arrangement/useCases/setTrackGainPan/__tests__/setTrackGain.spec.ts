@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     engineSetTrackGain: vi.fn(),
     updateDeviceParam: vi.fn(),
     getAllTracks: vi.fn(),
-    getTransportState: vi.fn(),
+    transportStoreValue: { isPlaying: false } as unknown,
     getTrackById: vi.fn(),
     recordAutomationValue: vi.fn(),
 }));
@@ -30,9 +30,13 @@ vi.mock('#/modules/Arrangement/useCases/getAllTracks', () => ({
     getAllTracks: mocks.getAllTracks,
 }));
 
-vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getTransportState: mocks.getTransportState,
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
+    transportStore: {
+        get value() {
+            return mocks.transportStoreValue;
+        },
+    },
 }));
 
 vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
@@ -44,7 +48,7 @@ describe('setTrackGain', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getAllTracks.mockReturnValue([]);
-        mocks.getTransportState.mockReturnValue({ isPlaying: false });
+        mocks.transportStoreValue = { isPlaying: false };
     });
 
     it('updates track gain and notifies engine', () => {
@@ -67,7 +71,7 @@ describe('setTrackGain', () => {
 
     it('records automation if track automation mode is write/touch', () => {
         mocks.getTrackById.mockReturnValue({ id: 't1', automationMode: 'write' });
-        mocks.getTransportState.mockReturnValue({ isPlaying: true, playheadPosition: 10 });
+        mocks.transportStoreValue = { isPlaying: true, playheadPosition: 10 };
 
         setTrackGain('t1', 0.8);
 

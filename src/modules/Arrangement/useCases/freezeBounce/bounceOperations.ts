@@ -1,6 +1,6 @@
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { pushUndoEntry } from '#/modules/Command/useCases';
-import { getTransportState } from '#/modules/Transport/useCases';
+import { pushUndoEntry } from '#/modules/Command/stores';
+import { transportStore } from '#/modules/Transport/stores';
 
 import { type Clip, type Track } from '../../models/Track';
 import { trackStore } from '../../stores/trackStore';
@@ -41,7 +41,7 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
     // Add tail if requested
     let finalEndBeat = endBeat;
     if (options.tailHandling === 'manual') {
-        const tempo = getTransportState()?.tempo ?? 120;
+        const tempo = transportStore.value?.tempo ?? 120;
         finalEndBeat += (5 * tempo) / 60; // 5 seconds fixed tail
     }
 

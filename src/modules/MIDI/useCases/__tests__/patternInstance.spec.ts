@@ -1,23 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 
 import { getPatternInstances } from '../patternInstance/getPatternInstances';
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
-    getTrackStoreState: vi.fn(),
+const { mocks } = vi.hoisted(() => ({
+    mocks: {
+        trackStore: { value: null },
+    },
+}));
+
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    trackStore: mocks.trackStore,
 }));
 
 describe('getPatternInstances', () => {
     beforeEach(() => {
         Container.clear();
-        vi.mocked(getTrackStoreState).mockReset();
+        mocks.trackStore.value = null;
     });
 
     it('returns an empty list when track state is unavailable', () => {
-        vi.mocked(getTrackStoreState).mockReturnValue(null);
+        mocks.trackStore.value = null;
 
         expect(getPatternInstances('parent')).toEqual([]);
     });

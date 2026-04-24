@@ -1,4 +1,4 @@
-import { getWorkspaceState } from '#/modules/Workspace/useCases';
+import { workspaceStore } from '#/modules/Workspace/stores';
 
 import { getTrackStoreState } from '../getTrackStoreState';
 
@@ -27,7 +27,7 @@ type PlanRippleInsertInput = {
  * Clips whose startBeat >= insertBeat are shifted forward by insertDuration.
  */
 export function planRippleInsert({ trackId, insertBeat }: PlanRippleInsertInput): RippleInsertPlan | null {
-    const rippleEnabled = getWorkspaceState()?.rippleEditing ?? false;
+    const rippleEnabled = workspaceStore.value?.rippleEditing ?? false;
     if (!rippleEnabled) {
         return null;
     }

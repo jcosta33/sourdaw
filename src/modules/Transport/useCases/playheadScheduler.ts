@@ -56,7 +56,21 @@ const schedulerSession = {
     scheduledFrozenTracks: new Set<string>(),
     activeAudioSources: [] as AudioBufferSourceNode[],
     punchRecordingActive: false,
+    onStopRequested: null as (() => void) | null,
 };
+
+/**
+ * Wire the scheduler's follow-action stop path to the full `stopPlayback`
+ * routine. Registered once from `src/app/bootstrap.ts` after all modules
+ * have loaded, so the scheduler never needs a static or dynamic import of
+ * `stopPlayback` (which would form a scheduler ↔ stopPlayback cycle).
+ *
+ * If the callback has not been registered yet (e.g. during tests that boot
+ * the scheduler directly), the follow-action `shouldStop` branch is a no-op.
+ */
+export function setStopPlaybackCallback(fn: () => void): void {
+    schedulerSession.onStopRequested = fn;
+}
 
 const SCHEDULE_AHEAD_SECONDS = 0.1;
 const DEFAULT_SCHEDULE_GRAIN_MS = 10;
@@ -133,7 +147,7 @@ export function startPlayheadScheduler(): void {
         const jumpToPosition = rawJumpToPosition;
 
         if (shouldStop) {
-            import('./transportControls/stopPlayback').then(({ stopPlayback }) => stopPlayback());
+            schedulerSession.onStopRequested?.();
             return;
         }
 

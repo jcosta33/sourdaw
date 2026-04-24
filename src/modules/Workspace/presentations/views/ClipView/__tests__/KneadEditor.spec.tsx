@@ -71,8 +71,11 @@ vi.mock('#/components/daw/DawCompactCheckbox', () => ({
     ),
 }));
 
-vi.mock('#/modules/Knead/stores/kneadStore', () => ({
+vi.mock('#/modules/Knead/stores', () => ({
     kneadStore: { value: { clips: {} } },
+}));
+
+vi.mock('#/modules/Knead/useCases', () => ({
     updateClipKneadState: vi.fn(),
 }));
 

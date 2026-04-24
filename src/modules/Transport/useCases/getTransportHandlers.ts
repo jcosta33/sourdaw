@@ -1,11 +1,10 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
-
 import { handleAddTimeSignatureChange } from '../handlers/transport/handleAddTimeSignatureChange';
+import { handleNextSetlistItem } from '../handlers/transport/handleNextSetlistItem';
+import { handlePreviousSetlistItem } from '../handlers/transport/handlePreviousSetlistItem';
 import { handleRemoveTimeSignatureChange } from '../handlers/transport/handleRemoveTimeSignatureChange';
 import { handleSeekPlayhead } from '../handlers/transport/handleSeekPlayhead';
 import { handleSetCountInBars } from '../handlers/transport/handleSetCountInBars';
 import { handleSetLoopRegion } from '../handlers/transport/handleSetLoopRegion';
-import { handleSetMasterGain } from '../handlers/transport/handleSetMasterGain';
 import { handleSetMetronomeVolume } from '../handlers/transport/handleSetMetronomeVolume';
 import { handleSetPreRollBars } from '../handlers/transport/handleSetPreRollBars';
 import { handleSetPunchIn } from '../handlers/transport/handleSetPunchIn';
@@ -18,31 +17,35 @@ import { handleToggleMetronome } from '../handlers/transport/handleToggleMetrono
 import { handleTogglePlayback } from '../handlers/transport/handleTogglePlayback';
 import { handleTogglePreRoll } from '../handlers/transport/handleTogglePreRoll';
 import { handleTogglePunch } from '../handlers/transport/handleTogglePunch';
+import { handleToggleLoopRecord } from '../handlers/transport/handleToggleLoopRecord';
+import { handleTogglePunchRecording } from '../handlers/transport/handleTogglePunchRecording';
 import { handleToggleRecording } from '../handlers/transport/handleToggleRecording';
-
-type TransportAppAction =
-    | Extract<AppAction, { type: 'setTempo' }>
-    | Extract<AppAction, { type: 'togglePlayback' }>
-    | Extract<AppAction, { type: 'stopPlayback' }>
-    | Extract<AppAction, { type: 'toggleRecording' }>
-    | Extract<AppAction, { type: 'toggleLoop' }>
-    | Extract<AppAction, { type: 'toggleMetronome' }>
-    | Extract<AppAction, { type: 'setMetronomeVolume' }>
-    | Extract<AppAction, { type: 'setMasterGain' }>
-    | Extract<AppAction, { type: 'setLoopRegion' }>
-    | Extract<AppAction, { type: 'seekPlayhead' }>
-    | Extract<AppAction, { type: 'setPunchIn' }>
-    | Extract<AppAction, { type: 'setPunchOut' }>
-    | Extract<AppAction, { type: 'togglePunch' }>
-    | Extract<AppAction, { type: 'toggleCountIn' }>
-    | Extract<AppAction, { type: 'setCountInBars' }>
-    | Extract<AppAction, { type: 'addTimeSignatureChange' }>
-    | Extract<AppAction, { type: 'removeTimeSignatureChange' }>
-    | Extract<AppAction, { type: 'togglePreRoll' }>
-    | Extract<AppAction, { type: 'setPreRollBars' }>;
+import { handleTriggerScene } from '../handlers/transport/handleTriggerScene';
 
 export type TransportHandlersMap = {
-    [Action in TransportAppAction as Action['type']]: ActionHandler<Action>;
+    addTimeSignatureChange: typeof handleAddTimeSignatureChange;
+    nextSetlistItem: typeof handleNextSetlistItem;
+    previousSetlistItem: typeof handlePreviousSetlistItem;
+    removeTimeSignatureChange: typeof handleRemoveTimeSignatureChange;
+    seekPlayhead: typeof handleSeekPlayhead;
+    setCountInBars: typeof handleSetCountInBars;
+    setLoopRegion: typeof handleSetLoopRegion;
+    setMetronomeVolume: typeof handleSetMetronomeVolume;
+    setPreRollBars: typeof handleSetPreRollBars;
+    setPunchIn: typeof handleSetPunchIn;
+    setPunchOut: typeof handleSetPunchOut;
+    setTempo: typeof handleSetTempo;
+    stopPlayback: typeof handleStopPlayback;
+    toggleCountIn: typeof handleToggleCountIn;
+    toggleLoop: typeof handleToggleLoop;
+    toggleMetronome: typeof handleToggleMetronome;
+    togglePlayback: typeof handleTogglePlayback;
+    togglePreRoll: typeof handleTogglePreRoll;
+    togglePunch: typeof handleTogglePunch;
+    toggleLoopRecord: typeof handleToggleLoopRecord;
+    togglePunchRecording: typeof handleTogglePunchRecording;
+    toggleRecording: typeof handleToggleRecording;
+    triggerScene: typeof handleTriggerScene;
 };
 
 /**
@@ -57,7 +60,6 @@ export function getTransportHandlers(): TransportHandlersMap {
         toggleLoop: handleToggleLoop,
         toggleMetronome: handleToggleMetronome,
         setMetronomeVolume: handleSetMetronomeVolume,
-        setMasterGain: handleSetMasterGain,
         setLoopRegion: handleSetLoopRegion,
         seekPlayhead: handleSeekPlayhead,
         setPunchIn: handleSetPunchIn,
@@ -69,5 +71,10 @@ export function getTransportHandlers(): TransportHandlersMap {
         removeTimeSignatureChange: handleRemoveTimeSignatureChange,
         togglePreRoll: handleTogglePreRoll,
         setPreRollBars: handleSetPreRollBars,
+        togglePunchRecording: handleTogglePunchRecording,
+        toggleLoopRecord: handleToggleLoopRecord,
+        triggerScene: handleTriggerScene,
+        nextSetlistItem: handleNextSetlistItem,
+        previousSetlistItem: handlePreviousSetlistItem,
     };
 }

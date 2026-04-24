@@ -1,5 +1,5 @@
-import { getAllTracks } from '#/modules/Arrangement/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { pushUndoEntry } from '#/modules/Command/stores';
 
 import { automationStore } from '../../stores/automationStore';
 
@@ -16,7 +16,7 @@ export function stopAutomationRecording(): void {
     // Snapshot lane state before flushing for undo
     const laneBefore = automationStore.value ? structuredClone(automationStore.value.lanes) : [];
 
-    const tracks = getAllTracks();
+    const tracks = trackStore.value?.tracks ?? [];
 
     for (const [key, session] of activeRecording) {
         const track = tracks.find((t) => t.id === session.trackId);

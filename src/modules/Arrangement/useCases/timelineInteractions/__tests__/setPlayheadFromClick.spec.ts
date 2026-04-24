@@ -4,44 +4,54 @@ import { defaultTransportState } from '#/modules/Transport/models/TransportState
 
 import { setPlayheadFromClick } from '../setPlayheadFromClick';
 
-const mockGetTransportState = vi.fn();
-const mockUpdateTransportState = vi.fn();
-vi.mock('#/modules/Transport/useCases', () => ({
-    getTransportState: () => mockGetTransportState(),
-    updateTransportState: (...args: any[]) => mockUpdateTransportState(...args),
+const mocks = vi.hoisted(() => ({
+    transportStoreValue: null as unknown,
+    transportStoreSet: vi.fn(),
+    timelineViewValue: null as unknown,
 }));
 
-let mockTimelineViewValue: any = null;
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
+    transportStore: {
+        get value() {
+            return mocks.transportStoreValue;
+        },
+        set: mocks.transportStoreSet,
+    },
+}));
+
 vi.mock('../../../stores/timelineViewStore', () => ({
     timelineViewStore: {
         get value() {
-            return mockTimelineViewValue;
+            return mocks.timelineViewValue;
         },
     },
 }));
 
 describe('setPlayheadFromClick', () => {
     beforeEach(() => {
-        mockGetTransportState.mockReset();
-        mockUpdateTransportState.mockReset();
-        mockTimelineViewValue = null;
+        mocks.transportStoreValue = null;
+        mocks.transportStoreSet.mockReset();
+        mocks.timelineViewValue = null;
     });
 
     it('does not update transport when transport snapshot is null', () => {
-        mockTimelineViewValue = { pixelsPerBeat: 12, scrollX: 0, scrollY: 0 };
-        mockGetTransportState.mockReturnValue(null);
+        mocks.timelineViewValue = { pixelsPerBeat: 12, scrollX: 0, scrollY: 0 };
+        mocks.transportStoreValue = null;
 
         setPlayheadFromClick(100);
 
-        expect(mockUpdateTransportState).not.toHaveBeenCalled();
+        expect(mocks.transportStoreSet).not.toHaveBeenCalled();
     });
 
     it('maps canvas x to playhead beats using timeline view state', () => {
-        mockTimelineViewValue = { pixelsPerBeat: 12, scrollX: 0, scrollY: 0 };
-        mockGetTransportState.mockReturnValue(defaultTransportState);
+        mocks.timelineViewValue = { pixelsPerBeat: 12, scrollX: 0, scrollY: 0 };
+        mocks.transportStoreValue = defaultTransportState;
 
         setPlayheadFromClick(24);
 
-        expect(mockUpdateTransportState).toHaveBeenCalledWith({ playheadPosition: 2 });
+        expect(mocks.transportStoreSet).toHaveBeenCalledWith(
+            expect.objectContaining({ playheadPosition: 2 })
+        );
     });
 });

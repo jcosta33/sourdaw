@@ -1,10 +1,11 @@
 import { trackStore, markerStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
+import { waitForDevices } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane } from '#/modules/Automation/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
-import { defaultTransportState } from '#/modules/Transport/useCases';
+import { defaultTransportState, ensureTrackStrips } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
 import { applyPreset } from '../demoUtils/applyPreset';
@@ -2264,11 +2265,9 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     syncArrangement(tracks);
 
     // Bootstrap device audio nodes from store state
-    const { ensureTrackStrips } = await import('#/modules/Transport/useCases');
     ensureTrackStrips();
 
     // Await all internal async device creations (e.g. Faust WASM compilation)
-    const { waitForDevices } = await import('#/modules/AudioEngine/useCases');
     await waitForDevices();
 
     projectStore.set({

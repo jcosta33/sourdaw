@@ -1,4 +1,5 @@
-import { type NoteBlob, updateClipKneadState } from '../stores/kneadStore';
+import { type NoteBlob } from '../stores/kneadStore';
+import { updateClipKneadState } from './updateClipKneadState';
 
 /**
  * Parses raw analysis frames from the Rust/WASM engine and converts them

@@ -4,7 +4,7 @@
  * Synchronizes with the kneadStore to receive per-clip pitch blobs and parameters.
  */
 
-import { type KneadClipState } from '#/modules/Knead/stores/kneadStore';
+import { type KneadClipState } from '#/modules/Knead/stores';
 
 import kneadProcessorUrl from '../services/kneadProcessor.ts?worker&url';
 

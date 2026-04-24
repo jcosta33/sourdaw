@@ -1,4 +1,5 @@
-import type { persistDeviceParam, persistDevicePatch, getAllTracks } from '#/modules/Arrangement/useCases';
+import type { Track, persistDeviceParam } from '#/modules/Arrangement/stores';
+import type { persistDevicePatch } from '#/modules/Arrangement/useCases';
 import type { updateDeviceParam, updateDevicePatch } from '#/modules/AudioEngine/useCases';
 
 export type FermenterDependencies = {
@@ -6,7 +7,7 @@ export type FermenterDependencies = {
     persistDevicePatch?: typeof persistDevicePatch;
     updateDeviceParam: typeof updateDeviceParam;
     updateDevicePatch?: typeof updateDevicePatch;
-    getAllTracks: typeof getAllTracks;
+    getAllTracks: () => Track[];
 };
 
 let dependencies: FermenterDependencies | null = null;

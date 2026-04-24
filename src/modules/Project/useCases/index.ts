@@ -5,7 +5,8 @@ export { loadProject } from './projectPersistence/loadProject';
 export { renameProject } from './projectPersistence/saveProject/renameProject';
 export { importSclFile } from './importSclFile';
 export { pickFiles } from './fileDialog';
-export { createFromTemplate, getTemplates } from './projectTemplates/index';
+export { createFromTemplate } from './projectTemplates/templateDefinitions/createFromTemplate';
+export { getTemplates } from './projectTemplates/templateDefinitions/getTemplates';
 
 export { exportProjectFile } from './projectPersistence/fileIO/exportProjectFile';
 export { pickAndImportProjectFile } from './projectPersistence/fileIO/pickAndImportProjectFile';

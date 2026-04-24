@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { addClip, addTrack } from '#/modules/Arrangement/useCases';
+import { separateStems as doSeparateStems } from '#/modules/AudioAnalysis/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { audioBufferToWav } from '#/modules/AudioEngine/useCases';
 import { createHandler } from '#/utils/createHandler';
@@ -8,8 +9,6 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 export const handleStemSeparate = createHandler<'stemSeparate'>({
     execute: async (a) => {
-        const { separateStems: doSeparateStems } = await import('#/modules/AudioAnalysis/useCases');
-
         const stems = a.payload.stems ?? ['all'];
         logger.info(`[Audio AI] Separating stems: ${stems.join(', ')} for clip ${a.payload.clipId}`);
 

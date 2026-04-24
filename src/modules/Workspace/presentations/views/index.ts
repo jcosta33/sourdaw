@@ -1,15 +1,3 @@
-export { AppShell } from './AppShell';
-export { ArrangeView } from './ArrangeView';
-export { AutomationView } from './AutomationView';
-export { ClipView } from './ClipView';
-export { MixerPanel } from './MixerPanel';
-export { Sidebar } from './Sidebar';
-export { StatusBar } from './StatusBar';
-export { TransportBar } from './TransportBar';
-export { BounceOptionsDialog } from './BounceOptionsDialog';
-export { PreferencesDialog } from './PreferencesDialog';
-export { PromptBar } from './PromptBar';
-export { RoutingGraph } from './RoutingGraph';
-export { RoutingMatrix } from './RoutingMatrix';
-export { SessionView } from './SessionView';
-export { TempoEditor } from './TempoEditor';
+// Workspace/presentations/views — public contract surface for cross-module views.
+// No cross-module view exports are currently consumed.
+export {};

@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import { trackStore } from '#/modules/Arrangement/stores';
-import { getBufferForClip } from '#/modules/Arrangement/useCases';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { processPitchEditWasm } from '#/modules/AudioEngine/useCases';
 import { isTauri } from '#/utils/tauriBridge';
 
@@ -14,22 +14,45 @@ type NoteSegment = {
     shift_semitones: number;
 };
 
-export async function commitPitchEditCommand(clipId: string, segments: NoteSegment[], contour: any): Promise<void> {
-    const tracksState = trackStore.value;
-    let targetClip: any = null;
-    if (tracksState && tracksState.tracks) {
-        for (const track of Object.values(tracksState.tracks)) {
-            for (const clip of track.clips) {
-                if (clip.id === clipId && clip.type === 'audio') {
-                    targetClip = clip;
-                    break;
-                }
-            }
-            if (targetClip) {
-                break;
+type PitchEditClip = {
+    id: string;
+    type: 'audio';
+    fileId?: string;
+    audioBufferId?: string;
+};
+
+function findAudioClip(clipId: string): PitchEditClip | null {
+    const tracks = trackStore.value?.tracks ?? [];
+    for (const track of tracks) {
+        for (const clip of track.clips) {
+            const candidate: {
+                id: string;
+                type: 'audio' | 'midi';
+                fileId?: string;
+                audioBufferId?: string;
+            } = clip;
+            if (candidate.id === clipId && candidate.type === 'audio') {
+                return {
+                    id: candidate.id,
+                    type: 'audio',
+                    fileId: candidate.fileId,
+                    audioBufferId: candidate.audioBufferId,
+                };
             }
         }
     }
+    return null;
+}
+
+function getCachedAudioBuffer(clip: PitchEditClip): AudioBuffer | null {
+    if (!clip.audioBufferId) {
+        return null;
+    }
+    return audioBufferCache.get(clip.audioBufferId) ?? null;
+}
+
+export async function commitPitchEditCommand(clipId: string, segments: NoteSegment[], contour: any): Promise<void> {
+    const targetClip = findAudioClip(clipId);
 
     if (!targetClip || !targetClip.fileId) {
         return;
@@ -51,11 +74,11 @@ export async function commitPitchEditCommand(clipId: string, segments: NoteSegme
             });
         } else {
             // WASM fallback
-            const result = getBufferForClip(clipId);
-            if (!result || !result.buffer) {
+            const buffer = getCachedAudioBuffer(targetClip);
+            if (!buffer) {
                 throw new Error('Could not get audio buffer for clip');
             }
-            processPitchEditWasm(result.buffer, segments, contour, outputAudioPath);
+            processPitchEditWasm(buffer, segments, contour, outputAudioPath);
         }
 
         const undoFn = () => {

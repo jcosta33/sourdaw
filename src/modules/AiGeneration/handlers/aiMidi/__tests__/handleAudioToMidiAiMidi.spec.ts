@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     info: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     audioToMidi: mocks.audioToMidi,
 }));
 
@@ -26,7 +26,12 @@ describe('handleAudioToMidiAiMidi', () => {
             payload: { clipId: 'c1' },
         });
 
-        expect(mocks.audioToMidi).toHaveBeenCalledWith('c1');
+        expect(mocks.audioToMidi).toHaveBeenCalledWith({
+            clipId: 'c1',
+            trackId: '',
+            sensitivity: undefined,
+            mode: 'rhythm',
+        });
         expect(mocks.info).toHaveBeenCalledWith('[Analysis] Audio-to-MIDI mapped for clip c1');
     });
 

@@ -11,6 +11,7 @@
  * See `.agents/audits/webdaw-codebase-audit.md` → **Findings → Extension scripting (frozen)**.
  */
 
+import { executeAppAction } from '#/modules/Command/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { extensionStore } from '../stores/extension';
@@ -43,7 +44,6 @@ export function createDawApi(): Record<string, unknown> {
             notifyUser(message);
         },
         executeAction: async (action: { type: string; payload?: unknown }) => {
-            const { executeAppAction } = await import('#/modules/Command/useCases');
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             await executeAppAction(action as any, { source: 'ai' });
         },

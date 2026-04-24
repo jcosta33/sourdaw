@@ -1,6 +1,5 @@
 import { midiStore } from '#/modules/MIDI/stores';
-import { playheadPositionRef } from '#/modules/Transport/stores';
-import { getTransportState } from '#/modules/Transport/useCases';
+import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -13,7 +12,7 @@ export function pasteClip(): void {
         return;
     }
 
-    const transport = getTransportState();
+    const transport = transportStore.value;
     const trackState = getTrackState();
     if (!transport || !trackState) {
         return;

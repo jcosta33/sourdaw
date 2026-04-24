@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { readTextFile } from '@tauri-apps/plugin-fs';
 
-import { registerTuningTable } from '#/modules/AudioEngine';
+import { registerTuningTable } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { projectStore } from '../stores/projectStore';

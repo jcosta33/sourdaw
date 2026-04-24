@@ -3,8 +3,8 @@ import { type ReactElement } from 'react';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Slider } from '#/components/ui/slider';
-import { MidiLearnButton } from '#/modules/Arrangement/presentations/views';
 import { setTrackGain, setTrackPan } from '#/modules/Arrangement/useCases';
+import { MidiLearnButton } from '#/modules/MIDI/presentations/views';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';

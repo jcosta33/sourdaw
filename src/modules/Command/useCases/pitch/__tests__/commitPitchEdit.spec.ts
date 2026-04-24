@@ -3,8 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 
 import { trackStore } from '#/modules/Arrangement/stores';
-import { getBufferForClip } from '#/modules/Arrangement/useCases/audioAnalysis/helpers';
-import { audioBufferCache } from '#/modules/AudioEngine/stores/audioBufferCache';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { commit_pitch_edit_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
 import { isTauri } from '#/utils/tauriBridge';
 
@@ -34,26 +33,10 @@ vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(() => true),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/audioAnalysis/helpers', () => ({
-    getBufferForClip: vi.fn(),
-}));
-
 vi.mock('#/modules/AudioEngine/stores/audioBufferCache', () => ({
     audioBufferCache: {
         set: vi.fn(),
         get: vi.fn(),
-    },
-}));
-
-vi.mock('#/modules/AudioEngine/repositories/createWebAudioEngine', () => ({
-    audioEngine: {
-        context: {
-            createBuffer: vi.fn().mockImplementation((channels, length, sampleRate) => ({
-                length,
-                sampleRate,
-                copyToChannel: vi.fn(),
-            })),
-        },
     },
 }));
 
@@ -62,9 +45,14 @@ vi.mock('#/modules/AudioEngine/wasm/daw_dsp.js', () => ({
 }));
 
 describe('commitPitchEditCommand', () => {
+    const AudioBufferMock = vi.fn(function AudioBufferMock(this: { copyToChannel: ReturnType<typeof vi.fn> }) {
+        this.copyToChannel = vi.fn();
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(isTauri).mockReturnValue(true);
+        vi.stubGlobal('AudioBuffer', AudioBufferMock);
 
         // Setup mock store
         trackStore.set({
@@ -72,7 +60,7 @@ describe('commitPitchEditCommand', () => {
                 {
                     id: 't1',
                     clips: [
-                        { id: 'c1', type: 'audio', fileId: 'test.wav' },
+                        { id: 'c1', type: 'audio', fileId: 'test.wav', audioBufferId: 'buffer-c1' },
                         { id: 'c2', type: 'midi', fileId: undefined },
                     ],
                 },
@@ -128,11 +116,9 @@ describe('commitPitchEditCommand', () => {
         const contour = { test: true };
         const segments = [{ start_time_ms: 0, end_time_ms: 100, shift_semitones: 1 }];
 
-        vi.mocked(getBufferForClip).mockReturnValue({
-            buffer: {
-                sampleRate: 44100,
-                getChannelData: vi.fn().mockReturnValue(new Float32Array(100)),
-            },
+        vi.mocked(audioBufferCache.get).mockReturnValue({
+            sampleRate: 44100,
+            getChannelData: vi.fn().mockReturnValue(new Float32Array(100)),
         } as any);
 
         vi.mocked(commit_pitch_edit_wasm).mockReturnValue(new Float32Array(100));
@@ -147,7 +133,7 @@ describe('commitPitchEditCommand', () => {
 
     it('should throw error in WASM mode if buffer is missing', async () => {
         vi.mocked(isTauri).mockReturnValue(false);
-        vi.mocked(getBufferForClip).mockReturnValue(null);
+        vi.mocked(audioBufferCache.get).mockReturnValue(undefined);
 
         const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         await commitPitchEditCommand('c1', [], {});

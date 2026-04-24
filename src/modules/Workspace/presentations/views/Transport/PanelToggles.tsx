@@ -23,7 +23,7 @@ import { linkStatusStore, defaultLinkStatus } from '#/modules/AudioEngine/stores
 import { enableLink, disableLink } from '#/modules/AudioEngine/useCases';
 
 import { openPreferencesDialog } from '../../../useCases/dialogs/openPreferencesDialog';
-import { toggleDualView } from '../../../useCases/togglePanel/panelToggles';
+import { toggleDualView } from '../../../useCases/togglePanel/panelToggles/toggleDualView';
 import { toggleChatPanel } from '../../../useCases/togglePanel/panelToggles/toggleChatPanel';
 import { toggleInspector } from '../../../useCases/togglePanel/panelToggles/toggleInspector';
 import { toggleMixer } from '../../../useCases/togglePanel/panelToggles/toggleMixer';

@@ -1,6 +1,6 @@
 import { type updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { type recordAutomationValue } from '#/modules/Automation/useCases';
-import { type getTransportState } from '#/modules/Transport/useCases';
+import type { transportStore } from '#/modules/Transport/stores';
 
 import { type getTrackById } from '../../repositories/track/getTrackById';
 import { type AutomationMode } from '../../stores/trackStore';
@@ -37,7 +37,7 @@ export function syncToasterPadParam(trackId: string, paramName: string, value: n
 }
 
 export type AutomationRecordDeps = {
-    getTransportState: typeof getTransportState;
+    getTransportValue: () => (typeof transportStore)['value'];
     getTrackById: typeof getTrackById;
     recordAutomationValue: typeof recordAutomationValue;
 };
@@ -48,7 +48,7 @@ export function maybeRecordAutomation(
     parameterId: string,
     value: number
 ): void {
-    const transport = deps.getTransportState();
+    const transport = deps.getTransportValue();
     if (!transport?.isPlaying) {
         return;
     }

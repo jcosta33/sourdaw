@@ -1,4 +1,3 @@
-import { type VelocityCurve } from '#/modules/Arrangement/useCases';
 import { scaleVelocities } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 
@@ -6,7 +5,7 @@ export const handleScaleVelocities = createHandler<'scaleVelocities'>({
     execute: (a) => {
         scaleVelocities(
             a.payload.clipId,
-            a.payload.curve as VelocityCurve,
+            a.payload.curve,
             a.payload.minVelocity,
             a.payload.maxVelocity
         );

@@ -1,4 +1,4 @@
-import { clearUndoHistory } from '#/modules/Command/useCases';
+import { clearUndoHistory } from '#/modules/Command/stores';
 
 import { arrangementStore } from '../../stores/arrangementStore';
 import { type ArrangementSnapshot } from '../../stores/arrangementStore';

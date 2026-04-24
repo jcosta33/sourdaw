@@ -4,16 +4,15 @@ import { planRippleDelete } from '../planRippleDelete';
 
 const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
-    getWorkspaceState: vi.fn(),
+    workspaceStore: { value: null as { rippleEditing?: boolean } | null },
 }));
 
 vi.mock('../../getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
 }));
 
-vi.mock('#/modules/Workspace/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getWorkspaceState: mocks.getWorkspaceState,
+vi.mock('#/modules/Workspace/stores', () => ({
+    workspaceStore: mocks.workspaceStore,
 }));
 
 describe('planRippleDelete', () => {
@@ -28,7 +27,7 @@ describe('planRippleDelete', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't1', clips: mockClips }],
         });
-        mocks.getWorkspaceState.mockReturnValue({ rippleEditing: false });
+        mocks.workspaceStore.value = { rippleEditing: false };
 
         const plan = planRippleDelete({ trackId: 't1', clipIds: ['c2'] });
 
@@ -49,7 +48,7 @@ describe('planRippleDelete', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't1', clips: mockClips }],
         });
-        mocks.getWorkspaceState.mockReturnValue({ rippleEditing: true });
+        mocks.workspaceStore.value = { rippleEditing: true };
 
         // Gap = c2 end (8) - c2 start (4) = 4.
         const plan = planRippleDelete({ trackId: 't1', clipIds: ['c2'] });

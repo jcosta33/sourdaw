@@ -1,4 +1,4 @@
-import { getWorkspaceState } from '#/modules/Workspace/useCases';
+import { workspaceStore } from '#/modules/Workspace/stores';
 
 import { getTrackStoreState } from '../getTrackStoreState';
 
@@ -38,7 +38,7 @@ export function planRippleMove({
     newStartBeat,
     clipDuration,
 }: PlanRippleMoveInput): RippleMovePlan | null {
-    const rippleEnabled = getWorkspaceState()?.rippleEditing ?? false;
+    const rippleEnabled = workspaceStore.value?.rippleEditing ?? false;
     if (!rippleEnabled) {
         return null;
     }

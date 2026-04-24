@@ -1,5 +1,5 @@
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { getTransportState } from '#/modules/Transport/useCases';
+import { transportStore } from '#/modules/Transport/stores';
 
 import { type Clip } from '../models/Track';
 import { findNearestZeroCrossing } from '../transformers/clipDspTransformers';
@@ -19,7 +19,7 @@ export function snapSplitBeatToZeroCrossing(clip: Clip, splitBeat: number): numb
         return splitBeat;
     }
 
-    const tempo = getTransportState()?.tempo ?? 120;
+    const tempo = transportStore.value?.tempo ?? 120;
     const beatsPerSecond = tempo / 60;
     const sampleRate = buffer.sampleRate;
 

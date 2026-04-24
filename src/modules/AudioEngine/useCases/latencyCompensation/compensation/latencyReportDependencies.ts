@@ -1,11 +1,11 @@
-import { getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { audioEngine } from '../../../repositories/createWebAudioEngine';
 
 import { getMaxTrackLatency, getTrackLatency } from './helpers';
 
 export const latencyReportDependencies = {
-    getTrackStoreState,
+    getTrackStoreState: () => trackStore.value,
     getTrackLatency,
     getMaxTrackLatency,
     audioEngine,

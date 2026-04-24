@@ -1,4 +1,4 @@
-import { getTransportState } from '#/modules/Transport/useCases';
+import { transportStore } from '#/modules/Transport/stores';
 
 import { type Clip } from '../../models/Track';
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -44,7 +44,7 @@ export function flattenTrack(trackId: string): void {
         startBeat,
         endBeat:
             endBeat +
-            (track.freezeState.renderSettings?.tailLengthSeconds ?? 0) * ((getTransportState()?.tempo ?? 120) / 60),
+            (track.freezeState.renderSettings?.tailLengthSeconds ?? 0) * ((transportStore.value?.tempo ?? 120) / 60),
         type: 'audio',
         audioBufferId: frozenBufferId,
         fadeInBeats: 0,

@@ -1,5 +1,5 @@
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { getTransportState } from '#/modules/Transport/useCases';
+import { transportStore } from '#/modules/Transport/stores';
 
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { computeTrackHash } from '../../services/computeTrackHash';
@@ -88,7 +88,7 @@ export async function freezeTrack(trackId: string): Promise<void> {
                     sampleRate: renderedBuffer.sampleRate,
                     bitDepth: 32,
                     channelCount: renderedBuffer.numberOfChannels,
-                    tailLengthSeconds: (tailBeats * 60) / (getTransportState()?.tempo ?? 120),
+                    tailLengthSeconds: (tailBeats * 60) / (transportStore.value?.tempo ?? 120),
                 },
                 renderedAt: Date.now(),
             },

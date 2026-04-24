@@ -7,7 +7,15 @@ const mocks = vi.hoisted(() => ({
     info: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: {
+        value: {
+            tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf1' }] }],
+        },
+    },
+}));
+
+vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     detectKey: mocks.detectKey,
 }));
 
@@ -21,14 +29,14 @@ describe('handleDetectKeyAiMidi', () => {
     });
 
     it('executes detectKey and logs the result', async () => {
-        mocks.detectKey.mockResolvedValue('C Major');
+        mocks.detectKey.mockReturnValue({ key: 'C', mode: 'major', confidence: 0.9 });
 
         await handleDetectKeyAiMidi.execute({
             type: 'detectKey',
             payload: { clipId: 'c1' },
         });
 
-        expect(mocks.detectKey).toHaveBeenCalledWith('c1');
+        expect(mocks.detectKey).toHaveBeenCalledWith('buf1');
         expect(mocks.info).toHaveBeenCalledWith('[Analysis] Key detected for clip c1: C Major');
     });
 

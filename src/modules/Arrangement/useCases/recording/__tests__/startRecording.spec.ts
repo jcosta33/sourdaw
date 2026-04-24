@@ -5,7 +5,7 @@ import { startRecording } from '../startRecording';
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn(),
     setTrackState: vi.fn(),
-    getTransportState: vi.fn(),
+    transportStoreValue: null as unknown,
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
     getTakeLaneForTrack: vi.fn(),
@@ -20,9 +20,13 @@ vi.mock('../../../repositories/track/setTrackState', () => ({
     setTrackState: mocks.setTrackState,
 }));
 
-vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getTransportState: mocks.getTransportState,
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
+    transportStore: {
+        get value() {
+            return mocks.transportStoreValue;
+        },
+    },
 }));
 
 vi.mock('#/modules/Arrangement/useCases/comping/addTakeLane', () => ({
@@ -54,7 +58,7 @@ describe('startRecording', () => {
                 { id: 't2', armed: false, kind: 'midi', clips: [] },
             ],
         });
-        mocks.getTransportState.mockReturnValue({ playheadPosition: 4 });
+        mocks.transportStoreValue = { playheadPosition: 4 };
         mocks.getTakeLaneForTrack.mockReturnValue(null);
 
         const newClips = startRecording();
@@ -78,10 +82,10 @@ describe('startRecording', () => {
                 { id: 't1', armed: true, kind: 'midi', clips: [{ id: 'c1', type: 'midi', startBeat: 0, endBeat: 10 }] },
             ],
         });
-        mocks.getTransportState.mockReturnValue({
+        mocks.transportStoreValue = {
             playheadPosition: 5,
             overdubEnabled: true,
-        });
+        };
 
         const newClips = startRecording();
 

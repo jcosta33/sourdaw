@@ -6,7 +6,7 @@
  */
 
 import { setTrackMute as engineSetTrackMute, setTrackGain as engineSetTrackGain } from '#/modules/AudioEngine/useCases';
-import { getWorkspaceState } from '#/modules/Workspace/useCases';
+import { workspaceStore } from '#/modules/Workspace/stores';
 
 import { type Track } from '../models/Track';
 import { getTrackStoreState } from '../useCases/getTrackStoreState';
@@ -41,7 +41,7 @@ export function applySoloLogic(): void {
         return;
     }
 
-    const soloMode = getWorkspaceState()?.soloMode ?? 'sip';
+    const soloMode = workspaceStore.value?.soloMode ?? 'sip';
     const anySoloed = state.tracks.some((t) => t.soloed);
 
     for (const track of state.tracks) {

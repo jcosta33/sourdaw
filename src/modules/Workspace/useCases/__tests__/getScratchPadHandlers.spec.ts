@@ -7,8 +7,6 @@ describe('getScratchPadHandlers', () => {
         const map = getScratchPadHandlers();
         expect(map.toggleScratchPad).toBeDefined();
         expect(map.captureScratchPad).toBeDefined();
-        expect(map.commitScratchPad).toBeDefined();
-        expect(map.clearScratchPad).toBeDefined();
         expect(getScratchPadHandlers()).not.toBe(map);
     });
 });

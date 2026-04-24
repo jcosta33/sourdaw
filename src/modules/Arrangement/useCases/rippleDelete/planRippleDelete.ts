@@ -1,4 +1,4 @@
-import { getWorkspaceState } from '#/modules/Workspace/useCases';
+import { workspaceStore } from '#/modules/Workspace/stores';
 
 import { type Clip } from '../../stores/trackStore';
 import { getTrackStoreState } from '../getTrackStoreState';
@@ -50,7 +50,7 @@ export function planRippleDelete({ trackId, clipIds }: PlanRippleDeleteInput): P
         }
     }
     const gap = deleteEnd - deleteStart;
-    const rippleEnabled = getWorkspaceState()?.rippleEditing ?? false;
+    const rippleEnabled = workspaceStore.value?.rippleEditing ?? false;
     const shiftedClips: RippleDeleteShift[] = [];
 
     const nextClips = track.clips.reduce<Clip[]>((accumulator, clip) => {

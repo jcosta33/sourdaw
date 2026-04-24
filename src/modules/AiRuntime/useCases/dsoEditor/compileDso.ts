@@ -5,11 +5,6 @@
  * before execution. Human-readable summaries are generated for the action history.
  */
 import { logger } from '#/infra/logger/appLogger';
-import {
-    applyChordProgressionToTrack,
-    applyDrumPatternToTrack,
-    applyMelodyToTrack,
-} from '#/modules/AiGeneration/useCases';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { addClip, addDevice, addTrack, removeTrack, setSend } from '#/modules/Arrangement/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
@@ -838,32 +833,61 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
         }
 
         case 'generate_melody': {
-            const key = noteNameToMidi(dso.key);
-            const scale = toScaleType(dso.scale);
-            const style = toMelodyStyle(dso.style);
-            applyMelodyToTrack(
-                dso.track_id,
-                { style, key, scale, octave: dso.octave, bars: dso.bars, density: dso.density },
-                dso.start_beat ?? 0
+            // Dispatch the registered `generateMelody` action so AiGeneration's
+            // handler owns the apply path — compileDso stays free of a static
+            // edge into AiGeneration/useCases.
+            await executeAppAction(
+                {
+                    type: 'generateMelody',
+                    payload: {
+                        trackId: dso.track_id,
+                        style: toMelodyStyle(dso.style),
+                        key: noteNameToMidi(dso.key),
+                        scale: toScaleType(dso.scale),
+                        octave: dso.octave,
+                        bars: dso.bars,
+                        density: dso.density,
+                        startBeat: dso.start_beat ?? 0,
+                    },
+                },
+                DSO_EXEC_OPTIONS
             );
             break;
         }
 
         case 'generate_chords': {
-            const key = noteNameToMidi(dso.key);
-            const style = toChordStyle(dso.progression);
-            const voicing = toChordVoicing(dso.voicing);
-            applyChordProgressionToTrack(
-                dso.track_id,
-                { style, key, scale: 'major', bars: dso.bars, voicing },
-                dso.start_beat ?? 0
+            await executeAppAction(
+                {
+                    type: 'generateChordProgression',
+                    payload: {
+                        trackId: dso.track_id,
+                        style: toChordStyle(dso.progression),
+                        key: noteNameToMidi(dso.key),
+                        scale: 'major',
+                        bars: dso.bars,
+                        voicing: toChordVoicing(dso.voicing),
+                        startBeat: dso.start_beat ?? 0,
+                    },
+                },
+                DSO_EXEC_OPTIONS
             );
             break;
         }
 
         case 'generate_drums': {
-            const style = toDrumStyle(dso.style);
-            applyDrumPatternToTrack(dso.track_id, { style, bars: dso.bars, density: dso.density }, dso.start_beat ?? 0);
+            await executeAppAction(
+                {
+                    type: 'generateDrumPattern',
+                    payload: {
+                        trackId: dso.track_id,
+                        style: toDrumStyle(dso.style),
+                        bars: dso.bars,
+                        density: dso.density,
+                        startBeat: dso.start_beat ?? 0,
+                    },
+                },
+                DSO_EXEC_OPTIONS
+            );
             break;
         }
 

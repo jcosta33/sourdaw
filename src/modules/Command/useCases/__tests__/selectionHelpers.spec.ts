@@ -2,8 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { getSelectedTrackId } from '../selectionHelpers/getSelectedTrackId';
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    getTrackStoreState: vi.fn(),
+const mocks = vi.hoisted(() => ({
+    trackStore: { value: null as { selectedTrackId: string | null } | null },
+}));
+
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    trackStore: mocks.trackStore,
 }));
 
 describe('getSelectedTrackId', () => {
@@ -12,8 +17,7 @@ describe('getSelectedTrackId', () => {
     });
 
     it('returns null when track state is unavailable', async () => {
-        const { getTrackStoreState } = await import('#/modules/Arrangement/useCases');
-        vi.mocked(getTrackStoreState).mockReturnValue(null);
+        mocks.trackStore.value = null;
 
         expect(getSelectedTrackId()).toBeNull();
     });

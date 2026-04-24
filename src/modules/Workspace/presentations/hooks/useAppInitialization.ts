@@ -9,14 +9,16 @@ import {
     setMasterGainValue,
     resumeEngine,
     requestMicPermission,
-} from '#/modules/AudioEngine';
+} from '#/modules/AudioEngine/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { hasCrdtProject } from '#/modules/CrdtDocument';
-import { registerProModulationEffects } from '#/modules/Plugin';
-import { verifyAudioBufferReferences, loadProject, projectStore, saveProject } from '#/modules/Project';
-import { restoreLibrary } from '#/modules/SampleLibrary';
-import { registerProSynthInstruments } from '#/modules/Synth';
-import { ensureTrackStrips, getTransportState } from '#/modules/Transport';
+import { hasCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { syncKneadToEngine } from '#/modules/Knead/useCases';
+import { registerProModulationEffects } from '#/modules/Plugin/useCases';
+import { projectStore } from '#/modules/Project/stores';
+import { verifyAudioBufferReferences, loadProject, saveProject } from '#/modules/Project/useCases';
+import { restoreLibrary } from '#/modules/SampleLibrary/useCases';
+import { registerProSynthInstruments } from '#/modules/Synth/useCases';
+import { ensureTrackStrips, getTransportState } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { preferencesStore } from '../../stores/preferencesStore';
@@ -26,6 +28,7 @@ export const useAppInitialization = (): void => {
         (async () => {
             try {
                 await initializeAudioEngine();
+                syncKneadToEngine();
                 const transport = getTransportState();
                 if (transport) {
                     setMasterGainValue(transport.masterGain / 100);

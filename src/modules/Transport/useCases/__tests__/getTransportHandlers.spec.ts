@@ -13,7 +13,6 @@ describe('getTransportHandlers', () => {
             'toggleLoop',
             'toggleMetronome',
             'setMetronomeVolume',
-            'setMasterGain',
             'setLoopRegion',
             'seekPlayhead',
             'setPunchIn',
@@ -25,6 +24,11 @@ describe('getTransportHandlers', () => {
             'removeTimeSignatureChange',
             'togglePreRoll',
             'setPreRollBars',
+            'togglePunchRecording',
+            'toggleLoopRecord',
+            'triggerScene',
+            'nextSetlistItem',
+            'previousSetlistItem',
         ] as const) {
             expect(map[key]).toBeDefined();
             expect(map[key].execute).toBeDefined();

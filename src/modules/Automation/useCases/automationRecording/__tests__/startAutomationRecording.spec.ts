@@ -2,21 +2,32 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { startAutomationRecording } from '../startAutomationRecording';
 
-const { activeRecording, pendingPoints, touchActive, automationSnapshot } = vi.hoisted(() => {
+type TestTrack = {
+    id: string;
+    kind: 'audio';
+    automationMode: 'read' | 'write' | 'touch' | 'latch';
+};
+
+const { activeRecording, pendingPoints, touchActive, automationSnapshot, trackSnapshot } = vi.hoisted(() => {
     const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
     const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
     const touchActive = new Set<string>();
     const automationSnapshot: {
         value: { lanes: Array<{ trackId: string; parameterId: string }> } | null;
     } = { value: null };
-    return { activeRecording, pendingPoints, touchActive, automationSnapshot };
+    const trackSnapshot: { value: { tracks: TestTrack[] } | null } = { value: null };
+    return { activeRecording, pendingPoints, touchActive, automationSnapshot, trackSnapshot };
 });
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
-    const mod = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
-        ...mod,
-        getAllTracks: vi.fn(),
+        ...actual,
+        trackStore: {
+            get value() {
+                return trackSnapshot.value;
+            },
+        },
     };
 });
 
@@ -36,7 +47,9 @@ vi.mock('../../../stores/automationStore', () => ({
     },
 }));
 
-import { getAllTracks } from '#/modules/Arrangement/useCases';
+function setTracks(tracks: TestTrack[]): void {
+    trackSnapshot.value = { tracks };
+}
 
 describe('startAutomationRecording', () => {
     beforeEach(() => {
@@ -50,6 +63,7 @@ describe('startAutomationRecording', () => {
         pendingPoints.set('stale', []);
         touchActive.add('stale');
         automationSnapshot.value = null;
+        trackSnapshot.value = null;
     });
 
     it('clears prior recording maps before inspecting tracks', () => {
@@ -61,7 +75,7 @@ describe('startAutomationRecording', () => {
     });
 
     it('returns early when automation store has no snapshot', () => {
-        vi.mocked(getAllTracks).mockReturnValue([{ id: 't1', kind: 'audio', automationMode: 'write' }] as any);
+        setTracks([{ id: 't1', kind: 'audio', automationMode: 'write' }]);
 
         startAutomationRecording();
 
@@ -88,10 +102,10 @@ describe('startAutomationRecording', () => {
             ],
         };
 
-        vi.mocked(getAllTracks).mockReturnValue([
+        setTracks([
             { id: 't1', kind: 'audio', automationMode: 'write' },
             { id: 't2', kind: 'audio', automationMode: 'read' },
-        ] as any);
+        ]);
 
         startAutomationRecording();
 

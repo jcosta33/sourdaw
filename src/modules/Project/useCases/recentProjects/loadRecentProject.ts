@@ -2,7 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getAudioContext, resetAudioGraph } from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory } from '#/modules/Command/useCases';
+import { clearUndoHistory } from '#/modules/Command/stores';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { type ProjectData } from '../../models/ProjectData';

@@ -4,10 +4,10 @@ import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
 import { useStore } from '#/infra/store/useStore';
-import { MidiLearnButton } from '#/modules/Arrangement/presentations/views';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 import { automationStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
 import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases';
+import { MidiLearnButton } from '#/modules/MIDI/presentations/views';
 import { cn } from '#/utils/Styles/cn';
 
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';

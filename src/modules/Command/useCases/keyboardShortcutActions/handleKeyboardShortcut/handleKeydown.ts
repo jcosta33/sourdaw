@@ -30,7 +30,6 @@ import {
     type EditingTool,
     TOOL_SHORTCUTS,
 } from '#/modules/Workspace/useCases';
-import { getWorkspaceState } from '#/modules/Workspace/useCases';
 
 import { shortcutStore, type ShortcutAction } from '../../../stores/shortcutStore';
 import { executeAppAction } from '../../executeAppAction';
@@ -514,7 +513,7 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
         const normalizedKey = key.toLowerCase();
         const tool = NUMBER_TOOL_MAP[key] || TOOL_SHORTCUTS[normalizedKey];
         if (tool && !mod && !shift && !alt && !repeat) {
-            const currentTool = getWorkspaceState()?.activeTool;
+            const currentTool = workspaceStore.value?.activeTool;
             // Only track swap if it's a different tool than current
             if (currentTool && currentTool !== tool) {
                 toolSwapStore.set({

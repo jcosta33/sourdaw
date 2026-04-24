@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../stores/kneadStore', () => ({
+vi.mock('../updateClipKneadState', () => ({
     updateClipKneadState: vi.fn(),
 }));
 
-import { updateClipKneadState } from '../../stores/kneadStore';
 import { ingestDspAnalysis } from '../dspAnalysis';
+import { updateClipKneadState } from '../updateClipKneadState';
 
 describe('ingestDspAnalysis', () => {
     beforeEach(() => {

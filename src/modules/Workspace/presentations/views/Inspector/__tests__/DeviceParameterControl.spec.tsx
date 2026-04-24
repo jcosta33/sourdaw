@@ -68,7 +68,7 @@ vi.mock('#/components/ui/bipolar-slider', () => ({
     ),
 }));
 
-vi.mock('#/modules/Arrangement/presentations/views/MidiLearnButton', () => ({
+vi.mock('#/modules/MIDI/presentations/views', () => ({
     MidiLearnButton: () => <button data-testid="midi-learn-btn">Learn</button>,
 }));
 

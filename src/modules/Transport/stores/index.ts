@@ -10,3 +10,4 @@ export type { TimeSignatureMapStoreState } from './timeSignatureMapStore';
 export { timeSignatureMapStore } from './timeSignatureMapStore';
 
 export { transportStore, defaultTransportState } from './transportStore';
+export type { TransportState } from './transportStore';

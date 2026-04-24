@@ -1,14 +1,14 @@
-import { getTransportState, updateTransportState } from '#/modules/Transport/useCases';
+import { transportStore } from '#/modules/Transport/stores';
 
 import { timelineViewStore } from '../../stores/timelineViewStore';
 
 export function setPlayheadFromClick(canvasX: number): void {
     const viewState = timelineViewStore.value;
-    const transport = getTransportState();
+    const transport = transportStore.value;
     if (!viewState || !transport) {
         return;
     }
 
     const beat = canvasX / viewState.pixelsPerBeat + viewState.scrollX / viewState.pixelsPerBeat;
-    updateTransportState({ playheadPosition: Math.max(0, beat) });
+    transportStore.set({ ...transport, playheadPosition: Math.max(0, beat) });
 }

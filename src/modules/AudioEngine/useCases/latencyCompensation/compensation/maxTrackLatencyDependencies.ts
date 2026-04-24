@@ -1,8 +1,8 @@
-import { getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { getTrackLatency } from './helpers';
 
 export const maxTrackLatencyDependencies = {
-    getTrackStoreState,
+    getTrackStoreState: () => trackStore.value,
     getTrackLatency,
 } as const;

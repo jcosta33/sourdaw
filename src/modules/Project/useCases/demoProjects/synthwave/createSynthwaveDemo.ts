@@ -1,10 +1,11 @@
 import { trackStore, markerStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
+import { waitForDevices } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane } from '#/modules/Automation/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
-import { defaultTransportState } from '#/modules/Transport/useCases';
+import { defaultTransportState, ensureTrackStrips } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
 import { applyPreset } from '../demoUtils/applyPreset';
@@ -1430,9 +1431,7 @@ export async function demo4_NativeShowcase(): Promise<void> {
 
     syncArrangement(tracks);
 
-    const { ensureTrackStrips } = await import('#/modules/Transport/useCases');
     ensureTrackStrips();
-    const { waitForDevices } = await import('#/modules/AudioEngine/useCases');
     await waitForDevices();
 
     projectStore.set({

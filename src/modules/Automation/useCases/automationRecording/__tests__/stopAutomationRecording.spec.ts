@@ -2,11 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { stopAutomationRecording } from '../stopAutomationRecording';
 
-const { activeRecording, pendingPoints, touchActive, findLaneId, clearPointsInRange, flushPendingPoints } = vi.hoisted(
-    () => {
+type TestTrack = {
+    id: string;
+    kind: 'audio';
+    automationMode: 'read' | 'write' | 'touch' | 'latch';
+};
+
+const { activeRecording, pendingPoints, touchActive, findLaneId, clearPointsInRange, flushPendingPoints, trackSnapshot } =
+    vi.hoisted(() => {
         const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
         const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
         const touchActive = new Set<string>();
+        const trackSnapshot: { value: { tracks: TestTrack[] } | null } = { value: null };
         return {
             activeRecording,
             pendingPoints,
@@ -14,15 +21,19 @@ const { activeRecording, pendingPoints, touchActive, findLaneId, clearPointsInRa
             findLaneId: vi.fn(() => null as string | null),
             clearPointsInRange: vi.fn(),
             flushPendingPoints: vi.fn(),
+            trackSnapshot,
         };
-    }
-);
+    });
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
-    const mod = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
-        ...mod,
-        getAllTracks: vi.fn(),
+        ...actual,
+        trackStore: {
+            get value() {
+                return trackSnapshot.value;
+            },
+        },
     };
 });
 
@@ -35,7 +46,9 @@ vi.mock('../recordingSessionState', () => ({
     flushPendingPoints,
 }));
 
-import { getAllTracks } from '#/modules/Arrangement/useCases';
+function setTracks(tracks: TestTrack[]): void {
+    trackSnapshot.value = { tracks };
+}
 
 describe('stopAutomationRecording', () => {
     beforeEach(() => {
@@ -44,13 +57,13 @@ describe('stopAutomationRecording', () => {
         pendingPoints.clear();
         touchActive.clear();
         findLaneId.mockReturnValue(null);
-        vi.mocked(getAllTracks).mockReturnValue([]);
+        setTracks([]);
     });
 
-    it('resolves the track list via getAllTracks', () => {
+    it('handles an empty track snapshot', () => {
         stopAutomationRecording();
 
-        expect(getAllTracks).toHaveBeenCalled();
+        expect(flushPendingPoints).not.toHaveBeenCalled();
     });
 
     it('flushes each active session then clears all recording maps', () => {
@@ -74,7 +87,7 @@ describe('stopAutomationRecording', () => {
 
     it('invokes clearPointsInRange for latch mode when a lane exists and pending points extend the session', () => {
         findLaneId.mockReturnValue('lane-a');
-        vi.mocked(getAllTracks).mockReturnValue([{ id: 't1', kind: 'audio', automationMode: 'latch' }] as any);
+        setTracks([{ id: 't1', kind: 'audio', automationMode: 'latch' }]);
 
         activeRecording.set('t1::gain', {
             parameterId: 'gain',

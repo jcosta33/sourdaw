@@ -1,4 +1,4 @@
-import { getAllTracks } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { automationStore } from '../../stores/automationStore';
 
@@ -9,7 +9,7 @@ export function startAutomationRecording(): void {
     pendingPoints.clear();
     touchActive.clear();
 
-    const tracks = getAllTracks();
+    const tracks = trackStore.value?.tracks ?? [];
 
     const autoState = automationStore.value;
     if (!autoState) {

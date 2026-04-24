@@ -8,10 +8,22 @@ import { DawDialogSection } from '#/components/daw/DawDialogSection';
 import { Stack, Row, Grid } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '#/components/ui/dialog';
-import { type Track, type BounceOptions } from '#/modules/Arrangement';
+
+type BounceTrack = {
+    name: string;
+};
+
+type BounceOptions = {
+    includeInserts: boolean;
+    includeSends: boolean;
+    includeAutomation: boolean;
+    normalization: 'off' | 'protection' | 'full';
+    tailHandling: 'auto' | 'manual' | 'off';
+    destination: 'new-track' | 'replace';
+};
 
 type BounceOptionsDialogProps = {
-    track: Track;
+    track: BounceTrack;
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onConfirm: (options: BounceOptions) => void;

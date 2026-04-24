@@ -65,7 +65,7 @@ vi.mock('#/components/daw/RotaryKnob', () => ({
     ),
 }));
 
-vi.mock('#/modules/Arrangement/presentations/views/MidiLearnButton', () => ({
+vi.mock('#/modules/MIDI/presentations/views', () => ({
     MidiLearnButton: ({ targetType }: { targetType: string }) => (
         <button data-testid="midi-learn-btn" data-target={targetType}>
             Learn

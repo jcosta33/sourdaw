@@ -1,4 +1,4 @@
-import { persistDeviceParam } from '#/modules/Arrangement/useCases';
+import { persistDeviceParam } from '#/modules/Arrangement/stores';
 
 import { bridges } from './helpers';
 

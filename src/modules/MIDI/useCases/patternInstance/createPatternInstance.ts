@@ -1,4 +1,4 @@
-import { getTrackStoreState, setTrackState } from '#/modules/Arrangement/useCases';
+import { appendClipToTrack, trackStore } from '#/modules/Arrangement/stores';
 
 import { type Clip } from '../../models/TrackViewTypes';
 import { getNotesForClip } from '../midiNoteCrud/getNotesForClip';
@@ -9,7 +9,7 @@ import { setNotesForClip } from '../midiNoteCrud/setNotesForClip';
  * The instance inherits MIDI notes and properties from the parent.
  */
 export function createPatternInstance(sourceClipId: string, targetTrackId: string, startBeat: number): string | null {
-    const state = getTrackStoreState();
+    const state = trackStore.value;
     if (!state) {
         return null;
     }
@@ -57,15 +57,11 @@ export function createPatternInstance(sourceClipId: string, targetTrackId: strin
         setNotesForClip(instanceId, clonedNotes);
     }
 
-    const targetTrack = state.tracks.find((t) => t.id === targetTrackId);
-    if (!targetTrack) {
+    if (!state.tracks.some((t) => t.id === targetTrackId)) {
         return null;
     }
 
-    setTrackState({
-        ...state,
-        tracks: state.tracks.map((t) => (t.id === targetTrackId ? { ...t, clips: [...t.clips, instance] } : t)),
-    });
+    appendClipToTrack(targetTrackId, instance);
 
     return instanceId;
 }

@@ -39,7 +39,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     persistCrdtProject: mocks.persistCrdtProject,
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/stores', () => ({
     clearUndoHistory: mocks.clearUndoHistory,
 }));
 

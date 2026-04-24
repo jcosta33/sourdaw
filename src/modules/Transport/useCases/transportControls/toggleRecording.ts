@@ -1,11 +1,10 @@
-import { getTrackStoreState, updateClip, startRecording, stopRecording } from '#/modules/Arrangement/useCases';
+import { getTrackStoreState, updateClip, startRecording } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     resumeEngine,
     getAudioContext,
     scheduleClick,
     startAudioRecording,
-    stopAudioRecording,
     getCompensationDelay,
 } from '#/modules/AudioEngine/useCases';
 
@@ -13,9 +12,8 @@ import { getTransportState } from '../../repositories/transport/getTransportStat
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { ensureTrackStrips } from '../ensureTrackStrips';
 
+import { setCountInTimerId, stopActiveRecording } from './recordingLifecycle';
 import { startPlayback } from './startPlayback';
-
-let countInTimerId: ReturnType<typeof setTimeout> | null = null;
 
 function beginActualRecording(): void {
     const clips = startRecording();
@@ -66,13 +64,7 @@ export function toggleRecording(): void {
     }
 
     if (state.isRecording) {
-        stopAudioRecording();
-        stopRecording();
-        if (countInTimerId !== null) {
-            clearTimeout(countInTimerId);
-            countInTimerId = null;
-        }
-        updateTransportState({ isRecording: false });
+        stopActiveRecording();
         return;
     }
 
@@ -101,14 +93,15 @@ export function toggleRecording(): void {
             scheduleClick(time, i % beatsPerBar === 0, state.metronomeVolume ?? 0.5);
         }
 
-        countInTimerId = setTimeout(() => {
-            countInTimerId = null;
+        const timerId = setTimeout(() => {
+            setCountInTimerId(null);
             beginActualRecording();
             const current = getTransportState();
             if (current && !current.isPlaying) {
                 startPlayback();
             }
         }, countInDurationSec * 1000);
+        setCountInTimerId(timerId);
         return;
     }
 

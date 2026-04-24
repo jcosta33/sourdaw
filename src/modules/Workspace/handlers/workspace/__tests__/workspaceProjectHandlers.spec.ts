@@ -1,9 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { importAudioFile, importMidiFile, exportMidiClip } from '#/modules/Arrangement/useCases';
+import { importAudioFile, importMidiFile } from '#/modules/Arrangement/useCases';
 import { newProject, saveProject, exportProjectFile, pickFiles } from '#/modules/Project/useCases';
 
-import { handleExportMidi } from '../handleExportMidi';
 import { handleExportProject } from '../handleExportProject';
 import { handleImportAudioFile } from '../handleImportAudioFile';
 import { handleImportMidiFile } from '../handleImportMidiFile';
@@ -20,7 +19,6 @@ vi.mock('#/modules/Project/useCases', () => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     importAudioFile: vi.fn(),
     importMidiFile: vi.fn(),
-    exportMidiClip: vi.fn(),
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
@@ -55,11 +53,6 @@ describe('Workspace Project Handlers', () => {
         await handleImportMidiFile.execute({ type: 'importMidiFile', payload: {} });
         expect(pickFiles).toHaveBeenCalledWith({ filters: [{ name: 'MIDI', extensions: ['mid', 'midi'] }] });
         expect(importMidiFile).toHaveBeenCalledWith('/mock/path.mid');
-    });
-
-    it('handleExportMidi should delegate to exportMidiClip', () => {
-        handleExportMidi.execute({ type: 'exportMidi', payload: { clipId: 'c1' } });
-        expect(exportMidiClip).toHaveBeenCalledWith('c1');
     });
 
     it('handleExportProject should delegate to exportProjectFile', () => {

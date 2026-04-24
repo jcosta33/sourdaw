@@ -3,15 +3,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createPatternInstance } from '../createPatternInstance';
 
 const mocks = vi.hoisted(() => ({
-    getTrackStoreState: vi.fn(),
-    setTrackState: vi.fn(),
+    trackStoreValue: null as unknown,
+    appendClipToTrack: vi.fn(),
     getNotesForClip: vi.fn(() => []),
     setNotesForClip: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    getTrackStoreState: mocks.getTrackStoreState,
-    setTrackState: mocks.setTrackState,
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: {
+        get value() {
+            return mocks.trackStoreValue;
+        },
+    },
+    appendClipToTrack: mocks.appendClipToTrack,
 }));
 
 vi.mock('../../../useCases/midiNoteCrud/getNotesForClip', () => ({
@@ -34,9 +38,9 @@ describe('createPatternInstance', () => {
             name: 'Loop',
             type: 'midi',
         };
-        mocks.getTrackStoreState.mockReturnValue({
+        mocks.trackStoreValue = {
             tracks: [{ id: 't1', clips: [sourceClip] }],
-        });
+        };
 
         const mockNotes = [{ id: 'n1', startBeat: 1, pitch: 60 }];
         mocks.getNotesForClip.mockReturnValue(mockNotes);
@@ -47,11 +51,12 @@ describe('createPatternInstance', () => {
         expect(instanceId).toMatch(/^clip-inst-/);
 
         // Verify track state update
-        expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
-        const newState = mocks.setTrackState.mock.calls[0][0];
-        const instance = newState.tracks[0].clips.find((c: any) => c.id === instanceId);
+        expect(mocks.appendClipToTrack).toHaveBeenCalledTimes(1);
+        const [appendedTrackId, appendedInstance] = mocks.appendClipToTrack.mock.calls[0] as [string, any];
+        expect(appendedTrackId).toBe('t1');
 
-        expect(instance).toMatchObject({
+        expect(appendedInstance).toMatchObject({
+            id: instanceId,
             parentClipId: 'cBase',
             startBeat: 16,
             endBeat: 20,
@@ -68,7 +73,7 @@ describe('createPatternInstance', () => {
     });
 
     it('bails if source clip not found', () => {
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        mocks.trackStoreValue = { tracks: [] };
         expect(createPatternInstance('missing', 't1', 0)).toBeNull();
     });
 });
