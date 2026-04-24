@@ -162,24 +162,23 @@ impl PowerAmp {
             PowerTubeType::TypeEL84 => (0.4, 0.18), // Early compression
         };
 
-        // Push-pull saturation with bias-dependent crossover
-        let bias_shift = (self.bias - 0.5) * 0.2;
-        let signal = with_nfb * headroom;
+        // Push-pull saturation with bias-dependent crossover and headroom.
+        let bias_shift = (self.bias - 0.5) * 2.0;
+        let bias_headroom = (1.0 - bias_shift * 0.10).clamp(0.82, 1.18);
+        let crossover_width = (0.028 - bias_shift * 0.012).clamp(0.006, 0.05);
+        let signal = with_nfb * headroom / bias_headroom;
 
-        // Asymmetric soft clipping (push-pull tube behavior)
-        let clipped = if signal >= 0.0 {
-            (signal * (1.0 + asymmetry)).tanh() * saturation_curve
-        } else {
-            (signal * (1.0 - asymmetry)).tanh() * saturation_curve
-        };
+        let positive_drive = (1.0 + asymmetry + bias_shift * 0.10).clamp(0.8, 1.35);
+        let negative_drive = (1.0 - asymmetry + bias_shift * 0.06).clamp(0.72, 1.20);
+        let clipped = biased_push_pull_clip(signal, positive_drive, negative_drive, crossover_width)
+            * saturation_curve;
 
-        // Bias affects crossover distortion
-        let crossover = if signal > 0.0 {
+        let crossover = if signal > crossover_width {
             1.0
-        } else if signal < 0.0 {
+        } else if signal < -crossover_width {
             -1.0
         } else {
-            0.0
+            signal / crossover_width.max(1.0e-4)
         };
         let tube_makeup = match self.tube_type {
             PowerTubeType::Type6L6 => 1.10,
@@ -187,7 +186,8 @@ impl PowerAmp {
             PowerTubeType::TypeEL84 => 1.32,
         };
         let sag_makeup = 1.0 + (self.v_nominal - self.vb_plus) * 0.12;
-        let output = (clipped + bias_shift * crossover * 0.005) * tube_makeup * sag_makeup;
+        let bias_even = signal * bias_shift * 0.02;
+        let output = (clipped + bias_even + bias_shift * crossover * 0.02) * tube_makeup * sag_makeup;
 
         // Update negative feedback state
         self.feedback_state = output;
@@ -220,9 +220,50 @@ impl PowerAmp {
     }
 }
 
+fn biased_push_pull_clip(
+    signal: f32,
+    positive_drive: f32,
+    negative_drive: f32,
+    crossover_width: f32,
+) -> f32 {
+    if signal >= crossover_width {
+        ((signal - crossover_width) * positive_drive).tanh()
+    } else if signal <= -crossover_width {
+        ((signal + crossover_width) * negative_drive).tanh()
+    } else {
+        let normalized = signal / crossover_width.max(1.0e-4);
+        normalized * 0.12
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::PowerAmp;
+    use super::{biased_push_pull_clip, PowerAmp};
+
+    fn average_abs_output_for_sample_rate(sample_rate: f32) -> f32 {
+        let mut amp = PowerAmp::new(sample_rate);
+        amp.set_param("master", 8.0);
+        amp.set_param("powerTubeType", 1.0);
+        amp.set_param("rectifierType", 0.0);
+        amp.set_param("sagAmount", 0.62);
+        amp.set_param("sagRecovery", 260.0);
+        amp.set_param("negFeedback", 0.42);
+        amp.set_param("powerAmpBias", 0.58);
+        amp.set_param("presence", 6.0);
+        amp.set_param("resonance", 6.0);
+
+        let total = 4096;
+        let mut sum = 0.0_f32;
+        for n in 0..total {
+            let phase = (n as f32 * 2.0 * std::f32::consts::PI * 1_450.0) / sample_rate;
+            let sample = phase.sin() * 0.22;
+            let out = amp.process_sample(sample);
+            assert!(out.is_finite(), "power amp output should remain finite");
+            sum += out.abs();
+        }
+
+        sum / total as f32
+    }
 
     #[test]
     fn presence_and_resonance_shape_the_power_stage_response() {
@@ -250,6 +291,58 @@ mod tests {
         assert!(
             average_diff > 1.0e-3,
             "presence and resonance should audibly change the power amp response, got diff {average_diff}"
+        );
+    }
+
+    #[test]
+    fn high_drive_power_amp_is_reasonably_sample_rate_stable() {
+        let output_48k = average_abs_output_for_sample_rate(48_000.0);
+        let output_96k = average_abs_output_for_sample_rate(96_000.0);
+        let relative_delta = (output_48k - output_96k).abs() / output_96k.max(1.0e-6);
+
+        assert!(
+            relative_delta <= 0.12,
+            "high-drive power amp should stay reasonably stable across sample rates (48k={output_48k}, 96k={output_96k}, delta={relative_delta})"
+        );
+    }
+
+    #[test]
+    fn power_amp_bias_audibly_changes_the_response() {
+        let total = 4096;
+
+        let mut cold = PowerAmp::new(48_000.0);
+        cold.set_param("master", 7.0);
+        cold.set_param("powerAmpBias", 0.15);
+
+        let mut hot = PowerAmp::new(48_000.0);
+        hot.set_param("master", 7.0);
+        hot.set_param("powerAmpBias", 0.85);
+
+        let mut diff_sum = 0.0_f32;
+        for n in 0..total {
+            let low = ((n as f32 * 2.0 * std::f32::consts::PI * 120.0) / 48_000.0).sin() * 0.15;
+            let high = ((n as f32 * 2.0 * std::f32::consts::PI * 1_400.0) / 48_000.0).sin() * 0.08;
+            let input = low + high;
+            let cold_out = cold.process_sample(input);
+            let hot_out = hot.process_sample(input);
+            diff_sum += (cold_out - hot_out).abs();
+        }
+
+        let average_diff = diff_sum / total as f32;
+        assert!(
+            average_diff > 5.0e-3,
+            "power amp bias should audibly change the response, got diff {average_diff}"
+        );
+    }
+
+    #[test]
+    fn biased_push_pull_clip_has_a_real_crossover_region() {
+        let inside = biased_push_pull_clip(0.002, 1.0, 1.0, 0.02);
+        let outside = biased_push_pull_clip(0.08, 1.0, 1.0, 0.02);
+
+        assert!(
+            inside.abs() < outside.abs(),
+            "crossover region should soften the response near zero crossing (inside={inside}, outside={outside})"
         );
     }
 }

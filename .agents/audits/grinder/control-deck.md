@@ -38,6 +38,7 @@ Grinder should behave like a trustworthy guitar-amp product: controls stay visua
 - Patch-to-audio synchronization is still selective, but it now includes explicit supported pedal-order params through `syncGrinderPatchToAudio()` plus snapshot-triggered patch resync in `src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts`, `moveGrinderPedalInChainWithAudio.ts`, and `recallGrinderSnapshotWithAudio.ts`.
 - Snapshots are now real recallable rig scenes. Grinder store keeps a hidden stable `basePatch`, the Browser rail exposes snapshot buttons when a patch contains them, and recalling a snapshot updates both `activeSnapshot` and the live audio path in `src/modules/Grinder/stores/grinderStore.ts` and `src/modules/Grinder/presentations/views/GrinderPanel.tsx`.
 - Distortion and fuzz are materially more controlled than before. Their pedal cores now use input conditioning plus a bounded 2x-oversampled nonlinear stage, moderate settings stay within tested loudness bounds, and fuzz settles near silence instead of emitting a residual signal bed on silence input in `crates/daw-dsp/src/grinder/pedals.rs`.
+- The later amp path is incrementally more honest than before. High-gain preamp/power-amp sample-rate guardrails now exist, and `powerAmpBias` in `crates/daw-dsp/src/grinder/power_amp.rs` now changes crossover width, asymmetry, and effective headroom enough to be audible instead of reading as a dead control.
 - Several visible or stored concepts remain metadata-only or partially wired. `neuralModelId`, `neuralModelName`, and `neuralModelFamily` are stored in the patch and updated by the Model Browser, but they still do not reach Rust DSP as distinct model-loading behavior.
 
 ## Findings
@@ -51,18 +52,19 @@ Grinder should behave like a trustworthy guitar-amp product: controls stay visua
 - Snapshots and supported chain order are no longer fake fields. The remaining fake/decorative areas are now concentrated in Neural/Cab/routing and in broader tone completeness, not in the just-implemented live-rig basics.
 - Cabinet spatial controls are materially more honest than before. `mic1Distance`, `mic2Distance`, and `roomAmount` now change the rendered cabinet output via direct-level/top-end shaping plus lightweight room reflections, though this is still a bounded realism pass rather than a full room/capture system.
 - Phase 5 removed the most obvious front-end high-gain breakage. Distortion no longer jumps to roughly `7.5x` bypass loudness at moderate settings, fuzz no longer jumps to roughly `13.7x`, and fuzz no longer produces a steady non-zero output on silence in the pedal unit tests.
-- Targeted coverage is materially better than before. DSP tests now cover overdrive/distortion/fuzz loudness sanity, fuzz silence behavior, gate closure depth, supported pedal order, and cabinet distance/room audibility, while UI/preset tests cover Neural non-duplication, metal taxonomy, snapshot UI, chain order, and the new room control. Real Neural model loading still lacks regression coverage.
+- Phase 6 found that the clearest later-stage miss was not sample-rate stability but control truth: the new failing test showed `powerAmpBias` changing the response by only about `0.00079` on average before the fix, which is effectively decorative.
+- Targeted coverage is materially better than before. DSP tests now cover overdrive/distortion/fuzz loudness sanity, fuzz silence behavior, gate closure depth, supported pedal order, cabinet distance/room audibility, later-stage sample-rate stability, and power-amp bias audibility, while UI/preset tests cover Neural non-duplication, metal taxonomy, snapshot UI, chain order, and the new room control. Real Neural model loading still lacks regression coverage.
 
 ## Priorities
 
-1. `I-06` Audit the remaining later amp stages, especially triode/preamp and power amp, now that the front-end distortion/fuzz pedals are stabilized.
+1. `I-06` Continue the later amp-stage pass beyond bias truth, especially deeper triode/preamp and power-amp voicing.
 2. `I-04` Deliver real Neural model loading and routing behavior behind the remaining decorative controls.
 3. `I-07` Make the remaining stored patch concepts audibly real end-to-end instead of metadata-only.
 
 ## Open issues
 
-1. **The later amp stages are still the main high-gain tone risk.**
-   Problem: phase 5 stabilized the front-end distortion/fuzz pedals with bounded oversampled nonlinear cores, but the triode/preamp and power-amp stages still run as the remaining unverified high-gain nonlinear path. Grinder can therefore still sound fizzy or brittle when the later amp stages are doing most of the work.
+1. **The later amp stages are still the main remaining tone risk even after the bias fix.**
+   Problem: phase 5 stabilized the front-end distortion/fuzz pedals and phase 6 made `powerAmpBias` materially real, but the broader triode/preamp and power-amp voicing still remains the highest-risk area for "artifacty and weird" amp tone when those stages are doing most of the work.
    Representative files: `crates/daw-dsp/src/grinder/triode.rs`, `crates/daw-dsp/src/grinder/power_amp.rs`.
    Needed: audit and retune the later amp stages around reference amp behavior and decide whether those stages need their own explicit alias-mitigation strategy.
 
@@ -115,3 +117,4 @@ Phase 5 stabilized the front-end high-gain pedals. The next move should still be
 - ~~`snapshots` and `activeSnapshot` were stored in the patch model but not usable as real rig scenes.~~ — resolved in `main` on `2026-04-24` by introducing `basePatch`-backed snapshot recall in Grinder state plus Browser-rail snapshot controls that resync the live audio patch.
 - ~~Cab mic distance and room controls were stored/synced but ignored by the cabinet DSP.~~ — resolved in `main` on `2026-04-24` by adding audibly real distance shaping plus lightweight room reflections in `CabinetConvolver`, exposing a direct `Room` control in the cab deck, and covering both behaviors with regression tests.
 - ~~Moderate distortion and fuzz settings produced runaway loudness, and fuzz emitted non-zero output on silence.~~ — resolved in `main` on `2026-04-24` by restructuring both pedals around conditioned, bounded 2x-oversampled nonlinear cores with output compensation and by adding regressions for distortion loudness, fuzz loudness, and fuzz silence behavior.
+- ~~`powerAmpBias` barely changed the live power-stage response and behaved like a decorative expert control.~~ — resolved in `main` on `2026-04-24` by rebuilding the bias effect around crossover width, asymmetry, and effective headroom and by adding a regression that proves hot vs cold bias now changes the response audibly.

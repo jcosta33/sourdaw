@@ -408,6 +408,28 @@ mod tests {
         sum / total as f32
     }
 
+    fn average_abs_output_for_sample_rate(sample_rate: f32) -> f32 {
+        let mut preamp = Preamp::new(sample_rate);
+        preamp.set_param("ampModel", 4.0);
+        preamp.set_param("channel", 2.0);
+        preamp.set_param("gain", 8.4);
+        preamp.set_param("fat", 1.0);
+        preamp.set_param("tubeBias", 0.56);
+        preamp.set_param("millerCapacitance", 0.58);
+
+        let total = 4096;
+        let mut sum = 0.0_f32;
+        for n in 0..total {
+            let phase = (n as f32 * 2.0 * std::f32::consts::PI * 1_750.0) / sample_rate;
+            let sample = phase.sin() * 0.16;
+            let out = preamp.process_sample(sample);
+            assert!(out.is_finite(), "preamp output should remain finite");
+            sum += out.abs();
+        }
+
+        sum / total as f32
+    }
+
     #[test]
     fn crunch_channel_produces_audible_output() {
         assert!(average_abs_output(1) > 1.0e-3);
@@ -475,6 +497,51 @@ mod tests {
         assert!(
             bright_peak < neutral_peak * 1.45,
             "bright voicing should add bite without spiky transient clicks (neutral={neutral_peak}, bright={bright_peak})"
+        );
+    }
+
+    #[test]
+    fn high_gain_preamp_is_reasonably_sample_rate_stable() {
+        let output_48k = average_abs_output_for_sample_rate(48_000.0);
+        let output_96k = average_abs_output_for_sample_rate(96_000.0);
+        let relative_delta = (output_48k - output_96k).abs() / output_96k.max(1.0e-6);
+
+        assert!(
+            relative_delta <= 0.12,
+            "high-gain preamp should stay reasonably stable across sample rates (48k={output_48k}, 96k={output_96k}, delta={relative_delta})"
+        );
+    }
+
+    #[test]
+    fn tube_bias_audibly_changes_the_preamp_response() {
+        let total = 4096;
+
+        let mut cold = Preamp::new(48_000.0);
+        cold.set_param("ampModel", 2.0);
+        cold.set_param("channel", 2.0);
+        cold.set_param("gain", 7.2);
+        cold.set_param("tubeBias", 0.2);
+
+        let mut hot = Preamp::new(48_000.0);
+        hot.set_param("ampModel", 2.0);
+        hot.set_param("channel", 2.0);
+        hot.set_param("gain", 7.2);
+        hot.set_param("tubeBias", 0.8);
+
+        let mut diff_sum = 0.0_f32;
+        for n in 0..total {
+            let low = ((n as f32 * 2.0 * std::f32::consts::PI * 130.0) / 48_000.0).sin() * 0.11;
+            let high = ((n as f32 * 2.0 * std::f32::consts::PI * 1_300.0) / 48_000.0).sin() * 0.05;
+            let sample = low + high;
+            let cold_out = cold.process_sample(sample);
+            let hot_out = hot.process_sample(sample);
+            diff_sum += (cold_out - hot_out).abs();
+        }
+
+        let average_diff = diff_sum / total as f32;
+        assert!(
+            average_diff > 5.0e-3,
+            "tube bias should audibly change the preamp response, got diff {average_diff}"
         );
     }
 }
