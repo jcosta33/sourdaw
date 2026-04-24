@@ -1,4 +1,4 @@
-import { type ReactElement, useRef, useEffect, useMemo } from 'react';
+import { type ReactElement, useRef, useEffect } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
 import { automationStore } from '#/modules/Automation/stores';
@@ -62,7 +62,7 @@ export const TimelineSurface = (): ReactElement => {
 
     const closeContextMenu = () => setContextMenu(null);
 
-    const marqueeStyle = useMemo(() => {
+    const marqueeStyle = (() => {
         if (!marqueeSelection || !currentViewStore || !currentTrackStore) {
             return null;
         }
@@ -121,7 +121,7 @@ export const TimelineSurface = (): ReactElement => {
             width,
             height: bottom - top,
         };
-    }, [marqueeSelection, currentViewStore, currentTrackStore]);
+    })();
 
     useEffect(() => {
         const handleZoomToFit = () => {

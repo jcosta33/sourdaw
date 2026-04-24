@@ -53,7 +53,11 @@ vi.mock('../recentProjects/addToRecentProjects', () => ({
 describe('Project Persistence Use Cases', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.projectStoreValue.value = { loading: false, dirty: false, name: 'Initial' } as unknown as ProjectStoreState;
+        mocks.projectStoreValue.value = {
+            loading: false,
+            dirty: false,
+            name: 'Initial',
+        } as unknown as ProjectStoreState;
     });
 
     describe('loadProject', () => {

@@ -64,6 +64,7 @@ describe('useVoiceRecording', () => {
         mocks.isTauri.mockReturnValue(true);
         const { result } = renderHook(() => useVoiceRecording());
 
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
         await act(async () => {
             result.current.toggleListening();
         });
@@ -93,12 +94,14 @@ describe('useVoiceRecording', () => {
         mocks.isTauri.mockReturnValue(true);
         const { result } = renderHook(() => useVoiceRecording());
 
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
         await act(async () => {
             result.current.toggleListening();
         });
 
         expect(result.current.isListening).toBe(true);
 
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
         await act(async () => {
             result.current.stopListening();
         });

@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { mixHealthAnalysis } from '../mixHealthAnalysis';
-import type { getTrackStoreState } from '#/modules/Arrangement/useCases';
+
 import type { streamCloudChatCompletion } from '#/modules/AiRuntime/useCases';
+import type { getTrackStoreState } from '#/modules/Arrangement/useCases';
 import type { summarizeFeatures } from '../audioFeatures';
 
 const getTrackStoreStateMock = vi.fn<typeof getTrackStoreState>().mockReturnValue(null);
@@ -14,7 +15,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
-    streamCloudChatCompletion: (...args: Parameters<typeof streamCloudChatCompletionMock>) => streamCloudChatCompletionMock(...args),
+    streamCloudChatCompletion: (...args: Parameters<typeof streamCloudChatCompletionMock>) =>
+        streamCloudChatCompletionMock(...args),
 }));
 
 vi.mock('../audioFeatures', () => ({

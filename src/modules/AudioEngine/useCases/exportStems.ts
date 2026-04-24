@@ -143,6 +143,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             if (taskIndex >= tasks.length && activeTasks === 0) {
                                 resolve();
                             } else {
+                                // eslint-disable-next-line promise/no-callback-in-promise -- `next` is an internal concurrent-pool scheduler, not a Node-style callback; it re-enters the loop to start the next pending task
                                 next();
                             }
                             return null;

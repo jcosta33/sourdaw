@@ -10,6 +10,7 @@ import { createNativePluginBridgeNode } from './NativePluginBridgeNode';
 import { findWasmDescriptor } from './wasmDeviceRegistry';
 
 import type { TrackChannelStrip, BuiltinDeviceNode, SendNode } from '../models/AudioEngineState';
+import type { OfflineDeviceNode } from '../repositories/deviceNodeFactory';
 
 export type TrackNodeDeps = {
     context: AudioContext;
@@ -17,7 +18,7 @@ export type TrackNodeDeps = {
     getBusGainNode: (id: string) => GainNode | undefined;
     getTrackGainNode: (id: string) => GainNode | undefined;
     getSendsForTrack: (tId: string) => SendNode[];
-    pendingDevicePromises: Set<Promise<any>>;
+    pendingDevicePromises: Set<Promise<unknown>>;
     transportSAB?: SharedArrayBuffer;
 };
 
@@ -134,10 +135,10 @@ export class TrackNode {
     public registerTuningTable(frequencies: number[]): void {
         for (const dn of this.strip.deviceNodes) {
             if (dn.kneadControls) {
-                dn.kneadControls.setParam('tuning-table', frequencies as any);
+                dn.kneadControls.setParam('tuning-table', frequencies);
             }
             if (dn.fermenterControls) {
-                dn.fermenterControls.setParam('tuning-table', frequencies as any);
+                dn.fermenterControls.setParam('tuning-table', frequencies);
             }
         }
     }
@@ -467,7 +468,7 @@ export class TrackNode {
         if (dn.nativeDspControls) {
             dn.nativeDspControls.setParam(paramId, value);
         } else if (DEVICE_FACTORIES[dn.type]) {
-            applyParams(dn as any, dn.type, { [paramId]: value });
+            applyParams(dn as OfflineDeviceNode, dn.type, { [paramId]: value });
         }
     }
 

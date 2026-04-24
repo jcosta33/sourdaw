@@ -29,12 +29,12 @@ export async function loadAllFromIdb(): Promise<DocumentBundle | null> {
             for (let index = 0; index < keys.length; index++) {
                 const value = values[index];
                 if (value) {
-                    bundle.set(String(keys[index]), value);
+                    bundle.set(keys[index] as string, value);
                 }
             }
             resolve(bundle);
         };
 
-        tx.onerror = () => reject(tx.error);
+        tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
     });
 }

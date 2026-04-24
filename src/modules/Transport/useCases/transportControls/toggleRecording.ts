@@ -31,7 +31,7 @@ function beginActualRecording(): void {
             const totalLatencySec = totalHardwareLatencySec + trackLatencySec;
 
             const recClip = clips.find((context) => context.trackId === track.id);
-            startAudioRecording(track.id, (buffer) => {
+            void startAudioRecording(track.id, (buffer) => {
                 const bufferId = `rec-${crypto.randomUUID()}`;
                 audioBufferCache.set(bufferId, buffer);
 
@@ -45,7 +45,7 @@ function beginActualRecording(): void {
                     const exactEndBeat = newStartBeat + durationBeats;
 
                     // Update in one go
-                    Promise.resolve().then(() => {
+                    void Promise.resolve().then(() => {
                         updateClip(recClip.id, (context) => ({
                             ...context,
                             audioBufferId: bufferId,

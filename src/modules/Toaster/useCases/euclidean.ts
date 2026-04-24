@@ -8,10 +8,10 @@ export function euclidean(hits: number, steps: number, rotation: number = 0): bo
         return [];
     }
     if (hits <= 0) {
-        return Array(steps).fill(false);
+        return Array.from({ length: steps }, () => false);
     }
     if (hits >= steps) {
-        return Array(steps).fill(true);
+        return Array.from({ length: steps }, () => true);
     }
 
     // Bjorklund iterative algorithm

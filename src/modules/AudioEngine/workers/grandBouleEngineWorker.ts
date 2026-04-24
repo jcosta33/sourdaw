@@ -1,4 +1,3 @@
-// @ts-nocheck
 /// <reference lib="webworker" />
 /**
  * Grand Boule Engine Worker — runs the WASM physical-modeling piano engine
@@ -57,7 +56,7 @@ const PARAM_MAP: Record<string, string> = {
     toneColor: 'tone_color',
 };
 
-let instance: InstanceType<typeof GrandBouleInstance> | null = null;
+let instance: GrandBouleInstance | null = null;
 let memory: WebAssembly.Memory | null = null;
 let running = false;
 
@@ -70,7 +69,7 @@ let ringFrames = 0;
 const WRITE_HEAD_IDX = 0;
 const READ_HEAD_IDX = 1;
 
-function initEngine(wasmBytes: ArrayBuffer, sab: SharedArrayBuffer, sampleRate: number): void {
+function initEngine(wasmBytes: ArrayBuffer, sab: SharedArrayBuffer, workerSampleRate: number): void {
     // Parse SAB layout.
     controlInts = new Int32Array(sab, 0, 2);
     const headerBytes = 2 * Int32Array.BYTES_PER_ELEMENT; // 8 bytes
@@ -86,7 +85,7 @@ function initEngine(wasmBytes: ArrayBuffer, sab: SharedArrayBuffer, sampleRate: 
     // Init WASM.
     const exports = initSync({ module: new WebAssembly.Module(wasmBytes) });
     memory = exports.memory;
-    instance = new GrandBouleInstance(sampleRate, 64);
+    instance = new GrandBouleInstance(workerSampleRate, 64);
     running = true;
     self.postMessage({ type: 'ready' });
     scheduleRender();
@@ -131,7 +130,9 @@ function renderLoop(): void {
         }
 
         Atomics.store(controlInts, WRITE_HEAD_IDX, (writeHead + BLOCK_SIZE) | 0);
-        Atomics.pause?.();
+        // Atomics.pause is a Stage 3 proposal — cast to an extended type that includes it
+        type AtomicsWithPause = typeof Atomics & { pause?: () => void };
+        (Atomics as AtomicsWithPause).pause?.();
     }
 
     // Yield to the event loop so pending MIDI messages can be dispatched.
@@ -143,37 +144,54 @@ function renderLoop(): void {
     }
 }
 
-function dispatch(msg: Record<string, unknown>): void {
+type GrandBouleDispatchMsg =
+    | { type: 'noteOn'; midiNote: number; velocity: number }
+    | { type: 'noteOff'; midiNote: number }
+    | { type: 'param'; name: string; value: number }
+    | { type: 'sustain'; position: number }
+    | { type: 'unaCorda'; engaged: boolean }
+    | { type: 'sostenuto'; engaged: boolean }
+    | { type: 'noteOnMidi2'; midiNote: number; velocity16bit: number; pitchOffsetQ24: number }
+    | { type: 'temperament'; index: number }
+    | { type: 'loadAttackClip'; key: number; samples: Float32Array }
+    | { type: 'allNotesOff' };
+
+type GrandBouleWorkerMsg =
+    | { type: 'init'; wasmBytes: ArrayBuffer; sab: SharedArrayBuffer; sampleRate: number }
+    | { type: 'stop' }
+    | GrandBouleDispatchMsg;
+
+function dispatch(msg: GrandBouleDispatchMsg): void {
     if (!instance) {
         return;
     }
     switch (msg.type) {
         case 'noteOn':
-            instance.note_on(msg.midiNote as number, msg.velocity as number, msg.sampleFrame as number);
+            instance.note_on(msg.midiNote, msg.velocity);
             break;
         case 'noteOff':
-            instance.note_off(msg.midiNote as number, msg.sampleFrame as number);
+            instance.note_off(msg.midiNote);
             break;
         case 'param':
-            instance.set_param(PARAM_MAP[msg.name as string] ?? (msg.name as string), msg.value as number);
+            instance.set_param(PARAM_MAP[msg.name] ?? msg.name, msg.value);
             break;
         case 'sustain':
-            instance.set_sustain(msg.position as number);
+            instance.set_sustain(msg.position);
             break;
         case 'unaCorda':
-            instance.set_una_corda(msg.engaged as boolean);
+            instance.set_una_corda(msg.engaged);
             break;
         case 'sostenuto':
-            instance.set_sostenuto(msg.engaged as boolean);
+            instance.set_sostenuto(msg.engaged);
             break;
         case 'noteOnMidi2':
-            instance.note_on_midi2(msg.midiNote as number, msg.velocity16bit as number, msg.pitchOffsetQ24 as number);
+            instance.note_on_midi2(msg.midiNote, msg.velocity16bit, msg.pitchOffsetQ24);
             break;
         case 'temperament':
-            instance.set_temperament(msg.index as number);
+            instance.set_temperament(msg.index);
             break;
         case 'loadAttackClip':
-            instance.load_attack_clip(msg.key as number, msg.samples as Float32Array);
+            instance.load_attack_clip(msg.key, msg.samples);
             break;
         case 'allNotesOff':
             instance.all_notes_off();
@@ -181,13 +199,12 @@ function dispatch(msg: Record<string, unknown>): void {
     }
 }
 
-self.onmessage = ({ data }: MessageEvent): void => {
-    const msg = data as Record<string, unknown>;
-    if (msg.type === 'init') {
-        initEngine(msg.wasmBytes as ArrayBuffer, msg.sab as SharedArrayBuffer, msg.sampleRate as number);
-    } else if (msg.type === 'stop') {
+self.onmessage = ({ data }: MessageEvent<GrandBouleWorkerMsg>): void => {
+    if (data.type === 'init') {
+        initEngine(data.wasmBytes, data.sab, data.sampleRate);
+    } else if (data.type === 'stop') {
         running = false;
     } else {
-        dispatch(msg);
+        dispatch(data);
     }
 };

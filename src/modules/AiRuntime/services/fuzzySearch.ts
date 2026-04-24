@@ -186,6 +186,7 @@ function isPresetAvailable(preset: PresetAction, context: PresetContext): boolea
             return context.selectedClipId !== undefined && context.selectedClipType === 'midi';
         case 'clipAudio':
             return context.selectedClipId !== undefined && context.selectedClipType === 'audio';
+        case undefined:
         default:
             return true;
     }

@@ -6,22 +6,21 @@ import { createFaustDevice } from '../faustDeviceFactory';
 
 import { type AudioDeviceStrategy } from './AudioDeviceStrategy';
 
+type FaustNodeLike = AudioNode & {
+    setParamValue(name: string, value: number): void;
+};
+
 export class FaustDeviceStrategy implements AudioDeviceStrategy {
     constructor(
         public readonly node: OfflineDeviceNode,
-        private readonly faustNode: any // IFaustMonoWebAudioNode
+        private readonly faustNode: FaustNodeLike
     ) {}
 
     setParam(name: string, value: number): void {
-        if (this.faustNode && typeof this.faustNode.setParamValue === 'function') {
-            try {
-                // The name here usually corresponds to the parameter ID which WAM uses
-                // Depending on the exact Faust implementation, it might need the full address.
-                // We'll pass the ID directly.
-                this.faustNode.setParamValue(name, value);
-            } catch (error) {
-                logger.warn(`[Faust] Failed to set param ${name} to ${value}:`, error);
-            }
+        try {
+            this.faustNode.setParamValue(name, value);
+        } catch (error) {
+            logger.warn(`[Faust] Failed to set param ${name} to ${value}:`, error);
         }
     }
 }
@@ -32,7 +31,7 @@ export async function createFaustStrategy(ctx: BaseAudioContext, device: Device)
         throw new Error(`Failed to create Faust device: ${device.type}`);
     }
 
-    const faustNode = node.nodes[0] as any;
+    const faustNode = node.nodes[0] as FaustNodeLike;
     const strategy = new FaustDeviceStrategy(node, faustNode);
 
     // Apply initial params

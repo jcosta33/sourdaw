@@ -9,15 +9,7 @@
  * - PianoRollToolbar.tsx        (toolbar controls — pure component)
  * - PianoRollContextMenu.tsx    (right-click menu — view component)
  */
-import {
-    type ReactElement,
-    type Dispatch,
-    type SetStateAction,
-    useRef,
-    useLayoutEffect,
-    useState,
-    useEffect,
-} from 'react';
+import { type ReactElement, type Dispatch, type SetStateAction, useRef, useLayoutEffect, useState } from 'react';
 
 import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawSideRail } from '#/components/daw/DawSideRail';
@@ -104,9 +96,11 @@ export const PianoRoll = ({
     const beatWidth = Math.max(1, 40 * zoom);
     /** A9: focused clip receives newly drawn notes; defaults to primary clipId */
     const [focusedClipId, setFocusedClipId] = useState<string>(clipId);
-    useEffect(() => {
+    const prevClipId = useRef(clipId);
+    if (prevClipId.current !== clipId) {
+        prevClipId.current = clipId;
         setFocusedClipId(clipId);
-    }, [clipId]);
+    }
 
     // ── Store subscriptions ──────────────────────────────────────────
     const midiState = useStore(midiStore, { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });

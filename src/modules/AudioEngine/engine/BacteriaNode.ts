@@ -99,7 +99,7 @@ export async function createBacteriaNode(ctx: BaseAudioContext, wasmUrl?: string
             }
             const view = slot.view;
             const poll = () => {
-                const bandLevels = new Array<number>(BACTERIA_BAND_COUNT);
+                const bandLevels = Array.from({ length: BACTERIA_BAND_COUNT }, (): number => 0);
                 for (let index = 0; index < BACTERIA_BAND_COUNT; index++) {
                     const linear = view[BACTERIA_IDX.bandLevelsBase + index] ?? 0;
                     bandLevels[index] = linearToDb(linear);

@@ -129,6 +129,7 @@ export const separateStemsBrowser = inject({ logger })(({ logger }) => {
             graphOptimizationLevel: 'all',
         });
 
+        // eslint-disable-next-line sourdaw/no-type-assertion-escape -- OrtSession is a structural subset of onnxruntime InferenceSession; run() return type differs only in index signature variance
         ortSession.cached = session as unknown as OrtSession;
         logger.info('[Browser Stems] Session ready');
         return ortSession.cached;

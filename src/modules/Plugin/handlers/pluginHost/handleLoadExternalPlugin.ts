@@ -4,6 +4,7 @@ import { createHandler } from '#/utils/createHandler';
 import { findPluginByName } from '../../useCases/pluginScan/queries';
 
 export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
+    // eslint-disable-next-line @typescript-eslint/require-await -- handler interface requires async execute; this handler has no asynchronous operations
     execute: async (alpha) => {
         const { pluginId, trackId: providedTrackId } = alpha.payload;
 

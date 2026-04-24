@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import type { getTrackState } from '../../../repositories/track/getTrackState';
-import type { mapAllTracks } from '../../../repositories/track/mapAllTracks';
+import { removeDevice } from '../removeDevice';
+
 import type { removeDeviceFromStrip } from '#/modules/AudioEngine/useCases';
 import type { unloadPlugin } from '#/modules/Plugin/useCases';
-import type { Track } from '../../../models/Track';
 import type { Device } from '../../../models/Device';
-
-import { removeDevice } from '../removeDevice';
+import type { Track } from '../../../models/Track';
+import type { getTrackState } from '../../../repositories/track/getTrackState';
+import type { mapAllTracks } from '../../../repositories/track/mapAllTracks';
 
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn<typeof getTrackState>(),
@@ -48,12 +48,19 @@ describe('removeDevice', () => {
         expect(mocks.removeDeviceFromStrip).toHaveBeenCalledWith('t1', 'd1');
         expect(mocks.mapAllTracks).toHaveBeenCalled();
         const updater = mocks.mapAllTracks.mock.calls[0]![0] as (track: Partial<Track>) => Partial<Track>;
-        expect(updater({ devices: [{ id: 'd1' }, { id: 'd2' }] as unknown as Device[] })).toEqual({ devices: [{ id: 'd2' }] });
+        expect(updater({ devices: [{ id: 'd1' }, { id: 'd2' }] as unknown as Device[] })).toEqual({
+            devices: [{ id: 'd2' }],
+        });
     });
 
     it('unloads plugin if it is an external plugin', () => {
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', devices: [{ id: 'd1', type: 'external-plugin', externalInstanceId: 'inst1' }] } as unknown as Track],
+            tracks: [
+                {
+                    id: 't1',
+                    devices: [{ id: 'd1', type: 'external-plugin', externalInstanceId: 'inst1' }],
+                } as unknown as Track,
+            ],
             selectedTrackId: null,
         });
 

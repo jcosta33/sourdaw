@@ -1,4 +1,5 @@
 import { trackStore, markerStore } from '#/modules/Arrangement/stores';
+import { type Track, type Device } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane } from '#/modules/Automation/useCases';
@@ -210,11 +211,9 @@ export async function demo4_NativeShowcase(): Promise<void> {
     applyPreset(nebulaArp, 'factory-faust-additive-glass');
 
     // ── FX HELPER ─────────────────────────────────────────────────────────
-    function addDev(time: any, type: string, name: string, params: Record<string, number>) {
-        time.devices = [
-            ...(time.devices ?? []),
-            { id: `dev-${crypto.randomUUID()}`, name, type, bypassed: false, parameterValues: params },
-        ];
+    function addDev(time: Track, type: string, name: string, params: Record<string, number>) {
+        const dev: Device = { id: `dev-${crypto.randomUUID()}`, name, type, bypassed: false, parameterValues: params };
+        time.devices = [...(time.devices ?? []), dev];
     }
 
     // Master chain
@@ -554,7 +553,7 @@ export async function demo4_NativeShowcase(): Promise<void> {
     nebulaArp.pan = 38;
 
     // ── CLIPS ────────────────────────────────────────────────────────────
-    function mkClip(time: any, name: string, state: number, event: number) {
+    function mkClip(time: Track, name: string, state: number, event: number) {
         const context = createMidiClip(time.id, name, state, event, time.color);
         time.clips = [...(time.clips || []), context];
         return context;
@@ -1133,7 +1132,7 @@ export async function demo4_NativeShowcase(): Promise<void> {
     }
 
     // Deep Space clip/note generation
-    function mkC2(time: any, name: string, state: number, event: number) {
+    function mkC2(time: Track, name: string, state: number, event: number) {
         const context = createMidiClip(time.id, name, state, event, time.color);
         time.clips = [...(time.clips || []), context];
         return context;

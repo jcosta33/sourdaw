@@ -14,9 +14,9 @@ async function float32ToBase64(arr: Float32Array): Promise<string> {
     let binary = '';
     let chunkIndex = 0;
     for (let index = 0; index < bytes.length; index += CHUNK) {
-        binary += String.fromCharCode.apply(null, bytes.subarray(index, index + CHUNK) as unknown as number[]);
+        binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(index, index + CHUNK)));
         if (++chunkIndex % YIELD_EVERY === 0) {
-            await new Promise<void>((r) => setTimeout(r, 0));
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
         }
     }
     return btoa(binary);
@@ -93,7 +93,7 @@ function openDb(): Promise<IDBDatabase> {
             }
         };
         req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
+        req.onerror = () => reject(req.error ?? new Error('IDB request failed'));
     });
 }
 
@@ -147,7 +147,7 @@ async function persistToIdb(id: string, buffer: AudioBuffer): Promise<void> {
         tx.objectStore(STORE_NAME).put(serializeBuffer(buffer), id);
         await new Promise<void>((resolve, reject) => {
             tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+            tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
         });
     } catch {
         // IndexedDB unavailable
@@ -323,7 +323,7 @@ export const audioBufferCache = {
                 keys = await new Promise<IDBValidKey[]>((resolve, reject) => {
                     const req = store.getAllKeys();
                     req.onsuccess = () => resolve(req.result);
-                    req.onerror = () => reject(req.error);
+                    req.onerror = () => reject(req.error ?? new Error('IDB request failed'));
                 });
             }
 
@@ -335,7 +335,7 @@ export const audioBufferCache = {
                 const data = await new Promise<SerializedBuffer | undefined>((resolve, reject) => {
                     const req = store.get(key);
                     req.onsuccess = () => resolve(req.result as SerializedBuffer | undefined);
-                    req.onerror = () => reject(req.error);
+                    req.onerror = () => reject(req.error ?? new Error('IDB request failed'));
                 });
                 if (!data) {
                     continue;
@@ -411,7 +411,7 @@ export const audioBufferCache = {
                     const data = await new Promise<SerializedBuffer | undefined>((resolve, reject) => {
                         const req = store.get(id);
                         req.onsuccess = () => resolve(req.result as SerializedBuffer | undefined);
-                        req.onerror = () => reject(req.error);
+                        req.onerror = () => reject(req.error ?? new Error('IDB request failed'));
                     });
                     if (!data || (data.channelData[0]?.length ?? 0) === 0) {
                         continue;
@@ -434,6 +434,7 @@ export const audioBufferCache = {
     /** Reconstruct AudioBuffer objects from base64-encoded data embedded in a
      * .sourdaw project file, loading them into both the in-memory cache and IDB.
      * Buffers whose ID already exists in the cache are skipped. */
+    // eslint-disable-next-line @typescript-eslint/require-await -- async API contract; persistToIdb is fire-and-forget; callers await this method
     async importBuffers(buffers: Record<string, ExportedAudioBuffer>, context: BaseAudioContext): Promise<void> {
         for (const [id, data] of Object.entries(buffers)) {
             if (cache.has(id)) {

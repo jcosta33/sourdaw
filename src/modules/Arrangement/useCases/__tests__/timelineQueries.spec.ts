@@ -27,5 +27,3 @@ describe('getMarkerState', () => {
         expect(getMarkerState()).toBeNull();
     });
 });
-    });
-});

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
+
 import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { useStore } from '#/infra/store/useStore';
 import { togglePlayback } from '#/modules/Transport/useCases/transportControls/togglePlayback';

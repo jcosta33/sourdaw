@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * RecordingWorkletProcessor — captures raw PCM on the isolated audio thread.
  *
@@ -17,15 +16,17 @@
  *   → { type: 'stopped', writeHead: number }      total samples written
  */
 
+type RecordingMsg = { type: 'init'; sab: SharedArrayBuffer } | { type: 'start' } | { type: 'stop' };
+
 class RecordingWorkletProcessor extends AudioWorkletProcessor {
-    _writeHead = null;
-    _ring = null;
+    _writeHead: Int32Array | null = null;
+    _ring: Float32Array | null = null;
     _ringSize = 0;
     _active = false;
 
     constructor() {
         super();
-        this.port.onmessage = ({ data }) => {
+        this.port.onmessage = ({ data }: MessageEvent<RecordingMsg>) => {
             switch (data.type) {
                 case 'init': {
                     const sab = data.sab;
@@ -47,7 +48,7 @@ class RecordingWorkletProcessor extends AudioWorkletProcessor {
         };
     }
 
-    process(inputs) {
+    process(inputs: Float32Array[][]): boolean {
         if (!this._active || !this._ring || !this._writeHead) {
             return true;
         }
@@ -59,7 +60,7 @@ class RecordingWorkletProcessor extends AudioWorkletProcessor {
         const head = Atomics.load(this._writeHead, 0);
         const ringSize = this._ringSize;
         for (let index = 0; index < input.length; index++) {
-            this._ring[(head + index) % ringSize] = input[index];
+            this._ring[(head + index) % ringSize] = input[index] ?? 0;
         }
         Atomics.add(this._writeHead, 0, input.length);
         return true;

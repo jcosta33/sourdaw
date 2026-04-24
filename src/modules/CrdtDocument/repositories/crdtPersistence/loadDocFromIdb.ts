@@ -17,6 +17,6 @@ export async function loadDocFromIdb(id: DocId): Promise<Uint8Array | null> {
             const result = request.result as Uint8Array | undefined;
             resolve(result ?? null);
         };
-        request.onerror = () => reject(request.error);
+        request.onerror = () => reject(request.error ?? new Error('IDB request failed'));
     });
 }

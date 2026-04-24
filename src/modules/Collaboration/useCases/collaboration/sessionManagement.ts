@@ -375,7 +375,9 @@ export async function joinSession(inviteString: string, name: string): Promise<s
     sessionState.cleanupProjectionBridge = setupProjectionBridge();
 
     sessionState.assetTransfer = new AssetTransfer(sessionState.peerManager, {
-        onAssetAvailable: resolveAssetForClips,
+        onAssetAvailable: (hash) => {
+            void resolveAssetForClips(hash);
+        },
         onProgress: (_hash, _received, _total) => {},
     });
 
@@ -646,7 +648,7 @@ function handlePeerMessage({ peerId, message }: HandlePeerMessageInput): void {
     if (message.type === 'crdt-sync') {
         // Route by docId to the appropriate subsystem
         if (message.docId === DOC_ID_ASSET) {
-            sessionState.assetTransfer?.handleMessage(peerId, message);
+            void sessionState.assetTransfer?.handleMessage(peerId, message);
         } else if (message.docId === '__permissions__') {
             sessionState.permissionManager?.handleMessage(peerId, message);
         } else {
@@ -795,8 +797,8 @@ async function compressInvite(json: string): Promise<string> {
     const bytes = new TextEncoder().encode(json);
     const stream = new CompressionStream('deflate-raw');
     const writer = stream.writable.getWriter();
-    writer.write(bytes);
-    writer.close();
+    void writer.write(bytes);
+    void writer.close();
     const result = await readAllChunks(stream.readable);
     const binary = Array.from(result, (b) => String.fromCharCode(b)).join('');
     return `z:${btoa(binary)}`;
@@ -811,8 +813,8 @@ async function decompressInvite(raw: string): Promise<string> {
     const bytes = Uint8Array.from(binary, (context) => context.charCodeAt(0));
     const stream = new DecompressionStream('deflate-raw');
     const writer = stream.writable.getWriter();
-    writer.write(bytes);
-    writer.close();
+    void writer.write(bytes);
+    void writer.close();
     const result = await readAllChunks(stream.readable);
     return new TextDecoder().decode(result);
 }

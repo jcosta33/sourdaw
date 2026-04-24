@@ -4,8 +4,6 @@
  * Synchronizes with the kneadStore to receive per-clip pitch blobs and parameters.
  */
 
-import { type KneadClipState } from '#/modules/Knead/stores/kneadStore';
-
 import kneadProcessorUrl from '../services/kneadProcessor.ts?worker&url';
 
 import { ensureWorkletRegistered, fetchWasmBinary, createReadyHandshake } from './workletInitShared';
@@ -14,9 +12,9 @@ const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 
 export type KneadNodeResult = {
     workletNode: AudioWorkletNode;
-    setParam: (name: string, value: number) => void;
+    setParam: (name: string, value: number | number[]) => void;
     setBypass: (bypassed: boolean) => void;
-    updateState: (state: Record<string, KneadClipState>) => void;
+    updateState: (state: Record<string, unknown>) => void;
     ready: Promise<void>;
 };
 
@@ -67,7 +65,7 @@ export async function createKneadNode(
         setBypass: (bypassed) => {
             node.port.postMessage({ type: 'bypass', bypassed });
         },
-        updateState: (clips: Record<string, KneadClipState>) => {
+        updateState: (clips: Record<string, unknown>) => {
             node.port.postMessage({ type: 'update-state', clips });
         },
         ready: readyPromise,

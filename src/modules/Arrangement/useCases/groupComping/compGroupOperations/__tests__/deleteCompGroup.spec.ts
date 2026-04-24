@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { deleteCompGroup } from '../deleteCompGroup';
+
 import type { GroupCompingState } from '../../../../stores/groupComping';
 
 const mocks = vi.hoisted(() => ({

@@ -60,9 +60,11 @@ export const projectCommands: CommandEntry[] = [
         label: 'Import Project',
         description: 'Import a .sourdaw project file',
         category: 'Project',
-        action: async () => {
-            const { pickAndImportProjectFile } = await import('#/modules/Project/useCases');
-            await pickAndImportProjectFile();
+        action: () => {
+            void (async () => {
+                const { pickAndImportProjectFile } = await import('#/modules/Project/useCases');
+                await pickAndImportProjectFile();
+            })();
         },
     },
     {

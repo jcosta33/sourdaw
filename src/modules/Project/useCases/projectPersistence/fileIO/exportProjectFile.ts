@@ -118,7 +118,7 @@ export async function exportProjectFile(): Promise<void> {
         markers: (markerStore.value?.markers || []).map((message) => ({
             id: message.id,
             beat: message.beat,
-            name: (message as any).name || (message as any).label || 'Untitled',
+            name: message.name || (message as { label?: string }).label || 'Untitled',
             color: message.color,
         })),
         takeLanes: takeLaneStore.value ?? undefined,

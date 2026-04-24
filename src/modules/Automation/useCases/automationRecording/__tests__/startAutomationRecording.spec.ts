@@ -61,7 +61,9 @@ describe('startAutomationRecording', () => {
     });
 
     it('returns early when automation store has no snapshot', () => {
-        vi.mocked(getAllTracks).mockReturnValue([{ id: 't1', kind: 'audio', automationMode: 'write' }] as unknown as ReturnType<typeof getAllTracks>);
+        vi.mocked(getAllTracks).mockReturnValue([
+            { id: 't1', kind: 'audio', automationMode: 'write' },
+        ] as unknown as ReturnType<typeof getAllTracks>);
 
         startAutomationRecording();
 

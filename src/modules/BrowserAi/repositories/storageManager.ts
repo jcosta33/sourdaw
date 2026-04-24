@@ -188,8 +188,8 @@ export const getStorageStatus = inject({ logger })(
 
                 async function measureDir(dir: FileSystemDirectoryHandle): Promise<number> {
                     let size = 0;
-                    // FileSystemDirectoryHandle is async iterable in Chrome (OPFS)
-                    for await (const [, handle] of dir as unknown as AsyncIterable<
+                    // FileSystemDirectoryHandle is async iterable in Chrome (OPFS) but not typed in lib.dom.d.ts
+                    for await (const [, handle] of dir as AsyncIterable<
                         [string, FileSystemFileHandle | FileSystemDirectoryHandle]
                     >) {
                         if (handle.kind === 'file') {

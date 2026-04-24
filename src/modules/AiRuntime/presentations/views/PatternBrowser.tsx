@@ -98,7 +98,7 @@ const MiniPianoRoll = ({ notes, lengthBeats }: { notes: PatternNote[]; lengthBea
 
 // ── Compact select component ──
 
-const CompactSelect = <T extends string>({
+const CompactSelect = <TValue extends string>({
     label,
     value,
     options,
@@ -106,16 +106,16 @@ const CompactSelect = <T extends string>({
     allLabel = 'All',
 }: {
     label: string;
-    value: T | undefined;
-    options: { id: T; label: string }[];
-    onChange: (v: T | undefined) => void;
+    value: TValue | undefined;
+    options: { id: TValue; label: string }[];
+    onChange: (v: TValue | undefined) => void;
     allLabel?: string;
 }): ReactElement => (
     <div className="flex flex-col gap-0.5">
         <DawEyebrowLabel>{label}</DawEyebrowLabel>
         <DawCompactSelect
             value={value ?? ''}
-            onChange={(event) => onChange(event.target.value ? (event.target.value as T) : undefined)}
+            onChange={(event) => onChange(event.target.value ? (event.target.value as TValue) : undefined)}
             className="border-border/60 bg-surface-base px-1 text-[11px] text-foreground/90 focus-visible:ring-purple-500/50"
             aria-label={label}
         >

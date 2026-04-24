@@ -1,5 +1,5 @@
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { buildDeviceChain, getAudioContext } from '#/modules/AudioEngine/useCases';
+import { buildDeviceChain, getAudioContext, type DeviceNodeEntry } from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { sidechainStore } from '#/modules/Routing/stores';
 import { transportStore } from '#/modules/Transport/stores';
@@ -54,7 +54,7 @@ export async function renderTrackOffline(
     );
 
     // Map trackId -> { input, output, devices }
-    const nodes = new Map<string, { input: AudioNode; output: AudioNode; devices: any[] }>();
+    const nodes = new Map<string, { input: AudioNode; output: AudioNode; devices: DeviceNodeEntry[] }>();
 
     for (const time of renderTracks) {
         const isTarget = time.id === targetTrack.id;
@@ -67,7 +67,7 @@ export async function renderTrackOffline(
         const panNode = offlineCtx.createStereoPanner();
         panNode.pan.value = includeAutomation ? time.pan / 50 : 0;
 
-        let devices: any[] = [];
+        let devices: DeviceNodeEntry[] = [];
         const inputNode: AudioNode = gainNode;
 
         if (includeInserts) {
@@ -176,14 +176,14 @@ export async function renderTrackOffline(
         if (nodes.has(r.sourceTrackId) && nodes.has(r.targetTrackId)) {
             const sourceNode = nodes.get(r.sourceTrackId)!.output;
             const targetTrackNodes = nodes.get(r.targetTrackId)!;
-            const targetDeviceNode = targetTrackNodes.devices.find((data: any) => data.deviceId === r.targetDeviceId);
+            const targetDeviceNode = targetTrackNodes.devices.find((data) => data.deviceId === r.targetDeviceId);
 
-            if (targetDeviceNode && targetDeviceNode.inputNode.numberOfInputs >= 2) {
+            if (targetDeviceNode && targetDeviceNode.node.inputNode.numberOfInputs >= 2) {
                 const scGain = offlineCtx.createGain();
                 scGain.gain.value = r.gain;
                 sourceNode.connect(scGain);
                 // Connect to the second input (index 1) of the sidechain-aware device
-                scGain.connect(targetDeviceNode.inputNode, 0, 1);
+                scGain.connect(targetDeviceNode.node.inputNode, 0, 1);
             }
         }
     }
@@ -321,7 +321,7 @@ async function renderWithProgress(
                     return null;
                 })
                 .catch((error) => {
-                    reject(error);
+                    reject(error instanceof Error ? error : new Error(String(error)));
                     return null;
                 });
         }
@@ -338,7 +338,7 @@ async function renderWithProgress(
             })
             .catch((error) => {
                 options?.abortSignal?.removeEventListener('abort', abortHandler);
-                reject(error);
+                reject(error instanceof Error ? error : new Error(String(error)));
                 return null;
             });
     });

@@ -93,7 +93,3 @@ describe('TimelineMinimap', () => {
         expect(observeMock).toHaveBeenCalled();
     });
 });
-inimap />);
-        expect(observeMock).toHaveBeenCalled();
-    });
-});

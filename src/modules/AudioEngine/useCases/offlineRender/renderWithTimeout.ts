@@ -8,17 +8,20 @@ export function renderWithTimeout(offlineCtx: OfflineAudioContext, timeoutMs: nu
             reject(new Error(`Offline render timed out after ${timeoutMs / 1000}s`));
         }, timeoutMs);
 
-        offlineCtx.startRendering().then(
-            (buffer) => {
-                clearTimeout(timer);
-                resolve(buffer);
-                return null;
-            },
-            (error: unknown) => {
-                clearTimeout(timer);
-                reject(error instanceof Error ? error : new Error(String(error)));
-                return null;
-            }
-        );
+        offlineCtx
+            .startRendering()
+            .then(
+                (buffer) => {
+                    clearTimeout(timer);
+                    resolve(buffer);
+                    return null;
+                },
+                (error: unknown) => {
+                    clearTimeout(timer);
+                    reject(error instanceof Error ? error : new Error(String(error)));
+                    return null;
+                }
+            )
+            .catch(() => undefined);
     });
 }

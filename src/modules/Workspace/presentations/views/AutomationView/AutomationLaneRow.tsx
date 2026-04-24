@@ -281,6 +281,7 @@ export const AutomationLaneRow = ({
         <div
             className={cn('relative border-b border-border/20 outline-none', isDisabled ? 'opacity-50' : '')}
             style={{ height: LANE_HEIGHT }}
+            // eslint-disable-next-line jsx-a11y-x/no-noninteractive-tabindex -- handles keyboard events (arrow key point editing); tabIndex needed for focus
             tabIndex={0}
             onKeyDown={handleKeyDown}
             onWheel={handleWheel}

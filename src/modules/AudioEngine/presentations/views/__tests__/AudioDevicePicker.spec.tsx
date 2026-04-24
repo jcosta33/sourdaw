@@ -122,7 +122,7 @@ describe('AudioDevicePicker', () => {
         });
     });
 
-    it('should show loading state', async () => {
+    it('should show loading state', () => {
         const { container } = render(<AudioDevicePicker />);
         expect(
             container.querySelector('[aria-busy="true"]') || screen.queryByText('Detecting devices...')

@@ -283,11 +283,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [showLaunch, setShowLaunch] = useState(false);
     const [launchExiting, setLaunchExiting] = useState(false);
 
-    useEffect(() => {
-        if (!project.initialized && !project.loading && !showLaunch && !launchExiting) {
-            setShowLaunch(true);
-        }
-    }, [project.initialized, project.loading, showLaunch, launchExiting]);
+    if (!project.initialized && !project.loading && !showLaunch && !launchExiting) {
+        setShowLaunch(true);
+    }
 
     useEffect(() => {
         if (project.initialized && !project.loading && showLaunch && !launchExiting) {

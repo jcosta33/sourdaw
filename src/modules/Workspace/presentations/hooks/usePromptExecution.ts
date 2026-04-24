@@ -2,6 +2,7 @@ import { type KeyboardEvent, type RefObject, type FormEvent, useState, useRef, u
 
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
+import { type RuntimeAction } from '#/modules/AiRuntime/models/RuntimeAction';
 import { llmStatusStore, pushAiActionGroup } from '#/modules/AiRuntime/stores';
 import {
     parsePromptToActions,
@@ -16,6 +17,7 @@ import {
     initEngine,
 } from '#/modules/AiRuntime/useCases';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { type AppAction } from '#/modules/Command/models/AppAction';
 import { executeAppAction, generateGroupId, describeAction } from '#/modules/Command/useCases';
 
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
@@ -55,7 +57,7 @@ export type PromptFuzzyResult = {
     score: number;
 };
 
-type PromptAction = Awaited<ReturnType<typeof parsePromptToActions>>['actions'][number];
+type PromptAction = RuntimeAction;
 
 type PromptPreview = {
     actions: PromptAction[];
@@ -87,7 +89,7 @@ export type PromptExecutionState = {
     llmStatus: typeof llmStatusStore.value;
 
     handleKeyDown: (e: KeyboardEvent<HTMLInputElement>) => void;
-    handleSubmit: (e: FormEvent) => void;
+    handleSubmit: (e: FormEvent) => void | Promise<void>;
     executePreset: (result: PromptFuzzyResult) => Promise<void>;
     confirmPreview: () => Promise<void>;
     cancelPreview: () => void;
@@ -156,6 +158,7 @@ export const usePromptExecution = (): PromptExecutionState => {
 
     // ── Reset dismissed tags when selection changes ─────────────────────
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- Resets UI state when selection changes; no cascade risk since deps are external
         setDismissedTags(new Set());
     }, [selectedTrackId, selectedClipId, selectedClipIds]);
 
@@ -179,10 +182,12 @@ export const usePromptExecution = (): PromptExecutionState => {
     // ── Fuzzy search on input change ────────────────────────────────────
     useEffect(() => {
         if (preview || isProcessing) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional state clear on mode/focus change; no cascade risk
             setFuzzyResults([]);
             return;
         }
         if (!isFocused) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional state clear on mode/focus change; no cascade risk
             setFuzzyResults([]);
             return;
         }
@@ -204,8 +209,8 @@ export const usePromptExecution = (): PromptExecutionState => {
         const executedLabels: Array<{ action: PromptAction; label: string }> = [];
 
         for (const action of actions) {
-            await executeAppAction(action, { ...group, source: 'prompt' });
-            executedLabels.push({ action, label: describeAction(action) });
+            await executeAppAction(action as AppAction, { ...group, source: 'prompt' });
+            executedLabels.push({ action, label: describeAction(action as AppAction) });
         }
 
         if (actions.length > 0) {

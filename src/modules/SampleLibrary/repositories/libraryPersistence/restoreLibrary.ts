@@ -17,7 +17,7 @@ export async function restoreLibrary(): Promise<void> {
             const store = tx.objectStore(ROOTS_STORE);
             const request = store.getAll();
             request.onsuccess = () => resolve(request.result as LibraryRoot[]);
-            request.onerror = () => reject(request.error);
+            request.onerror = () => reject(request.error ?? new Error('IDB request failed'));
         });
 
         // Restore handles for browser roots
@@ -27,7 +27,7 @@ export async function restoreLibrary(): Promise<void> {
                 const store = tx.objectStore(HANDLES_STORE);
                 const request = store.getAll();
                 request.onsuccess = () => resolve(request.result);
-                request.onerror = () => reject(request.error);
+                request.onerror = () => reject(request.error ?? new Error('IDB request failed'));
             }
         );
 
@@ -40,9 +40,11 @@ export async function restoreLibrary(): Promise<void> {
                 if (handle) {
                     // Check if we still have permission
                     try {
-                        const perm = await (
-                            handle as unknown as { queryPermission: (opts: { mode: string }) => Promise<string> }
-                        ).queryPermission({ mode: 'read' });
+                        // eslint-disable-next-line sourdaw/no-type-assertion-escape -- FileSystemDirectoryHandle.queryPermission exists at runtime but is absent from TS DOM lib
+                        const handleWithQuery = handle as unknown as {
+                            queryPermission: (opts: { mode: string }) => Promise<string>;
+                        };
+                        const perm = await handleWithQuery.queryPermission({ mode: 'read' });
                         if (perm === 'granted') {
                             root.handle = handle;
                             root.status = 'ready';
@@ -70,7 +72,7 @@ export async function restoreLibrary(): Promise<void> {
             const store = tx.objectStore(SAMPLES_STORE);
             const request = store.getAll();
             request.onsuccess = () => resolve(request.result as SampleRecord[]);
-            request.onerror = () => reject(request.error);
+            request.onerror = () => reject(request.error ?? new Error('IDB request failed'));
         });
 
         if (samples.length > 0) {

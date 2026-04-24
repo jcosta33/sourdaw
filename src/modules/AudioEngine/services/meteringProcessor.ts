@@ -1,12 +1,12 @@
-// @ts-nocheck
-/// <reference lib="webworker" />
+type MeteringMsg = { type: 'init'; sab: SharedArrayBuffer; channels?: number };
+
 export class MeteringWorkletProcessor extends AudioWorkletProcessor {
     private _sab: Float32Array | null = null;
     private _channels = 1;
 
     constructor() {
         super();
-        this.port.onmessage = (event) => {
+        this.port.onmessage = (event: MessageEvent<MeteringMsg>) => {
             if (event.data.type === 'init') {
                 this._sab = new Float32Array(event.data.sab);
                 this._channels = event.data.channels ?? 1;

@@ -12,6 +12,6 @@ export async function hasCrdtDocsInIdb(): Promise<boolean> {
         const store = tx.objectStore(STORE_NAME);
         const request = store.count();
         request.onsuccess = () => resolve(request.result > 0);
-        request.onerror = () => reject(request.error);
+        request.onerror = () => reject(request.error ?? new Error('IDB request failed'));
     });
 }

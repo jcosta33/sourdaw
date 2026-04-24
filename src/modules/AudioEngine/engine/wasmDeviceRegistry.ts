@@ -66,7 +66,7 @@ function loadingBypassNode(context: AudioContext, deviceId: string, deviceType: 
 const fermenterDescriptor: WasmDeviceDescriptor = {
     matches: isFermenterDevice,
     create({ context, deviceId, deviceType, onLoaded }) {
-        const pendingParams: Array<[string, number]> = [];
+        const pendingParams: Array<[string, number | number[]]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.fermenterControls = {
             ready: false,
@@ -581,7 +581,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
 const kneadDescriptor: WasmDeviceDescriptor = {
     matches: isKneadDevice,
     create({ context, deviceId, deviceType, transportSAB, onLoaded }) {
-        const pendingParams: Array<[string, number]> = [];
+        const pendingParams: Array<[string, number | number[]]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.kneadControls = {
             ready: false,

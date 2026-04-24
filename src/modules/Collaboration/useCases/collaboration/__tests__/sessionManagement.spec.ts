@@ -117,7 +117,9 @@ describe('collaboration sessionManagement', () => {
     });
 
     it('leaveSession cleans up sub-systems and resets store', () => {
-        mocks.collaborationStoreValue.value = { localPeerId: 'p1' } as unknown as typeof mocks.collaborationStoreValue.value;
+        mocks.collaborationStoreValue.value = {
+            localPeerId: 'p1',
+        } as unknown as typeof mocks.collaborationStoreValue.value;
 
         // Setup existing session state
         createSession('Alice');

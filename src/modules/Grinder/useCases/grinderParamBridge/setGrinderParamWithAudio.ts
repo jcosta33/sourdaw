@@ -41,6 +41,7 @@ function toPatchValue<Key extends keyof GrinderPatch>(key: Key, value: number): 
         return (value > 0.5) as GrinderPatch[Key];
     }
 
+    // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check -- intentional partial handler: only enum-valued keys need index-to-value conversion; boolean keys are handled by the guard above, and numeric keys fall to `default: return value`
     switch (key) {
         case 'engineMode':
             return getIndexedValue(ENGINE_MODES, value) as GrinderPatch[Key];

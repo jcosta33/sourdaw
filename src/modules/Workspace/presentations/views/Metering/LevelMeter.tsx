@@ -186,6 +186,7 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
             aria-label="Level meter"
             aria-valuemin={MIN_DB}
             aria-valuemax={0}
+            aria-valuenow={MIN_DB}
         >
             <div className="flex flex-col justify-between py-0.5 pr-px shrink-0">
                 {DB_MARKS.map((db) => (

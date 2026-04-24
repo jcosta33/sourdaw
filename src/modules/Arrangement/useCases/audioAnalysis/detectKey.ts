@@ -42,6 +42,7 @@ function rotateArray(arr: number[], offset: number): number[] {
     return result;
 }
 
+// eslint-disable-next-line @typescript-eslint/require-await -- async API contract; callers use await; synchronous implementation pending real audio-AI backend
 export async function detectKey(clipId: string): Promise<string | null> {
     const result = getBufferForClip(clipId);
     if (!result) {

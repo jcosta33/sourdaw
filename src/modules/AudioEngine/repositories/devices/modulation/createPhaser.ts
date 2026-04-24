@@ -32,7 +32,7 @@ export function createPhaser(ctx: BaseAudioContext): OfflineDeviceNode {
     splitter.connect(filters[0]!);
     lfo.connect(lfoGain);
     for (const freq of filters) {
-        lfoGain.connect(freq.frequency as unknown as AudioNode);
+        lfoGain.connect(freq.frequency);
     }
     const lastFilter = filters[filters.length - 1]!;
     lastFilter.connect(feedback);

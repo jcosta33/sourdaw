@@ -15,9 +15,11 @@ export async function requestPermission(rootId: string): Promise<boolean> {
     }
 
     try {
-        const perm = await (
-            root.handle as unknown as { requestPermission: (opts: { mode: string }) => Promise<string> }
-        ).requestPermission({ mode: 'read' });
+        // eslint-disable-next-line sourdaw/no-type-assertion-escape -- FileSystemDirectoryHandle.requestPermission exists at runtime but is absent from TS DOM lib
+        const handleWithPerm = root.handle as unknown as {
+            requestPermission: (opts: { mode: string }) => Promise<string>;
+        };
+        const perm = await handleWithPerm.requestPermission({ mode: 'read' });
         if (perm === 'granted') {
             const { updateLibraryRootStatus } = await import('../../stores/libraryStore');
             updateLibraryRootStatus(rootId, 'ready');

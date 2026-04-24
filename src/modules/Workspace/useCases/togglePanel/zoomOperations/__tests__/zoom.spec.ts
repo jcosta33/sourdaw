@@ -6,7 +6,9 @@ import { zoomToSelection } from '../zoomToSelection';
 const mocks = vi.hoisted(() => ({
     eventBus: { emit: vi.fn() },
     getWorkspaceState: vi.fn(),
-    trackStoreValue: { value: null as { tracks: { clips: { id: string; startBeat: number; endBeat: number; }[] }[] } | null },
+    trackStoreValue: {
+        value: null as { tracks: { clips: { id: string; startBeat: number; endBeat: number }[] }[] } | null,
+    },
 }));
 
 vi.mock('#/app/registerDependencies', () => ({

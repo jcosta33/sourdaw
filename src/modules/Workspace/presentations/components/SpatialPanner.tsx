@@ -151,6 +151,9 @@ export const SpatialPanner = ({
             className="rounded border border-border/30 cursor-crosshair"
             aria-label={`Spatial panner: ${azimuth}° azimuth, ${(distance * 100).toFixed(0)}% distance`}
             role="slider"
+            aria-valuenow={azimuth}
+            aria-valuemin={-180}
+            aria-valuemax={180}
             onMouseDown={(event) => {
                 dragging.current = true;
                 handlePointer(event);

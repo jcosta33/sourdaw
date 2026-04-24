@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useEffect } from 'react';
+import { type ReactElement, useState, useEffect, useRef } from 'react';
 
 import { Sparkles, Loader2, Music, Mic, AudioLines, Download } from 'lucide-react';
 
@@ -102,9 +102,9 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         }
     };
 
-    // Reset per-clip state when the inspected clip changes so text/voice/render
-    // state from one clip does not bleed into another.
-    useEffect(() => {
+    const prevClipId = useRef(clip.id);
+    if (prevClipId.current !== clip.id) {
+        prevClipId.current = clip.id;
         setTtsText('');
         setDiffSingerLyrics('');
         setTtsVoiceId('af_heart');
@@ -115,7 +115,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
         setIsRenderingSvs(false);
         setTtsResults([]);
         setSvsResults([]);
-    }, [clip.id]);
+    }
 
     const handleDownloadKokoro = (): void => {
         void downloadModel({

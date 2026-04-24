@@ -5,7 +5,10 @@ import { loopStationStore } from '../../../stores/loopStationStore';
 import { clearSlot } from '../clearSlot';
 
 vi.mock('../../../stores/loopStationStore', () => ({
-    loopStationStore: { value: null as import('../../../stores/loopStationStore').LoopStationState | null, set: vi.fn() },
+    loopStationStore: {
+        value: null as import('../../../stores/loopStationStore').LoopStationState | null,
+        set: vi.fn(),
+    },
 }));
 
 describe('clearSlot', () => {

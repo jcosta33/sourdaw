@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createTrack } from '#/modules/Arrangement/models/Track';
-import type { TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
 
 import { ensureTrackStrips } from '../ensureTrackStrips';
+
+import type { TrackStoreState } from '#/modules/Arrangement/stores/trackStore';
 
 const mocks = vi.hoisted(() => ({
     trackStoreValue: { value: null as TrackStoreState | null },
@@ -42,7 +43,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 // Mock AudioEngine use cases
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
+vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureTrackStrip: mocks.ensureTrackStrip,
     setTrackOutput: mocks.setTrackOutput,
     setTrackGain: mocks.setTrackGain,
@@ -61,7 +62,7 @@ vi.mock('#/modules/AudioEngine/useCases', async () => ({
 }));
 
 // Mock Routing use cases
-vi.mock('#/modules/Routing/useCases', async () => ({
+vi.mock('#/modules/Routing/useCases', () => ({
     ensureBusStrip: mocks.ensureBusStrip,
     setBusGain: mocks.setBusGain,
     setSend: mocks.setSend,
@@ -83,7 +84,9 @@ describe('ensureTrackStrips', () => {
                     muted: false,
                     soloed: false,
                     outputId: 'main',
-                    devices: [{ id: 'd1', name: 'reverb', type: 'reverb', bypassed: false, parameterValues: { room: 0.5 } }],
+                    devices: [
+                        { id: 'd1', name: 'reverb', type: 'reverb', bypassed: false, parameterValues: { room: 0.5 } },
+                    ],
                     sends: [{ busId: 'b1', level: 0.1, preFader: false }],
                 },
                 {

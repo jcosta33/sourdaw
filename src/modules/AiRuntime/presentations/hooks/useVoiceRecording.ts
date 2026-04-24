@@ -37,17 +37,22 @@ type VoiceMode = 'browser' | 'whisper' | null;
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
+type WindowWithSpeechRecognition = Window & {
+    SpeechRecognition?: new () => SpeechRecognitionInstance;
+    webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
+};
+
 const getSpeechRecognition = (): SpeechRecognitionInstance | null => {
-    const w = window as unknown as Record<string, unknown>;
+    const w = window as WindowWithSpeechRecognition;
     const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
     if (!Ctor) {
         return null;
     }
-    return new (Ctor as new () => SpeechRecognitionInstance)();
+    return new Ctor();
 };
 
 export const isSpeechRecognitionAvailable = (): boolean => {
-    const w = window as unknown as Record<string, unknown>;
+    const w = window as WindowWithSpeechRecognition;
     return !!(w.SpeechRecognition ?? w.webkitSpeechRecognition);
 };
 
@@ -100,6 +105,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
         voiceStatusStore.set({ isListening: voiceStatusStore.value?.isListening ?? false, transcribing: value });
     };
 
+    const [voiceMode, setVoiceMode] = useState<VoiceMode>(null);
     const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const chunksRef = useRef<Blob[]>([]);
@@ -142,6 +148,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             await startDictation();
 
             modeRef.current = 'whisper';
+            setVoiceMode('whisper');
             setListening(true);
             setFinalText('');
             setInterimText('Recording...');
@@ -207,6 +214,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
                 showError('Microphone access denied. Allow mic in browser settings.');
                 if (isTauriAvailable()) {
                     modeRef.current = 'whisper';
+                    setVoiceMode('whisper');
                     void startWhisperRecording();
                 }
                 return;
@@ -232,6 +240,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             recognition.start();
             recognitionRef.current = recognition;
             modeRef.current = 'browser';
+            setVoiceMode('browser');
             setListening(true);
             setFinalText('');
             setInterimText('');
@@ -322,7 +331,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
         finalText,
         transcribing,
         errorText,
-        voiceMode: modeRef.current,
+        voiceMode,
         stopListening,
         toggleListening,
     };

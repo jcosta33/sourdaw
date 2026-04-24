@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * AudioWorkletProcessor for the Bacteria creative multi-effects framework.
  *
@@ -8,10 +7,10 @@
  * Effect processor: reads from inputs[0], writes to outputs[0].
  */
 
-import { initSync, BacteriaInstance } from '../wasm/daw_dsp.js';
+import { BacteriaInstance, initSync } from '../wasm/daw_dsp.js';
 
 /** Bacteria passes param names through as-is (Rust engine uses camelCase matching). */
-const PARAM_MAP = {
+const PARAM_MAP: Record<string, string> = {
     mix: 'mix',
     inputGain: 'inputGain',
     outputGain: 'outputGain',
@@ -49,17 +48,22 @@ const PARAM_MAP = {
     lorenzSpeed: 'lorenzSpeed',
 };
 
+type BacteriaMsg =
+    | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
+    | { type: 'param'; name: string; value: number };
+
 class BacteriaProcessor extends AudioWorkletProcessor {
-    _instance = null;
-    _memory = null;
+    _instance: BacteriaInstance | null = null;
+    _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
     _meterCounter = 0;
-    _sabView = null; // Float32Array view into the telemetry SharedArrayBuffer slot
+    _sabView: Float32Array | null = null;
 
     constructor() {
         super();
-        this.port.onmessage = (event) => {
+        this.port.onmessage = (event: MessageEvent<BacteriaMsg>) => {
             const msg = event.data;
             try {
                 if (msg.type === 'init') {
@@ -69,7 +73,7 @@ class BacteriaProcessor extends AudioWorkletProcessor {
                     this._initWasm(msg.wasmBytes);
                 } else if (msg.type === 'init-sab') {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
-                } else if (msg.type === 'param' && this._ready && !this._faulted) {
+                } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
                     const rustName = PARAM_MAP[msg.name] ?? msg.name;
                     this._instance.set_param(rustName, msg.value);
                 }
@@ -79,7 +83,7 @@ class BacteriaProcessor extends AudioWorkletProcessor {
         };
     }
 
-    _initWasm(wasmBytes) {
+    _initWasm(wasmBytes: BufferSource): void {
         const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
         this._memory = wasmExports.memory;
         this._instance = new BacteriaInstance(sampleRate);
@@ -87,16 +91,18 @@ class BacteriaProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'ready' });
     }
 
-    _passthrough(input, output) {
-        if (output[0] && input[0]) {
-            output[0].set(input[0]);
+    _passthrough(input: Float32Array[], output: Float32Array[]): void {
+        const in0 = input[0];
+        const in1 = input[1] ?? in0;
+        if (output[0] && in0) {
+            output[0].set(in0);
         }
-        if (output[1] && (input[1] ?? input[0])) {
-            output[1].set(input[1] ?? input[0]);
+        if (output[1] && in1) {
+            output[1].set(in1);
         }
     }
 
-    process(inputs, outputs) {
+    process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
         if (!this._ready || this._faulted) {
             return true;
         }
@@ -107,23 +113,33 @@ class BacteriaProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        const frames = output[0].length;
+        const in0 = input[0];
+        const in1 = input[1] ?? in0;
+        const out0 = output[0];
+        const out1 = output[1];
+        if (!in0 || !out0) {
+            return true;
+        }
+        const frames = out0.length;
 
         try {
             const inst = this._instance;
-            const mem = this._memory.buffer;
+            const mem = this._memory?.buffer;
+            if (!inst || !mem) {
+                return true;
+            }
 
             const inLeftPtr = inst.get_input_left_ptr();
             const inRightPtr = inst.get_input_right_ptr();
-            new Float32Array(mem, inLeftPtr, frames).set(input[0]);
-            new Float32Array(mem, inRightPtr, frames).set(input[1] ?? input[0]);
+            new Float32Array(mem, inLeftPtr, frames).set(in0);
+            new Float32Array(mem, inRightPtr, frames).set(in1 ?? in0);
 
             const outLeftPtr = inst.process(frames);
             const outRightPtr = inst.get_right_ptr();
 
-            output[0].set(new Float32Array(mem, outLeftPtr, frames));
-            if (output[1]) {
-                output[1].set(new Float32Array(mem, outRightPtr, frames));
+            out0.set(new Float32Array(mem, outLeftPtr, frames));
+            if (out1) {
+                out1.set(new Float32Array(mem, outRightPtr, frames));
             }
 
             this._meterCounter++;

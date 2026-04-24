@@ -5,7 +5,10 @@ import { loopStationStore } from '../../../stores/loopStationStore';
 import { setFixedLoopLength } from '../setFixedLoopLength';
 
 vi.mock('../../../stores/loopStationStore', () => ({
-    loopStationStore: { value: null as import('../../../stores/loopStationStore').LoopStationState | null, set: vi.fn() },
+    loopStationStore: {
+        value: null as import('../../../stores/loopStationStore').LoopStationState | null,
+        set: vi.fn(),
+    },
 }));
 
 function emptyLoopState(): LoopStationState {

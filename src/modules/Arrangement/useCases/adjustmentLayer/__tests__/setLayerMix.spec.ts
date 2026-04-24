@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import type { AdjustmentLayerState } from '../../stores/adjustmentLayer';
 import { setLayerMix } from '../setLayerMix';
+
+import type { AdjustmentLayerState } from '../../stores/adjustmentLayer';
 
 const mocks = vi.hoisted(() => ({
     adjustmentLayerStoreValue: { value: { layers: [] } },

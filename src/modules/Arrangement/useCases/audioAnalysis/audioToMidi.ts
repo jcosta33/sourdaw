@@ -5,6 +5,7 @@ import { addClip } from '../clip/addClip';
 
 import { getBufferForClip } from './helpers';
 
+// eslint-disable-next-line @typescript-eslint/require-await -- async API contract; callers use await; synchronous implementation pending real audio-AI backend
 export async function audioToMidi(clipId: string): Promise<void> {
     const result = getBufferForClip(clipId);
     if (!result) {

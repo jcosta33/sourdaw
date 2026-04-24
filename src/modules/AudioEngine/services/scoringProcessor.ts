@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * AudioWorkletProcessor for the Scoring chromatic tuner.
  *
@@ -16,19 +15,25 @@
 
 import { initSync, ScoringInstance } from '../wasm/scoring.js';
 
+type ScoringMsg =
+    | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
+    | { type: 'param'; name: string; value: number }
+    | { type: 'bypass'; bypassed: boolean };
+
 class ScoringProcessor extends AudioWorkletProcessor {
-    _instance = null; // ScoringInstance (generated wasm-bindgen class)
-    _memory = null; // WebAssembly.Memory
+    _instance: ScoringInstance | null = null;
+    _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
     _bypassed = false;
     _frameCount = 0;
     _telemetryInterval = 4; // send telemetry every N process calls (~21ms at 128 samples/48kHz)
-    _sabView = null; // Float32Array view into the telemetry SharedArrayBuffer slot
+    _sabView: Float32Array | null = null;
 
     constructor() {
         super();
-        this.port.onmessage = (event) => {
+        this.port.onmessage = (event: MessageEvent<ScoringMsg>) => {
             const msg = event.data;
             try {
                 if (msg.type === 'init') {
@@ -40,19 +45,22 @@ class ScoringProcessor extends AudioWorkletProcessor {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                 } else if (msg.type === 'bypass') {
                     this._bypassed = msg.bypassed;
-                } else if (msg.type === 'param' && this._ready && !this._faulted) {
+                } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
                     this._instance.set_param(msg.name, msg.value);
                 }
             } catch (error) {
                 console.error('ScoringProcessor error:', error);
                 if (!this._ready) {
-                    this.port.postMessage({ type: 'error', message: error?.message ?? String(error) });
+                    this.port.postMessage({
+                        type: 'error',
+                        message: error instanceof Error ? error.message : String(error),
+                    });
                 }
             }
         };
     }
 
-    _initWasm(wasmBytes) {
+    _initWasm(wasmBytes: BufferSource): void {
         const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
         this._memory = wasmExports.memory;
         this._instance = new ScoringInstance(sampleRate);
@@ -60,15 +68,17 @@ class ScoringProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'ready' });
     }
 
-    _passthrough(input, output) {
+    _passthrough(input: Float32Array[], output: Float32Array[]): void {
         for (let ch = 0; ch < Math.min(input.length, output.length); ch++) {
-            if (input[ch] && output[ch]) {
-                output[ch].set(input[ch]);
+            const inCh = input[ch];
+            const outCh = output[ch];
+            if (inCh && outCh) {
+                outCh.set(inCh);
             }
         }
     }
 
-    process(inputs, outputs) {
+    process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
         const input = inputs[0];
         const output = outputs[0];
 
@@ -79,28 +89,36 @@ class ScoringProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        if (!input || output.length === 0 || input.length === 0) {
+        const in0 = input?.[0];
+        if (!in0 || !output || output.length === 0) {
             return true;
         }
-
-        const frames = input[0].length;
+        const frames = in0.length;
 
         try {
-            // process() takes Float32Array inputs directly — no manual malloc needed
-            const leftPtr = this._instance.process(input[0], input[1] ?? input[0], frames);
-            const rightPtr = this._instance.get_right_ptr();
+            const inst = this._instance;
+            const mem = this._memory?.buffer;
+            if (!inst || !mem) {
+                return true;
+            }
 
-            const mem = this._memory.buffer;
-            output[0].set(new Float32Array(mem, leftPtr, frames));
-            if (output[1]) {
-                output[1].set(new Float32Array(mem, rightPtr, frames));
+            // process() takes Float32Array inputs directly — no manual malloc needed
+            const leftPtr = inst.process(in0, input[1] ?? in0, frames);
+            const rightPtr = inst.get_right_ptr();
+
+            const out0 = output[0];
+            if (out0) {
+                out0.set(new Float32Array(mem, leftPtr, frames));
+            }
+            const out1 = output[1];
+            if (out1) {
+                out1.set(new Float32Array(mem, rightPtr, frames));
             }
 
             // Send telemetry periodically
             this._frameCount++;
             if (this._frameCount >= this._telemetryInterval) {
                 this._frameCount = 0;
-                const inst = this._instance;
                 const active = inst.is_active();
                 if (this._sabView) {
                     if (active) {

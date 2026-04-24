@@ -96,7 +96,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         paramBatcher.cancelAll();
     }
 
-    function setLevainParamWithAudio<K extends keyof LevainPatch>(key: K, value: LevainPatch[K]): void {
+    function setLevainParamWithAudio<TKey extends keyof LevainPatch>(key: TKey, value: LevainPatch[TKey]): void {
         setLevainParam(key, value);
 
         if (key === 'currentArticulation' && typeof value === 'string') {
@@ -165,6 +165,9 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
                 break;
             case 'Release':
                 device.setParam('release', value);
+                break;
+            case undefined:
+            default:
                 break;
         }
     }

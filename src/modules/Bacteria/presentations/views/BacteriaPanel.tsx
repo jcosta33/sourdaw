@@ -801,7 +801,10 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
     const band = patch.bands[state.activeBand] ?? patch.bands[0]!;
     const activeModule = state.activeModule;
 
-    const setBandParam = <K extends keyof BacteriaPatch['bands'][0]>(key: K, value: BacteriaPatch['bands'][0][K]) => {
+    const setBandParam = <TKey extends keyof BacteriaPatch['bands'][0]>(
+        key: TKey,
+        value: BacteriaPatch['bands'][0][TKey]
+    ) => {
         setBacteriaBandParamWithAudio(deviceId, state.activeBand, key, value);
     };
 

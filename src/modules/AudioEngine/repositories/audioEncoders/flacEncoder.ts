@@ -520,7 +520,7 @@ async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => vo
 
         if (frameNumber % 16 === 0) {
             onProgress?.(sampleOffset / totalSamples);
-            await new Promise<void>((r) => setTimeout(r, 0));
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
         }
     }
 

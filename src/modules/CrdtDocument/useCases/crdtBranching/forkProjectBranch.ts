@@ -1,4 +1,4 @@
-import * as Automerge from '@automerge/automerge';
+import { getHeads, clone as cloneDoc } from '@automerge/automerge';
 
 import { createBranchError } from '../../errors/BranchError';
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
@@ -24,10 +24,10 @@ export async function forkProjectBranch(name: string, note = ''): Promise<string
 
     const branchId = crypto.randomUUID();
     const branchDocId = `branch_${branchId}`;
-    const heads = Automerge.getHeads(sourceDoc).map(String);
+    const heads = getHeads(sourceDoc).map(String);
 
     // Clone the document — shares full history with source
-    const forkedDoc = Automerge.clone(sourceDoc);
+    const forkedDoc = cloneDoc(sourceDoc);
     automergeRepository.insertDoc(branchDocId, forkedDoc);
 
     const record: BranchRecord = {

@@ -22,6 +22,6 @@ export async function saveAllToIdb(bundle: DocumentBundle): Promise<void> {
         }
 
         tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
+        tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
     });
 }

@@ -26,6 +26,10 @@ export function useProofAnalyser(): {
 } {
     const analyserRef = useRef<AnalyserNode | null>(null);
     const dataRef = useRef<Float32Array<ArrayBuffer> | null>(null);
+    // fftData is stored in state so the return value is not a ref access during render.
+    // The Float32Array is mutated in place on every rAF tick; state is updated in the
+    // rAF callback (not synchronously in the effect body) to carry the stable reference.
+    const [fftData, setFftData] = useState<Float32Array<ArrayBuffer> | null>(null);
     const [tick, setTick] = useState(0);
 
     useEffect(() => {
@@ -49,11 +53,13 @@ export function useProofAnalyser(): {
         }
 
         analyserRef.current = analyser;
-        dataRef.current = new Float32Array(analyser.frequencyBinCount);
+        const buf = new Float32Array(analyser.frequencyBinCount);
+        dataRef.current = buf;
 
         // Animation loop at ~15fps for tonal balance display
         let rafId = 0;
         let frameCount = 0;
+        let initialized = false;
         const update = () => {
             rafId = requestAnimationFrame(update);
             frameCount++;
@@ -62,6 +68,12 @@ export function useProofAnalyser(): {
             } // throttle to ~15fps
             if (analyserRef.current && dataRef.current) {
                 analyserRef.current.getFloatFrequencyData(dataRef.current);
+                // On the first tick, publish the array reference into state so
+                // consumers can read it. Subsequent ticks only bump the version counter.
+                if (!initialized) {
+                    initialized = true;
+                    setFftData(dataRef.current);
+                }
                 setTick((t) => t + 1);
             }
         };
@@ -84,7 +96,7 @@ export function useProofAnalyser(): {
     }, []);
 
     return {
-        fftData: dataRef.current,
+        fftData,
         fftVersion: tick,
         sampleRate: getAudioSampleRate(),
         fftSize: 4096,

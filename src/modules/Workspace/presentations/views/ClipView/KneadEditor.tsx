@@ -96,8 +96,8 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                     }
                     return null;
                 })
-                .catch((error) => {
-                    logger.error(error);
+                .catch((error: unknown) => {
+                    logger.error(error instanceof Error ? error : new Error(String(error)));
                     notifyUser('Pitch analysis failed. See logs for details.', 'error');
                     return null;
                 });

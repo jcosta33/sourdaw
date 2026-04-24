@@ -968,6 +968,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 return 'crosshair';
             case 'stretch':
                 return 'ew-resize';
+            case 'marquee':
+            case 'select':
             default:
                 return 'default';
         }

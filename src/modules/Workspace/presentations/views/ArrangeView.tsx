@@ -4,7 +4,6 @@ import {
     type DragEvent,
     useState,
     useRef,
-    useEffect,
     useLayoutEffect,
 } from 'react';
 
@@ -55,20 +54,22 @@ export const ArrangeView = (): ReactElement => {
 
     const [localTrackListWidth, setLocalTrackListWidth] = useState(trackListWidth);
     const trackListWidthRef = useRef(localTrackListWidth);
+    const prevTrackListWidth = useRef(trackListWidth);
+    if (prevTrackListWidth.current !== trackListWidth) {
+        prevTrackListWidth.current = trackListWidth;
+        setLocalTrackListWidth(trackListWidth);
+    }
 
     const [localSessionWidth, setLocalSessionWidth] = useState(sessionViewWidth);
     const sessionWidthRef = useRef(localSessionWidth);
+    const prevSessionViewWidth = useRef(sessionViewWidth);
+    if (prevSessionViewWidth.current !== sessionViewWidth) {
+        prevSessionViewWidth.current = sessionViewWidth;
+        setLocalSessionWidth(sessionViewWidth);
+    }
 
     const timelineContainerRef = useRef<HTMLDivElement>(null);
     const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
-
-    useEffect(() => {
-        setLocalTrackListWidth(trackListWidth);
-    }, [trackListWidth]);
-
-    useEffect(() => {
-        setLocalSessionWidth(sessionViewWidth);
-    }, [sessionViewWidth]);
 
     const handleTrackListResize = (delta: number): void => {
         setLocalTrackListWidth((prev) => {

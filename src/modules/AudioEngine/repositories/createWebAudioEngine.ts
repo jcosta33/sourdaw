@@ -8,11 +8,17 @@ import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url'
 
 import type { AudioEngine, AudioEngineState, TrackChannelStrip, BusStrip, SendNode } from '../models/AudioEngineState';
 
+type NoopMeterNode = {
+    connect(): void;
+    disconnect(): void;
+    port: { postMessage(message: unknown): void };
+};
+
 class AudioEngineImpl implements AudioEngine {
     public context!: AudioContext;
     public masterGainNode!: GainNode;
     public masterAnalyser!: AnalyserNode;
-    public masterMeterNode!: AudioWorkletNode;
+    public masterMeterNode!: AudioWorkletNode | NoopMeterNode;
 
     private trackNodes = new Map<string, TrackNode>();
     private busNodes = new Map<string, BusNode>();
@@ -57,14 +63,14 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     private setupNoopContext() {
-        this.context = new OfflineAudioContext(2, 1, 44100) as unknown as AudioContext;
+        this.context = new OfflineAudioContext(2, 1, 44100) as BaseAudioContext as AudioContext;
         this.masterGainNode = this.context.createGain();
         this.masterGainNode.gain.value = 0;
         this.masterMeterNode = {
             connect: () => {},
             disconnect: () => {},
             port: { postMessage: () => {} },
-        } as unknown as AudioWorkletNode; // Mock node for noop/offline fallback
+        };
         this.masterAnalyser = this.context.createAnalyser();
         this.masterMeterBuffer = new Float32Array(1);
     }
@@ -287,7 +293,7 @@ class AudioEngineImpl implements AudioEngine {
         this.trackNodes.get(trackId)?.updateMidiFxBypass(fxId, bypassed);
     }
 
-    public syncKneadState(trackId: string, clips: Record<string, any>): void {
+    public syncKneadState(trackId: string, clips: Record<string, unknown>): void {
         const trackNode = this.trackNodes.get(trackId);
         if (trackNode) {
             for (const dn of trackNode.strip.deviceNodes) {

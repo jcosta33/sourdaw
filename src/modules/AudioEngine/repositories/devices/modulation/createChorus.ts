@@ -27,9 +27,9 @@ export function createChorus(ctx: BaseAudioContext): OfflineDeviceNode {
     splitter.connect(delay1);
     splitter.connect(delay2);
     lfo1.connect(lfoGain1);
-    lfoGain1.connect(delay1.delayTime as unknown as AudioNode);
+    lfoGain1.connect(delay1.delayTime);
     lfo2.connect(lfoGain2);
-    lfoGain2.connect(delay2.delayTime as unknown as AudioNode);
+    lfoGain2.connect(delay2.delayTime);
     delay1.connect(wet);
     delay2.connect(wet);
     dry.connect(merger);

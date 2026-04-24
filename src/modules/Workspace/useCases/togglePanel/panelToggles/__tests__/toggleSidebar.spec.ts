@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import type { WorkspaceState } from '../../../../models/WorkspaceState';
 import { toggleSidebar } from '../toggleSidebar';
+
+import type { WorkspaceState } from '../../../../models/WorkspaceState';
 
 const mocks = vi.hoisted(() => ({
     getWorkspaceState: vi.fn<() => Partial<WorkspaceState> | null>(),

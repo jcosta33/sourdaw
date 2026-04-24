@@ -36,7 +36,7 @@ async function encodePcmToMp3(
         yieldCounter++;
         if (yieldCounter % 64 === 0) {
             onProgress?.(index / buffer.length);
-            await new Promise<void>((r) => setTimeout(r, 0));
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
         }
     }
 

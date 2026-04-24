@@ -68,6 +68,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
     const waveCtxRef = useRef<HTMLDivElement>(null);
     // Warp marker drag state
     const draggingMarker = useRef<{ id: string; startX: number; startBeat: number } | null>(null);
+    const [isDraggingMarker, setIsDraggingMarker] = useState(false);
     const didDrag = useRef(false);
 
     const refreshWarp = () => setWarpState(getWarpState(clipId));
@@ -241,6 +242,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
         if (hit) {
             draggingMarker.current = { id: hit.id, startX: x, startBeat: hit.warpedBeat };
             didDrag.current = false;
+            setIsDraggingMarker(true);
             (event.target as HTMLCanvasElement).setPointerCapture(event.pointerId);
             event.preventDefault();
         }
@@ -264,6 +266,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
 
     const handlePointerUp = () => {
         draggingMarker.current = null;
+        setIsDraggingMarker(false);
     };
 
     const handleDoubleClick = (event: MouseEvent<HTMLCanvasElement>) => {
@@ -397,7 +400,7 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
             >
                 <canvas
                     ref={canvasRef}
-                    className={draggingMarker.current ? 'cursor-ew-resize' : 'cursor-crosshair'}
+                    className={isDraggingMarker ? 'cursor-ew-resize' : 'cursor-crosshair'}
                     aria-label="Waveform editor"
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
@@ -445,7 +448,9 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                             type="button"
                             className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-[var(--color-accent-lavender)] hover:bg-accent"
                             role="menuitem"
-                            onClick={waveAct(() => handleAiDenoiseClip(clipId))}
+                            onClick={waveAct(() => {
+                                void handleAiDenoiseClip(clipId);
+                            })}
                         >
                             <span>AI Denoise</span>
                             <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">
@@ -462,7 +467,9 @@ export const WaveformEditor = ({ clipId }: WaveformEditorProps): ReactElement =>
                             type="button"
                             className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-[var(--color-accent-lavender)] hover:bg-accent"
                             role="menuitem"
-                            onClick={waveAct(() => handleStemSeparationPreview(clipId))}
+                            onClick={waveAct(() => {
+                                void handleStemSeparationPreview(clipId);
+                            })}
                         >
                             <span>AI Stem Separation</span>
                             <span className="text-[9px] opacity-60 border border-current rounded px-1 ml-2">

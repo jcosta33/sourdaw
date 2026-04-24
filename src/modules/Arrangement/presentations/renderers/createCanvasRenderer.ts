@@ -49,7 +49,7 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): TimelineRendere
 }
 
 function drawGrid(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, width: number, height: number): void {
-    const { pixelsPerBeat, viewportStartBeat, timeSignatureNumerator, timeSignatureDenominator } = model;
+    const { pixelsPerBeat, viewportStartBeat, timeSignatureNumerator } = model;
     const startBeat = Math.floor(viewportStartBeat);
     const tsChanges = timeSignatureMapStore.value?.changes ?? [];
 
@@ -59,8 +59,6 @@ function drawGrid(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, wid
         if (change.beat >= startBeat) {
             break;
         }
-        const beatsInSegment = change.beat - barStartBeat;
-        beatsInSegment;
         barStartBeat = change.beat;
         currentNumerator = change.numerator;
     }
@@ -107,8 +105,6 @@ function drawGrid(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, wid
         }
     }
     ctx.stroke();
-
-    timeSignatureDenominator;
 }
 
 const TRACK_KIND_LABELS: Record<string, string> = {

@@ -90,6 +90,7 @@ function toAudioValue<Key extends keyof GrinderPatch>(key: Key, value: GrinderPa
         return value ? 1 : 0;
     }
 
+    // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check -- intentional partial handler: only enum-valued keys need conversion; all numeric/boolean/array/object keys are handled by the guards above and fall to `default: return null`
     switch (key) {
         case 'engineMode':
             return getOptionIndex(ENGINE_MODES, value as string);

@@ -521,6 +521,7 @@ export default defineConfig(
             'coverage/',
             'storybook-static/',
             'src/routeTree.gen.ts',
+            'src/modules/AudioEngine/wasm/*.js',
             'test-debug.mjs',
             'test-jscodeshift.js',
             'test-manual-fix.mjs',
@@ -1036,7 +1037,7 @@ export default defineConfig(
 
     // ─── Test files ──────────────────────────────────────────────────────────
     {
-        files: ['**/*.spec.{ts,tsx}', '**/*.test.{ts,tsx}'],
+        files: ['**/*.spec.{ts,tsx}', '**/*.test.{ts,tsx}', '**/setupTests.ts'],
         rules: {
             '@eslint-react/no-unnecessary-use-prefix': 'off',
             '@eslint-react/no-missing-context-display-name': 'off',

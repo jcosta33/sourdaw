@@ -24,6 +24,7 @@ function loadProcessorClass(filePath: string, className: string) {
     // We replace the import statements so it doesn't crash on evaluation
     const safeCode = code.replaceAll(/import\s+.*?;/g, '').replaceAll(/export\s+/g, '');
 
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval -- test utility: dynamically loads AudioWorkletProcessor source to extract class; no user input
     const execute = new Function(
         ...Object.keys(globals),
         `

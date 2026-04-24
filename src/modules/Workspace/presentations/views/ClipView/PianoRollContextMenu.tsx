@@ -2,7 +2,7 @@
  * PianoRoll context menu — right-click actions for note editing,
  * quantize, transpose, humanize, strum, AI, and groove operations.
  */
-import { type ReactElement, useRef } from 'react';
+import { type ReactElement, useRef, useState } from 'react';
 
 import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
@@ -54,6 +54,7 @@ export const PianoRollContextMenu = ({
 }: PianoRollContextMenuProps): ReactElement => {
     const ref = useRef<HTMLDivElement>(null);
     useContextMenuDismiss(ref, onClose);
+    const [grooveTemplate, setGrooveTemplate] = useState<Parameters<typeof applyGrooveToClip>[1] | null>(null);
 
     const act = (fn: () => void) => () => {
         fn();
@@ -310,7 +311,10 @@ export const PianoRollContextMenu = ({
                         {isTauri() ? 'Desktop' : 'Web'}
                     </span>
                 }
-                onClick={act(handleAIGenerate)}
+                onClick={() => {
+                    void handleAIGenerate();
+                    onClose();
+                }}
             >
                 AI Auto-Complete
             </DawMenuButton>
@@ -324,7 +328,7 @@ export const PianoRollContextMenu = ({
                 onClick={act(() => {
                     const groove = extractGrooveFromClip(clipId);
                     if (groove) {
-                        (window as unknown as Record<string, unknown>).__lastGrooveTemplate = groove;
+                        setGrooveTemplate(groove);
                     }
                 })}
             >
@@ -332,20 +336,15 @@ export const PianoRollContextMenu = ({
             </DawMenuButton>
             <DawMenuButton
                 role="menuitem"
-                disabled={!(window as unknown as Record<string, unknown>).__lastGrooveTemplate}
+                disabled={!grooveTemplate}
                 onClick={act(() => {
-                    const groove = (window as unknown as Record<string, unknown>).__lastGrooveTemplate;
-                    if (groove) {
-                        const originals = applyGrooveToClip(
-                            clipId,
-                            groove as Parameters<typeof applyGrooveToClip>[1],
-                            0.5
-                        );
+                    if (grooveTemplate) {
+                        const originals = applyGrooveToClip(clipId, grooveTemplate, 0.5);
                         if (originals) {
                             pushUndoEntry(
                                 'Apply groove',
                                 () => restoreGrooveOriginals(clipId, originals),
-                                () => applyGrooveToClip(clipId, groove as Parameters<typeof applyGrooveToClip>[1], 0.5)
+                                () => applyGrooveToClip(clipId, grooveTemplate, 0.5)
                             );
                         }
                     }

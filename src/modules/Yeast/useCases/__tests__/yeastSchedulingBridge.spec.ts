@@ -4,7 +4,16 @@ import { processYeastMidi } from '../yeastSchedulingBridge/processRealtimeMidiIn
 
 const mocks = vi.hoisted(() => ({
     getYeastRack: vi.fn(),
-    transportStore: { value: null as { tempo: number; isPlaying: boolean; timeSignatureNumerator: number; timeSignatureDenominator: number; loopStart: number; loopEnd: number } | null },
+    transportStore: {
+        value: null as {
+            tempo: number;
+            isPlaying: boolean;
+            timeSignatureNumerator: number;
+            timeSignatureDenominator: number;
+            loopStart: number;
+            loopEnd: number;
+        } | null,
+    },
     getAudioContext: vi.fn(),
 }));
 

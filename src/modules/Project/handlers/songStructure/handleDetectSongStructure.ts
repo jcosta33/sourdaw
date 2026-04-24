@@ -3,6 +3,7 @@ import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 export const handleDetectSongStructure = createHandler<'detectSongStructure'>({
+    // eslint-disable-next-line @typescript-eslint/require-await -- handler interface requires async execute; this handler has no asynchronous operations
     execute: async (alpha) => {
         const sections = detectAndApplySongStructure(alpha.payload.trackId);
         if (sections.length === 0) {

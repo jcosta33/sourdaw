@@ -63,7 +63,7 @@ export const createAutomergeStorage = <TData>(
      */
     let lastHydratedJson: string | null = null;
 
-    const toDocSafe = <TValue>(value: TValue): TValue => JSON.parse(JSON.stringify(value));
+    const toDocSafe = <TValue>(value: TValue): TValue => JSON.parse(JSON.stringify(value)) as TValue;
 
     const writeToCrdt = (value: TData | null): void => {
         if (!hasCrdtDoc(docId)) {

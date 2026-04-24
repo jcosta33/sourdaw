@@ -1,4 +1,4 @@
-import * as Automerge from '@automerge/automerge';
+import { load, clone, merge, getAllChanges } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
 
@@ -34,15 +34,15 @@ export function detectImportDecision(bundle: DocumentBundle): ImportDecision {
     // Check if the incoming doc shares lineage by attempting a trial merge.
     // If the merge produces more changes than either doc alone, they share history.
     try {
-        const incomingDoc = Automerge.load(incomingRootBytes);
+        const incomingDoc = load(incomingRootBytes);
 
         // Trial merge on a clone — doesn't modify the real doc
-        const trialDoc = Automerge.clone(localDoc);
-        const merged = Automerge.merge(trialDoc, incomingDoc);
+        const trialDoc = clone(localDoc);
+        const merged = merge(trialDoc, incomingDoc);
 
-        const localChangeCount = Automerge.getAllChanges(localDoc).length;
-        const incomingChangeCount = Automerge.getAllChanges(incomingDoc).length;
-        const mergedChangeCount = Automerge.getAllChanges(merged).length;
+        const localChangeCount = getAllChanges(localDoc).length;
+        const incomingChangeCount = getAllChanges(incomingDoc).length;
+        const mergedChangeCount = getAllChanges(merged).length;
 
         // If merged has fewer changes than the sum, they share some history
         if (mergedChangeCount < localChangeCount + incomingChangeCount) {

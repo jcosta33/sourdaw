@@ -2,6 +2,7 @@ import { getTrackStoreState, groupTracks, renameTrack, setTrackColor } from '#/m
 import { createHandler } from '#/utils/createHandler';
 
 export const handleAutoOrganizeProject = createHandler<'autoOrganizeProject'>({
+    // eslint-disable-next-line @typescript-eslint/require-await -- handler interface requires async execute; this handler has no asynchronous operations
     execute: async (alpha) => {
         const trackState = getTrackStoreState();
         if (!trackState) {

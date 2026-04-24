@@ -15,7 +15,7 @@ export type FermenterNodeResult = {
     workletNode: AudioWorkletNode;
     noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
     noteOff: (note: number, sampleFrame?: number) => void;
-    setParam: (name: string, value: number, sampleFrame?: number) => void;
+    setParam: (name: string, value: number | number[], sampleFrame?: number) => void;
     setPatch: (patch: Record<string, unknown>) => void;
     setBypass: (bypassed: boolean) => void;
     onTelemetry: (callback: (data: { peakL: number; peakR: number; scopeBuffer: Float32Array }) => void) => void;
@@ -88,8 +88,8 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
         noteOff(note: number, sampleFrame?: number) {
             node.port.postMessage({ type: 'noteOff', note, sampleFrame });
         },
-        setParam(name: string, value: number, sampleFrame?: number) {
-            if (Number.isFinite(value)) {
+        setParam(name: string, value: number | number[], sampleFrame?: number) {
+            if (Array.isArray(value) || Number.isFinite(value)) {
                 node.port.postMessage({ type: 'param', name, value, sampleFrame });
             }
         },

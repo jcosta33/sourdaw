@@ -12,6 +12,6 @@ export async function clearCrdtIdb(): Promise<void> {
         const store = tx.objectStore(STORE_NAME);
         const request = store.clear();
         request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
+        request.onerror = () => reject(request.error ?? new Error('IDB request failed'));
     });
 }

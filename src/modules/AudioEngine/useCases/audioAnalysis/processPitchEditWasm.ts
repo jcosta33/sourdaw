@@ -1,8 +1,9 @@
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { audioBufferCache } from '../../stores/audioBufferCache';
-// @ts-expect-error - generated wasm-bindgen glue, no type declarations
 import { commit_pitch_edit_wasm } from '../../wasm/daw_dsp.js';
-import type { PitchContour, PitchSegment } from './analyzePitchForClip';
+
+import type { PitchContour } from '#/modules/Knead/stores/kneadStore';
+import type { PitchSegment } from './analyzePitchForClip';
 
 export function processPitchEditWasm(
     originalBuffer: AudioBuffer,

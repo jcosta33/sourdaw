@@ -20,6 +20,3 @@ describe('setTrackStoreState', () => {
         expect(trackStore.set).toHaveBeenCalledWith(nextState);
     });
 });
-With(nextState);
-    });
-});

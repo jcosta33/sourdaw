@@ -2,11 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { eventBus } from '#/app/registerDependencies';
 
-import type { Track, TrackKind } from '../../models/Track';
-import type { TrackState } from '../../repositories/track/getTrackState';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { addTrack } from '../addTrack';
+
+import type { Track, TrackKind } from '../../models/Track';
+import type { TrackState } from '../../repositories/track/getTrackState';
 
 vi.mock('../../repositories/track/getTrackState', () => ({
     getTrackState: vi.fn<typeof getTrackState>(),

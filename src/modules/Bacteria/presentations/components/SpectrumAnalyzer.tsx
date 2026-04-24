@@ -48,12 +48,6 @@ export const SpectrumAnalyzer = ({
     const heatmapRef = useRef<HeatmapRing>({ rows: [], head: 0, count: 0 });
     const frameRef = useRef(0);
 
-    useEffect(() => {
-        draw();
-        // Dep array narrowed from "run every render" to "run when inputs that
-        // actually affect the draw change" (§150.2).
-    }, [fftData, width, height, crossoverFreqs, bandCount, showHeatmap]);
-
     const draw = (): void => {
         const canvas = canvasRef.current;
         if (!canvas) {
@@ -194,6 +188,12 @@ export const SpectrumAnalyzer = ({
             ctx.setLineDash([]);
         }
     };
+
+    useEffect(() => {
+        draw();
+        // Dep array narrowed from "run every render" to "run when inputs that
+        // actually affect the draw change" (§150.2).
+    }, [fftData, width, height, crossoverFreqs, bandCount, showHeatmap]);
 
     return <canvas ref={canvasRef} width={width} height={height} className="rounded-lg border border-border/30" />;
 };

@@ -56,7 +56,11 @@ const LEVELS = [
 
 function loadUserPatches(): Array<{ id: string; name: string; patch: FermenterPatch }> {
     try {
-        return JSON.parse(window.localStorage.getItem(USER_PATCHES_KEY) ?? '[]');
+        return JSON.parse(window.localStorage.getItem(USER_PATCHES_KEY) ?? '[]') as Array<{
+            id: string;
+            name: string;
+            patch: FermenterPatch;
+        }>;
     } catch {
         return [];
     }
@@ -476,8 +480,8 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     const [section, setSection] = useState<FermenterSection>('osc');
     const [showSave, setShowSave] = useState(false);
     const [saveName, setSaveName] = useState('');
-    const [version, setVersion] = useState(0);
-    version;
+    // version counter forces re-render after user-patch save so the preset browser reflects new entries
+    const [, setVersion] = useState(0);
 
     const userPatches = loadUserPatches();
     const sectionMeta = getSectionMeta(section);

@@ -21,7 +21,7 @@ export function createFlanger(ctx: BaseAudioContext): OfflineDeviceNode {
     splitter.connect(dry);
     splitter.connect(delay);
     lfo.connect(lfoGain);
-    lfoGain.connect(delay.delayTime as unknown as AudioNode);
+    lfoGain.connect(delay.delayTime);
     delay.connect(feedback);
     feedback.connect(delay);
     delay.connect(wet);

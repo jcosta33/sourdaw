@@ -242,7 +242,7 @@ export const InstrumentsTab = ({
         void eventBus.emit('panel.showCrumbs', { deviceId: device?.id ?? null });
     };
 
-    userPresetsVersion;
+    void userPresetsVersion; // Read to cause re-render when preset version bumps
 
     // ── Route: root category picker ─────────────────────────────────────
     const isCategoryRoot = currentRoute.id === 'instruments';

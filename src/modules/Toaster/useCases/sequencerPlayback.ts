@@ -39,6 +39,8 @@ function shouldTrigger(step: Step, loopIndex: number): boolean {
     }
 
     switch (step.condition) {
+        case 'always':
+            break;
         case 'fill':
             if (!sequencerState.fillActive) {
                 return false;

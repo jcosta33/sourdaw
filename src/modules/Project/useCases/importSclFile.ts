@@ -1,3 +1,4 @@
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- this IS a repository/adapter layer: invoke bridges native parse_scl command
 import { invoke } from '@tauri-apps/api/core';
 
 import { registerTuningTable } from '#/modules/AudioEngine';

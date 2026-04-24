@@ -16,10 +16,10 @@ import { ScheduledEventQueue } from '../../models/MidiProcessor';
 /** Bjorklund's algorithm — distribute `hits` across `steps` as evenly as possible. */
 function bjorklund(hits: number, steps: number): boolean[] {
     if (hits >= steps) {
-        return new Array(steps).fill(true);
+        return Array.from<boolean>({ length: steps }).fill(true);
     }
     if (hits <= 0) {
-        return new Array(steps).fill(false);
+        return Array.from<boolean>({ length: steps }).fill(false);
     }
 
     const pattern: boolean[][] = [];

@@ -1085,7 +1085,7 @@ export function phonemize({
 }: PhonemizeInput): PhonemizeOutput {
     const words = lyrics
         .toLowerCase()
-        .split(/[\s,.\-!?;:'"()\[\]]+/)
+        .split(/[\s,.\-!?;:'"()[\]]+/)
         .filter((w) => w.length > 0);
 
     if (words.length === 0) {

@@ -1,4 +1,18 @@
-import * as Automerge from '@automerge/automerge';
+import {
+    type Doc,
+    type ChangeFn,
+    type Heads,
+    init,
+    load,
+    save,
+    saveIncremental,
+    loadIncremental,
+    merge,
+    change,
+    getChanges,
+    view,
+    getHeads,
+} from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
 
@@ -80,7 +94,7 @@ type ChangeListener = (docId?: DocId) => void;
  * which triggers the projection bridge to update existing stores.
  */
 class AutomergeRepository {
-    private docs = new Map<DocId, Automerge.Doc<AnyDoc>>();
+    private docs = new Map<DocId, Doc<AnyDoc>>();
     private rootId: DocId = DOC_PREFIX_ROOT;
     private changeListeners = new Set<ChangeListener>();
     // Automerge's actor ID must be a hex string with an even length; the
@@ -100,8 +114,8 @@ class AutomergeRepository {
     }
 
     /** Get a document by ID (read-only). */
-    getDoc<T = AnyDoc>(id: DocId): Automerge.Doc<T> | undefined {
-        return this.docs.get(id) as Automerge.Doc<T> | undefined;
+    getDoc<TDoc = AnyDoc>(id: DocId): Doc<TDoc> | undefined {
+        return this.docs.get(id) as Doc<TDoc> | undefined;
     }
 
     /** Check if a document exists. */
@@ -127,7 +141,7 @@ class AutomergeRepository {
         this.docs.clear();
 
         this.rootId = DOC_PREFIX_ROOT;
-        this.docs.set(this.rootId, Automerge.init<AnyDoc>());
+        this.docs.set(this.rootId, init<AnyDoc>());
 
         return this.rootId;
     }
@@ -137,14 +151,14 @@ class AutomergeRepository {
      * Returns the DocId.
      */
     createChildDoc(docId: DocId): DocId {
-        const doc = Automerge.init<AnyDoc>();
+        const doc = init<AnyDoc>();
         this.docs.set(docId, doc);
         return docId;
     }
 
     /** Insert or replace a document (used by branching). */
-    insertDoc(docId: DocId, doc: Automerge.Doc<unknown>): void {
-        this.docs.set(docId, doc as Automerge.Doc<AnyDoc>);
+    insertDoc(docId: DocId, doc: Doc<unknown>): void {
+        this.docs.set(docId, doc as Doc<AnyDoc>);
     }
 
     /**
@@ -154,14 +168,14 @@ class AutomergeRepository {
      * @param message - Optional semantic message attached to the Automerge change.
      *   Used for history inspection (`getHistory()` returns this in `DecodedChange.message`).
      */
-    changeDoc<T = AnyDoc>(id: DocId, changeFn: Automerge.ChangeFn<T>, message?: string): void {
-        const doc = this.docs.get(id) as Automerge.Doc<T> | undefined;
+    changeDoc<TDoc = AnyDoc>(id: DocId, changeFn: ChangeFn<TDoc>, message?: string): void {
+        const doc = this.docs.get(id) as Doc<TDoc> | undefined;
         if (!doc) {
             throw new Error(`Document not found: ${id}`);
         }
 
-        const updated = message ? Automerge.change(doc, { message }, changeFn) : Automerge.change(doc, changeFn);
-        this.docs.set(id, updated as Automerge.Doc<AnyDoc>);
+        const updated = message ? change(doc, { message }, changeFn) : change(doc, changeFn);
+        this.docs.set(id, updated as Doc<AnyDoc>);
         this.notifyListeners(id);
     }
 
@@ -169,8 +183,8 @@ class AutomergeRepository {
      * Replace a document directly (used by sync protocol after receiveSyncMessage).
      * Notifies listeners so response sync messages can be generated.
      */
-    replaceDoc(id: DocId, doc: Automerge.Doc<unknown>): void {
-        this.docs.set(id, doc as Automerge.Doc<AnyDoc>);
+    replaceDoc(id: DocId, doc: Doc<unknown>): void {
+        this.docs.set(id, doc as Doc<AnyDoc>);
         this.notifyListeners(id);
     }
 
@@ -179,11 +193,11 @@ class AutomergeRepository {
      * Used for sync and merge-on-open.
      */
     mergeRemoteDoc(id: DocId, binary: Uint8Array): void {
-        const incoming = Automerge.load<AnyDoc>(binary);
+        const incoming = load<AnyDoc>(binary);
 
         if (this.docs.has(id)) {
             const local = this.docs.get(id)!;
-            const merged = Automerge.merge(local, incoming);
+            const merged = merge(local, incoming);
             this.docs.set(id, merged);
         } else {
             this.docs.set(id, incoming);
@@ -198,7 +212,7 @@ class AutomergeRepository {
         if (!doc) {
             return undefined;
         }
-        return Automerge.save(doc);
+        return save(doc);
     }
 
     /** Serialize only the changes since the last save/saveIncremental call. */
@@ -207,14 +221,14 @@ class AutomergeRepository {
         if (!doc) {
             return undefined;
         }
-        return Automerge.saveIncremental(doc);
+        return saveIncremental(doc);
     }
 
     /** Serialize all documents as a bundle. */
     saveAll(): DocumentBundle {
         const bundle: DocumentBundle = new Map();
         for (const [id, doc] of this.docs) {
-            bundle.set(id, Automerge.save(doc));
+            bundle.set(id, save(doc));
         }
         return bundle;
     }
@@ -226,7 +240,7 @@ class AutomergeRepository {
      */
     restoreSnapshot(bundle: DocumentBundle): void {
         for (const [id, bytes] of bundle) {
-            this.docs.set(id, Automerge.load<AnyDoc>(bytes));
+            this.docs.set(id, load<AnyDoc>(bytes));
         }
         this.notifyListeners();
     }
@@ -234,9 +248,9 @@ class AutomergeRepository {
     /**
      * Load all documents from a bundle, replacing current state.
      *
-     * Heavy WASM parsing (Automerge.load + loadIncremental loops) runs in
+     * Heavy WASM parsing (load + loadIncremental loops) runs in
      * crdtWorker.ts. The worker returns compacted binaries; main thread calls
-     * Automerge.load() once per doc (fast — no incremental chain to replay).
+     * load() once per doc (fast — no incremental chain to replay).
      */
     async loadAll(bundle: DocumentBundle): Promise<void> {
         this.docs.clear();
@@ -262,7 +276,7 @@ class AutomergeRepository {
         }
 
         for (const [id, bytes] of compacted) {
-            this.docs.set(id, Automerge.load<AnyDoc>(bytes));
+            this.docs.set(id, load<AnyDoc>(bytes));
         }
         this.rootId = rootId;
 
@@ -283,7 +297,7 @@ class AutomergeRepository {
         }
 
         for (const [id, bytes] of baseDocs) {
-            this.docs.set(id, Automerge.load<AnyDoc>(bytes));
+            this.docs.set(id, load<AnyDoc>(bytes));
             if (id.startsWith(DOC_PREFIX_ROOT)) {
                 this.rootId = id;
             }
@@ -299,14 +313,14 @@ class AutomergeRepository {
             const docId = key.substring(0, key.indexOf(':incremental:'));
             const doc = this.docs.get(docId);
             if (doc) {
-                this.docs.set(docId, Automerge.loadIncremental(doc, bytes));
+                this.docs.set(docId, loadIncremental(doc, bytes));
             } else {
                 logger.warn(`[AutomergeRepository] Found incremental chunk for missing doc: ${docId}`);
             }
         }
 
         for (const [id, doc] of this.docs) {
-            this.docs.set(id, Automerge.load(Automerge.save(doc)));
+            this.docs.set(id, load(save(doc)));
         }
 
         this.notifyListeners();
@@ -317,7 +331,7 @@ class AutomergeRepository {
      * Documents with matching IDs are merged; new documents are inserted.
      *
      * Heavy WASM parsing runs in crdtWorker.ts. The current in-memory docs are
-     * serialised once (Automerge.save — fast), sent to the worker alongside the
+     * serialised once (save — fast), sent to the worker alongside the
      * incoming bundle, then the worker returns merged compacted binaries.
      */
     async mergeBundle(bundle: DocumentBundle): Promise<MergeResult> {
@@ -345,7 +359,7 @@ class AutomergeRepository {
         }
 
         for (const [id, bytes] of compacted) {
-            this.docs.set(id, Automerge.load<AnyDoc>(bytes));
+            this.docs.set(id, load<AnyDoc>(bytes));
         }
 
         this.notifyListeners();
@@ -357,10 +371,10 @@ class AutomergeRepository {
         const result: MergeResult = { mergedDocIds: [], newDocIds: [] };
 
         for (const [id, bytes] of bundle) {
-            const incoming = Automerge.load<AnyDoc>(bytes);
+            const incoming = load<AnyDoc>(bytes);
             const local = this.docs.get(id);
             if (local) {
-                this.docs.set(id, Automerge.merge(local, incoming));
+                this.docs.set(id, merge(local, incoming));
                 result.mergedDocIds.push(id);
             } else {
                 this.docs.set(id, incoming);
@@ -384,21 +398,21 @@ class AutomergeRepository {
     }
 
     /** Get the incremental changes since a given set of heads. */
-    getChanges(id: DocId, heads: Automerge.Heads): Uint8Array[] {
+    getChanges(id: DocId, heads: Heads): Uint8Array[] {
         const doc = this.docs.get(id);
         if (!doc) {
             return [];
         }
-        return Automerge.getChanges(Automerge.view(doc, heads), doc);
+        return getChanges(view(doc, heads), doc);
     }
 
     /** Get the current heads of a document (for sync protocol). */
-    getHeads(id: DocId): Automerge.Heads | undefined {
+    getHeads(id: DocId): Heads | undefined {
         const doc = this.docs.get(id);
         if (!doc) {
             return undefined;
         }
-        return Automerge.getHeads(doc);
+        return getHeads(doc);
     }
 
     private notifyListeners(docId?: DocId): void {

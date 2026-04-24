@@ -22,7 +22,7 @@ export async function persistSamples(): Promise<void> {
 
         await new Promise<void>((resolve, reject) => {
             tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+            tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
         });
         db.close();
     } catch {

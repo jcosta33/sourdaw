@@ -112,7 +112,8 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
             }
 
             // ── Memory ──────────────────────────────────────────────────
-            const perfMemory = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
+            // performance.memory is a Chrome non-standard extension not in TypeScript's lib.dom.d.ts
+            const perfMemory = (performance as { memory?: { usedJSHeapSize: number } }).memory;
             if (perfMemory) {
                 const memMb = Math.round(perfMemory.usedJSHeapSize / (1024 * 1024));
                 if (refs.memContainer.current) {

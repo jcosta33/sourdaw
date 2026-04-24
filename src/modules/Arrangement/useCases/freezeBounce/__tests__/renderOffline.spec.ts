@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type Track } from '../../../models/Track';
 import { renderTrackOffline } from '../renderOffline';
-import type { buildDeviceChain } from '#/modules/AudioEngine/useCases';
-import type { getAudioContext } from '#/modules/AudioEngine/useCases';
+
+import type { buildDeviceChain, getAudioContext } from '#/modules/AudioEngine/useCases';
 
 const mockBuildDeviceChain = vi.fn<typeof buildDeviceChain>();
 const mockGetAudioContext = vi.fn<typeof getAudioContext>().mockReturnValue({ sampleRate: 44100 } as AudioContext);

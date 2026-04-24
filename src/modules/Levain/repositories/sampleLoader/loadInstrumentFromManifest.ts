@@ -79,7 +79,7 @@ export async function loadInstrumentFromManifest(
         throw new Error(`Failed to fetch manifest: ${manifestUrl} (${response.status})`);
     }
 
-    const manifest: SampleManifest = await response.json();
+    const manifest = (await response.json()) as SampleManifest;
 
     // Collect all unique sample file URLs.
     const allZones: { zone: ManifestZone; artId: number }[] = [];

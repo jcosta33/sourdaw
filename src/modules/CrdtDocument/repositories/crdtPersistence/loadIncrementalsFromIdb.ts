@@ -27,6 +27,6 @@ export async function loadIncrementalsFromIdb(id: DocId): Promise<Uint8Array[]> 
         };
 
         tx.oncomplete = () => resolve(chunks);
-        tx.onerror = () => reject(tx.error);
+        tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
     });
 }

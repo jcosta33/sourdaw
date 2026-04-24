@@ -1,6 +1,6 @@
 import { markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
-import { type AutomationLane } from '#/modules/Automation/models/Automation';
+import { type AutomationCurveType, type AutomationLane } from '#/modules/Automation/models/Automation';
 import { automationStore } from '#/modules/Automation/stores';
 
 import { type ProjectData } from '../../../models/ProjectData';
@@ -27,7 +27,7 @@ export function hydrateModuleStoresFromProjectData(data: ProjectData): void {
                 objects: length.objects || [],
                 points: length.points.map((param) => ({
                     ...param,
-                    curve: param.curve as any,
+                    curve: param.curve as AutomationCurveType,
                     tension: param.tension ?? 0,
                 })),
             })) as AutomationLane[],
@@ -40,7 +40,7 @@ export function hydrateModuleStoresFromProjectData(data: ProjectData): void {
             markers: data.markers.map((message) => ({
                 id: message.id,
                 beat: message.beat,
-                name: (message as any).name || (message as any).label || 'Untitled',
+                name: message.name || 'Untitled',
                 color: message.color,
             })),
             sections: [],

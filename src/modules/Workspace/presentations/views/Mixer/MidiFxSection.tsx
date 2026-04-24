@@ -27,12 +27,12 @@ export const MidiFxSection = ({ track }: MidiFxSectionProps): ReactElement | nul
     return (
         <MixerSection label="MIDI FX">
             <div className="max-h-[80px] space-y-0.5 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10">
-                {(track as any).midiFx?.map((fx: any) => (
+                {track.midiFx.map((fx) => (
                     <div key={fx.id} className="group relative">
                         <MixerInsetButton
                             className={cn(
                                 'shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)]',
-                                fx.bypassed && 'opacity-40 line-through'
+                                fx.bypassed ? 'opacity-40 line-through' : undefined
                             )}
                             tone="accent"
                         >

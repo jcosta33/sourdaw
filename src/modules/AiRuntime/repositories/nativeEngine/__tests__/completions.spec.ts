@@ -49,9 +49,7 @@ describe('generateNativeCompletion', () => {
         it('calls localhost llama-server API', async () => {
             mocks.fetch.mockResolvedValue({
                 ok: true,
-                json: async () => ({
-                    choices: [{ message: { content: 'Fetch response' } }],
-                }),
+                json: () => Promise.resolve({ choices: [{ message: { content: 'Fetch response' } }] }),
             });
 
             const result = await generateNativeCompletion('system prompt', 'hello');
@@ -76,7 +74,7 @@ describe('generateNativeCompletion', () => {
             mocks.fetch.mockResolvedValue({
                 ok: false,
                 status: 500,
-                text: async () => 'Internal Server Error',
+                text: () => Promise.resolve('Internal Server Error'),
             });
 
             await expect(generateNativeCompletion('sys', 'user')).rejects.toThrow(

@@ -350,6 +350,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
         <div
             ref={panelRef}
             className="flex h-full w-full select-none flex-col overflow-hidden rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(18,18,20,0.98),rgba(11,11,13,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none"
+            // eslint-disable-next-line jsx-a11y-x/no-noninteractive-tabindex -- application role requires programmatic focus for keyboard input
             tabIndex={0}
             onKeyDown={onKeyDown}
             onKeyUp={onKeyUp}

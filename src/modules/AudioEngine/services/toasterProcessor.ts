@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * AudioWorkletProcessor for the Toaster drum machine.
  *
@@ -16,7 +15,7 @@
 import { initSync, ToasterInstance } from '../wasm/daw_dsp.js';
 
 /** Map camelCase pad param names from TypeScript to snake_case for Rust. */
-const PAD_PARAM_MAP = {
+const PAD_PARAM_MAP: Record<string, string> = {
     volume: 'volume',
     pan: 'pan',
     muted: 'muted',
@@ -35,7 +34,7 @@ const PAD_PARAM_MAP = {
 };
 
 /** Map camelCase kit param names to snake_case. */
-const KIT_PARAM_MAP = {
+const KIT_PARAM_MAP: Record<string, string> = {
     masterGain: 'master_gain',
     reverbMix: 'reverb_mix',
     reverbDecay: 'reverb_decay',
@@ -48,17 +47,28 @@ const KIT_PARAM_MAP = {
     lofiMix: 'lofi_mix',
 };
 
+type ToasterMsg =
+    | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'noteOn'; pad: number; velocity: number; note?: number; sampleFrame?: number }
+    | { type: 'noteOff'; pad: number; sampleFrame?: number }
+    | { type: 'param'; name: string; value: number }
+    | { type: 'padParam'; pad: number; name: string; value: number };
+
+type ToasterQueued =
+    | { type: 'noteOn'; pad: number; velocity: number; note?: number; sampleFrame: number }
+    | { type: 'noteOff'; pad: number; sampleFrame: number };
+
 class ToasterProcessor extends AudioWorkletProcessor {
-    _instance = null; // ToasterInstance (generated wasm-bindgen class)
-    _memory = null; // WebAssembly.Memory
+    _instance: ToasterInstance | null = null;
+    _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
-    _queue = []; // Sorted by sampleFrame (integer sample count)
-    _queueHead = 0; // Read index — consumed entries are past this
+    _queue: ToasterQueued[] = [];
+    _queueHead = 0;
 
     constructor() {
         super();
-        this.port.onmessage = (event) => {
+        this.port.onmessage = (event: MessageEvent<ToasterMsg>) => {
             const msg = event.data;
             try {
                 if (msg.type === 'init') {
@@ -72,13 +82,16 @@ class ToasterProcessor extends AudioWorkletProcessor {
             } catch (error) {
                 console.error('ToasterProcessor error:', error);
                 if (!this._ready) {
-                    this.port.postMessage({ type: 'error', message: error?.message ?? String(error) });
+                    this.port.postMessage({
+                        type: 'error',
+                        message: error instanceof Error ? error.message : String(error),
+                    });
                 }
             }
         };
     }
 
-    _initWasm(wasmBytes) {
+    _initWasm(wasmBytes: BufferSource): void {
         const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
         this._memory = wasmExports.memory;
         this._instance = new ToasterInstance(sampleRate, 16);
@@ -86,15 +99,13 @@ class ToasterProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'ready' });
     }
 
-    _enqueue(msg) {
-        // Insert in ascending sampleFrame order within the live range
-        // [_queueHead, _queue.length). Called from the message port handler, not
-        // the audio render quantum, so splice insertion is acceptable here.
-        let lo = this._queueHead,
-            hi = this._queue.length;
+    _enqueue(msg: ToasterQueued): void {
+        let lo = this._queueHead;
+        let hi = this._queue.length;
         while (lo < hi) {
             const mid = (lo + hi) >>> 1;
-            if (this._queue[mid].sampleFrame <= msg.sampleFrame) {
+            const midMsg = this._queue[mid];
+            if (midMsg && midMsg.sampleFrame <= msg.sampleFrame) {
                 lo = mid + 1;
             } else {
                 hi = mid;
@@ -103,20 +114,24 @@ class ToasterProcessor extends AudioWorkletProcessor {
         this._queue.splice(lo, 0, msg);
     }
 
-    _handleMessage(msg) {
-        // If a future sampleFrame is given, defer to audio-clock queue.
-        if (msg.sampleFrame !== undefined) {
-            if (msg.sampleFrame > currentFrame) {
-                this._enqueue(msg);
+    _handleMessage(msg: ToasterMsg): void {
+        if (msg.type === 'noteOn' || msg.type === 'noteOff') {
+            if (msg.sampleFrame !== undefined && msg.sampleFrame > currentFrame) {
+                this._enqueue({ ...msg, sampleFrame: msg.sampleFrame });
                 return;
             }
         }
         this._dispatch(msg);
     }
 
-    _dispatch(msg) {
+    _dispatch(msg: ToasterMsg | ToasterQueued): void {
         const inst = this._instance;
+        if (!inst) {
+            return;
+        }
         switch (msg.type) {
+            case 'init':
+                break;
             case 'noteOn':
                 inst.note_on(msg.pad, msg.velocity, msg.note ?? 60);
                 break;
@@ -132,21 +147,22 @@ class ToasterProcessor extends AudioWorkletProcessor {
         }
     }
 
-    _drainQueue(blockEndFrame) {
-        // Audio-thread hot path: advance the read head, no splice per block.
-        while (this._queueHead < this._queue.length && this._queue[this._queueHead].sampleFrame <= blockEndFrame) {
-            this._dispatch(this._queue[this._queueHead]);
+    _drainQueue(blockEndFrame: number): void {
+        while (this._queueHead < this._queue.length) {
+            const queued = this._queue[this._queueHead];
+            if (!queued || queued.sampleFrame > blockEndFrame) {
+                break;
+            }
+            this._dispatch(queued);
             this._queueHead++;
         }
-        // Fully drained — clear in place. This is the common case for steady-state
-        // playback and allocates nothing.
         if (this._queueHead >= this._queue.length) {
             this._queue.length = 0;
             this._queueHead = 0;
         }
     }
 
-    process(_inputs, outputs) {
+    process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
         if (!this._ready || this._faulted) {
             return true;
         }
@@ -156,20 +172,29 @@ class ToasterProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        const frames = output[0].length;
+        const out0 = output[0];
+        if (!out0) {
+            return true;
+        }
+        const frames = out0.length;
 
-        // Drain any scheduled events that fall within this render block.
         const blockEndFrame = currentFrame + frames;
         this._drainQueue(blockEndFrame);
 
         try {
-            const leftPtr = this._instance.process(frames);
-            const rightPtr = this._instance.get_right_ptr();
+            const inst = this._instance;
+            const mem = this._memory?.buffer;
+            if (!inst || !mem) {
+                return true;
+            }
 
-            const mem = this._memory.buffer;
-            output[0].set(new Float32Array(mem, leftPtr, frames));
-            if (output[1]) {
-                output[1].set(new Float32Array(mem, rightPtr, frames));
+            const leftPtr = inst.process(frames);
+            const rightPtr = inst.get_right_ptr();
+
+            out0.set(new Float32Array(mem, leftPtr, frames));
+            const out1 = output[1];
+            if (out1) {
+                out1.set(new Float32Array(mem, rightPtr, frames));
             }
         } catch (error) {
             this._faulted = true;

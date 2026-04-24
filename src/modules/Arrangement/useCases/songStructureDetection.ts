@@ -88,7 +88,7 @@ export function detectSongStructure(trackId?: string): DetectedSection[] {
     // Step 1: Compute energy profile (clip density per beat window)
     const windowSize = 4; // 1 bar in 4/4
     const numWindows = Math.ceil(totalBeats / windowSize);
-    const energy: number[] = new Array(numWindows).fill(0);
+    const energy: number[] = Array.from({ length: numWindows }, () => 0);
 
     for (const clip of allClips) {
         const startWindow = Math.floor((clip.startBeat - minBeat) / windowSize);

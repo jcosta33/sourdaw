@@ -13,7 +13,7 @@ describe('schedulePendingSuspends', () => {
         // No assertions needed other than it doesn't crash
     });
 
-    it('should call noteOn with correct sampleFrame for a non-toaster note-on', async () => {
+    it('should call noteOn with correct sampleFrame for a non-toaster note-on', () => {
         const noteOn = vi.fn();
         const noteOff = vi.fn();
         const instrumentControls = { noteOn, noteOff };
@@ -36,7 +36,7 @@ describe('schedulePendingSuspends', () => {
         expect(noteOff).not.toHaveBeenCalled();
     });
 
-    it('should use pad + midi note + sampleFrame for Toaster note-on when pad index is set', async () => {
+    it('should use pad + midi note + sampleFrame for Toaster note-on when pad index is set', () => {
         const noteOn = vi.fn();
         const noteOff = vi.fn();
         const instrumentControls = { noteOn, noteOff };
@@ -58,7 +58,7 @@ describe('schedulePendingSuspends', () => {
         expect(noteOn).toHaveBeenCalledWith(4, 0.9, 60, 24_000);
     });
 
-    it('should sort events correctly (off before on at same time)', async () => {
+    it('should sort events correctly (off before on at same time)', () => {
         const noteOn = vi.fn();
         const noteOff = vi.fn();
         const instrumentControls = { noteOn, noteOff };

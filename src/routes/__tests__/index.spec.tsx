@@ -1,9 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import type { WorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
-
 import { IndexPage } from '../index';
+
+import type { WorkspaceState } from '#/modules/Workspace/models/WorkspaceState';
 
 // Mock workspace state
 vi.mock('#/modules/Workspace/presentations/hooks/useWorkspaceState', () => ({

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * AudioWorkletProcessor for the ProofChamber reverb (Dutch Oven).
  *
@@ -15,16 +14,21 @@
 
 import { initSync, ProofChamberInstance } from '../wasm/proof_chamber.js';
 
+type ProofChamberMsg =
+    | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'param'; name: string; value: number }
+    | { type: 'bypass'; bypassed: boolean };
+
 class ProofChamberProcessor extends AudioWorkletProcessor {
-    _instance = null; // ProofChamberInstance (generated wasm-bindgen class)
-    _memory = null; // WebAssembly.Memory
+    _instance: ProofChamberInstance | null = null;
+    _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
     _bypassed = false;
 
     constructor() {
         super();
-        this.port.onmessage = (event) => {
+        this.port.onmessage = (event: MessageEvent<ProofChamberMsg>) => {
             const msg = event.data;
             try {
                 if (msg.type === 'init') {
@@ -34,19 +38,22 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
                     this._initWasm(msg.wasmBytes);
                 } else if (msg.type === 'bypass') {
                     this._bypassed = msg.bypassed;
-                } else if (msg.type === 'param' && this._ready && !this._faulted) {
+                } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
                     this._instance.set_param(msg.name, msg.value);
                 }
             } catch (error) {
                 console.error('ProofChamberProcessor error:', error);
                 if (!this._ready) {
-                    this.port.postMessage({ type: 'error', message: error?.message ?? String(error) });
+                    this.port.postMessage({
+                        type: 'error',
+                        message: error instanceof Error ? error.message : String(error),
+                    });
                 }
             }
         };
     }
 
-    _initWasm(wasmBytes) {
+    _initWasm(wasmBytes: BufferSource): void {
         const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
         this._memory = wasmExports.memory;
         this._instance = new ProofChamberInstance(sampleRate);
@@ -54,15 +61,17 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'ready' });
     }
 
-    _passthrough(input, output) {
+    _passthrough(input: Float32Array[], output: Float32Array[]): void {
         for (let ch = 0; ch < Math.min(input.length, output.length); ch++) {
-            if (input[ch] && output[ch]) {
-                output[ch].set(input[ch]);
+            const inCh = input[ch];
+            const outCh = output[ch];
+            if (inCh && outCh) {
+                outCh.set(inCh);
             }
         }
     }
 
-    process(inputs, outputs) {
+    process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
         const input = inputs[0];
         const output = outputs[0];
 
@@ -76,21 +85,31 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
         // Accept mono by duplicating input[0] to the right channel.
         // Previously this early-returned on `input.length < 2`, silently dropping
         // audio from any mono upstream.
-        if (!input || input.length === 0 || !input[0] || !output || output.length < 2) {
+        const leftIn = input?.[0];
+        if (!leftIn || !output || output.length < 2) {
+            return true;
+        }
+        const rightIn = input[1] ?? leftIn;
+        const frames = leftIn.length;
+
+        const out0 = output[0];
+        const out1 = output[1];
+        if (!out0 || !out1) {
             return true;
         }
 
-        const leftIn = input[0];
-        const rightIn = input[1] ?? input[0];
-        const frames = leftIn.length;
-
         try {
-            const leftPtr = this._instance.process(leftIn, rightIn, frames);
-            const rightPtr = this._instance.get_right_ptr();
+            const inst = this._instance;
+            const mem = this._memory?.buffer;
+            if (!inst || !mem) {
+                return true;
+            }
 
-            const mem = this._memory.buffer;
-            output[0].set(new Float32Array(mem, leftPtr, frames));
-            output[1].set(new Float32Array(mem, rightPtr, frames));
+            const leftPtr = inst.process(leftIn, rightIn, frames);
+            const rightPtr = inst.get_right_ptr();
+
+            out0.set(new Float32Array(mem, leftPtr, frames));
+            out1.set(new Float32Array(mem, rightPtr, frames));
         } catch (error) {
             this._faulted = true;
             this.port.postMessage({ type: 'error', message: String(error) });

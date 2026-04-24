@@ -15,6 +15,7 @@ import { createFaustStrategy } from './FaustDeviceStrategy';
 import { createNativeDspStrategy } from './NativeDspDeviceStrategy';
 import { createWebAudioDevice } from './WebAudioDeviceStrategy';
 
+// eslint-disable-next-line @typescript-eslint/require-await -- registry callback signature is async; createWebAudioDevice is currently synchronous
 deviceRegistry.register('builtin-', async (ctx, device) => createWebAudioDevice(ctx, device));
 
 deviceRegistry.register(isFaustModule, createFaustStrategy);

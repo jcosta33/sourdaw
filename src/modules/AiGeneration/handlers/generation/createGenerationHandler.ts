@@ -42,7 +42,8 @@ export function createGenerationHandler<ActionType extends GenerationActionType>
 ) {
     return createHandler<ActionType>({
         execute: (alpha) => {
-            const payload = (alpha as unknown as { payload: CommonGenerationPayload }).payload;
+            // alpha is the specific action union member; cast to shared payload shape for uniform handling
+            const payload = (alpha as { payload: CommonGenerationPayload }).payload;
             const style = config.validStyles.has(payload.style) ? payload.style : config.defaultStyle;
 
             const trackId = resolveOrCreateMidiTrack(payload.trackId, `${config.trackNamePrefix} (${style})`, {
@@ -87,7 +88,8 @@ export function createGenerationHandler<ActionType extends GenerationActionType>
             }
         },
         describe: (alpha) => ({
-            label: `Generate ${(alpha as unknown as { payload: CommonGenerationPayload }).payload.style} ${config.labelSuffix}`,
+            // alpha is the specific action union member; cast to shared payload shape for uniform handling
+            label: `Generate ${(alpha as { payload: CommonGenerationPayload }).payload.style} ${config.labelSuffix}`,
         }),
         undoable: true,
     });

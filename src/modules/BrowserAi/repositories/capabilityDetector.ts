@@ -59,8 +59,9 @@ async function runWebGpuBenchmark(): Promise<number> {
         const startTime = performance.now();
         // Check if WebGPU adapter is available and responsive
         if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
+            // navigator.gpu is not in lib.dom.d.ts — cast to access the WebGPU API
             const adapter = await (
-                navigator as unknown as { gpu: { requestAdapter: () => Promise<unknown> } }
+                navigator as { gpu: { requestAdapter: () => Promise<unknown> } }
             ).gpu.requestAdapter();
             if (adapter) {
                 const endTime = performance.now();

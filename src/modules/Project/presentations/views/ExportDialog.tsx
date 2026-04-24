@@ -38,6 +38,23 @@ const EXPORT_SETTINGS_KEY = 'sourdaw:export-settings';
 
 type Mp3BitRate = 96 | 128 | 192 | 320;
 
+type StoredExportSettings = {
+    formats?: ExportFormat[];
+    format?: ExportFormat;
+    sampleRate?: number;
+    bitDepth?: number;
+    mp3BitRate?: number;
+};
+
+type WebFileHandle = {
+    createWritable: () => Promise<{
+        write: (data: Uint8Array) => Promise<void>;
+        close: () => Promise<void>;
+    }>;
+};
+
+const validMp3BitRates: readonly number[] = [96, 128, 192, 320];
+
 const loadExportSettings = (): {
     formats: ExportFormat[];
     sampleRate: number;
@@ -47,7 +64,7 @@ const loadExportSettings = (): {
     try {
         const stored = window.localStorage.getItem(EXPORT_SETTINGS_KEY);
         if (stored) {
-            const parsed = JSON.parse(stored);
+            const parsed = JSON.parse(stored) as StoredExportSettings;
             let parsedFormats: ExportFormat[] = ['wav'];
             if (Array.isArray(parsed.formats)) {
                 parsedFormats = parsed.formats;
@@ -59,7 +76,7 @@ const loadExportSettings = (): {
                 formats: parsedFormats,
                 sampleRate: parsed.sampleRate ?? 44100,
                 bitDepth: parsed.bitDepth ?? 24,
-                mp3BitRate: ([96, 128, 192, 320] as Mp3BitRate[]).includes(parsed.mp3BitRate)
+                mp3BitRate: validMp3BitRates.includes(parsed.mp3BitRate ?? -1)
                     ? (parsed.mp3BitRate as Mp3BitRate)
                     : 128,
             };
@@ -139,6 +156,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             '.flac': 'audio/flac',
             '.zip': 'application/zip',
         };
+        // eslint-disable-next-line sourdaw/no-type-assertion-escape -- Uint8Array<ArrayBufferLike> requires cast to BlobPart; structurally safe at runtime
         const blob = new Blob([data as unknown as BlobPart], { type: mimeMap[ext] || 'application/octet-stream' });
         const url = URL.createObjectURL(blob);
         const alpha = document.createElement('a');
@@ -163,8 +181,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         let tauriFilePath: string | null = null;
 
         // This Handle uses the new FileSystem Access API
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let webFileHandle: any = null;
+        let webFileHandle: WebFileHandle | null = null;
 
         // ── 1. SECURE THE DESTINATION EARLY ──
         try {
@@ -205,7 +222,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     }
 
                     webFileHandle = await (
-                        window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<unknown> }
+                        window as Window & { showSaveFilePicker: (opts: unknown) => Promise<WebFileHandle> }
                     ).showSaveFilePicker({
                         suggestedName: `${baseName}${fileExt}`,
                         types: [{ accept: { [mime]: [fileExt] } }],
@@ -419,11 +436,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
                 if (webFileHandle) {
                     // File System Access Method
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     const writable = await webFileHandle.createWritable();
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     await writable.write(finalBytes);
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     await writable.close();
                 } else {
                     // Fallback
@@ -472,6 +486,98 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
     const sampleRates = [44100, 48000, 88200, 96000];
     const bitDepths = [16, 24, 32];
+
+    const renderOvenStatus = (): ReactElement => {
+        if (exporting || progress === 100) {
+            return (
+                <div className="space-y-1.5 animate-in fade-in duration-300">
+                    <div className="flex items-end justify-between text-xs">
+                        <span className={`font-medium ${progress === 100 ? 'text-green-400' : 'text-orange-400'}`}>
+                            {statusText}
+                        </span>
+                        <span className="font-mono text-[10px] text-orange-500/50">{progress.toFixed(0)}%</span>
+                    </div>
+                    <div
+                        className="h-2 w-full overflow-hidden rounded-full border border-stone-800 bg-stone-900 shadow-inner"
+                        role="progressbar"
+                        aria-valuenow={Math.round(progress)}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                    >
+                        <div
+                            className={`h-full rounded-full transition-all duration-300 ease-out ${
+                                progress === 100
+                                    ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]'
+                                    : 'bg-gradient-to-r from-amber-600 to-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.6)]'
+                            }`}
+                            style={{ width: `${progress}%` }}
+                        >
+                            {progress < 100 ? (
+                                <div className="absolute inset-0 w-[30%] animate-[shimmer_1.5s_infinite] bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.4)_50%,transparent_100%)]" />
+                            ) : null}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+        if (errorText) {
+            return (
+                <div className="flex h-full items-center rounded-lg border border-red-900/30 bg-red-950/20 px-3 text-xs text-red-400 animate-in fade-in">
+                    {errorText}
+                </div>
+            );
+        }
+        return (
+            <div className="flex h-full flex-col justify-center text-center text-[10px] uppercase tracking-widest text-stone-500">
+                {isTauri() ? 'Desktop Oven Ready' : 'Web Oven Ready'}
+            </div>
+        );
+    };
+
+    const renderFooterActions = (): ReactElement => {
+        if (exporting) {
+            return (
+                <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleCancel}
+                    className="border border-red-900/50 bg-red-950 text-red-400 hover:bg-red-900 hover:text-red-200"
+                >
+                    <X className="mr-1 size-3.5" />
+                    Turn off Oven
+                </Button>
+            );
+        }
+        if (progress === 100) {
+            return (
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onClose}
+                    className="border-green-900/50 text-green-400 hover:bg-green-950/30 hover:text-green-300"
+                >
+                    <CheckCircle2 className="mr-1 size-3.5" />
+                    Close Bakery
+                </Button>
+            );
+        }
+        return (
+            <>
+                <Button variant="ghost" size="sm" onClick={onClose} className="text-stone-400 hover:text-stone-200">
+                    Cancel
+                </Button>
+                <Button
+                    size="sm"
+                    onClick={handleExport}
+                    disabled={formats.size === 0 || isExportActive()}
+                    className="border-t border-orange-400/30 bg-orange-600 font-medium text-white shadow-[0_0_15px_rgba(234,88,12,0.3)] transition-all hover:bg-orange-500 hover:shadow-[0_0_20px_rgba(249,115,22,0.5)]"
+                >
+                    <Flame className="mr-1.5 size-3.5 opacity-80" />
+                    Start Baking
+                </Button>
+            </>
+        );
+    };
 
     return (
         <Dialog
@@ -662,95 +768,12 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         title="Oven Status"
                         detail={isTauri() ? 'Desktop oven ready' : 'Web oven ready'}
                     >
-                        <div className="h-10">
-                            {exporting || progress === 100 ? (
-                                <div className="space-y-1.5 animate-in fade-in duration-300">
-                                    <div className="flex items-end justify-between text-xs">
-                                        <span
-                                            className={`font-medium ${progress === 100 ? 'text-green-400' : 'text-orange-400'}`}
-                                        >
-                                            {statusText}
-                                        </span>
-                                        <span className="font-mono text-[10px] text-orange-500/50">
-                                            {progress.toFixed(0)}%
-                                        </span>
-                                    </div>
-                                    <div
-                                        className="h-2 w-full overflow-hidden rounded-full border border-stone-800 bg-stone-900 shadow-inner"
-                                        role="progressbar"
-                                        aria-valuenow={Math.round(progress)}
-                                        aria-valuemin={0}
-                                        aria-valuemax={100}
-                                    >
-                                        <div
-                                            className={`h-full rounded-full transition-all duration-300 ease-out ${
-                                                progress === 100
-                                                    ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]'
-                                                    : 'bg-gradient-to-r from-amber-600 to-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.6)]'
-                                            }`}
-                                            style={{ width: `${progress}%` }}
-                                        >
-                                            {progress < 100 ? (
-                                                <div className="absolute inset-0 w-[30%] animate-[shimmer_1.5s_infinite] bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.4)_50%,transparent_100%)]" />
-                                            ) : null}
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : errorText ? (
-                                <div className="flex h-full items-center rounded-lg border border-red-900/30 bg-red-950/20 px-3 text-xs text-red-400 animate-in fade-in">
-                                    {errorText}
-                                </div>
-                            ) : (
-                                <div className="flex h-full flex-col justify-center text-center text-[10px] uppercase tracking-widest text-stone-500">
-                                    {isTauri() ? 'Desktop Oven Ready' : 'Web Oven Ready'}
-                                </div>
-                            )}
-                        </div>
+                        <div className="h-10">{renderOvenStatus()}</div>
                     </DawDialogSection>
                 </DawDialogBody>
 
                 <DawDialogFooter tone="warm" align="end" className="px-6">
-                    {exporting ? (
-                        <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={handleCancel}
-                            className="border border-red-900/50 bg-red-950 text-red-400 hover:bg-red-900 hover:text-red-200"
-                        >
-                            <X className="mr-1 size-3.5" />
-                            Turn off Oven
-                        </Button>
-                    ) : progress === 100 ? (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={onClose}
-                            className="border-green-900/50 text-green-400 hover:bg-green-950/30 hover:text-green-300"
-                        >
-                            <CheckCircle2 className="mr-1 size-3.5" />
-                            Close Bakery
-                        </Button>
-                    ) : (
-                        <>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={onClose}
-                                className="text-stone-400 hover:text-stone-200"
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                size="sm"
-                                onClick={handleExport}
-                                disabled={formats.size === 0 || isExportActive()}
-                                className="border-t border-orange-400/30 bg-orange-600 font-medium text-white shadow-[0_0_15px_rgba(234,88,12,0.3)] transition-all hover:bg-orange-500 hover:shadow-[0_0_20px_rgba(249,115,22,0.5)]"
-                            >
-                                <Flame className="mr-1.5 size-3.5 opacity-80" />
-                                Start Baking
-                            </Button>
-                        </>
-                    )}
+                    {renderFooterActions()}
                 </DawDialogFooter>
             </DialogContent>
         </Dialog>

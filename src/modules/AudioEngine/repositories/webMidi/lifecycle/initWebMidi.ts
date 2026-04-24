@@ -67,8 +67,9 @@ export async function initWebMidi(): Promise<boolean> {
     // whenever selectedTrackId changes — app launch, project load, addTrack,
     // user click — we automatically route MIDI to the correct MIDI track
     // without having to patch every write-site.
-    if (!(initWebMidi as unknown as { _trackStoreSub?: boolean })._trackStoreSub) {
-        (initWebMidi as unknown as { _trackStoreSub?: boolean })._trackStoreSub = true;
+    type InitWebMidiWithSub = typeof initWebMidi & { _trackStoreSub?: boolean };
+    if (!(initWebMidi as InitWebMidiWithSub)._trackStoreSub) {
+        (initWebMidi as InitWebMidiWithSub)._trackStoreSub = true;
         let prevSelectedId: string | null = null;
         trackStore.subscribe((trackState) => {
             const id = trackState?.selectedTrackId ?? null;

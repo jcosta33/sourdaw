@@ -4,10 +4,10 @@ import { Slider } from '#/components/ui/slider';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
-import { registerDeviceLayout } from '../deviceLayoutRegistry';
+import { type DeviceLayoutProps, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
 
-export const HammondB3Layout = ({ device, trackId }: any): ReactElement | null => {
+export const HammondB3Layout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement | null => {
     if (!device) {
         return null;
     }
@@ -24,16 +24,18 @@ export const HammondB3Layout = ({ device, trackId }: any): ReactElement | null =
         'drawbar_1',
     ];
 
-    const drawbarParams = drawbars.map((id) => device.parameters.find((param: any) => param.id === id)).filter(Boolean);
+    const drawbarParams = drawbars
+        .map((id) => parameters.find((p) => p.id === id))
+        .filter((p): p is NonNullable<typeof p> => p !== undefined);
 
-    const otherParams = device.parameters.filter((param: any) => !drawbars.includes(param.id));
+    const otherParams = parameters.filter((param) => !drawbars.includes(param.id));
 
     return (
         <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-2">
                 <h3 className="text-xs font-semibold text-foreground/80 uppercase px-1">Drawbars</h3>
                 <div className="flex flex-row justify-between bg-surface-raised p-4 rounded-md border border-border/50">
-                    {drawbarParams.map((param: any) => {
+                    {drawbarParams.map((param) => {
                         const val = device.parameterValues[param.id] ?? param.value;
                         return (
                             <div key={param.id} className="flex flex-col items-center gap-2">
@@ -70,7 +72,7 @@ export const HammondB3Layout = ({ device, trackId }: any): ReactElement | null =
                 <div className="flex flex-col gap-2 border-t border-border/40 pt-4">
                     <h3 className="text-xs font-semibold text-foreground/80 uppercase px-1">Controls</h3>
                     <div className="grid grid-cols-2 gap-4">
-                        {otherParams.map((param: any) => (
+                        {otherParams.map((param) => (
                             <SurfaceCard key={param.id} className="p-2">
                                 <DeviceParameterControl param={param} device={device} trackId={trackId} />
                             </SurfaceCard>

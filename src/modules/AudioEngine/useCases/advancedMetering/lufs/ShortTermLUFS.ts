@@ -12,7 +12,7 @@ export class ShortTermLUFS {
 
     constructor(sampleRate = 48000) {
         this.maxBlocks = Math.ceil((3 * sampleRate) / (0.4 * sampleRate));
-        this.blocks = new Array<number>(this.maxBlocks).fill(0);
+        this.blocks = Array.from({ length: this.maxBlocks }, () => 0);
     }
 
     push(momentaryLUFS: number): void {

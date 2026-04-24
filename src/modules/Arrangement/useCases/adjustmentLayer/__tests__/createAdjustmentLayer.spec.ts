@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import type { AdjustmentEffectType } from '../../stores/adjustmentLayer';
 import { createAdjustmentLayer } from '../createAdjustmentLayer';
+
+import type { AdjustmentEffectType } from '../../stores/adjustmentLayer';
 
 const mocks = vi.hoisted(() => ({
     adjustmentLayerStoreValue: { value: { layers: [] } },

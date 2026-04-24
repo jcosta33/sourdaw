@@ -31,6 +31,7 @@ export function isAudioGenerationAvailable(): boolean {
 }
 
 // Keep for backward compat — used by generateAudio handler
+// eslint-disable-next-line @typescript-eslint/require-await -- backward-compat async wrapper; callers expect Promise<boolean>
 export async function isAudioAiServerRunning(): Promise<boolean> {
     return isTauri();
 }

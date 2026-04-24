@@ -1,4 +1,4 @@
-import * as Automerge from '@automerge/automerge';
+import { merge } from '@automerge/automerge';
 
 import { createBranchError } from '../../errors/BranchError';
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
@@ -28,7 +28,7 @@ export async function mergeBranch(sourceBranchId: string): Promise<void> {
         throw createBranchError('Cannot merge: missing documents');
     }
 
-    const merged = Automerge.merge(targetDoc, sourceDoc);
+    const merged = merge(targetDoc, sourceDoc);
     automergeRepository.replaceDoc(DOC_PREFIX_ROOT, merged);
 
     // Persist merged state

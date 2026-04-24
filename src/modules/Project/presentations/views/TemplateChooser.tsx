@@ -324,12 +324,14 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
     const [loadingName, setLoadingName] = useState('');
     const templates = getTemplates();
 
-    useEffect(() => {
+    const [prevOpen, setPrevOpen] = useState(open);
+    if (prevOpen !== open) {
+        setPrevOpen(open);
         if (open) {
             setActiveFilter(initialCategory);
             setIsLoading(false);
         }
-    }, [open, initialCategory]);
+    }
 
     const filtered = activeFilter === 'all' ? templates : templates.filter((time) => time.category === activeFilter);
 

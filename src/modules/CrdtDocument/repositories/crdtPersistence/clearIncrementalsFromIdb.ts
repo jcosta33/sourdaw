@@ -26,6 +26,6 @@ export async function clearIncrementalsFromIdb(id: DocId): Promise<void> {
         };
 
         tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
+        tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
     });
 }

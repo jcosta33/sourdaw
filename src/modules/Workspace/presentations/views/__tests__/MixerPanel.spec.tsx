@@ -51,7 +51,9 @@ vi.mock('#/modules/Arrangement/useCases/mixerSnapshot/operations/saveMixerSnapsh
 
 // Mock child components
 vi.mock('../Mixer/ExpandedChannelStrip', () => ({
-    ExpandedChannelStrip: ({ track }: { track: { id: string; name: string } }) => <div data-testid={`channel-strip-${track.id}`}>{track.name}</div>,
+    ExpandedChannelStrip: ({ track }: { track: { id: string; name: string } }) => (
+        <div data-testid={`channel-strip-${track.id}`}>{track.name}</div>
+    ),
 }));
 
 vi.mock('../Mixer/MasterChannelStrip', () => ({

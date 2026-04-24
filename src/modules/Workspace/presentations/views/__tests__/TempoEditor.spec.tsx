@@ -52,7 +52,7 @@ describe('TempoEditor', () => {
         expect(screen.getByText('4/4')).toBeInTheDocument();
     });
 
-    it('should call handleTapTempo when TAP is clicked', async () => {
+    it('should call handleTapTempo when TAP is clicked', () => {
         render(<TempoEditor />);
         const tapButton = screen.getByText('TAP');
         fireEvent.click(tapButton);
@@ -60,7 +60,7 @@ describe('TempoEditor', () => {
         expect(mockState.handleTapTempo).toHaveBeenCalled();
     });
 
-    it('should toggle tempo map when map button is clicked', async () => {
+    it('should toggle tempo map when map button is clicked', () => {
         render(<TempoEditor />);
         const mapButton = screen.getByLabelText('Toggle tempo map');
         fireEvent.click(mapButton);
@@ -68,7 +68,7 @@ describe('TempoEditor', () => {
         expect(mockState.setMapOpen).toHaveBeenCalledWith(true);
     });
 
-    it('should call startTimeSigEdit when time signature is clicked', async () => {
+    it('should call startTimeSigEdit when time signature is clicked', () => {
         render(<TempoEditor />);
         const timeSigButton = screen.getByText('4/4');
         fireEvent.click(timeSigButton);

@@ -81,9 +81,9 @@ function drawCurve(ctx: CanvasRenderingContext2D, algo: CrustSatAlgorithm, drive
                 outSig = Math.max(-1, Math.min(1, outSig));
                 break;
             }
-            default:
+            case 'soft':
                 outSig = Math.tanh(inSig);
-                break; // soft
+                break;
         }
 
         const normalized = outSig / (gain * 1.2);

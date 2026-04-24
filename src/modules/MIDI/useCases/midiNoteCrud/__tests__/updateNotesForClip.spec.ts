@@ -3,7 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { updateNotesForClip } from '../updateNotesForClip';
 
 type MidiStoreValue = {
-    notesByClipId: Record<string, { id: string; pitch: number; startBeat: number; duration: number; velocity: number }[]>;
+    notesByClipId: Record<
+        string,
+        { id: string; pitch: number; startBeat: number; duration: number; velocity: number }[]
+    >;
     ccByClipId: Record<string, unknown>;
     pitchBendByClipId: Record<string, unknown>;
 };

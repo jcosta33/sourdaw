@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { createCompGroup } from '../compGroupOperations/createCompGroup';
+
 import type { GroupCompingState } from '../../../stores/groupComping';
 
 const mockSet = vi.fn<(state: GroupCompingState) => void>();
@@ -30,7 +31,7 @@ describe('compGroupOperations', () => {
         createCompGroup('My Group', ['a', 'b']);
 
         expect(mockSet).toHaveBeenCalledTimes(1);
-        const next = mockSet.mock.calls[0]![0] as GroupCompingState;
+        const next = mockSet.mock.calls[0]![0];
         expect(next.groups).toHaveLength(1);
         expect(next.groups[0]!.id).toBe('grp-test');
         expect(next.groups[0]!.name).toBe('My Group');

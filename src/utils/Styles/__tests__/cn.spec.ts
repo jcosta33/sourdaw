@@ -12,6 +12,6 @@ describe('cn', () => {
     });
 
     it('should ignore falsy inputs', () => {
-        expect(cn('base', false && 'x', 'end')).toBe('base end');
+        expect(cn('base', (false as boolean) && 'x', 'end')).toBe('base end');
     });
 });

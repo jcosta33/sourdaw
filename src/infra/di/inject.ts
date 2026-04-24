@@ -2,6 +2,7 @@ import { Container } from './Container';
 import { registrations, cache, testOverrides } from './internal/containerState';
 import { type DependencyKey } from './types';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- TFactoryReturn constraint; DI machinery requires universal function compatibility
 type ResolveDependency<TDep> = TDep extends new (...args: any[]) => infer TInstance ? TInstance : TDep;
 
 type ResolveDependencies<TDeps extends Record<string, unknown>> = {
@@ -77,21 +78,31 @@ function resolveInjectedDependency(key: string, rawDependency: unknown): unknown
 
 export function inject<TDeps extends Record<string, unknown>>(
     deps: TDeps
-): <TFactoryReturn extends (...args: any[]) => any>(
+): <
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TFactoryReturn constraint; DI machinery requires universal function compatibility
+    TFactoryReturn extends (...args: any[]) => any,
+>(
     factory: (resolvedDeps: ResolveDependencies<TDeps>) => TFactoryReturn
 ) => TFactoryReturn & InjectableFunction;
 export function inject<TDeps extends Record<string, unknown>>(
     deps: TDeps,
     options: InjectOptions
-): <TFactoryReturn extends (...args: any[]) => any>(
+): <
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TFactoryReturn constraint; DI machinery requires universal function compatibility
+    TFactoryReturn extends (...args: any[]) => any,
+>(
     factory: (resolvedDeps: ResolveDependencies<TDeps>) => TFactoryReturn
 ) => TFactoryReturn & InjectableFunction;
 export function inject<TDeps extends Record<string, unknown>>(deps: TDeps, options?: InjectOptions) {
-    return <TFactoryReturn extends (...args: any[]) => any>(
+    return <
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TFactoryReturn constraint; DI machinery requires universal function compatibility
+        TFactoryReturn extends (...args: any[]) => any,
+    >(
         factory: (resolvedDeps: ResolveDependencies<TDeps>) => TFactoryReturn
     ): TFactoryReturn & InjectableFunction => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DI invoker args are heterogeneous by design
         const invoker = (...args: any[]) => {
-            let cachedInvoker = cache.get(invoker);
+            let cachedInvoker: InjectableCallable | undefined = cache.get(invoker) as InjectableCallable | undefined;
             if (!cachedInvoker) {
                 if (resolutionStack.has(invoker as InjectableFunction)) {
                     const chain = Array.from(resolutionStack)
@@ -121,6 +132,7 @@ export function inject<TDeps extends Record<string, unknown>>(deps: TDeps, optio
                     resolutionStack.delete(invoker as InjectableFunction);
                 }
             }
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument -- cachedInvoker is InjectableCallable but return type is any by DI design
             return cachedInvoker(...args);
         };
 
@@ -129,6 +141,7 @@ export function inject<TDeps extends Record<string, unknown>>(deps: TDeps, optio
         invoker._factory = factory;
         invoker._options = options;
 
+        // eslint-disable-next-line sourdaw/no-type-assertion-escape -- DI invoker function carries extra properties; cast through unknown is required because the intersection type cannot be structurally proven
         return invoker as unknown as TFactoryReturn & InjectableFunction;
     };
 }

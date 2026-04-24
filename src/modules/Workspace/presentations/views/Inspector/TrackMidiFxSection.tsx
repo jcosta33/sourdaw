@@ -65,7 +65,7 @@ export const TrackMidiFxSection = ({ track }: TrackMidiFxSectionProps): ReactEle
                 }
             />
             <div className="space-y-2">
-                {midiFx.map((fx: any) => (
+                {midiFx.map((fx) => (
                     <ChoiceCard key={fx.id} className={cn('flex flex-col gap-2 p-2', fx.bypassed ? 'opacity-50' : '')}>
                         <div className="flex items-center justify-between w-full">
                             <div className="flex items-center gap-1.5">

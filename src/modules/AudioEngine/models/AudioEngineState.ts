@@ -32,7 +32,7 @@ export type BuiltinDeviceNode = {
         ready: boolean;
         noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
         noteOff: (note: number, sampleFrame?: number) => void;
-        setParam: (name: string, value: number, sampleFrame?: number) => void;
+        setParam: (name: string, value: number | number[], sampleFrame?: number) => void;
         setPatch?: (patch: Record<string, unknown>) => void;
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
@@ -77,8 +77,8 @@ export type BuiltinDeviceNode = {
     /** Controls for the Knead pitch processor (blob sync + param updates via MessagePort) */
     kneadControls?: {
         ready: boolean;
-        updateState: (clips: Record<string, any>) => void;
-        setParam: (name: string, value: number) => void;
+        updateState: (clips: Record<string, unknown>) => void;
+        setParam: (name: string, value: number | number[]) => void;
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
     };
@@ -156,7 +156,7 @@ export type AudioEngine = {
     removeMidiFxFromStrip(trackId: string, fxId: string): void;
     updateMidiFxParam(trackId: string, fxId: string, paramId: string, value: number): void;
     updateMidiFxBypass(trackId: string, fxId: string, bypassed: boolean): void;
-    syncKneadState(trackId: string, clips: Record<string, any>): void;
+    syncKneadState(trackId: string, clips: Record<string, unknown>): void;
     registerTuningTable(frequencies: number[]): void;
     ensureBusStrip(busId: string): BusStrip;
     removeBusStrip(busId: string): void;

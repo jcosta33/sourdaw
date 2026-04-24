@@ -1,34 +1,32 @@
-import { type ReactElement, type KeyboardEvent, useState, useEffect, useRef } from 'react';
+import { type ReactElement, type KeyboardEvent, useState, useRef } from 'react';
 
 import { DawKeycap } from '#/components/daw/DawKeycap';
 import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { Input } from '#/components/ui/input';
 import { useStore } from '#/infra/store/useStore';
 import { workspaceStore } from '#/modules/Workspace/stores';
-import { closeCommandPalette, type WorkspaceState } from '#/modules/Workspace/useCases';
+import { closeCommandPalette } from '#/modules/Workspace/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { searchCommands, type CommandEntry } from '../../models/CommandRegistry';
 import { executeAppAction } from '../../useCases/executeAppAction';
 
 export const CommandPalette = (): ReactElement | null => {
-    const commandPaletteOpen = useStore(workspaceStore, null as unknown as WorkspaceState)?.commandPaletteOpen ?? false;
+    const commandPaletteOpen = useStore(workspaceStore)?.commandPaletteOpen ?? false;
     const [query, setQuery] = useState('');
     const [selectedIndex, setSelectedIndex] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);
 
     const results = searchCommands(query);
 
-    useEffect(() => {
-        setSelectedIndex(0);
-    }, [query]);
-
-    useEffect(() => {
+    const [prevOpen, setPrevOpen] = useState(commandPaletteOpen);
+    if (prevOpen !== commandPaletteOpen) {
+        setPrevOpen(commandPaletteOpen);
         if (commandPaletteOpen) {
             setQuery('');
             setSelectedIndex(0);
         }
-    }, [commandPaletteOpen]);
+    }
 
     const close = closeCommandPalette;
 
@@ -70,7 +68,10 @@ export const CommandPalette = (): ReactElement | null => {
                     <Input
                         ref={inputRef}
                         value={query}
-                        onChange={(event) => setQuery(event.target.value)}
+                        onChange={(event) => {
+                            setQuery(event.target.value);
+                            setSelectedIndex(0);
+                        }}
                         onKeyDown={handleKeyDown}
                         placeholder="Type a command..."
                         className="h-12 border-0 bg-transparent shadow-none focus-visible:ring-0 text-base"

@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import type { Clip } from '../../models/Track';
-import type { TakeLane } from '../../models/TakeLane';
-import type { MidiNote } from '#/modules/MIDI/models/MidiNote';
-
 import { clipboardStore, setClipClipboard, setNoteClipboard } from '../clipboardStore';
 import { getEnvelope, setEnvelope, __resetGainEnvelopesForTest } from '../gainEnvelopeStore';
 import { markerStore } from '../markerStore';
 import { takeLaneStore } from '../takeLaneStore';
 import { getVcaGroupsState, setVcaGroupsState } from '../vcaGroupStore';
+
+import type { MidiNote } from '#/modules/MIDI/models/MidiNote';
+import type { TakeLane } from '../../models/TakeLane';
+import type { Clip } from '../../models/Track';
 
 describe('Arrangement Misc Stores', () => {
     describe('clipboardStore', () => {

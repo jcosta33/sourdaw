@@ -1,3 +1,4 @@
+import { type Track } from '#/modules/Arrangement/models/Track';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getTrackById, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import { scheduleNote, startFaustNote, getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases';
@@ -36,7 +37,7 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
     }
 
     let isToasterChild = false;
-    let toasterParentTrack;
+    let toasterParentTrack: Track | undefined;
     if (track?.parentId) {
         toasterParentTrack = getTrackById(track.parentId);
         if (toasterParentTrack?.devices.some((data) => data.type === 'toaster')) {
@@ -61,8 +62,8 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
 
             if (isToasterChild && toasterParentTrack) {
                 const children =
-                    trackStore.value?.tracks.filter((time: any) => time.parentId === toasterParentTrack.id) || [];
-                const childPad = children.findIndex((time: any) => time.id === trackId);
+                    trackStore.value?.tracks.filter((time) => time.parentId === toasterParentTrack.id) || [];
+                const childPad = children.findIndex((time) => time.id === trackId);
                 if (childPad !== -1) {
                     pad = childPad;
                 }

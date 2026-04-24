@@ -153,7 +153,7 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                 } else {
                     const selectedClipId = workspaceStore.value?.selectedClipId;
                     if (selectedClipId) {
-                        executeAppAction({ type: 'duplicateClip', payload: { clipId: selectedClipId } });
+                        void executeAppAction({ type: 'duplicateClip', payload: { clipId: selectedClipId } });
                     }
                 }
                 return true;
@@ -161,12 +161,12 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
             if (type === 'duplicateClipToNextBar' && (payload as { clipId?: string })?.clipId === 'selected') {
                 const selectedClipId = workspaceStore.value?.selectedClipId;
                 if (selectedClipId) {
-                    executeAppAction({ type: 'duplicateClipToNextBar', payload: { clipId: selectedClipId } });
+                    void executeAppAction({ type: 'duplicateClipToNextBar', payload: { clipId: selectedClipId } });
                 }
                 return true;
             }
 
-            executeAppAction(action.action);
+            void executeAppAction(action.action);
             return true;
         }
         if (action.type === 'callback') {
@@ -410,7 +410,7 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
         const allClips = trackStore.value?.tracks.flatMap((time) => time.clips) ?? [];
         const deletedClips = ids
             .map((id) => allClips.find((clip) => clip.id === id))
-            .filter((clip): clip is NonNullable<typeof clip> => clip != null);
+            .filter((clip): clip is NonNullable<typeof clip> => clip !== undefined);
 
         if (deletedClips.length === 0) {
             return false;
@@ -490,7 +490,7 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
             if (isInput) {
                 return false;
             }
-            eventBus.emit('voice.toggle', { active: true });
+            void eventBus.emit('voice.toggle', { active: true });
             return true;
         }
 

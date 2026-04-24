@@ -72,6 +72,7 @@ function createMessageHandler(state: WorkerState): (event: MessageEvent<WorkerRe
     };
 }
 
+// eslint-disable-next-line @typescript-eslint/require-await -- consistent async API; callers await this; worker creation is currently synchronous
 async function getOnnxWorker(): Promise<Worker> {
     if (workerState.onnx.worker && workerState.onnx.initialized) {
         return workerState.onnx.worker;
@@ -84,6 +85,7 @@ async function getOnnxWorker(): Promise<Worker> {
     return worker;
 }
 
+// eslint-disable-next-line @typescript-eslint/require-await -- consistent async API; callers await this; worker creation is currently synchronous
 async function getTfjsWorker(): Promise<Worker> {
     // Reset idle timer
     if (workerState.tfjsIdleTimer !== null) {
@@ -202,6 +204,7 @@ export const inferenceWorkerBridge = {
         return response as Extract<WorkerResponse, { type: 'ddsp-result' }>;
     },
 
+    // eslint-disable-next-line @typescript-eslint/require-await -- fire-and-forget postMessage; async for uniform bridge API
     async releaseOnnxSession(modelId: string): Promise<void> {
         if (!workerState.onnx.worker) {
             return;
@@ -210,6 +213,7 @@ export const inferenceWorkerBridge = {
         workerState.onnx.worker.postMessage(request);
     },
 
+    // eslint-disable-next-line @typescript-eslint/require-await -- fire-and-forget postMessage; async for uniform bridge API
     async releaseDdspSession(modelId: string): Promise<void> {
         if (!workerState.tfjs.worker) {
             return;

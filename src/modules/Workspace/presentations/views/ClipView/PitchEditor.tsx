@@ -23,9 +23,7 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
 
     const dragRef = useRef<{ startY: number; initialShift: number; segmentIndex: number } | null>(null);
 
-    // Any contour data available for this clip?
-    // We cast to any because the store type hasn't been strictly updated yet.
-    const contour = (kneadState as any).pitchContour;
+    const contour = kneadState.contours[clipId];
 
     // Generate segments from contour if none exist yet.
     useEffect(() => {
@@ -95,7 +93,11 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
             return height - norm * height;
         };
 
-        const totalTimeMs = contour.points[contour.points.length - 1].time_ms;
+        const lastPoint = contour.points[contour.points.length - 1];
+        if (!lastPoint) {
+            return;
+        }
+        const totalTimeMs = lastPoint.time_ms;
         const msToX = (ms: number) => (ms / totalTimeMs) * width;
 
         // Draw the pitch contour as connected segments
@@ -113,6 +115,9 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
 
         for (let index = 0; index < contour.points.length; index++) {
             const pt = contour.points[index];
+            if (!pt) {
+                continue;
+            }
 
             if (pt.voiced && pt.confidence > 0.3) {
                 const shift = getShiftAtTime(pt.time_ms);

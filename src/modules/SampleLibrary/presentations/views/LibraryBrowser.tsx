@@ -158,7 +158,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
         }
     };
 
-    const handleAnalyzeFolder = async (): Promise<void> => {
+    const handleAnalyzeFolder = (): void => {
         for (const sample of visibleFiles) {
             void analyzeSample(sample.id);
         }

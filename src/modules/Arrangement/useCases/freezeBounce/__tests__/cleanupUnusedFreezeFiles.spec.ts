@@ -3,9 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 
 import { trackStore } from '../../../stores/trackStore';
-import type { TrackStoreState } from '../../../stores/trackStore';
 import { cleanupUnusedFreezeFiles } from '../cleanupUnusedFreezeFiles';
+
 import type { Track } from '../../../models/Track';
+import type { TrackStoreState } from '../../../stores/trackStore';
 
 vi.mock('#/modules/AudioEngine/stores', () => ({
     audioBufferCache: {

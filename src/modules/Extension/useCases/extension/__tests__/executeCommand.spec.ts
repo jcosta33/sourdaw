@@ -4,7 +4,10 @@ import { type ExtensionMarketplaceState, type ScriptCommand } from '../../../sto
 import { executeCommand } from '../executeCommand';
 
 const mocks = vi.hoisted(() => ({
-    extensionStore: { value: null as unknown as ExtensionMarketplaceState | null, set: vi.fn<(...args: unknown[]) => void>() },
+    extensionStore: {
+        value: null as unknown as ExtensionMarketplaceState | null,
+        set: vi.fn<(...args: unknown[]) => void>(),
+    },
     appendLog: vi.fn<(...args: unknown[]) => void>(),
 }));
 

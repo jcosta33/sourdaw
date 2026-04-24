@@ -76,7 +76,7 @@ describe('nativeFileDialog', () => {
             expect(result![0]!.name).toBe('test.wav');
         });
 
-        it('should use browser fallback when not in Tauri', async () => {
+        it('should use browser fallback when not in Tauri', () => {
             vi.mocked(isTauri).mockReturnValue(false);
             const mockInput = {
                 click: vi.fn(),

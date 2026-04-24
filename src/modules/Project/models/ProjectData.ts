@@ -17,11 +17,11 @@ export type ProjectData = {
     markers: ProjectMarker[];
     tempoMap?: ProjectTempoMap;
     timeSignatureMap?: ProjectTimeSignatureMap;
-    takeLanes?: any;
-    sidechainRoutes?: any;
-    arrangements?: any[];
+    takeLanes?: ProjectTakeLaneStoreState;
+    sidechainRoutes?: ProjectSidechainRoute[];
+    arrangements?: ProjectArrangementSnapshot[];
     activeArrangementId?: string;
-    audioBuffers?: Record<string, any>;
+    audioBuffers?: Record<string, ProjectExportedAudioBuffer>;
     history: ProjectHistory;
 };
 
@@ -80,13 +80,26 @@ export type ProjectClip = {
     sampleStartBeat?: number;
     // MIDI specific
     notes?: ProjectMidiNote[];
-    kneadState?: any;
+    kneadState?: ProjectClipKneadState;
+};
+
+export type ProjectMidiCC = {
+    beat: number;
+    controller: number;
+    value: number;
+    channel: number;
+};
+
+export type ProjectMidiPitchBend = {
+    beat: number;
+    value: number;
+    channel: number;
 };
 
 export type ProjectMidi = {
     notesByClipId: Record<string, ProjectMidiNote[]>;
-    ccByClipId: Record<string, any[]>;
-    pitchBendByClipId: Record<string, any[]>;
+    ccByClipId: Record<string, ProjectMidiCC[]>;
+    pitchBendByClipId: Record<string, ProjectMidiPitchBend[]>;
 };
 
 export type ProjectMidiNote = {
@@ -269,6 +282,70 @@ export type ProjectTimeSignatureMap = {
         numerator: number;
         denominator: number;
     }>;
+};
+
+export type ProjectClipKneadBlob = {
+    id: string;
+    startTime: number;
+    endTime: number;
+    pitchCenterCents: number;
+    pitchCurveCents: number[];
+    voicedConfidence: number;
+};
+
+export type ProjectClipKneadState = {
+    blobs: ProjectClipKneadBlob[];
+    retuneSpeedMs: number;
+    humanizePercent: number;
+    formantPreserve: boolean;
+};
+
+export type ProjectExportedAudioBuffer = {
+    sampleRate: number;
+    numberOfChannels: number;
+    channelData: string[];
+};
+
+export type ProjectTake = {
+    id: string;
+    clipId: string;
+    name: string;
+    startBeat: number;
+    endBeat: number;
+    selected: boolean;
+};
+
+export type ProjectTakeLane = {
+    id: string;
+    trackId: string;
+    automationLaneId?: string;
+    takes: ProjectTake[];
+    activeCompRegions: Array<{ startBeat: number; endBeat: number; takeId: string }>;
+};
+
+export type ProjectTakeLaneStoreState = {
+    lanes: ProjectTakeLane[];
+};
+
+export type ProjectSidechainRoute = {
+    id: string;
+    sourceTrackId: string;
+    targetTrackId: string;
+    targetDeviceId: string;
+    targetParameterId: string;
+    gain: number;
+};
+
+export type ProjectArrangementSnapshot = {
+    id: string;
+    name: string;
+    tracks: unknown;
+    automation: unknown;
+    midi: unknown;
+    tempoMap?: unknown;
+    timeSignatureMap?: unknown;
+    markers?: unknown;
+    takeLanes?: unknown;
 };
 
 export const RECENT_PROJECTS_KEY = 'sourdaw-recent-projects';

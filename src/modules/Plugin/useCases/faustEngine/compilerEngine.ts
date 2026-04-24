@@ -280,7 +280,7 @@ export async function createFaustNode(
             let backoff = 20;
             const maxRetries = 5;
             for (let i = 0; i < maxRetries; i++) {
-                await new Promise<void>((r) => setTimeout(r, backoff));
+                await new Promise<void>((resolve) => setTimeout(resolve, backoff));
                 try {
                     return await mod.generator.createNode(context);
                 } catch (retryError) {
@@ -332,5 +332,5 @@ registerPluginLoader('faust.', async (pluginId, context) => {
         return null;
     }
     const faustNode = await createFaustNode(faustModuleId, context);
-    return (faustNode as unknown as AudioNode | null) ?? null;
+    return faustNode;
 });

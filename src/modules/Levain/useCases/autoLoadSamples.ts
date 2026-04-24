@@ -27,9 +27,9 @@ export async function autoLoadLevainSamples(nodePort: MessagePort, instrumentId:
         try {
             // Tauri places parent-relative bundle assets under _up_ to protect the root Resources directory
             const localPath = await resolveResource(`_up_/public/samples/levain/${instrumentId}`);
-            const { convertFileSrc } = (await import('@tauri-apps/api/core')) as unknown as {
-                convertFileSrc: (p: string) => string;
-            };
+            const tauriCore = await import('@tauri-apps/api/core');
+            // eslint-disable-next-line sourdaw/no-type-assertion-escape -- dynamic import type doesn't expose convertFileSrc; runtime value is structurally correct
+            const { convertFileSrc } = tauriCore as unknown as { convertFileSrc: (p: string) => string };
             manifestBase = convertFileSrc(localPath);
         } catch (error) {
             logger.warn('[Levain] Failed to resolve Tauri resource path:', error);

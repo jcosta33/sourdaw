@@ -4,12 +4,13 @@ import { defaultTransportState } from '../../models/TransportState';
 import { type TransportState } from '../../models/TransportState';
 import { getTransportState as repoGetTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState as repoUpdateTransportState } from '../../repositories/transport/updateTransportState';
-import type { TempoMapStoreState } from '../../stores/tempoMapStore';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { getTempoMapState } from '../transportQueries/getTempoMapState';
 import { getTransportState } from '../transportQueries/getTransportState';
 import { getTransportStoreValue } from '../transportQueries/getTransportStoreValue';
 import { updateTransportState } from '../transportQueries/updateTransportState';
+
+import type { TempoMapStoreState } from '../../stores/tempoMapStore';
 
 vi.mock('../../repositories/transport/getTransportState');
 vi.mock('../../repositories/transport/updateTransportState');

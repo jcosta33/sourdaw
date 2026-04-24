@@ -207,7 +207,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         setLoadingName(template.name);
         setView('loading');
         void (async () => {
-            await new Promise<void>((r) => setTimeout(r, 80));
+            await new Promise<void>((resolve) => setTimeout(resolve, 80));
             await createFromTemplate(template.id);
         })();
     };
@@ -219,7 +219,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         setLoadingName('Importing files…');
         setView('loading');
         void (async () => {
-            await new Promise<void>((r) => setTimeout(r, 100));
+            await new Promise<void>((resolve) => setTimeout(resolve, 100));
             newProject();
             for (const file of Array.from(event.dataTransfer.files)) {
                 const ext = file.name.toLowerCase().split('.').pop() ?? '';

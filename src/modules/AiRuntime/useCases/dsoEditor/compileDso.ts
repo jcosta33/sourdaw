@@ -259,8 +259,13 @@ function levenshtein(alpha: string, b: string): number {
     return dp[message]![node]!;
 }
 
-function bestMatch<T>(query: string, items: T[], getName: (item: T) => string, threshold = 30): T | null {
-    let best: T | null = null;
+function bestMatch<TItem>(
+    query: string,
+    items: TItem[],
+    getName: (item: TItem) => string,
+    threshold = 30
+): TItem | null {
+    let best: TItem | null = null;
     let bestScore = 0;
     for (const item of items) {
         const score = fuzzyScore(query, getName(item));
@@ -301,9 +306,9 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
             return nameOrId;
         }
 
-        let match = bestMatch(nameOrId, state!.tracks, (time) => time.name);
+        let match: { id: string } | null = bestMatch(nameOrId, state!.tracks, (time) => time.name);
         if (!match) {
-            match = bestMatch(nameOrId, mockTracks, (time) => time.name) as any;
+            match = bestMatch(nameOrId, mockTracks, (time) => time.name);
         }
         return match?.id ?? null;
     }
@@ -358,9 +363,9 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
                     dsos.splice(index, 0, {
                         op: 'add_track',
                         name: dso.track_id,
-                        kind: kindFallback as any,
+                        kind: kindFallback,
                         track_id: newId,
-                    } as any);
+                    } as Dso);
 
                     mockTracks.push({ id: newId, name: dso.track_id });
                     (dso as Record<string, unknown>).track_id = newId;
@@ -453,8 +458,6 @@ export function validateDsos(dsos: Dso[]): DsoValidationError[] {
         switch (dso.op) {
             case 'remove_track':
             case 'rename_track':
-            case 'set_track_volume':
-            case 'set_track_pan':
             case 'mute_track':
             case 'solo_track':
             case 'arm_track':
@@ -514,12 +517,18 @@ export function validateDsos(dsos: Dso[]): DsoValidationError[] {
                 break;
 
             case 'set_track_volume':
+                if (!trackIds.has(dso.track_id)) {
+                    errors.push({ dso, reason: `Track "${dso.track_id}" does not exist` });
+                }
                 if (dso.gain < 0 || dso.gain > 1.5) {
                     errors.push({ dso, reason: `Gain ${dso.gain} out of range (0-1.5)` });
                 }
                 break;
 
             case 'set_track_pan':
+                if (!trackIds.has(dso.track_id)) {
+                    errors.push({ dso, reason: `Track "${dso.track_id}" does not exist` });
+                }
                 if (dso.pan < -50 || dso.pan > 50) {
                     errors.push({ dso, reason: `Pan ${dso.pan} out of range (-50 to 50)` });
                 }
@@ -571,6 +580,11 @@ export function validateDsos(dsos: Dso[]): DsoValidationError[] {
                     errors.push({ dso, reason: `Track "${dso.track_id}" does not exist` });
                 }
                 break;
+
+            case 'add_track':
+            case 'set_time_signature':
+            case 'set_loop':
+                break;
         }
     }
 
@@ -592,7 +606,7 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
     switch (dso.op) {
         case 'add_track': {
             addTrack({
-                id: (dso as any).track_id,
+                id: dso.track_id ?? '',
                 name: dso.name,
                 kind: dso.kind as 'audio' | 'midi' | 'bus' | 'master',
             });

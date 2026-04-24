@@ -140,16 +140,15 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
 
     return (
         <DawMeterFrame>
-            <canvas
-                ref={canvasRef}
-                width={width}
-                height={height}
-                className="block"
-                aria-label="Phase correlation meter"
+            <div
                 role="meter"
+                aria-label="Phase correlation meter"
                 aria-valuemin={-1}
                 aria-valuemax={1}
-            />
+                aria-valuenow={0}
+            >
+                <canvas ref={canvasRef} width={width} height={height} className="block" aria-hidden="true" />
+            </div>
         </DawMeterFrame>
     );
 };

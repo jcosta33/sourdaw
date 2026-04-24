@@ -11,7 +11,7 @@ import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { workspaceStore } from '#/modules/Workspace/stores';
-import { closeUndoHistory, type WorkspaceState } from '#/modules/Workspace/useCases';
+import { closeUndoHistory } from '#/modules/Workspace/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { undoStore, type UndoStoreState } from '../../stores/undoStore';
@@ -20,7 +20,7 @@ import { undoToIndex } from '../../useCases/undoRedo';
 const defaultState: UndoStoreState = { past: [], future: [] };
 
 export const UndoHistoryPanel = (): ReactElement | null => {
-    const wsOpen = useStore(workspaceStore, null as unknown as WorkspaceState)?.undoHistoryOpen ?? false;
+    const wsOpen = useStore(workspaceStore)?.undoHistoryOpen ?? false;
 
     const state = useStore(undoStore, defaultState);
 

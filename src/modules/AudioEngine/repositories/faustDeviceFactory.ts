@@ -38,48 +38,45 @@ export async function createFaustDevice(
         return null;
     }
 
-    const audioNode = node as unknown as AudioNode;
     return {
-        inputNode: audioNode,
-        outputNode: audioNode,
-        nodes: [audioNode],
+        inputNode: node,
+        outputNode: node,
+        nodes: [node],
         wamControls: {
             setParam: (name: string, value: number) => {
                 // Resolve bare param names to full Faust addresses via suffix fallback.
                 // Faust expects addresses like '/FM_Synth/algorithm'; UI passes 'algorithm'.
-                if (node && typeof (node as any).setParamValue === 'function') {
-                    if (audioNode instanceof AudioWorkletNode) {
-                        let resolvedName = name;
-                        if (!audioNode.parameters.get(name)) {
-                            for (const [key] of audioNode.parameters) {
-                                if (key.endsWith(`/${name}`)) {
-                                    resolvedName = key;
-                                    break;
-                                }
+                if (node instanceof AudioWorkletNode) {
+                    let resolvedName = name;
+                    if (!node.parameters.get(name)) {
+                        for (const [key] of node.parameters) {
+                            if (key.endsWith(`/${name}`)) {
+                                resolvedName = key;
+                                break;
                             }
                         }
-                        try {
-                            (node as any).setParamValue(resolvedName, value);
-                        } catch (error) {
-                            logger.warn(`[FaustDevice] Failed to set param ${resolvedName} to ${value}:`, error);
-                        }
-                    } else {
-                        try {
-                            (node as any).setParamValue(name, value);
-                        } catch (error) {
-                            logger.warn(`[FaustDevice] Failed to set param ${name} to ${value}:`, error);
-                        }
+                    }
+                    try {
+                        node.setParamValue(resolvedName, value);
+                    } catch (error) {
+                        logger.warn(`[FaustDevice] Failed to set param ${resolvedName} to ${value}:`, error);
+                    }
+                } else {
+                    try {
+                        node.setParamValue(name, value);
+                    } catch (error) {
+                        logger.warn(`[FaustDevice] Failed to set param ${name} to ${value}:`, error);
                     }
                 }
             },
             scheduleParam: (name: string, value: number, time: number) => {
-                if (audioNode instanceof AudioWorkletNode) {
+                if (node instanceof AudioWorkletNode) {
                     let targetParam: AudioParam | null = null;
-                    const exact = audioNode.parameters.get(name);
+                    const exact = node.parameters.get(name);
                     if (exact) {
                         targetParam = exact;
                     } else {
-                        for (const [key, param] of audioNode.parameters) {
+                        for (const [key, param] of node.parameters) {
                             if (key.endsWith(`/${name}`)) {
                                 targetParam = param;
                                 break;
@@ -92,12 +89,10 @@ export async function createFaustDevice(
                 }
             },
             destroy: () => {
-                if ('destroy' in audioNode && typeof (audioNode as any).destroy === 'function') {
-                    try {
-                        (audioNode as any).destroy();
-                    } catch (error) {
-                        logger.warn(`[FaustDevice] Failed to destroy node:`, error);
-                    }
+                try {
+                    node.destroy();
+                } catch (error) {
+                    logger.warn(`[FaustDevice] Failed to destroy node:`, error);
                 }
             },
         },
