@@ -37,6 +37,7 @@ Grinder should behave like a trustworthy guitar-amp product: controls stay visua
 - Preset browsing is derived directly from `GRINDER_PRESETS`, whose categories now include `Metal` alongside `Clean`, `Crunch`, `High Gain`, `Lead`, `Pedal`, and `Performance` in `src/modules/Grinder/useCases/grinderPresets.ts`.
 - Patch-to-audio synchronization is still selective, but it now includes explicit supported pedal-order params through `syncGrinderPatchToAudio()` plus snapshot-triggered patch resync in `src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts`, `moveGrinderPedalInChainWithAudio.ts`, and `recallGrinderSnapshotWithAudio.ts`.
 - Snapshots are now real recallable rig scenes. Grinder store keeps a hidden stable `basePatch`, the Browser rail exposes snapshot buttons when a patch contains them, and recalling a snapshot updates both `activeSnapshot` and the live audio path in `src/modules/Grinder/stores/grinderStore.ts` and `src/modules/Grinder/presentations/views/GrinderPanel.tsx`.
+- Distortion and fuzz are materially more controlled than before. Their pedal cores now use input conditioning plus a bounded 2x-oversampled nonlinear stage, moderate settings stay within tested loudness bounds, and fuzz settles near silence instead of emitting a residual signal bed on silence input in `crates/daw-dsp/src/grinder/pedals.rs`.
 - Several visible or stored concepts remain metadata-only or partially wired. `neuralModelId`, `neuralModelName`, and `neuralModelFamily` are stored in the patch and updated by the Model Browser, but they still do not reach Rust DSP as distinct model-loading behavior.
 
 ## Findings
@@ -49,35 +50,36 @@ Grinder should behave like a trustworthy guitar-amp product: controls stay visua
 - The Neural tab is more honest than before, but not yet fully honest. The duplicated Mode guide is gone, yet the model browser is still metadata-first because no real model-loading path exists in the DSP bridge.
 - Snapshots and supported chain order are no longer fake fields. The remaining fake/decorative areas are now concentrated in Neural/Cab/routing and in broader tone completeness, not in the just-implemented live-rig basics.
 - Cabinet spatial controls are materially more honest than before. `mic1Distance`, `mic2Distance`, and `roomAmount` now change the rendered cabinet output via direct-level/top-end shaping plus lightweight room reflections, though this is still a bounded realism pass rather than a full room/capture system.
-- Targeted coverage is materially better than before. DSP tests now cover overdrive loudness sanity, gate closure depth, supported pedal order, and cabinet distance/room audibility, while UI/preset tests cover Neural non-duplication, metal taxonomy, snapshot UI, chain order, and the new room control. Real Neural model loading still lacks regression coverage.
+- Phase 5 removed the most obvious front-end high-gain breakage. Distortion no longer jumps to roughly `7.5x` bypass loudness at moderate settings, fuzz no longer jumps to roughly `13.7x`, and fuzz no longer produces a steady non-zero output on silence in the pedal unit tests.
+- Targeted coverage is materially better than before. DSP tests now cover overdrive/distortion/fuzz loudness sanity, fuzz silence behavior, gate closure depth, supported pedal order, and cabinet distance/room audibility, while UI/preset tests cover Neural non-duplication, metal taxonomy, snapshot UI, chain order, and the new room control. Real Neural model loading still lacks regression coverage.
 
 ## Priorities
 
-1. `I-06` Audit the remaining nonlinear drive stages beyond overdrive, especially distortion/fuzz and later amp stages, for artifact-prone behavior.
-2. `I-04` Remove the remaining fake or decorative Neural/routing controls, or wire them to real DSP behavior.
-3. `I-07` Reduce the patch/model contract to what is actually real today.
+1. `I-06` Audit the remaining later amp stages, especially triode/preamp and power amp, now that the front-end distortion/fuzz pedals are stabilized.
+2. `I-04` Deliver real Neural model loading and routing behavior behind the remaining decorative controls.
+3. `I-07` Make the remaining stored patch concepts audibly real end-to-end instead of metadata-only.
 
 ## Open issues
 
-1. **The broader drive stack is still artifact-prone beyond the overdrive fix.**
-   Problem: overdrive has been recalibrated, but distortion, fuzz, preamp, and power-amp nonlinearities still run directly at the sample rate with no visible oversampling or anti-alias stage in these paths. Under high-gain settings the product can still drift into fizzy, brittle behavior even though the most explosive overdrive loudness bug is now gone.
-   Representative files: `crates/daw-dsp/src/grinder/pedals.rs`, `crates/daw-dsp/src/grinder/triode.rs`, `crates/daw-dsp/src/grinder/power_amp.rs`.
-   Needed: audit and retune the remaining nonlinear stages around reference amp/pedal behavior and decide whether an anti-alias strategy is required for Grinder to be credible as a guitar amp.
+1. **The later amp stages are still the main high-gain tone risk.**
+   Problem: phase 5 stabilized the front-end distortion/fuzz pedals with bounded oversampled nonlinear cores, but the triode/preamp and power-amp stages still run as the remaining unverified high-gain nonlinear path. Grinder can therefore still sound fizzy or brittle when the later amp stages are doing most of the work.
+   Representative files: `crates/daw-dsp/src/grinder/triode.rs`, `crates/daw-dsp/src/grinder/power_amp.rs`.
+   Needed: audit and retune the later amp stages around reference amp behavior and decide whether those stages need their own explicit alias-mitigation strategy.
 
 2. **The Neural tab is no longer duplicated, but the model browser is still mostly decorative.**
    Problem: the hero-side Mode guide duplication is fixed, but model selection still only changes patch metadata plus placement. `neuralModelId`, `neuralModelName`, and `neuralModelFamily` are not part of the audio-sync path, and the Rust neural engine still has no model-loading API in this flow. The UI is less misleading than before, but the browser still does not load distinct capture content.
    Representative files: `src/modules/Grinder/presentations/views/GrinderPanel.tsx`, `src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts`, `crates/daw-dsp/src/grinder/neural.rs`.
-   Needed: either add a real model-loading path or downgrade/remove the browser interaction so it no longer behaves like a full model selector.
+   Needed: add a real model-loading path from browser selection through the bridge into distinct neural capture behavior.
 
 3. **Routing-style controls and broader cabinet contracts are still incomplete.**
    Problem: phase 4 made mic distances and room amount real, but `routingMode` still reaches the bridge without any routing implementation in `engine.rs`, and `cabType` / `cabIrId` still imply cabinet-selection behaviors that this path does not complete. The cabinet UI is more honest now, but the patch contract still advertises more cabinet/routing flexibility than the current engine supports.
    Representative files: `src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts`, `crates/daw-dsp/src/grinder/engine.rs`, `src/modules/Grinder/models/GrinderPatch.ts`.
-   Needed: remove or disable placeholder routing/cabinet contract features until they are real, or complete the DSP/bridge behavior they imply.
+   Needed: complete the routing and cabinet-selection behaviors implied by `routingMode`, `cabType`, and `cabIrId` so those controls change the live signal path.
 
 4. **Some patch concepts are still stale or fake at the data-model layer.**
    Problem: `inputMode` is passed from the engine to `InputConditioner`, but `InputConditioner::set_param()` ignores it. `neuralModelId/name/family`, `cabType`, `cabIrId`, and `routingMode` still make the patch shape look more complete than the current audible implementation really is. Phase 3 removed `snapshots` and `activeSnapshot` from this bucket by making them real recall features.
    Representative files: `src/modules/Grinder/models/GrinderPatch.ts`, `crates/daw-dsp/src/grinder/engine.rs`, `crates/daw-dsp/src/grinder/input.rs`.
-   Needed: reduce the contract to what is real today or explicitly mark placeholder fields/features so future work does not keep shipping decorative controls.
+   Needed: make the remaining stored fields audibly real so the patch contract matches what the runtime can actually do.
 
 ## Open questions
 
@@ -87,21 +89,19 @@ Grinder should behave like a trustworthy guitar-amp product: controls stay visua
 
 ## Risks
 
-- The remaining high-gain stack can still sound fizzy or artifact-prone even after the overdrive fix, which keeps the core "is this a credible amp?" question open.
+- The remaining later amp stages can still sound fizzy or artifact-prone even after the front-end pedal fixes, which keeps the core "is this a credible amp?" question open.
 - The cabinet controls are more trustworthy now, but users may still infer richer routing/cabinet-model behavior than actually exists if the remaining placeholder fields stay exposed.
 - Weak coverage still exists around real Neural model loading and broader gain-stage behavior, so regressions can still slip through outside the narrowed areas already fixed.
 
 ## Suggested approaches
 
-- Fix the state contract first: UI state must tell the truth about whether pedals and gate are active.
-- Decide which Grinder features are real today versus aspirational, then either wire them end-to-end or remove/disable them from the UI.
-- Revoice the gain structure using reference amp/pedal targets and add anti-alias strategy before spending time on cosmetic preset shuffling.
-- Rebuild the Neural page around what the engine can actually do today; add real model loading later under a separate spec if needed.
-- Add expert-oriented regression tests: pedal enable semantics, gate attenuation behavior, cabinet distance/room audibility, and preset-category expectations.
+- Continue from the pedal fixes into the later amp stages: preamp/triode and power amp are now the highest-value tone work.
+- Complete the remaining Neural/routing features end-to-end rather than leaving metadata-only controls in place.
+- Keep expanding expert-oriented regression tests: pedal enable semantics, gate attenuation behavior, cabinet distance/room audibility, neural model loading, and later gain-stage behavior.
 
 ## Recommendation
 
-Phase 4 removed the loudest cabinet-honesty gap. The next move should be `I-06`: retune the remaining distortion/fuzz/high-gain nonlinear path so Grinder sounds more like a credible guitar amp and less like a brittle artifact machine.
+Phase 5 stabilized the front-end high-gain pedals. The next move should still be `I-06`, but now focused on the later amp stages: retune the preamp/triode and power-amp nonlinear path so Grinder sounds more like a credible guitar amp and less like a brittle artifact machine.
 
 ## Resolved
 
@@ -114,3 +114,4 @@ Phase 4 removed the loudest cabinet-honesty gap. The next move should be `I-06`:
 - ~~Supported front-end pedal order existed only as patch-array metadata while the DSP path stayed hardcoded.~~ — resolved in `main` on `2026-04-24` by surfacing chain order in the Drive deck, syncing explicit order params through the bridge, and rebuilding supported pedal execution order in the Rust engine.
 - ~~`snapshots` and `activeSnapshot` were stored in the patch model but not usable as real rig scenes.~~ — resolved in `main` on `2026-04-24` by introducing `basePatch`-backed snapshot recall in Grinder state plus Browser-rail snapshot controls that resync the live audio patch.
 - ~~Cab mic distance and room controls were stored/synced but ignored by the cabinet DSP.~~ — resolved in `main` on `2026-04-24` by adding audibly real distance shaping plus lightweight room reflections in `CabinetConvolver`, exposing a direct `Room` control in the cab deck, and covering both behaviors with regression tests.
+- ~~Moderate distortion and fuzz settings produced runaway loudness, and fuzz emitted non-zero output on silence.~~ — resolved in `main` on `2026-04-24` by restructuring both pedals around conditioned, bounded 2x-oversampled nonlinear cores with output compensation and by adding regressions for distortion loudness, fuzz loudness, and fuzz silence behavior.

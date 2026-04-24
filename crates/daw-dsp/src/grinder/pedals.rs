@@ -94,9 +94,11 @@ pub struct DistortionPedal {
     level: f32,
     enabled: bool,
     input_hp_state: f32,
+    pre_shape_state: f32,
+    oversample_input_state: f32,
     tone_lp_state: f32,
     tone_hp_state: f32,
-    slew_state: f32,
+    output_hp_state: f32,
     sample_rate: f32,
 }
 
@@ -108,9 +110,11 @@ impl DistortionPedal {
             level: 0.58,
             enabled: false,
             input_hp_state: 0.0,
+            pre_shape_state: 0.0,
+            oversample_input_state: 0.0,
             tone_lp_state: 0.0,
             tone_hp_state: 0.0,
-            slew_state: 0.0,
+            output_hp_state: 0.0,
             sample_rate,
         }
     }
@@ -131,18 +135,22 @@ impl DistortionPedal {
         }
 
         let dt = 1.0 / self.sample_rate;
-        let pre_hp_coeff = (2.0 * PI * 140.0 * dt).min(0.42);
+        let pre_hp_freq = 110.0 + self.drive * 160.0;
+        let pre_hp_coeff = (2.0 * PI * pre_hp_freq * dt).min(0.36);
         self.input_hp_state += pre_hp_coeff * (input - self.input_hp_state);
         let tightened = input - self.input_hp_state;
 
-        let gain = 2.4 + self.drive * 26.0;
-        let pushed = tightened * gain;
+        let pre_shape_hz = 2_200.0 + (1.0 - self.drive) * 2_000.0;
+        let pre_shape_coeff = (2.0 * PI * pre_shape_hz * dt).min(0.48);
+        self.pre_shape_state += pre_shape_coeff * (tightened - self.pre_shape_state);
+        let conditioned = tightened * 0.58 + self.pre_shape_state * 0.42;
 
-        let slew_coeff = (0.1 + (1.0 - self.drive) * 0.22).clamp(0.06, 0.34);
-        self.slew_state += slew_coeff * (pushed - self.slew_state);
-
-        let clip_threshold = 0.78 - self.drive * 0.2;
-        let clipped = Self::rat_clip(self.slew_state, clip_threshold);
+        let gain = 1.35 + self.drive * 7.2;
+        let pushed = conditioned * gain;
+        let drive = self.drive;
+        let clipped = process_2x_oversampled(&mut self.oversample_input_state, pushed, |sample| {
+            Self::rat_core(sample, drive)
+        });
 
         let low_pass_hz = 1_000.0 + self.tone * 5_200.0;
         let low_pass_coeff = (2.0 * PI * low_pass_hz * dt).min(0.92);
@@ -151,29 +159,42 @@ impl DistortionPedal {
         let high_pass_hz = 120.0 + (1.0 - self.tone) * 320.0;
         let high_pass_coeff = (2.0 * PI * high_pass_hz * dt).min(0.42);
         self.tone_hp_state += high_pass_coeff * (self.tone_lp_state - self.tone_hp_state);
-        let voiced = self.tone_lp_state - self.tone_hp_state;
+        let body = self.tone_lp_state - self.tone_hp_state;
+        let edge = clipped - self.tone_lp_state;
+        let voiced = body * (0.96 - self.tone * 0.08) + edge * (0.08 + self.tone * 0.32);
 
-        let level = 0.68 + self.level * 0.82;
-        voiced * level
+        let output_hp_coeff = (2.0 * PI * 70.0 * dt).min(0.34);
+        self.output_hp_state += output_hp_coeff * (voiced - self.output_hp_state);
+        let dc_trimmed = voiced - self.output_hp_state;
+
+        let level = 0.36 + self.level * 0.98;
+        let drive_compensation = 1.0 / (1.0 + self.drive * 1.25);
+        dc_trimmed * level * drive_compensation
     }
 
-    fn rat_clip(input: f32, threshold: f32) -> f32 {
+    fn rat_core(input: f32, drive: f32) -> f32 {
+        let threshold = 0.52 - drive * 0.12;
         let abs = input.abs();
-        if abs <= threshold {
-            return input * 0.92;
-        }
-
         let sign = input.signum();
-        let over = (abs - threshold) / (1.0 - threshold).max(1.0e-4);
-        let compressed = threshold + (1.0 - (-4.0 * over).exp()) * (0.98 - threshold);
-        sign * compressed
+        let clipped = if abs <= threshold {
+            input * 0.86
+        } else {
+            let over = (abs - threshold) / (1.0 + abs);
+            let knee = 1.0 - (-3.2 * over).exp();
+            let limited = threshold + knee * (0.96 - threshold);
+            sign * limited
+        };
+        let edge = (input * (0.55 + drive * 0.95)).tanh();
+        clipped * (0.82 - drive * 0.10) + edge * (0.18 + drive * 0.10)
     }
 
     pub fn reset(&mut self) {
         self.input_hp_state = 0.0;
+        self.pre_shape_state = 0.0;
+        self.oversample_input_state = 0.0;
         self.tone_lp_state = 0.0;
         self.tone_hp_state = 0.0;
-        self.slew_state = 0.0;
+        self.output_hp_state = 0.0;
     }
 }
 
@@ -182,9 +203,12 @@ pub struct FuzzPedal {
     tone: f32,
     level: f32,
     enabled: bool,
+    input_hp_state: f32,
     bias_state: f32,
+    oversample_input_state: f32,
     tone_lp_state: f32,
     cleanup_state: f32,
+    output_hp_state: f32,
     sample_rate: f32,
 }
 
@@ -195,9 +219,12 @@ impl FuzzPedal {
             tone: 0.48,
             level: 0.62,
             enabled: false,
+            input_hp_state: 0.0,
             bias_state: 0.0,
+            oversample_input_state: 0.0,
             tone_lp_state: 0.0,
             cleanup_state: 0.0,
+            output_hp_state: 0.0,
             sample_rate,
         }
     }
@@ -218,39 +245,75 @@ impl FuzzPedal {
         }
 
         let dt = 1.0 / self.sample_rate;
-        self.cleanup_state += 0.002 * (input.abs() - self.cleanup_state);
-        let cleanup = (1.0 - self.cleanup_state * (0.9 - self.fuzz * 0.45)).clamp(0.45, 1.0);
+        let pre_hp_freq = 75.0 + self.fuzz * 120.0;
+        let pre_hp_coeff = (2.0 * PI * pre_hp_freq * dt).min(0.34);
+        self.input_hp_state += pre_hp_coeff * (input - self.input_hp_state);
+        let tightened = input - self.input_hp_state;
 
-        let bias_offset = (self.fuzz - 0.5) * 0.22;
-        let pushed = input * cleanup * (2.4 + self.fuzz * 24.0) + bias_offset;
-        self.bias_state += 0.0008 * (pushed - self.bias_state);
-        let biased = pushed - self.bias_state * (0.32 + self.fuzz * 0.18);
+        self.cleanup_state += 0.0025 * (tightened.abs() - self.cleanup_state);
+        let cleanup = (1.0 - self.cleanup_state * (0.28 + self.fuzz * 0.18)).clamp(0.68, 1.0);
 
-        let clipped = if biased >= 0.0 {
-            1.0 - (-biased * (2.1 + self.fuzz * 1.4)).exp()
-        } else {
-            -(1.0 - (biased * (1.55 + self.fuzz * 0.95)).exp())
-        };
+        let bias_target = tightened * (0.06 + self.fuzz * 0.10);
+        self.bias_state += 0.0020 * (bias_target - self.bias_state);
 
-        let starve = (1.0 - input.abs() * self.fuzz * 0.38).clamp(0.52, 1.0);
-        let saturated = clipped * starve;
+        let conditioned = (tightened + self.bias_state) * cleanup;
+        let pushed = conditioned * (1.9 + self.fuzz * 10.5);
+        let fuzz = self.fuzz;
+        let saturated = process_2x_oversampled(
+            &mut self.oversample_input_state,
+            pushed,
+            |sample| Self::fuzz_core(sample, fuzz),
+        );
 
         let tone_freq = 420.0 + self.tone * 5_600.0;
         let tone_coeff = (2.0 * PI * tone_freq * dt).min(0.92);
         self.tone_lp_state += tone_coeff * (saturated - self.tone_lp_state);
         let edge = saturated - self.tone_lp_state;
         let voiced =
-            self.tone_lp_state * (1.16 - self.tone * 0.34) + edge * (0.14 + self.tone * 1.08);
+            self.tone_lp_state * (1.08 - self.tone * 0.24) + edge * (0.12 + self.tone * 0.68);
 
-        let level = 0.64 + self.level * 0.84;
-        voiced * level
+        let output_hp_coeff = (2.0 * PI * 65.0 * dt).min(0.34);
+        self.output_hp_state += output_hp_coeff * (voiced - self.output_hp_state);
+        let dc_trimmed = voiced - self.output_hp_state;
+
+        let level = 0.22 + self.level * 0.84;
+        let fuzz_compensation = 1.0 / (1.0 + self.fuzz * 3.4);
+        dc_trimmed * level * fuzz_compensation
+    }
+
+    fn fuzz_core(input: f32, fuzz: f32) -> f32 {
+        let magnitude = input.abs();
+        let starve = 1.0 / (1.0 + magnitude * (0.34 + fuzz * 0.46));
+
+        if input >= 0.0 {
+            let positive = 1.0 - (-(input * (1.9 + fuzz * 2.0))).exp();
+            positive * starve
+        } else {
+            let negative = -(1.0 - (-(magnitude * (1.45 + fuzz * 1.35))).exp());
+            negative * starve
+        }
     }
 
     pub fn reset(&mut self) {
+        self.input_hp_state = 0.0;
         self.bias_state = 0.0;
+        self.oversample_input_state = 0.0;
         self.tone_lp_state = 0.0;
         self.cleanup_state = 0.0;
+        self.output_hp_state = 0.0;
     }
+}
+
+fn process_2x_oversampled(
+    previous_input: &mut f32,
+    current_input: f32,
+    mut shaper: impl FnMut(f32) -> f32,
+) -> f32 {
+    let midpoint = 0.5 * (*previous_input + current_input);
+    let first = shaper(midpoint);
+    let second = shaper(current_input);
+    *previous_input = current_input;
+    (first + second) * 0.5
 }
 
 /// Simple compressor pedal.
@@ -322,7 +385,7 @@ impl CompressorPedal {
 
 #[cfg(test)]
 mod tests {
-    use super::OverdrivePedal;
+    use super::{DistortionPedal, FuzzPedal, OverdrivePedal};
 
     fn average_abs_overdrive_output(drive: f32, tone: f32, level: f32, enabled: bool) -> f32 {
         let mut pedal = OverdrivePedal::new(48_000.0);
@@ -342,6 +405,72 @@ mod tests {
         }
 
         sum / total as f32
+    }
+
+    fn average_abs_distortion_output(
+        drive: f32,
+        tone: f32,
+        level: f32,
+        enabled: bool,
+    ) -> f32 {
+        let mut pedal = DistortionPedal::new(48_000.0);
+        pedal.set_param("enabled", if enabled { 1.0 } else { 0.0 });
+        pedal.set_param("drive", drive);
+        pedal.set_param("tone", tone);
+        pedal.set_param("level", level);
+
+        let total = 4096;
+        let mut sum = 0.0_f32;
+        for index in 0..total {
+            let phase = (index as f32 * 2.0 * std::f32::consts::PI * 220.0) / 48_000.0;
+            let input = phase.sin() * 0.08;
+            let output = pedal.process_sample(input);
+            assert!(output.is_finite(), "distortion output should stay finite");
+            sum += output.abs();
+        }
+
+        sum / total as f32
+    }
+
+    fn average_abs_fuzz_output(fuzz: f32, tone: f32, level: f32, enabled: bool) -> f32 {
+        let mut pedal = FuzzPedal::new(48_000.0);
+        pedal.set_param("enabled", if enabled { 1.0 } else { 0.0 });
+        pedal.set_param("fuzz", fuzz);
+        pedal.set_param("tone", tone);
+        pedal.set_param("level", level);
+
+        let total = 4096;
+        let mut sum = 0.0_f32;
+        for index in 0..total {
+            let phase = (index as f32 * 2.0 * std::f32::consts::PI * 220.0) / 48_000.0;
+            let input = phase.sin() * 0.08;
+            let output = pedal.process_sample(input);
+            assert!(output.is_finite(), "fuzz output should stay finite");
+            sum += output.abs();
+        }
+
+        sum / total as f32
+    }
+
+    fn average_abs_fuzz_silence_tail(fuzz: f32, tone: f32, level: f32) -> f32 {
+        let mut pedal = FuzzPedal::new(48_000.0);
+        pedal.set_param("enabled", 1.0);
+        pedal.set_param("fuzz", fuzz);
+        pedal.set_param("tone", tone);
+        pedal.set_param("level", level);
+
+        let total = 4096;
+        let settle_start = total / 2;
+        let mut sum = 0.0_f32;
+        for index in 0..total {
+            let output = pedal.process_sample(0.0);
+            assert!(output.is_finite(), "fuzz silence output should stay finite");
+            if index >= settle_start {
+                sum += output.abs();
+            }
+        }
+
+        sum / (total - settle_start) as f32
     }
 
     #[test]
@@ -364,6 +493,40 @@ mod tests {
         assert!(
             (driven_average - dry_average).abs() > 1.0e-3,
             "overdrive should still audibly change the signal path (dry={dry_average}, driven={driven_average})"
+        );
+    }
+
+    #[test]
+    fn moderate_distortion_stays_in_a_usable_loudness_range() {
+        let dry_average = average_abs_distortion_output(4.0, 5.0, 5.0, false);
+        let driven_average = average_abs_distortion_output(4.0, 5.0, 5.0, true);
+        let loudness_ratio = driven_average / dry_average.max(1.0e-6);
+
+        assert!(
+            (0.8..=2.0).contains(&loudness_ratio),
+            "moderate distortion should stay near a usable loudness range, got ratio {loudness_ratio} (dry={dry_average}, driven={driven_average})"
+        );
+    }
+
+    #[test]
+    fn moderate_fuzz_stays_in_a_usable_loudness_range() {
+        let dry_average = average_abs_fuzz_output(4.0, 5.0, 5.0, false);
+        let driven_average = average_abs_fuzz_output(4.0, 5.0, 5.0, true);
+        let loudness_ratio = driven_average / dry_average.max(1.0e-6);
+
+        assert!(
+            (0.8..=2.0).contains(&loudness_ratio),
+            "moderate fuzz should stay near a usable loudness range, got ratio {loudness_ratio} (dry={dry_average}, driven={driven_average})"
+        );
+    }
+
+    #[test]
+    fn enabled_fuzz_settles_near_silence_for_silence_input() {
+        let silence_average = average_abs_fuzz_silence_tail(6.0, 5.0, 5.0);
+
+        assert!(
+            silence_average <= 1.0e-3,
+            "enabled fuzz should settle near silence for silence input, got average {silence_average}"
         );
     }
 }
