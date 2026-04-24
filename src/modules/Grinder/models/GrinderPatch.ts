@@ -27,6 +27,38 @@ export type GrinderNeuralStatus = 'idle' | 'warming' | 'ready';
 
 export type GrinderUiSection = 'browse' | 'amp' | 'drive' | 'cab' | 'neural' | 'lab';
 
+export type GrinderNeuralLibraryEntry = {
+    id: string;
+    name: string;
+    family: string;
+    placement: GrinderNeuralPlacement;
+    description: string;
+};
+
+export const GRINDER_NEURAL_LIBRARY: readonly GrinderNeuralLibraryEntry[] = [
+    {
+        id: 'factory-amp-a',
+        name: 'Factory Amp A',
+        family: 'NAM-compatible',
+        placement: 'amp-capture',
+        description: 'Focused head capture with a tight midrange and a smooth top.',
+    },
+    {
+        id: 'factory-rig-b',
+        name: 'Factory Rig B',
+        family: 'A1-ready',
+        placement: 'rig-capture',
+        description: 'Full rig snapshot with denser low mids and a darker edge.',
+    },
+    {
+        id: 'vintage-stack-c',
+        name: 'Vintage Stack C',
+        family: 'NAM-compatible',
+        placement: 'amp-capture',
+        description: 'Wider low mids with a softer attack and a more open upper band.',
+    },
+] as const;
+
 // ── Pedal types ──────────────────────────────────────────────────────────────
 
 export type GrinderPedalType =

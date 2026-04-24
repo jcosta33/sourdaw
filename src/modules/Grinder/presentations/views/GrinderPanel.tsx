@@ -11,6 +11,7 @@ import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
 import { useStore } from '#/infra/store/useStore';
 
 import {
+    GRINDER_NEURAL_LIBRARY,
     type GrinderAmpModel,
     type GrinderEngineMode,
     type GrinderPatch,
@@ -111,30 +112,6 @@ const AMP_MODELS: ReadonlyArray<{
 
 const POWER_TUBES: readonly GrinderPowerTubeType[] = ['6l6', 'el34', 'el84'];
 const RECTIFIERS: readonly GrinderRectifierType[] = ['tube', 'solid-state', 'variac'];
-const NEURAL_LIBRARY = [
-    {
-        id: 'factory-amp-a',
-        name: 'Factory Amp A',
-        family: 'NAM-compatible',
-        placement: 'amp-capture',
-        description: 'Focused head capture with a tight midrange and a smooth top.',
-    },
-    {
-        id: 'factory-rig-b',
-        name: 'Factory Rig B',
-        family: 'A1-ready',
-        placement: 'rig-capture',
-        description: 'Full rig snapshot when you want the whole baked loaf at once.',
-    },
-    {
-        id: 'vintage-stack-c',
-        name: 'Vintage Stack C',
-        family: 'NAM-compatible',
-        placement: 'amp-capture',
-        description: 'Wider low mids with a softer edge on pick attack.',
-    },
-] as const;
-
 function get_engine_mode_label(engine_mode: GrinderEngineMode): string {
     return ENGINE_MODES.find((mode) => mode.id === engine_mode)?.label ?? 'Circuit';
 }
@@ -697,8 +674,7 @@ function NeuralStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
                         <div className="mt-1 text-xs leading-5 text-white/60">{get_neural_path_status(patch)}</div>
                     </div>
                     <div className="rounded-[16px] border border-dashed border-[var(--color-accent-cyan)]/25 bg-[var(--color-accent-cyan)]/6 px-3 py-2.5 text-xs leading-5 text-white/62">
-                        Library entries label the active capture voice in this build. They do not swap a separate DSP
-                        asset yet.
+                        Selecting a library voice now swaps the active built-in capture profile in the live DSP path.
                     </div>
                 </div>
             </div>
@@ -1440,7 +1416,7 @@ function ControlDeck({
                         Model Browser
                     </div>
                     <div className="grid gap-2">
-                        {NEURAL_LIBRARY.map((model) => {
+                        {GRINDER_NEURAL_LIBRARY.map((model) => {
                             const selected = patch.neuralModelId === model.id;
                             return (
                                 <button

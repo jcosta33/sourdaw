@@ -172,7 +172,7 @@ impl GrinderEngine {
 
             // Neural
             "engineMode" | "neuralEnabled" | "neuralPlacement" | "neuralMix" | "neuralTier"
-            | "neuralCpuBudget" => self.neural.set_param(name, value),
+            | "neuralCpuBudget" | "neuralModelSlot" => self.neural.set_param(name, value),
 
             // Supported pedal ordering
             "preCompressorOrder" | "preOverdriveOrder" | "preDistortionOrder" | "preFuzzOrder"

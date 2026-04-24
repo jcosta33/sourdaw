@@ -12,6 +12,7 @@ import {
     TONE_STACK_TYPES,
     type DeviceRef,
     getPedalOrderAudioEntries,
+    getNeuralModelSlot,
 } from './helpers';
 
 type SyncGrinderPatchToAudioInput = {
@@ -195,6 +196,11 @@ export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): vo
 
     for (const entry of getPedalOrderAudioEntries(true, patch.postPedals)) {
         sendNumericParamToDevice(input, entry.key, entry.value);
+    }
+
+    const neural_model_slot = getNeuralModelSlot(patch.neuralModelId);
+    if (neural_model_slot !== null) {
+        sendNumericParamToDevice(input, 'neuralModelSlot', neural_model_slot);
     }
 
     sendNumericParamToDevice(input, 'mic1Enabled', patch.mic1.enabled ? 1 : 0);

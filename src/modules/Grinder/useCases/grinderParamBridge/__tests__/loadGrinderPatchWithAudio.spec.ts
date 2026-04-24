@@ -76,4 +76,29 @@ describe('loadGrinderPatchWithAudio', () => {
         expect(deps.updateDeviceParam).toHaveBeenCalledWith(expect.anything(), deviceId, 'mic2Enabled', 1);
         expect(deps.updateDeviceParam).toHaveBeenCalledWith(expect.anything(), deviceId, 'mic2PositionY', 0.4);
     });
+
+    it('should sync the selected neural model as a real DSP slot', () => {
+        const deviceId = 'device-1';
+        deps.getAllTracks.mockReturnValue([
+            {
+                id: 'track-1',
+                devices: [{ id: deviceId, type: 'grinder' }],
+            },
+        ]);
+
+        const patch = {
+            ...DEFAULT_PATCH,
+            uiSection: 'neural' as const,
+            engineMode: 'capture' as const,
+            neuralEnabled: true,
+            neuralModelId: 'factory-rig-b',
+            neuralModelName: 'Factory Rig B',
+        };
+        const action = loadGrinderPatchWithAudio(deps as any);
+
+        action(deviceId, patch);
+
+        expect(deps.updateDeviceParam).toHaveBeenCalledWith(expect.anything(), deviceId, 'neuralModelSlot', 1);
+        expect(deps.persistDeviceParam).toHaveBeenCalledWith(deviceId, 'neuralModelSlot', 1);
+    });
 });
