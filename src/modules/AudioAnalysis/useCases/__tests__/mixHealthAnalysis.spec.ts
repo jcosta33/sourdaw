@@ -2,20 +2,25 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { mixHealthAnalysis } from '../mixHealthAnalysis';
 
-const getTrackStoreStateMock = vi.fn().mockReturnValue(null);
-const streamCloudChatCompletionMock = vi.fn();
-const summarizeFeaturesMock = vi.fn();
+import type { streamCloudChatCompletion } from '#/modules/AiRuntime/useCases';
+import type { getTrackStoreState } from '#/modules/Arrangement/useCases';
+import type { summarizeFeatures } from '../audioFeatures';
+
+const getTrackStoreStateMock = vi.fn<typeof getTrackStoreState>().mockReturnValue(null);
+const streamCloudChatCompletionMock = vi.fn<typeof streamCloudChatCompletion>();
+const summarizeFeaturesMock = vi.fn<typeof summarizeFeatures>();
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    getTrackStoreState: (...args: any[]) => getTrackStoreStateMock(...args),
+    getTrackStoreState: (...args: Parameters<typeof getTrackStoreStateMock>) => getTrackStoreStateMock(...args),
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
-    streamCloudChatCompletion: (...args: any[]) => streamCloudChatCompletionMock(...args),
+    streamCloudChatCompletion: (...args: Parameters<typeof streamCloudChatCompletionMock>) =>
+        streamCloudChatCompletionMock(...args),
 }));
 
 vi.mock('../audioFeatures', () => ({
-    summarizeFeatures: (...args: any[]) => summarizeFeaturesMock(...args),
+    summarizeFeatures: (...args: Parameters<typeof summarizeFeaturesMock>) => summarizeFeaturesMock(...args),
 }));
 
 describe('mixHealthAnalysis injectable', () => {

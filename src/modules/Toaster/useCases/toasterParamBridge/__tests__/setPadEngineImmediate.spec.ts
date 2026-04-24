@@ -5,7 +5,7 @@ import * as subject from '../setPadEngineImmediate';
 describe('setPadEngineImmediate', () => {
     it('should export setPadEngineImmediate', () => {
         expect(subject.setPadEngineImmediate).toBeDefined();
-        const t = typeof subject.setPadEngineImmediate;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setPadEngineImmediate;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

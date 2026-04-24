@@ -21,8 +21,10 @@ const files = walkDir('src/modules/Workspace').concat(walkDir('src/modules/Proje
 for (const file of files) {
     let content = fs.readFileSync(file, 'utf-8');
     if (content.includes('const { mockEventBus } = vi.hoisted(')) {
-        content = content.replace(/const\s+\{\s*mockEventBus\s*\}\s*=\s*vi\.hoisted\(\(\)\s*=>\s*\(\{\s*mockEventBus:\s*\{([^}]*)\}\s*,\s*\}\)\);/m, 
-            'const mocks = vi.hoisted(() => ({ mockEventBus: {$1} }));');
+        content = content.replace(
+            /const\s+\{\s*mockEventBus\s*\}\s*=\s*vi\.hoisted\(\(\)\s*=>\s*\(\{\s*mockEventBus:\s*\{([^}]*)\}\s*,\s*\}\)\);/m,
+            'const mocks = vi.hoisted(() => ({ mockEventBus: {$1} }));'
+        );
         content = content.replace(/mockEventBus\./g, 'mocks.mockEventBus.');
         content = content.replace(/eventBus:\s*mockEventBus/g, 'eventBus: mocks.mockEventBus');
         fs.writeFileSync(file, content);

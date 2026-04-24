@@ -11,7 +11,7 @@ function pickFilesViaBrowser(options: OpenFileOptions): Promise<File[] | null> {
         input.multiple = options.multiple ?? false;
 
         if (options.filters && options.filters.length > 0) {
-            input.accept = options.filters.flatMap((f) => f.extensions.map((ext) => `.${ext}`)).join(',');
+            input.accept = options.filters.flatMap((freq) => freq.extensions.map((ext) => `.${ext}`)).join(',');
         }
 
         input.addEventListener('change', () => {
@@ -20,8 +20,8 @@ function pickFilesViaBrowser(options: OpenFileOptions): Promise<File[] | null> {
                 return;
             }
             const files: File[] = [];
-            for (let i = 0; i < input.files.length; i++) {
-                files.push(input.files[i]!);
+            for (let index = 0; index < input.files.length; index++) {
+                files.push(input.files[index]!);
             }
             resolve(files);
         });
@@ -52,9 +52,9 @@ export async function pickFiles(options: OpenFileOptions = {}): Promise<File[] |
                 readFile: (path: string) => Promise<ArrayBuffer>;
             };
             const files: File[] = [];
-            for (const p of paths) {
-                const bytes = await fs.readFile(p);
-                const name = p.split('/').pop() ?? p.split('\\').pop() ?? p;
+            for (const param of paths) {
+                const bytes = await fs.readFile(param);
+                const name = param.split('/').pop() ?? param.split('\\').pop() ?? param;
                 files.push(new File([bytes], name));
             }
             return files.length > 0 ? files : null;

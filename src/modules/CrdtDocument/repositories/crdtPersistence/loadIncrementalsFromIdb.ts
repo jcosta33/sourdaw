@@ -3,7 +3,7 @@ import { type DocId } from '../../models/CrdtDocumentTypes';
 import { STORE_NAME, openDatabase } from './helpers';
 
 /** Load all incremental chunks for a document and apply them to the base. */
-export const loadIncrementalsFromIdb = async (id: DocId): Promise<Uint8Array[]> => {
+export async function loadIncrementalsFromIdb(id: DocId): Promise<Uint8Array[]> {
     const database = await openDatabase();
     if (!database) {
         return [];
@@ -27,6 +27,6 @@ export const loadIncrementalsFromIdb = async (id: DocId): Promise<Uint8Array[]> 
         };
 
         tx.oncomplete = () => resolve(chunks);
-        tx.onerror = () => reject(tx.error);
+        tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
     });
-};
+}

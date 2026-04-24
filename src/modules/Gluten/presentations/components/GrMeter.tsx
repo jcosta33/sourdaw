@@ -128,12 +128,13 @@ export const GrMeter = ({
     }, [grDb, inputDb, outputDb, width, height, accentColor]);
 
     return (
-        <canvas
-            ref={canvasRef}
-            style={{ width, height }}
-            className="rounded border border-border/20"
-            aria-label="Gain reduction meter"
-            role="meter"
-        />
+        <div role="meter" aria-label="Gain reduction meter" aria-valuemin={-30} aria-valuemax={0} aria-valuenow={grDb}>
+            <canvas
+                ref={canvasRef}
+                style={{ width, height }}
+                className="rounded border border-border/20"
+                aria-hidden="true"
+            />
+        </div>
     );
 };

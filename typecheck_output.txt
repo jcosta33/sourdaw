@@ -1,0 +1,4 @@
+
+> sourdaw@0.1.0 typecheck /Users/josecosta/dev/webdaw--refactor-lint
+> tsgo --noEmit
+

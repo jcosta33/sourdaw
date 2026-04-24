@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 import { TimelineChromeSurface } from '../TimelineChromeSurface';
 
@@ -35,7 +35,7 @@ describe('TimelineChromeSurface', () => {
     });
 
     it('should pass through additional props', () => {
-        const { container } = render(<TimelineChromeSurface data-testid="surface" style={{ height: 100 }} />);
+        render(<TimelineChromeSurface data-testid="surface" style={{ height: 100 }} />);
         const surface = screen.getByTestId('surface');
         expect(surface).toHaveStyle({ height: '100px' });
     });

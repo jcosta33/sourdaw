@@ -25,6 +25,6 @@ describe('addGainEnvelopePoint', () => {
         addGainEnvelopePoint('c1', 0.5, -6);
 
         const stored = getEnvelope('c1');
-        expect(stored?.points.map((p) => p.beatOffset)).toEqual([0, 0.5]);
+        expect(stored?.points.map((param) => param.beatOffset)).toEqual([0, 0.5]);
     });
 });

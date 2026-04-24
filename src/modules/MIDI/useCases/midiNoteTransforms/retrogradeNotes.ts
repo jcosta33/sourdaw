@@ -8,20 +8,20 @@ export function retrogradeNotes(clipId: string): void {
 
         let minStart = Infinity;
         let maxEnd = -Infinity;
-        for (const n of notes) {
-            if (n.startBeat < minStart) {
-                minStart = n.startBeat;
+        for (const node of notes) {
+            if (node.startBeat < minStart) {
+                minStart = node.startBeat;
             }
-            const end = n.startBeat + n.duration;
+            const end = node.startBeat + node.duration;
             if (end > maxEnd) {
                 maxEnd = end;
             }
         }
         const totalLength = maxEnd - minStart;
 
-        return notes.map((n) => ({
-            ...n,
-            startBeat: minStart + totalLength - (n.startBeat - minStart) - n.duration,
+        return notes.map((node) => ({
+            ...node,
+            startBeat: minStart + totalLength - (node.startBeat - minStart) - node.duration,
         }));
     });
 }

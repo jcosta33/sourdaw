@@ -62,7 +62,10 @@ export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProp
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
     const analyserRef = useRef(analyser);
-    analyserRef.current = analyser;
+
+    useEffect(() => {
+        analyserRef.current = analyser;
+    }, [analyser]);
 
     // Log-frequency history ring: each row has DISPLAY_COLS values.
     const historyRef = useRef<Float32Array[]>(
@@ -77,7 +80,7 @@ export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProp
         const container = containerRef.current;
         const canvas = canvasRef.current;
         if (container === null || canvas === null) {
-            return;
+            return undefined;
         }
 
         // Resize canvas to match CSS layout.
@@ -96,7 +99,7 @@ export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProp
 
         const ctx = canvas.getContext('2d');
         if (ctx === null) {
-            return;
+            return undefined;
         }
 
         const offscreenCanvas = document.createElement('canvas');
@@ -104,13 +107,13 @@ export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProp
         offscreenCanvas.height = HISTORY_FRAMES;
         const offscreenCtx = offscreenCanvas.getContext('2d');
         if (offscreenCtx === null) {
-            return;
+            return undefined;
         }
         const imgData = offscreenCtx.createImageData(DISPLAY_COLS, HISTORY_FRAMES);
 
         let raf = 0;
-        let dbBuffer: Float32Array | null = null;
-        let normBuffer: Float32Array | null = null;
+        let dbBuffer: Float32Array<ArrayBuffer> | null = null;
+        let normBuffer: Float32Array<ArrayBuffer> | null = null;
         let lastAnalyser: AnalyserNode | null = null;
 
         const render = (): void => {
@@ -121,14 +124,14 @@ export const SpectralWaterfall = ({ analyser, className }: SpectralWaterfallProp
             if (currentAnalyser && currentAnalyser !== lastAnalyser) {
                 currentAnalyser.fftSize = 512;
                 const binCount = currentAnalyser.frequencyBinCount;
-                dbBuffer = new Float32Array(binCount);
-                normBuffer = new Float32Array(binCount);
+                dbBuffer = new Float32Array(new ArrayBuffer(binCount * Float32Array.BYTES_PER_ELEMENT));
+                normBuffer = new Float32Array(new ArrayBuffer(binCount * Float32Array.BYTES_PER_ELEMENT));
                 lastAnalyser = currentAnalyser;
             }
 
             // Ingest new frame: resample from linear FFT bins to log-frequency columns.
             if (currentAnalyser && dbBuffer && normBuffer) {
-                currentAnalyser.getFloatFrequencyData(dbBuffer as any);
+                currentAnalyser.getFloatFrequencyData(dbBuffer);
                 const binCount = dbBuffer.length;
 
                 for (let i = 0; i < binCount; i += 1) {

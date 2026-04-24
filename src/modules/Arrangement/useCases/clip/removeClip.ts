@@ -3,7 +3,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 
 export function removeClip(clipId: string): void {
-    mapAllTracks((t) => ({ ...t, clips: t.clips.filter((c) => c.id !== clipId) }));
+    mapAllTracks((time) => ({ ...time, clips: time.clips.filter((context) => context.id !== clipId) }));
 
     // Clean up MIDI data keyed by the removed clip to prevent orphaned entries.
     const ms = midiStore.value;

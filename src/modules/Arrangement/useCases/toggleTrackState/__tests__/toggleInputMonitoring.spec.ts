@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type Track } from '../../../models/Track';
 import { toggleInputMonitoring } from '../toggleInputMonitoring';
 
 const mocks = vi.hoisted(() => ({
@@ -18,7 +19,7 @@ vi.mock('#/modules/Arrangement/repositories/track/updateTrack', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     startInputMonitoring: mocks.startInputMonitoring,
     stopInputMonitoring: mocks.stopInputMonitoring,
 }));
@@ -40,7 +41,7 @@ describe('toggleInputMonitoring', () => {
         mocks.getTrackById.mockReturnValue({
             id: 't1',
             inputMonitoring: 'off',
-        } as any);
+        } as unknown as Track);
 
         toggleInputMonitoring('t1');
 
@@ -58,7 +59,7 @@ describe('toggleInputMonitoring', () => {
         mocks.getTrackById.mockReturnValue({
             id: 't1',
             inputMonitoring: 'on',
-        } as any);
+        } as unknown as Track);
 
         toggleInputMonitoring('t1');
 

@@ -5,5 +5,7 @@ export function setScratchPadSectionColor(sectionId: string, color: string): voi
     if (!state) {
         return;
     }
-    scratchPadStore.set({ sections: state.sections.map((s) => (s.id === sectionId ? { ...s, color } : s)) });
+    scratchPadStore.set({
+        sections: state.sections.map((state1) => (state1.id === sectionId ? { ...state1, color } : state1)),
+    });
 }

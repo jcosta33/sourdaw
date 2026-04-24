@@ -36,7 +36,11 @@ export function getGlutenState(deviceId: string): GlutenState {
     return glutenStore.value?.[deviceId] ?? { ...DEFAULT_GLUTEN_STATE, patch: { ...DEFAULT_PATCH } };
 }
 
-export function setGlutenParam<K extends keyof GlutenPatch>(deviceId: string, key: K, value: GlutenPatch[K]): void {
+export function setGlutenParam<Key extends keyof GlutenPatch>(
+    deviceId: string,
+    key: Key,
+    value: GlutenPatch[Key]
+): void {
     const instances = glutenStore.value ?? {};
     const state = instances[deviceId] ?? { ...DEFAULT_GLUTEN_STATE, patch: { ...DEFAULT_PATCH } };
     glutenStore.set({ ...instances, [deviceId]: { ...state, patch: { ...state.patch, [key]: value } } });

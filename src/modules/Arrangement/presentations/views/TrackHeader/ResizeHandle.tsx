@@ -7,12 +7,12 @@ type ResizeHandleProps = {
 };
 
 export const ResizeHandle = ({ trackId }: ResizeHandleProps): ReactElement => {
-    const handleMouseDown = (e: MouseEvent<HTMLDivElement>) => {
-        e.preventDefault();
-        e.stopPropagation();
+    const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
 
-        const startY = e.clientY;
-        const row = (e.currentTarget as HTMLElement).parentElement;
+        const startY = event.clientY;
+        const row = (event.currentTarget as HTMLElement).parentElement;
         const startHeight = row?.getBoundingClientRect().height ?? 64;
 
         const onMouseMove = (moveEvent: globalThis.MouseEvent) => {

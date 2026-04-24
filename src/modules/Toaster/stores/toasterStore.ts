@@ -103,7 +103,7 @@ export function toggleStep(deviceId: string, padIndex: number, stepIndex: number
     if (!pattern) {
         return;
     }
-    const track = pattern.tracks.find((t) => t.padIndex === padIndex);
+    const track = pattern.tracks.find((time) => time.padIndex === padIndex);
     if (!track || !track.steps[stepIndex]) {
         return;
     }
@@ -123,7 +123,7 @@ export function setStepVelocity(deviceId: string, padIndex: number, stepIndex: n
     if (!pattern) {
         return;
     }
-    const track = pattern.tracks.find((t) => t.padIndex === padIndex);
+    const track = pattern.tracks.find((time) => time.padIndex === padIndex);
     if (!track || !track.steps[stepIndex]) {
         return;
     }

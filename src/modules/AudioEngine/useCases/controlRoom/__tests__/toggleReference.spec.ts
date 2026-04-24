@@ -5,7 +5,7 @@ import { toggleReference } from '../toggleReference';
 const mocks = vi.hoisted(() => ({
     state: {
         referenceActive: false,
-    } as any,
+    } as { referenceActive: boolean } | null,
     set: vi.fn(),
 }));
 

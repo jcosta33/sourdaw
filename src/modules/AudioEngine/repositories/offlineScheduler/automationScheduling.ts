@@ -12,33 +12,33 @@ function interpolateValue(p1: AutomationPoint, p2: AutomationPoint, beat: number
     if (p1.curve === 'step') {
         return p1.value;
     }
-    const t = (beat - p1.beat) / (p2.beat - p1.beat);
+    const time = (beat - p1.beat) / (p2.beat - p1.beat);
     if (p1.curve === 'exponential') {
-        return p1.value + (p2.value - p1.value) * t * t;
+        return p1.value + (p2.value - p1.value) * time * time;
     }
-    return p1.value + (p2.value - p1.value) * t;
+    return p1.value + (p2.value - p1.value) * time;
 }
 
 const AUTOMATION_SAMPLE_INTERVAL_SEC = 0.01;
 
-export const scheduleAutomationOnParam = (
+export function scheduleAutomationOnParam(
     param: AudioParam,
     points: AutomationPoint[],
     durationSeconds: number,
     defaultTempo: number,
     changes: TempoChange[]
-): void => {
+): void {
     if (points.length === 0) {
         return;
     }
 
-    const sorted = [...points].sort((a, b) => a.beat - b.beat);
+    const sorted = [...points].sort((alpha, b) => alpha.beat - b.beat);
 
     param.setValueAtTime(sorted[0]!.value, 0);
 
-    for (let i = 0; i < sorted.length; i++) {
-        const current = sorted[i]!;
-        const next = sorted[i + 1];
+    for (let index = 0; index < sorted.length; index++) {
+        const current = sorted[index]!;
+        const next = sorted[index + 1];
         const currentTime = beatToSeconds(current.beat, defaultTempo, changes);
 
         if (currentTime > durationSeconds) {
@@ -59,8 +59,8 @@ export const scheduleAutomationOnParam = (
             param.linearRampToValueAtTime(next.value, Math.min(nextTime, durationSeconds));
         } else {
             const steps = Math.max(2, Math.ceil((nextTime - currentTime) / AUTOMATION_SAMPLE_INTERVAL_SEC));
-            for (let s = 1; s <= steps; s++) {
-                const fraction = s / steps;
+            for (let state = 1; state <= steps; state++) {
+                const fraction = state / steps;
                 const sampleBeat = current.beat + (next.beat - current.beat) * fraction;
                 const sampleTime = beatToSeconds(sampleBeat, defaultTempo, changes);
                 if (sampleTime > durationSeconds) {
@@ -71,9 +71,9 @@ export const scheduleAutomationOnParam = (
             }
         }
     }
-};
+}
 
-export const scheduleTrackAutomation = (
+export function scheduleTrackAutomation(
     lanes: AutomationLane[],
     trackId: string,
     trackGainNode: GainNode,
@@ -82,8 +82,8 @@ export const scheduleTrackAutomation = (
     durationSeconds: number,
     defaultTempo: number,
     changes: TempoChange[]
-): void => {
-    const trackLanes = lanes.filter((l) => l.trackId === trackId && !l.clipId);
+): void {
+    const trackLanes = lanes.filter((length) => length.trackId === trackId && !length.clipId);
 
     for (const lane of trackLanes) {
         if (lane.points.length === 0) {
@@ -100,8 +100,8 @@ export const scheduleTrackAutomation = (
             continue;
         }
 
-        const deviceEntry = deviceEntries.find((e) => {
-            const prefix = `${e.deviceId}:`;
+        const deviceEntry = deviceEntries.find((event) => {
+            const prefix = `${event.deviceId}:`;
             return lane.parameterId.startsWith(prefix);
         });
         if (deviceEntry) {
@@ -109,22 +109,24 @@ export const scheduleTrackAutomation = (
             const audioParam = resolveDeviceParam(deviceEntry.deviceType, paramKey, deviceEntry.node);
             if (audioParam) {
                 const scale = resolveDeviceParamScale(deviceEntry.deviceType, paramKey);
-                const points = scale !== 1 ? lane.points.map((p) => ({ ...p, value: p.value * scale })) : lane.points;
+                const points =
+                    scale !== 1 ? lane.points.map((param) => ({ ...param, value: param.value * scale })) : lane.points;
                 scheduleAutomationOnParam(audioParam, points, durationSeconds, defaultTempo, changes);
             }
             continue;
         }
 
-        const directEntry = deviceEntries.find((e) => {
-            return resolveDeviceParam(e.deviceType, lane.parameterId, e.node) !== null;
+        const directEntry = deviceEntries.find((event) => {
+            return resolveDeviceParam(event.deviceType, lane.parameterId, event.node) !== null;
         });
         if (directEntry) {
             const audioParam = resolveDeviceParam(directEntry.deviceType, lane.parameterId, directEntry.node);
             if (audioParam) {
                 const scale = resolveDeviceParamScale(directEntry.deviceType, lane.parameterId);
-                const points = scale !== 1 ? lane.points.map((p) => ({ ...p, value: p.value * scale })) : lane.points;
+                const points =
+                    scale !== 1 ? lane.points.map((param) => ({ ...param, value: param.value * scale })) : lane.points;
                 scheduleAutomationOnParam(audioParam, points, durationSeconds, defaultTempo, changes);
             }
         }
     }
-};
+}

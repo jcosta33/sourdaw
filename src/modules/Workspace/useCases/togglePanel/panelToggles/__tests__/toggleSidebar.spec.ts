@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { toggleSidebar } from '../toggleSidebar';
 
+import type { WorkspaceState } from '../../../../models/WorkspaceState';
+
 const mocks = vi.hoisted(() => ({
-    getWorkspaceState: vi.fn(),
+    getWorkspaceState: vi.fn<() => Partial<WorkspaceState> | null>(),
     updateWorkspaceState: vi.fn(),
 }));
 
@@ -26,7 +28,7 @@ describe('toggleSidebar', () => {
     });
 
     it('flips sidebarOpen when state exists', () => {
-        mocks.getWorkspaceState.mockReturnValue({ sidebarOpen: true } as any);
+        mocks.getWorkspaceState.mockReturnValue({ sidebarOpen: true });
 
         toggleSidebar();
 

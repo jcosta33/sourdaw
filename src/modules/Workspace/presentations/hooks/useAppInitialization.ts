@@ -27,7 +27,7 @@ const FIRST_LOAD_HINT_DELAY_MS = 3000;
 
 export const useAppInitialization = (): void => {
     useEffect(() => {
-        (async () => {
+        void (async () => {
             try {
                 await initializeAudioEngine();
                 const transport = getTransportState();
@@ -35,14 +35,14 @@ export const useAppInitialization = (): void => {
                     setMasterGainValue(transport.masterGain / 100);
                 }
                 const referencedIds = (trackStore.value?.tracks ?? [])
-                    .flatMap((t) => t.clips.map((c) => c.audioBufferId))
+                    .flatMap((time) => time.clips.map((context) => context.audioBufferId))
                     .filter((id): id is string => Boolean(id));
                 await audioBufferCache.restoreFromIdb(
                     getAudioContext(),
                     referencedIds.length > 0 ? referencedIds : undefined
                 );
-                verifyAudioBufferReferences();
-                initWebMidi();
+                void verifyAudioBufferReferences();
+                void initWebMidi();
                 registerProModulationEffects();
                 registerProSynthInstruments();
 
@@ -66,7 +66,7 @@ export const useAppInitialization = (): void => {
     useEffect(() => {
         const onGesture = (): void => {
             void resumeEngine();
-            requestMicPermission();
+            void requestMicPermission();
         };
         window.addEventListener('click', onGesture, { once: true });
         window.addEventListener('keydown', onGesture, { once: true });

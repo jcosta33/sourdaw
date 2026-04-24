@@ -7,6 +7,7 @@ New layout components (`Stack`, `Row`, `Grid`, `Spacer`, `Divider`) have been cr
 This spec guides the systematic migration from inline Tailwind classes to the new layout primitives.
 
 **Prerequisites:**
+
 - Audit: `.agents/audits/layout-components/flex-grid-patterns.md`
 - Components: `src/components/layout/*.tsx`
 
@@ -35,7 +36,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 
 ## Design decisions
 
-- **Decision:** A primitive match must preserve gap *and* direction semantics. When an inline class is ambiguous (e.g., `flex gap-2` without `flex-col`), it is treated as a `Row` unless the surrounding context clearly implies a column.
+- **Decision:** A primitive match must preserve gap _and_ direction semantics. When an inline class is ambiguous (e.g., `flex gap-2` without `flex-col`), it is treated as a `Row` unless the surrounding context clearly implies a column.
 - **Decision:** Migrate by file group, not by class pattern, to amortize review cost and keep visual regressions local.
 - **Decision:** Ad-hoc patterns outside the primitive's vocabulary (e.g., custom grids with `auto-cols-min`) are left in place; the 80% target explicitly excludes them.
 
@@ -52,7 +53,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ### In Scope
 
 1. **Stack migrations** — Replace `flex flex-col gap-*` patterns
-2. **Row migrations** — Replace `flex items-center gap-*` patterns  
+2. **Row migrations** — Replace `flex items-center gap-*` patterns
 3. **Grid migrations** — Replace `grid grid-cols-* gap-*` patterns
 4. **Space-y migrations** — Replace `space-y-*` with Stack
 5. **Spacer migrations** — Replace ad-hoc spacing divs
@@ -73,6 +74,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ### Stack Migrations
 
 #### Pattern 1: Basic vertical stack
+
 ```tsx
 // BEFORE:
 <div className="flex flex-col gap-3">
@@ -88,6 +90,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ```
 
 #### Pattern 2: Centered vertical stack (knob groups)
+
 ```tsx
 // BEFORE:
 <div className="flex flex-col items-center gap-1">
@@ -103,6 +106,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ```
 
 #### Pattern 3: Scrollable panel section
+
 ```tsx
 // BEFORE:
 <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
@@ -114,9 +118,11 @@ The migration is **invariant** — end users must see zero visual or interaction
   {items.map(...)}
 </Stack>
 ```
+
 **Note:** `min-h-0` is included by default in Stack.
 
 #### Pattern 4: Space-y replacement
+
 ```tsx
 // BEFORE:
 <div className="space-y-2">
@@ -132,6 +138,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ```
 
 #### Pattern 5: Grow/shrink patterns
+
 ```tsx
 // BEFORE:
 <div className="flex flex-1 flex-col gap-3">
@@ -145,6 +152,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ```
 
 #### Pattern 6: Shrink-0 protection
+
 ```tsx
 // BEFORE:
 <div className="flex shrink-0 flex-col gap-2">
@@ -162,6 +170,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ### Row Migrations
 
 #### Pattern 1: Basic horizontal row
+
 ```tsx
 // BEFORE:
 <div className="flex items-center gap-2">
@@ -177,6 +186,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ```
 
 #### Pattern 2: Space-between header
+
 ```tsx
 // BEFORE:
 <div className="flex items-center justify-between">
@@ -192,6 +202,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ```
 
 #### Pattern 3: Control strip (DawControlStrip pattern)
+
 ```tsx
 // BEFORE:
 <div className="daw-control-strip flex min-w-0 shrink-0 items-center gap-2 px-2 py-1">
@@ -203,9 +214,11 @@ The migration is **invariant** — end users must see zero visual or interaction
   {children}
 </Row>
 ```
+
 **Note:** Keep existing `daw-control-strip` class for styling hooks.
 
 #### Pattern 4: Justify center
+
 ```tsx
 // BEFORE:
 <div className="flex items-center justify-center">
@@ -219,6 +232,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ```
 
 #### Pattern 5: Wrap patterns
+
 ```tsx
 // BEFORE:
 <div className="flex flex-wrap items-center gap-2">
@@ -232,6 +246,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ```
 
 #### Pattern 6: Non-centered alignment
+
 ```tsx
 // BEFORE:
 <div className="flex items-start gap-3">
@@ -249,6 +264,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ### Grid Migrations
 
 #### Pattern 1: 2-column grid
+
 ```tsx
 // BEFORE:
 <div className="grid grid-cols-2 gap-2">
@@ -264,6 +280,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ```
 
 #### Pattern 2: 3-column parameter grid
+
 ```tsx
 // BEFORE:
 <div className="grid grid-cols-3 gap-x-2 gap-y-3">
@@ -277,6 +294,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ```
 
 #### Pattern 3: Nested in flex container
+
 ```tsx
 // BEFORE:
 <div className="flex flex-col gap-3">
@@ -298,6 +316,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ### Spacer Migrations
 
 #### Pattern 1: Horizontal spacing in Row
+
 ```tsx
 // BEFORE:
 <Row gap={2}>
@@ -315,6 +334,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ```
 
 #### Pattern 2: Vertical spacing in Stack
+
 ```tsx
 // BEFORE:
 <Stack gap={2}>
@@ -336,6 +356,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ### Divider Migrations
 
 #### Pattern 1: Horizontal divider
+
 ```tsx
 // BEFORE:
 <Stack gap={3}>
@@ -353,6 +374,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ```
 
 #### Pattern 2: Vertical divider
+
 ```tsx
 // BEFORE:
 <Row gap={2}>
@@ -370,6 +392,7 @@ The migration is **invariant** — end users must see zero visual or interaction
 ```
 
 #### Pattern 3: Subtle divider
+
 ```tsx
 // BEFORE:
 <div className="h-px w-full bg-border/20" />
@@ -385,17 +408,20 @@ The migration is **invariant** — end users must see zero visual or interaction
 Based on audit frequency, migrate these high-impact patterns first:
 
 ### Tier 1: Highest Impact (gap-2, items-center patterns)
+
 - `src/components/daw/DawControlStrip.tsx` — Iconic pattern, 222+ similar usages
 - `src/components/daw/DawDialogFooter.tsx` — Uses `flex items-center gap-2`
 - `src/components/daw/DawMetricCluster.tsx` — Uses `flex items-center gap-1`
 - `src/components/daw/DawPluginMetricStrip.tsx` — Uses `flex flex-wrap`
 
 ### Tier 2: High Impact (flex-col gap-3 patterns)
+
 - `src/modules/Fermenter/presentations/components/EnvelopeSection.tsx` — Uses `space-y-2`
 - `src/modules/Gluten/presentations/views/GlutenPanel.tsx` — Multiple grid patterns
 - `src/modules/Workspace/presentations/views/Inspector/GenericDeviceLayout.tsx` — Grid patterns
 
 ### Tier 3: Medium Impact (Grid patterns)
+
 - Any file with `grid-cols-2` or `grid-cols-3` in parameter/knob layouts
 - Files with `grid-cols-4` for topology selectors
 
@@ -407,9 +433,9 @@ Based on audit frequency, migrate these high-impact patterns first:
 
 1. **Identify patterns** — Search for qualifying patterns in the file
 2. **Import components** — Add to imports:
-   ```tsx
-   import { Stack, Row, Grid } from '#/components/layout';
-   ```
+    ```tsx
+    import { Stack, Row, Grid } from '#/components/layout';
+    ```
 3. **Migrate one pattern at a time** — Don't batch too many changes
 4. **Verify visually** — Run dev server, check the UI
 5. **Run tests** — `pnpm vitest run src/path/to/file.spec.tsx`
@@ -427,6 +453,7 @@ Based on audit frequency, migrate these high-impact patterns first:
 ## Common Pitfalls
 
 ### Pitfall 1: Removing needed classes
+
 ```tsx
 // WRONG:
 <Stack gap={2}>  {/* Missing 'grow' */}
@@ -440,6 +467,7 @@ Based on audit frequency, migrate these high-impact patterns first:
 ```
 
 ### Pitfall 2: Wrong default alignment
+
 ```tsx
 // BEFORE:
 <div className="flex flex-col gap-2">  {/* stretch by default */}
@@ -459,6 +487,7 @@ Based on audit frequency, migrate these high-impact patterns first:
 ```
 
 ### Pitfall 3: Conditional classes
+
 ```tsx
 // DON'T MIGRATE — too complex:
 <div className={cn(
@@ -471,6 +500,7 @@ Based on audit frequency, migrate these high-impact patterns first:
 ```
 
 ### Pitfall 4: Missing data attributes or refs
+
 ```tsx
 // BEFORE:
 <div ref={containerRef} data-track-id={id} className="flex flex-col gap-2">
@@ -483,14 +513,16 @@ Based on audit frequency, migrate these high-impact patterns first:
 ```
 
 ### Pitfall 5: Complex grid templates
+
 ```tsx
 // DON'T MIGRATE:
 <div className="grid grid-cols-[15rem_minmax(0,1fr)_16rem] gap-3">
-  
+
 // KEEP AS-IS — this is panel architecture, not component layout
 ```
 
 ### Pitfall 6: Inline styles interaction
+
 ```tsx
 // BEFORE:
 <div className="flex flex-col gap-2" style={{ height: computedHeight }}>
@@ -506,6 +538,7 @@ Based on audit frequency, migrate these high-impact patterns first:
 ## Edge Cases
 
 ### Edge Case 1: Component wrapping with extra classes
+
 ```tsx
 // BEFORE:
 <div className="flex flex-col gap-2 custom-layout-class">
@@ -515,6 +548,7 @@ Based on audit frequency, migrate these high-impact patterns first:
 ```
 
 ### Edge Case 2: Event handlers
+
 ```tsx
 // BEFORE:
 <div onClick={handleClick} className="flex flex-col gap-2">
@@ -524,6 +558,7 @@ Based on audit frequency, migrate these high-impact patterns first:
 ```
 
 ### Edge Case 3: Ref forwarding
+
 ```tsx
 // BEFORE:
 <div ref={ref} className="flex flex-col gap-2">
@@ -533,6 +568,7 @@ Based on audit frequency, migrate these high-impact patterns first:
 ```
 
 ### Edge Case 4: Polymorphic 'as' prop
+
 ```tsx
 // BEFORE:
 <section className="flex flex-col gap-3">
@@ -565,7 +601,7 @@ Use these regex patterns to find migration candidates:
 className="[^"]*flex flex-col gap-\d[^"]*"
 className="[^"]*space-y-\d[^"]*"
 
-# Row candidates  
+# Row candidates
 className="[^"]*flex items-center gap-\d[^"]*"
 className="[^"]*flex items-center justify-between[^"]*"
 
@@ -600,24 +636,24 @@ pnpm deps:validate
 ## Open Questions
 
 1. **[MINOR]** Should we migrate `space-x-*` patterns (horizontal space between)?
-   - *Recommendation:* Yes, use `Row gap={N}`
+    - _Recommendation:_ Yes, use `Row gap={N}`
 
 2. **[MINOR]** Should we keep semantic class names like `daw-control-strip`?
-   - *Recommendation:* Yes, add them via `className` prop for styling hooks
+    - _Recommendation:_ Yes, add them via `className` prop for styling hooks
 
 3. **[MINOR]** How to handle deeply nested conditionals?
-   - *Recommendation:* Don't migrate if more than 2 conditions affect layout classes
+    - _Recommendation:_ Don't migrate if more than 2 conditions affect layout classes
 
 ---
 
 ## Tradeoffs and Risks
 
-| Risk | Mitigation |
-|------|------------|
-| Visual regression | Migrate one pattern at a time, verify in browser |
-| Bundle size increase | Components are tree-shakeable, minimal runtime |
-| Breaking existing code | Strict typing prevents invalid prop values |
-| Migration fatigue | Focus on high-impact patterns first (Tier 1) |
+| Risk                             | Mitigation                                             |
+| -------------------------------- | ------------------------------------------------------ |
+| Visual regression                | Migrate one pattern at a time, verify in browser       |
+| Bundle size increase             | Components are tree-shakeable, minimal runtime         |
+| Breaking existing code           | Strict typing prevents invalid prop values             |
+| Migration fatigue                | Focus on high-impact patterns first (Tier 1)           |
 | Mixed patterns during transition | Document in code comments: `// TODO: migrate to Stack` |
 
 ---

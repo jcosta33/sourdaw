@@ -92,12 +92,7 @@ export function toPromptPreset(preset: (typeof PRESET_ACTIONS)[number]): PromptP
     };
 }
 
-export {
-    NATIVE_MODEL_INFO,
-    CLOUD_MODEL_INFO,
-    WEBLLM_MODELS,
-    type ModelInfo,
-} from '../../models/ModelInfo';
+export { NATIVE_MODEL_INFO, CLOUD_MODEL_INFO, WEBLLM_MODELS, type ModelInfo } from '../../models/ModelInfo';
 export { getActiveModelId } from '../../repositories/webLlm/engineLifecycle';
 
 // ─── Cross-module re-exports ───────────────────────────────────────────────────

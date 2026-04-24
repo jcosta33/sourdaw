@@ -5,17 +5,17 @@ import * as subject from '../helpers';
 describe('helpers', () => {
     it('should export getDeviceLatencyMs', () => {
         expect(subject.getDeviceLatencyMs).toBeDefined();
-        const t = typeof subject.getDeviceLatencyMs;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getDeviceLatencyMs;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export getMaxTrackLatency', () => {
         expect(subject.getMaxTrackLatency).toBeDefined();
-        const t = typeof subject.getMaxTrackLatency;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getMaxTrackLatency;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export getTrackLatency', () => {
         expect(subject.getTrackLatency).toBeDefined();
-        const t = typeof subject.getTrackLatency;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getTrackLatency;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

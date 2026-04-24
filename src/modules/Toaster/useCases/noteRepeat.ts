@@ -36,6 +36,8 @@ function rateToDurationMs(rate: NoteRepeatRate, bpm: number): number {
             return beatMs / 3;
         case '1/16t':
             return beatMs / 6;
+        default:
+            throw new Error(`Unknown note repeat rate: ${rate}`);
     }
 }
 

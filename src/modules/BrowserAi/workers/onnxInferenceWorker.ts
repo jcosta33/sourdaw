@@ -16,9 +16,7 @@ import type { WorkerRequest, WorkerResponse, TensorData } from '../models/Infere
 // ── Types ──────────────────────────────────────────────────────────────────
 
 type OrtInferenceSession = {
-    run: (
-        feeds: Record<string, OrtTensor>
-    ) => Promise<Record<string, { data: Float32Array | BigInt64Array; dims: number[] }>>;
+    run: (feeds: Record<string, OrtTensor>) => Promise<Record<string, OrtTensor>>;
     release: () => Promise<void>;
 };
 
@@ -59,6 +57,7 @@ async function getOrt(): Promise<OrtModule> {
         return ortModule;
     }
     // Dynamic import keeps onnxruntime-web out of the main bundle
+    // eslint-disable-next-line sourdaw/no-type-assertion-escape -- onnxruntime-web module shape diverges from OrtModule structural subset; double cast required
     const ort = (await import('onnxruntime-web')) as unknown as OrtModule;
     // Multi-threaded WASM requires SharedArrayBuffer which is only available
     // when crossOriginIsolated is true. IIFE workers (forced by Rolldown)
@@ -126,8 +125,21 @@ async function getOrCreateSession(modelId: string, modelData: ArrayBuffer): Prom
 // ── Tensor helpers ─────────────────────────────────────────────────────────
 
 function tensorDataToOrt(ort: OrtModule, td: TensorData): OrtTensor {
-    const type =
-        td.type === 'int64' ? 'int64' : td.type === 'int32' ? 'int32' : td.type === 'bool' ? 'bool' : 'float32';
+    const type = (() => {
+        if (td.type === 'int64') {
+            return 'int64';
+        } else {
+            if (td.type === 'int32') {
+                return 'int32';
+            } else {
+                if (td.type === 'bool') {
+                    return 'bool';
+                } else {
+                    return 'float32';
+                }
+            }
+        }
+    })();
     return new ort.Tensor(type, td.data, td.dims);
 }
 
@@ -148,8 +160,8 @@ type DiffSingerSessions = {
  */
 function broadcastSpkEmbed(ort: OrtModule, embed: Float32Array, nFrames: number): OrtTensor {
     const tiled = new Float32Array(nFrames * 256);
-    for (let f = 0; f < nFrames; f++) {
-        tiled.set(embed, f * 256);
+    for (let freq = 0; freq < nFrames; freq++) {
+        tiled.set(embed, freq * 256);
     }
     return new ort.Tensor('float32', tiled, [1, nFrames, 256]);
 }
@@ -180,7 +192,13 @@ async function runDiffSingerPipeline(
 
     const linguisticOut = await sessions.linguistic.run({ tokens, word_div: wordDiv, word_dur: wordDur });
     const encoderOut = linguisticOut.encoder_out;
+    if (!encoderOut) {
+        throw new Error('Linguistic encoder produced no encoder_out output');
+    }
     const xMasks = linguisticOut.x_masks;
+    if (!xMasks) {
+        throw new Error('Linguistic encoder produced no x_masks output');
+    }
     post('Encoding phonemes', 0.15);
 
     // ── 2. Duration predictor ──────────────────────────────────────────────
@@ -189,8 +207,8 @@ async function runDiffSingerPipeline(
     const noteDur = new ort.Tensor('int64', params.noteDur, [1, params.noteDur.length]);
 
     const durFeeds: Record<string, OrtTensor> = {
-        encoder_out: encoderOut as unknown as OrtTensor,
-        x_masks: xMasks as unknown as OrtTensor,
+        encoder_out: encoderOut,
+        x_masks: xMasks,
         note_midi: noteMidi,
         note_dur: noteDur,
     };
@@ -216,8 +234,8 @@ async function runDiffSingerPipeline(
     const steps = new ort.Tensor('int64', BigInt64Array.from([BigInt(params.steps)]), [1]);
 
     const pitchFeeds: Record<string, OrtTensor> = {
-        encoder_out: encoderOut as unknown as OrtTensor,
-        ph_dur: phDur as unknown as OrtTensor,
+        encoder_out: encoderOut,
+        ph_dur: phDur,
         note_midi: noteMidi,
         note_dur: noteDur,
         pitch: pitchPlaceholder,
@@ -230,16 +248,19 @@ async function runDiffSingerPipeline(
 
     const pitchOut = await sessions.pitch.run(pitchFeeds);
     const pitchPred = pitchOut.pitch_pred;
+    if (!pitchPred) {
+        throw new Error('Pitch predictor produced no pitch_pred output');
+    }
     post('Predicting pitch', 0.5);
 
     // ── 4. Variance predictor ──────────────────────────────────────────────
     post('Predicting expression', 0.55);
     const retakeVariance = new ort.Tensor('bool', new Uint8Array(nTokens).fill(1), [1, nTokens]);
     const varianceFeeds: Record<string, OrtTensor> = {
-        encoder_out: encoderOut as unknown as OrtTensor,
-        x_masks: xMasks as unknown as OrtTensor,
-        ph_dur: phDur as unknown as OrtTensor,
-        pitch: pitchPred as unknown as OrtTensor,
+        encoder_out: encoderOut,
+        x_masks: xMasks,
+        ph_dur: phDur,
+        pitch: pitchPred,
         retake: retakeVariance,
         steps,
     };
@@ -258,16 +279,16 @@ async function runDiffSingerPipeline(
 
     const acousticFeeds: Record<string, OrtTensor> = {
         tokens,
-        durations: phDur as unknown as OrtTensor,
-        f0: pitchPred as unknown as OrtTensor,
+        durations: phDur,
+        f0: pitchPred,
         depth: depthTensor,
         steps,
     };
     if (energyPred) {
-        acousticFeeds.energy = energyPred as unknown as OrtTensor;
+        acousticFeeds.energy = energyPred;
     }
     if (breathinessPred) {
-        acousticFeeds.breathiness = breathinessPred as unknown as OrtTensor;
+        acousticFeeds.breathiness = breathinessPred;
     }
     if (params.speakerEmbed) {
         acousticFeeds.spk_embed = broadcastSpkEmbed(ort, params.speakerEmbed, params.durationFrames);
@@ -285,8 +306,8 @@ async function runDiffSingerPipeline(
     // ── 6. Vocoder ─────────────────────────────────────────────────────────
     post('Running vocoder', 0.87);
     const vocoderOut = await sessions.vocoder.run({
-        mel: mel as unknown as OrtTensor,
-        f0: pitchPred as unknown as OrtTensor,
+        mel,
+        f0: pitchPred,
     });
     const waveform = vocoderOut.waveform;
     post('Running vocoder', 0.98);
@@ -501,8 +522,8 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
                 !sessions.vocoder
             ) {
                 const missing = Object.entries(sessions)
-                    .filter(([, s]) => !s)
-                    .map(([k]) => k)
+                    .filter(([, state]) => !state)
+                    .map(([kIndex]) => kIndex)
                     .join(', ');
                 throw new Error(`DiffSinger sessions not loaded: ${missing}`);
             }

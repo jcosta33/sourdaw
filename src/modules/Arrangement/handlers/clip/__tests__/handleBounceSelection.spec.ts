@@ -16,7 +16,7 @@ describe('handleBounceSelection', () => {
     });
 
     it('executes bounceSelection with the provided payload', () => {
-        handleBounceSelection.execute({
+        void handleBounceSelection.execute({
             type: 'bounceSelection',
             payload: { trackId: 't1', startBeat: 0, endBeat: 4 },
         });

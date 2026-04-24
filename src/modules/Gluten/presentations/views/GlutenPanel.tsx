@@ -333,6 +333,13 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     const accentColor = topologyMeta.color;
     const stageTwoOptions = TOPOLOGIES.filter((topology) => topology !== currentPatch.topology);
 
+    let phaseCorrStr = phaseCorr.toFixed(2);
+    if (phaseCorr > 0.99) {
+        phaseCorrStr = 'Mono';
+    } else if (phaseCorr < -0.99) {
+        phaseCorrStr = 'OOP';
+    }
+
     function applyPreset(nextPatch: GlutenPatch): void {
         loadGlutenPatchWithAudio(deviceId, nextPatch);
     }
@@ -437,7 +444,7 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             <DawPluginMetricTile
                                 className="gluten-window min-w-[90px]"
                                 label="Phase"
-                                value={phaseCorr > 0.99 ? 'Mono' : phaseCorr < -0.99 ? 'OOP' : phaseCorr.toFixed(2)}
+                                value={phaseCorrStr}
                                 detail="Stereo correlation"
                             />
                             <DawPluginMetricTile

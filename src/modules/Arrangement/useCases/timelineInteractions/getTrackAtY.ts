@@ -3,10 +3,10 @@ export function getTrackAtY(
     contentY: number
 ): { index: number; id: string } | null {
     let offset = 0;
-    for (let i = 0; i < tracks.length; i++) {
-        const h = tracks[i]!.height ?? 64;
+    for (let index = 0; index < tracks.length; index++) {
+        const h = tracks[index]!.height ?? 64;
         if (contentY >= offset && contentY < offset + h) {
-            return { index: i, id: tracks[i]!.id };
+            return { index, id: tracks[index]!.id };
         }
         offset += h;
     }

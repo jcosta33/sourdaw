@@ -16,7 +16,7 @@ describe('handleToggleControlRoomDim', () => {
     });
 
     it('executes toggleDim', () => {
-        handleToggleControlRoomDim.execute({ type: 'toggleControlRoomDim', payload: {} });
+        void handleToggleControlRoomDim.execute({ type: 'toggleControlRoomDim', payload: {} });
         expect(mocks.toggleDim).toHaveBeenCalledTimes(1);
     });
 

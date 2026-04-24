@@ -1,15 +1,15 @@
-// @ts-nocheck
-/// <reference lib="webworker" />
+type MeteringMsg = { type: 'init'; sab: SharedArrayBuffer; channels?: number };
+
 export class MeteringWorkletProcessor extends AudioWorkletProcessor {
     private _sab: Float32Array | null = null;
     private _channels = 1;
 
     constructor() {
         super();
-        this.port.onmessage = (e) => {
-            if (e.data.type === 'init') {
-                this._sab = new Float32Array(e.data.sab);
-                this._channels = e.data.channels ?? 1;
+        this.port.onmessage = (event: MessageEvent<MeteringMsg>) => {
+            if (event.data.type === 'init') {
+                this._sab = new Float32Array(event.data.sab);
+                this._channels = event.data.channels ?? 1;
             }
         };
     }
@@ -37,8 +37,8 @@ export class MeteringWorkletProcessor extends AudioWorkletProcessor {
         for (let channel = 0; channel < Math.min(input.length, this._channels); channel++) {
             const data = input[channel];
             if (data) {
-                for (let i = 0; i < data.length; i++) {
-                    const abs = Math.abs(data[i]!);
+                for (let index = 0; index < data.length; index++) {
+                    const abs = Math.abs(data[index]!);
                     if (abs > peak) {
                         peak = abs;
                     }

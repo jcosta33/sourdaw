@@ -43,14 +43,14 @@ export const useAppEventHandlers = ({ onOpenExport, onOpenPreferences }: AppEven
                 })();
             }),
             onCommandUndo(() => {
-                undo();
+                void undo();
             }),
             onCommandRedo(() => {
-                redo();
+                void redo();
             }),
             onMidiImport((payload) => {
                 if (payload.file) {
-                    importMidiFile(payload.file);
+                    void importMidiFile(payload.file);
                 }
             }),
         ];

@@ -82,11 +82,11 @@ export const CrustWaveformDisplay = ({
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return () => {};
         }
         const ctxOrNull = canvas.getContext('2d');
         if (!ctxOrNull) {
-            return;
+            return () => {};
         }
         // Capture into a local that the nested `draw` closure can use
         // without re-narrowing the union type on every reference.
@@ -107,7 +107,15 @@ export const CrustWaveformDisplay = ({
             } = latestRef.current;
 
             // Scroll rate: slow=4 frames/sample, normal=2, fast=1
-            const frameSkip = speed === 'slow' ? 4 : speed === 'fast' ? 1 : 2;
+            const frameSkip = (() => {
+                if (speed === 'slow') {
+                    return 4;
+                }
+                if (speed === 'fast') {
+                    return 1;
+                }
+                return 2;
+            })();
             if (tickRef.current % frameSkip !== 0) {
                 return;
             }

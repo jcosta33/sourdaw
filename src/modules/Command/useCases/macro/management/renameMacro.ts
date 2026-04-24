@@ -7,6 +7,6 @@ export function renameMacro(macroId: string, name: string): void {
     }
     macroStore.set({
         ...state,
-        macros: state.macros.map((m) => (m.id === macroId ? { ...m, name } : m)),
+        macros: state.macros.map((message) => (message.id === macroId ? { ...message, name } : message)),
     });
 }

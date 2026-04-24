@@ -6,7 +6,9 @@ import { zoomToSelection } from '../zoomToSelection';
 const mocks = vi.hoisted(() => ({
     eventBus: { emit: vi.fn() },
     getWorkspaceState: vi.fn(),
-    trackStoreValue: { value: null },
+    trackStoreValue: {
+        value: null as { tracks: { clips: { id: string; startBeat: number; endBeat: number }[] }[] } | null,
+    },
 }));
 
 vi.mock('#/app/registerDependencies', () => ({
@@ -38,7 +40,7 @@ describe('Zoom Operations', () => {
     describe('zoomToSelection', () => {
         it('bails if no selection', () => {
             mocks.getWorkspaceState.mockReturnValue({ selectedClipIds: [], selectedClipId: null });
-            mocks.trackStoreValue.value = { tracks: [] } as any;
+            mocks.trackStoreValue.value = { tracks: [] };
 
             zoomToSelection();
 
@@ -57,7 +59,7 @@ describe('Zoom Operations', () => {
                     },
                     { clips: [{ id: 'c3', startBeat: 2, endBeat: 6 }] },
                 ],
-            } as any;
+            };
 
             zoomToSelection();
 
@@ -72,7 +74,7 @@ describe('Zoom Operations', () => {
             mocks.getWorkspaceState.mockReturnValue({ selectedClipIds: [], selectedClipId: 'c1' });
             mocks.trackStoreValue.value = {
                 tracks: [{ clips: [{ id: 'c1', startBeat: 10, endBeat: 20 }] }],
-            } as any;
+            };
 
             zoomToSelection();
 

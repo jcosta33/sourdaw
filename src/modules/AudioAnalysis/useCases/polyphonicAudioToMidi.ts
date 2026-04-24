@@ -68,8 +68,8 @@ export async function polyphonicAudioToMidi(
 
     // Find the source clip and its audio buffer
     const clip = getAllTracks()
-        .flatMap((t) => t.clips)
-        .find((c) => c.id === clipId);
+        .flatMap((time) => time.clips)
+        .find((context) => context.id === clipId);
     if (!clip) {
         logger.warn(`[Basic Pitch] Clip not found: ${clipId}`);
         return null;
@@ -114,10 +114,10 @@ export async function polyphonicAudioToMidi(
     try {
         await model.evaluateModel(
             evaluationBuffer,
-            (f, o, c) => {
-                frames = f;
-                onsets = o;
-                contours = c;
+            (freq, output, context) => {
+                frames = freq;
+                onsets = output;
+                contours = context;
             },
             (percent) => {
                 onProgress?.(percent);

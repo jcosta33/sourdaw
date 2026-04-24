@@ -5,7 +5,7 @@ import * as subject from '../NoteRepeater';
 describe('NoteRepeater', () => {
     it('should export NoteRepeater', () => {
         expect(subject.NoteRepeater).toBeDefined();
-        const t = typeof subject.NoteRepeater;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.NoteRepeater;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

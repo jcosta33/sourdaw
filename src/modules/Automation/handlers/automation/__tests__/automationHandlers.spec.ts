@@ -23,7 +23,7 @@ describe('Automation Handlers', () => {
     });
 
     it('handleQuantizeAutomation should delegate to quantizeAutomationBeats', () => {
-        handleQuantizeAutomation.execute({
+        void handleQuantizeAutomation.execute({
             type: 'quantizeAutomation',
             payload: { laneId: 'l1', gridSize: 0.25 },
         });
@@ -31,7 +31,7 @@ describe('Automation Handlers', () => {
     });
 
     it('handleReverseAutomation should delegate to reverseAutomation', () => {
-        handleReverseAutomation.execute({
+        void handleReverseAutomation.execute({
             type: 'reverseAutomation',
             payload: { laneId: 'l1' },
         });
@@ -39,7 +39,7 @@ describe('Automation Handlers', () => {
     });
 
     it('handleScaleAutomation should delegate to scaleAutomationValues', () => {
-        handleScaleAutomation.execute({
+        void handleScaleAutomation.execute({
             type: 'scaleAutomation',
             payload: { laneId: 'l1', factor: 2, anchor: 0.5 },
         });
@@ -47,7 +47,7 @@ describe('Automation Handlers', () => {
     });
 
     it('handleStretchAutomation should delegate to stretchAutomationTime', () => {
-        handleStretchAutomation.execute({
+        void handleStretchAutomation.execute({
             type: 'stretchAutomation',
             payload: { laneId: 'l1', factor: 1.5, anchorBeat: 10 },
         });
@@ -55,7 +55,7 @@ describe('Automation Handlers', () => {
     });
 
     it('handleThinAutomation should delegate to thinAutomationPoints', () => {
-        handleThinAutomation.execute({
+        void handleThinAutomation.execute({
             type: 'thinAutomation',
             payload: { laneId: 'l1', tolerance: 0.05 },
         });

@@ -51,7 +51,7 @@ export function searchPresets(query: string, context: PresetContext, limit = 12)
         }
     }
 
-    results.sort((a, b) => b.score - a.score);
+    results.sort((alpha, b) => b.score - alpha.score);
     return results.slice(0, limit);
 }
 
@@ -76,16 +76,16 @@ export function findBestMatch(query: string, context: PresetContext): PresetActi
  * Get all available presets for the current context, grouped by category.
  */
 export function getAvailablePresets(context: PresetContext): PresetAction[] {
-    const available = PRESET_ACTIONS.filter((p) => isPresetAvailable(p, context));
+    const available = PRESET_ACTIONS.filter((param) => isPresetAvailable(param, context));
 
     // Sort by category order
     const categoryIndex = new Map<PresetCategory, number>();
-    for (const [i, cat] of CATEGORY_ORDER.entries()) {
-        categoryIndex.set(cat, i);
+    for (const [index, cat] of CATEGORY_ORDER.entries()) {
+        categoryIndex.set(cat, index);
     }
 
-    available.sort((a, b) => {
-        const ai = categoryIndex.get(a.category) ?? 99;
+    available.sort((alpha, b) => {
+        const ai = categoryIndex.get(alpha.category) ?? 99;
         const bi = categoryIndex.get(b.category) ?? 99;
         return ai - bi;
     });
@@ -98,7 +98,7 @@ export function getAvailablePresets(context: PresetContext): PresetAction[] {
 function scorePreset(preset: PresetAction, tokens: string[], fullQuery: string): number {
     let score = 0;
     const labelLower = preset.label.toLowerCase();
-    const allSearchable = [labelLower, ...preset.keywords.map((k) => k.toLowerCase())];
+    const allSearchable = [labelLower, ...preset.keywords.map((kIndex) => kIndex.toLowerCase())];
 
     // Exact label match → highest score
     if (labelLower === fullQuery) {
@@ -186,6 +186,7 @@ function isPresetAvailable(preset: PresetAction, context: PresetContext): boolea
             return context.selectedClipId !== undefined && context.selectedClipType === 'midi';
         case 'clipAudio':
             return context.selectedClipId !== undefined && context.selectedClipType === 'audio';
+        case undefined:
         default:
             return true;
     }

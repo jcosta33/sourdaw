@@ -16,7 +16,7 @@ describe('handleDuplicateTimeRange', () => {
     });
 
     it('executes duplicateTimeRange with the provided payload', () => {
-        handleDuplicateTimeRange.execute({
+        void handleDuplicateTimeRange.execute({
             type: 'duplicateTimeRange',
             payload: { startBeat: 4, endBeat: 8 },
         });

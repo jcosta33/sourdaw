@@ -4,7 +4,7 @@ import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
 
 export function armTrack(trackId: string, armed: boolean): void {
-    updateTrack(trackId, (t) => ({ ...t, armed }));
+    updateTrack(trackId, (time) => ({ ...time, armed }));
 
     if (armed) {
         const track = getTrackById(trackId);

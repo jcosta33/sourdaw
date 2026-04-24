@@ -57,7 +57,22 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
     }
 
     const n = norm(value);
-    const fillColor = n > 0.66 ? '#C44030' : n > 0.33 ? '#D4A847' : '#5B8FC4';
+    const fillColor = (() => {
+        if (n > 0.66) {
+            return '#C44030';
+        }
+        if (n > 0.33) {
+            return '#D4A847';
+        }
+        return '#5B8FC4';
+    })();
+
+    let valueColor = '#E8E6E0';
+    if (value > 12) {
+        valueColor = '#C44030';
+    } else if (value > 6) {
+        valueColor = '#D4A847';
+    }
 
     return (
         <div
@@ -147,7 +162,7 @@ export const CrustGainStrip = ({ value, onChange }: Props): ReactElement => {
             {/* Numeric readout */}
             <span
                 className="text-[9px] font-mono tabular-nums font-semibold"
-                style={{ color: value > 12 ? '#C44030' : value > 6 ? '#D4A847' : '#E8E6E0' }}
+                style={{ color: valueColor }}
                 aria-hidden="true"
             >
                 {value > 0 ? '+' : ''}

@@ -7,7 +7,9 @@ export function captureArrangementToScratchPad(): void {
     if (!markerState || markerState.sections.length === 0) {
         return;
     }
-    const sorted = [...markerState.sections].sort((a, b) => a.startBeat - b.startBeat);
-    const scratchSections = sorted.map((s, i) => createScratchPadSection(s.startBeat, s.endBeat, s.name, s.color, i));
+    const sorted = [...markerState.sections].sort((alpha, buffer) => alpha.startBeat - buffer.startBeat);
+    const scratchSections = sorted.map((state, index) =>
+        createScratchPadSection(state.startBeat, state.endBeat, state.name, state.color, index)
+    );
     scratchPadStore.set({ sections: scratchSections });
 }

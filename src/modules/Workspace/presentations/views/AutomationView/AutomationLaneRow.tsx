@@ -108,8 +108,8 @@ export const AutomationLaneRow = ({
     const playheadBeat = transport.playheadPosition;
     let currentValue: number | null = null;
     if (lane.points.length > 0) {
-        const before = lane.points.filter((p) => p.beat <= playheadBeat);
-        const after = lane.points.filter((p) => p.beat > playheadBeat);
+        const before = lane.points.filter((param) => param.beat <= playheadBeat);
+        const after = lane.points.filter((param) => param.beat > playheadBeat);
         if (before.length === 0) {
             currentValue = lane.points[0]!.value;
         } else if (after.length === 0) {
@@ -119,7 +119,9 @@ export const AutomationLaneRow = ({
         }
     }
 
-    const visiblePoints = lane.points.filter((p) => p.beat >= viewportStartBeat - 2 && p.beat <= viewportEndBeat + 2);
+    const visiblePoints = lane.points.filter(
+        (param) => param.beat >= viewportStartBeat - 2 && param.beat <= viewportEndBeat + 2
+    );
     const selectedSet = new Set(selectedPoints);
 
     // Build SVG paths — in VT mode, break into separate segments per region
@@ -127,17 +129,19 @@ export const AutomationLaneRow = ({
 
     if (lane.virginTerritory && vtRegions.length > 0) {
         for (const region of vtRegions) {
-            const regionPoints = visiblePoints.filter((p) => p.beat >= region.startBeat && p.beat <= region.endBeat);
+            const regionPoints = visiblePoints.filter(
+                (param) => param.beat >= region.startBeat && param.beat <= region.endBeat
+            );
             if (regionPoints.length === 0) {
                 continue;
             }
-            const regionIndexMap = new Map(lane.points.map((p, idx) => [p, idx]));
+            const regionIndexMap = new Map(lane.points.map((param, idx) => [param, idx]));
             let segPath = `M ${beatToX(regionPoints[0]!.beat)} ${valueToY(regionPoints[0]!.value)}`;
-            for (let i = 0; i < regionPoints.length - 1; i++) {
-                const allIdx = regionIndexMap.get(regionPoints[i]!) ?? -1;
+            for (let index = 0; index < regionPoints.length - 1; index++) {
+                const allIdx = regionIndexMap.get(regionPoints[index]!) ?? -1;
                 const prevPt = allIdx > 0 ? lane.points[allIdx - 1] : undefined;
                 const nextPt = allIdx < lane.points.length - 1 ? lane.points[allIdx + 1] : undefined;
-                segPath += ` ${buildCurvePath(regionPoints[i]!, regionPoints[i + 1]!, beatToX, valueToY, prevPt, nextPt)}`;
+                segPath += ` ${buildCurvePath(regionPoints[index]!, regionPoints[index + 1]!, beatToX, valueToY, prevPt, nextPt)}`;
             }
             const segFill =
                 regionPoints.length > 1
@@ -146,13 +150,13 @@ export const AutomationLaneRow = ({
             pathSegments.push({ pathD: segPath, fillD: segFill });
         }
     } else if (visiblePoints.length > 0) {
-        const visIndexMap = new Map(lane.points.map((p, idx) => [p, idx]));
+        const visIndexMap = new Map(lane.points.map((param, idx) => [param, idx]));
         let pathD = `M ${beatToX(visiblePoints[0]!.beat)} ${valueToY(visiblePoints[0]!.value)}`;
-        for (let i = 0; i < visiblePoints.length - 1; i++) {
-            const allIdx = visIndexMap.get(visiblePoints[i]!) ?? -1;
+        for (let index = 0; index < visiblePoints.length - 1; index++) {
+            const allIdx = visIndexMap.get(visiblePoints[index]!) ?? -1;
             const prevPt = allIdx > 0 ? lane.points[allIdx - 1] : undefined;
             const nextPt = allIdx < lane.points.length - 1 ? lane.points[allIdx + 1] : undefined;
-            pathD += ` ${buildCurvePath(visiblePoints[i]!, visiblePoints[i + 1]!, beatToX, valueToY, prevPt, nextPt)}`;
+            pathD += ` ${buildCurvePath(visiblePoints[index]!, visiblePoints[index + 1]!, beatToX, valueToY, prevPt, nextPt)}`;
         }
         const fillD = `${pathD} L ${beatToX(visiblePoints[visiblePoints.length - 1]!.beat)} ${LANE_HEIGHT} L ${beatToX(visiblePoints[0]!.beat)} ${LANE_HEIGHT} Z`;
         pathSegments.push({ pathD, fillD });
@@ -162,39 +166,39 @@ export const AutomationLaneRow = ({
     const selBounds = selectedPoints.length > 1 ? getSelectionBounds(lane.id, selectedPoints) : null;
 
     // ── SVG dispatcher ───────────────────────────────────────────────────────
-    const handleSvgMouseDown = (e: MouseEvent<SVGSVGElement>) => {
-        if (e.button !== 0) {
+    const handleSvgMouseDown = (event: MouseEvent<SVGSVGElement>) => {
+        if (event.button !== 0) {
             return;
         }
         if (isDrawMode) {
-            onDrawMouseDown(e, lane, snapValue, coords);
+            onDrawMouseDown(event, lane, snapValue, coords);
         } else {
-            onRubberBandStart(e, lane, setRubberBand, setSelectedPoints, coords);
+            onRubberBandStart(event, lane, setRubberBand, setSelectedPoints, coords);
         }
     };
 
-    const handleSvgContextMenu = (e: MouseEvent<SVGSVGElement>) => {
-        if ((e.target as Element).closest('[data-auto-point]')) {
+    const handleSvgContextMenu = (event: MouseEvent<SVGSVGElement>) => {
+        if ((event.target as Element).closest('[data-auto-point]')) {
             return;
         }
-        e.preventDefault();
+        event.preventDefault();
         const rect = getRect();
         if (!rect) {
             return;
         }
-        const beat = Math.max(0, xToBeat(e.clientX - rect.left));
-        setContextMenu({ x: e.clientX, y: e.clientY, beat, section: 'shape' });
+        const beat = Math.max(0, xToBeat(event.clientX - rect.left));
+        setContextMenu({ x: event.clientX, y: event.clientY, beat, section: 'shape' });
     };
 
-    const handlePointContextMenu = (pointBeat: number, e: MouseEvent<SVGCircleElement>) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setContextMenu({ x: e.clientX, y: e.clientY, beat: pointBeat, section: null });
+    const handlePointContextMenu = (pointBeat: number, event: MouseEvent<SVGCircleElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setContextMenu({ x: event.clientX, y: event.clientY, beat: pointBeat, section: null });
     };
 
-    const handlePointDoubleClick = (pointBeat: number, e: MouseEvent<SVGCircleElement>) => {
-        e.stopPropagation();
-        const point = lane.points.find((p) => p.beat === pointBeat);
+    const handlePointDoubleClick = (pointBeat: number, event: MouseEvent<SVGCircleElement>) => {
+        event.stopPropagation();
+        const point = lane.points.find((param) => param.beat === pointBeat);
         if (!point) {
             return;
         }
@@ -238,7 +242,7 @@ export const AutomationLaneRow = ({
         }
         if (event.key === 'a' && (event.metaKey || event.ctrlKey)) {
             event.preventDefault();
-            setSelectedPoints(lane.points.map((p) => p.beat));
+            setSelectedPoints(lane.points.map((param) => param.beat));
         }
         if (event.key === 'Escape') {
             setSelectedPoints([]);
@@ -246,22 +250,22 @@ export const AutomationLaneRow = ({
     };
 
     // ── Y-axis zoom ───────────────────────────────────────────────────────────
-    const handleWheel = (e: WheelEvent<HTMLDivElement>) => {
-        if (!e.altKey) {
+    const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
+        if (!event.altKey) {
             return;
         }
-        e.preventDefault();
-        e.stopPropagation();
-        adjustYZoom(lane.id, e.deltaY > 0 ? -1 : 1);
+        event.preventDefault();
+        event.stopPropagation();
+        adjustYZoom(lane.id, event.deltaY > 0 ? -1 : 1);
     };
 
     const showZeroLine = vMin < 0 && vMax > 0;
 
     // Tension handle positions (midpoint of each segment)
     const tensionHandles: { cx: number; cy: number; beat: number; tension: number }[] = [];
-    for (let i = 0; i < visiblePoints.length - 1; i++) {
-        const p1 = visiblePoints[i]!;
-        const p2 = visiblePoints[i + 1]!;
+    for (let index = 0; index < visiblePoints.length - 1; index++) {
+        const p1 = visiblePoints[index]!;
+        const p2 = visiblePoints[index + 1]!;
         if (p1.curve === 'step' || p1.curve === 'linear') {
             continue;
         }
@@ -277,6 +281,7 @@ export const AutomationLaneRow = ({
         <div
             className={cn('relative border-b border-border/20 outline-none', isDisabled ? 'opacity-50' : '')}
             style={{ height: LANE_HEIGHT }}
+            // eslint-disable-next-line jsx-a11y-x/no-noninteractive-tabindex -- handles keyboard events (arrow key point editing); tabIndex needed for focus
             tabIndex={0}
             onKeyDown={handleKeyDown}
             onWheel={handleWheel}
@@ -292,7 +297,6 @@ export const AutomationLaneRow = ({
                 viewMin={vMin}
                 viewMax={vMax}
             />
-
             <AutomationLaneControls
                 laneId={lane.id}
                 isVirginTerritory={Boolean(lane.virginTerritory)}
@@ -303,7 +307,6 @@ export const AutomationLaneRow = ({
                 onToggleVisibility={() => toggleAutomationVisibility(lane.id)}
                 onClose={() => toggleAutomationVisibility(lane.id)}
             />
-
             <svg
                 ref={svgRef}
                 className={cn('w-full h-full', isDrawMode ? 'cursor-cell' : 'cursor-crosshair')}
@@ -315,11 +318,11 @@ export const AutomationLaneRow = ({
                 <rect x={0} y={0} width={containerWidth} height={LANE_HEIGHT} fill="transparent" />
 
                 {/* Grid lines */}
-                {Array.from({ length: 5 }).map((_, i) => {
-                    const y = (LANE_HEIGHT / 4) * i;
+                {Array.from({ length: 5 }).map((_, index) => {
+                    const y = (LANE_HEIGHT / 4) * index;
                     return (
                         <line
-                            key={i}
+                            key={index}
                             x1={0}
                             y1={y}
                             x2={containerWidth}
@@ -331,8 +334,8 @@ export const AutomationLaneRow = ({
                 })}
 
                 {/* Beat grid */}
-                {Array.from({ length: Math.ceil(containerWidth / pixelsPerBeat) + 1 }).map((_, i) => {
-                    const beat = Math.floor(viewportStartBeat) + i;
+                {Array.from({ length: Math.ceil(containerWidth / pixelsPerBeat) + 1 }).map((_, index) => {
+                    const beat = Math.floor(viewportStartBeat) + index;
                     const x = beatToX(beat);
                     return (
                         <line
@@ -360,16 +363,21 @@ export const AutomationLaneRow = ({
                 ) : null}
 
                 {/* Fill under curve segments */}
-                {pathSegments.map((seg, i) =>
+                {pathSegments.map((seg, index) =>
                     seg.fillD ? (
-                        <path key={`fill-${i}`} d={seg.fillD} fill={curveColor} fillOpacity={isDisabled ? 0.04 : 0.1} />
+                        <path
+                            key={`fill-${index}`}
+                            d={seg.fillD}
+                            fill={curveColor}
+                            fillOpacity={isDisabled ? 0.04 : 0.1}
+                        />
                     ) : null
                 )}
 
                 {/* Curve line segments */}
-                {pathSegments.map((seg, i) => (
+                {pathSegments.map((seg, index) => (
                     <path
-                        key={`curve-${i}`}
+                        key={`curve-${index}`}
                         d={seg.pathD}
                         fill="none"
                         stroke={curveColor}
@@ -425,7 +433,7 @@ export const AutomationLaneRow = ({
                                 r={12}
                                 fill="transparent"
                                 className="cursor-ns-resize"
-                                onMouseDown={(e) => onTensionMouseDown(th.beat, e, lane, setTensionDrag)}
+                                onMouseDown={(event) => onTensionMouseDown(th.beat, event, lane, setTensionDrag)}
                             />
                             <circle
                                 cx={th.cx}
@@ -458,7 +466,21 @@ export const AutomationLaneRow = ({
                     const isDragging = dragPointBeat === point.beat;
                     const isHovered = hoveredBeat === point.beat;
                     const isSelected = selectedSet.has(point.beat);
-                    const nodeSize = isDragging ? 6 : isHovered || isSelected ? 5 : 4;
+                    let nodeSize = 4;
+                    if (isDragging) {
+                        nodeSize = 6;
+                    } else if (isHovered || isSelected) {
+                        nodeSize = 5;
+                    }
+                    const renderIife_2 = () => {
+                        if (isDragging) {
+                            return `drop-shadow(0 0 8px ${curveColor})`;
+                        }
+                        if (isHovered || isSelected) {
+                            return `drop-shadow(0 0 4px ${curveColor})`;
+                        }
+                        return `drop-shadow(0 0 2px ${curveColor})`;
+                    };
 
                     return (
                         <g key={`pt-${String(ptIdx)}-${point.beat}`} data-auto-point="true">
@@ -468,11 +490,18 @@ export const AutomationLaneRow = ({
                                 r={10}
                                 fill="transparent"
                                 className="cursor-grab"
-                                onMouseDown={(e) =>
-                                    onPointMouseDown(point.beat, e, lane, setDragPointBeat, setSelectedPoints, coords)
+                                onMouseDown={(event) =>
+                                    onPointMouseDown(
+                                        point.beat,
+                                        event,
+                                        lane,
+                                        setDragPointBeat,
+                                        setSelectedPoints,
+                                        coords
+                                    )
                                 }
-                                onDoubleClick={(e) => handlePointDoubleClick(point.beat, e)}
-                                onContextMenu={(e) => handlePointContextMenu(point.beat, e)}
+                                onDoubleClick={(event) => handlePointDoubleClick(point.beat, event)}
+                                onContextMenu={(event) => handlePointContextMenu(point.beat, event)}
                                 onMouseEnter={() => setHoveredBeat(point.beat)}
                                 onMouseLeave={() => setHoveredBeat(null)}
                             />
@@ -495,11 +524,7 @@ export const AutomationLaneRow = ({
                                 strokeWidth={isDragging || isSelected ? 2 : 1.5}
                                 pointerEvents="none"
                                 style={{
-                                    filter: isDragging
-                                        ? `drop-shadow(0 0 8px ${curveColor})`
-                                        : isHovered || isSelected
-                                          ? `drop-shadow(0 0 4px ${curveColor})`
-                                          : `drop-shadow(0 0 2px ${curveColor})`,
+                                    filter: renderIife_2(),
                                 }}
                             />
                             {point.curve !== 'linear' && !isDragging ? (
@@ -571,9 +596,9 @@ export const AutomationLaneRow = ({
                             { x: beatToX(selBounds.maxBeat), y: valueToY(selBounds.maxValue) },
                             { x: beatToX(selBounds.minBeat), y: valueToY(selBounds.minValue) },
                             { x: beatToX(selBounds.maxBeat), y: valueToY(selBounds.minValue) },
-                        ].map((h, i) => (
+                        ].map((h, index) => (
                             <rect
-                                key={`handle-${i}`}
+                                key={`handle-${index}`}
                                 x={h.x - 3}
                                 y={h.y - 3}
                                 width={6}
@@ -586,7 +611,6 @@ export const AutomationLaneRow = ({
                     </g>
                 ) : null}
             </svg>
-
             {contextMenu !== null ? (
                 <AutomationContextMenu
                     x={contextMenu.x}

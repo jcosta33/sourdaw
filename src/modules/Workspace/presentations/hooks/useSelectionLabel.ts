@@ -18,9 +18,9 @@ const getSnapshot = (): string => {
     if (ids.length === 0) {
         return '';
     }
-    const allClips = trackStore.value?.tracks.flatMap((t) => t.clips) ?? [];
+    const allClips = trackStore.value?.tracks.flatMap((time) => time.clips) ?? [];
     if (ids.length === 1) {
-        const clip = allClips.find((c) => c.id === ids[0]);
+        const clip = allClips.find((context) => context.id === ids[0]);
         if (!clip) {
             return '1 clip';
         }

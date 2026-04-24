@@ -1,7 +1,9 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 
-import { kneadStore } from '../stores/kneadStore';
+import { kneadStore, type KneadClipState } from '../stores/kneadStore';
+
+type EngineKneadState = KneadClipState & { startBeat: number; endBeat: number };
 
 /**
  * Orchestrates the synchronization of Knead pitch data from the store
@@ -17,14 +19,15 @@ export function syncKneadToEngine(): () => void {
 
         // For each track, check if it has a Knead device and sync its clips' states
         for (const track of tracks) {
-            const hasKnead = track.devices.some((d) => d.type.toLowerCase() === 'knead');
+            const hasKnead = track.devices.some((data) => data.type.toLowerCase() === 'knead');
             if (hasKnead) {
                 // Collect all clips belonging to this track that have knead state
-                const trackClipsState: Record<string, any> = {};
+                const trackClipsState: Record<string, EngineKneadState> = {};
                 for (const clip of track.clips) {
-                    if (state.clips[clip.id]) {
+                    const clipState = state.clips[clip.id];
+                    if (clipState) {
                         trackClipsState[clip.id] = {
-                            ...state.clips[clip.id],
+                            ...clipState,
                             startBeat: clip.startBeat,
                             endBeat: clip.endBeat,
                         };

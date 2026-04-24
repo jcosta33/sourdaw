@@ -41,7 +41,7 @@ export class MarkovChain extends BaseMidiProcessor {
         super(id ?? `markov-${Date.now()}`);
         // Pre-allocate the full MAX_STATES × MAX_STATES matrix once
         this.probs = [];
-        for (let i = 0; i < MAX_STATES; i++) {
+        for (let index = 0; index < MAX_STATES; index++) {
             const row: number[] = Array.from({ length: MAX_STATES }, () => 0);
             this.probs.push(row);
         }
@@ -51,32 +51,46 @@ export class MarkovChain extends BaseMidiProcessor {
     /** Fill the pre-allocated matrix with default transition probabilities for `size` states. */
     private fillDefaultMatrix(size: number): void {
         this.stateCount = Math.min(size, MAX_STATES);
-        for (let i = 0; i < this.stateCount; i++) {
-            const row = this.probs[i]!;
+        for (let index = 0; index < this.stateCount; index++) {
+            const row = this.probs[index]!;
             let sum = 0;
-            for (let j = 0; j < this.stateCount; j++) {
+            for (let jIndex = 0; jIndex < this.stateCount; jIndex++) {
                 // Default: favor adjacent states, some probability for jumps
-                const dist = Math.min(Math.abs(i - j), this.stateCount - Math.abs(i - j));
-                const val = dist === 0 ? 0.05 : dist === 1 ? 0.35 : dist === 2 ? 0.15 : 0.05;
-                row[j] = val;
+                const dist = Math.min(Math.abs(index - jIndex), this.stateCount - Math.abs(index - jIndex));
+                const val = (() => {
+                    if (dist === 0) {
+                        return 0.05;
+                    } else {
+                        if (dist === 1) {
+                            return 0.35;
+                        } else {
+                            if (dist === 2) {
+                                return 0.15;
+                            } else {
+                                return 0.05;
+                            }
+                        }
+                    }
+                })();
+                row[jIndex] = val;
                 sum += val;
             }
             // Normalize row in-place
             if (sum > 0) {
-                for (let j = 0; j < this.stateCount; j++) {
-                    row[j] = row[j]! / sum;
+                for (let jIndex = 0; jIndex < this.stateCount; jIndex++) {
+                    row[jIndex] = row[jIndex]! / sum;
                 }
             }
             // Zero out unused columns
-            for (let j = this.stateCount; j < MAX_STATES; j++) {
-                row[j] = 0;
+            for (let jIndex = this.stateCount; jIndex < MAX_STATES; jIndex++) {
+                row[jIndex] = 0;
             }
         }
         // Zero out unused rows
-        for (let i = this.stateCount; i < MAX_STATES; i++) {
-            const row = this.probs[i]!;
-            for (let j = 0; j < MAX_STATES; j++) {
-                row[j] = 0;
+        for (let index = this.stateCount; index < MAX_STATES; index++) {
+            const row = this.probs[index]!;
+            for (let jIndex = 0; jIndex < MAX_STATES; jIndex++) {
+                row[jIndex] = 0;
             }
         }
     }
@@ -94,10 +108,10 @@ export class MarkovChain extends BaseMidiProcessor {
         const r = this.rngState / 0x7fffffff;
         let cumulative = 0;
 
-        for (let i = 0; i < this.stateCount; i++) {
-            cumulative += row[i]!;
+        for (let index = 0; index < this.stateCount; index++) {
+            cumulative += row[index]!;
             if (r <= cumulative) {
-                return i;
+                return index;
             }
         }
         return this.stateCount - 1;
@@ -109,11 +123,11 @@ export class MarkovChain extends BaseMidiProcessor {
             if (event.kind.type === 'noteOn') {
                 if (!this.held.includes(event.kind.note)) {
                     this.held.push(event.kind.note);
-                    this.held.sort((a, b) => a - b);
+                    this.held.sort((alpha, b) => alpha - b);
                     // Copy held notes into pre-allocated stateToNote buffer (no allocation)
                     this.stateNoteCount = Math.min(this.held.length, MAX_STATES);
-                    for (let k = 0; k < this.stateNoteCount; k++) {
-                        this.stateToNote[k] = this.held[k]!;
+                    for (let kIndex = 0; kIndex < this.stateNoteCount; kIndex++) {
+                        this.stateToNote[kIndex] = this.held[kIndex]!;
                     }
                     if (this.stateCount !== this.held.length) {
                         this.fillDefaultMatrix(this.held.length);
@@ -167,8 +181,8 @@ export class MarkovChain extends BaseMidiProcessor {
         }
 
         const drained = this.scheduled.drainRange(0, blockEnd);
-        for (const e of drained) {
-            output.push(e);
+        for (const event1 of drained) {
+            output.push(event1);
         }
     }
 
@@ -200,12 +214,12 @@ export class MarkovChain extends BaseMidiProcessor {
             // Re-normalize active portion of row
             const row = this.probs[from];
             let sum = 0;
-            for (let i = 0; i < this.stateCount; i++) {
-                sum += row[i]!;
+            for (let index = 0; index < this.stateCount; index++) {
+                sum += row[index]!;
             }
             if (sum > 0) {
-                for (let i = 0; i < this.stateCount; i++) {
-                    row[i] = row[i]! / sum;
+                for (let index = 0; index < this.stateCount; index++) {
+                    row[index] = row[index]! / sum;
                 }
             }
         }
@@ -214,8 +228,8 @@ export class MarkovChain extends BaseMidiProcessor {
     /** Get the active portion of the transition matrix for UI display. */
     getMatrix(): number[][] {
         const result: number[][] = [];
-        for (let i = 0; i < this.stateCount; i++) {
-            result.push(this.probs[i]!.slice(0, this.stateCount));
+        for (let index = 0; index < this.stateCount; index++) {
+            result.push(this.probs[index]!.slice(0, this.stateCount));
         }
         return result;
     }

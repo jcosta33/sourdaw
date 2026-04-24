@@ -160,10 +160,7 @@ function buildDepsIdentifierToObjectMap(root: JRoot, j: API['jscodeshift']): Map
 
 type DepsArgNode = Identifier | ObjectExpression;
 
-function resolveDepsObject(
-    depsArg: DepsArgNode,
-    depsMap: Map<string, ObjectExpression>,
-): ObjectExpression | null {
+function resolveDepsObject(depsArg: DepsArgNode, depsMap: Map<string, ObjectExpression>): ObjectExpression | null {
     if (depsArg.type === 'ObjectExpression') return depsArg;
     if (depsArg.type === 'Identifier') {
         return depsMap.get(depsArg.name) ?? null;
@@ -195,7 +192,7 @@ function buildRenameMapFromObjectPattern(pattern: ObjectPattern): RenameMap {
 function augmentRenameMapFromDepsObjectPattern(
     renames: RenameMap,
     pattern: ObjectPattern,
-    resolvedDeps: ObjectExpression,
+    resolvedDeps: ObjectExpression
 ): void {
     const depValueByKey = new Map<string, string>();
     for (const prop of resolvedDeps.properties) {
@@ -296,12 +293,7 @@ function isUnderSubtree(path: ASTPath<unknown>, subtreeRoot: object): boolean {
     return false;
 }
 
-function applyRenamesInSubtree(
-    j: API['jscodeshift'],
-    fileRoot: JRoot,
-    subtreeRoot: object,
-    renames: RenameMap,
-): void {
+function applyRenamesInSubtree(j: API['jscodeshift'], fileRoot: JRoot, subtreeRoot: object, renames: RenameMap): void {
     if (renames.size === 0) return;
 
     fileRoot.find(j.Identifier).forEach((path: ASTPath<Identifier>) => {
@@ -324,7 +316,7 @@ function memberInlinePatternIsUnsafe(
     fileRoot: JRoot,
     subtreeRoot: object,
     paramName: string,
-    memberMap: Map<string, string>,
+    memberMap: Map<string, string>
 ): boolean {
     let unsafe = false;
 
@@ -388,7 +380,7 @@ function applyMemberReplacementsInSubtree(
     fileRoot: JRoot,
     subtreeRoot: object,
     paramName: string,
-    memberKeyToImportName: Map<string, string>,
+    memberKeyToImportName: Map<string, string>
 ): void {
     if (memberKeyToImportName.size === 0) return;
 
@@ -450,7 +442,7 @@ function extractInnerFromFactory(factory: ArrowFunctionExpression): ExtractedInn
 function copyAsyncGeneratorOntoFunctionDeclaration(
     fnNode: FunctionDeclaration,
     generator: boolean,
-    asyncFlag: boolean,
+    asyncFlag: boolean
 ): void {
     fnNode.generator = generator;
     fnNode.async = asyncFlag;
@@ -459,12 +451,18 @@ function copyAsyncGeneratorOntoFunctionDeclaration(
 function arrowToFunctionDeclaration(
     j: API['jscodeshift'],
     arrow: ArrowFunctionExpression,
-    name: string,
+    name: string
 ): FunctionDeclaration {
     const id = j.identifier(name);
     let fnNode: FunctionDeclaration;
     if (arrow.body.type === 'BlockStatement') {
-        fnNode = j.functionDeclaration(id, arrow.params, arrow.body, arrow.generator, arrow.async) as FunctionDeclaration;
+        fnNode = j.functionDeclaration(
+            id,
+            arrow.params,
+            arrow.body,
+            arrow.generator,
+            arrow.async
+        ) as FunctionDeclaration;
     } else {
         const ret = j.returnStatement(arrow.body as never);
         const block = j.blockStatement([ret]);
@@ -481,7 +479,7 @@ function replaceExportConstInjectWithFunction(
     exportName: string,
     inner: ExtractedInner,
     renames: RenameMap,
-    memberInline: { paramName: string; map: Map<string, string> } | null,
+    memberInline: { paramName: string; map: Map<string, string> } | null
 ): void {
     let fnNode: FunctionDeclaration;
 
@@ -494,13 +492,7 @@ function replaceExportConstInjectWithFunction(
 
         if (fn.type === 'FunctionExpression') {
             const id = j.identifier(exportName);
-            fnNode = j.functionDeclaration(
-                id,
-                fn.params,
-                fn.body,
-                fn.generator,
-                fn.async,
-            ) as FunctionDeclaration;
+            fnNode = j.functionDeclaration(id, fn.params, fn.body, fn.generator, fn.async) as FunctionDeclaration;
             copyAsyncGeneratorOntoFunctionDeclaration(fnNode, Boolean(fn.generator), Boolean(fn.async));
             (fnNode as { returnType?: unknown }).returnType = (fn as FunctionExpression).returnType;
             (fnNode as { typeParameters?: unknown }).typeParameters = (fn as FunctionExpression).typeParameters;
@@ -511,7 +503,7 @@ function replaceExportConstInjectWithFunction(
                 fd.params,
                 fd.body,
                 fd.generator,
-                fd.async,
+                fd.async
             ) as FunctionDeclaration;
             copyAsyncGeneratorOntoFunctionDeclaration(fnNode, Boolean(fd.generator), Boolean(fd.async));
             (fnNode as { returnType?: unknown }).returnType = fd.returnType;
@@ -632,7 +624,7 @@ export default function transform(fileInfo: FileInfo, api: API): string | null {
             if (typeof src !== 'string' || !src.includes('/di/inject')) return;
             const specifiers = importPath.node.specifiers ?? [];
             const injectSpecifier = specifiers.find(
-                (s) => s.type === 'ImportSpecifier' && (s as { imported?: Identifier }).imported?.name === 'inject',
+                (s) => s.type === 'ImportSpecifier' && (s as { imported?: Identifier }).imported?.name === 'inject'
             );
             if (!injectSpecifier) return;
             if (specifiers.length === 1) {

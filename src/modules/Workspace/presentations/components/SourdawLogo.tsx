@@ -101,11 +101,11 @@ export const SourdawLogo = ({ className, paused }: SourdawLogoProps): ReactEleme
     // Generate unique animation names once per render (React Compiler memoizes automatically)
     const styleBlock = paused
         ? ''
-        : PARTICLES.map((_, i) => {
-              const p = PARTICLES[i]!;
-              const dist = p.dir === 'up' ? -20 : 20;
+        : PARTICLES.map((_, index) => {
+              const param = PARTICLES[index]!;
+              const dist = param.dir === 'up' ? -20 : 20;
               return `
-@keyframes sdl-p${i} {
+@keyframes sdl-p${index} {
   0% { opacity: 0; transform: translateY(0) scale(0.4); }
   12% { opacity: 1; transform: translateY(0) scale(1); }
   65% { opacity: 0.8; transform: translateY(${dist * 0.6}px) scale(0.95); }
@@ -122,7 +122,6 @@ export const SourdawLogo = ({ className, paused }: SourdawLogoProps): ReactEleme
         >
             {/* Inject keyframes */}
             {!paused && <style>{styleBlock}</style>}
-
             {/* Bread loaf — the hero, always static and crisp */}
             <img
                 src={LOAF.src}
@@ -137,26 +136,25 @@ export const SourdawLogo = ({ className, paused }: SourdawLogoProps): ReactEleme
                     imageRendering: 'auto',
                 }}
             />
-
             {/* Animated particles — each is the real raster piece */}
-            {PARTICLES.map((p, i) => (
+            {PARTICLES.map((param, index) => (
                 <img
-                    key={i}
-                    src={p.src}
+                    key={index}
+                    src={param.src}
                     alt=""
                     draggable={false}
                     style={{
                         position: 'absolute',
-                        left: `${(p.x / CANVAS_W) * 100}%`,
-                        top: `${(p.y / CANVAS_H) * 100}%`,
-                        width: `${(p.w / CANVAS_W) * 100}%`,
-                        height: `${(p.h / CANVAS_H) * 100}%`,
+                        left: `${(param.x / CANVAS_W) * 100}%`,
+                        top: `${(param.y / CANVAS_H) * 100}%`,
+                        width: `${(param.w / CANVAS_W) * 100}%`,
+                        height: `${(param.h / CANVAS_H) * 100}%`,
                         imageRendering: 'auto',
                         ...(paused
                             ? { opacity: 1 }
                             : {
                                   opacity: 0,
-                                  animation: `sdl-p${i} ${p.duration}s ease-in-out ${p.delay}s infinite`,
+                                  animation: `sdl-p${index} ${param.duration}s ease-in-out ${param.delay}s infinite`,
                               }),
                     }}
                 />

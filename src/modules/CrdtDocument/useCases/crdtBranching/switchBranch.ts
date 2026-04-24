@@ -7,7 +7,7 @@ import { projectCrdtToStores } from '../projection/projectProjection';
 /**
  * Switch to a different branch.
  */
-export const switchBranch = (branchId: string): void => {
+export function switchBranch(branchId: string): void {
     const state = branchStore.value;
     if (!state) {
         return;
@@ -31,4 +31,4 @@ export const switchBranch = (branchId: string): void => {
 
     branchStore.set({ ...state, activeBranchId: branchId });
     projectCrdtToStores();
-};
+}

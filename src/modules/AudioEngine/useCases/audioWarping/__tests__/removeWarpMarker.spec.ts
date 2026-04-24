@@ -5,7 +5,7 @@ import * as subject from '../removeWarpMarker';
 describe('removeWarpMarker', () => {
     it('should export removeWarpMarker', () => {
         expect(subject.removeWarpMarker).toBeDefined();
-        const t = typeof subject.removeWarpMarker;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.removeWarpMarker;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

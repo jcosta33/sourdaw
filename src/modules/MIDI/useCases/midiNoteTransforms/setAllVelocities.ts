@@ -4,8 +4,8 @@ export function setAllVelocities(clipId: string, velocity: number): void {
     const clamped = Math.max(1, Math.min(127, velocity));
 
     updateNotesForClip(clipId, (notes) =>
-        notes.map((n) => ({
-            ...n,
+        notes.map((node) => ({
+            ...node,
             velocity: clamped,
         }))
     );

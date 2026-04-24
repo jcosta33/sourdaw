@@ -37,17 +37,22 @@ type VoiceMode = 'browser' | 'whisper' | null;
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
+type WindowWithSpeechRecognition = Window & {
+    SpeechRecognition?: new () => SpeechRecognitionInstance;
+    webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
+};
+
 const getSpeechRecognition = (): SpeechRecognitionInstance | null => {
-    const w = window as unknown as Record<string, unknown>;
+    const w = window as WindowWithSpeechRecognition;
     const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
     if (!Ctor) {
         return null;
     }
-    return new (Ctor as new () => SpeechRecognitionInstance)();
+    return new Ctor();
 };
 
 export const isSpeechRecognitionAvailable = (): boolean => {
-    const w = window as unknown as Record<string, unknown>;
+    const w = window as WindowWithSpeechRecognition;
     return !!(w.SpeechRecognition ?? w.webkitSpeechRecognition);
 };
 
@@ -91,15 +96,16 @@ export const useVoiceRecording = (): VoiceRecordingState => {
     const [errorText, setErrorText] = useState('');
 
     // Sync to voiceStatusStore so VoiceButton can reflect state
-    const setListening = (v: boolean): void => {
-        setIsListening(v);
-        voiceStatusStore.set({ isListening: v, transcribing: voiceStatusStore.value?.transcribing ?? false });
+    const setListening = (value: boolean): void => {
+        setIsListening(value);
+        voiceStatusStore.set({ isListening: value, transcribing: voiceStatusStore.value?.transcribing ?? false });
     };
-    const setTranscribingAndStore = (v: boolean): void => {
-        setTranscribing(v);
-        voiceStatusStore.set({ isListening: voiceStatusStore.value?.isListening ?? false, transcribing: v });
+    const setTranscribingAndStore = (value: boolean): void => {
+        setTranscribing(value);
+        voiceStatusStore.set({ isListening: voiceStatusStore.value?.isListening ?? false, transcribing: value });
     };
 
+    const [voiceMode, setVoiceMode] = useState<VoiceMode>(null);
     const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const chunksRef = useRef<Blob[]>([]);
@@ -142,6 +148,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             await startDictation();
 
             modeRef.current = 'whisper';
+            setVoiceMode('whisper');
             setListening(true);
             setFinalText('');
             setInterimText('Recording...');
@@ -182,8 +189,8 @@ export const useVoiceRecording = (): VoiceRecordingState => {
         recognition.onresult = (event) => {
             let finalPart = '';
             let interimPart = '';
-            for (let i = 0; i < event.results.length; i++) {
-                const result = event.results[i];
+            for (let index = 0; index < event.results.length; index++) {
+                const result = event.results[index];
                 if (!result || result.length === 0 || !result[0]) {
                     continue;
                 }
@@ -207,7 +214,8 @@ export const useVoiceRecording = (): VoiceRecordingState => {
                 showError('Microphone access denied. Allow mic in browser settings.');
                 if (isTauriAvailable()) {
                     modeRef.current = 'whisper';
-                    startWhisperRecording();
+                    setVoiceMode('whisper');
+                    void startWhisperRecording();
                 }
                 return;
             }
@@ -232,6 +240,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
             recognition.start();
             recognitionRef.current = recognition;
             modeRef.current = 'browser';
+            setVoiceMode('browser');
             setListening(true);
             setFinalText('');
             setInterimText('');
@@ -267,13 +276,13 @@ export const useVoiceRecording = (): VoiceRecordingState => {
         if (mode === 'browser') {
             const started = startBrowserRecognition();
             if (!started && isTauriAvailable()) {
-                startWhisperRecording();
+                void startWhisperRecording();
             }
             return;
         }
 
         if (mode === 'whisper') {
-            startWhisperRecording();
+            void startWhisperRecording();
             return;
         }
 
@@ -322,7 +331,7 @@ export const useVoiceRecording = (): VoiceRecordingState => {
         finalText,
         transcribing,
         errorText,
-        voiceMode: modeRef.current,
+        voiceMode,
         stopListening,
         toggleListening,
     };

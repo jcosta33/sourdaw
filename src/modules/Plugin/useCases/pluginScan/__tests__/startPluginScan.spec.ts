@@ -3,10 +3,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { startPluginScan } from '../scanning/startPluginScan';
 
 const mocks = vi.hoisted(() => ({
-    pluginScanStoreValue: { value: { scanPaths: [], isScanning: false, scannedPlugins: [], errors: [] } },
-    pluginScanStoreSet: vi.fn(),
-    scanPlugins: vi.fn(),
-    getDefaultPluginPaths: vi.fn(),
+    pluginScanStoreValue: {
+        value: {
+            scanPaths: [] as string[],
+            isScanning: false,
+            scannedPlugins: [] as unknown[],
+            errors: [] as string[],
+        },
+    },
+    pluginScanStoreSet: vi.fn<typeof import('../../../stores/pluginScanStore').pluginScanStore.set>(),
+    scanPlugins: vi.fn<typeof import('../../../repositories/pluginBridge/scanPlugins').scanPlugins>(),
+    getDefaultPluginPaths:
+        vi.fn<typeof import('../../../repositories/pluginBridge/getDefaultPluginPaths').getDefaultPluginPaths>(),
 }));
 
 vi.mock('../../../stores/pluginScanStore', () => ({
@@ -29,7 +37,12 @@ vi.mock('../../../repositories/pluginBridge/getDefaultPluginPaths', () => ({
 describe('startPluginScan', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.pluginScanStoreValue.value = { scanPaths: [], isScanning: false, scannedPlugins: [], errors: [] } as any;
+        mocks.pluginScanStoreValue.value = {
+            scanPaths: [],
+            isScanning: false,
+            scannedPlugins: [],
+            errors: [],
+        } as unknown as typeof mocks.pluginScanStoreValue.value;
         mocks.getDefaultPluginPaths.mockResolvedValue(['/default/path']);
     });
 

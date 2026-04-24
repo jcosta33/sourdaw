@@ -14,7 +14,7 @@ describe('aiMidiHandlers', () => {
     it('handleAddNotes forwards notes to addMidiNote', async () => {
         const { addMidiNote } = await import('#/modules/MIDI/useCases/midiNoteCrud/addMidiNote');
 
-        handleAddNotes.execute({
+        void handleAddNotes.execute({
             type: 'addNotes',
             payload: {
                 clipId: 'clip1',

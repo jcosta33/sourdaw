@@ -3,9 +3,9 @@ import { stripSilence as stripSilenceFromClip } from '#/modules/Arrangement/useC
 import { createHandler } from '#/utils/createHandler';
 
 export const handleStripSilenceAiMidi = createHandler<'stripSilence'>({
-    execute: (a) => {
-        stripSilenceFromClip(a.payload.clipId, a.payload.threshold || -40);
-        logger.info(`[Analysis] Strip silence executed for clip ${a.payload.clipId}`);
+    execute: (alpha) => {
+        stripSilenceFromClip(alpha.payload.clipId, alpha.payload.threshold || -40);
+        logger.info(`[Analysis] Strip silence executed for clip ${alpha.payload.clipId}`);
     },
     describe: () => ({ label: 'Strip silence' }),
     undoable: true,

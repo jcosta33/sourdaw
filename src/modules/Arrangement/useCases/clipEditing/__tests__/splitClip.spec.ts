@@ -2,11 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { splitClip } from '../splitClip';
 
+import type { Clip, Track } from '#/modules/Arrangement/models/Track';
+import type { getNextClipId as originalGetNextClipId } from '#/modules/Arrangement/repositories/clipIdCounter';
+import type { getTrackState as originalGetTrackState } from '#/modules/Arrangement/repositories/track/getTrackState';
+import type { setTrackState as originalSetTrackState } from '#/modules/Arrangement/repositories/track/setTrackState';
+import type { snapSplitBeatToZeroCrossing as originalSnapSplitBeatToZeroCrossing } from '#/modules/Arrangement/services/snapSplitBeatToZeroCrossing';
+
 const mocks = vi.hoisted(() => ({
-    getTrackState: vi.fn(),
-    setTrackState: vi.fn(),
-    getNextClipId: vi.fn(() => 'new-clip-id'),
-    snapSplitBeatToZeroCrossing: vi.fn((c, b) => b),
+    getTrackState: vi.fn<typeof originalGetTrackState>(),
+    setTrackState: vi.fn<typeof originalSetTrackState>(),
+    getNextClipId: vi.fn<typeof originalGetNextClipId>(() => 'new-clip-id'),
+    snapSplitBeatToZeroCrossing: vi.fn<typeof originalSnapSplitBeatToZeroCrossing>((clip, splitBeat) => splitBeat),
 }));
 
 vi.mock('#/modules/Arrangement/repositories/track/getTrackState', () => ({
@@ -31,9 +37,16 @@ describe('splitClip', () => {
     });
 
     it('splits a clip into two at the specified beat', () => {
-        const mockClip = { id: 'c1', name: 'Vocal', startBeat: 0, endBeat: 10, fadeOutBeats: 1 };
+        const mockClip = {
+            id: 'c1',
+            name: 'Vocal',
+            startBeat: 0,
+            endBeat: 10,
+            fadeOutBeats: 1,
+        } as Partial<Clip> as Clip;
         mocks.getTrackState.mockReturnValue({
-            tracks: [{ id: 't1', clips: [mockClip] }],
+            selectedTrackId: null,
+            tracks: [{ id: 't1', clips: [mockClip] } as Partial<Track> as Track],
         });
 
         const rightId = splitClip('c1', 4);
@@ -41,7 +54,7 @@ describe('splitClip', () => {
 
         expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
         const newState = mocks.setTrackState.mock.calls[0][0];
-        const track = newState.tracks[0];
+        const track = newState.tracks[0]!;
 
         expect(track.clips).toHaveLength(2);
 
@@ -66,8 +79,11 @@ describe('splitClip', () => {
     });
 
     it('bails if split beat is outside clip boundaries', () => {
-        const mockClip = { id: 'c1', startBeat: 4, endBeat: 8 };
-        mocks.getTrackState.mockReturnValue({ tracks: [{ clips: [mockClip] }] });
+        const mockClip = { id: 'c1', startBeat: 4, endBeat: 8 } as Partial<Clip> as Clip;
+        mocks.getTrackState.mockReturnValue({
+            selectedTrackId: null,
+            tracks: [{ id: 't1', clips: [mockClip] } as Partial<Track> as Track],
+        });
 
         expect(splitClip('c1', 2)).toBeNull(); // Before
         expect(splitClip('c1', 9)).toBeNull(); // After

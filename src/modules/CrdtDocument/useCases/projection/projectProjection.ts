@@ -35,8 +35,8 @@ export function projectCrdtToStores(): void {
  * This is only needed for Phase 2 (incoming remote changes).
  * For local operations, AutomergeStorage handles the write path directly.
  */
-export const setupProjectionBridge = (): (() => void) => {
+export function setupProjectionBridge(): () => void {
     return automergeRepository.onChange(() => {
         projectCrdtToStores();
     });
-};
+}

@@ -71,8 +71,8 @@ export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): 
     let pollInterval: ReturnType<typeof setInterval> | null = null;
 
     const handshake = createReadyHandshake({ pluginName: 'ProofNode' });
-    node.port.onmessage = (e: MessageEvent) => {
-        const outcome = handshake.onMessage(e);
+    node.port.onmessage = (event: MessageEvent) => {
+        const outcome = handshake.onMessage(event);
         if (outcome !== 'ready') {
             return;
         }
@@ -158,7 +158,9 @@ export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): 
             }
             try {
                 node.disconnect();
-            } catch {}
+            } catch {
+                // ignore
+            }
             node.port.close();
         },
         ready: readyPromise,

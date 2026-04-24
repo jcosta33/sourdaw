@@ -184,8 +184,13 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         if (!rustKey) {
             return;
         }
-        const numericValue = typeof value === 'boolean' ? (value ? 1 : 0) : value;
-        executeAppAction({
+        let numericValue: number;
+        if (typeof value === 'boolean') {
+            numericValue = value ? 1 : 0;
+        } else {
+            numericValue = value;
+        }
+        void executeAppAction({
             type: 'setDeviceParameter',
             payload: { deviceId, paramId: rustKey, value: numericValue },
         });
@@ -197,7 +202,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
         const nextParams = { ...DEFAULT_PARAMS, ...preset, space, algorithm: algorithm ?? 'plate' };
 
         updateChamberEngine(deviceId, () => nextParams);
-        executeAppAction({
+        void executeAppAction({
             type: 'setDeviceParameter',
             payload: { deviceId, paramId: 'algorithm', value: ALGORITHM_MAP[nextParams.algorithm] ?? 0 },
         });
@@ -212,17 +217,24 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
             }
 
             if (typeof rawValue === 'boolean') {
-                executeAppAction({
+                void executeAppAction({
                     type: 'setDeviceParameter',
                     payload: { deviceId, paramId: rustKey, value: rawValue ? 1 : 0 },
                 });
             } else if (typeof rawValue === 'number') {
-                executeAppAction({
+                void executeAppAction({
                     type: 'setDeviceParameter',
                     payload: { deviceId, paramId: rustKey, value: rawValue },
                 });
             }
         }
+    }
+
+    let tailViewLed = 'Live tail';
+    if (showDecayEq) {
+        tailViewLed = 'EQ overlay';
+    } else if (showFlow) {
+        tailViewLed = 'Flow open';
     }
 
     return (
@@ -276,7 +288,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                             ...prev,
                                             algorithm: algorithm.id,
                                         }));
-                                        executeAppAction({
+                                        void executeAppAction({
                                             type: 'setDeviceParameter',
                                             payload: {
                                                 deviceId,
@@ -361,9 +373,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                         <div className="flex h-full min-h-0 flex-col">
                             <div className="flex items-center justify-between px-3 py-2">
                                 <div className="text-[9px] uppercase tracking-[0.24em] text-white/44">Tail view</div>
-                                <ChamberLed>
-                                    {showDecayEq ? 'EQ overlay' : showFlow ? 'Flow open' : 'Live tail'}
-                                </ChamberLed>
+                                <ChamberLed>{tailViewLed}</ChamberLed>
                             </div>
                             <div className="relative min-h-0 flex-1 border-t border-white/6">
                                 <ReverbSpectrogram decay={params.decay} damping={params.damping} />
@@ -374,7 +384,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                             const next = [...decayEqMults];
                                             next[band] = mult;
                                             setDecayEqMults(next);
-                                            executeAppAction({
+                                            void executeAppAction({
                                                 type: 'setDeviceParameter',
                                                 payload: { deviceId, paramId: `decay_eq_${band}`, mult },
                                             });
@@ -690,7 +700,7 @@ export const ProofChamberPanel = ({ deviceId }: { deviceId: string }): ReactElem
                                                         ...prev,
                                                         algorithm: algorithm.id,
                                                     }));
-                                                    executeAppAction({
+                                                    void executeAppAction({
                                                         type: 'setDeviceParameter',
                                                         payload: {
                                                             deviceId,
@@ -740,11 +750,11 @@ const ReverbSpectrogram = ({ decay, damping }: { decay: number; damping: number 
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return undefined;
         }
 
         const width = canvas.width;

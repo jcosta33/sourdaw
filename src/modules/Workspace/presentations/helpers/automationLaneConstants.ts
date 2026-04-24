@@ -37,6 +37,8 @@ export const curveLabel = (curve: AutomationCurveType): string => {
             return '⊏';
         case 'smooth':
             return '~';
+        case 'linear':
+        case 'bezier':
         default:
             return '';
     }

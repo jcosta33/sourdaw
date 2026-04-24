@@ -47,8 +47,8 @@ export class ChordMemory extends BaseMidiProcessor {
                     const emitted: number[] = [];
                     const transpose = this.transposeMode ? event.kind.note - stored.root : 0;
 
-                    for (const n of stored.notes) {
-                        const note = Math.max(0, Math.min(127, n + transpose));
+                    for (const node of stored.notes) {
+                        const note = Math.max(0, Math.min(127, node + transpose));
                         emitted.push(note);
                         output.push({
                             timeSamples: event.timeSamples,

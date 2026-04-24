@@ -16,7 +16,7 @@ describe('handleRemoveSend', () => {
     });
 
     it('executes removeSend with the provided payload', () => {
-        handleRemoveSend.execute({
+        void handleRemoveSend.execute({
             type: 'removeSend',
             payload: { trackId: 't1', busId: 'bus-1' },
         });

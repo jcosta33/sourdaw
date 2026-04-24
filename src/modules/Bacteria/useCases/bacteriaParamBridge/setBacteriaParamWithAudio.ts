@@ -17,10 +17,10 @@ export const setBacteriaParamWithAudio = inject(bacteriaParamBridgeDependencies)
 }) => {
     const findDeviceRef = createFindDeviceRef(getAllTracksFn);
     const flushParam = createFlushParam(updateDeviceParamFn, persistDeviceParamFn);
-    return function setBacteriaParamWithAudio<K extends keyof BacteriaPatch>(
+    return function setBacteriaParamWithAudio<Key extends keyof BacteriaPatch>(
         deviceId: string,
-        key: K,
-        value: BacteriaPatch[K]
+        key: Key,
+        value: BacteriaPatch[Key]
     ): void {
         setBacteriaParam(deviceId, key, value);
 

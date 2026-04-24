@@ -20,7 +20,7 @@ export function getFirstToasterDeviceId(): string | null {
     }
     let found: string | null = null;
     for (const track of tracks) {
-        const device = track.devices.find((d) => d.type === 'toaster');
+        const device = track.devices.find((data) => data.type === 'toaster');
         if (device) {
             found = device.id;
             break;

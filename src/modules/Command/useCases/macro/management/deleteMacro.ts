@@ -7,6 +7,6 @@ export function deleteMacro(macroId: string): void {
     }
     macroStore.set({
         ...state,
-        macros: state.macros.filter((m) => m.id !== macroId),
+        macros: state.macros.filter((message) => message.id !== macroId),
     });
 }

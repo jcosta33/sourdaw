@@ -7,6 +7,6 @@ export function moveNode(id: string, x: number, y: number): void {
     }
     nodeViewStore.set({
         ...state,
-        nodes: state.nodes.map((n) => (n.id === id ? { ...n, x, y } : n)),
+        nodes: state.nodes.map((node) => (node.id === id ? { ...node, x, y } : node)),
     });
 }

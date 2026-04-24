@@ -5,8 +5,8 @@ import { goToItem } from '../goToItem';
 import { previousItem } from '../previousItem';
 
 const mockSetlistStore = vi.hoisted(() => ({
-    value: null as any,
-    set: vi.fn(),
+    value: null as SetlistState | null,
+    set: vi.fn<[SetlistState], void>(),
 }));
 
 vi.mock('../../../stores/setlistStore', () => ({
@@ -14,23 +14,25 @@ vi.mock('../../../stores/setlistStore', () => ({
 }));
 
 vi.mock('../goToItem', () => ({
-    goToItem: vi.fn(),
+    goToItem: vi.fn<[number], void>(),
 }));
 
-const oneItem = (id: string): SetlistItem => ({
-    id,
-    name: 'A',
-    projectPath: null,
-    bpm: null,
-    timeSignature: null,
-    estimatedDuration: 1,
-    notes: '',
-    programChange: null,
-    color: '#000',
-    autoStop: true,
-    gapSeconds: 0,
-    markers: [],
-});
+function oneItem(id: string): SetlistItem {
+    return {
+        id,
+        name: 'A',
+        projectPath: null,
+        bpm: null,
+        timeSignature: null,
+        estimatedDuration: 1,
+        notes: '',
+        programChange: null,
+        color: '#000',
+        autoStop: true,
+        gapSeconds: 0,
+        markers: [],
+    };
+}
 
 describe('previousItem', () => {
     beforeEach(() => {

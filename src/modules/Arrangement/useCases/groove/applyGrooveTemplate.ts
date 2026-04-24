@@ -10,7 +10,7 @@ export function getGrooveOffsetAtBeat(beat: number): number {
         return 0;
     }
 
-    const template = state.templates.find((t) => t.id === state.projectGrooveId);
+    const template = state.templates.find((time) => time.id === state.projectGrooveId);
     if (!template) {
         return 0;
     }

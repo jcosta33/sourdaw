@@ -8,8 +8,8 @@ type GapValue = 0 | 0.5 | 1 | 1.5 | 2 | 2.5 | 3 | 4 | 6 | 8;
 type AlignValue = 'start' | 'center' | 'end' | 'stretch' | 'baseline';
 type JustifyValue = 'start' | 'center' | 'end' | 'between' | 'around' | 'evenly';
 
-type RowProps<T extends RowElement = 'div'> = Omit<ComponentPropsWithoutRef<T>, 'as'> & {
-    as?: T;
+type RowProps<Element extends RowElement = 'div'> = Omit<ComponentPropsWithoutRef<Element>, 'as'> & {
+    as?: Element;
     gap?: GapValue;
     align?: AlignValue;
     justify?: JustifyValue;
@@ -49,7 +49,7 @@ const JUSTIFY_CLASS_NAMES: Record<JustifyValue, string> = {
     evenly: 'justify-evenly',
 };
 
-export const Row = <T extends RowElement = 'div'>({
+export const Row = <Element extends RowElement = 'div'>({
     as,
     gap = 0,
     align = 'center',
@@ -60,7 +60,7 @@ export const Row = <T extends RowElement = 'div'>({
     className,
     children,
     ...props
-}: RowProps<T>): ReactElement => {
+}: RowProps<Element>): ReactElement => {
     const Component = as ?? 'div';
     return (
         <Component

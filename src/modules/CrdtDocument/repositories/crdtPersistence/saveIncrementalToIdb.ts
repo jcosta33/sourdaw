@@ -3,7 +3,7 @@ import { type DocId } from '../../models/CrdtDocumentTypes';
 import { STORE_NAME, openDatabase } from './helpers';
 
 /** Save an incremental chunk for a document (append, don't replace). */
-export const saveIncrementalToIdb = async (id: DocId, chunk: Uint8Array): Promise<void> => {
+export async function saveIncrementalToIdb(id: DocId, chunk: Uint8Array): Promise<void> {
     if (chunk.length === 0) {
         return;
     }
@@ -13,11 +13,11 @@ export const saveIncrementalToIdb = async (id: DocId, chunk: Uint8Array): Promis
     }
 
     const key = `${id}:incremental:${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
         const tx = database.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
         store.put(chunk, key);
         tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
+        tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
     });
-};
+}

@@ -18,9 +18,9 @@ export class VUMeter {
      */
     update(samples: Float32Array, deltaTime: number): number {
         let sumSquares = 0;
-        for (let i = 0; i < samples.length; i++) {
-            const s = samples[i]!;
-            sumSquares += s * s;
+        for (let index = 0; index < samples.length; index++) {
+            const state = samples[index]!;
+            sumSquares += state * state;
         }
         const rms = samples.length > 0 ? Math.sqrt(sumSquares / samples.length) : 0;
 

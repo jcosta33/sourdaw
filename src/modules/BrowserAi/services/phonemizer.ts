@@ -1085,7 +1085,7 @@ export function phonemize({
 }: PhonemizeInput): PhonemizeOutput {
     const words = lyrics
         .toLowerCase()
-        .split(/[\s,.\-!?;:'"()\[\]]+/)
+        .split(/[\s,.\-!?;:'"()[\]]+/)
         .filter((w) => w.length > 0);
 
     if (words.length === 0) {
@@ -1128,4 +1128,19 @@ export function phonemize({
     return { tokenIds, phonemes: allPhonemes, wordDiv, wordIsSp };
 }
 
+/**
+ * Parse a DiffSinger phonemes.txt file into a phoneme → token ID map.
+ * Format: one phoneme per line; index = line number.
+ */
+export function parsePhonemesTxt(content: string): Record<string, number> {
+    const lines = content
+        .split('\n')
+        .map((length) => length.trim())
+        .filter((length) => length.length > 0);
+    const map: Record<string, number> = {};
+    for (let index = 0; index < lines.length; index++) {
+        map[lines[index]!] = index;
+    }
+    return map;
+}
 

@@ -5,7 +5,7 @@ import * as subject from '../audioToMidi';
 describe('audioToMidi', () => {
     it('should export audioToMidi', () => {
         expect(subject.audioToMidi).toBeDefined();
-        const t = typeof subject.audioToMidi;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.audioToMidi;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

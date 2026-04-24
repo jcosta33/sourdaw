@@ -40,7 +40,7 @@ const K = ({
     <div className="flex flex-col items-center gap-0">
         <RotaryKnob
             value={value}
-            onChange={(v) => onSetParam(id, name, v)}
+            onChange={(value1) => onSetParam(id, name, value1)}
             min={min}
             max={max}
             step={step}
@@ -77,10 +77,10 @@ const Sel = ({
         <select
             className="h-4 text-[6px] bg-surface-inset border border-border/30 rounded px-0.5 text-foreground cursor-pointer"
             value={value}
-            onChange={(e) => onSetParam(id, name, parseInt(e.target.value))}
+            onChange={(event) => onSetParam(id, name, parseInt(event.target.value))}
         >
-            {options.map((opt, i) => (
-                <option key={i} value={i}>
+            {options.map((opt, index) => (
+                <option key={index} value={index}>
                     {opt}
                 </option>
             ))}

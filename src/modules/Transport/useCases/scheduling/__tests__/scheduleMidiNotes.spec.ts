@@ -44,7 +44,7 @@ vi.mock('#/modules/Yeast/stores', () => ({
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     getChordAtBeat: vi.fn(),
-    transposeForChordTrack: vi.fn((p) => p),
+    transposeForChordTrack: vi.fn((param) => param),
 }));
 
 describe('scheduleMidiNotes', () => {

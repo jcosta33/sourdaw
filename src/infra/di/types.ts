@@ -1,4 +1,4 @@
-export type DependencyKey<TValue> = (new (...args: any[]) => TValue) | symbol | string;
+export type DependencyKey<TValue> = (new (...args: never[]) => TValue) | symbol | string;
 
 export type ContainerApi = {
     register<TValue>(token: DependencyKey<TValue>, value: TValue): void;

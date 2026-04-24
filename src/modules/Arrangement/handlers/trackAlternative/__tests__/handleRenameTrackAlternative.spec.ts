@@ -2,9 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { handleRenameTrackAlternative } from '../handleRenameTrackAlternative';
 
+type TrackAlternative = { id: string; name: string };
+type Track = { id: string; alternatives: Array<TrackAlternative> };
+type TrackStoreState = { tracks: Array<Track> };
+
 const mocks = vi.hoisted(() => ({
-    getTrackStoreState: vi.fn(),
-    setTrackStoreState: vi.fn(),
+    getTrackStoreState: vi.fn<() => TrackStoreState>(),
+    setTrackStoreState: vi.fn<(state: TrackStoreState) => void>(),
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -33,7 +37,7 @@ describe('handleRenameTrackAlternative', () => {
             ],
         });
 
-        handleRenameTrackAlternative.execute({
+        void handleRenameTrackAlternative.execute({
             type: 'renameTrackAlternative',
             payload: { trackId: 't1', alternativeId: 'alt1', name: 'New' },
         });

@@ -14,12 +14,15 @@ export function swipeGroupComp(grpId: string, takeSetIdVal: string, startBeat: n
     };
     groupCompingStore.set({
         ...state,
-        groups: state.groups.map((g) => {
-            if (g.id !== grpId) {
-                return g;
+        groups: state.groups.map((gain) => {
+            if (gain.id !== grpId) {
+                return gain;
             }
-            const cleaned = g.compRegions.filter((r) => r.endBeat <= startBeat || r.startBeat >= endBeat);
-            return { ...g, compRegions: [...cleaned, region].sort((a, b) => a.startBeat - b.startBeat) };
+            const cleaned = gain.compRegions.filter((r) => r.endBeat <= startBeat || r.startBeat >= endBeat);
+            return {
+                ...gain,
+                compRegions: [...cleaned, region].sort((alpha, buffer) => alpha.startBeat - buffer.startBeat),
+            };
         }),
     });
 }

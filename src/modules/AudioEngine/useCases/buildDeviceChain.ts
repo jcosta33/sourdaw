@@ -43,7 +43,7 @@ export const buildDeviceChain = inject({ logger })(
             inputNode: AudioNode,
             outputNode: AudioNode
         ): Promise<BuildDeviceChainOutput> {
-            const activeDevices = devices.filter((d) => !d.bypassed);
+            const activeDevices = devices.filter((data) => !data.bypassed);
             if (activeDevices.length === 0) {
                 inputNode.connect(outputNode);
                 return [];

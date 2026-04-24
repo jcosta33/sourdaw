@@ -15,7 +15,7 @@ type SetGrandBouleSympatheticSendInput = {
     store: Store<GrandBouleState>;
 };
 
-export const setGrandBouleSympatheticSend = (input: SetGrandBouleSympatheticSendInput): void => {
+export function setGrandBouleSympatheticSend(input: SetGrandBouleSympatheticSendInput): void {
     const state = input.store.value;
     if (state === null) {
         return;
@@ -26,4 +26,4 @@ export const setGrandBouleSympatheticSend = (input: SetGrandBouleSympatheticSend
         config: { ...state.config, sympatheticSend: clamped },
     });
     input.engine.setParam({ name: 'sympathetic_send', value: clamped });
-};
+}

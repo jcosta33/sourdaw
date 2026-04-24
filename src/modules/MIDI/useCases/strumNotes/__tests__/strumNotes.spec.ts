@@ -34,9 +34,9 @@ describe('strumNotes', () => {
 
         // Sort order for 'up': Low(60) -> Mid(64) -> High(72)
         // Offsets: Low: 0*0.1=0, Mid: 1*0.1=0.1, High: 2*0.1=0.2
-        const nLow = updated.find((n: any) => n.id === 'nLow');
-        const nMid = updated.find((n: any) => n.id === 'nMid');
-        const nHigh = updated.find((n: any) => n.id === 'nHigh');
+        const nLow = updated.find((node: any) => node.id === 'nLow');
+        const nMid = updated.find((node: any) => node.id === 'nMid');
+        const nHigh = updated.find((node: any) => node.id === 'nHigh');
 
         expect(nLow.startBeat).toBe(4.0);
         expect(nMid.startBeat).toBe(4.1);
@@ -55,8 +55,8 @@ describe('strumNotes', () => {
         const updated = mocks.midiStoreSet.mock.calls[0][0].notesByClipId.c1;
         // Sort order for 'down': High(72) -> Low(60)
         // Offsets: High: 0, Low: 0.05
-        const nHigh = updated.find((n: any) => n.id === 'nHigh');
-        const nLow = updated.find((n: any) => n.id === 'nLow');
+        const nHigh = updated.find((node: any) => node.id === 'nHigh');
+        const nLow = updated.find((node: any) => node.id === 'nLow');
 
         expect(nHigh.startBeat).toBe(0);
         expect(nLow.startBeat).toBe(0.05);

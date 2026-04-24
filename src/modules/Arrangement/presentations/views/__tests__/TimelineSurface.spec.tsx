@@ -51,24 +51,24 @@ vi.mock('../TimelineContextMenus', () => ({
 }));
 
 vi.mock('../../hooks/useTimelineInteractions', () => ({
-    useTimelineInteractions: vi.fn(() => ({
-        handleMouseDown: vi.fn(),
-        handleMouseMove: vi.fn(),
-        handleMouseUp: vi.fn(),
-        handleDoubleClick: vi.fn(),
-        handleContextMenu: vi.fn(),
-        handlePointerDown: vi.fn(),
-        handlePointerMove: vi.fn(),
-        handlePointerUp: vi.fn(),
-        handlePointerCancel: vi.fn(),
-        handleFileDrop: vi.fn(),
-        getCursor: vi.fn(() => 'default'),
-        setIsDragOver: vi.fn(),
+    useTimelineInteractions: vi.fn<() => Record<string, unknown>>(() => ({
+        handleMouseDown: vi.fn<() => void>(),
+        handleMouseMove: vi.fn<() => void>(),
+        handleMouseUp: vi.fn<() => void>(),
+        handleDoubleClick: vi.fn<() => void>(),
+        handleContextMenu: vi.fn<() => void>(),
+        handlePointerDown: vi.fn<() => void>(),
+        handlePointerMove: vi.fn<() => void>(),
+        handlePointerUp: vi.fn<() => void>(),
+        handlePointerCancel: vi.fn<() => void>(),
+        handleFileDrop: vi.fn<() => void>(),
+        getCursor: vi.fn<() => string>(() => 'default'),
+        setIsDragOver: vi.fn<() => void>(),
         isDragOver: false,
         isImporting: false,
         rubberBand: null,
         contextMenu: null,
-        setContextMenu: vi.fn(),
+        setContextMenu: vi.fn<() => void>(),
     })),
 }));
 

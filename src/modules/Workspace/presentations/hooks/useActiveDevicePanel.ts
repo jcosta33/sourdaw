@@ -58,12 +58,12 @@ export function useActiveDevicePanel(): UseActiveDevicePanelResult {
     useEffect(() => {
         type NeedsDeviceId = Exclude<ActiveDevicePanel, { kind: 'yeast' }>['kind'];
         const currentTrackId = (): string | null => trackStore.value?.selectedTrackId ?? null;
-        const openForKind = (kind: NeedsDeviceId) => (p: { deviceId: string | null }) => {
-            if (p.deviceId === null) {
+        const openForKind = (kind: NeedsDeviceId) => (param: { deviceId: string | null }) => {
+            if (param.deviceId === null) {
                 setActivePanel(null);
                 return;
             }
-            setActivePanel({ kind, deviceId: p.deviceId, trackId: currentTrackId() } as ActiveDevicePanel);
+            setActivePanel({ kind, deviceId: param.deviceId, trackId: currentTrackId() } as ActiveDevicePanel);
         };
         const subs = [
             onPanelShowFermenter(openForKind('fermenter')),

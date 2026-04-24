@@ -50,7 +50,7 @@ export function updateRenderStatus(phraseId: string, status: PhraseRenderStatus)
         if (!state) {
             return state;
         }
-        const entries = state.entries.map((e) => (e.phraseId === phraseId ? { ...e, status } : e));
+        const entries = state.entries.map((event) => (event.phraseId === phraseId ? { ...event, status } : event));
         return {
             ...state,
             entries,
@@ -64,9 +64,11 @@ export function markRenderComplete(phraseId: string, cacheKey: string): void {
         if (!state) {
             return state;
         }
-        // Update status to 'preview' in-place. Entry is preserved so the pipeline type
-        // can be recovered if the phrase becomes stale later.
-        const entries = state.entries.map((e) => (e.phraseId === phraseId ? { ...e, status: 'preview' as const } : e));
+        // Update status to 'preview' in-place — entry is preserved so renderAllStale
+        // can recover the pipeline type if the phrase becomes stale later.
+        const entries = state.entries.map((event) =>
+            event.phraseId === phraseId ? { ...event, status: 'preview' as const } : event
+        );
         const cachedPhraseIds = state.cachedPhraseIds.includes(cacheKey)
             ? state.cachedPhraseIds
             : [...state.cachedPhraseIds, cacheKey];
@@ -96,7 +98,7 @@ export function cancelQueuedRender(phraseId: string): void {
         if (!state) {
             return state;
         }
-        const entries = state.entries.filter((e) => e.phraseId !== phraseId);
+        const entries = state.entries.filter((event) => event.phraseId !== phraseId);
         const phraseStatusMap = { ...state.phraseStatusMap };
         delete phraseStatusMap[phraseId];
         return { ...state, entries, phraseStatusMap };

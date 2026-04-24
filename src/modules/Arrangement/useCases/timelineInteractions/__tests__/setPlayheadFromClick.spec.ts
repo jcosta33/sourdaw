@@ -4,14 +4,14 @@ import { defaultTransportState } from '#/modules/Transport/models/TransportState
 
 import { setPlayheadFromClick } from '../setPlayheadFromClick';
 
-const mockGetTransportState = vi.fn();
-const mockUpdateTransportState = vi.fn();
+const mockGetTransportState = vi.fn<() => typeof defaultTransportState | null>();
+const mockUpdateTransportState = vi.fn<(...args: unknown[]) => void>();
 vi.mock('#/modules/Transport/useCases', () => ({
     getTransportState: () => mockGetTransportState(),
-    updateTransportState: (...args: any[]) => mockUpdateTransportState(...args),
+    updateTransportState: (...args: unknown[]) => mockUpdateTransportState(...args),
 }));
 
-let mockTimelineViewValue: any = null;
+let mockTimelineViewValue: { pixelsPerBeat: number; scrollX: number; scrollY: number } | null = null;
 vi.mock('../../../stores/timelineViewStore', () => ({
     timelineViewStore: {
         get value() {

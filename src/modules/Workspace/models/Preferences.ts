@@ -30,7 +30,7 @@ export const GRID_SNAP_OPTIONS: { value: GridSnapOption; label: string; beats: n
 ];
 
 export function gridSnapBeats(option: GridSnapOption): number {
-    const entry = GRID_SNAP_OPTIONS.find((o) => o.value === option);
+    const entry = GRID_SNAP_OPTIONS.find((output) => output.value === option);
     return entry?.beats ?? 0;
 }
 

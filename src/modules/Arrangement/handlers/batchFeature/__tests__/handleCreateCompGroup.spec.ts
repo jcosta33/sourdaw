@@ -16,7 +16,7 @@ describe('handleCreateCompGroup', () => {
     });
 
     it('executes createCompGroup with name and trackIds', () => {
-        handleCreateCompGroup.execute({
+        void handleCreateCompGroup.execute({
             type: 'createCompGroup',
             payload: { name: 'Drums', trackIds: ['t1', 't2'] },
         });

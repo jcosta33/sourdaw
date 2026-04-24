@@ -19,7 +19,7 @@ function openViaBrowser(options: OpenFileOptions): Promise<string[] | null> {
         input.multiple = options.multiple ?? false;
 
         if (options.filters && options.filters.length > 0) {
-            input.accept = options.filters.flatMap((f) => f.extensions.map((ext) => `.${ext}`)).join(',');
+            input.accept = options.filters.flatMap((freq) => freq.extensions.map((ext) => `.${ext}`)).join(',');
         }
 
         input.addEventListener('change', () => {
@@ -28,8 +28,8 @@ function openViaBrowser(options: OpenFileOptions): Promise<string[] | null> {
                 return;
             }
             const paths: string[] = [];
-            for (let i = 0; i < input.files.length; i++) {
-                paths.push(input.files[i]!.name);
+            for (let index = 0; index < input.files.length; index++) {
+                paths.push(input.files[index]!.name);
             }
             resolve(paths);
         });

@@ -22,7 +22,7 @@ export function handleMidiMessage(channel: number, cc: number, value: number): v
         return;
     }
 
-    const matchingMappings = state.mappings.filter((m) => m.channel === channel && m.cc === cc);
+    const matchingMappings = state.mappings.filter((message) => message.channel === channel && message.cc === cc);
 
     for (const mapping of matchingMappings) {
         const scaled = scaleMidiValue(value, mapping.minValue, mapping.maxValue);
@@ -48,9 +48,9 @@ export function handleMidiMessage(channel: number, cc: number, value: number): v
                 if (mapping.paramId) {
                     let fermenterDeviceId: string | undefined;
                     for (const track of getAllTracks()) {
-                        const d = track.devices.find((dev) => dev.type === 'fermenter');
-                        if (d) {
-                            fermenterDeviceId = d.id;
+                        const data = track.devices.find((dev) => dev.type === 'fermenter');
+                        if (data) {
+                            fermenterDeviceId = data.id;
                             break;
                         }
                     }
@@ -72,7 +72,7 @@ export function handleMidiMessage(channel: number, cc: number, value: number): v
                                     track.automationMode === 'touch' ||
                                     track.automationMode === 'latch'
                                 ) {
-                                    const fermenterDevice = track.devices.find((d) => d.type === 'fermenter');
+                                    const fermenterDevice = track.devices.find((data) => data.type === 'fermenter');
                                     if (fermenterDevice) {
                                         recordAutomationValue(
                                             track.id,

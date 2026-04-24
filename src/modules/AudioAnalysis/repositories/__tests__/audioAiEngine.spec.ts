@@ -2,12 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { type Logger } from '#/infra/logger/types';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { generateAudio, separateStems } from '../audioAiEngine';
 import { separateStemsBrowser } from '../browserStemSeparation';
-
-import { type Logger } from '#/infra/logger/types';
 
 vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(),

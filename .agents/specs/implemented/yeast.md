@@ -20,7 +20,7 @@ Yeast is the MIDI FX rack that sits between a track's MIDI input (controller, cl
 
 The research identifies **two** concrete features missing today that keep Yeast below the perceptual bar of comparable rack-style MIDI FX tools (Logic Scripter / Live MIDI Tools / Cubase MIDI Modifier):
 
-1. **No forward visibility into scheduled events.** Users cannot see what the rack is *about to* play. For procedural processors (Arpeggiator, Markov, Euclidean, NoteRepeater, MutationEngine), this breaks the feedback loop between parameter changes and audible outcome.
+1. **No forward visibility into scheduled events.** Users cannot see what the rack is _about to_ play. For procedural processors (Arpeggiator, Markov, Euclidean, NoteRepeater, MutationEngine), this breaks the feedback loop between parameter changes and audible outcome.
 2. **No way to capture or transfer groove from a performance.** The `GrooveModule` exists with six built-in templates (Straight, MPC Swing, Triplet Shuffle, Late Backbeat, Dilla Pocket, Push) but cannot ingest a user's own timing feel. Producers expect the standard "drag a clip onto the groove slot" workflow.
 
 Those are the gaps this spec closes.
@@ -64,7 +64,7 @@ Add a real-time piano-roll preview surface and a groove-template extraction pipe
 - Cross-track groove application. A template lives at the project level and is referenced by id from individual processors; there is no "master groove track" concept in this spec.
 - Groove quantization of already-recorded audio (this is Knead territory).
 - Piano-roll preview of audio stems.
-- Replacing the AudioWorklet transport for MIDI events; the preview is a *read-only* tap on the existing scheduling bridge.
+- Replacing the AudioWorklet transport for MIDI events; the preview is a _read-only_ tap on the existing scheduling bridge.
 - Exporting groove templates to file or sharing them between projects.
 
 ---
@@ -171,7 +171,7 @@ The following processors MUST accept a `GrooveTemplate` by id (in addition to th
 **Chosen:** A docked pane at the bottom of the `YeastPanel`, spanning the full width of the rack, collapsible, default-open.
 **Considered and rejected:**
 
-- A per-processor inline preview row. Rejected because the value of the preview is seeing the *combined* output after all processors in the chain; per-processor previews would clutter the rack and duplicate work.
+- A per-processor inline preview row. Rejected because the value of the preview is seeing the _combined_ output after all processors in the chain; per-processor previews would clutter the rack and duplicate work.
 - A floating detachable window. Rejected for v1 because the existing panel already supports a multi-block layout and a dockable pane is consistent with it; detaching can be added later without changing the rendering pipeline.
 
 ### Decision: groove template storage
@@ -255,22 +255,20 @@ The following processors MUST accept a `GrooveTemplate` by id (in addition to th
     - Open Yeast on a track with Arpeggiator + NoteRepeater + MarkovChain, confirm the preview scrolls smoothly at 180 BPM with 32+ events/sec.
     - [ ] Save the project, reload, confirm the extracted template persists and can be reapplied.
 
-    ---
+    ***
 
     ## Implementation Status
-
     - **What is implemented:** The core MIDI FX rack architecture and 15 specific processors (Arpeggiator, MarkovChain, EuclideanGenerator, etc.) are fully implemented in `src/modules/Yeast/` with comprehensive unit tests. The `GrooveModule` exists with built-in templates.
     - **What is not implemented:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
     - **What is done well:** The modular processor architecture and the separation between UI and the worklet engine are excellent. The individual processors are well-tested.
     - **What needs refactoring:** Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
-
 
 ---
 
 ## Open questions
 
 - [ ] **[MAJOR]** Should preview events from bypassed processors still show (greyed out) or be hidden entirely? Bypassed processors technically emit pass-through events; the preview could either show them as normal (consistent with "what you hear") or grey them out to indicate their contribution is inert.
-- [ ] **[MAJOR]** Probability reporting contract: for processors that are *effectively* probabilistic (e.g., Humanizer with a non-zero velocity-drop chance, MutationEngine with transformation probabilities), do we require each such processor to plumb an explicit probability through, or is a declared "this processor is non-deterministic; assume variable opacity" flag enough? Affects R1 and R4 consumer surface.
+- [ ] **[MAJOR]** Probability reporting contract: for processors that are _effectively_ probabilistic (e.g., Humanizer with a non-zero velocity-drop chance, MutationEngine with transformation probabilities), do we require each such processor to plumb an explicit probability through, or is a declared "this processor is non-deterministic; assume variable opacity" flag enough? Affects R1 and R4 consumer surface.
 - [ ] **[MINOR]** Preview pitch-range auto-ranging — should it clamp to the last N seconds of scheduled events to avoid pitch-axis jitter, or hold the widest range seen since transport started?
 - [ ] **[MINOR]** Should extracted templates survive project deletion / be exportable to `.mid` or a native format? Current spec is "in-project only"; a later spec can add export.
 - [ ] **[MINOR]** Name collision strategy when two extracted templates share the default name. Current plan: append a numeric suffix (`"Clip 1 groove (2)"`). Confirm.

@@ -462,38 +462,42 @@ export const EffectsSection = (props: EffectsSectionProps): ReactElement => {
                     </div>
                 );
         }
+
+        return <></>;
     };
 
     return (
         <div className="space-y-2">
             {/* FX sub-tabs */}
             <div className="flex gap-0.5 flex-wrap">
-                {TAB_ITEMS.map(({ id, label, color }) => (
-                    <DawPluginChip
-                        key={id}
-                        active={activeTab === id}
-                        tone={
-                            id === 'dist'
-                                ? 'danger'
-                                : id === 'comp'
-                                  ? 'lavender'
-                                  : id === 'reverb'
-                                    ? 'mint'
-                                    : id === 'delay' || id === 'eq'
-                                      ? 'cyan'
-                                      : id === 'mod'
-                                        ? 'peach'
-                                        : 'neutral'
-                        }
-                        size="xs"
-                        style={activeTab === id && id === 'master' ? { backgroundColor: color } : undefined}
-                        onClick={() => setActiveTab(id)}
-                    >
-                        {label}
-                    </DawPluginChip>
-                ))}
-            </div>
+                {TAB_ITEMS.map(({ id, label, color }) => {
+                    let tone: 'danger' | 'lavender' | 'mint' | 'cyan' | 'peach' | 'neutral' = 'neutral';
+                    if (id === 'dist') {
+                        tone = 'danger';
+                    } else if (id === 'comp') {
+                        tone = 'lavender';
+                    } else if (id === 'reverb') {
+                        tone = 'mint';
+                    } else if (id === 'delay' || id === 'eq') {
+                        tone = 'cyan';
+                    } else if (id === 'mod') {
+                        tone = 'peach';
+                    }
 
+                    return (
+                        <DawPluginChip
+                            key={id}
+                            active={activeTab === id}
+                            tone={tone}
+                            size="xs"
+                            style={activeTab === id && id === 'master' ? { backgroundColor: color } : undefined}
+                            onClick={() => setActiveTab(id)}
+                        >
+                            {label}
+                        </DawPluginChip>
+                    );
+                })}
+            </div>
             {/* Active effect content */}
             <div className="min-h-[130px]">{renderContent()}</div>
         </div>

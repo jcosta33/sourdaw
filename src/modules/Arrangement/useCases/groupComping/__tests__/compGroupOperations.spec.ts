@@ -2,15 +2,17 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { createCompGroup } from '../compGroupOperations/createCompGroup';
 
-const mockSet = vi.fn();
-let mockValue: any = null;
+import type { GroupCompingState } from '../../../stores/groupComping';
+
+const mockSet = vi.fn<(state: GroupCompingState) => void>();
+let mockValue: GroupCompingState | null = null;
 
 vi.mock('../../../stores/groupComping', () => ({
     groupCompingStore: {
         get value() {
             return mockValue;
         },
-        set: (v: any) => mockSet(v),
+        set: (value: GroupCompingState) => mockSet(value),
     },
     getNextGroupId: () => 'grp-test',
     getNextTakeSetId: () => 'ts-1',
@@ -24,15 +26,12 @@ describe('compGroupOperations', () => {
     });
 
     it('createCompGroup appends a group using injected id generation', () => {
-        mockValue = { groups: [], activeGroupId: null, defaultCrossfade: 0.125 };
+        mockValue = { groups: [], activeGroupId: null, defaultCrossfade: 0.125 } as GroupCompingState;
 
         createCompGroup('My Group', ['a', 'b']);
 
         expect(mockSet).toHaveBeenCalledTimes(1);
-        const next = mockSet.mock.calls[0]![0] as {
-            groups: { id: string; name: string; trackIds: string[] }[];
-            activeGroupId: string;
-        };
+        const next = mockSet.mock.calls[0]![0];
         expect(next.groups).toHaveLength(1);
         expect(next.groups[0]!.id).toBe('grp-test');
         expect(next.groups[0]!.name).toBe('My Group');

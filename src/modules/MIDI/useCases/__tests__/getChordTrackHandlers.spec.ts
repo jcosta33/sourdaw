@@ -5,7 +5,7 @@ import * as subject from '../getChordTrackHandlers';
 describe('getChordTrackHandlers', () => {
     it('should export getChordTrackHandlers', () => {
         expect(subject.getChordTrackHandlers).toBeDefined();
-        const t = typeof subject.getChordTrackHandlers;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getChordTrackHandlers;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

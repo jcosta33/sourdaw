@@ -12,11 +12,11 @@ export function formatNotesForLlm(
     if (notes.length === 0) {
         return '(empty clip — no notes)';
     }
-    const sorted = [...notes].sort((a, b) => a.startBeat - b.startBeat);
+    const sorted = [...notes].sort((alpha, b) => alpha.startBeat - b.startBeat);
     return sorted
         .map(
-            (n) =>
-                `${notePitchToName(n.pitch)}(${String(n.startBeat)}-${String(n.startBeat + n.duration)},v${String(n.velocity)})`
+            (node) =>
+                `${notePitchToName(node.pitch)}(${String(node.startBeat)}-${String(node.startBeat + node.duration)},v${String(node.velocity)})`
         )
         .join(' ');
 }

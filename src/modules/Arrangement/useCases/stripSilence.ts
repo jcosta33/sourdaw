@@ -17,7 +17,7 @@ export function stripSilence(clipId: string, thresholdDb: number = -40, minSilen
 
     let targetClip: { trackId: string; clip: Clip } | null = null;
     for (const track of state.tracks) {
-        const clip = track.clips.find((c) => c.id === clipId);
+        const clip = track.clips.find((context) => context.id === clipId);
         if (clip) {
             targetClip = { trackId: track.id, clip };
             break;
@@ -42,11 +42,11 @@ export function stripSilence(clipId: string, thresholdDb: number = -40, minSilen
     let inSound = false;
     let regionStart = 0;
 
-    for (let i = 0; i < channelData.length; i += windowSize) {
+    for (let index = 0; index < channelData.length; index += windowSize) {
         let peak = 0;
-        const end = Math.min(i + windowSize, channelData.length);
-        for (let j = i; j < end; j++) {
-            const abs = Math.abs(channelData[j]!);
+        const end = Math.min(index + windowSize, channelData.length);
+        for (let jIndex = index; jIndex < end; jIndex++) {
+            const abs = Math.abs(channelData[jIndex]!);
             if (abs > peak) {
                 peak = abs;
             }
@@ -54,12 +54,12 @@ export function stripSilence(clipId: string, thresholdDb: number = -40, minSilen
 
         if (peak > threshold) {
             if (!inSound) {
-                regionStart = i;
+                regionStart = index;
                 inSound = true;
             }
         } else {
             if (inSound) {
-                regions.push({ startSample: regionStart, endSample: i });
+                regions.push({ startSample: regionStart, endSample: index });
                 inSound = false;
             }
         }
@@ -100,8 +100,8 @@ export function stripSilence(clipId: string, thresholdDb: number = -40, minSilen
         endBeat: clip.startBeat + region.endSample * beatsPerSample,
     }));
 
-    updateTrack(targetClip.trackId, (t) => ({
-        ...t,
-        clips: [...t.clips.filter((c) => c.id !== clipId), ...newClips],
+    updateTrack(targetClip.trackId, (time) => ({
+        ...time,
+        clips: [...time.clips.filter((context) => context.id !== clipId), ...newClips],
     }));
 }

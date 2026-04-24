@@ -5,7 +5,7 @@ import * as subject from '../recordAction';
 describe('recordAction', () => {
     it('should export recordAction', () => {
         expect(subject.recordAction).toBeDefined();
-        const t = typeof subject.recordAction;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.recordAction;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

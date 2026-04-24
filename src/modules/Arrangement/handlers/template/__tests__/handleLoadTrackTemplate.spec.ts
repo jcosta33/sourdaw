@@ -16,7 +16,7 @@ describe('handleLoadTrackTemplate', () => {
     });
 
     it('executes loadTrackTemplate', () => {
-        handleLoadTrackTemplate.execute({
+        void handleLoadTrackTemplate.execute({
             type: 'loadTrackTemplate',
             payload: { templateId: 'tmpl-1' },
         });

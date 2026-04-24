@@ -16,7 +16,7 @@ describe('handleSplitClip', () => {
     });
 
     it('executes splitClip with the provided payload', () => {
-        handleSplitClip.execute({
+        void handleSplitClip.execute({
             type: 'splitClip',
             payload: { clipId: 'c1', beat: 2.5 },
         });

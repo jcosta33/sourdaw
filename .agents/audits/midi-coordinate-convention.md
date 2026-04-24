@@ -18,19 +18,19 @@ One convention for `MidiNote.startBeat` across the entire codebase. Notes visibl
 
 ## Relevant code paths
 
-| File | Convention | Line | Formula |
-|------|-----------|------|---------|
-| `clipDrawing.ts` | Clip-relative | 386 | `relStart = (note.startBeat - midiOffset) - clip.startBeat + loopOffset` |
-| `renderOffline.ts` | **Correct for clip-relative** | 97 | `noteStart = (clip.startBeat - startBeat + note.startBeat) / tempo * 60` — adds clip offset from render start + note offset within clip |
-| `duplicateClipCore.ts` | **WRONG** — adds clip delta to clip-relative notes | 42 | `startBeat: note.startBeat + beatDelta` — should be `note.startBeat` (notes are already clip-relative) |
-| `usePianoRollRenderer.ts` | Clip-relative | 526 | `x = note.startBeat * beatWidth` |
-| `usePianoRollInteractions.ts` | Clip-relative | 435-469 | `beat = snap(x / beatWidth)` |
-| `applyMelodyToTrack.ts` | Timeline-absolute | 42 | `startBeat: startBeat + note.startBeat` |
-| `applyChordProgressionToTrack.ts` | Timeline-absolute | 44 | `startBeat: startBeat + note.startBeat` |
-| `applyDrumPatternToTrack.ts` | Timeline-absolute | 38 | `startBeat: startBeat + note.startBeat` |
-| `PatternBrowser.tsx` | Clip-relative | 301 | `startBeat: note.startBeat` (template-local) |
-| `scheduleMidiNotes.ts` | Expects clip-relative | 388 | `rawStartBeat = clip.startBeat + iterOffset + (note.startBeat - midiOffset)` — adds `clip.startBeat` to convert |
-| `importMidiFile.ts` | Masks issue | 52 | Forces `clip.startBeat = 0` |
+| File                              | Convention                                         | Line    | Formula                                                                                                                                 |
+| --------------------------------- | -------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `clipDrawing.ts`                  | Clip-relative                                      | 386     | `relStart = (note.startBeat - midiOffset) - clip.startBeat + loopOffset`                                                                |
+| `renderOffline.ts`                | **Correct for clip-relative**                      | 97      | `noteStart = (clip.startBeat - startBeat + note.startBeat) / tempo * 60` — adds clip offset from render start + note offset within clip |
+| `duplicateClipCore.ts`            | **WRONG** — adds clip delta to clip-relative notes | 42      | `startBeat: note.startBeat + beatDelta` — should be `note.startBeat` (notes are already clip-relative)                                  |
+| `usePianoRollRenderer.ts`         | Clip-relative                                      | 526     | `x = note.startBeat * beatWidth`                                                                                                        |
+| `usePianoRollInteractions.ts`     | Clip-relative                                      | 435-469 | `beat = snap(x / beatWidth)`                                                                                                            |
+| `applyMelodyToTrack.ts`           | Timeline-absolute                                  | 42      | `startBeat: startBeat + note.startBeat`                                                                                                 |
+| `applyChordProgressionToTrack.ts` | Timeline-absolute                                  | 44      | `startBeat: startBeat + note.startBeat`                                                                                                 |
+| `applyDrumPatternToTrack.ts`      | Timeline-absolute                                  | 38      | `startBeat: startBeat + note.startBeat`                                                                                                 |
+| `PatternBrowser.tsx`              | Clip-relative                                      | 301     | `startBeat: note.startBeat` (template-local)                                                                                            |
+| `scheduleMidiNotes.ts`            | Expects clip-relative                              | 388     | `rawStartBeat = clip.startBeat + iterOffset + (note.startBeat - midiOffset)` — adds `clip.startBeat` to convert                         |
+| `importMidiFile.ts`               | Masks issue                                        | 52      | Forces `clip.startBeat = 0`                                                                                                             |
 
 ## Current behavior
 
@@ -56,6 +56,7 @@ When `clip.startBeat = 0`, both conventions produce the same result — which is
 **Problem:** Half the codebase stores clip-relative, half stores timeline-absolute.
 
 **Needed:**
+
 1. Standardize on **clip-relative** (the majority convention).
 2. Fix `applyMelodyToTrack.ts:42` — change `startBeat: startBeat + note.startBeat` to `startBeat: note.startBeat`.
 3. Fix `applyChordProgressionToTrack.ts:44` — same change.

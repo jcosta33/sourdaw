@@ -16,7 +16,7 @@ describe('handleStripSilence', () => {
     });
 
     it('executes stripSilence with the provided payload', () => {
-        handleStripSilence.execute({
+        void handleStripSilence.execute({
             type: 'stripSilence',
             payload: { clipId: 'c1', threshold: -30, minDuration: 0.1 },
         });

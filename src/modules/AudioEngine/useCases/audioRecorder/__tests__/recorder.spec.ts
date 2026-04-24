@@ -20,7 +20,7 @@ describe('AudioRecorder Use Cases', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('startAudioRecording delegates to repository', async () => {
-        const onComplete = () => {};
+        function onComplete() {}
         await startAudioRecording('t1', onComplete, 'in1');
         expect(mocks.startAudioRecordingRepo).toHaveBeenCalledWith('t1', onComplete, 'in1');
     });

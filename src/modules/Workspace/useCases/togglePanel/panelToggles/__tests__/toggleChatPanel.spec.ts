@@ -5,7 +5,7 @@ import * as subject from '../toggleChatPanel';
 describe('toggleChatPanel', () => {
     it('should export toggleChatPanel', () => {
         expect(subject.toggleChatPanel).toBeDefined();
-        const t = typeof subject.toggleChatPanel;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.toggleChatPanel;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

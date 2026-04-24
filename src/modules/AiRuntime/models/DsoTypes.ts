@@ -14,7 +14,7 @@ export type ModerationDecision = 'allow' | 'needs_confirmation' | 'block';
 // ── DSO Operations ───────────────────────────────────────────────────────────
 
 export type Dso =
-    | { op: 'add_track'; name: string; kind: 'audio' | 'midi' | 'bus' }
+    | { op: 'add_track'; name: string; kind: 'audio' | 'midi' | 'bus'; track_id?: string }
     | { op: 'remove_track'; track_id: string }
     | { op: 'rename_track'; track_id: string; name: string }
     | { op: 'set_track_volume'; track_id: string; gain: number }

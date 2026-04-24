@@ -9,7 +9,7 @@ export function addChordEvent(beat: number, root: number, quality: ChordType, du
     }
 
     const event = createChordEvent(beat, root, quality, duration);
-    const events = [...state.events, event].sort((a, b) => a.beat - b.beat);
+    const events = [...state.events, event].sort((alpha, b) => alpha.beat - b.beat);
 
     chordTrackStore.set({ ...state, events });
     return event;

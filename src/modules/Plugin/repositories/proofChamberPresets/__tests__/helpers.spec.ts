@@ -7,13 +7,13 @@ const STORAGE_KEY = 'proof-chamber-user-presets';
 
 describe('FACTORY_PRESETS', () => {
     it('should use unique ids across factory presets', () => {
-        const ids = FACTORY_PRESETS.map((p) => p.id);
+        const ids = FACTORY_PRESETS.map((param) => param.id);
         expect(new Set(ids).size).toBe(ids.length);
     });
 
     it('should only use supported preset categories', () => {
-        for (const p of FACTORY_PRESETS) {
-            expect(['hall', 'room', 'plate', 'spring', 'creative', 'user']).toContain(p.category);
+        for (const param of FACTORY_PRESETS) {
+            expect(['hall', 'room', 'plate', 'spring', 'creative', 'user']).toContain(param.category);
         }
     });
 });

@@ -36,11 +36,11 @@ export class VelocityProcessor extends BaseMidiProcessor {
         }
     }
 
-    private processVelocity(v: number): number {
+    private processVelocity(value: number): number {
         let out: number;
         switch (this.mode) {
             case 'passthrough':
-                out = v;
+                out = value;
                 break;
             case 'fixed':
                 out = this.fixedVel;
@@ -48,11 +48,11 @@ export class VelocityProcessor extends BaseMidiProcessor {
             case 'compress':
             case 'expand': {
                 const center = 64;
-                out = center + (v - center) * this.compressAmount;
+                out = center + (value - center) * this.compressAmount;
                 break;
             }
             case 'curve': {
-                const norm = v / 127;
+                const norm = value / 127;
                 let mapped: number;
                 switch (this.curve) {
                     case 'linear':

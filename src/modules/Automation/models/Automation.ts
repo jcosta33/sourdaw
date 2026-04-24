@@ -49,40 +49,44 @@ export type AutomationLane = {
     color?: string; // Defaults to track color if unset
 };
 
-export const createAutomationLane = (
+export function createAutomationLane(
     trackId: string,
     parameterId: string,
     parameterName: string,
     minValue = 0,
     maxValue = 1,
     clipId?: string
-): AutomationLane => ({
-    id: `auto-${crypto.randomUUID().slice(0, 8)}`,
-    trackId,
-    clipId,
-    parameterId,
-    parameterName,
-    points: [],
-    objects: [],
-    visible: true,
-    enabled: true,
-    collapsed: false,
-    virginTerritory: true,
-    minValue,
-    maxValue,
-});
+): AutomationLane {
+    return {
+        id: `auto-${crypto.randomUUID().slice(0, 8)}`,
+        trackId,
+        clipId,
+        parameterId,
+        parameterName,
+        points: [],
+        objects: [],
+        visible: true,
+        enabled: true,
+        collapsed: false,
+        virginTerritory: true,
+        minValue,
+        maxValue,
+    };
+}
 
-export const createAutomationObject = (
+export function createAutomationObject(
     laneId: string,
     startBeat: number,
     endBeat: number,
     points: AutomationPoint[] = [],
     name = 'Untitled'
-): AutomationObject => ({
-    id: `auto-obj-${crypto.randomUUID().slice(0, 8)}`,
-    laneId,
-    startBeat,
-    endBeat,
-    points,
-    name,
-});
+): AutomationObject {
+    return {
+        id: `auto-obj-${crypto.randomUUID().slice(0, 8)}`,
+        laneId,
+        startBeat,
+        endBeat,
+        points,
+        name,
+    };
+}

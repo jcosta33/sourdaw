@@ -20,11 +20,11 @@ import type {
 // short-circuit with a readable message so browser callers get a diagnosable
 // failure instead of a raw runtime throw. Data-returning calls throw; void
 // calls return early.
-const ensureTauri = (command: string): void => {
+function ensureTauri(command: string): void {
     if (!isTauri()) {
         throw new Error(`Crumbs IPC "${command}" is only available in the Sourdaw desktop app`);
     }
-};
+}
 
 export async function createCrumbsInstance(instanceId: string, sampleRate: number): Promise<void> {
     if (!isTauri()) {

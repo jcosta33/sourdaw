@@ -30,9 +30,9 @@ export const MidiSection = ({ prefs, update }: SectionProps): ReactElement => (
             <div className="flex items-center gap-2">
                 <Slider
                     value={[prefs.defaultVelocity]}
-                    onValueChange={([v]) => {
-                        if (v !== undefined) {
-                            update({ defaultVelocity: v });
+                    onValueChange={([value]) => {
+                        if (value !== undefined) {
+                            update({ defaultVelocity: value });
                         }
                     }}
                     min={1}
@@ -50,16 +50,16 @@ export const MidiSection = ({ prefs, update }: SectionProps): ReactElement => (
         <FieldGroup label="Input Channel">
             <DawCompactSelect
                 value={prefs.midiInputChannel === 'all' ? 'all' : String(prefs.midiInputChannel)}
-                onChange={(e) =>
-                    update({ midiInputChannel: e.target.value === 'all' ? 'all' : Number(e.target.value) })
+                onChange={(event) =>
+                    update({ midiInputChannel: event.target.value === 'all' ? 'all' : Number(event.target.value) })
                 }
                 className="w-full"
                 aria-label="MIDI input channel"
             >
                 <option value="all">All Channels</option>
-                {Array.from({ length: 16 }, (_, i) => (
-                    <option key={i + 1} value={i + 1}>
-                        Channel {i + 1}
+                {Array.from({ length: 16 }, (_, index) => (
+                    <option key={index + 1} value={index + 1}>
+                        Channel {index + 1}
                     </option>
                 ))}
             </DawCompactSelect>

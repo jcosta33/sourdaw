@@ -67,8 +67,8 @@ export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string):
     }
 
     const handshake = createReadyHandshake({ pluginName: 'GlutenNode' });
-    node.port.onmessage = (e: MessageEvent) => {
-        handshake.onMessage(e);
+    node.port.onmessage = (event: MessageEvent) => {
+        handshake.onMessage(event);
     };
     const readyPromise = handshake.promise;
 
@@ -114,7 +114,9 @@ export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string):
         disconnect() {
             try {
                 node.disconnect();
-            } catch {}
+            } catch {
+                // ignore
+            }
         },
         destroy() {
             if (meterRafId !== null) {
@@ -127,7 +129,9 @@ export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string):
             }
             try {
                 node.disconnect();
-            } catch {}
+            } catch {
+                // ignore
+            }
             node.port.close();
         },
         ready: readyPromise,

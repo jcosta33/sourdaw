@@ -92,7 +92,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
         <DawPanelSurface tone="dock" style={style} role="region" aria-label="Mixer panel">
             <DawHeaderBand
                 className="rounded-none px-3 py-1.5"
-                title={`Mixer - ${tracks.filter((t) => t.kind !== 'folder').length} channels`}
+                title={`Mixer - ${tracks.filter((time) => time.kind !== 'folder').length} channels`}
                 titleClassName="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider"
                 actions={
                     <div className="flex items-center gap-1">
@@ -155,11 +155,13 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                                                     defaultValue={snap.name}
                                                     size="micro"
                                                     className="flex-1 text-[10px]"
-                                                    onBlur={(e) => handleRenameCommit(snap.id, e.currentTarget.value)}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') {
-                                                            handleRenameCommit(snap.id, e.currentTarget.value);
-                                                        } else if (e.key === 'Escape') {
+                                                    onBlur={(event) =>
+                                                        handleRenameCommit(snap.id, event.currentTarget.value)
+                                                    }
+                                                    onKeyDown={(event) => {
+                                                        if (event.key === 'Enter') {
+                                                            handleRenameCommit(snap.id, event.currentTarget.value);
+                                                        } else if (event.key === 'Escape') {
                                                             setEditingSnapshotId(null);
                                                         }
                                                     }}
@@ -197,13 +199,11 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                     </div>
                 }
             />
-
             <MixHealthDialog open={showMixHealth} onOpenChange={setShowMixHealth} />
-
             <ScrollArea className="flex-1">
                 <div className="flex h-full items-stretch gap-1 p-2">
                     {tracks
-                        .filter((t) => t.kind !== 'folder')
+                        .filter((time) => time.kind !== 'folder')
                         .map((track) => (
                             <ExpandedChannelStrip
                                 key={track.id}

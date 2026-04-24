@@ -12,7 +12,7 @@ export function processOscMessage(
         return null;
     }
 
-    const mapping = state.oscMappings.find((m) => m.oscAddress === address);
+    const mapping = state.oscMappings.find((message) => message.oscAddress === address);
     if (!mapping) {
         return null;
     }

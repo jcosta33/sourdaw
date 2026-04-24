@@ -57,10 +57,10 @@ export const exportStems: ExportStemsFn = async function exportStems(
         // Exclude disabled and structural tracks (unless they host a Toaster); muted tracks are included as stems
         // (users may want silent-in-mixdown stems for later use in a DAW).
         const eligible = tracks.tracks.filter(
-            (t) =>
-                !t.disabled &&
-                t.kind !== 'master' &&
-                (t.kind !== 'folder' || t.devices.some((d) => d.type === 'toaster'))
+            (time) =>
+                !time.disabled &&
+                time.kind !== 'master' &&
+                (time.kind !== 'folder' || time.devices.some((data) => data.type === 'toaster'))
         );
         let done = 0;
 
@@ -136,7 +136,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
         let taskIndex = 0;
 
         await new Promise<void>((resolve, reject) => {
-            const next = (): void => {
+            function next(): void {
                 if (isCancelRequested()) {
                     reject(new Error('Export cancelled'));
                     return;
@@ -150,15 +150,17 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             if (taskIndex >= tasks.length && activeTasks === 0) {
                                 resolve();
                             } else {
+                                // eslint-disable-next-line promise/no-callback-in-promise -- `next` is an internal concurrent-pool scheduler, not a Node-style callback; it re-enters the loop to start the next pending task
                                 next();
                             }
+                            return null;
                         })
                         .catch(reject);
                 }
                 if (taskIndex >= tasks.length && activeTasks === 0) {
                     resolve();
                 }
-            };
+            }
             next();
         });
 

@@ -92,11 +92,13 @@ export async function generateMidiViaLlm(
 }
 
 function fallbackToPatternMatch(promptText: string): MidiGenerationNote[] {
-    const q = promptText.toLowerCase();
+    const query = promptText.toLowerCase();
 
     const matched =
-        filterTemplates({ query: q })[0] ??
-        PATTERN_TEMPLATES.find((t) => t.tags.some((tag) => q.includes(tag)) || t.name.toLowerCase().includes(q));
+        filterTemplates({ query })[0] ??
+        PATTERN_TEMPLATES.find(
+            (time) => time.tags.some((tag) => query.includes(tag)) || time.name.toLowerCase().includes(query)
+        );
 
     if (matched) {
         const notes = matched.generate({ key: 'C', scale: 'minor', density: 5, complexity: 5 });
@@ -123,12 +125,15 @@ function fallbackToPatternMatch(promptText: string): MidiGenerationNote[] {
 // ── Helpers ──
 
 function buildUserMessage(prompt: string, numNotes: number, creativity: number): string {
-    const creativityDesc =
-        creativity < 0.3
-            ? 'very predictable and conventional'
-            : creativity < 0.6
-              ? 'balanced between conventional and creative'
-              : 'creative, experimental, and surprising';
+    const creativityDesc = (() => {
+        if (creativity < 0.3) {
+            return 'very predictable and conventional';
+        }
+        if (creativity < 0.6) {
+            return 'balanced between conventional and creative';
+        }
+        return 'creative, experimental, and surprising';
+    })();
 
     return `Generate a MIDI pattern based on this description: "${prompt}"
 - Target approximately ${String(numNotes)} notes

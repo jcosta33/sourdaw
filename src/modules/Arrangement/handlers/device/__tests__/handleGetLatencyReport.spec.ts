@@ -27,7 +27,7 @@ describe('handleGetLatencyReport', () => {
             tracks: [{ trackId: 't1', deviceLatencyMs: 5.5, totalLatencyMs: 15.5 }],
         });
 
-        handleGetLatencyReport.execute({ type: 'getLatencyReport', payload: {} });
+        void handleGetLatencyReport.execute({ type: 'getLatencyReport', payload: {} });
 
         expect(mocks.getLatencyReport).toHaveBeenCalledTimes(1);
         expect(mocks.notifyUser).toHaveBeenCalledWith('Latency Report: Max: 15.5ms, Base: 10.0ms — t1: 15.5ms');
@@ -40,7 +40,7 @@ describe('handleGetLatencyReport', () => {
             tracks: [{ trackId: 't1', deviceLatencyMs: 0, totalLatencyMs: 10.0 }],
         });
 
-        handleGetLatencyReport.execute({ type: 'getLatencyReport', payload: {} });
+        void handleGetLatencyReport.execute({ type: 'getLatencyReport', payload: {} });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith('Latency Report: Max: 10.0ms, Base: 10.0ms — no device latency');
     });

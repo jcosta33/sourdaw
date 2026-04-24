@@ -67,7 +67,7 @@ function loadingBypassNode(context: AudioContext, deviceId: string, deviceType: 
 const fermenterDescriptor: WasmDeviceDescriptor = {
     matches: isFermenterDevice,
     create({ context, deviceId, deviceType, onLoaded }) {
-        const pendingParams: Array<[string, number]> = [];
+        const pendingParams: Array<[string, number | number[]]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.fermenterControls = {
             ready: false,
@@ -111,8 +111,12 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Fermenter failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -167,9 +171,13 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
-                eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Toaster failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -237,8 +245,12 @@ const levainDescriptor: WasmDeviceDescriptor = {
                     result.workletNode.port
                 );
                 setEngineReady(deviceId, true);
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Levain failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -269,8 +281,12 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
                     controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Dutch Oven failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -311,8 +327,12 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                     controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Gluten failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -346,8 +366,12 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                     controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Bacteria failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -398,8 +422,12 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                     controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Grinder failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -438,9 +466,13 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: () => { result.destroy(); try { unregisterProofDevice(deviceId); } catch {} } },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
-                syncFullPatch(deviceId);
+                void syncFullPatch(deviceId);
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Proof failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -474,8 +506,12 @@ const scoringDescriptor: WasmDeviceDescriptor = {
                     controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Scoring failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -545,9 +581,13 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
-                eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Grand Boule failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -610,9 +650,13 @@ const faustDescriptor: WasmDeviceDescriptor = {
                         destroy: controls.destroy,
                     },
                 });
-                eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Faust failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -620,7 +664,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
 const kneadDescriptor: WasmDeviceDescriptor = {
     matches: isKneadDevice,
     create({ context, deviceId, deviceType, transportSAB, onLoaded }) {
-        const pendingParams: Array<[string, number]> = [];
+        const pendingParams: Array<[string, number | number[]]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.kneadControls = {
             ready: false,
@@ -663,13 +707,19 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                         destroy: () => {
                             try {
                                 result.workletNode.disconnect();
-                            } catch {}
+                            } catch {
+                                // ignore
+                            }
                             result.workletNode.port.close();
                         },
                     },
                 });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Knead failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -692,5 +742,5 @@ const WASM_DEVICE_DESCRIPTORS: WasmDeviceDescriptor[] = [
 ];
 
 export function findWasmDescriptor(deviceType: string): WasmDeviceDescriptor | undefined {
-    return WASM_DEVICE_DESCRIPTORS.find((d) => d.matches(deviceType));
+    return WASM_DEVICE_DESCRIPTORS.find((data) => data.matches(deviceType));
 }

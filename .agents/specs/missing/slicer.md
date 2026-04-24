@@ -13,6 +13,7 @@ The Slicer is a distinct instrument from both the **drum machine** (`drum-machin
 - The **Slicer** is the **opinionated workflow layer on top of the suite's Slice mode**: drop a loop, instantly play its slices on a 16-pad grid, sequence them with per-step parameter locks, route each slice to its own mixer channel. This is the Ableton Simpler "Slice to New MIDI Track" / MPC chop workflow done properly as a native plugin.
 
 The Slicer reuses:
+
 - The onset-detection algorithms in `unified-sampler-suite.md` Requirement 4 (SuperFlux / HFC / Complex Domain).
 - The voice pool, disk streamer, and waveform mipmap infrastructure from the suite.
 - The step sequencer primitives from `drum-machine.md` Part 3 (parameter locks, conditional triggers, swing).
@@ -83,6 +84,7 @@ The plugin view consists of 5 vertically stacked blocks, each independently coll
 - **Block 5 — Advanced / Lab**: transient-detection algorithm selector (HFC, Spectral Flux, Complex Domain), per-slice time-stretch algorithm (off, Resample, WSOLA, Phase Vocoder), REX2 import button, "Send to Toaster" button, zero-crossing snap strength.
 
 **Acceptance:**
+
 - AC1: Each block renders independently; collapsing block N MUST NOT affect any other block's state or DOM beyond its own body.
 - AC2: The full plugin mounts and renders within 150 ms of being added to a track (first paint, not counting loaded sample decode).
 - AC3: All block interactions are keyboard-accessible (tab order, arrow-key parameter adjustment).
@@ -96,6 +98,7 @@ The plugin view consists of 5 vertically stacked blocks, each independently coll
 - Re-dropping a second file MUST replace the current state cleanly with a single undo step — no leftover markers from the previous drop.
 
 **Acceptance:**
+
 - AC1: Dropping a 10 s drum loop produces a playable kit within 1000 ms on a reference laptop (measured, checked in as a perf test).
 - AC2: Pad 1 triggers the correct slice (from slice-1-start to slice-2-start) — verified by offline render comparison to the source file.
 
@@ -108,6 +111,7 @@ The plugin view consists of 5 vertically stacked blocks, each independently coll
 - The slider's range endpoints MUST correspond to: $s=0$ → 1 slice (full loop, no internal cuts); $s=1$ → up to 64 slices bounded by the onset count the ODF produced.
 
 **Acceptance:**
+
 - AC1: Dragging the slider from 0 → 1 produces a slice-count sequence $n_0 \leq n_1 \leq \ldots \leq n_k$ (monotonic, verified by property test).
 - AC2: Locking 3 markers manually then sweeping the slider from 0 → 1 → 0 leaves those 3 markers untouched (exact equality check pre/post).
 - AC3: The slider maintains ≥ 30 Hz marker redraw rate while dragging on a 60 s source file.
@@ -121,6 +125,7 @@ The plugin view consists of 5 vertically stacked blocks, each independently coll
 - The interface MUST be pluggable so a future ML model (transient + onset-type classifier) can replace the v1 heuristic without changing the UI surface.
 
 **Acceptance:**
+
 - AC1: Running Suggest on a loop with soft onsets (e.g. a vinyl breakbeat) proposes at least one marker that the sensitivity-slider pass did not produce at its default position.
 - AC2: Rejecting a suggestion then re-running Suggest does NOT re-propose the same marker.
 
@@ -133,12 +138,14 @@ The plugin view consists of 5 vertically stacked blocks, each independently coll
 - The colors MUST be WCAG AA contrast against the waveform background in both light and dark themes.
 
 **Acceptance:**
+
 - AC1: Locking an Auto marker changes its color immediately and excludes it from future sensitivity sweeps.
 - AC2: Unlocking a Manual marker re-includes it in the sensitivity set only if its position matches an ODF onset (with a small tolerance ±16 samples); otherwise it remains but is flagged as orphaned.
 
 ### R6 — Per-pad controls
 
 Each of the 16 pads exposes:
+
 - **Tune** — coarse semitones (−24 to +24) + fine cents (−100 to +100).
 - **Envelope** — A/H/D/S/R (attack, hold, decay, sustain, release). Defaults: 0/0/200 ms/0/20 ms (one-shot-friendly). Reuses the sampler suite's AHDSR engine (R5 of `unified-sampler-suite.md`).
 - **Gain** — per-pad gain in dB, −inf to +12.
@@ -148,6 +155,7 @@ Each of the 16 pads exposes:
 All parameter changes MUST be automatable by DAW automation lanes. All parameters MUST be persisted in the plugin's preset format.
 
 **Acceptance:**
+
 - AC1: Adjusting Tune by +12 semitones on pad 1 doubles playback speed and raises pitch by an octave (verified by pitch-detection in offline test).
 - AC2: Envelope change does NOT introduce allocation on the audio thread (tested via `assert_no_alloc` in debug builds).
 
@@ -160,6 +168,7 @@ All parameter changes MUST be automatable by DAW automation lanes. All parameter
 - Patterns MUST be undoable as atomic operations (Randomize = one undo step).
 
 **Acceptance:**
+
 - AC1: A 16-step pattern at 120 BPM with pad 1 on every step produces 8 hits/second on playback (verified by offline render).
 - AC2: Swing 62% on a pattern with hits on every 16th note shifts alternating hits to the mathematically correct position within ±1 sample at 48 kHz.
 - AC3: A parameter lock on step 5 that sets pad 1 Tune to +7 produces a single perfect-fifth-up hit on that step and unaffected hits on steps 1–4 and 6+.
@@ -172,6 +181,7 @@ All parameter changes MUST be automatable by DAW automation lanes. All parameter
 - **Velocity zones**: each pad supports up to 4 zones with `[v_lo, v_hi]` ranges, each mapping to a different slice or alternate layer. Zones MUST be non-overlapping in the v1; overlap support is a v2 concern.
 
 **Acceptance:**
+
 - AC1: Routing pad 1 to Direct Out 3 and playing it produces audio on DAW channel "Slicer / Out 3" and silence on Master.
 - AC2: Pads 5 and 6 in choke group 2: triggering 5, then 6, cuts pad 5 within 10 ms (measured at the output).
 - AC3: Velocity zone v∈[0,63] = slice A, v∈[64,127] = slice B: hitting with v=63 produces A, v=64 produces B.
@@ -184,6 +194,7 @@ All parameter changes MUST be automatable by DAW automation lanes. All parameter
 - **"Send to Toaster"** — an action that hands off all current slices as a multi-sample pad kit to the drum-machine/Toaster sampler: each slice becomes one pad, per-pad tune/envelope/routing copied, and the Slicer is optionally closed. The action MUST NOT destroy the Slicer's state — it is a copy, not a move.
 
 **Acceptance:**
+
 - AC1: Switching from Spectral Flux to HFC on a percussive loop produces at least as many transient-confident markers (HFC has higher specificity on percussion).
 - AC2: Setting pad 3 to `PhaseVocoder` and pitching it down 12 semitones preserves duration (offline render length within ±1 ms of original).
 - AC3: Importing a REX2 file with 32 slices produces exactly 32 markers; the first 16 are pad-mapped; slice 1 plays the REX2's slice 1.
@@ -199,6 +210,7 @@ All parameter changes MUST be automatable by DAW automation lanes. All parameter
 - **Performance**: dragging a marker MUST maintain ≥ 60 fps on a 60 s source (measured on reference hardware).
 
 **Acceptance:**
+
 - AC1: A marker dragged near a zero-crossing snaps to within ±8 samples of it (verified by inspecting marker position vs. sample data).
 - AC2: All 16 pads have visually distinct colors drawn from the 12-hue palette (pads 13–16 reuse hues 0–3, by design).
 - AC3: Waveform drag at maximum zoom (1 sample/px) maintains 60 fps on a 10-minute file on reference hardware.
@@ -223,6 +235,7 @@ All parameter changes MUST be automatable by DAW automation lanes. All parameter
 
 **Chosen:** 16 pads (4×4) as the default and canonical grid.
 **Considered and rejected:**
+
 - **8 pads** — insufficient for common drum-loop slicing (kick/snare/hat/OH/perc easily exceed 8 slots).
 - **32 pads** — double the screen real estate for a workflow where most users use ≤16 slots; clutters the UI.
 - **Variable grid (user-configurable 8/16/32)** — adds state-management complexity without a clear user demand. Can be added later if needed; 16 is the MPC-canonical starting point.
@@ -231,6 +244,7 @@ All parameter changes MUST be automatable by DAW automation lanes. All parameter
 
 **Chosen:** each pad may route to its own direct-out DAW channel.
 **Considered and rejected:**
+
 - **Single stereo bus** — trivially simple but defeats a major pro workflow (parallel-compress the kick, bus-EQ the hats). Puts the Slicer on the wrong side of the build/performance divide.
 - **Internal submixer with fixed buses (Bus 1–4)** — intermediate; useful but doesn't reach the "fully exposed to DAW mixer" experience that NI Battery and Bitwig Drum Machine provide and users expect.
 
@@ -238,6 +252,7 @@ All parameter changes MUST be automatable by DAW automation lanes. All parameter
 
 **Chosen:** $s \in [0,1]$ → $\tau(s)$ monotonic threshold on a pre-computed ODF.
 **Considered and rejected:**
+
 - **Re-run onset detection at every slider position** — too expensive; violates the 30 Hz real-time redraw requirement.
 - **Discrete slice-count slider (snap to 8/16/32/64)** — loses the intuitive "dial in the feel" UX that is the Slicer's hook.
 - **Non-monotonic thresholding** — confusing: raising the slider could drop existing slices and add new ones simultaneously, making the interaction feel random.
@@ -246,6 +261,7 @@ All parameter changes MUST be automatable by DAW automation lanes. All parameter
 
 **Chosen:** `Auto` vs `Manual` classification with explicit lock/unlock.
 **Considered and rejected:**
+
 - **One-color markers with a hidden "is_manual" flag** — users can't tell at a glance which markers are slider-controlled. Leads to "why did my marker move?" confusion.
 - **Auto markers always win (re-detection overwrites manual)** — destroys user edits; violates user-intent hierarchy.
 
@@ -253,6 +269,7 @@ All parameter changes MUST be automatable by DAW automation lanes. All parameter
 
 **Chosen:** Slicer consumes the onset detection defined in `unified-sampler-suite.md` R4 (SuperFlux default; HFC and Complex Domain selectable).
 **Considered and rejected:**
+
 - **Slicer-specific onset detector** — would fragment the detector ecosystem and create parallel implementations for the same problem. Violates `AGENTS.md` "survey existing patterns first — do not reinvent" principle.
 
 ---

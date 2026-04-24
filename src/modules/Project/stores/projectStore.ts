@@ -44,7 +44,7 @@ export const projectStore = createStore<ProjectStoreState>({
         scaleName: 'chromatic',
         tuning: {
             name: 'Equal Temperament',
-            frequencies: Array.from({ length: 128 }, (_, i) => 440 * 2 ** ((i - 69) / 12)),
+            frequencies: Array.from({ length: 128 }, (_, index) => 440 * 2 ** ((index - 69) / 12)),
         },
         initialized: false,
     },

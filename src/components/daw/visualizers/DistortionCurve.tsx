@@ -19,12 +19,12 @@ type DistortionCurveProps = {
 };
 
 /** Attempt to match the waveshaper curve used in deviceNodeFactory */
-const waveshape = (x: number, drive: number): number => {
-    const k = drive * 4; // amplify the effect
-    if (k === 0) {
-        return x;
+const waveshape = (xPos: number, drive: number): number => {
+    const kIndex = drive * 4; // amplify the effect
+    if (kIndex === 0) {
+        return xPos;
     }
-    return Math.tanh(x * k) / Math.tanh(k);
+    return Math.tanh(xPos * kIndex) / Math.tanh(kIndex);
 };
 
 export const DistortionCurve = ({
@@ -97,23 +97,23 @@ export const DistortionCurve = ({
         const points: [number, number][] = [];
         const steps = gw;
 
-        for (let i = 0; i <= steps; i++) {
-            const inputNorm = i / steps; // 0–1
+        for (let index = 0; index <= steps; index++) {
+            const inputNorm = index / steps; // 0–1
             const input = inputNorm * 2 - 1; // -1 to +1
             const shaped = waveshape(input, normalizedDrive);
             // Blend with dry based on mix
             const blended = input * (1 - mix) + shaped * mix;
             const outputNorm = (blended + 1) / 2; // back to 0–1
-            const x = pad + i;
-            const y = pad + gh - outputNorm * gh;
-            points.push([x, y]);
+            const xPos = pad + index;
+            const yPos = pad + gh - outputNorm * gh;
+            points.push([xPos, yPos]);
         }
 
         // Fill under curve — gradient
         ctx.beginPath();
         ctx.moveTo(pad, pad + gh);
-        for (const [x, y] of points) {
-            ctx.lineTo(x, y);
+        for (const [xPos, yPos] of points) {
+            ctx.lineTo(xPos, yPos);
         }
         ctx.lineTo(pad + gw, pad + gh);
         ctx.closePath();
@@ -125,12 +125,12 @@ export const DistortionCurve = ({
 
         // Glow pass
         ctx.beginPath();
-        for (let i = 0; i < points.length; i++) {
-            const [x, y] = points[i]!;
-            if (i === 0) {
-                ctx.moveTo(x, y);
+        for (let index = 0; index < points.length; index++) {
+            const [xPos, yPos] = points[index]!;
+            if (index === 0) {
+                ctx.moveTo(xPos, yPos);
             } else {
-                ctx.lineTo(x, y);
+                ctx.lineTo(xPos, yPos);
             }
         }
         ctx.strokeStyle = `${accPeach}28`;
@@ -139,12 +139,12 @@ export const DistortionCurve = ({
 
         // Sharp stroke
         ctx.beginPath();
-        for (let i = 0; i < points.length; i++) {
-            const [x, y] = points[i]!;
-            if (i === 0) {
-                ctx.moveTo(x, y);
+        for (let index = 0; index < points.length; index++) {
+            const [xPos, yPos] = points[index]!;
+            if (index === 0) {
+                ctx.moveTo(xPos, yPos);
             } else {
-                ctx.lineTo(x, y);
+                ctx.lineTo(xPos, yPos);
             }
         }
         ctx.strokeStyle = accPeach;
@@ -168,7 +168,7 @@ export const DistortionCurve = ({
         }
     }, [drive, mix, width, height, _tone, isInteractive]);
 
-    const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
         if (!onParamChange) {
             return;
         }
@@ -177,24 +177,24 @@ export const DistortionCurve = ({
             return;
         }
         isDragging.current = true;
-        lastY.current = e.clientY;
-        canvas.setPointerCapture(e.pointerId);
+        lastY.current = event.clientY;
+        canvas.setPointerCapture(event.pointerId);
         canvas.style.cursor = 'grabbing';
     };
 
-    const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
         if (!onParamChange || !isDragging.current) {
             return;
         }
-        const deltaY = lastY.current - e.clientY; // up = positive
-        lastY.current = e.clientY;
+        const deltaY = lastY.current - event.clientY; // up = positive
+        lastY.current = event.clientY;
         // Map vertical drag to drive change: ~0.5 drive units per pixel
         const sensitivity = 0.5;
         const newDrive = Math.max(0, Math.min(100, drive + deltaY * sensitivity));
         onParamChange('dist-drive', newDrive);
     };
 
-    const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
         if (!onParamChange) {
             return;
         }
@@ -203,7 +203,7 @@ export const DistortionCurve = ({
             return;
         }
         isDragging.current = false;
-        canvas.releasePointerCapture(e.pointerId);
+        canvas.releasePointerCapture(event.pointerId);
         canvas.style.cursor = 'grab';
     };
 

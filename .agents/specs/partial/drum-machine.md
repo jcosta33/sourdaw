@@ -641,15 +641,15 @@ A `PatternDelta` is the only object AI features emit. UI applies it by calling t
 
 ```json
 {
-  "bars": 1,
-  "resolution": 16,
-  "swing": 0.12,
-  "steps": [
-    { "pad": "kick",  "index": 0,  "velocity": 1.00, "probability": 1.0, "micro": 0.00 },
-    { "pad": "snare", "index": 4,  "velocity": 0.85, "probability": 1.0, "micro": -0.02 },
-    { "pad": "hat",   "index": 2,  "velocity": 0.60, "probability": 0.9, "micro": 0.00 }
-  ],
-  "kit_deltas": []
+    "bars": 1,
+    "resolution": 16,
+    "swing": 0.12,
+    "steps": [
+        { "pad": "kick", "index": 0, "velocity": 1.0, "probability": 1.0, "micro": 0.0 },
+        { "pad": "snare", "index": 4, "velocity": 0.85, "probability": 1.0, "micro": -0.02 },
+        { "pad": "hat", "index": 2, "velocity": 0.6, "probability": 0.9, "micro": 0.0 }
+    ],
+    "kit_deltas": []
 }
 ```
 
@@ -1483,13 +1483,17 @@ The component tolerances (±20% capacitors, ±5% resistors) that made every hard
 ## Implementation Status
 
 **What is implemented:**
+
 - None. This is a comprehensive blueprint for a future drum machine. Note: the codename "Grinder" currently collides with the existing Amp Simulator module.
 
 **What is not implemented:**
+
 - All parts (Part 1-11) and mathematical models described in the spec.
 
 **What is done well:**
+
 - Extremely detailed technical research and mathematical grounding.
 
 **What needs refactoring:**
+
 - Codename resolution (Grinder) before implementation begins.

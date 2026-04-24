@@ -14,7 +14,7 @@ type SendsSectionProps = {
 
 export const SendsSection = ({ track }: SendsSectionProps): ReactElement | null => {
     const { tracks } = useTracks();
-    const buses = tracks.filter((t) => t.kind === 'bus');
+    const buses = tracks.filter((time) => time.kind === 'bus');
     if (buses.length === 0) {
         return null;
     }
@@ -22,7 +22,7 @@ export const SendsSection = ({ track }: SendsSectionProps): ReactElement | null 
     return (
         <MixerSection label="Sends">
             {buses.map((bus) => {
-                const send = track.sends.find((s) => s.busId === bus.id);
+                const send = track.sends.find((state) => state.busId === bus.id);
                 const level = send?.level ?? 0;
                 const isPreFader = send?.preFader ?? false;
                 return (
@@ -30,9 +30,9 @@ export const SendsSection = ({ track }: SendsSectionProps): ReactElement | null 
                         <span className="text-[6px] text-muted-foreground truncate w-6">{bus.name}</span>
                         <Slider
                             value={[level * 100]}
-                            onValueChange={([v]) => {
-                                if (v !== undefined) {
-                                    setSend(track.id, bus.id, v / 100);
+                            onValueChange={([value]) => {
+                                if (value !== undefined) {
+                                    setSend(track.id, bus.id, value / 100);
                                 }
                             }}
                             max={100}
@@ -45,8 +45,8 @@ export const SendsSection = ({ track }: SendsSectionProps): ReactElement | null 
                             variant="amber"
                             size="icon-sm"
                             className="shrink-0 text-[5px] font-bold leading-tight px-0.5"
-                            onClick={(e) => {
-                                e.stopPropagation();
+                            onClick={(event) => {
+                                event.stopPropagation();
                                 toggleSendPreFader(track.id, bus.id);
                             }}
                             aria-label={`Toggle send to ${bus.name} ${isPreFader ? 'post' : 'pre'}-fader`}

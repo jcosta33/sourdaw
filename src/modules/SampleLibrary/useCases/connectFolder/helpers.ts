@@ -97,7 +97,7 @@ async function scanBrowserDirectory(root: LibraryRoot): Promise<void> {
         buildFolderTree(root.id);
         await persistLibraryRoots();
         await persistSamples();
-    } catch (error) {
+    } catch {
         updateLibraryRootStatus(root.id, 'offline');
     } finally {
         setScanProgress(false, 1);

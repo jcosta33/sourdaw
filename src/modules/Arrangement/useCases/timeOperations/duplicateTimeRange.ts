@@ -36,7 +36,9 @@ export function insertTime(atBeat: number, durationBeats: number): void {
     if (markerState) {
         markerStore.set({
             ...markerState,
-            markers: markerState.markers.map((m) => (m.beat >= atBeat ? { ...m, beat: m.beat + durationBeats } : m)),
+            markers: markerState.markers.map((message) =>
+                message.beat >= atBeat ? { ...message, beat: message.beat + durationBeats } : message
+            ),
         });
     }
 
@@ -46,7 +48,9 @@ export function insertTime(atBeat: number, durationBeats: number): void {
             ...autoState,
             lanes: autoState.lanes.map((lane) => ({
                 ...lane,
-                points: lane.points.map((p) => (p.beat >= atBeat ? { ...p, beat: p.beat + durationBeats } : p)),
+                points: lane.points.map((param) =>
+                    param.beat >= atBeat ? { ...param, beat: param.beat + durationBeats } : param
+                ),
             })),
         });
     }
@@ -56,7 +60,9 @@ export function insertTime(atBeat: number, durationBeats: number): void {
     if (tempoState) {
         tempoMapStore.set({
             ...tempoState,
-            changes: tempoState.changes.map((c) => (c.beat >= atBeat ? { ...c, beat: c.beat + durationBeats } : c)),
+            changes: tempoState.changes.map((context) =>
+                context.beat >= atBeat ? { ...context, beat: context.beat + durationBeats } : context
+            ),
         });
     }
 
@@ -65,7 +71,9 @@ export function insertTime(atBeat: number, durationBeats: number): void {
     if (timeSigState) {
         timeSignatureMapStore.set({
             ...timeSigState,
-            changes: timeSigState.changes.map((c) => (c.beat >= atBeat ? { ...c, beat: c.beat + durationBeats } : c)),
+            changes: timeSigState.changes.map((context) =>
+                context.beat >= atBeat ? { ...context, beat: context.beat + durationBeats } : context
+            ),
         });
     }
 
@@ -88,13 +96,16 @@ export function duplicateTimeRange(startBeat: number, endBeat: number): void {
         ...state,
         tracks: state.tracks.map((track) => {
             const clipsInRange = track.clips.filter(
-                (c) => c.startBeat >= startBeat && c.endBeat <= endBeat + duration && c.startBeat < endBeat
+                (context) =>
+                    context.startBeat >= startBeat &&
+                    context.endBeat <= endBeat + duration &&
+                    context.startBeat < endBeat
             );
-            const duplicated = clipsInRange.map((c) => ({
-                ...c,
+            const duplicated = clipsInRange.map((context) => ({
+                ...context,
                 id: `clip-dup-${crypto.randomUUID()}`,
-                startBeat: c.startBeat + duration,
-                endBeat: c.endBeat + duration,
+                startBeat: context.startBeat + duration,
+                endBeat: context.endBeat + duration,
             }));
             return { ...track, clips: [...track.clips, ...duplicated] };
         }),

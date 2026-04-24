@@ -16,7 +16,7 @@ describe('handleCutClip', () => {
     });
 
     it('executes cutSelectedClip', () => {
-        handleCutClip.execute({ type: 'cutClip', payload: {} });
+        void handleCutClip.execute({ type: 'cutClip', payload: {} });
         expect(mocks.cutSelectedClip).toHaveBeenCalledTimes(1);
     });
 

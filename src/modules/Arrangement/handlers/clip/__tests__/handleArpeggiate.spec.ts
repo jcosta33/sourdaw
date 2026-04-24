@@ -16,7 +16,7 @@ describe('handleArpeggiate', () => {
     });
 
     it('executes arpeggiate with the provided payload', () => {
-        handleArpeggiate.execute({
+        void handleArpeggiate.execute({
             type: 'arpeggiate',
             payload: {
                 clipId: 'c1',
@@ -31,7 +31,7 @@ describe('handleArpeggiate', () => {
     });
 
     it('uses defaults for missing parameters', () => {
-        handleArpeggiate.execute({
+        void handleArpeggiate.execute({
             type: 'arpeggiate',
             payload: {
                 clipId: 'c1',

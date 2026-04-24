@@ -90,6 +90,7 @@ export const initWebLlmEngine = inject({ logger })(
                     { context_window_size: 8192 }
                 );
 
+                // eslint-disable-next-line sourdaw/no-type-assertion-escape -- WebWorkerMLCEngine and WebLlmEngine are structurally compatible subsets; cast required due to overloaded chat.completions.create signature
                 engineState.engine = created as unknown as WebLlmEngine;
                 llmStatusStore.set({ state: 'ready', modelId: targetModel });
                 logger.info(`[AI Engine] WebLLM loaded: ${targetModel}`);

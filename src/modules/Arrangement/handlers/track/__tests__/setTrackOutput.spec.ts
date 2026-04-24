@@ -16,7 +16,7 @@ describe('handleSetTrackOutput', () => {
     });
 
     it('executes setTrackOutput with the provided payload', () => {
-        handleSetTrackOutput.execute({
+        void handleSetTrackOutput.execute({
             type: 'setTrackOutput',
             payload: { trackId: 't1', outputId: 'main' },
         });

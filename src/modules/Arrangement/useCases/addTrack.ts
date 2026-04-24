@@ -23,7 +23,7 @@ export const addTrack = inject({ eventBus })(
                 selectedTrackId: track.id,
             });
 
-            eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
+            void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
             return track;
         }
 );

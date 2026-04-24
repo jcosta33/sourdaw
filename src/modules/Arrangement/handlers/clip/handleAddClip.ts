@@ -3,9 +3,9 @@ import { createHandler } from '#/utils/createHandler';
 import { addClip } from '../../useCases/clip/addClip';
 
 export const handleAddClip = createHandler<'addClip'>({
-    execute: (a) => {
-        addClip(a.payload);
+    execute: (alpha) => {
+        addClip(alpha.payload);
     },
-    describe: (a) => ({ label: `Add clip "${a.payload.name}"` }),
+    describe: (alpha) => ({ label: `Add clip "${alpha.payload.name}"` }),
     undoable: true,
 });

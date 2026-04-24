@@ -17,20 +17,22 @@ vi.mock('../../../stores/controlSurface', () => ({
     },
 }));
 
-const baseState = (): ControlSurfaceState => ({
-    protocol: null,
-    mcu: {
-        faders: Array.from({ length: 9 }, (_, i) => ({ position: 0, trackIndex: i })),
-        bankOffset: 0,
-        vpots: Array.from({ length: 8 }, () => 0),
-        mode: 'pan',
-        timecodeDisplay: '00:00:00:00',
-        assignmentDisplay: 'PAN',
-    },
-    oscEndpoints: [],
-    oscMappings: [],
-    connected: false,
-});
+function baseState(): ControlSurfaceState {
+    return {
+        protocol: null,
+        mcu: {
+            faders: Array.from({ length: 9 }, (_, index) => ({ position: 0, trackIndex: index })),
+            bankOffset: 0,
+            vpots: Array.from({ length: 8 }, () => 0),
+            mode: 'pan',
+            timecodeDisplay: '00:00:00:00',
+            assignmentDisplay: 'PAN',
+        },
+        oscEndpoints: [],
+        oscMappings: [],
+        connected: false,
+    };
+}
 
 describe('mcuBankRight', () => {
     beforeEach(() => {

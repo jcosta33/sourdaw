@@ -3,10 +3,10 @@ import { setCrustParam } from '../../stores/crustStore';
 
 import { encodeCrustValue, findDeviceRefCrust, flushCrustParam, paramBatcher } from './helpers';
 
-export function setCrustParamWithAudio<K extends keyof CrustPatch>(
+export function setCrustParamWithAudio<Key extends keyof CrustPatch>(
     deviceId: string,
-    key: K,
-    value: CrustPatch[K]
+    key: Key,
+    value: CrustPatch[Key]
 ): void {
     setCrustParam(key, value);
 

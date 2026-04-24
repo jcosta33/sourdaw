@@ -6,7 +6,7 @@ import { loadGrinderPatchWithAudio } from '../loadGrinderPatchWithAudio';
 
 vi.mock('../../../stores/grinderStore', () => ({
     loadGrinderPatch: vi.fn(),
-    migrateGrinderPatch: (p: any) => p,
+    migrateGrinderPatch: (param: any) => param,
     grinderStore: { value: {} },
 }));
 

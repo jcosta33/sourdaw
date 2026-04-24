@@ -3,7 +3,7 @@
  * Shows the complete audio path from generators through effects to output.
  * Each node is interactive — clicking opens its controls in the inspector.
  */
-import { type ReactElement, useRef, useEffect, useMemo } from 'react';
+import { type ReactElement, useRef, useEffect } from 'react';
 
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 
@@ -59,7 +59,12 @@ export const SignalFlowView = ({
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     // Build node graph
-    const { nodes, connections, canvasW, canvasH } = useMemo(() => {
+    const buildNodeGraph = (): {
+        nodes: FlowNode[];
+        connections: Array<[number, number]>;
+        canvasW: number;
+        canvasH: number;
+    } => {
         const nodes: FlowNode[] = [];
         const connections: Array<[number, number]> = [];
 
@@ -290,7 +295,8 @@ export const SignalFlowView = ({
         const canvasH = row2y + 30;
 
         return { nodes, connections, canvasW, canvasH };
-    }, [patch, numLayers, activeLayer]);
+    };
+    const { nodes, connections, canvasW, canvasH } = buildNodeGraph();
 
     useEffect(() => {
         const canvas = canvasRef.current;

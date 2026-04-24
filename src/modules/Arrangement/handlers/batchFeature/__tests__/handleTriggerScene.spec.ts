@@ -16,7 +16,7 @@ describe('handleTriggerScene', () => {
     });
 
     it('executes triggerScene from Transport module with column', () => {
-        handleTriggerScene.execute({ type: 'triggerScene', payload: { column: 2 } });
+        void handleTriggerScene.execute({ type: 'triggerScene', payload: { column: 2 } });
         expect(mocks.triggerScene).toHaveBeenCalledWith(2);
     });
 

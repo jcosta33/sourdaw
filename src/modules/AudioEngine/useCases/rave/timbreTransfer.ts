@@ -11,16 +11,16 @@ export function timbreTransfer(
 ): LatentVector[] {
     const clampedBlend = Math.max(0, Math.min(1, blend));
 
-    return sourceVectors.map((sv, i) => {
-        const tv = targetVectors[i % targetVectors.length];
+    return sourceVectors.map((sv, index) => {
+        const tv = targetVectors[index % targetVectors.length];
         if (!tv) {
             return sv;
         }
 
         return {
             timeSec: sv.timeSec,
-            values: sv.values.map((val, d) => {
-                const targetVal = tv.values[d] ?? 0;
+            values: sv.values.map((val, data) => {
+                const targetVal = tv.values[data] ?? 0;
                 return val * (1 - clampedBlend) + targetVal * clampedBlend;
             }),
         };

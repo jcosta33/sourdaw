@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, type ElementType } from 'react';
 
 import {
     Coffee,
@@ -28,7 +28,7 @@ type GridProps = {
 type OptionDef = {
     id: string;
     label: string;
-    Icon: any;
+    Icon: ElementType<{ className?: string }>;
     colorClass: string;
 };
 

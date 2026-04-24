@@ -12,20 +12,20 @@ export function applyEuclideanToTrack(deviceId: string, padIndex: number, hits: 
         return;
     }
 
-    const pattern = state.kit.patterns.find((p) => p.id === state.kit.activePatternId);
+    const pattern = state.kit.patterns.find((param) => param.id === state.kit.activePatternId);
     if (!pattern) {
         return;
     }
 
     const rhythm = euclidean(hits, steps, rotation);
-    const track = pattern.tracks.find((t) => t.padIndex === padIndex);
+    const track = pattern.tracks.find((time) => time.padIndex === padIndex);
     if (!track) {
         return;
     }
 
-    const newSteps = track.steps.map((step, i) => ({
+    const newSteps = track.steps.map((step, index) => ({
         ...step,
-        active: i < rhythm.length ? rhythm[i]! : false,
+        active: index < rhythm.length ? rhythm[index]! : false,
     }));
 
     const newTracks = pattern.tracks.map((t) => (t.padIndex === padIndex ? { ...t, steps: newSteps } : t));

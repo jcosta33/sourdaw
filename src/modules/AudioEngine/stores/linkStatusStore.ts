@@ -23,4 +23,6 @@ export const linkStatusStore = createStore<LinkStatus>({
 });
 
 export const subscribeToLinkStatus = linkStatusStore.subscribe.bind(linkStatusStore);
-export const getLinkStatusSnapshot = () => linkStatusStore.value?.enabled ?? false;
+export function getLinkStatusSnapshot() {
+    return linkStatusStore.value?.enabled ?? false;
+}

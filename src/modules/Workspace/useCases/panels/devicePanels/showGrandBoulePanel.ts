@@ -5,6 +5,6 @@ import { inject } from '#/infra/di/inject';
 export const showGrandBoulePanel = inject({ eventBus })(
     ({ eventBus }) =>
         function showGrandBoulePanel(deviceId: string | null): void {
-            eventBus.emit('panel.showGrandBoule', { deviceId });
+            void eventBus.emit('panel.showGrandBoule', { deviceId });
         }
 );

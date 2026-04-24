@@ -44,7 +44,8 @@ export const StatusBar = (): ReactElement => {
     const renderQueue = useStore(renderQueueStore, { entries: [], cachedPhraseIds: [], phraseStatusMap: {} });
     const activeRenderCount = renderQueue
         ? renderQueue.entries.filter(
-              (e) => e.status === 'rendering-browser' || e.status === 'queued' || e.status === 'preparing'
+              (event) =>
+                  event.status === 'rendering-browser' || event.status === 'queued' || event.status === 'preparing'
           ).length
         : 0;
 
@@ -70,6 +71,28 @@ export const StatusBar = (): ReactElement => {
         masterLevelText: masterLevelTextRef,
         engineState: engineStateRef,
     });
+
+    const renderIife_13 = () => {
+        if (llmStatus?.state === 'generating') {
+            return (
+                <span className="animate-pulse font-mono text-[10px] text-[var(--color-accent-lavender)]">active</span>
+            );
+        } else {
+            if (llmStatus?.state === 'loading') {
+                return (
+                    <span className="font-mono text-[10px] text-[var(--color-state-warning)]">
+                        {Math.round(llmStatus.progress * 100)}%
+                    </span>
+                );
+            } else {
+                if (llmStatus?.state === 'ready') {
+                    return <span className="font-mono text-[10px] text-[var(--color-state-success)]/70">ready</span>;
+                } else {
+                    return <span className="font-mono text-[10px] text-muted-foreground/50">idle</span>;
+                }
+            }
+        }
+    };
 
     return (
         <footer role="status" aria-label="Application status">
@@ -99,26 +122,7 @@ export const StatusBar = (): ReactElement => {
                         }
                     />
 
-                    <DawMetricCluster
-                        label="GPU"
-                        value={
-                            llmStatus?.state === 'generating' ? (
-                                <span className="animate-pulse font-mono text-[10px] text-[var(--color-accent-lavender)]">
-                                    active
-                                </span>
-                            ) : llmStatus?.state === 'loading' ? (
-                                <span className="font-mono text-[10px] text-[var(--color-state-warning)]">
-                                    {Math.round(llmStatus.progress * 100)}%
-                                </span>
-                            ) : llmStatus?.state === 'ready' ? (
-                                <span className="font-mono text-[10px] text-[var(--color-state-success)]/70">
-                                    ready
-                                </span>
-                            ) : (
-                                <span className="font-mono text-[10px] text-muted-foreground/50">idle</span>
-                            )
-                        }
-                    />
+                    <DawMetricCluster label="GPU" value={renderIife_13()} />
 
                     {activeRenderCount > 0 ? (
                         <DawMetricCluster

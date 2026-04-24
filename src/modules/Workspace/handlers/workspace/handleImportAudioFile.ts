@@ -9,12 +9,14 @@ export const handleImportAudioFile = createHandler<'importAudioFile'>({
             .then((files) => {
                 if (files) {
                     for (const file of files) {
-                        importAudioFile(file);
+                        void importAudioFile(file);
                     }
                 }
+                return null;
             })
             .catch(() => {
                 notifyUser('Failed to open file dialog', 'error');
+                return null;
             });
     },
     describe: () => ({ label: 'Import audio file' }),

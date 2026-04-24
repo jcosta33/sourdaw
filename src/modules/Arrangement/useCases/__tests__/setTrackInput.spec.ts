@@ -5,7 +5,7 @@ import * as subject from '../setTrackInput';
 describe('setTrackInput', () => {
     it('should export setTrackInput', () => {
         expect(subject.setTrackInput).toBeDefined();
-        const t = typeof subject.setTrackInput;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setTrackInput;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

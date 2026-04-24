@@ -8,8 +8,8 @@ type GapValue = 0 | 0.5 | 1 | 1.5 | 2 | 2.5 | 3 | 4 | 6 | 8;
 type AlignValue = 'start' | 'center' | 'end' | 'stretch';
 type JustifyValue = 'start' | 'center' | 'end' | 'between';
 
-type StackProps<T extends StackElement = 'div'> = Omit<ComponentPropsWithoutRef<T>, 'as'> & {
-    as?: T;
+type StackProps<Element extends StackElement = 'div'> = Omit<ComponentPropsWithoutRef<Element>, 'as'> & {
+    as?: Element;
     gap?: GapValue;
     align?: AlignValue;
     justify?: JustifyValue;
@@ -46,7 +46,7 @@ const JUSTIFY_CLASS_NAMES: Record<JustifyValue, string> = {
     between: 'justify-between',
 };
 
-export const Stack = <T extends StackElement = 'div'>({
+export const Stack = <Element extends StackElement = 'div'>({
     as,
     gap = 0,
     align = 'stretch',
@@ -57,7 +57,7 @@ export const Stack = <T extends StackElement = 'div'>({
     className,
     children,
     ...props
-}: StackProps<T>): ReactElement => {
+}: StackProps<Element>): ReactElement => {
     const Component = as ?? 'div';
     return (
         <Component

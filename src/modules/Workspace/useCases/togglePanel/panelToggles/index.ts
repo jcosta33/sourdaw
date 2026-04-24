@@ -25,87 +25,87 @@ import { type ChannelStripWidth, type SoloMode } from '../../workspaceQueries/he
 
 // ── Group 1: unconditional setters ──────────────────────────────────────
 
-export const clearClipSelection = (): void => {
+export function clearClipSelection(): void {
     updateWorkspaceState({ selectedClipId: null, selectedClipIds: [] });
-};
+}
 
-export const closeBranchManager = (): void => {
+export function closeBranchManager(): void {
     updateWorkspaceState({ branchManagerOpen: false });
-};
+}
 
-export const closeCollaborationPanel = (): void => {
+export function closeCollaborationPanel(): void {
     updateWorkspaceState({ collaborationPanelOpen: false });
-};
+}
 
-export const closeCommandPalette = (): void => {
+export function closeCommandPalette(): void {
     updateWorkspaceState({ commandPaletteOpen: false });
-};
+}
 
-export const closeScratchPad = (): void => {
+export function closeScratchPad(): void {
     updateWorkspaceState({ scratchPadOpen: false });
-};
+}
 
-export const closeUndoHistory = (): void => {
+export function closeUndoHistory(): void {
     updateWorkspaceState({ undoHistoryOpen: false });
-};
+}
 
-export const openInspector = (): void => {
+export function openInspector(): void {
     updateWorkspaceState({ inspectorOpen: true });
-};
+}
 
-export const openMixer = (): void => {
+export function openMixer(): void {
     updateWorkspaceState({ mixerOpen: true });
-};
+}
 
-export const openVirtualKeyboard = (): void => {
+export function openVirtualKeyboard(): void {
     updateWorkspaceState({ virtualKeyboardOpen: true });
-};
+}
 
-export const selectAllClips = (getAllClipIds: () => string[]): void => {
+export function selectAllClips(getAllClipIds: () => string[]): void {
     updateWorkspaceState({ selectedClipIds: getAllClipIds(), selectedClipId: null });
-};
+}
 
-export const selectClip = (clipId: string): void => {
+export function selectClip(clipId: string): void {
     updateWorkspaceState({ selectedClipId: clipId });
-};
+}
 
-export const selectClipWithFocus = (clipId: string): void => {
+export function selectClipWithFocus(clipId: string): void {
     updateWorkspaceState({ selectedClipId: clipId, selectedClipIds: [clipId] });
-};
+}
 
-export const setClipSelection = (clipIds: string[]): void => {
+export function setClipSelection(clipIds: string[]): void {
     updateWorkspaceState({ selectedClipId: clipIds[0] ?? null, selectedClipIds: clipIds });
-};
+}
 
-export const setSnapValue = (value: number): void => {
+export function setSnapValue(value: number): void {
     if (!getWorkspaceState()) {
         return;
     }
     updateWorkspaceState({ snapValue: value });
-};
+}
 
-export const setSoloMode = (soloMode: SoloMode): void => {
+export function setSoloMode(soloMode: SoloMode): void {
     if (!getWorkspaceState()) {
         return;
     }
     updateWorkspaceState({ soloMode });
-};
+}
 
-export const setTrackListWidth = (width: number): void => {
+export function setTrackListWidth(width: number): void {
     updateWorkspaceState({ trackListWidth: width });
-};
+}
 
-export const setVirtualKeyboardOctave = (octave: number): void => {
+export function setVirtualKeyboardOctave(octave: number): void {
     updateWorkspaceState({ virtualKeyboardOctave: Math.max(0, Math.min(8, octave)) });
-};
+}
 
-export const setVirtualKeyboardVelocity = (velocity: number): void => {
+export function setVirtualKeyboardVelocity(velocity: number): void {
     updateWorkspaceState({ virtualKeyboardVelocity: Math.max(1, Math.min(127, velocity)) });
-};
+}
 
-export const setSessionViewWidth = (width: number): void => {
+export function setSessionViewWidth(width: number): void {
     updateWorkspaceState({ sessionViewWidth: width });
-};
+}
 
 // ── Group 2: boolean toggles via factory ────────────────────────────────
 // Each of these reads the current state, negates one boolean field,
@@ -115,15 +115,15 @@ type BooleanKey = {
     [K in keyof WorkspaceState]: WorkspaceState[K] extends boolean ? K : never;
 }[keyof WorkspaceState];
 
-const createBooleanToggle =
-    <K extends BooleanKey>(key: K): (() => void) =>
-    () => {
+function createBooleanToggle<Key extends BooleanKey>(key: Key): () => void {
+    return () => {
         const current = getWorkspaceState();
         if (!current) {
             return;
         }
         updateWorkspaceState({ [key]: !current[key] } as Partial<WorkspaceState>);
     };
+}
 
 export const toggleAutomationPanel = createBooleanToggle('automationPanelOpen');
 export const toggleBranchManager = createBooleanToggle('branchManagerOpen');
@@ -146,15 +146,15 @@ const STRIP_WIDTH_CYCLE: Record<ChannelStripWidth, ChannelStripWidth> = {
     wide: 'narrow',
 };
 
-export const cycleChannelStripWidth = (): void => {
+export function cycleChannelStripWidth(): void {
     const current = getWorkspaceState();
     if (!current) {
         return;
     }
     updateWorkspaceState({ channelStripWidth: STRIP_WIDTH_CYCLE[current.channelStripWidth] });
-};
+}
 
-export const toggleTimeDisplayMode = (): void => {
+export function toggleTimeDisplayMode(): void {
     const current = getWorkspaceState();
     if (!current) {
         return;
@@ -162,17 +162,17 @@ export const toggleTimeDisplayMode = (): void => {
     updateWorkspaceState({
         timeDisplayMode: current.timeDisplayMode === 'musical' ? 'time' : 'musical',
     });
-};
+}
 
-export const toggleWorkspaceMode = (): void => {
+export function toggleWorkspaceMode(): void {
     const current = getWorkspaceState();
     if (!current) {
         return;
     }
     updateWorkspaceState({ mode: current.mode === 'arrange' ? 'clip' : 'arrange' });
-};
+}
 
-export const toggleClipInSelection = (clipId: string): void => {
+export function toggleClipInSelection(clipId: string): void {
     const current = getWorkspaceState();
     if (!current) {
         return;
@@ -184,4 +184,4 @@ export const toggleClipInSelection = (clipId: string): void => {
         ids.add(clipId);
     }
     updateWorkspaceState({ selectedClipId: clipId, selectedClipIds: [...ids] });
-};
+}

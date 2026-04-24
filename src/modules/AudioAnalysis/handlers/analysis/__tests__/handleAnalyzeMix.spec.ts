@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime/useCases';
+
+import { analyzeMix } from '../../../useCases/analyzeMix';
 import { handleAnalyzeMix } from '../handleAnalyzeMix';
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
@@ -10,10 +13,6 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 vi.mock('../../../useCases/analyzeMix', () => ({
     analyzeMix: vi.fn(),
 }));
-
-import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime/useCases';
-
-import { analyzeMix } from '../../../useCases/analyzeMix';
 
 describe('handleAnalyzeMix', () => {
     beforeEach(() => {

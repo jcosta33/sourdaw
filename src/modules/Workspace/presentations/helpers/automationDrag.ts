@@ -22,7 +22,7 @@ import { type AutomationLane, type AutomationPoint, type AutomationCurveType } f
 
 import { startMouseDrag } from './mouseDrag';
 
-type SetStateFn<T> = (updater: T | ((prev: T) => T)) => void;
+type SetStateFn<State> = (updater: State | ((prev: State) => State)) => void;
 
 type CoordFns = {
     getRect: () => DOMRect | undefined;
@@ -33,7 +33,7 @@ type CoordFns = {
 // ── Draw mode ────────────────────────────────────────────────────────────────
 
 export const onDrawMouseDown = (
-    e: ReactMouseEvent,
+    event: ReactMouseEvent,
     lane: AutomationLane,
     snapValue: number,
     coords: CoordFns
@@ -42,9 +42,9 @@ export const onDrawMouseDown = (
     if (!rect) {
         return;
     }
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    beginDrawSession(lane.id, snapValue, e.shiftKey);
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    beginDrawSession(lane.id, snapValue, event.shiftKey);
     paintDrawPoint(Math.max(0, coords.xToBeat(x)), coords.yToValue(y));
     startMouseDrag(
         (me) => {
@@ -59,14 +59,14 @@ export const onDrawMouseDown = (
 // ── Rubber-band selection ────────────────────────────────────────────────────
 
 export const onRubberBandStart = (
-    e: ReactMouseEvent,
+    event: ReactMouseEvent,
     lane: AutomationLane,
     setRubberBand: SetStateFn<{ x1: number; y1: number; x2: number; y2: number } | null>,
     setSelectedPoints: SetStateFn<number[]>,
     coords: CoordFns
 ): void => {
-    const isOnPoint = (e.target as Element).closest('[data-auto-point]');
-    const isOnTension = (e.target as Element).closest('[data-tension-handle]');
+    const isOnPoint = (event.target as Element).closest('[data-auto-point]');
+    const isOnTension = (event.target as Element).closest('[data-tension-handle]');
     if (isOnPoint || isOnTension) {
         return;
     }
@@ -74,9 +74,9 @@ export const onRubberBandStart = (
     if (!rect) {
         return;
     }
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const isShift = e.shiftKey;
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const isShift = event.shiftKey;
 
     if (!isShift) {
         setSelectedPoints([]);
@@ -143,18 +143,18 @@ export const onRubberBandStart = (
 
 export const onTensionMouseDown = (
     pointBeat: number,
-    e: ReactMouseEvent,
+    event: ReactMouseEvent,
     lane: AutomationLane,
     setTensionDrag: SetStateFn<{ beat: number; initialTension: number } | null>
 ): void => {
-    e.stopPropagation();
-    const point = lane.points.find((p) => p.beat === pointBeat);
+    event.stopPropagation();
+    const point = lane.points.find((param) => param.beat === pointBeat);
     if (!point) {
         return;
     }
     const initialTension = point.tension ?? 0;
     setTensionDrag({ beat: pointBeat, initialTension });
-    const startY = e.clientY;
+    const startY = event.clientY;
     startMouseDrag(
         (me) => {
             const newTension = Math.max(-1, Math.min(1, initialTension + (me.clientY - startY) / 100));
@@ -170,26 +170,26 @@ export const onTensionMouseDown = (
 
 export const onPointMouseDown = (
     pointBeat: number,
-    e: ReactMouseEvent,
+    event: ReactMouseEvent,
     lane: AutomationLane,
     setDragPointBeat: SetStateFn<number | null>,
     setSelectedPoints: SetStateFn<number[]>,
     coords: CoordFns
 ): void => {
-    e.stopPropagation();
+    event.stopPropagation();
     const rect = coords.getRect();
     if (!rect) {
         return;
     }
 
-    if (e.shiftKey) {
+    if (event.shiftKey) {
         setSelectedPoints((prev) =>
             prev.includes(pointBeat) ? prev.filter((b) => b !== pointBeat) : [...prev, pointBeat]
         );
         return;
     }
 
-    const origPoint = lane.points.find((p) => p.beat === pointBeat);
+    const origPoint = lane.points.find((param) => param.beat === pointBeat);
     if (!origPoint) {
         return;
     }
@@ -217,8 +217,8 @@ export const onPointMouseDown = (
         },
         () => {
             setDragPointBeat(null);
-            const finalLane = automationStore.value?.lanes.find((l) => l.id === lane.id);
-            const finalPoint = finalLane?.points.find((p) => Math.abs(p.beat - currentBeat) < 0.05);
+            const finalLane = automationStore.value?.lanes.find((length) => length.id === lane.id);
+            const finalPoint = finalLane?.points.find((param) => Math.abs(param.beat - currentBeat) < 0.05);
             const hasMoved =
                 finalPoint !== undefined && (finalPoint.beat !== origBeat || finalPoint.value !== origValue);
             if (hasMoved) {

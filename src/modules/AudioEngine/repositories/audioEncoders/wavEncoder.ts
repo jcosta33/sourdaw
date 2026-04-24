@@ -18,8 +18,8 @@ export async function audioBufferToWav(
     const view = new DataView(arrayBuffer);
 
     function writeString(offset: number, str: string) {
-        for (let i = 0; i < str.length; i++) {
-            view.setUint8(offset + i, str.charCodeAt(i));
+        for (let index = 0; index < str.length; index++) {
+            view.setUint8(offset + index, str.charCodeAt(index));
         }
     }
 
@@ -47,14 +47,16 @@ export async function audioBufferToWav(
         channels.push(buffer.getChannelData(ch));
     }
 
-    const tpdfDither = (): number => Math.random() - Math.random();
+    function tpdfDither(): number {
+        return Math.random() - Math.random();
+    }
 
     let offset = dataOffset + 8;
     const YIELD_INTERVAL = 32768;
 
-    for (let i = 0; i < buffer.length; i++) {
+    for (let index = 0; index < buffer.length; index++) {
         for (let ch = 0; ch < numChannels; ch++) {
-            const sample = Math.max(-1, Math.min(1, channels[ch]![i]!));
+            const sample = Math.max(-1, Math.min(1, channels[ch]![index]!));
             if (bitDepth === 16) {
                 const dithered = sample + tpdfDither() / 0x8000;
                 const clamped = Math.max(-1, Math.min(1, dithered));
@@ -71,9 +73,9 @@ export async function audioBufferToWav(
             offset += bytesPerSample;
         }
 
-        if (i > 0 && i % YIELD_INTERVAL === 0) {
-            onProgress?.(i / buffer.length);
-            await new Promise<void>((r) => setTimeout(r, 0));
+        if (index > 0 && index % YIELD_INTERVAL === 0) {
+            onProgress?.(index / buffer.length);
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
         }
     }
 

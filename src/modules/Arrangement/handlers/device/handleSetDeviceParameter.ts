@@ -5,12 +5,13 @@ import { setDeviceParameter } from '../../useCases/device/setDeviceParameter/set
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
-    execute: (a) => {
-        setDeviceParameter(a.payload.deviceId, a.payload.paramId, a.payload.value);
+    execute: (alpha) => {
+        setDeviceParameter(alpha.payload.deviceId, alpha.payload.paramId, alpha.payload.value);
         const ownerTrackId =
-            getTrackStoreState()?.tracks.find((t) => t.devices.some((d) => d.id === a.payload.deviceId))?.id ?? '';
-        updateDeviceParam(ownerTrackId, a.payload.deviceId, a.payload.paramId, a.payload.value);
+            getTrackStoreState()?.tracks.find((time) => time.devices.some((data) => data.id === alpha.payload.deviceId))
+                ?.id ?? '';
+        updateDeviceParam(ownerTrackId, alpha.payload.deviceId, alpha.payload.paramId, alpha.payload.value);
     },
-    describe: (a) => ({ label: `Set ${a.payload.paramId}` }),
+    describe: (alpha) => ({ label: `Set ${alpha.payload.paramId}` }),
     undoable: true,
 });

@@ -71,32 +71,32 @@ describe('Transport Handlers', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('handleTogglePlayback delegates to use case', () => {
-        handleTogglePlayback.execute({ type: 'togglePlayback', payload: {} });
+        void handleTogglePlayback.execute({ type: 'togglePlayback', payload: {} });
         expect(mocks.togglePlayback).toHaveBeenCalled();
     });
 
     it('handleStopPlayback delegates to use case', () => {
-        handleStopPlayback.execute({ type: 'stopPlayback', payload: {} });
+        void handleStopPlayback.execute({ type: 'stopPlayback', payload: {} });
         expect(mocks.stopPlayback).toHaveBeenCalled();
     });
 
     it('handleSeekPlayhead delegates to use case', () => {
-        handleSeekPlayhead.execute({ type: 'seekPlayhead', payload: { beat: 16 } });
+        void handleSeekPlayhead.execute({ type: 'seekPlayhead', payload: { beat: 16 } });
         expect(mocks.seekPlayhead).toHaveBeenCalledWith(16);
     });
 
     it('handleToggleLoop delegates to use case', () => {
-        handleToggleLoop.execute({ type: 'toggleLoop', payload: {} });
+        void handleToggleLoop.execute({ type: 'toggleLoop', payload: {} });
         expect(mocks.toggleLoop).toHaveBeenCalled();
     });
 
     it('handleSetLoopRegion delegates to use case', () => {
-        handleSetLoopRegion.execute({ type: 'setLoopRegion', payload: { startBeat: 0, endBeat: 4 } });
+        void handleSetLoopRegion.execute({ type: 'setLoopRegion', payload: { startBeat: 0, endBeat: 4 } });
         expect(mocks.setLoopRegion).toHaveBeenCalledWith(0, 4);
     });
 
     it('handleAddTimeSignatureChange delegates to use case', () => {
-        handleAddTimeSignatureChange.execute({
+        void handleAddTimeSignatureChange.execute({
             type: 'addTimeSignatureChange',
             payload: { beat: 0, numerator: 3, denominator: 4 },
         });
@@ -104,62 +104,62 @@ describe('Transport Handlers', () => {
     });
 
     it('handleRemoveTimeSignatureChange delegates to use case', () => {
-        handleRemoveTimeSignatureChange.execute({ type: 'removeTimeSignatureChange', payload: { beat: 4 } });
+        void handleRemoveTimeSignatureChange.execute({ type: 'removeTimeSignatureChange', payload: { beat: 4 } });
         expect(mocks.removeTimeSignatureChange).toHaveBeenCalledWith(4);
     });
 
     it('handleSetCountInBars delegates to use case', () => {
-        handleSetCountInBars.execute({ type: 'setCountInBars', payload: { bars: 2 } });
+        void handleSetCountInBars.execute({ type: 'setCountInBars', payload: { bars: 2 } });
         expect(mocks.setCountInBars).toHaveBeenCalledWith(2);
     });
 
     it('handleSetMasterGain delegates to use case', () => {
-        handleSetMasterGain.execute({ type: 'setMasterGain', payload: { gain: 0.8 } });
+        void handleSetMasterGain.execute({ type: 'setMasterGain', payload: { gain: 0.8 } });
         expect(mocks.setMasterGain).toHaveBeenCalledWith(0.8);
     });
 
     it('handleSetMetronomeVolume delegates to use case', () => {
-        handleSetMetronomeVolume.execute({ type: 'setMetronomeVolume', payload: { volume: 0.5 } });
+        void handleSetMetronomeVolume.execute({ type: 'setMetronomeVolume', payload: { volume: 0.5 } });
         expect(mocks.setMetronomeVolume).toHaveBeenCalledWith(0.5);
     });
 
     it('handleSetPreRollBars delegates to use case', () => {
-        handleSetPreRollBars.execute({ type: 'setPreRollBars', payload: { bars: 1 } });
+        void handleSetPreRollBars.execute({ type: 'setPreRollBars', payload: { bars: 1 } });
         expect(mocks.setPreRollBars).toHaveBeenCalledWith(1);
     });
 
     it('handleSetPunchIn delegates to use case', () => {
-        handleSetPunchIn.execute({ type: 'setPunchIn', payload: { beat: 8 } });
+        void handleSetPunchIn.execute({ type: 'setPunchIn', payload: { beat: 8 } });
         expect(mocks.setPunchIn).toHaveBeenCalledWith(8);
     });
 
     it('handleSetPunchOut delegates to use case', () => {
-        handleSetPunchOut.execute({ type: 'setPunchOut', payload: { beat: 16 } });
+        void handleSetPunchOut.execute({ type: 'setPunchOut', payload: { beat: 16 } });
         expect(mocks.setPunchOut).toHaveBeenCalledWith(16);
     });
 
     it('handleToggleCountIn delegates to use case', () => {
-        handleToggleCountIn.execute({ type: 'toggleCountIn', payload: {} });
+        void handleToggleCountIn.execute({ type: 'toggleCountIn', payload: {} });
         expect(mocks.toggleCountIn).toHaveBeenCalled();
     });
 
     it('handleToggleMetronome delegates to use case', () => {
-        handleToggleMetronome.execute({ type: 'toggleMetronome', payload: {} });
+        void handleToggleMetronome.execute({ type: 'toggleMetronome', payload: {} });
         expect(mocks.toggleMetronome).toHaveBeenCalled();
     });
 
     it('handleTogglePreRoll delegates to use case', () => {
-        handleTogglePreRoll.execute({ type: 'togglePreRoll', payload: {} });
+        void handleTogglePreRoll.execute({ type: 'togglePreRoll', payload: {} });
         expect(mocks.togglePreRoll).toHaveBeenCalled();
     });
 
     it('handleTogglePunch delegates to use case', () => {
-        handleTogglePunch.execute({ type: 'togglePunch', payload: {} });
+        void handleTogglePunch.execute({ type: 'togglePunch', payload: {} });
         expect(mocks.togglePunchEnabled).toHaveBeenCalled();
     });
 
     it('handleToggleRecording delegates to use case', () => {
-        handleToggleRecording.execute({ type: 'toggleRecording', payload: {} });
+        void handleToggleRecording.execute({ type: 'toggleRecording', payload: {} });
         expect(mocks.toggleRecording).toHaveBeenCalled();
     });
 });

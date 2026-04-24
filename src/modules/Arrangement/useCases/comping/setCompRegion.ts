@@ -25,7 +25,7 @@ export function setCompRegion(trackId: string, region: CompRegion): void {
 
             return {
                 ...l,
-                activeCompRegions: [...filtered, region].sort((a, b) => a.startBeat - b.startBeat),
+                activeCompRegions: [...filtered, region].sort((alpha, buffer) => alpha.startBeat - buffer.startBeat),
             };
         }),
     };

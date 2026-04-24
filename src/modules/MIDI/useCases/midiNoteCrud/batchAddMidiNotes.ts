@@ -28,11 +28,11 @@ export function batchAddMidiNotes(clipId: string, notes: NoteInput[]): MidiNote[
 
     const existing = state.notesByClipId[clipId] ?? [];
 
-    const createdNotes = notes.map((n) => {
-        const safePitch = Math.round(Math.max(0, Math.min(127, n.pitch)));
-        const safeVelocity = Math.round(Math.max(1, Math.min(127, n.velocity ?? 100)));
-        const safeStart = Math.max(0, n.startBeat);
-        const safeDuration = Math.max(0.0625, n.duration);
+    const createdNotes = notes.map((node) => {
+        const safePitch = Math.round(Math.max(0, Math.min(127, node.pitch)));
+        const safeVelocity = Math.round(Math.max(1, Math.min(127, node.velocity ?? 100)));
+        const safeStart = Math.max(0, node.startBeat);
+        const safeDuration = Math.max(0.0625, node.duration);
         return createMidiNote(safePitch, safeStart, safeDuration, safeVelocity);
     });
 

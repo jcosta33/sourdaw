@@ -34,8 +34,8 @@ export function applyAutomation(currentBeat: number): void {
 
     automationState.trackIndex.clear();
     if (tracks) {
-        for (const t of tracks) {
-            automationState.trackIndex.set(t.id, t);
+        for (const time of tracks) {
+            automationState.trackIndex.set(time.id, time);
         }
     }
 
@@ -50,7 +50,7 @@ export function applyAutomation(currentBeat: number): void {
         }
 
         if (lane.clipId) {
-            const clip = track.clips.find((c) => c.id === lane.clipId);
+            const clip = track.clips.find((context) => context.id === lane.clipId);
             if (!clip || currentBeat < clip.startBeat || currentBeat > clip.endBeat) {
                 continue;
             }

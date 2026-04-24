@@ -16,7 +16,7 @@ describe('handleBounceInPlace', () => {
     });
 
     it('executes bounceInPlace with the provided payload', () => {
-        handleBounceInPlace.execute({
+        void handleBounceInPlace.execute({
             type: 'bounceInPlace',
             payload: { trackId: 't1' },
         });

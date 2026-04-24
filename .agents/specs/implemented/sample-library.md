@@ -82,6 +82,7 @@ Deliver a Rust-backed sample library service and React browser that: (a) authent
 - Network errors MUST NOT block the UI thread; all Freesound work happens on a Tokio task.
 
 **Acceptance:**
+
 - AC1: Signing in opens a browser, redirects to `http://127.0.0.1:<port>/callback`, and the app receives the token within 60 s.
 - AC2: Token survives app restart; revoked tokens trigger re-auth, not a crash.
 - AC3: A test that stubs 429 responses verifies the client waits and retries with exponential backoff.
@@ -95,6 +96,7 @@ Deliver a Rust-backed sample library service and React browser that: (a) authent
 - Partial downloads MUST be resumable (Range requests) or restart cleanly on failure; no corrupted partial files may be left in the pack directory.
 
 **Acceptance:**
+
 - AC1: Installing a 200 MB pack on a 50 Mbps connection completes within 60 s and produces a queryable index.
 - AC2: Tampering with a downloaded archive (modifying a byte) MUST cause install to fail with a checksum error and remove the bad file.
 - AC3: Uninstalling a pack removes its directory AND all its index entries; other packs' entries remain.
@@ -108,6 +110,7 @@ Deliver a Rust-backed sample library service and React browser that: (a) authent
 - A `Migration` trait MUST define `from_version() -> u32` and `migrate(&mut Value) -> Result<()>`; the dispatcher MUST run migrations in ascending order until current.
 
 **Acceptance:**
+
 - AC1: Hashing the same file twice across separate process runs produces the identical `SampleId`.
 - AC2: Renaming a file inside a watched folder does NOT change its `SampleId`; moving the same bytes to a different folder produces the same ID.
 - AC3: A fixture `index.json` at `schema_version = 1` loads correctly under the current codebase via migration.
@@ -131,6 +134,7 @@ Typed via `tauri-specta` (per `AGENTS.md` — Typesync). All commands live exclu
 Progress events: `pack-import-progress`, `library-scan-progress`, `library-updated` (coalesced, max 10 Hz).
 
 **Acceptance:**
+
 - AC1: Generated TypeScript bindings (`tauri-specta`) compile with zero `any` types in consuming modules.
 - AC2: Every command is covered by at least one Rust unit test that exercises success + one error path.
 
@@ -143,6 +147,7 @@ Progress events: `pack-import-progress`, `library-scan-progress`, `library-updat
 - Incremental updates (add/remove single entry) MUST NOT require a full rebuild.
 
 **Acceptance:**
+
 - AC1: On a 100k-entry synthetic library, p95 query latency MUST be under 50 ms on a 2020-era laptop (measured with `criterion`).
 - AC2: Query "kick 808" returns "808_Kick_Dirty.wav" ranked within the top 10 results on a factory-content index.
 - AC3: Removing one entry reduces facet counts for its ancestor categories by exactly one — measured after an insert/remove pair returns counts to baseline.
@@ -156,6 +161,7 @@ Progress events: `pack-import-progress`, `library-scan-progress`, `library-updat
 - Preview MUST begin audible output within 200 ms of the command being issued (measured end-to-end from UI click to first audio frame on a warm peak cache).
 
 **Acceptance:**
+
 - AC1: Clicking a sample while another is playing cuts over within one render quantum without clicks or pops.
 - AC2: A broken/truncated file produces a UI-level error event and does NOT kill the preview thread.
 
@@ -168,6 +174,7 @@ Progress events: `pack-import-progress`, `library-scan-progress`, `library-updat
 - Cache reads MUST be `mmap`-backed for zero-copy mipmap slicing.
 
 **Acceptance:**
+
 - AC1: After touching a source file's mtime, the next `get_waveform_peaks` call triggers re-decode; before the touch it does not.
 - AC2: The on-disk peak size for a 1-minute stereo 48 kHz WAV stays under 256 KB (mipmap all levels).
 
@@ -180,6 +187,7 @@ Progress events: `pack-import-progress`, `library-scan-progress`, `library-updat
 - Symlinks MUST be resolved once; cycles MUST be detected and logged, not traversed infinitely.
 
 **Acceptance:**
+
 - AC1: Dropping a `.wav` into a watched root surfaces it in a fuzzy-search result within 500 ms of the drop.
 - AC2: Renaming `foo.wav` → `bar.wav` preserves its `SampleId` and updates only the `display_name` + `relative_path`.
 
@@ -192,6 +200,7 @@ Progress events: `pack-import-progress`, `library-scan-progress`, `library-updat
 - Extraction MUST use `zip` (or `async_zip`) with per-entry size limits (reject any single entry > 500 MB to guard against zip bombs).
 
 **Acceptance:**
+
 - AC1: Cancelling a 50%-complete download frees all disk space used by the partial file.
 - AC2: A zip bomb (entry with extracted size > 500 MB) is rejected with an error and does not fill the disk.
 
@@ -204,6 +213,7 @@ Progress events: `pack-import-progress`, `library-scan-progress`, `library-updat
 - Samples with license `Commercial(_)` or `Unknown` MUST surface a warning badge and MUST NOT be auto-included in credit exports without user confirmation.
 
 **Acceptance:**
+
 - AC1: Hovering any result shows its license within 100 ms (tooltip or always-visible badge).
 - AC2: Dropping a CC-BY sample into a project produces an attribution record retrievable via `get_project_attribution`.
 - AC3: Exporting credits for a 3-sample project produces a stable, reproducible Markdown file.
@@ -227,6 +237,7 @@ Progress events: `pack-import-progress`, `library-scan-progress`, `library-updat
 
 **Chosen:** `SampleId` = `blake3::hash(file_bytes)`.
 **Considered and rejected:**
+
 - `xxhash` — faster but not cryptographically robust; identical short hashes across different files are possible on large corpora (100k+ items).
 - `sha256` — robust but 2–4× slower than blake3 on modern CPUs; identical security properties are unnecessary for an asset library.
 - Path-based or UUID-based IDs — break on rename/move and duplicate the same audio data under multiple IDs. The whole point of content-addressing is that "the same audio" maps to "the same ID" everywhere.
@@ -235,6 +246,7 @@ Progress events: `pack-import-progress`, `library-scan-progress`, `library-updat
 
 **Chosen:** `nucleo-matcher` for fuzzy ranking.
 **Considered and rejected:**
+
 - `fuzzy-matcher` (skim variant) — older algorithm, slower on long haystacks, less actively maintained.
 - `tantivy` — full-text search engine with inverted indices; overkill for our 100k-item scale and introduces mandatory on-disk segment management we don't need.
 - Hand-rolled subsequence scorer — reinvents a well-tuned wheel; nucleo is the ranker used by Helix and is already optimized for type-ahead UIs.
@@ -243,6 +255,7 @@ Progress events: `pack-import-progress`, `library-scan-progress`, `library-updat
 
 **Chosen:** human-readable `index.json` as the canonical form; `index.bin` (bincode) as an opaque performance cache regenerated from JSON on version mismatch.
 **Considered and rejected:**
+
 - JSON-only — startup on 100k entries takes 2–4 s which is user-visible.
 - Bincode-only — makes the index opaque; debugging issues requires custom tooling. For a library of user-visible content, human-readable is cheap and valuable.
 - SQLite — adds a heavyweight dependency and blurs the "index is a set of files you can copy" model that makes packs portable.
@@ -251,6 +264,7 @@ Progress events: `pack-import-progress`, `library-scan-progress`, `library-updat
 
 **Chosen:** Authorization Code + PKCE.
 **Considered and rejected:**
+
 - Client credentials flow — tied to an app secret that MUST NOT ship in a client binary.
 - Implicit flow — deprecated by the OAuth 2.0 Security BCP.
 
@@ -258,6 +272,7 @@ Progress events: `pack-import-progress`, `library-scan-progress`, `library-updat
 
 **Chosen:** preview runs through its own `rodio` OutputStream on a dedicated thread.
 **Considered and rejected:**
+
 - Route preview through the DAW's mixer — couples library to mixer topology, makes "preview while transport is stopped" awkward, and risks preview audio getting recorded into a bounced mix.
 - WebAudio preview — works for frontend but duplicates the decoder stack we already ship in Rust; also loses native file-path access.
 

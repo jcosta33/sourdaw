@@ -394,6 +394,7 @@ export class MockAudioBuffer {
     }
 
     static create(channels: number, length: number, sampleRate: number): AudioBuffer {
-        return new MockAudioBuffer({ numberOfChannels: channels, length, sampleRate });
+        // eslint-disable-next-line sourdaw/no-type-assertion-escape -- MockAudioBuffer is a test double; cast to AudioBuffer is intentional for test fixture use
+        return new MockAudioBuffer({ numberOfChannels: channels, length, sampleRate }) as unknown as AudioBuffer;
     }
 }

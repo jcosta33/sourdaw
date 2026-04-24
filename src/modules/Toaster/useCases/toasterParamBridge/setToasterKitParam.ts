@@ -18,10 +18,10 @@ const KIT_PARAM_MAP = {
     lofiMix: 'lofi_mix',
 } as const;
 
-export function setToasterKitParam<K extends keyof typeof KIT_PARAM_MAP>(
+export function setToasterKitParam<Key extends keyof typeof KIT_PARAM_MAP>(
     deviceId: string,
-    key: K,
-    value: ToasterKit[K]
+    key: Key,
+    value: ToasterKit[Key]
 ): void {
     updateKit(deviceId, { [key]: value } as Partial<ToasterKit>);
 

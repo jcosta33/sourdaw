@@ -44,7 +44,11 @@ describe('acceptGhostClip', () => {
     });
 
     it('should handle legacy ghost-flag acceptance', () => {
-        const state = trackStore.value as any;
+        type MockTrackStoreValue = {
+            tracks: { id: string; clips: { id: string; isGhost?: boolean }[] }[];
+            ghostClips: unknown[];
+        };
+        const state = trackStore.value as unknown as MockTrackStoreValue;
         state.ghostClips = [];
         state.tracks = [{ id: 't1', clips: [{ id: 'c1', isGhost: true }] }];
 

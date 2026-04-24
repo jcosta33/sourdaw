@@ -16,7 +16,7 @@ describe('handleDuplicateClipToNextBar', () => {
     });
 
     it('executes duplicateClipToNextBar with the provided payload', () => {
-        handleDuplicateClipToNextBar.execute({
+        void handleDuplicateClipToNextBar.execute({
             type: 'duplicateClipToNextBar',
             payload: { clipId: 'c1' },
         });

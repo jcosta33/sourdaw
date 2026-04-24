@@ -5,8 +5,8 @@ import { updateClip } from '../updateClip';
  * When active, the clip renders interactive notes directly in the timeline.
  */
 export function toggleInlineEditing(clipId: string, force?: boolean): void {
-    updateClip(clipId, (c) => ({
-        ...c,
-        isInlineEditing: force !== undefined ? force : !c.isInlineEditing,
+    updateClip(clipId, (context) => ({
+        ...context,
+        isInlineEditing: force !== undefined ? force : !context.isInlineEditing,
     }));
 }

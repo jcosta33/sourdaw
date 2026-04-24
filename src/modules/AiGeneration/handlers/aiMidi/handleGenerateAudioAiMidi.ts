@@ -5,7 +5,7 @@ import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 export const handleGenerateAudioAiMidi = createHandler<'generateAudio'>({
-    execute: async (a) => {
+    execute: async (alpha) => {
         const { generateAudio: genAudio, isAudioGenerationAvailable } =
             await import('#/modules/AudioAnalysis/useCases');
 
@@ -14,7 +14,7 @@ export const handleGenerateAudioAiMidi = createHandler<'generateAudio'>({
             throw new Error('Audio generation requires the Sourdaw desktop app');
         }
 
-        let trackId = a.payload.trackId;
+        let trackId = alpha.payload.trackId;
         if (!trackId) {
             const newTrack = addTrack({ name: `AI Audio`, kind: 'audio' });
             trackId = newTrack?.id;
@@ -24,11 +24,11 @@ export const handleGenerateAudioAiMidi = createHandler<'generateAudio'>({
             throw new Error('Could not create track for audio generation');
         }
 
-        const duration = a.payload.durationSeconds ?? 8;
-        logger.info(`[Audio AI] Generating: "${a.payload.prompt}" (${String(duration)}s)`);
+        const duration = alpha.payload.durationSeconds ?? 8;
+        logger.info(`[Audio AI] Generating: "${alpha.payload.prompt}" (${String(duration)}s)`);
 
         try {
-            const audioBuffer = await genAudio(a.payload.prompt, duration);
+            const audioBuffer = await genAudio(alpha.payload.prompt, duration);
             logger.info(
                 `[Audio AI] Generated ${String(audioBuffer.duration.toFixed(1))}s of audio (${String(audioBuffer.sampleRate)}Hz)`
             );
@@ -38,7 +38,7 @@ export const handleGenerateAudioAiMidi = createHandler<'generateAudio'>({
 
             const durationBeats = Math.max(1, Math.ceil(audioBuffer.duration * 2));
 
-            const promptLabel = a.payload.prompt.slice(0, 40);
+            const promptLabel = alpha.payload.prompt.slice(0, 40);
             addClip({
                 trackId,
                 startBeat: 0,
@@ -57,6 +57,6 @@ export const handleGenerateAudioAiMidi = createHandler<'generateAudio'>({
             throw error;
         }
     },
-    describe: (a) => ({ label: `AI: generate audio "${a.payload.prompt.slice(0, 30)}"` }),
+    describe: (alpha) => ({ label: `AI: generate audio "${alpha.payload.prompt.slice(0, 30)}"` }),
     undoable: true,
 });

@@ -19,10 +19,10 @@ Key rules:
 - MIDI: C4=60, 0.25=16th, 0.5=8th, 1=quarter, 4=whole note`;
 
 function getClaudeTools(): Anthropic.Messages.Tool[] {
-    return mcpToOpenAiTools().map((t) => ({
-        name: t.function.name,
-        description: t.function.description,
-        input_schema: t.function.parameters as Anthropic.Messages.Tool.InputSchema,
+    return mcpToOpenAiTools().map((time) => ({
+        name: time.function.name,
+        description: time.function.description,
+        input_schema: time.function.parameters as Anthropic.Messages.Tool.InputSchema,
     }));
 }
 

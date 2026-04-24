@@ -36,9 +36,9 @@ export function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
     view.setUint32(40, dataLength, true);
 
     let offset = 44;
-    for (let i = 0; i < numSamples; i++) {
+    for (let index = 0; index < numSamples; index++) {
         for (let ch = 0; ch < numChannels; ch++) {
-            const sample = Math.max(-1, Math.min(1, channels[ch]![i]!));
+            const sample = Math.max(-1, Math.min(1, channels[ch]![index]!));
             view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
             offset += 2;
         }
@@ -48,7 +48,7 @@ export function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
 }
 
 function writeString(view: DataView, offset: number, str: string): void {
-    for (let i = 0; i < str.length; i++) {
-        view.setUint8(offset + i, str.charCodeAt(i));
+    for (let index = 0; index < str.length; index++) {
+        view.setUint8(offset + index, str.charCodeAt(index));
     }
 }

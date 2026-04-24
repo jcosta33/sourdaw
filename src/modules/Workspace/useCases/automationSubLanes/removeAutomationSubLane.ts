@@ -10,6 +10,6 @@ export function removeAutomationSubLane(trackId: string, index: number): void {
     const existing = current.automationSubLanes[trackId] ?? [];
     setAutomationSubLanes(
         trackId,
-        existing.filter((_, i) => i !== index)
+        existing.filter((_, index1) => index1 !== index)
     );
 }

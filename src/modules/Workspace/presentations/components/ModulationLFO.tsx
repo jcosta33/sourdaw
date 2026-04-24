@@ -19,14 +19,14 @@ type ModulationLFOProps = {
 };
 
 const lfoValue = (phase: number, shape: string): number => {
-    const p = ((phase % 1) + 1) % 1; // normalize to 0–1
+    const param = ((phase % 1) + 1) % 1; // normalize to 0–1
     switch (shape) {
         case 'square':
-            return p < 0.5 ? 1 : -1;
+            return param < 0.5 ? 1 : -1;
         case 'triangle':
-            return p < 0.5 ? p * 4 - 1 : 3 - p * 4;
+            return param < 0.5 ? param * 4 - 1 : 3 - param * 4;
         default: // sine
-            return Math.sin(p * Math.PI * 2);
+            return Math.sin(param * Math.PI * 2);
     }
 };
 
@@ -43,11 +43,11 @@ export const ModulationLFO = ({
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return () => {};
         }
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return () => {};
         }
 
         const dpr = window.devicePixelRatio || 1;
@@ -88,15 +88,15 @@ export const ModulationLFO = ({
             const phaseOffset = elapsed * rate; // animated phase
 
             ctx.beginPath();
-            for (let i = 0; i <= width; i++) {
-                const normalizedX = i / width;
+            for (let index = 0; index <= width; index++) {
+                const normalizedX = index / width;
                 const phase = normalizedX * cyclesVisible + phaseOffset;
                 const val = lfoValue(phase, shape);
                 const y = centerY - val * amplitude;
-                if (i === 0) {
-                    ctx.moveTo(i, y);
+                if (index === 0) {
+                    ctx.moveTo(index, y);
                 } else {
-                    ctx.lineTo(i, y);
+                    ctx.lineTo(index, y);
                 }
             }
             ctx.strokeStyle = accentMint;
@@ -106,12 +106,12 @@ export const ModulationLFO = ({
             // Fill under curve (subtle)
             ctx.beginPath();
             ctx.moveTo(0, centerY);
-            for (let i = 0; i <= width; i++) {
-                const normalizedX = i / width;
+            for (let index = 0; index <= width; index++) {
+                const normalizedX = index / width;
                 const phase = normalizedX * cyclesVisible + phaseOffset;
                 const val = lfoValue(phase, shape);
                 const y = centerY - val * amplitude;
-                ctx.lineTo(i, y);
+                ctx.lineTo(index, y);
             }
             ctx.lineTo(width, centerY);
             ctx.closePath();

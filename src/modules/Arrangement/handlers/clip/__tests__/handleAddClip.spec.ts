@@ -24,7 +24,7 @@ describe('handleAddClip', () => {
             type: 'audio' as const,
         };
 
-        handleAddClip.execute({ type: 'addClip', payload });
+        void handleAddClip.execute({ type: 'addClip', payload });
 
         expect(mocks.addClip).toHaveBeenCalledWith(payload);
     });

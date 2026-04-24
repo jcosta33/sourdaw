@@ -1,15 +1,17 @@
 /// <reference types="vitest" />
-import { fileURLToPath, URL } from 'node:url';
-import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { configDefaults, defineConfig } from 'vitest/config';
-import react, { reactCompilerPreset } from '@vitejs/plugin-react';
+import { resolve } from 'node:path';
+import { fileURLToPath, URL } from 'node:url';
+
+import babel from '@rolldown/plugin-babel';
 import tailwindcss from '@tailwindcss/vite';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
-import babel from '@rolldown/plugin-babel';
+import react, { reactCompilerPreset } from '@vitejs/plugin-react';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string };
 
+// eslint-disable-next-line import-x/no-default-export
 export default defineConfig({
     base: './',
     worker: {

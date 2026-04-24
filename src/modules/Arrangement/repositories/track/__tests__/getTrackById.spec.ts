@@ -7,8 +7,8 @@ vi.mock('../../../stores/trackStore', () => {
             get value() {
                 return internal.value;
             },
-            set: vi.fn((v) => {
-                internal.value = v;
+            set: vi.fn((value) => {
+                internal.value = value;
             }),
             update: vi.fn((cb) => {
                 internal.value = cb(internal.value);

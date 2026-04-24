@@ -9,6 +9,6 @@ export function renameMixerSnapshot(snapshotId: string, name: string): void {
         return;
     }
     mixerSnapshotStore.set({
-        snapshots: current.snapshots.map((s) => (s.id === snapshotId ? { ...s, name } : s)),
+        snapshots: current.snapshots.map((state) => (state.id === snapshotId ? { ...state, name } : state)),
     });
 }

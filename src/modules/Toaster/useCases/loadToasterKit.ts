@@ -53,7 +53,7 @@ export function getToasterControls(): {
     setParam: (name: string, value: number) => void;
 } | null {
     const tracks = getAllTracks();
-    const toasterTrack = tracks.find((t) => t.devices.some((d) => d.type === 'toaster'));
+    const toasterTrack = tracks.find((time) => time.devices.some((data) => data.type === 'toaster'));
     if (!toasterTrack) {
         return null;
     }
@@ -63,7 +63,7 @@ export function getToasterControls(): {
         return null;
     }
 
-    const dn = strip.deviceNodes.find((d) => d.toasterControls?.ready);
+    const dn = strip.deviceNodes.find((data) => data.toasterControls?.ready);
     return dn?.toasterControls ?? null;
 }
 
@@ -89,32 +89,32 @@ export function loadToasterKitPreset(deviceId: string, kit: ToasterKit): void {
     controls.setParam('lofi_mix', kit.lofiMix);
 
     // Per-pad params (snake_case for Rust)
-    for (let i = 0; i < kit.pads.length; i++) {
-        const pad = kit.pads[i]!;
+    for (let index = 0; index < kit.pads.length; index++) {
+        const pad = kit.pads[index]!;
         const engineIdx = TOASTER_ENGINE_MAP[pad.engineType] ?? 0;
-        controls.setPadParam(i, 'engine_type', engineIdx);
+        controls.setPadParam(index, 'engine_type', engineIdx);
 
         if (pad.engineType === 'hihat-open') {
-            controls.setPadParam(i, 'open', 1);
+            controls.setPadParam(index, 'open', 1);
         }
         if (pad.engineType === 'hihat-closed') {
-            controls.setPadParam(i, 'open', 0);
+            controls.setPadParam(index, 'open', 0);
         }
 
-        controls.setPadParam(i, 'volume', pad.volume);
-        controls.setPadParam(i, 'pan', pad.pan);
-        controls.setPadParam(i, 'tune', pad.tune);
-        controls.setPadParam(i, 'decay', pad.decay);
-        controls.setPadParam(i, 'tone', pad.tone);
-        controls.setPadParam(i, 'drive', pad.drive);
-        controls.setPadParam(i, 'filter_cutoff', pad.filterCutoff);
-        controls.setPadParam(i, 'filter_resonance', pad.filterResonance);
-        controls.setPadParam(i, 'send_reverb', pad.sendReverb);
-        controls.setPadParam(i, 'send_delay', pad.sendDelay);
+        controls.setPadParam(index, 'volume', pad.volume);
+        controls.setPadParam(index, 'pan', pad.pan);
+        controls.setPadParam(index, 'tune', pad.tune);
+        controls.setPadParam(index, 'decay', pad.decay);
+        controls.setPadParam(index, 'tone', pad.tone);
+        controls.setPadParam(index, 'drive', pad.drive);
+        controls.setPadParam(index, 'filter_cutoff', pad.filterCutoff);
+        controls.setPadParam(index, 'filter_resonance', pad.filterResonance);
+        controls.setPadParam(index, 'send_reverb', pad.sendReverb);
+        controls.setPadParam(index, 'send_delay', pad.sendDelay);
 
         if (pad.engineParams) {
             for (const [key, value] of Object.entries(pad.engineParams)) {
-                controls.setPadParam(i, key, value);
+                controls.setPadParam(index, key, value);
             }
         }
     }

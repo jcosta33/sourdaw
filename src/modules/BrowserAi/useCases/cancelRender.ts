@@ -23,7 +23,7 @@ export const cancelRender = inject({ logger })(
 
             // Determine which worker is running this render and terminate it.
             // Termination rejects all in-flight promises and allows respawn on next use.
-            const entry = renderQueueStore.value?.entries.find((e) => e.phraseId === phraseId);
+            const entry = renderQueueStore.value?.entries.find((event) => event.phraseId === phraseId);
             if (entry?.pipeline === 'ddsp') {
                 inferenceWorkerBridge.terminateTfjsWorker();
             } else {

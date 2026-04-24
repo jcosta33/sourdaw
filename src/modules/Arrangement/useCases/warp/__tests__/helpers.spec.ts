@@ -5,7 +5,7 @@ import * as subject from '../helpers';
 describe('helpers', () => {
     it('should export getWarpState', () => {
         expect(subject.getWarpState).toBeDefined();
-        const t = typeof subject.getWarpState;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getWarpState;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

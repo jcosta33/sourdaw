@@ -35,8 +35,8 @@ export const RoutingMatrix = (): ReactElement => {
     };
 
     // Separate buses from regular tracks
-    const buses = tracks.filter((t: Track) => t.kind === 'bus' || t.kind === 'folder');
-    const sources = tracks.filter((t: Track) => t.kind !== 'bus' && t.kind !== 'folder');
+    const buses = tracks.filter((time: Track) => time.kind === 'bus' || time.kind === 'folder');
+    const sources = tracks.filter((time: Track) => time.kind !== 'bus' && time.kind !== 'folder');
 
     // Destination columns: buses + Master
     const destinations = [...buses, { id: 'master', name: 'Master', kind: 'master' as const }];
@@ -54,16 +54,16 @@ export const RoutingMatrix = (): ReactElement => {
                             <th className="p-1 text-muted-foreground font-normal text-left sticky left-0 bg-surface-base z-10">
                                 Source ↓ / Dest →
                             </th>
-                            {destinations.map((d) => (
+                            {destinations.map((data) => (
                                 <th
-                                    key={d.id}
+                                    key={data.id}
                                     className="p-1 text-muted-foreground font-normal text-center min-w-[40px] border-l border-border/20"
                                 >
                                     <span
                                         className="writing-mode-vertical block rotate-180"
                                         style={{ writingMode: 'vertical-rl' }}
                                     >
-                                        {d.name}
+                                        {data.name}
                                     </span>
                                 </th>
                             ))}

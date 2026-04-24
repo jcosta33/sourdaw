@@ -4,8 +4,8 @@ import { type PunchRecordingState } from '../../../stores/punchRecordingStore';
 import { definePunchRegion } from '../definePunchRegion';
 
 const mockPunchRecordingStore = vi.hoisted(() => ({
-    value: null as any,
-    set: vi.fn(),
+    value: null as import('../../../stores/punchRecordingStore').PunchRecordingState | null,
+    set: vi.fn<(state: import('../../../stores/punchRecordingStore').PunchRecordingState) => void>(),
 }));
 
 vi.mock('../../../stores/punchRecordingStore', () => ({
@@ -47,7 +47,7 @@ describe('definePunchRegion', () => {
         });
 
         definePunchRegion('cap1', 2, 6);
-        const next = mockPunchRecordingStore.set.mock.calls[0]![0] as PunchRecordingState;
+        const next = mockPunchRecordingStore.set.mock.calls[0]![0];
         expect(next.captures[0]!.punchRegions).toHaveLength(1);
         expect(next.captures[0]!.punchRegions[0]!.punchInBeat).toBe(2);
     });

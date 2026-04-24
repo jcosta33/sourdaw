@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { resolveBackend } from '../helpers';
 
 const mocks = vi.hoisted(() => ({
-    isTauri: vi.fn(),
-    isCloudAvailable: vi.fn(),
+    isTauri: vi.fn<() => boolean>(),
+    isCloudAvailable: vi.fn<() => boolean>(),
 }));
 
 vi.mock('#/utils/tauriBridge', () => ({
@@ -19,7 +19,7 @@ describe('backendResolution helpers', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         // Reset navigator.gpu for tests
-        (globalThis as any).navigator = {};
+        Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true, writable: true });
     });
 
     describe('resolveBackend', () => {
@@ -30,7 +30,7 @@ describe('backendResolution helpers', () => {
 
         it('returns webllm if WebGPU is available and not in Tauri', () => {
             mocks.isTauri.mockReturnValue(false);
-            (globalThis as any).navigator = { gpu: {} };
+            Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
 
             expect(resolveBackend()).toBe('webllm');
         });

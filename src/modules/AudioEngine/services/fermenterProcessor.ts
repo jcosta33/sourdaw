@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * AudioWorkletProcessor for the Fermenter synthesizer.
  *
@@ -14,12 +13,8 @@
 
 import { initSync, FermenterInstance } from '../wasm/daw_dsp.js';
 
-/**
- * Convert camelCase to snake_case automatically.
- */
-function camelToSnake(str) {
+function camelToSnake(str: string): string {
     const snake = str.replaceAll(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
-    // Handle the 3 exceptions
     if (snake === 'filter_cutoff') {
         return 'cutoff';
     }
@@ -44,18 +39,29 @@ function camelToSnake(str) {
     return snake;
 }
 
+type FermenterMsg =
+    | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'noteOn'; note: number; velocity: number; sampleFrame?: number }
+    | { type: 'noteOff'; note: number; sampleFrame?: number }
+    | { type: 'param'; name: string; value: number }
+    | { type: 'patch'; patch: Record<string, number | number[]> };
+
+type FermenterQueued =
+    | { type: 'noteOn'; note: number; velocity: number; sampleFrame: number }
+    | { type: 'noteOff'; note: number; sampleFrame: number };
+
 class FermenterProcessor extends AudioWorkletProcessor {
-    _instance = null; // FermenterInstance (generated wasm-bindgen class)
-    _memory = null; // WebAssembly.Memory (for direct buffer access in process())
+    _instance: FermenterInstance | null = null;
+    _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
-    _queue = []; // Sorted by sampleFrame (integer sample count)
-    _queueHead = 0; // Read index — consumed entries are past this
+    _queue: FermenterQueued[] = [];
+    _queueHead = 0;
 
     constructor() {
         super();
-        this.port.onmessage = (e) => {
-            const msg = e.data;
+        this.port.onmessage = (event: MessageEvent<FermenterMsg>) => {
+            const msg = event.data;
             try {
                 if (msg.type === 'init') {
                     if (this._ready) {
@@ -68,13 +74,16 @@ class FermenterProcessor extends AudioWorkletProcessor {
             } catch (error) {
                 console.error('FermenterProcessor error:', error);
                 if (!this._ready) {
-                    this.port.postMessage({ type: 'error', message: error?.message ?? String(error) });
+                    this.port.postMessage({
+                        type: 'error',
+                        message: error instanceof Error ? error.message : String(error),
+                    });
                 }
             }
         };
     }
 
-    _initWasm(wasmBytes) {
+    _initWasm(wasmBytes: BufferSource): void {
         const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
         this._memory = wasmExports.memory;
         this._instance = new FermenterInstance(sampleRate, 32);
@@ -82,12 +91,13 @@ class FermenterProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'ready' });
     }
 
-    _enqueue(msg) {
-        let lo = this._queueHead,
-            hi = this._queue.length;
+    _enqueue(msg: FermenterQueued): void {
+        let lo = this._queueHead;
+        let hi = this._queue.length;
         while (lo < hi) {
             const mid = (lo + hi) >>> 1;
-            if (this._queue[mid].sampleFrame <= msg.sampleFrame) {
+            const midMsg = this._queue[mid];
+            if (midMsg && midMsg.sampleFrame <= msg.sampleFrame) {
                 lo = mid + 1;
             } else {
                 hi = mid;
@@ -96,19 +106,26 @@ class FermenterProcessor extends AudioWorkletProcessor {
         this._queue.splice(lo, 0, msg);
     }
 
-    _handleMessage(msg) {
-        if (msg.sampleFrame !== undefined) {
-            if (msg.sampleFrame > currentFrame) {
-                this._enqueue(msg);
-                return;
-            }
+    _handleMessage(msg: FermenterMsg): void {
+        if (
+            (msg.type === 'noteOn' || msg.type === 'noteOff') &&
+            msg.sampleFrame !== undefined &&
+            msg.sampleFrame > currentFrame
+        ) {
+            this._enqueue({ ...msg, sampleFrame: msg.sampleFrame });
+            return;
         }
         this._dispatch(msg);
     }
 
-    _dispatch(msg) {
+    _dispatch(msg: FermenterMsg | FermenterQueued): void {
         const inst = this._instance;
+        if (!inst) {
+            return;
+        }
         switch (msg.type) {
+            case 'init':
+                break;
             case 'noteOn':
                 inst.note_on(msg.note, msg.velocity);
                 break;
@@ -125,8 +142,8 @@ class FermenterProcessor extends AudioWorkletProcessor {
                     if (typeof value === 'number') {
                         inst.set_param(camelToSnake(key), value);
                     } else if (key === 'macros' && Array.isArray(value)) {
-                        for (let i = 0; i < value.length; i++) {
-                            inst.set_param(`macro${i}`, value[i]);
+                        for (let index = 0; index < value.length; index++) {
+                            inst.set_param(`macro${index}`, value[index] ?? 0);
                         }
                     }
                 }
@@ -135,10 +152,13 @@ class FermenterProcessor extends AudioWorkletProcessor {
         }
     }
 
-    _drainQueue(blockEndFrame) {
-        // Audio-thread hot path: advance the read head, no splice per block.
-        while (this._queueHead < this._queue.length && this._queue[this._queueHead].sampleFrame <= blockEndFrame) {
-            this._dispatch(this._queue[this._queueHead]);
+    _drainQueue(blockEndFrame: number): void {
+        while (this._queueHead < this._queue.length) {
+            const queued = this._queue[this._queueHead];
+            if (!queued || queued.sampleFrame > blockEndFrame) {
+                break;
+            }
+            this._dispatch(queued);
             this._queueHead++;
         }
         if (this._queueHead >= this._queue.length) {
@@ -147,7 +167,7 @@ class FermenterProcessor extends AudioWorkletProcessor {
         }
     }
 
-    process(_inputs, outputs) {
+    process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
         if (!this._ready || this._faulted) {
             return true;
         }
@@ -157,46 +177,55 @@ class FermenterProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        const frames = output[0].length;
+        const out0 = output[0];
+        if (!out0) {
+            return true;
+        }
+        const frames = out0.length;
 
         const blockEndFrame = currentFrame + frames;
         this._drainQueue(blockEndFrame);
 
         try {
-            const leftPtr = this._instance.process(frames);
-            const rightPtr = this._instance.get_right_ptr();
+            const inst = this._instance;
+            const mem = this._memory?.buffer;
+            if (!inst || !mem) {
+                return true;
+            }
 
-            const mem = this._memory.buffer;
+            const leftPtr = inst.process(frames);
+            const rightPtr = inst.get_right_ptr();
+
             const outL = new Float32Array(mem, leftPtr, frames);
-            output[0].set(outL);
+            out0.set(outL);
 
-            let outR = null;
-            if (output[1]) {
+            const out1 = output[1];
+            let outR: Float32Array | null = null;
+            if (out1) {
                 outR = new Float32Array(mem, rightPtr, frames);
-                output[1].set(outR);
+                out1.set(outR);
             }
 
             // Compute Telemetry (Peak & Scope) every 2048 frames (~46ms at 44.1kHz)
             if (currentFrame % 2048 < frames) {
                 let peakL = 0;
                 let peakR = 0;
-                for (let i = 0; i < frames; i++) {
-                    const l = Math.abs(outL[i]);
-                    if (l > peakL) {
-                        peakL = l;
+                for (let index = 0; index < frames; index++) {
+                    const absL = Math.abs(outL[index] ?? 0);
+                    if (absL > peakL) {
+                        peakL = absL;
                     }
                     if (outR) {
-                        const r = Math.abs(outR[i]);
-                        if (r > peakR) {
-                            peakR = r;
+                        const absR = Math.abs(outR[index] ?? 0);
+                        if (absR > peakR) {
+                            peakR = absR;
                         }
                     }
                 }
                 const scopeBuffer = new Float32Array(128);
-                // Downsample from block into scope buffer
                 const step = frames / 128;
-                for (let i = 0; i < 128; i++) {
-                    scopeBuffer[i] = outL[Math.floor(i * step)] || 0;
+                for (let index = 0; index < 128; index++) {
+                    scopeBuffer[index] = outL[Math.floor(index * step)] ?? 0;
                 }
                 this.port.postMessage({ type: 'telemetry', peakL, peakR, scopeBuffer }, [scopeBuffer.buffer]);
             }

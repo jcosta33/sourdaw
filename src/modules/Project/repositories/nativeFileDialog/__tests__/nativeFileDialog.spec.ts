@@ -76,16 +76,16 @@ describe('nativeFileDialog', () => {
             expect(result![0]!.name).toBe('test.wav');
         });
 
-        it('should use browser fallback when not in Tauri', async () => {
+        it('should use browser fallback when not in Tauri', () => {
             vi.mocked(isTauri).mockReturnValue(false);
             const mockInput = {
                 click: vi.fn(),
                 addEventListener: vi.fn(),
                 type: '',
             };
-            vi.spyOn(document, 'createElement').mockReturnValue(mockInput as any);
+            vi.spyOn(document, 'createElement').mockReturnValue(mockInput as unknown as HTMLInputElement);
 
-            const promise = pickFiles();
+            void pickFiles();
             expect(mockInput.click).toHaveBeenCalled();
         });
     });

@@ -18,8 +18,10 @@ export const clipCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                const track = trackStore.value?.tracks.find((t) => t.clips.some((c) => c.id === clipId));
-                const clip = track?.clips.find((c) => c.id === clipId);
+                const track = trackStore.value?.tracks.find((time) =>
+                    time.clips.some((context) => context.id === clipId)
+                );
+                const clip = track?.clips.find((context) => context.id === clipId);
                 const name = window.prompt('Rename clip:', clip?.name ?? '');
                 if (name !== null && name.trim()) {
                     renameClip(clipId, name.trim());
@@ -48,7 +50,7 @@ export const clipCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'normalizeClip', payload: { clipId } });
+                void executeAppAction({ type: 'normalizeClip', payload: { clipId } });
             }
         },
     },
@@ -60,7 +62,7 @@ export const clipCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'reverseClip', payload: { clipId } });
+                void executeAppAction({ type: 'reverseClip', payload: { clipId } });
             }
         },
     },
@@ -72,7 +74,7 @@ export const clipCommands: CommandEntry[] = [
         action: () => {
             const ids = getSelectedClipIds();
             if (ids.length >= 2) {
-                executeAppAction({ type: 'glueClips', payload: { clipIds: ids } });
+                void executeAppAction({ type: 'glueClips', payload: { clipIds: ids } });
             }
         },
     },
@@ -85,10 +87,10 @@ export const clipCommands: CommandEntry[] = [
             const trackId = getSelectedTrackId();
             const clipId = getSelectedClipId();
             if (trackId && clipId) {
-                const track = trackStore.value?.tracks.find((t) => t.id === trackId);
-                const clip = track?.clips.find((c) => c.id === clipId);
+                const track = trackStore.value?.tracks.find((time) => time.id === trackId);
+                const clip = track?.clips.find((context) => context.id === clipId);
                 if (clip) {
-                    executeAppAction({
+                    void executeAppAction({
                         type: 'consolidateSelection',
                         payload: { trackId, startBeat: clip.startBeat, endBeat: clip.endBeat },
                     });
@@ -104,10 +106,12 @@ export const clipCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                const track = trackStore.value?.tracks.find((t) => t.clips.some((c) => c.id === clipId));
-                const clip = track?.clips.find((c) => c.id === clipId);
+                const track = trackStore.value?.tracks.find((time) =>
+                    time.clips.some((context) => context.id === clipId)
+                );
+                const clip = track?.clips.find((context) => context.id === clipId);
                 if (clip) {
-                    executeAppAction({ type: 'setClipLoop', payload: { clipId, enabled: !clip.loopEnabled } });
+                    void executeAppAction({ type: 'setClipLoop', payload: { clipId, enabled: !clip.loopEnabled } });
                 }
             }
         },

@@ -12,10 +12,10 @@ vi.mock('../../stores/markerStore', () => ({
 
 describe('getMarkerState', () => {
     it('returns the injected marker store value', () => {
-        const state = {
+        const state: MarkerStoreState = {
             markers: [],
             sections: [{ id: 's1', startBeat: 0, endBeat: 4, name: 'A', color: '#000' }],
-        } as any;
+        };
         markerStore.value = state;
 
         expect(getMarkerState()).toBe(state);

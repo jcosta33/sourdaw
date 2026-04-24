@@ -76,26 +76,26 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
             return null;
         }
 
-        const track = trackState.tracks.find((t) => t.id === trackId);
+        const track = trackState.tracks.find((time) => time.id === trackId);
         if (!track) {
             return null;
         }
 
-        const midiClips = track.clips.filter((c) => c.type === 'midi');
+        const midiClips = track.clips.filter((context) => context.type === 'midi');
         if (midiClips.length === 0) {
             return null;
         }
 
         if (transport.isRecording && transport.overdubEnabled) {
             const ph = deps.playheadPositionRef.current;
-            const intersecting = midiClips.find((c) => ph >= c.startBeat && ph <= c.endBeat);
+            const intersecting = midiClips.find((context) => ph >= context.startBeat && ph <= context.endBeat);
             if (intersecting) {
                 return intersecting.id;
             }
 
             if (transport.isLooping && ph >= transport.loopStart && ph <= transport.loopEnd) {
                 const loopClip = midiClips.find(
-                    (c) => c.startBeat >= transport.loopStart && c.endBeat <= transport.loopEnd
+                    (context) => context.startBeat >= transport.loopStart && context.endBeat <= transport.loopEnd
                 );
                 if (loopClip) {
                     return loopClip.id;
@@ -121,7 +121,7 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
 
         if (noteData.fermenterDeviceId && getTargetTrackId()) {
             const strip = audioEngine.getTrackStrip(getTargetTrackId()!);
-            const dn = strip?.deviceNodes.find((d) => d.deviceId === noteData.fermenterDeviceId);
+            const dn = strip?.deviceNodes.find((data) => data.deviceId === noteData.fermenterDeviceId);
             if (dn?.fermenterControls) {
                 dn.fermenterControls.noteOff(note);
             }
@@ -129,7 +129,7 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
 
         if (noteData.toasterDeviceId && getTargetTrackId()) {
             const trackState = deps.getTrackStoreState();
-            const track = trackState?.tracks.find((t) => t.id === getTargetTrackId());
+            const track = trackState?.tracks.find((time) => time.id === getTargetTrackId());
             let instrumentTrackId = getTargetTrackId()!;
             let toasterChildPad: number | null = null;
 
@@ -138,17 +138,17 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
                 // `find()` + `filter()` + `findIndex()` (§80.4).
                 let parent: typeof track | undefined;
                 let padIdx = 0;
-                for (const t of trackState.tracks) {
-                    if (t.id === track.parentId) {
-                        parent = t;
-                    } else if (t.parentId === track.parentId) {
-                        if (t.id === track.id) {
+                for (const time of trackState.tracks) {
+                    if (time.id === track.parentId) {
+                        parent = time;
+                    } else if (time.parentId === track.parentId) {
+                        if (time.id === track.id) {
                             toasterChildPad = padIdx;
                         }
                         padIdx++;
                     }
                 }
-                if (parent?.devices.some((d) => d.type === 'toaster')) {
+                if (parent?.devices.some((data) => data.type === 'toaster')) {
                     instrumentTrackId = parent.id;
                 } else {
                     toasterChildPad = null;
@@ -156,7 +156,7 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
             }
 
             const strip = audioEngine.getTrackStrip(instrumentTrackId);
-            const dn = strip?.deviceNodes.find((d) => d.deviceId === noteData.toasterDeviceId);
+            const dn = strip?.deviceNodes.find((data) => data.deviceId === noteData.toasterDeviceId);
             if (dn?.toasterControls) {
                 let pad = toasterChildPad;
                 if (pad === null || pad === -1) {
@@ -173,17 +173,17 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
 
         if (noteData.grandBouleDeviceId && getTargetTrackId()) {
             const strip = audioEngine.getTrackStrip(getTargetTrackId()!);
-            const dn = strip?.deviceNodes.find((d) => d.deviceId === noteData.grandBouleDeviceId);
+            const dn = strip?.deviceNodes.find((data) => data.deviceId === noteData.grandBouleDeviceId);
             if (dn?.grandBouleControls) {
                 dn.grandBouleControls.noteOff(note);
             }
-            deps.eventBus.emit('midi.noteOff', { midiNote: note });
+            void deps.eventBus.emit('midi.noteOff', { midiNote: note });
         }
 
         if (noteData.levainDeviceId && getTargetTrackId()) {
             const strip = audioEngine.getTrackStrip(getTargetTrackId()!);
             const levainId = noteData.levainDeviceId;
-            const dn = strip?.deviceNodes.find((d) => d.deviceId === levainId);
+            const dn = strip?.deviceNodes.find((data) => data.deviceId === levainId);
             if (dn?.levainControls) {
                 dn.levainControls.noteOff(note);
             }
@@ -210,7 +210,7 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
 
         const transport = deps.getTransportStoreValue();
         const trackState = deps.getTrackStoreState();
-        const track = trackState?.tracks.find((t) => t.id === getTargetTrackId());
+        const track = trackState?.tracks.find((time) => time.id === getTargetTrackId());
         const isArmed = track?.armed ?? false;
         const isRecording = transport?.isRecording ?? false;
 
@@ -296,7 +296,7 @@ export const handleNoteOn = inject({
             }
 
             const trackState = deps.getTrackStoreState();
-            const track = trackState?.tracks.find((t) => t.id === getTargetTrackId());
+            const track = trackState?.tracks.find((time) => time.id === getTargetTrackId());
 
             let instrumentTrackId = getTargetTrackId()!;
             let instrumentTrack = track;
@@ -306,17 +306,17 @@ export const handleNoteOn = inject({
                 // Single pass instead of find() + filter() + findIndex() (§80.4).
                 let parent: typeof track | undefined;
                 let padIdx = 0;
-                for (const t of trackState.tracks) {
-                    if (t.id === track.parentId) {
-                        parent = t;
-                    } else if (t.parentId === track.parentId) {
-                        if (t.id === track.id) {
+                for (const time of trackState.tracks) {
+                    if (time.id === track.parentId) {
+                        parent = time;
+                    } else if (time.parentId === track.parentId) {
+                        if (time.id === track.id) {
                             toasterChildPad = padIdx;
                         }
                         padIdx++;
                     }
                 }
-                if (parent?.devices.some((d) => d.type === 'toaster')) {
+                if (parent?.devices.some((data) => data.type === 'toaster')) {
                     instrumentTrackId = parent.id;
                     instrumentTrack = parent;
                 } else {
@@ -326,7 +326,7 @@ export const handleNoteOn = inject({
 
             const strip = engine.ensureTrackStrip(instrumentTrackId);
 
-            const hasYeast = instrumentTrack?.devices.some((d) => d.type === 'yeast');
+            const hasYeast = instrumentTrack?.devices.some((data) => data.type === 'yeast');
             if (hasYeast) {
                 const sampleTime = Math.round(now * engine.context.sampleRate);
                 const processedEvents = deps.processRealtimeMidiInput(note, velocity, channel, true, sampleTime);
@@ -334,22 +334,22 @@ export const handleNoteOn = inject({
                     if (evt.kind.type === 'noteOn') {
                         const evtNote = evt.kind.note;
                         const evtVel = evt.kind.velocity;
-                        const fDev = instrumentTrack?.devices.find((d) => d.type === 'fermenter');
+                        const fDev = instrumentTrack?.devices.find((data) => data.type === 'fermenter');
                         if (fDev) {
-                            const dn = strip.deviceNodes.find((d) => d.type === 'fermenter');
+                            const dn = strip.deviceNodes.find((data) => data.type === 'fermenter');
                             dn?.fermenterControls?.noteOn(evtNote, evtVel);
                             continue;
                         }
-                        const gbDev = instrumentTrack?.devices.find((d) => d.type === 'grand-boule');
+                        const gbDev = instrumentTrack?.devices.find((data) => data.type === 'grand-boule');
                         if (gbDev) {
-                            const dn = strip.deviceNodes.find((d) => d.type === 'grand-boule');
+                            const dn = strip.deviceNodes.find((data) => data.type === 'grand-boule');
                             dn?.grandBouleControls?.noteOn(evtNote, evtVel / 127);
-                            deps.eventBus.emit('midi.noteOn', { midiNote: evtNote, velocity: evtVel / 127 });
+                            void deps.eventBus.emit('midi.noteOn', { midiNote: evtNote, velocity: evtVel / 127 });
                             continue;
                         }
-                        const lDev = instrumentTrack?.devices.find((d) => d.type === 'levain');
+                        const lDev = instrumentTrack?.devices.find((data) => data.type === 'levain');
                         if (lDev) {
-                            const dn = strip.deviceNodes.find((d) => d.type === 'levain');
+                            const dn = strip.deviceNodes.find((data) => data.type === 'levain');
                             dn?.levainControls?.noteOn(evtNote, evtVel);
                             continue;
                         }
@@ -359,22 +359,22 @@ export const handleNoteOn = inject({
                         }
                     } else if (evt.kind.type === 'noteOff') {
                         const evtNote = evt.kind.note;
-                        const fDev = instrumentTrack?.devices.find((d) => d.type === 'fermenter');
+                        const fDev = instrumentTrack?.devices.find((data) => data.type === 'fermenter');
                         if (fDev) {
-                            const dn = strip.deviceNodes.find((d) => d.type === 'fermenter');
+                            const dn = strip.deviceNodes.find((data) => data.type === 'fermenter');
                             dn?.fermenterControls?.noteOff(evtNote);
                             continue;
                         }
-                        const gbDev2 = instrumentTrack?.devices.find((d) => d.type === 'grand-boule');
+                        const gbDev2 = instrumentTrack?.devices.find((data) => data.type === 'grand-boule');
                         if (gbDev2) {
-                            const dn = strip.deviceNodes.find((d) => d.type === 'grand-boule');
+                            const dn = strip.deviceNodes.find((data) => data.type === 'grand-boule');
                             dn?.grandBouleControls?.noteOff(evtNote);
-                            deps.eventBus.emit('midi.noteOff', { deviceId: gbDev2.id, midiNote: evtNote });
+                            void deps.eventBus.emit('midi.noteOff', { deviceId: gbDev2.id, midiNote: evtNote });
                             continue;
                         }
-                        const lDev = instrumentTrack?.devices.find((d) => d.type === 'levain');
+                        const lDev = instrumentTrack?.devices.find((data) => data.type === 'levain');
                         if (lDev) {
-                            const dn = strip.deviceNodes.find((d) => d.type === 'levain');
+                            const dn = strip.deviceNodes.find((data) => data.type === 'levain');
                             dn?.levainControls?.noteOff(evtNote);
                             continue;
                         }
@@ -383,9 +383,11 @@ export const handleNoteOn = inject({
                 return;
             }
 
-            const fermenterDev = instrumentTrack?.devices.find((d) => d.type === 'fermenter');
+            const fermenterDev = instrumentTrack?.devices.find((data) => data.type === 'fermenter');
             if (fermenterDev) {
-                const dn = strip.deviceNodes.find((d) => d.deviceId === fermenterDev.id || d.type === 'fermenter');
+                const dn = strip.deviceNodes.find(
+                    (data) => data.deviceId === fermenterDev.id || data.type === 'fermenter'
+                );
                 if (dn?.fermenterControls?.ready) {
                     dn.fermenterControls.noteOn(note, velocity);
                     noteData.fermenterDeviceId = fermenterDev.id;
@@ -393,9 +395,9 @@ export const handleNoteOn = inject({
                 return;
             }
 
-            const toasterDev = instrumentTrack?.devices.find((d) => d.type === 'toaster');
+            const toasterDev = instrumentTrack?.devices.find((data) => data.type === 'toaster');
             if (toasterDev) {
-                const dn = strip.deviceNodes.find((d) => d.deviceId === toasterDev.id || d.type === 'toaster');
+                const dn = strip.deviceNodes.find((data) => data.deviceId === toasterDev.id || data.type === 'toaster');
                 if (dn?.toasterControls) {
                     let pad = toasterChildPad;
                     let pitchNote = note;
@@ -415,16 +417,18 @@ export const handleNoteOn = inject({
                 return;
             }
 
-            const grandBouleDev = instrumentTrack?.devices.find((d) => d.type === 'grand-boule');
+            const grandBouleDev = instrumentTrack?.devices.find((data) => data.type === 'grand-boule');
             if (grandBouleDev) {
-                const dn = strip.deviceNodes.find((d) => d.deviceId === grandBouleDev.id || d.type === 'grand-boule');
+                const dn = strip.deviceNodes.find(
+                    (data) => data.deviceId === grandBouleDev.id || data.type === 'grand-boule'
+                );
                 if (dn?.grandBouleControls?.ready) {
                     const gbStore = createGrandBouleStore(grandBouleDev.id);
                     const calibration = gbStore.value?.midiCalibration;
                     const finalVelocity = calibration ? applyVelocityCurve(velocity, calibration) : velocity / 127;
                     dn.grandBouleControls.noteOn(note, finalVelocity);
                     noteData.grandBouleDeviceId = grandBouleDev.id;
-                    deps.eventBus.emit('midi.noteOn', {
+                    void deps.eventBus.emit('midi.noteOn', {
                         deviceId: grandBouleDev.id,
                         midiNote: note,
                         velocity: finalVelocity,
@@ -433,9 +437,9 @@ export const handleNoteOn = inject({
                 return;
             }
 
-            const levainDev = instrumentTrack?.devices.find((d) => d.type === 'levain');
+            const levainDev = instrumentTrack?.devices.find((data) => data.type === 'levain');
             if (levainDev) {
-                const dn = strip.deviceNodes.find((d) => d.deviceId === levainDev.id || d.type === 'levain');
+                const dn = strip.deviceNodes.find((data) => data.deviceId === levainDev.id || data.type === 'levain');
                 if (dn?.levainControls?.ready) {
                     dn.levainControls.noteOn(note, velocity);
                     noteData.levainDeviceId = levainDev.id;
@@ -446,10 +450,10 @@ export const handleNoteOn = inject({
 
             let osc: OscillatorNode | null = null;
             const synthDevice = instrumentTrack?.devices.find(
-                (d) =>
-                    d.type === 'builtin-drum-kit' ||
-                    d.type.startsWith('builtin-drum-machine') ||
-                    d.type.startsWith('builtin-synth')
+                (data) =>
+                    data.type === 'builtin-drum-kit' ||
+                    data.type.startsWith('builtin-drum-machine') ||
+                    data.type.startsWith('builtin-synth')
             );
 
             if (synthDevice?.type === 'builtin-drum-kit' || synthDevice?.type.startsWith('builtin-drum-machine')) {
@@ -530,31 +534,31 @@ export const handleCC = inject(midiMessageHandlerDependencies)(
             }
 
             const trackState = deps.getTrackStoreState();
-            const track = trackState?.tracks.find((t) => t.id === getTargetTrackId());
-            const grandBouleDevice = track?.devices.find((d) => d.type === 'grand-boule');
+            const track = trackState?.tracks.find((time) => time.id === getTargetTrackId());
+            const grandBouleDevice = track?.devices.find((data) => data.type === 'grand-boule');
             if (grandBouleDevice) {
                 const strip = audioEngine.getTrackStrip(getTargetTrackId()!);
                 const dn = strip?.deviceNodes.find(
-                    (d) => d.deviceId === grandBouleDevice.id || d.type === 'grand-boule'
+                    (data) => data.deviceId === grandBouleDevice.id || data.type === 'grand-boule'
                 );
                 if (dn?.grandBouleControls?.ready) {
                     if (cc === 64) {
                         dn.grandBouleControls.setSustain(value / 127);
-                        deps.eventBus.emit('midi.pedalCc', {
+                        void deps.eventBus.emit('midi.pedalCc', {
                             deviceId: grandBouleDevice.id,
                             cc: 64,
                             value: value / 127,
                         });
                     } else if (cc === 66) {
                         dn.grandBouleControls.setSostenuto(value >= 64);
-                        deps.eventBus.emit('midi.pedalCc', {
+                        void deps.eventBus.emit('midi.pedalCc', {
                             deviceId: grandBouleDevice.id,
                             cc: 66,
                             value: value >= 64,
                         });
                     } else if (cc === 67) {
                         dn.grandBouleControls.setUnaCorda(value >= 64);
-                        deps.eventBus.emit('midi.pedalCc', {
+                        void deps.eventBus.emit('midi.pedalCc', {
                             deviceId: grandBouleDevice.id,
                             cc: 67,
                             value: value >= 64,
@@ -563,10 +567,12 @@ export const handleCC = inject(midiMessageHandlerDependencies)(
                 }
             }
 
-            const levainDevice = track?.devices.find((d) => d.type === 'levain');
+            const levainDevice = track?.devices.find((data) => data.type === 'levain');
             if (levainDevice) {
                 const strip = audioEngine.getTrackStrip(getTargetTrackId()!);
-                const dn = strip?.deviceNodes.find((d) => d.deviceId === levainDevice.id || d.type === 'levain');
+                const dn = strip?.deviceNodes.find(
+                    (data) => data.deviceId === levainDevice.id || data.type === 'levain'
+                );
                 if (dn?.levainControls?.ready) {
                     dn.levainControls.handleCc(cc, value);
                 }

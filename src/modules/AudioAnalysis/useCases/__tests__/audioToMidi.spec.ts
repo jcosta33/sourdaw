@@ -49,7 +49,7 @@ describe('audioToMidi', () => {
         const mockBuffer = {
             sampleRate: 44100,
             length: 44100,
-            getChannelData: () => new Float32Array(44100).map((_, i) => (i % 5000 < 100 ? 1.0 : 0)), // Some sharp onsets
+            getChannelData: () => new Float32Array(44100).map((_, index) => (index % 5000 < 100 ? 1.0 : 0)), // Some sharp onsets
         };
         mocks.audioBufferCacheGet.mockReturnValue(mockBuffer);
 

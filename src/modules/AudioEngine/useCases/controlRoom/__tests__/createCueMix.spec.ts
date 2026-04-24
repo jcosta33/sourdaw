@@ -5,7 +5,7 @@ import * as subject from '../createCueMix';
 describe('createCueMix', () => {
     it('should export createCueMix', () => {
         expect(subject.createCueMix).toBeDefined();
-        const t = typeof subject.createCueMix;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.createCueMix;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

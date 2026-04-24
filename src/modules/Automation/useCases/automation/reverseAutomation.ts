@@ -13,10 +13,12 @@ export function reverseAutomation(laneId: string): void {
             if (lane.points.length === 0) {
                 return lane;
             }
-            const maxBeat = Math.max(...lane.points.map((p) => p.beat));
+            const maxBeat = Math.max(...lane.points.map((param) => param.beat));
             return {
                 ...lane,
-                points: lane.points.map((p) => ({ ...p, beat: maxBeat - p.beat })).sort((a, b) => a.beat - b.beat),
+                points: lane.points
+                    .map((param) => ({ ...param, beat: maxBeat - param.beat }))
+                    .sort((alpha, b) => alpha.beat - b.beat),
             };
         }),
     });

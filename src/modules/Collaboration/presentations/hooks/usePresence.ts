@@ -29,7 +29,7 @@ export const usePresence = (): readonly PresenceData[] => {
             // broadcasts) don't wipe fields set by other update paths.
             const existing = dataRef.current[data.peerId];
             dataRef.current[data.peerId] = existing ? { ...existing, ...data } : data;
-            setVersion((v) => v + 1);
+            setVersion((value) => value + 1);
 
             // Reset expiration timer for this peer
             const timers = timersRef.current;
@@ -42,7 +42,7 @@ export const usePresence = (): readonly PresenceData[] => {
                 setTimeout(() => {
                     delete dataRef.current[data.peerId];
                     timers.delete(data.peerId);
-                    setVersion((v) => v + 1);
+                    setVersion((value) => value + 1);
                 }, PRESENCE_EXPIRY_MS)
             );
         });
@@ -58,7 +58,10 @@ export const usePresence = (): readonly PresenceData[] => {
     }, []);
 
     // Rebuild once per version bump. The React Compiler memoizes this
-    // across renders with the same version.
+    // across renders with the same version. Reading `dataRef.current` here
+    // is intentional: `version` ensures React re-renders only when data changes,
+    // while the ref avoids stale-closure issues in the subscription callback.
     void version;
+    // eslint-disable-next-line react-hooks/refs -- intentional version-counter pattern: ref stores mutable presence map, state version triggers re-render
     return Object.values(dataRef.current);
 };

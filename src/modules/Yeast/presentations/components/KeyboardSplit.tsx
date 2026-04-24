@@ -31,11 +31,11 @@ export const KeyboardSplit = ({
 }: Props): ReactElement => {
     const whiteKeys: number[] = [];
     const blackKeys: number[] = [];
-    for (let n = RANGE_LOW; n < RANGE_HIGH; n++) {
-        if (isBlack(n)) {
-            blackKeys.push(n);
+    for (let node = RANGE_LOW; node < RANGE_HIGH; node++) {
+        if (isBlack(node)) {
+            blackKeys.push(node);
         } else {
-            whiteKeys.push(n);
+            whiteKeys.push(node);
         }
     }
 
@@ -45,8 +45,8 @@ export const KeyboardSplit = ({
     const noteToX = (note: number): number => {
         // Count white keys below this note
         let whiteCount = 0;
-        for (let n = RANGE_LOW; n < note; n++) {
-            if (!isBlack(n)) {
+        for (let node = RANGE_LOW; node < note; node++) {
+            if (!isBlack(node)) {
                 whiteCount++;
             }
         }
@@ -78,6 +78,25 @@ export const KeyboardSplit = ({
                 const x = noteToX(note);
                 const held = heldSet.has(note);
                 const sounding = soundingSet.has(note);
+                const renderIife_18 = () => {
+                    if (sounding) {
+                        return 'var(--color-accent-peach)';
+                    }
+                    if (held) {
+                        return 'var(--color-accent-lavender)';
+                    }
+                    return '#1a1a1a';
+                };
+                const renderIife_19 = () => {
+                    if (sounding) {
+                        return 0.9;
+                    }
+                    if (held) {
+                        return 0.7;
+                    }
+                    return 1;
+                };
+
                 return (
                     <div
                         key={note}
@@ -86,12 +105,8 @@ export const KeyboardSplit = ({
                             left: x,
                             width: whiteKeyWidth - 1,
                             height,
-                            background: sounding
-                                ? 'var(--color-accent-peach)'
-                                : held
-                                  ? 'var(--color-accent-lavender)'
-                                  : '#1a1a1a',
-                            opacity: sounding ? 0.9 : held ? 0.7 : 1,
+                            background: renderIife_18(),
+                            opacity: renderIife_19(),
                             borderRadius: '0 0 2px 2px',
                         }}
                     />
@@ -103,6 +118,16 @@ export const KeyboardSplit = ({
                 const x = noteToX(note);
                 const held = heldSet.has(note);
                 const sounding = soundingSet.has(note);
+                const renderIife_20 = () => {
+                    if (sounding) {
+                        return 'var(--color-accent-peach)';
+                    }
+                    if (held) {
+                        return 'var(--color-accent-lavender)';
+                    }
+                    return '#0e0e0e';
+                };
+
                 return (
                     <div
                         key={note}
@@ -111,11 +136,7 @@ export const KeyboardSplit = ({
                             left: x,
                             width: whiteKeyWidth * 0.6,
                             height: height * 0.6,
-                            background: sounding
-                                ? 'var(--color-accent-peach)'
-                                : held
-                                  ? 'var(--color-accent-lavender)'
-                                  : '#0e0e0e',
+                            background: renderIife_20(),
                             borderRadius: '0 0 2px 2px',
                             zIndex: 1,
                         }}

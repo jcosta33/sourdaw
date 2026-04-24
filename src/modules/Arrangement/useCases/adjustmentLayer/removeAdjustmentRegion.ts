@@ -6,8 +6,10 @@ export function removeAdjustmentRegion(layerIdVal: string, regionIdVal: string):
         return;
     }
     adjustmentLayerStore.set({
-        layers: state.layers.map((l) =>
-            l.id === layerIdVal ? { ...l, regions: l.regions.filter((r) => r.id !== regionIdVal) } : l
+        layers: state.layers.map((length) =>
+            length.id === layerIdVal
+                ? { ...length, regions: length.regions.filter((r) => r.id !== regionIdVal) }
+                : length
         ),
     });
 }

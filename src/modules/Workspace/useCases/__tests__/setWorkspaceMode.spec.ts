@@ -19,7 +19,7 @@ describe('setWorkspaceMode', () => {
     });
 
     it('should patch mode when state exists', () => {
-        vi.mocked(getWorkspaceState).mockReturnValue({ ...defaultWorkspaceState } as any);
+        vi.mocked(getWorkspaceState).mockReturnValue({ ...defaultWorkspaceState });
 
         setWorkspaceMode('automation');
 

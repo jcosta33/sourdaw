@@ -91,7 +91,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
     const [userSamples, setUserSamples] = useState<UserSample[]>([]);
     const [favorites, setFavorites] = useState<Set<string>>(() => {
         try {
-            const stored = localStorage.getItem('sourdaw-favorites');
+            const stored = window.localStorage.getItem('sourdaw-favorites');
             return stored ? new Set(JSON.parse(stored) as string[]) : new Set();
         } catch {
             return new Set();
@@ -143,7 +143,7 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                 next.add(id);
             }
             try {
-                localStorage.setItem('sourdaw-favorites', JSON.stringify([...next]));
+                window.localStorage.setItem('sourdaw-favorites', JSON.stringify([...next]));
             } catch {
                 /* ignore */
             }
@@ -153,17 +153,95 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
 
     const allSamples = [...SAMPLE_LIBRARY, ...userSamples];
     const filteredSamples = allSamples.filter(
-        (s) =>
+        (state) =>
             !searchQuery.trim() ||
-            s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            s.category.toLowerCase().includes(searchQuery.toLowerCase())
+            state.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            state.category.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     const filteredPlugins = getPlatformPlugins().filter(
-        (p) => !searchQuery.trim() || p.name.toLowerCase().includes(searchQuery.toLowerCase())
+        (param) => !searchQuery.trim() || param.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    const selectedTrack = selectedTrackId ? (tracks.find((t) => t.id === selectedTrackId) ?? null) : null;
+    const selectedTrack = selectedTrackId ? (tracks.find((time) => time.id === selectedTrackId) ?? null) : null;
+    const renderIife_11 = () => {
+        if (currentRoute.id === 'library') {
+            const renderIife_12 = () => {
+                if (libSubTab === 'folders') {
+                    return (
+                        <div className="px-1 flex-1 min-h-0">
+                            <LibraryBrowser preview={preview} selectedTrackId={selectedTrackId} />
+                        </div>
+                    );
+                }
+                if (libSubTab === 'mine') {
+                    return (
+                        <div className="px-2">
+                            <div className="flex items-center justify-between pb-1">
+                                <span className="text-[9px] text-muted-foreground">
+                                    {filteredSamples.length} samples
+                                </span>
+                                <Button
+                                    variant="ghost"
+                                    size="xs"
+                                    className="h-5 gap-1 text-[10px]"
+                                    onClick={() => fileInputRef.current?.click()}
+                                >
+                                    <Upload className="size-3" aria-hidden="true" />
+                                    Import
+                                </Button>
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept="audio/*,.wav,.mp3,.ogg,.flac,.aac,.m4a,.aiff,.aif"
+                                    multiple
+                                    className="hidden"
+                                    onChange={(event) => {
+                                        void handleFileImport(event.target.files);
+                                        event.target.value = '';
+                                    }}
+                                />
+                            </div>
+                            <SamplesTab
+                                samples={filteredSamples}
+                                favorites={favorites}
+                                onToggleFavorite={toggleFavorite}
+                                selectedTrackId={selectedTrackId}
+                                preview={preview}
+                            />
+                        </div>
+                    );
+                }
+                return (
+                    <div className="px-2">
+                        <OnlineSampleBrowser preview={preview} />
+                    </div>
+                );
+            };
+
+            return (
+                <>
+                    {/* Sub-tabs: Folders | My Samples | Find Samples */}
+                    <RailTabBar
+                        activeId={libSubTab}
+                        items={[
+                            { id: 'folders', label: 'Folders', icon: FolderSync },
+                            { id: 'mine', label: 'Imported', icon: FileAudio },
+                            { id: 'find', label: 'Find', icon: Search },
+                        ]}
+                        onChange={setLibSubTab}
+                        size="sub"
+                        className="px-2 pb-2"
+                        scrollerClassName="gap-1"
+                        buttonClassName="min-w-[88px]"
+                    />
+                    {renderIife_12()}
+                </>
+            );
+        } else {
+            return null;
+        }
+    };
 
     return (
         <aside
@@ -177,8 +255,8 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                     type="search"
                     placeholder="Search library..."
                     value={searchQuery}
-                    onChange={(e) => {
-                        setSearchQuery(e.target.value);
+                    onChange={(event) => {
+                        setSearchQuery(event.target.value);
                     }}
                     className="h-7 border-0 bg-transparent text-xs shadow-none focus-visible:ring-0 px-1"
                     aria-label="Search browser"
@@ -187,7 +265,6 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                     <X className="size-3.5" />
                 </Button>
             </div>
-
             <RailTabBar
                 activeId={activeTab}
                 items={TAB_ITEMS.map(({ id, label, Icon }) => ({ id, label, icon: Icon }))}
@@ -195,7 +272,6 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                 className="border-b border-border/20 bg-surface-base/80"
                 scrollerClassName="w-full px-1 py-1.5"
             />
-
             {currentStack.length > 1 ? (
                 <RailBackBar
                     title={currentRoute.title}
@@ -204,76 +280,13 @@ export const Sidebar = ({ style }: SidebarProps): ReactElement => {
                     iconColor={currentRoute.iconColor}
                 />
             ) : null}
-
             <ScrollArea className="flex-1">
                 <div
                     id={`browser-panel-${currentRoute.id}`}
                     className="p-1 h-full"
                     aria-label={`${currentRoute.title} browser`}
                 >
-                    {currentRoute.id === 'library' ? (
-                        <>
-                            {/* Sub-tabs: Folders | My Samples | Find Samples */}
-                            <RailTabBar
-                                activeId={libSubTab}
-                                items={[
-                                    { id: 'folders', label: 'Folders', icon: FolderSync },
-                                    { id: 'mine', label: 'Imported', icon: FileAudio },
-                                    { id: 'find', label: 'Find', icon: Search },
-                                ]}
-                                onChange={setLibSubTab}
-                                size="sub"
-                                className="px-2 pb-2"
-                                scrollerClassName="gap-1"
-                                buttonClassName="min-w-[88px]"
-                            />
-
-                            {libSubTab === 'folders' ? (
-                                <div className="px-1 flex-1 min-h-0">
-                                    <LibraryBrowser preview={preview} selectedTrackId={selectedTrackId} />
-                                </div>
-                            ) : libSubTab === 'mine' ? (
-                                <div className="px-2">
-                                    <div className="flex items-center justify-between pb-1">
-                                        <span className="text-[9px] text-muted-foreground">
-                                            {filteredSamples.length} samples
-                                        </span>
-                                        <Button
-                                            variant="ghost"
-                                            size="xs"
-                                            className="h-5 gap-1 text-[10px]"
-                                            onClick={() => fileInputRef.current?.click()}
-                                        >
-                                            <Upload className="size-3" aria-hidden="true" />
-                                            Import
-                                        </Button>
-                                        <input
-                                            ref={fileInputRef}
-                                            type="file"
-                                            accept="audio/*,.wav,.mp3,.ogg,.flac,.aac,.m4a,.aiff,.aif"
-                                            multiple
-                                            className="hidden"
-                                            onChange={(e) => {
-                                                handleFileImport(e.target.files);
-                                                e.target.value = '';
-                                            }}
-                                        />
-                                    </div>
-                                    <SamplesTab
-                                        samples={filteredSamples}
-                                        favorites={favorites}
-                                        onToggleFavorite={toggleFavorite}
-                                        selectedTrackId={selectedTrackId}
-                                        preview={preview}
-                                    />
-                                </div>
-                            ) : (
-                                <div className="px-2">
-                                    <OnlineSampleBrowser preview={preview} />
-                                </div>
-                            )}
-                        </>
-                    ) : null}
+                    {renderIife_11()}
 
                     {currentRoute.id.startsWith('instruments') ? (
                         <InstrumentsTab

@@ -4,12 +4,12 @@ import { createWarpMarker, defaultWarpState } from '../WarpMarker';
 
 describe('createWarpMarker', () => {
     it('creates markers with original and warped beat positions', () => {
-        const m = createWarpMarker(0, 0);
-        const n = createWarpMarker(4, 4.5);
-        expect(m.originalBeat).toBe(0);
-        expect(m.warpedBeat).toBe(0);
-        expect(n.id).not.toBe(m.id);
-        expect(n.id).toMatch(/^warp-[a-f0-9]{8}$/i);
+        const message = createWarpMarker(0, 0);
+        const node = createWarpMarker(4, 4.5);
+        expect(message.originalBeat).toBe(0);
+        expect(message.warpedBeat).toBe(0);
+        expect(node.id).not.toBe(message.id);
+        expect(node.id).toMatch(/^warp-[a-f0-9]{8}$/i);
     });
 });
 

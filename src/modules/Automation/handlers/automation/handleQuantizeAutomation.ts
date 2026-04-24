@@ -3,9 +3,9 @@ import { createHandler } from '#/utils/createHandler';
 import { quantizeAutomationBeats } from '../../useCases/automation/quantizeAutomationBeats';
 
 export const handleQuantizeAutomation = createHandler<'quantizeAutomation'>({
-    execute: (a) => {
-        quantizeAutomationBeats(a.payload.laneId, a.payload.gridSize);
+    execute: (alpha) => {
+        quantizeAutomationBeats(alpha.payload.laneId, alpha.payload.gridSize);
     },
-    describe: (a) => ({ label: `Quantize automation to ${a.payload.gridSize} beats` }),
+    describe: (alpha) => ({ label: `Quantize automation to ${alpha.payload.gridSize} beats` }),
     undoable: true,
 });

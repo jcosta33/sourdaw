@@ -16,7 +16,7 @@ describe('handleSetClipLoopLength', () => {
     });
 
     it('executes setClipLoopLength with the provided payload', () => {
-        handleSetClipLoopLength.execute({
+        void handleSetClipLoopLength.execute({
             type: 'setClipLoopLength',
             payload: { clipId: 'c1', loopLength: 4 },
         });

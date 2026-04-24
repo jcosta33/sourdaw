@@ -4,7 +4,7 @@ import { MIDI_EFFECT_FACTORIES } from '../registry';
 
 describe('MIDI_EFFECT_FACTORIES', () => {
     it('should use unique factory ids', () => {
-        const ids = MIDI_EFFECT_FACTORIES.map((f) => f.id);
+        const ids = MIDI_EFFECT_FACTORIES.map((freq) => freq.id);
         expect(new Set(ids).size).toBe(ids.length);
     });
 

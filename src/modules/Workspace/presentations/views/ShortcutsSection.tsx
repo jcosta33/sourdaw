@@ -130,7 +130,7 @@ export const ShortcutsSection = (): ReactElement => {
 
     useEffect(() => {
         if (!editingId) {
-            return;
+            return undefined;
         }
         const handleKey = (event: KeyboardEvent) => {
             event.preventDefault();
@@ -156,10 +156,12 @@ export const ShortcutsSection = (): ReactElement => {
         }
     }
     for (const bucket of grouped.values()) {
-        bucket.sort((a, b) => a.label.localeCompare(b.label));
+        bucket.sort((alpha, b) => alpha.label.localeCompare(b.label));
     }
 
-    const categories = [...grouped.keys()].sort((a, b) => (CATEGORY_ORDER[a] ?? 999) - (CATEGORY_ORDER[b] ?? 999));
+    const categories = [...grouped.keys()].sort(
+        (alpha, b) => (CATEGORY_ORDER[alpha] ?? 999) - (CATEGORY_ORDER[b] ?? 999)
+    );
 
     const editingDefinition = editingId
         ? (state.definitions.find((definition) => definition.id === editingId) ?? null)

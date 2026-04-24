@@ -18,54 +18,58 @@ for (const viewPath of views.sort()) {
     const dir = dirname(viewPath);
     const baseName = basename(viewPath, '.tsx');
     const specPath = join(dir, `${baseName}.spec.tsx`);
-    
+
     // Skip if spec already exists
     if (existsSync(specPath)) {
         skipped++;
         continue;
     }
-    
+
     const content = readFileSync(viewPath, 'utf-8');
-    
+
     // Analyze the view
     const hasUseStore = content.includes('useStore');
     const hasUseCases = content.match(/from\s+['"]\.\.\/\.\.\/useCases|from\s+['"]#\/modules\/.*\/useCases/);
     const hasProps = content.match(/type\s+\w+Props\s*=|interface\s+\w+Props/);
     const exportMatch = content.match(/export\s+(?:const|function)\s+(\w+)/);
     const componentName = exportMatch ? exportMatch[1] : baseName;
-    
+
     // Extract imports for mocking
     const useCaseImports = [];
     const storeImports = [];
-    
+
     // Find useCase imports
     const useCaseImportMatches = content.matchAll(/from\s+['"]([^'"]*useCases[^'"]*)['"];?/g);
     for (const match of useCaseImportMatches) {
         const path = match[1];
-        const importMatch = content.match(new RegExp(`import\\s+\\{([^}]+)\\}\\s+from\\s+['"]${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"];?`));
+        const importMatch = content.match(
+            new RegExp(`import\\s+\\{([^}]+)\\}\\s+from\\s+['"]${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"];?`)
+        );
         if (importMatch) {
-            const imports = importMatch[1].split(',').map(s => s.trim().split(' ')[0]);
+            const imports = importMatch[1].split(',').map((s) => s.trim().split(' ')[0]);
             useCaseImports.push({ path, imports });
         }
     }
-    
+
     // Find store imports
     const storeImportMatches = content.matchAll(/from\s+['"]([^'"]*stores[^'"]*)['"];?/g);
     for (const match of storeImportMatches) {
         const path = match[1];
-        const importMatch = content.match(new RegExp(`import\\s+\\{([^}]+)\\}\\s+from\\s+['"]${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"];?`));
+        const importMatch = content.match(
+            new RegExp(`import\\s+\\{([^}]+)\\}\\s+from\\s+['"]${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"];?`)
+        );
         if (importMatch) {
-            const imports = importMatch[1].split(',').map(s => s.trim().split(' ')[0]);
+            const imports = importMatch[1].split(',').map((s) => s.trim().split(' ')[0]);
             storeImports.push({ path, imports });
         }
     }
-    
+
     // Generate test file
     let testContent = `import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen${hasUseStore || hasUseCases ? ', fireEvent' : ''} } from '@testing-library/react';
 import { ${componentName} } from './${baseName}';
 `;
-    
+
     // Add mocks for useStore
     if (hasUseStore) {
         testContent += `
@@ -75,27 +79,31 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 `;
     }
-    
+
     // Add mocks for useCases
-    for (const { path, imports } of useCaseImports.slice(0, 5)) { // Limit to first 5 to avoid too many mocks
-        const mockExports = imports.map(imp => `    ${imp}: vi.fn(),`).join('\n');
+    for (const { path, imports } of useCaseImports.slice(0, 5)) {
+        // Limit to first 5 to avoid too many mocks
+        const mockExports = imports.map((imp) => `    ${imp}: vi.fn(),`).join('\n');
         testContent += `
 vi.mock('${path}', () => ({
 ${mockExports}
 }));
 `;
     }
-    
+
     // Add mocks for stores
-    for (const { path, imports } of storeImports.slice(0, 3)) { // Limit to first 3
-        const mockExports = imports.map(imp => `    ${imp}: { getState: vi.fn(() => ({})), subscribe: vi.fn() },`).join('\n');
+    for (const { path, imports } of storeImports.slice(0, 3)) {
+        // Limit to first 3
+        const mockExports = imports
+            .map((imp) => `    ${imp}: { getState: vi.fn(() => ({})), subscribe: vi.fn() },`)
+            .join('\n');
         testContent += `
 vi.mock('${path}', () => ({
 ${mockExports}
 }));
 `;
     }
-    
+
     // Start describe block
     testContent += `
 describe('${componentName}', () => {
@@ -105,7 +113,7 @@ describe('${componentName}', () => {
 
     it('should render without crashing', () => {
 `;
-    
+
     // Generate props if needed
     if (hasProps || content.includes('props:')) {
         // Try to extract prop types
@@ -113,7 +121,7 @@ describe('${componentName}', () => {
         if (propsMatch) {
             const propsType = propsMatch[1];
             const propsBody = propsMatch[2];
-            
+
             // Generate mock props based on types
             const mockProps = [];
             const propMatches = propsBody.matchAll(/(\w+)(\?)?:\s*(\w+)/g);
@@ -139,7 +147,7 @@ describe('${componentName}', () => {
                 }
                 mockProps.push(`        ${name}: ${mockValue}`);
             }
-            
+
             if (mockProps.length > 0) {
                 testContent += `        const props: ${propsType} = {
 ${mockProps.join(',\n')},
@@ -154,12 +162,12 @@ ${mockProps.join(',\n')},
     } else {
         testContent += `        render(<${componentName} />);`;
     }
-    
+
     testContent += `
         expect(document.body).toBeTruthy();
     });
 `;
-    
+
     // Add more tests based on component features
     if (hasUseStore) {
         testContent += `
@@ -170,7 +178,7 @@ ${mockProps.join(',\n')},
     });
 `;
     }
-    
+
     if (hasUseCases) {
         testContent += `
     it('should call useCase handlers on interaction', () => {
@@ -180,7 +188,7 @@ ${mockProps.join(',\n')},
     });
 `;
     }
-    
+
     // Check for buttons/interactive elements
     if (content.includes('onClick') || content.includes('Button')) {
         testContent += `
@@ -191,10 +199,10 @@ ${mockProps.join(',\n')},
     });
 `;
     }
-    
+
     testContent += `});
 `;
-    
+
     writeFileSync(specPath, testContent);
     created++;
     console.log(`Created: ${specPath.replace(process.cwd() + '/', '')}`);

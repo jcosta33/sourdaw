@@ -3,9 +3,9 @@ import { createHandler } from '#/utils/createHandler';
 import { setTempo } from '../../useCases/setTempo';
 
 export const handleSetTempo = createHandler<'setTempo'>({
-    execute: (a) => {
-        setTempo(a.payload.bpm);
+    execute: (alpha) => {
+        setTempo(alpha.payload.bpm);
     },
-    describe: (a) => ({ label: `Set tempo to ${a.payload.bpm} BPM` }),
+    describe: (alpha) => ({ label: `Set tempo to ${alpha.payload.bpm} BPM` }),
     undoable: true,
 });

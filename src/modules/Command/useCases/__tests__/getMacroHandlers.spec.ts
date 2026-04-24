@@ -5,7 +5,7 @@ import * as subject from '../getMacroHandlers';
 describe('getMacroHandlers', () => {
     it('should export getMacroHandlers', () => {
         expect(subject.getMacroHandlers).toBeDefined();
-        const t = typeof subject.getMacroHandlers;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getMacroHandlers;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

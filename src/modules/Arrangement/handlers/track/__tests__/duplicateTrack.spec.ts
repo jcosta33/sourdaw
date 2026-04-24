@@ -16,7 +16,7 @@ describe('handleDuplicateTrack', () => {
     });
 
     it('executes duplicateTrack with the provided payload', () => {
-        handleDuplicateTrack.execute({
+        void handleDuplicateTrack.execute({
             type: 'duplicateTrack',
             payload: { trackId: 't1' },
         });

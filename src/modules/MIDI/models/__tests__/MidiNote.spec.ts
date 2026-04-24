@@ -4,15 +4,15 @@ import { createMidiCC, createMidiNote, createMidiPitchBend } from '../MidiNote';
 
 describe('createMidiNote', () => {
     it('creates notes with defaults and incrementing ids', () => {
-        const a = createMidiNote(60, 0, 1);
+        const alpha = createMidiNote(60, 0, 1);
         const b = createMidiNote(61, 4, 0.5, 80, 50);
-        expect(a.pitch).toBe(60);
-        expect(a.velocity).toBe(100);
-        expect(a.probability).toBe(100);
-        expect(a.id).toMatch(/^note-[a-f0-9]{8}$/i);
+        expect(alpha.pitch).toBe(60);
+        expect(alpha.velocity).toBe(100);
+        expect(alpha.probability).toBe(100);
+        expect(alpha.id).toMatch(/^note-[a-f0-9]{8}$/i);
         expect(b.velocity).toBe(80);
         expect(b.probability).toBe(50);
-        expect(b.id).not.toBe(a.id);
+        expect(b.id).not.toBe(alpha.id);
     });
 });
 

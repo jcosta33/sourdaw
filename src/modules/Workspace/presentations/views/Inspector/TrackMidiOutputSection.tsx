@@ -23,8 +23,8 @@ export const TrackMidiOutputSection = ({ track, allTracks }: TrackMidiOutputSect
                     <DawCompactSelect
                         className="w-full border-border"
                         value={track.midiOutputTrackId ?? ''}
-                        onChange={(e) => {
-                            const val = e.target.value;
+                        onChange={(event) => {
+                            const val = event.target.value;
                             if (val) {
                                 setMidiOutput(track.id, val);
                             } else {
@@ -35,10 +35,10 @@ export const TrackMidiOutputSection = ({ track, allTracks }: TrackMidiOutputSect
                     >
                         <option value="">No MIDI routing</option>
                         {allTracks
-                            .filter((t) => t.kind === 'midi' && t.id !== track.id)
-                            .map((t) => (
-                                <option key={t.id} value={t.id}>
-                                    {t.name}
+                            .filter((time) => time.kind === 'midi' && time.id !== track.id)
+                            .map((time) => (
+                                <option key={time.id} value={time.id}>
+                                    {time.name}
                                 </option>
                             ))}
                     </DawCompactSelect>

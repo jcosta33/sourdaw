@@ -26,7 +26,7 @@ export const PerformanceSection = ({ prefs, update }: SectionProps): ReactElemen
             <div className="flex items-center gap-2">
                 <DawCompactSelect
                     value={prefs.bufferSize}
-                    onChange={(e) => update({ bufferSize: Number(e.target.value) as BufferSizeOption })}
+                    onChange={(event) => update({ bufferSize: Number(event.target.value) as BufferSizeOption })}
                     className="flex-1"
                     aria-label="Buffer size"
                 >
@@ -45,7 +45,7 @@ export const PerformanceSection = ({ prefs, update }: SectionProps): ReactElemen
         <FieldGroup label="Sample Rate">
             <DawCompactSelect
                 value={prefs.sampleRate}
-                onChange={(e) => update({ sampleRate: Number(e.target.value) as SampleRateOption })}
+                onChange={(event) => update({ sampleRate: Number(event.target.value) as SampleRateOption })}
                 className="w-full"
                 aria-label="Sample rate"
             >

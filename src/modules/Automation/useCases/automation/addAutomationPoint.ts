@@ -7,13 +7,13 @@ export function addAutomationPoint(laneId: string, point: AutomationPoint): void
         return;
     }
     automationStore.set({
-        lanes: state.lanes.map((l) =>
-            l.id === laneId
+        lanes: state.lanes.map((length) =>
+            length.id === laneId
                 ? {
-                      ...l,
-                      points: [...l.points, point].sort((a, b) => a.beat - b.beat),
+                      ...length,
+                      points: [...length.points, point].sort((alpha, b) => alpha.beat - b.beat),
                   }
-                : l
+                : length
         ),
     });
 }

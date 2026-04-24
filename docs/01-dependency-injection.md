@@ -2,7 +2,7 @@
 
 Business-layer code wires collaborators through **`inject()`** from `#/infra/di/inject`. Use cases and repositories that perform I/O or call other application services declare dependencies in the dependency map; they are resolved at **call time**, not by ad hoc static imports of repos and use cases.
 
-**Canonical reference:** `docs/architecture/03-typescript-module.md` §4.10 — *Dependency injection with `inject()`*.
+**Canonical reference:** `docs/architecture/03-typescript-module.md` §4.10 — _Dependency injection with `inject()`_.
 
 **Testing:** `docs/06-testing.md` §5 — use **`injectDependencies()`** for injectables; do not rely on module-level `vi.mock()` for collaborators that belong in the `inject()` map.
 

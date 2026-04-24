@@ -5,8 +5,8 @@ import { BUILTIN_PLUGINS } from '../models/DeviceParameter';
  * All plugins are available on both web and native (Tauri).
  */
 export function getPlatformPlugins(): typeof BUILTIN_PLUGINS {
-    return BUILTIN_PLUGINS.filter((p) => {
-        const platform = p.platform ?? 'both';
+    return BUILTIN_PLUGINS.filter((param) => {
+        const platform = param.platform ?? 'both';
         return platform !== 'native';
     });
 }

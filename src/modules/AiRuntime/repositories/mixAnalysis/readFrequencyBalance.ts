@@ -41,8 +41,8 @@ export function readFrequencyBalance(analyser: AnalyserNode): FrequencyBands {
 
         let sum = 0;
         let count = 0;
-        for (let i = startBin; i <= endBin; i++) {
-            const dbVal = data[i] ?? SILENCE_FLOOR_DB;
+        for (let index = startBin; index <= endBin; index++) {
+            const dbVal = data[index] ?? SILENCE_FLOOR_DB;
             sum += 10 ** (dbVal / 10);
             count++;
         }

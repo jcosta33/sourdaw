@@ -4,8 +4,8 @@ import { type PunchRecordingState } from '../../../stores/punchRecordingStore';
 import { stopBackgroundCapture } from '../stopBackgroundCapture';
 
 const mockPunchRecordingStore = vi.hoisted(() => ({
-    value: null as any,
-    set: vi.fn(),
+    value: null as PunchRecordingState | null,
+    set: vi.fn<(state: PunchRecordingState) => void>(),
 }));
 
 vi.mock('../../../stores/punchRecordingStore', () => ({
@@ -43,7 +43,14 @@ describe('stopBackgroundCapture', () => {
         });
 
         stopBackgroundCapture('c1');
-        const next = mockPunchRecordingStore.set.mock.calls[0]![0] as PunchRecordingState;
-        expect(next.captures[0]!.recording).toBe(false);
+        const next = mockPunchRecordingStore.set.mock.calls[0]?.[0];
+        if (!next) {
+            throw new Error('set was not called with arguments');
+        }
+        const capture = next.captures[0];
+        if (!capture) {
+            throw new Error('capture was not found');
+        }
+        expect(capture.recording).toBe(false);
     });
 });

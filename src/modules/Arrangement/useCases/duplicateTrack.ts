@@ -33,8 +33,8 @@ export function duplicateTrack(trackId: string): void {
                     if (sourceNotes && sourceNotes.length > 0) {
                         updates.notesByClipId = {
                             ...midiState.notesByClipId,
-                            [newClipId]: sourceNotes.map((n) => ({
-                                ...n,
+                            [newClipId]: sourceNotes.map((node) => ({
+                                ...node,
                                 id: `note-dup-${crypto.randomUUID().slice(0, 8)}`,
                             })),
                         };
@@ -96,13 +96,13 @@ export function duplicateTrack(trackId: string): void {
     }
 
     // 4. Update track with copied devices, sends, and alternatives
-    updateTrack(newTrack.id, (t) => ({
-        ...t,
+    updateTrack(newTrack.id, (time) => ({
+        ...time,
         gain: source.gain,
         pan: source.pan,
         color: source.color,
-        devices: source.devices.map((d) => ({
-            ...d,
+        devices: source.devices.map((data) => ({
+            ...data,
             id: `dev-dup-${crypto.randomUUID().slice(0, 8)}`,
         })),
         sends: [...source.sends],

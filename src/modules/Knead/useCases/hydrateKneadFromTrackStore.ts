@@ -1,6 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 
-import { kneadStore } from '../stores/kneadStore';
+import { kneadStore, type KneadClipState } from '../stores/kneadStore';
 
 /**
  * Hydrates the kneadStore with pitch-correction data extracted from
@@ -13,12 +13,12 @@ export function hydrateKneadFromTrackStore(): void {
     }
 
     const { tracks } = trackStoreValue;
-    const clipsWithKnead: Record<string, any> = {};
+    const clipsWithKnead: Record<string, KneadClipState> = {};
 
     for (const track of tracks) {
         for (const clip of track.clips) {
             if (clip.kneadState) {
-                clipsWithKnead[clip.id] = clip.kneadState;
+                clipsWithKnead[clip.id] = clip.kneadState as KneadClipState;
             }
         }
     }

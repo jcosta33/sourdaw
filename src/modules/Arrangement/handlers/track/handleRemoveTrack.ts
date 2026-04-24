@@ -16,10 +16,10 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
     execute: (action) => {
         removeTrack(action.payload.trackId);
     },
-    describe: (a) => {
+    describe: (alpha) => {
         // Snapshot everything that removeTrack will delete, so the inverse
         // action (`restoreTrack`) can replay it. Runs pre-execute.
-        const track = getTrackStoreState()?.tracks.find((t) => t.id === a.payload.trackId);
+        const track = getTrackStoreState()?.tracks.find((time) => time.id === alpha.payload.trackId);
         if (!track) {
             return { label: 'Remove track' };
         }
@@ -27,11 +27,11 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
         const trackSnapshot = structuredClone(track);
 
         const autoState = automationStore.value;
-        const autoLanes = autoState ? autoState.lanes.filter((l) => l.trackId === a.payload.trackId) : [];
+        const autoLanes = autoState ? autoState.lanes.filter((length) => length.trackId === alpha.payload.trackId) : [];
         const automationLaneSnapshots = structuredClone(autoLanes);
 
         const midiState = midiStore.value;
-        const clipIds = track.clips.map((c) => c.id);
+        const clipIds = track.clips.map((context) => context.id);
         const midiNotesByClipId: Record<string, readonly MidiNoteEntry[]> = {};
         const midiCcByClipId: Record<string, readonly MidiCcEntry[]> = {};
         const midiPitchBendByClipId: Record<string, readonly MidiPitchBendEntry[]> = {};
@@ -50,7 +50,9 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
         }
 
         const takeLaneState = takeLaneStore.value;
-        const takeLanes = takeLaneState ? takeLaneState.lanes.filter((l) => l.trackId === a.payload.trackId) : [];
+        const takeLanes = takeLaneState
+            ? takeLaneState.lanes.filter((length) => length.trackId === alpha.payload.trackId)
+            : [];
         const takeLaneSnapshots = structuredClone(takeLanes);
 
         return {
@@ -58,7 +60,7 @@ export const handleRemoveTrack = createHandler<'removeTrack'>({
             inverseAction: {
                 type: 'restoreTrack',
                 payload: {
-                    trackId: a.payload.trackId,
+                    trackId: alpha.payload.trackId,
                     trackSnapshot,
                     automationLaneSnapshots,
                     midiNotesByClipId,

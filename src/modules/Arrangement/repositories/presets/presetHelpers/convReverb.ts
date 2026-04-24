@@ -1,17 +1,19 @@
 import { type DevicePreset } from '../../../models/SoundPreset';
 
-export const convReverb = (
+export function convReverb(
     name: string,
     params: Partial<Record<'conv-ir' | 'conv-mix' | 'conv-predelay' | 'conv-lowcut' | 'conv-highcut', number>>
-): DevicePreset => ({
-    type: 'builtin-convolution-reverb',
-    name,
-    parameterValues: {
-        'conv-ir': 6,
-        'conv-mix': 0.4,
-        'conv-predelay': 10,
-        'conv-lowcut': 60,
-        'conv-highcut': 12000,
-        ...params,
-    },
-});
+): DevicePreset {
+    return {
+        type: 'builtin-convolution-reverb',
+        name,
+        parameterValues: {
+            'conv-ir': 6,
+            'conv-mix': 0.4,
+            'conv-predelay': 10,
+            'conv-lowcut': 60,
+            'conv-highcut': 12000,
+            ...params,
+        },
+    };
+}

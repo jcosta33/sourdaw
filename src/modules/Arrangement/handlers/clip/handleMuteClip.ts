@@ -3,9 +3,9 @@ import { createHandler } from '#/utils/createHandler';
 import { muteClip } from '../../useCases/clipEditing/muteClip';
 
 export const handleMuteClip = createHandler<'muteClip'>({
-    execute: (a) => {
-        muteClip(a.payload.clipId, a.payload.muted);
+    execute: (alpha) => {
+        muteClip(alpha.payload.clipId, alpha.payload.muted);
     },
-    describe: (a) => ({ label: a.payload.muted ? 'Mute clip' : 'Unmute clip' }),
+    describe: (alpha) => ({ label: alpha.payload.muted ? 'Mute clip' : 'Unmute clip' }),
     undoable: true,
 });

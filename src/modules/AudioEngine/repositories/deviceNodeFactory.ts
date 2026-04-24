@@ -39,11 +39,11 @@ import { applyDeEsserParams } from './devices/toneShaping/applyDeEsserParams';
 import { applyDistortionParams } from './devices/toneShaping/applyDistortionParams';
 import { applyFilterParams } from './devices/toneShaping/applyFilterParams';
 import { applyGainParams } from './devices/toneShaping/applyGainParams';
+import { createBitcrusher } from './devices/toneShaping/createBitcrusher';
+import { createDeEsser } from './devices/toneShaping/createDeEsser';
 import { createDistortion } from './devices/toneShaping/createDistortion';
 import { createFilter } from './devices/toneShaping/createFilter';
 import { createGainDevice } from './devices/toneShaping/createGainDevice';
-import { createBitcrusher } from './devices/toneShaping/createBitcrusher';
-import { createDeEsser } from './devices/toneShaping/createDeEsser';
 import { createLufsMeter } from './devices/toneShaping/createLufsMeter';
 import { type OfflineDeviceNode } from './devices/types';
 

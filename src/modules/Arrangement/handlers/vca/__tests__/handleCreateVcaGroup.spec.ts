@@ -16,7 +16,7 @@ describe('handleCreateVcaGroup', () => {
     });
 
     it('executes createVcaGroup with payload', () => {
-        handleCreateVcaGroup.execute({
+        void handleCreateVcaGroup.execute({
             type: 'createVcaGroup',
             payload: { name: 'Drums VCA', trackIds: ['t1', 't2'] },
         });

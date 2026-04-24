@@ -93,10 +93,10 @@ export const useTempoEditorState = (): TempoEditorState => {
     // Click-outside to close tempo map panel
     useEffect(() => {
         if (!mapOpen) {
-            return;
+            return undefined;
         }
-        const handleClickOutside = (e: MouseEvent): void => {
-            if (mapPanelRef.current && !mapPanelRef.current.contains(e.target as Node)) {
+        const handleClickOutside = (event: MouseEvent): void => {
+            if (mapPanelRef.current && !mapPanelRef.current.contains(event.target as Node)) {
                 setMapOpen(false);
             }
         };
@@ -163,7 +163,7 @@ export const useTempoEditorState = (): TempoEditorState => {
             return;
         }
 
-        const recentTaps = taps.filter((t) => now - t < 4000);
+        const recentTaps = taps.filter((time) => now - time < 4000);
         tapTimesRef.current = recentTaps;
 
         if (recentTaps.length < 2) {
@@ -171,8 +171,8 @@ export const useTempoEditorState = (): TempoEditorState => {
         }
 
         let totalInterval = 0;
-        for (let i = 1; i < recentTaps.length; i++) {
-            totalInterval += recentTaps[i]! - recentTaps[i - 1]!;
+        for (let index = 1; index < recentTaps.length; index++) {
+            totalInterval += recentTaps[index]! - recentTaps[index - 1]!;
         }
         const avgInterval = totalInterval / (recentTaps.length - 1);
         if (avgInterval <= 0) {

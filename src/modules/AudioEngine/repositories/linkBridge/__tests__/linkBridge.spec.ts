@@ -8,7 +8,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { disableLink } from '../disableLink';
 import { enableLink } from '../enableLink';
 import { getLinkStatus } from '../getLinkStatus';
-import { invokeLink, isTauri } from '../helpers';
+import { invokeLink } from '../helpers';
 
 describe('linkBridge repository', () => {
     const originalWindow = global.window;

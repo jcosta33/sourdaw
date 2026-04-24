@@ -5,7 +5,7 @@ import * as subject from '../getPluginHostHandlers';
 describe('getPluginHostHandlers', () => {
     it('should export getPluginHostHandlers', () => {
         expect(subject.getPluginHostHandlers).toBeDefined();
-        const t = typeof subject.getPluginHostHandlers;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getPluginHostHandlers;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

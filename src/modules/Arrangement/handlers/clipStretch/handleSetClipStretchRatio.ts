@@ -6,6 +6,6 @@ export const handleSetClipStretchRatio = createHandler<'setClipStretchRatio'>({
     execute: (action) => {
         setClipStretchRatio(action.payload.clipId, action.payload.ratio);
     },
-    describe: (a) => ({ label: `Set clip stretch ratio to ${a.payload.ratio}` }),
+    describe: (alpha) => ({ label: `Set clip stretch ratio to ${alpha.payload.ratio}` }),
     undoable: true,
 });

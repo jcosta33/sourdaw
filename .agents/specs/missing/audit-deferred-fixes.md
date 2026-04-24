@@ -64,10 +64,11 @@ All deferred items from `consolidated-issues.md` and its `# Audit: Timeline and 
 - **I-28** (`LocalStorageKeys` legacy keys) — file header requires legal review; out of scope for an agent.
 - **I-30** (per-plugin DSP claims carried over) — must move into per-plugin audits before any code work; this spec does not implement those.
 - **Pre-existing breaks** that the 2026-04-16 fix pass surfaced but did not introduce:
-  - `crates/daw-dsp/src/grand_boule/voice.rs` missing `envelope` field.
-  - `src/modules/AiRuntime/repositories/webMidi/messageHandlers.ts:224` missing `getCompensationDelay`.
+    - `crates/daw-dsp/src/grand_boule/voice.rs` missing `envelope` field.
+    - `src/modules/AiRuntime/repositories/webMidi/messageHandlers.ts:224` missing `getCompensationDelay`.
 
-  These are tracked separately. They are not gating for this spec but should be fixed before the workspace is declared clean.
+    These are tracked separately. They are not gating for this spec but should be fixed before the workspace is declared clean.
+
 - Migrating MIDI notes from absolute to relative positioning. The audit lists this as a "Suggested approach"; this spec preserves the absolute model and fixes the operations that desync. A relative-MIDI migration is a separate, larger spec.
 - Building new flagship features described in `implementation-gaps.md` (drum-machine flagship, ZDF filters, ghost playheads, etc.). That spec is forward-looking; this one is corrective.
 
@@ -579,13 +580,17 @@ If any of these risks materialise during implementation, surface them as a Findi
 ## Implementation Status
 
 **What is implemented:**
+
 - None of the specific fixes defined in this spec (e.g., `deleteMidiNotesInRange`, `EngineDeviceNode`, `invokeLlm` refactor) are present in the codebase.
 
 **What is not implemented:**
+
 - All features and fixes described in the spec across MIDI, Audio Engine, AI Runtime, and UI State.
 
 **What is done well:**
+
 - N/A
 
 **What needs refactoring:**
+
 - This spec remains the primary backlog for critical architectural fixes.

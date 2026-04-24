@@ -133,42 +133,42 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             <DawMenuButton
                 role="menuitem"
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
-                onClick={act(() =>
-                    runAiActionWithToast(() => executeAppAction({ type: 'stemSeparate', payload: { clipId } }), {
+                onClick={act(() => {
+                    void runAiActionWithToast(() => executeAppAction({ type: 'stemSeparate', payload: { clipId } }), {
                         startMsg: 'Separating stems… this may take a moment',
                         successMsg: 'Stem separation complete',
                         successDetails: ['Created separate tracks for each stem'],
                         failMsg: 'Stem separation failed',
-                    })
-                )}
+                    });
+                })}
             >
                 Separate Stems
             </DawMenuButton>
             <DawMenuButton
                 role="menuitem"
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
-                onClick={act(() =>
-                    runAiActionWithToast(() => executeAppAction({ type: 'audioToMidi', payload: { clipId } }), {
+                onClick={act(() => {
+                    void runAiActionWithToast(() => executeAppAction({ type: 'audioToMidi', payload: { clipId } }), {
                         startMsg: 'Converting audio to MIDI…',
                         successMsg: 'Audio converted to MIDI',
                         successDetails: ['New MIDI clip created from detected onsets'],
                         failMsg: 'Audio-to-MIDI conversion failed',
-                    })
-                )}
+                    });
+                })}
             >
                 Convert to MIDI
             </DawMenuButton>
             <DawMenuButton
                 role="menuitem"
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
-                onClick={act(() =>
-                    runAiActionWithToast(() => handleAiDenoiseClip(clipId, 0.7), {
+                onClick={act(() => {
+                    void runAiActionWithToast(() => handleAiDenoiseClip(clipId, 0.7), {
                         startMsg: 'Denoising audio…',
                         successMsg: 'Audio denoised',
                         successDetails: ['Noise reduction applied to clip'],
                         failMsg: 'Audio denoise failed',
-                    })
-                )}
+                    });
+                })}
             >
                 Denoise
             </DawMenuButton>
@@ -182,7 +182,9 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             </DawMenuButton>
             <DawMenuButton
                 role="menuitem"
-                onClick={act(() => executeAppAction({ type: 'arpeggiate', payload: { clipId } }))}
+                onClick={act(() => {
+                    void executeAppAction({ type: 'arpeggiate', payload: { clipId } });
+                })}
             >
                 Arpeggiate
             </DawMenuButton>
@@ -197,8 +199,8 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             <DawMenuButton
                 role="menuitem"
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
-                onClick={act(() =>
-                    runAiActionWithToast(
+                onClick={act(() => {
+                    void runAiActionWithToast(
                         () => executeAppAction({ type: 'completeMidi', payload: { clipId, bars: 4 } }),
                         {
                             startMsg: 'Generating MIDI continuation…',
@@ -206,16 +208,16 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                             successDetails: ['Added 4 bars of new MIDI content'],
                             failMsg: 'MIDI continuation failed',
                         }
-                    )
-                )}
+                    );
+                })}
             >
                 Continue MIDI…
             </DawMenuButton>
             <DawMenuButton
                 role="menuitem"
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
-                onClick={act(() =>
-                    runAiActionWithToast(
+                onClick={act(() => {
+                    void runAiActionWithToast(
                         () => executeAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.3 } }),
                         {
                             startMsg: 'Creating MIDI variation…',
@@ -223,8 +225,8 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                             successDetails: ['Variation applied with 30% divergence'],
                             failMsg: 'MIDI variation failed',
                         }
-                    )
-                )}
+                    );
+                })}
             >
                 Generate Variation
             </DawMenuButton>

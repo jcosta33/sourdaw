@@ -80,7 +80,14 @@ async function getCompiler(): Promise<IFaustCompiler> {
                 compilerState.ready = true;
                 return compiler;
             } catch (error) {
-                const msg = isAppError(error) ? error.message : error instanceof Error ? error.message : String(error);
+                let msg: string;
+                if (isAppError(error)) {
+                    msg = error.message;
+                } else if (error instanceof Error) {
+                    msg = error.message;
+                } else {
+                    msg = String(error);
+                }
                 compilerState.error = msg;
                 logger.warn(`[Faust] Compiler initialization failed: ${msg}`);
                 // Re-throw so callers know compilation is impossible
@@ -168,7 +175,14 @@ export async function compileFaustDSP(moduleId: string): Promise<boolean> {
             modules.set(moduleId, mod);
             return true;
         } catch (error) {
-            const msg = isAppError(error) ? error.message : error instanceof Error ? error.message : String(error);
+            let msg: string;
+            if (isAppError(error)) {
+                msg = error.message;
+            } else if (error instanceof Error) {
+                msg = error.message;
+            } else {
+                msg = String(error);
+            }
             logger.warn(`[Faust] Compilation failed for "${mod.name}": ${msg}`);
             return false;
         } finally {
@@ -229,7 +243,14 @@ async function attemptCreateNode(
     try {
         return await invoke();
     } catch (error) {
-        const msg = isAppError(error) ? error.message : error instanceof Error ? error.message : String(error);
+        let msg: string;
+        if (isAppError(error)) {
+            msg = error.message;
+        } else if (error instanceof Error) {
+            msg = error.message;
+        } else {
+            msg = String(error);
+        }
 
         if (msg.includes('already registered')) {
             try {
@@ -241,7 +262,7 @@ async function attemptCreateNode(
             let backoff = 20;
             const maxRetries = 5;
             for (let i = 0; i < maxRetries; i++) {
-                await new Promise<void>((r) => setTimeout(r, backoff));
+                await new Promise<void>((resolve) => setTimeout(resolve, backoff));
                 try {
                     return await invoke();
                 } catch (retryError) {
@@ -288,5 +309,5 @@ registerPluginLoader('faust.', async (pluginId, context) => {
         return null;
     }
     const faustNode = await createFaustNode(faustModuleId, context);
-    return (faustNode as unknown as AudioNode | null) ?? null;
+    return faustNode;
 });

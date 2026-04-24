@@ -30,7 +30,7 @@ function makePad(index: number): PadState {
 
 describe('PadMixer', () => {
     it('should render', () => {
-        const pads = Array.from({ length: 4 }, (_, i) => makePad(i));
+        const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
         render(<PadMixer pads={pads} onPadParam={vi.fn()} />);
         expect(screen.getByText('P0')).toBeInTheDocument();
     });

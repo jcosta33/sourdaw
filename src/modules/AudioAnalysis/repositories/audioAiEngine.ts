@@ -31,6 +31,7 @@ export function isAudioGenerationAvailable(): boolean {
 }
 
 // Keep for backward compat — used by generateAudio handler
+// eslint-disable-next-line @typescript-eslint/require-await -- backward-compat async wrapper; callers expect Promise<boolean>
 export async function isAudioAiServerRunning(): Promise<boolean> {
     return isTauri();
 }
@@ -89,7 +90,7 @@ export const separateStems = inject({ logger })(({ logger }) => {
      * Native stem separation via Tauri Rust command.
      * Writes WAV to temp file, passes path to Rust (avoids large JSON IPC).
      */
-    const separateStemsNative = async (audioData: ArrayBuffer, stems: string[]): Promise<StemResult> => {
+    async function separateStemsNative(audioData: ArrayBuffer, stems: string[]): Promise<StemResult> {
         const tempPath = `__sourdaw_stems_input_${String(Date.now())}.wav`;
         const wavBytes = new Uint8Array(audioData);
         await tauriInvoke('write_audio_file', { path: tempPath, data: wavBytes });
@@ -120,7 +121,7 @@ export const separateStems = inject({ logger })(({ logger }) => {
         }
 
         return stemBuffers;
-    };
+    }
 
     return async function separateStems(audioData: ArrayBuffer, stems: string[] = ['all']): Promise<StemResult> {
         logger.info(`[Audio AI] Separating stems: ${stems.join(', ')}`);

@@ -16,11 +16,17 @@ import type {
     TrackChannelStrip,
 } from '../models/AudioEngineState';
 
+type NoopMeterNode = {
+    connect(): void;
+    disconnect(): void;
+    port: { postMessage(message: unknown): void };
+};
+
 class AudioEngineImpl implements AudioEngine {
     public context!: AudioContext;
     public masterGainNode!: GainNode;
     public masterAnalyser!: AnalyserNode;
-    public masterMeterNode!: AudioWorkletNode;
+    public masterMeterNode!: AudioWorkletNode | NoopMeterNode;
 
     private trackNodes = new Map<string, TrackNode>();
     private busNodes = new Map<string, BusNode>();
@@ -73,14 +79,14 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     private setupNoopContext() {
-        this.context = new OfflineAudioContext(2, 1, 44100) as unknown as AudioContext;
+        this.context = new OfflineAudioContext(2, 1, 44100) as BaseAudioContext as AudioContext;
         this.masterGainNode = this.context.createGain();
         this.masterGainNode.gain.value = 0;
         this.masterMeterNode = {
             connect: () => {},
             disconnect: () => {},
             port: { postMessage: () => {} },
-        } as unknown as AudioWorkletNode; // Mock node for noop/offline fallback
+        };
         this.masterAnalyser = this.context.createAnalyser();
         this.masterMeterBuffer = new Float32Array(1);
     }
@@ -183,7 +189,7 @@ class AudioEngineImpl implements AudioEngine {
                     getBusGainNode: (id) => this.busNodes.get(id)?.strip.gainNode,
                     getTrackGainNode: (id) => this.trackNodes.get(id)?.strip.gainNode,
                     getSendsForTrack: (tId) =>
-                        Array.from(this.sendNodes.values()).filter((s) => s.sourceTrackId === tId),
+                        Array.from(this.sendNodes.values()).filter((state) => state.sourceTrackId === tId),
                     pendingDevicePromises: this.pendingDevicePromises,
                     transportSAB: this.transportSAB,
                     getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
@@ -313,7 +319,7 @@ class AudioEngineImpl implements AudioEngine {
         this.trackNodes.get(trackId)?.updateMidiFxBypass(fxId, bypassed);
     }
 
-    public syncKneadState(trackId: string, clips: Record<string, any>): void {
+    public syncKneadState(trackId: string, clips: Record<string, unknown>): void {
         const trackNode = this.trackNodes.get(trackId);
         if (trackNode) {
             for (const dn of trackNode.strip.deviceNodes) {
@@ -341,14 +347,14 @@ class AudioEngineImpl implements AudioEngine {
         loopEnd = 0,
         isLooping = false
     ): void {
-        const v = this.transportView;
-        v[0] = beat;
-        v[1] = tempo;
-        v[2] = this.context.sampleRate;
-        v[3] = loopStart;
-        v[4] = loopEnd;
-        v[5] = isPlaying ? 1 : 0;
-        v[6] = isLooping ? 1 : 0;
+        const value = this.transportView;
+        value[0] = beat;
+        value[1] = tempo;
+        value[2] = this.context.sampleRate;
+        value[3] = loopStart;
+        value[4] = loopEnd;
+        value[5] = isPlaying ? 1 : 0;
+        value[6] = isLooping ? 1 : 0;
     }
 
     public getTransportSAB(): SharedArrayBuffer {
@@ -372,7 +378,9 @@ class AudioEngineImpl implements AudioEngine {
             if (existing.preFader !== preFader) {
                 try {
                     existing.gainNode.disconnect();
-                } catch {}
+                } catch {
+                    // ignore
+                }
                 const tap = preFader ? trackNode.strip.preFaderTap : trackNode.strip.analyserNode;
                 tap.connect(existing.gainNode);
                 existing.gainNode.connect(busStrip.gainNode);
@@ -424,7 +432,7 @@ class AudioEngineImpl implements AudioEngine {
             return;
         }
 
-        const deviceNode = targetStrip.deviceNodes.find((d) => d.deviceId === targetDeviceId);
+        const deviceNode = targetStrip.deviceNodes.find((data) => data.deviceId === targetDeviceId);
         if (!deviceNode || deviceNode.type !== 'builtin-sidechain-compressor') {
             return;
         }
@@ -490,7 +498,9 @@ class AudioEngineImpl implements AudioEngine {
         for (const node of [...this.scheduledNodes]) {
             try {
                 node.stop(now);
-            } catch {}
+            } catch {
+                // ignore
+            }
         }
         this.scheduledNodes.length = 0;
 
@@ -529,13 +539,17 @@ class AudioEngineImpl implements AudioEngine {
         for (const [, scGain] of this.sidechainConnections) {
             try {
                 scGain.disconnect();
-            } catch {}
+            } catch {
+                // ignore
+            }
         }
         this.sidechainConnections.clear();
         for (const [, send] of this.sendNodes) {
             try {
                 send.gainNode.disconnect();
-            } catch {}
+            } catch {
+                // ignore
+            }
         }
         this.sendNodes.clear();
         for (const [id] of this.busNodes) {
@@ -563,7 +577,7 @@ class AudioEngineImpl implements AudioEngine {
         this.resetGraph();
         this.masterGainNode.disconnect();
         this.masterAnalyser.disconnect();
-        this.context.close();
+        void this.context.close();
     }
 }
 

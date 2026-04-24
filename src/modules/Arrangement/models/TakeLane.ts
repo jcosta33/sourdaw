@@ -21,18 +21,22 @@ export type CompRegion = {
     takeId: string;
 };
 
-export const createTake = (clipId: string, name: string, startBeat: number, endBeat: number): Take => ({
-    id: `take-${crypto.randomUUID().slice(0, 8)}`,
-    clipId,
-    name,
-    startBeat,
-    endBeat,
-    selected: false,
-});
+export function createTake(clipId: string, name: string, startBeat: number, endBeat: number): Take {
+    return {
+        id: `take-${crypto.randomUUID().slice(0, 8)}`,
+        clipId,
+        name,
+        startBeat,
+        endBeat,
+        selected: false,
+    };
+}
 
-export const createTakeLane = (trackId: string): TakeLane => ({
-    id: `take-lane-${crypto.randomUUID().slice(0, 8)}`,
-    trackId,
-    takes: [],
-    activeCompRegions: [],
-});
+export function createTakeLane(trackId: string): TakeLane {
+    return {
+        id: `take-lane-${crypto.randomUUID().slice(0, 8)}`,
+        trackId,
+        takes: [],
+        activeCompRegions: [],
+    };
+}

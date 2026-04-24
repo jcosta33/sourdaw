@@ -16,11 +16,34 @@ export const AiSection = (): ReactElement => {
     const [apiKey, setApiKey] = useState('');
     const [showKey, setShowKey] = useState(false);
     const backend = resolveBackend();
+    const renderIife_16 = () => {
+        if (backend === 'native') {
+            return 'success';
+        }
+        if (backend === 'webllm') {
+            return 'cyan';
+        }
+        if (backend === 'cloud') {
+            return 'primary';
+        }
+        return 'muted';
+    };
+    const renderIife_17 = () => {
+        if (backend === 'native') {
+            return 'Native (in-process)';
+        }
+        if (backend === 'cloud') {
+            return 'Cloud (Claude)';
+        }
+        if (backend === 'webllm') {
+            return 'Browser (WebLLM)';
+        }
+        return 'None';
+    };
 
     return (
         <>
             <SectionTitle icon={<Sparkles className="size-4" />} title="AI" />
-
             <FieldGroup label="Active Backend">
                 <div className="flex items-center gap-2">
                     <span
@@ -34,30 +57,12 @@ export const AiSection = (): ReactElement => {
                             backend === 'none' && 'bg-muted text-muted-foreground'
                         )}
                     >
-                        <DawStatusDot
-                            tone={
-                                backend === 'native'
-                                    ? 'success'
-                                    : backend === 'webllm'
-                                      ? 'cyan'
-                                      : backend === 'cloud'
-                                        ? 'primary'
-                                        : 'muted'
-                            }
-                        />
-                        {backend === 'native'
-                            ? 'Native (in-process)'
-                            : backend === 'cloud'
-                              ? 'Cloud (Claude)'
-                              : backend === 'webllm'
-                                ? 'Browser (WebLLM)'
-                                : 'None'}
+                        <DawStatusDot tone={renderIife_16()} />
+                        {renderIife_17()}
                     </span>
                 </div>
             </FieldGroup>
-
             <Separator />
-
             <FieldGroup label="Cloud AI (Anthropic API)">
                 <p className="text-[10px] text-muted-foreground mb-2 leading-relaxed">
                     Enter your Anthropic API key to enable cloud AI features. Uses Claude Sonnet for the highest quality
@@ -68,7 +73,7 @@ export const AiSection = (): ReactElement => {
                         <Input
                             type={showKey ? 'text' : 'password'}
                             value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
+                            onChange={(event) => setApiKey(event.target.value)}
                             placeholder="sk-ant-api03-..."
                             className="h-8 text-xs font-mono pr-8"
                             aria-label="Anthropic API key"
@@ -120,9 +125,7 @@ export const AiSection = (): ReactElement => {
                     ) : null}
                 </div>
             </FieldGroup>
-
             <Separator />
-
             <FieldGroup label="Browser AI">
                 <p className="text-[10px] text-muted-foreground leading-relaxed mb-2">
                     Instrument synthesis (DDSP), vocal previews (Kokoro TTS), and singing voice synthesis (DiffSinger) —
@@ -132,17 +135,13 @@ export const AiSection = (): ReactElement => {
                     <CapabilityReportPanel />
                 </div>
             </FieldGroup>
-
             <Separator />
-
             <FieldGroup label="AI Model Manager">
                 <div className="border border-border/30 rounded overflow-hidden max-h-[400px] overflow-y-auto">
                     <ModelManagerPanel />
                 </div>
             </FieldGroup>
-
             <Separator />
-
             <FieldGroup label="Audio Analysis">
                 <p className="text-[10px] text-muted-foreground leading-relaxed">
                     Audio analysis features (pitch detection, spectral analysis, polyphonic audio-to-MIDI) run entirely

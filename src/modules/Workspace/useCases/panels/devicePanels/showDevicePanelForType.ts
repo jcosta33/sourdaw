@@ -50,9 +50,9 @@ export const showDevicePanelForType = inject({ eventBus })(
             }
 
             // Unified event — new subscribers should listen to this
-            eventBus.emit('panel.showDevice', { deviceType, deviceId });
+            void eventBus.emit('panel.showDevice', { deviceType, deviceId });
 
             // Legacy per-device event — kept for backward compatibility
-            eventBus.emit(event, { deviceId });
+            void eventBus.emit(event, { deviceId });
         }
 );

@@ -5,7 +5,7 @@ import * as subject from '../importAudioClipToTrack';
 describe('importAudioClipToTrack', () => {
     it('should export importAudioClipToTrack', () => {
         expect(subject.importAudioClipToTrack).toBeDefined();
-        const t = typeof subject.importAudioClipToTrack;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.importAudioClipToTrack;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

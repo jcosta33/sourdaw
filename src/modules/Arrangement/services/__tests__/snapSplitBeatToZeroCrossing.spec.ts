@@ -47,8 +47,8 @@ describe('snapSplitBeatToZeroCrossing', () => {
             sampleRate: 48000,
             getChannelData: vi.fn().mockReturnValue(new Float32Array(100)),
         };
-        vi.mocked(audioBufferCache.get).mockReturnValue(mockBuffer as any);
-        vi.mocked(getTransportState).mockReturnValue({ tempo: 120 } as any);
+        vi.mocked(audioBufferCache.get).mockReturnValue(mockBuffer as unknown as AudioBuffer);
+        vi.mocked(getTransportState).mockReturnValue({ tempo: 120 } as ReturnType<typeof getTransportState>);
 
         // 120 bpm = 2 beats per second.
         // splitBeat = 2.1, startBeat = 1.0 -> relativeBeat = 1.1.

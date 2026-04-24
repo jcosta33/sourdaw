@@ -11,8 +11,8 @@ export function createNoiseBurst(
     const noise = ctx.createBufferSource();
     const noiseBuf = ctx.createBuffer(1, Math.ceil(duration * 44100), 44100);
     const data = noiseBuf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-        data[i] = Math.random() * 2 - 1;
+    for (let index = 0; index < data.length; index++) {
+        data[index] = Math.random() * 2 - 1;
     }
     noise.buffer = noiseBuf;
     const env = ctx.createGain();
@@ -52,17 +52,25 @@ export async function generateDemoDrumBuffer(
                 continue;
             }
 
-            const isKick =
-                style === 'kick'
-                    ? pos === 0 || pos === 2
-                    : style === '4onFloor'
-                      ? pos === 0 || pos === 2
-                      : style === 'electro'
-                        ? pos === 0 || pos === 2.5
-                        : false;
+            let isKick: boolean;
+            if (style === 'kick') {
+                isKick = pos === 0 || pos === 2;
+            } else if (style === '4onFloor') {
+                isKick = pos === 0 || pos === 2;
+            } else if (style === 'electro') {
+                isKick = pos === 0 || pos === 2.5;
+            } else {
+                isKick = false;
+            }
 
-            const isSnare =
-                style === 'snare' ? pos === 1 || pos === 3 : style === 'electro' ? pos === 1 || pos === 3 : false;
+            let isSnare: boolean;
+            if (style === 'snare') {
+                isSnare = pos === 1 || pos === 3;
+            } else if (style === 'electro') {
+                isSnare = pos === 1 || pos === 3;
+            } else {
+                isSnare = false;
+            }
 
             const isHat =
                 (style === 'hat' || style === '4onFloor') &&
@@ -118,5 +126,7 @@ export async function generateDemoDrumBuffer(
 
         const rendered = await ctx.startRendering();
         audioBufferCache.set(bufferId, rendered);
-    } catch {}
+    } catch {
+        // ignore
+    }
 }

@@ -10,24 +10,15 @@
 
 import { FERMENTER_PRESETS } from '#/modules/Fermenter/useCases';
 
-import { type SoundPreset } from '../../models/SoundPreset';
-
-// ── Category sub-modules ───────────────────────────────────────────────────
-import { type DevicePreset } from '../../models/SoundPreset';
+import { type SoundPreset, type DevicePreset } from '../../models/SoundPreset';
 
 import { bassPresets } from './bassPresets';
-
-// ── Standalone data files (unchanged — each already < 300 lines) ──────────
 import { EXPANDED_FX_PRESETS, EXPANDED_SYNTH_PRESETS } from './expandedPresets';
 import { FAUST_EFFECT_PRESETS } from './faustEffectPresets';
 import { FAUST_INSTRUMENT_PRESETS } from './faustInstrumentPresets';
 import { keysPresets } from './keysPresets';
 import { leadPresets } from './leadPresets';
 import { padPresets } from './padPresets';
-
-// ── Drum Kit presets ────────────────────────────────────────────────────────
-// Small enough to stay inline here (< 60 lines).
-
 import { comp } from './presetHelpers/comp';
 import { eq } from './presetHelpers/eq';
 import { AUTHOR } from './presetHelpers/helpers';

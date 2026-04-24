@@ -1,72 +1,75 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { markerStore } from '../../../stores/markerStore';
+import { scratchPadStore } from '../../../stores/scratchPadStore';
 import { captureArrangementToScratchPad } from '../captureCommit/captureArrangementToScratchPad';
 import { commitScratchPadToArrangement } from '../captureCommit/commitScratchPadToArrangement';
 
-const mockMarkerSet = vi.fn();
-let mockMarkerValue: any = null;
+import type { MarkerStoreState } from '#/modules/Arrangement/stores/markerStore';
+import type { ScratchPadStoreState } from '#/modules/Arrangement/stores/scratchPadStore';
+
 vi.mock('../../../stores/markerStore', () => ({
     markerStore: {
-        get value() {
-            return mockMarkerValue;
-        },
-        set: (v: any) => mockMarkerSet(v),
+        value: null as MarkerStoreState | null,
+        set: vi.fn(),
     },
 }));
 
-const mockScratchPadSet = vi.fn();
-let mockScratchPadValue: any = null;
 vi.mock('../../../stores/scratchPadStore', () => ({
     scratchPadStore: {
-        get value() {
-            return mockScratchPadValue;
-        },
-        set: (v: any) => mockScratchPadSet(v),
+        value: null as ScratchPadStoreState | null,
+        set: vi.fn(),
     },
 }));
 
 describe('captureArrangementToScratchPad', () => {
     beforeEach(() => {
-        mockMarkerSet.mockReset();
-        mockScratchPadSet.mockReset();
+        vi.mocked(markerStore.set).mockReset();
+        vi.mocked(scratchPadStore.set).mockReset();
+        markerStore.value = null as unknown as MarkerStoreState;
+        scratchPadStore.value = null as unknown as ScratchPadStoreState;
     });
 
     it('copies sorted arrangement sections into the scratch pad store', () => {
-        mockMarkerValue = {
+        markerStore.value = {
             markers: [],
             sections: [
                 { id: 's2', startBeat: 8, endBeat: 16, name: 'B', color: '#00f' },
                 { id: 's1', startBeat: 0, endBeat: 4, name: 'A', color: '#f00' },
             ],
-        };
-        mockScratchPadValue = { sections: [] };
+        } as unknown as MarkerStoreState;
+        scratchPadStore.value = { sections: [] } as unknown as ScratchPadStoreState;
 
         captureArrangementToScratchPad();
 
-        expect(mockScratchPadSet).toHaveBeenCalledTimes(1);
-        const next = mockScratchPadSet.mock.calls[0]![0] as { sections: { name: string; startBeat: number }[] };
+        expect(scratchPadStore.set).toHaveBeenCalledTimes(1);
+        const next = vi.mocked(scratchPadStore.set).mock.calls[0]![0] as {
+            sections: { name: string; startBeat: number }[];
+        };
         expect(next.sections).toHaveLength(2);
         expect(next.sections[0]!.name).toBe('A');
         expect(next.sections[1]!.name).toBe('B');
     });
 
     it('no-ops when there are no sections', () => {
-        mockMarkerValue = { markers: [], sections: [] };
-        mockScratchPadValue = { sections: [] };
+        markerStore.value = { markers: [], sections: [] } as unknown as MarkerStoreState;
+        scratchPadStore.value = { sections: [] } as unknown as ScratchPadStoreState;
 
         captureArrangementToScratchPad();
-        expect(mockScratchPadSet).not.toHaveBeenCalled();
+        expect(scratchPadStore.set).not.toHaveBeenCalled();
     });
 });
 
 describe('commitScratchPadToArrangement', () => {
     beforeEach(() => {
-        mockMarkerSet.mockReset();
-        mockScratchPadSet.mockReset();
+        vi.mocked(markerStore.set).mockReset();
+        vi.mocked(scratchPadStore.set).mockReset();
+        markerStore.value = null as unknown as MarkerStoreState;
+        scratchPadStore.value = null as unknown as ScratchPadStoreState;
     });
 
     it('writes scratch sections back to the marker store', () => {
-        mockScratchPadValue = {
+        scratchPadStore.value = {
             sections: [
                 {
                     id: 'sp1',
@@ -77,16 +80,18 @@ describe('commitScratchPadToArrangement', () => {
                     order: 0,
                 },
             ],
-        };
-        mockMarkerValue = {
+        } as unknown as ScratchPadStoreState;
+        markerStore.value = {
             markers: [],
             sections: [{ id: 'old', startBeat: 99, endBeat: 100, name: 'X', color: '#000' }],
-        };
+        } as unknown as MarkerStoreState;
 
         commitScratchPadToArrangement();
 
-        expect(mockMarkerSet).toHaveBeenCalledTimes(1);
-        const next = mockMarkerSet.mock.calls[0]![0] as { sections: { name: string; startBeat: number }[] };
+        expect(markerStore.set).toHaveBeenCalledTimes(1);
+        const next = vi.mocked(markerStore.set).mock.calls[0]![0] as {
+            sections: { name: string; startBeat: number }[];
+        };
         expect(next.sections).toHaveLength(1);
         expect(next.sections[0]!.name).toBe('A');
         expect(next.sections[0]!.startBeat).toBe(0);

@@ -5,7 +5,7 @@ import * as subject from '../stopInputMonitoring';
 describe('stopInputMonitoring', () => {
     it('should export stopInputMonitoring', () => {
         expect(subject.stopInputMonitoring).toBeDefined();
-        const t = typeof subject.stopInputMonitoring;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.stopInputMonitoring;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

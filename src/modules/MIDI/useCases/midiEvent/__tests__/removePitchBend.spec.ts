@@ -19,7 +19,7 @@ describe('removePitchBend', () => {
 
     it('should remove only the pitch bend with the given id', () => {
         removePitchBend('c1', 'pb-a');
-        expect(midiStore.value?.pitchBendByClipId.c1?.map((p) => p.id)).toEqual(['pb-b']);
+        expect(midiStore.value?.pitchBendByClipId.c1?.map((param) => param.id)).toEqual(['pb-b']);
     });
 
     it('should not mutate when the clip or store is missing', () => {

@@ -5,7 +5,7 @@ import * as subject from '../createTrack';
 describe('createTrack', () => {
     it('should export createTrack', () => {
         expect(subject.createTrack).toBeDefined();
-        const t = typeof subject.createTrack;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.createTrack;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

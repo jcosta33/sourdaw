@@ -9,6 +9,6 @@ export function assignTrackToVCA(trackId: string, vcaGroupId: string): void {
 
     setTrackState({
         ...state,
-        tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, vcaGroupId } : t)),
+        tracks: state.tracks.map((time) => (time.id === trackId ? { ...time, vcaGroupId } : time)),
     });
 }

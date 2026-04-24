@@ -16,7 +16,7 @@ describe('handleTrimClipStart', () => {
     });
 
     it('executes trimClipStart with the provided payload', () => {
-        handleTrimClipStart.execute({
+        void handleTrimClipStart.execute({
             type: 'trimClipStart',
             payload: { clipId: 'c1', newStartBeat: 2 },
         });

@@ -32,13 +32,13 @@ type TakeLaneViewState = {
 export const TakesSection = ({ trackId }: TakesSectionProps): ReactElement | null => {
     const takeLaneState = useStore<TakeLaneViewState>(takeLaneStore, { lanes: [] });
 
-    const lane = takeLaneState.lanes.find((l) => l.trackId === trackId);
+    const lane = takeLaneState.lanes.find((length) => length.trackId === trackId);
     if (!lane || lane.takes.length === 0) {
         return null;
     }
 
     const handleSetActive = (takeId: string) => {
-        const take = lane.takes.find((t) => t.id === takeId);
+        const take = lane.takes.find((time) => time.id === takeId);
         if (!take) {
             return;
         }

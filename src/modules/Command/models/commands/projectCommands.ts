@@ -11,7 +11,7 @@ export const projectCommands: CommandEntry[] = [
         description: 'Create a new empty project',
         category: 'Project',
         action: () => {
-            newProject();
+            void newProject();
         },
     },
     {
@@ -21,7 +21,7 @@ export const projectCommands: CommandEntry[] = [
         category: 'Project',
         shortcut: '⌘S',
         action: () => {
-            saveProject();
+            void saveProject();
         },
     },
     {
@@ -31,7 +31,7 @@ export const projectCommands: CommandEntry[] = [
         category: 'Project',
         shortcut: '⌘⇧E',
         action: () => {
-            eventBus.emit('dialog.openExport', undefined);
+            void eventBus.emit('dialog.openExport', undefined);
         },
     },
     {
@@ -60,9 +60,11 @@ export const projectCommands: CommandEntry[] = [
         label: 'Import Project',
         description: 'Import a .sourdaw project file',
         category: 'Project',
-        action: async () => {
-            const { pickAndImportProjectFile } = await import('#/modules/Project/useCases');
-            await pickAndImportProjectFile();
+        action: () => {
+            void (async () => {
+                const { pickAndImportProjectFile } = await import('#/modules/Project/useCases');
+                await pickAndImportProjectFile();
+            })();
         },
     },
     {

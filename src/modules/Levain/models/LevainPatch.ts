@@ -384,6 +384,21 @@ function getDefaultKeyRange(id: InstrumentId): [number, number] {
             return [53, 89]; // F3-F6
         case 'timpani':
             return [36, 57]; // C2-A3
+        case 'english-horn':
+        case 'bass-clarinet':
+        case 'contrabassoon':
+        case 'snare':
+        case 'bass-drum':
+        case 'cymbals':
+        case 'celesta':
+        case 'tubular-bells':
+        case 'tam-tam':
+        case 'triangle':
+        case 'harp':
+        case 'soprano':
+        case 'alto':
+        case 'tenor':
+        case 'bass-voice':
         default:
             return [21, 108]; // full range
     }
@@ -434,4 +449,6 @@ function getDefaultArticulations(family: InstrumentFamily): ArticulationEntry[] 
                 { type: 'staccato', keyswitch: 26, name: 'Staccato', enabled: true },
             ];
     }
+
+    return [];
 }

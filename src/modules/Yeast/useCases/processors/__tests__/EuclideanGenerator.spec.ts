@@ -5,7 +5,7 @@ import * as subject from '../EuclideanGenerator';
 describe('EuclideanGenerator', () => {
     it('should export EuclideanGenerator', () => {
         expect(subject.EuclideanGenerator).toBeDefined();
-        const t = typeof subject.EuclideanGenerator;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.EuclideanGenerator;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

@@ -17,8 +17,8 @@ describe('downloadFile repository', () => {
             click: vi.fn(),
             href: '',
             download: '',
-        };
-        const createElementSpy = vi.spyOn(document, 'createElement').mockReturnValue(mockAnchor as any);
+        } as unknown as HTMLAnchorElement;
+        const createElementSpy = vi.spyOn(document, 'createElement').mockReturnValue(mockAnchor);
 
         downloadBlob('some data', 'test.mid', 'audio/midi');
 

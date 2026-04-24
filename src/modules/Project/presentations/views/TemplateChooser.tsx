@@ -80,11 +80,11 @@ const CANVAS_H = 480;
 const SourdawLogo = ({ className, paused }: SourdawLogoProps): ReactElement => {
     const styleBlock = paused
         ? ''
-        : PARTICLES.map((_, i) => {
-              const p = PARTICLES[i]!;
-              const dist = p.dir === 'up' ? -20 : 20;
+        : PARTICLES.map((_, index) => {
+              const param = PARTICLES[index]!;
+              const dist = param.dir === 'up' ? -20 : 20;
               return `
-@keyframes sdl-p${i} {
+@keyframes sdl-p${index} {
   0% { opacity: 0; transform: translateY(0) scale(0.4); }
   12% { opacity: 1; transform: translateY(0) scale(1); }
   65% { opacity: 0.8; transform: translateY(${dist * 0.6}px) scale(0.95); }
@@ -113,24 +113,24 @@ const SourdawLogo = ({ className, paused }: SourdawLogoProps): ReactElement => {
                     imageRendering: 'auto',
                 }}
             />
-            {PARTICLES.map((p, i) => (
+            {PARTICLES.map((param, index) => (
                 <img
-                    key={i}
-                    src={p.src}
+                    key={index}
+                    src={param.src}
                     alt=""
                     draggable={false}
                     style={{
                         position: 'absolute',
-                        left: `${(p.x / CANVAS_W) * 100}%`,
-                        top: `${(p.y / CANVAS_H) * 100}%`,
-                        width: `${(p.w / CANVAS_W) * 100}%`,
-                        height: `${(p.h / CANVAS_H) * 100}%`,
+                        left: `${(param.x / CANVAS_W) * 100}%`,
+                        top: `${(param.y / CANVAS_H) * 100}%`,
+                        width: `${(param.w / CANVAS_W) * 100}%`,
+                        height: `${(param.h / CANVAS_H) * 100}%`,
                         imageRendering: 'auto',
                         ...(paused
                             ? { opacity: 1 }
                             : {
                                   opacity: 0,
-                                  animation: `sdl-p${i} ${p.duration}s ease-in-out ${p.delay}s infinite`,
+                                  animation: `sdl-p${index} ${param.duration}s ease-in-out ${param.delay}s infinite`,
                               }),
                     }}
                 />
@@ -324,23 +324,25 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
     const [loadingName, setLoadingName] = useState('');
     const templates = getTemplates();
 
-    useEffect(() => {
+    const [prevOpen, setPrevOpen] = useState(open);
+    if (prevOpen !== open) {
+        setPrevOpen(open);
         if (open) {
             setActiveFilter(initialCategory);
             setIsLoading(false);
         }
-    }, [open, initialCategory]);
+    }
 
-    const filtered = activeFilter === 'all' ? templates : templates.filter((t) => t.category === activeFilter);
+    const filtered = activeFilter === 'all' ? templates : templates.filter((time) => time.category === activeFilter);
 
     const handleSelect = (templateId: string) => {
-        const template = templates.find((t) => t.id === templateId);
+        const template = templates.find((time) => time.id === templateId);
         setLoadingName(template?.name ?? 'Project');
         setIsLoading(true);
-        saveProject();
+        void saveProject();
 
         setTimeout(() => {
-            (async () => {
+            void (async () => {
                 try {
                     await createFromTemplate(templateId);
                 } finally {
@@ -392,7 +394,7 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
                                 <Layers className="size-3" aria-hidden="true" />
                                 All
                             </Button>
-                            {CATEGORY_ORDER.filter((c) => c !== 'empty').map((category) => {
+                            {CATEGORY_ORDER.filter((context) => context !== 'empty').map((category) => {
                                 const colors = CATEGORY_COLORS[category];
                                 const isActive = activeFilter === category;
                                 return (

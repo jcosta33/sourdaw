@@ -5,7 +5,7 @@ import * as subject from '../getMixerSnapshots';
 describe('getMixerSnapshots', () => {
     it('should export getMixerSnapshots', () => {
         expect(subject.getMixerSnapshots).toBeDefined();
-        const t = typeof subject.getMixerSnapshots;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getMixerSnapshots;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

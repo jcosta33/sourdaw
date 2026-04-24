@@ -5,8 +5,8 @@ import { goToItem } from '../goToItem';
 import { nextItem } from '../nextItem';
 
 const mockSetlistStore = vi.hoisted(() => ({
-    value: null as any,
-    set: vi.fn(),
+    value: null as SetlistState | null,
+    set: vi.fn<[SetlistState], void>(),
 }));
 
 vi.mock('../../../stores/setlistStore', () => ({
@@ -14,7 +14,7 @@ vi.mock('../../../stores/setlistStore', () => ({
 }));
 
 vi.mock('../goToItem', () => ({
-    goToItem: vi.fn(),
+    goToItem: vi.fn<[number], void>(),
 }));
 
 describe('nextItem', () => {

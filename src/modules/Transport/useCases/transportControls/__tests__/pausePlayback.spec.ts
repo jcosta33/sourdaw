@@ -35,7 +35,7 @@ describe('pausePlayback', () => {
     });
 
     it('should pause transport and tear down scheduling when state exists', () => {
-        const update = vi.fn();
+        const update = vi.fn<typeof updateTransportState>();
         vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: true });
         vi.mocked(updateTransportState).mockImplementation(update);
 
@@ -48,8 +48,8 @@ describe('pausePlayback', () => {
     });
 
     it('should no-op when transport state is missing', () => {
-        const update = vi.fn();
-        vi.mocked(getTransportState).mockReturnValue(null as any);
+        const update = vi.fn<typeof updateTransportState>();
+        vi.mocked(getTransportState).mockReturnValue(null);
         vi.mocked(updateTransportState).mockImplementation(update);
 
         pausePlayback();

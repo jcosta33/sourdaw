@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { runAppAction } from '../runAppAction';
 
 const mocks = vi.hoisted(() => ({
-    executeAppAction: vi.fn(),
+    executeAppAction: vi.fn<typeof import('#/modules/Command/useCases').executeAppAction>(),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -16,8 +16,8 @@ describe('runAppAction', () => {
     });
 
     it('forwards the action to executeAppAction', () => {
-        const action = { type: 'testAction', payload: 123 } as any;
-        runAppAction(action);
+        const action: Parameters<typeof runAppAction>[0] = { type: 'removeTrack', payload: { trackId: '123' } };
+        void runAppAction(action);
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(action);
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
@@ -25,7 +25,7 @@ describe('runAppAction', () => {
 
     it('returns the result of executeAppAction (Promise or void)', async () => {
         mocks.executeAppAction.mockResolvedValueOnce('success');
-        const action = { type: 'asyncAction' } as any;
+        const action: Parameters<typeof runAppAction>[0] = { type: 'removeTrack', payload: { trackId: '456' } };
 
         const result = await runAppAction(action);
         expect(result).toBe('success');

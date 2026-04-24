@@ -220,7 +220,7 @@ function buildRoutingSummary(): string {
     if (!trackState || trackState.tracks.length === 0) {
         return 'Empty project';
     }
-    const names = trackState.tracks.slice(0, 8).map((t) => t.name);
+    const names = trackState.tracks.slice(0, 8).map((time) => time.name);
     if (trackState.tracks.length > 8) {
         return `${names.join(', ')} +${trackState.tracks.length - 8} more → Master`;
     }

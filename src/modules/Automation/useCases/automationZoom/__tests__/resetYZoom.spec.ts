@@ -34,8 +34,8 @@ describe('resetYZoom', () => {
     it('should clear view min/max for the matching lane', () => {
         resetYZoom('lane-1');
 
-        const l = automationStore.value?.lanes[0];
-        expect(l?.viewMinValue).toBeUndefined();
-        expect(l?.viewMaxValue).toBeUndefined();
+        const length = automationStore.value?.lanes[0];
+        expect(length?.viewMinValue).toBeUndefined();
+        expect(length?.viewMaxValue).toBeUndefined();
     });
 });

@@ -1,5 +1,3 @@
-import { forwardRef } from 'react';
-
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -39,9 +37,17 @@ vi.mock('#/modules/Project/useCases/arrangement/switchArrangement', () => ({
 
 // Mock UI components
 vi.mock('#/components/daw/DawCompactInput', () => ({
-    DawCompactInput: forwardRef(({ value, onChange, onKeyDown }: any, ref: any) => (
-        <input ref={ref} value={value} onChange={onChange} onKeyDown={onKeyDown} data-testid="compact-input" />
-    )),
+    DawCompactInput: ({
+        value,
+        onChange,
+        onKeyDown,
+        ref,
+    }: {
+        value?: string;
+        onChange?: React.ChangeEventHandler<HTMLInputElement>;
+        onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
+        ref?: React.Ref<HTMLInputElement>;
+    }) => <input ref={ref} value={value} onChange={onChange} onKeyDown={onKeyDown} data-testid="compact-input" />,
 }));
 
 vi.mock('#/components/daw/DawMenuParts', () => ({
@@ -52,7 +58,15 @@ vi.mock('#/components/daw/DawMenuParts', () => ({
 }));
 
 vi.mock('#/components/daw/DawPickerRow', () => ({
-    DawPickerRow: ({ heading, active, onClick }: any) => (
+    DawPickerRow: ({
+        heading,
+        active,
+        onClick,
+    }: {
+        heading?: React.ReactNode;
+        active?: boolean;
+        onClick?: React.MouseEventHandler<HTMLDivElement>;
+    }) => (
         <div data-testid="picker-row" data-active={active} onClick={onClick}>
             {heading}
         </div>

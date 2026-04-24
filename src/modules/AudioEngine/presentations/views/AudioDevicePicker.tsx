@@ -26,9 +26,10 @@ export const AudioDevicePicker = (): ReactElement => {
 
     const refresh = () => {
         setLoading(true);
-        getAudioDevices().then((result) => {
+        void getAudioDevices().then((result) => {
             setDevices(result);
             setLoading(false);
+            return null;
         });
     };
 
@@ -36,11 +37,11 @@ export const AudioDevicePicker = (): ReactElement => {
         refresh();
     }, []);
 
-    const outputs = devices.filter((d) => d.kind === 'audiooutput');
-    const inputs = devices.filter((d) => d.kind === 'audioinput');
+    const outputs = devices.filter((data) => data.kind === 'audiooutput');
+    const inputs = devices.filter((data) => data.kind === 'audioinput');
 
     const handleOutputChange = (deviceId: string) => {
-        setOutputDevice(deviceId);
+        void setOutputDevice(deviceId);
     };
 
     const handleInputChange = (deviceId: string) => {
@@ -56,7 +57,7 @@ export const AudioDevicePicker = (): ReactElement => {
                 <div className="flex items-center gap-2">
                     <DawCompactSelect
                         value={state?.selectedOutputId ?? ''}
-                        onChange={(e) => handleOutputChange(e.target.value)}
+                        onChange={(event) => handleOutputChange(event.target.value)}
                         tone="inset"
                         size="sm"
                         className="flex-1"
@@ -64,9 +65,9 @@ export const AudioDevicePicker = (): ReactElement => {
                         disabled={loading}
                     >
                         <option value="">Default</option>
-                        {outputs.map((d) => (
-                            <option key={d.id} value={d.id}>
-                                {d.label}
+                        {outputs.map((data) => (
+                            <option key={data.id} value={data.id}>
+                                {data.label}
                             </option>
                         ))}
                     </DawCompactSelect>
@@ -81,14 +82,13 @@ export const AudioDevicePicker = (): ReactElement => {
                     </Button>
                 </div>
             </div>
-
             <div className="space-y-1.5">
                 <DawEyebrowLabel size="sm" className="block">
                     Input
                 </DawEyebrowLabel>
                 <DawCompactSelect
                     value={state?.selectedInputId ?? ''}
-                    onChange={(e) => handleInputChange(e.target.value)}
+                    onChange={(event) => handleInputChange(event.target.value)}
                     tone="inset"
                     size="sm"
                     className="w-full"
@@ -96,14 +96,13 @@ export const AudioDevicePicker = (): ReactElement => {
                     disabled={loading}
                 >
                     <option value="">Default</option>
-                    {inputs.map((d) => (
-                        <option key={d.id} value={d.id}>
-                            {d.label}
+                    {inputs.map((data) => (
+                        <option key={data.id} value={data.id}>
+                            {data.label}
                         </option>
                     ))}
                 </DawCompactSelect>
             </div>
-
             {loading ? (
                 <DawInlineHint className="animate-pulse justify-start px-0 py-0 text-[10px] text-muted-foreground/70">
                     Detecting devices...

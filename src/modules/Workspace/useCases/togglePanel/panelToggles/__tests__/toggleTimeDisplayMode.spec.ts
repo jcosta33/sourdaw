@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type WorkspaceState } from '../../../../models/WorkspaceState';
 import { toggleTimeDisplayMode } from '../toggleTimeDisplayMode';
 
 const mocks = vi.hoisted(() => ({
-    getWorkspaceState: vi.fn(),
-    updateWorkspaceState: vi.fn(),
+    getWorkspaceState: vi.fn<() => WorkspaceState | null>(),
+    updateWorkspaceState: vi.fn<typeof import('../../../../repositories/workspace').updateWorkspaceState>(),
 }));
 
 vi.mock('../../../../repositories/workspace', () => ({
@@ -26,7 +27,7 @@ describe('toggleTimeDisplayMode', () => {
     });
 
     it('should toggle musical display to time', () => {
-        mocks.getWorkspaceState.mockReturnValue({ timeDisplayMode: 'musical' } as any);
+        mocks.getWorkspaceState.mockReturnValue({ timeDisplayMode: 'musical' } as WorkspaceState);
 
         toggleTimeDisplayMode();
 

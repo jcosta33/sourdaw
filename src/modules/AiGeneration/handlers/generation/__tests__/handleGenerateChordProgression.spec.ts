@@ -42,7 +42,7 @@ describe('handleGenerateChordProgression', () => {
     });
 
     it('executes progression generation with validated payload and defaults', () => {
-        handleGenerateChordProgression.execute({
+        void handleGenerateChordProgression.execute({
             type: 'generateChordProgression',
             payload: {
                 style: 'jazz',
@@ -61,13 +61,13 @@ describe('handleGenerateChordProgression', () => {
     });
 
     it('falls back to default style, scale, key, and voicing for invalid inputs', () => {
-        handleGenerateChordProgression.execute({
+        void handleGenerateChordProgression.execute({
             type: 'generateChordProgression',
             payload: {
-                style: 'invalid-style' as any,
-                scale: 'invalid-scale' as any,
+                style: 'invalid-style' as unknown as 'pop',
+                scale: 'invalid-scale' as unknown as 'major',
                 key: 99,
-                voicing: 'invalid-voicing' as any,
+                voicing: 'invalid-voicing' as unknown as 'close',
                 bars: 8,
             },
         });
@@ -82,7 +82,7 @@ describe('handleGenerateChordProgression', () => {
     it('bails if track cannot be resolved or created', () => {
         mocks.resolveOrCreateMidiTrack.mockReturnValue(null);
 
-        handleGenerateChordProgression.execute({
+        void handleGenerateChordProgression.execute({
             type: 'generateChordProgression',
             payload: { style: 'pop', scale: 'major', key: 0, bars: 1 },
         });

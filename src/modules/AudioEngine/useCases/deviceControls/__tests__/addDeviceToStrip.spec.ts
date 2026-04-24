@@ -5,7 +5,7 @@ import * as subject from '../addDeviceToStrip';
 describe('addDeviceToStrip', () => {
     it('should export addDeviceToStrip', () => {
         expect(subject.addDeviceToStrip).toBeDefined();
-        const t = typeof subject.addDeviceToStrip;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.addDeviceToStrip;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

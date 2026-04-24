@@ -12,8 +12,8 @@ function estimateFrequencyProfile(tracks: Array<{ kind: string; gain?: number }>
         air: 0.3,
     };
 
-    const midiTracks = tracks.filter((t) => t.kind === 'midi').length;
-    const audioTracks = tracks.filter((t) => t.kind === 'audio').length;
+    const midiTracks = tracks.filter((time) => time.kind === 'midi').length;
+    const audioTracks = tracks.filter((time) => time.kind === 'audio').length;
     const totalTracks = tracks.length || 1;
 
     if (midiTracks / totalTracks > 0.5) {
@@ -56,19 +56,19 @@ export function analyzeMix(): MixAnalysis {
         return createDefaultAnalysis();
     }
 
-    const tracks = state.tracks.filter((t) => !t.muted && t.kind !== 'folder');
+    const tracks = state.tracks.filter((time) => !time.muted && time.kind !== 'folder');
     const trackCount = tracks.length || 1;
 
-    const gains = tracks.map((t) => t.gain ?? 0);
-    const avgGain = gains.reduce((a, b) => a + b, 0) / trackCount;
+    const gains = tracks.map((time) => time.gain ?? 0);
+    const avgGain = gains.reduce((alpha, b) => alpha + b, 0) / trackCount;
     const rmsDb = Math.max(-60, avgGain - 6);
     const peakDb = Math.max(-60, avgGain - 1);
     const lufs = rmsDb - 3;
 
     const frequencyProfile = estimateFrequencyProfile(tracks);
 
-    const pans = tracks.map((t) => Math.abs(t.pan ?? 0));
-    const stereoWidth = pans.length > 0 ? pans.reduce((a, b) => a + b, 0) / pans.length : 0.5;
+    const pans = tracks.map((time) => Math.abs(time.pan ?? 0));
+    const stereoWidth = pans.length > 0 ? pans.reduce((alpha, b) => alpha + b, 0) / pans.length : 0.5;
 
     const dynamicRange = Math.min(20, Math.max(3, 14 - trackCount * 0.5));
     const crestFactor = dynamicRange * 0.7;

@@ -28,7 +28,7 @@ export class MidiRack {
 
     /** Remove a processor by id. */
     removeProcessor(id: string): void {
-        const idx = this.processors.findIndex((p) => p.id === id);
+        const idx = this.processors.findIndex((param) => param.id === id);
         if (idx !== -1) {
             this.processors[idx]!.reset();
             this.processors.splice(idx, 1);
@@ -61,10 +61,10 @@ export class MidiRack {
         this.scheduled.drainRangeInto(blockStartSamples, blockEndSamples, current0);
 
         // 2. Merge with input events.
-        for (let i = 0; i < inputEvents.length; i++) {
-            current0.push(inputEvents[i]!);
+        for (let index = 0; index < inputEvents.length; index++) {
+            current0.push(inputEvents[index]!);
         }
-        current0.sort((a, b) => a.timeSamples - b.timeSamples);
+        current0.sort((alpha, b) => alpha.timeSamples - b.timeSamples);
 
         // 3. Run through processor chain — ping-pong between scratchA/scratchB
         // so each hop reuses the same two buffers (§149.1).
@@ -83,7 +83,7 @@ export class MidiRack {
         const current = input;
 
         // 4. Sort final output
-        current.sort((a, b) => a.timeSamples - b.timeSamples);
+        current.sort((alpha, b) => alpha.timeSamples - b.timeSamples);
 
         // 5. Track active notes for panic. Numeric key avoids a per-event
         // template literal allocation in the worklet (§149.2).
@@ -144,27 +144,27 @@ export class MidiRack {
 
     /** Get the list of processor IDs in order. */
     getProcessorIds(): string[] {
-        return this.processors.map((p) => p.id);
+        return this.processors.map((param) => param.id);
     }
 
     /** Get processor names for UI. */
     getProcessorNames(): Array<{ id: string; name: string; bypassed: boolean }> {
-        return this.processors.map((p) => ({
-            id: p.id,
-            name: p.name,
-            bypassed: p.isBypassed(),
+        return this.processors.map((param) => ({
+            id: param.id,
+            name: param.name,
+            bypassed: param.isBypassed(),
         }));
     }
 
     /** Set a parameter on a specific processor. */
     setProcessorParam(processorId: string, name: string, value: number): void {
-        const proc = this.processors.find((p) => p.id === processorId);
+        const proc = this.processors.find((param) => param.id === processorId);
         proc?.setParam(name, value);
     }
 
     /** Toggle bypass on a specific processor. */
     setProcessorBypass(processorId: string, bypassed: boolean): void {
-        const proc = this.processors.find((p) => p.id === processorId);
+        const proc = this.processors.find((param) => param.id === processorId);
         proc?.setBypassed(bypassed);
     }
 }

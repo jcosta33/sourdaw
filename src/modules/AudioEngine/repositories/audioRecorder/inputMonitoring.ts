@@ -47,8 +47,8 @@ export function stopInputMonitoring(): void {
         session.monitorSource = null;
     }
     if (session.monitorStream) {
-        for (const t of session.monitorStream.getTracks()) {
-            t.stop();
+        for (const time of session.monitorStream.getTracks()) {
+            time.stop();
         }
         session.monitorStream = null;
     }

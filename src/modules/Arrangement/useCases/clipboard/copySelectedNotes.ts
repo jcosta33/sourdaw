@@ -13,12 +13,12 @@ export function copySelectedNotes(clipId: string, noteIds: string[]): void {
         return;
     }
 
-    const selected = notes.filter((n) => noteIds.includes(n.id));
+    const selected = notes.filter((node) => noteIds.includes(node.id));
     if (selected.length === 0) {
         return;
     }
 
     setNoteClipboard({
-        notes: selected.map((n) => ({ ...n })),
+        notes: selected.map((node) => ({ ...node })),
     });
 }

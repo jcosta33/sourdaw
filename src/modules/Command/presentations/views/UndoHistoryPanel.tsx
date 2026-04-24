@@ -11,7 +11,7 @@ import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { workspaceStore } from '#/modules/Workspace/stores';
-import { closeUndoHistory, type WorkspaceState } from '#/modules/Workspace/useCases';
+import { closeUndoHistory } from '#/modules/Workspace/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { undoStore, type UndoStoreState } from '../../stores/undoStore';
@@ -20,7 +20,7 @@ import { undoToIndex } from '../../useCases/undoRedo';
 const defaultState: UndoStoreState = { past: [], future: [] };
 
 export const UndoHistoryPanel = (): ReactElement | null => {
-    const wsOpen = useStore(workspaceStore, null as unknown as WorkspaceState)?.undoHistoryOpen ?? false;
+    const wsOpen = useStore(workspaceStore)?.undoHistoryOpen ?? false;
 
     const state = useStore(undoStore, defaultState);
 
@@ -31,7 +31,7 @@ export const UndoHistoryPanel = (): ReactElement | null => {
     const close = closeUndoHistory;
 
     const handleClick = (index: number) => {
-        undoToIndex(index);
+        void undoToIndex(index);
     };
 
     const pastCount = state.past.length;
@@ -48,7 +48,6 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                     </Button>
                 }
             />
-
             <div className="max-h-72 overflow-y-auto">
                 {state.past.length === 0 && state.future.length === 0 ? (
                     <div className="p-3">
@@ -66,8 +65,8 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                             <Redo2 className="mr-1 inline size-2.5" />
                             Redo
                         </DawEyebrowLabel>
-                        {[...state.future].reverse().map((entry, i) => {
-                            const futureIndex = pastCount + (state.future.length - 1 - i);
+                        {[...state.future].reverse().map((entry, index) => {
+                            const futureIndex = pastCount + (state.future.length - 1 - index);
                             return (
                                 <DawUtilityListRow
                                     key={entry.id}
@@ -93,16 +92,16 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                             <Undo2 className="mr-1 inline size-2.5" />
                             Undo
                         </DawEyebrowLabel>
-                        {[...state.past].reverse().map((entry, i) => {
-                            const entryIndex = pastCount - 1 - i;
+                        {[...state.past].reverse().map((entry, index) => {
+                            const entryIndex = pastCount - 1 - index;
                             return (
                                 <DawUtilityListRow
                                     key={entry.id}
-                                    active={i === 0}
+                                    active={index === 0}
                                     title={entry.label}
                                     titleClassName={cn(
                                         'text-xs',
-                                        i === 0 ? 'text-foreground' : 'text-muted-foreground'
+                                        index === 0 ? 'text-foreground' : 'text-muted-foreground'
                                     )}
                                     endSlot={
                                         entry.source !== 'manual' ? (

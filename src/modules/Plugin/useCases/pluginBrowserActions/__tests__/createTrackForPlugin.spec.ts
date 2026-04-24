@@ -3,11 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createTrackForPlugin } from '../createTrackForPlugin';
 
 const mocks = vi.hoisted(() => ({
-    addTrack: vi.fn(),
+    addTrack: vi.fn<typeof import('#/modules/Arrangement/useCases').addTrack>(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     addTrack: mocks.addTrack,
 }));
 

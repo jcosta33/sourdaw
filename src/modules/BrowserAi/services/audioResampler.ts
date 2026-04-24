@@ -39,6 +39,17 @@ export async function resampleTo44100({ audio, fromSampleRate, channels = 1 }: R
     return rendered.getChannelData(0);
 }
 
+/**
+ * Convert a Float32Array PCM (at 44.1 kHz) to an AudioBuffer
+ * that can be used with the Web Audio graph.
+ */
+export function float32ToAudioBuffer(audio: Float32Array, sampleRate = TARGET_SAMPLE_RATE): AudioBuffer {
+    const ctx = new AudioContext({ sampleRate });
+    const buffer = ctx.createBuffer(1, audio.length, sampleRate);
+    buffer.copyToChannel(new Float32Array(audio), 0);
+    void ctx.close();
+    return buffer;
+}
 
 /**
  * Apply a simple fade-in/fade-out at phrase boundaries to avoid clicks.
@@ -46,10 +57,10 @@ export async function resampleTo44100({ audio, fromSampleRate, channels = 1 }: R
  */
 export function applyFades(audio: Float32Array, fadeSamples: number): void {
     const fadeLen = Math.min(fadeSamples, Math.floor(audio.length / 2));
-    for (let i = 0; i < fadeLen; i++) {
-        const gain = i / fadeLen;
-        audio[i] = (audio[i] ?? 0) * gain;
-        const endIdx = audio.length - 1 - i;
+    for (let index = 0; index < fadeLen; index++) {
+        const gain = index / fadeLen;
+        audio[index] = (audio[index] ?? 0) * gain;
+        const endIdx = audio.length - 1 - index;
         audio[endIdx] = (audio[endIdx] ?? 0) * gain;
     }
 }
@@ -68,8 +79,8 @@ export function normalizePeak(audio: Float32Array): void {
     }
     if (peak > 0 && peak !== 1) {
         const scale = 1 / peak;
-        for (let i = 0; i < audio.length; i++) {
-            audio[i] = (audio[i] ?? 0) * scale;
+        for (let index = 0; index < audio.length; index++) {
+            audio[index] = (audio[index] ?? 0) * scale;
         }
     }
 }

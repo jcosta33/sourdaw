@@ -51,33 +51,33 @@ export const ACTION_LABELS: Record<string, string> = {
  */
 export function describeAction(action: AppAction): string {
     const base = ACTION_LABELS[action.type] ?? action.type;
-    const p = action.payload as Record<string, unknown> | undefined;
-    if (!p) {
+    const param = action.payload as Record<string, unknown> | undefined;
+    if (!param) {
         return base;
     }
-    if ('name' in p && typeof p.name === 'string') {
-        return `${base}: ${p.name}`;
+    if ('name' in param && typeof param.name === 'string') {
+        return `${base}: ${param.name}`;
     }
-    if ('bpm' in p) {
-        return `${base}: ${p.bpm} BPM`;
+    if ('bpm' in param) {
+        return `${base}: ${param.bpm} BPM`;
     }
-    if ('kind' in p) {
-        return `${base} (${p.kind})`;
+    if ('kind' in param) {
+        return `${base} (${param.kind})`;
     }
-    if ('deviceType' in p) {
-        return `${base}: ${p.deviceType}`;
+    if ('deviceType' in param) {
+        return `${base}: ${param.deviceType}`;
     }
-    if ('paramId' in p && 'value' in p) {
-        return `${base}: ${p.paramId} = ${p.value}`;
+    if ('paramId' in param && 'value' in param) {
+        return `${base}: ${param.paramId} = ${param.value}`;
     }
-    if ('semitones' in p) {
-        return `${base}: ${(p.semitones as number) > 0 ? '+' : ''}${p.semitones}st`;
+    if ('semitones' in param) {
+        return `${base}: ${(param.semitones as number) > 0 ? '+' : ''}${param.semitones}st`;
     }
-    if ('gain' in p) {
-        return `${base}: ${Math.round((p.gain as number) * 100)}%`;
+    if ('gain' in param) {
+        return `${base}: ${Math.round((param.gain as number) * 100)}%`;
     }
-    if ('tool' in p) {
-        return `${base}: ${p.tool}`;
+    if ('tool' in param) {
+        return `${base}: ${param.tool}`;
     }
     return base;
 }

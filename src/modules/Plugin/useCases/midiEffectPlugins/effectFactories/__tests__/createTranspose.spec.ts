@@ -4,13 +4,15 @@ import { type MidiNote } from '#/modules/Plugin/models/MidiEffectTypes';
 
 import { createTranspose } from '../createTranspose';
 
-const n = (pitch: number): MidiNote => ({
-    pitch,
-    velocity: 100,
-    startBeat: 0,
-    durationBeats: 0.25,
-    channel: 0,
-});
+function n(pitch: number): MidiNote {
+    return {
+        pitch,
+        velocity: 100,
+        startBeat: 0,
+        durationBeats: 0.25,
+        channel: 0,
+    };
+}
 
 describe('createTranspose', () => {
     it('should shift pitch by semitones and clamp to 0–127', () => {

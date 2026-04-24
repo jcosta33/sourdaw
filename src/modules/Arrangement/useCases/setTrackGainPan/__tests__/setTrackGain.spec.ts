@@ -21,7 +21,7 @@ vi.mock('../../../repositories/track/getTrackById', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     setTrackGain: mocks.engineSetTrackGain,
     updateDeviceParam: mocks.updateDeviceParam,
 }));
@@ -31,12 +31,12 @@ vi.mock('#/modules/Arrangement/useCases/getAllTracks', () => ({
 }));
 
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+    ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
     getTransportState: mocks.getTransportState,
 }));
 
 vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+    ...(await importOriginal<typeof import('#/modules/Automation/useCases')>()),
     recordAutomationValue: mocks.recordAutomationValue,
 }));
 
@@ -51,7 +51,7 @@ describe('setTrackGain', () => {
         setTrackGain('t1', 0.5);
 
         expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
-        const updater = mocks.updateTrack.mock.calls[0][1];
+        const updater = mocks.updateTrack.mock.calls[0]![1] as (t: { gain: number }) => { gain: number };
         expect(updater({ gain: 1.0 })).toEqual({ gain: 0.5 });
 
         expect(mocks.engineSetTrackGain).toHaveBeenCalledWith('t1', 0.5);

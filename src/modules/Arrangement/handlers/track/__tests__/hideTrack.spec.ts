@@ -16,7 +16,7 @@ describe('handleHideTrack', () => {
     });
 
     it('executes hideTrack with payload', () => {
-        handleHideTrack.execute({
+        void handleHideTrack.execute({
             type: 'hideTrack',
             payload: { trackId: 't1', hidden: true },
         });

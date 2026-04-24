@@ -5,7 +5,7 @@ import * as subject from '../setTalkbackLevel';
 describe('setTalkbackLevel', () => {
     it('should export setTalkbackLevel', () => {
         expect(subject.setTalkbackLevel).toBeDefined();
-        const t = typeof subject.setTalkbackLevel;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setTalkbackLevel;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { WaveformEditor } from '../WaveformEditor';
@@ -61,7 +61,7 @@ vi.mock('#/components/ui/slider', () => ({
             step={step}
             className={className}
             aria-label={ariaLabel}
-            onChange={(e) => onValueChange([Number(e.target.value)])}
+            onChange={(event) => onValueChange([Number(event.target.value)])}
         />
     ),
 }));

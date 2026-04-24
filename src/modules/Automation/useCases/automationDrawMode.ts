@@ -45,7 +45,7 @@ export function beginDrawSession(laneId: string, gridResolution: number, constra
         return;
     }
 
-    const lane = state.lanes.find((l) => l.id === laneId);
+    const lane = state.lanes.find((length) => length.id === laneId);
     if (!lane) {
         return;
     }
@@ -89,18 +89,18 @@ export function paintDrawPoint(beat: number, value: number): void {
 
     // Compute the new lane state in memory — do NOT write to the CRDT store yet.
     const nextState: AutomationStoreState = {
-        lanes: state.lanes.map((l) => {
-            if (l.id !== activeSession!.laneId) {
-                return l;
+        lanes: state.lanes.map((length) => {
+            if (length.id !== activeSession!.laneId) {
+                return length;
             }
-            const filtered = l.points.filter((p) => Math.abs(p.beat - snappedBeat) > 0.001);
+            const filtered = length.points.filter((param) => Math.abs(param.beat - snappedBeat) > 0.001);
             const newPoint: AutomationPoint = {
                 beat: snappedBeat,
-                value: Math.max(l.minValue, Math.min(l.maxValue, paintValue)),
+                value: Math.max(length.minValue, Math.min(length.maxValue, paintValue)),
                 curve: 'step',
                 tension: 0,
             };
-            return { ...l, points: [...filtered, newPoint].sort((a, b) => a.beat - b.beat) };
+            return { ...length, points: [...filtered, newPoint].sort((alpha, b) => alpha.beat - b.beat) };
         }),
     };
 
@@ -133,29 +133,33 @@ export function endDrawSession(): void {
 
     const { laneId, previousPoints } = activeSession;
     const state = automationStore.value;
-    const currentLane = state?.lanes.find((l) => l.id === laneId);
+    const currentLane = state?.lanes.find((length) => length.id === laneId);
     const currentPoints = currentLane ? [...currentLane.points] : [];
 
     pushUndoEntry(
         'Draw automation',
         () => {
             // Undo: restore previous points
-            const s = automationStore.value;
-            if (!s) {
+            const state1 = automationStore.value;
+            if (!state1) {
                 return;
             }
             automationStore.set({
-                lanes: s.lanes.map((l) => (l.id === laneId ? { ...l, points: previousPoints } : l)),
+                lanes: state1.lanes.map((length) =>
+                    length.id === laneId ? { ...length, points: previousPoints } : length
+                ),
             });
         },
         () => {
             // Redo: restore drawn points
-            const s = automationStore.value;
-            if (!s) {
+            const state1 = automationStore.value;
+            if (!state1) {
                 return;
             }
             automationStore.set({
-                lanes: s.lanes.map((l) => (l.id === laneId ? { ...l, points: currentPoints } : l)),
+                lanes: state1.lanes.map((length) =>
+                    length.id === laneId ? { ...length, points: currentPoints } : length
+                ),
             });
         }
     );

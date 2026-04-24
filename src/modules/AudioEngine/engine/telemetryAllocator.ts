@@ -112,8 +112,8 @@ class TelemetryAllocator {
     private ensureInit(): SharedArrayBuffer {
         if (!this.sab) {
             this.sab = new SharedArrayBuffer(MAX_SLOTS * BYTES_PER_SLOT);
-            for (let i = MAX_SLOTS - 1; i >= 0; i--) {
-                this.freeSlots.push(i);
+            for (let index = MAX_SLOTS - 1; index >= 0; index--) {
+                this.freeSlots.push(index);
             }
         }
         return this.sab;

@@ -7,13 +7,13 @@ export function unfreezeTrack(trackId: string): void {
         return;
     }
 
-    const track = state.tracks.find((t) => t.id === trackId);
+    const track = state.tracks.find((time) => time.id === trackId);
     if (!track || track.freezeState.status === 'unfrozen') {
         return;
     }
 
-    updateTrack(trackId, (t) => ({
-        ...t,
+    updateTrack(trackId, (time) => ({
+        ...time,
         frozen: false,
         frozenBufferId: undefined,
         freezeState: { status: 'unfrozen' },

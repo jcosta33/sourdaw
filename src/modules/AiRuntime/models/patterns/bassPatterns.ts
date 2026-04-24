@@ -11,15 +11,15 @@ export const bassPatterns: PatternTemplate[] = [
         tags: ['classic', 'smooth'],
         description: 'Stepwise jazz walking bass',
         lengthBeats: 8,
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 28, 55);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 28, 55);
             const mid = Math.floor(sp.length / 2);
             const notes: PatternNote[] = [];
             let idx = mid;
             for (let b = 0; b < 8; b++) {
                 notes.push({
                     pitch: sp[idx]!,
-                    velocity: 80 + Math.round(p.density * 2),
+                    velocity: 80 + Math.round(param.density * 2),
                     startBeat: b,
                     durationBeats: 1,
                 });
@@ -37,9 +37,9 @@ export const bassPatterns: PatternTemplate[] = [
         tags: ['driving', 'power'],
         description: 'Root-octave pump pattern',
         lengthBeats: 4,
-        generate: (p) => {
-            const root = (KEY_SEMITONES[p.key] ?? 0) + 28;
-            const step = p.density > 5 ? 0.25 : 0.5;
+        generate: (param) => {
+            const root = (KEY_SEMITONES[param.key] ?? 0) + 28;
+            const step = param.density > 5 ? 0.25 : 0.5;
             const notes: PatternNote[] = [];
             for (let b = 0; b < 4; b += step) {
                 notes.push({
@@ -61,8 +61,8 @@ export const bassPatterns: PatternTemplate[] = [
         description: 'Syncopated funk bass',
         lengthBeats: 4,
         scaleOverride: 'pentatonic-minor',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 28, 48);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 28, 48);
             const r = sp[0]!;
             return [
                 { pitch: r, velocity: 110, startBeat: 0, durationBeats: 0.25 },
@@ -82,12 +82,12 @@ export const bassPatterns: PatternTemplate[] = [
         tags: ['sub', 'sustained'],
         description: 'Long sustained sub bass notes',
         lengthBeats: 16,
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 28, 48);
-            return [0, 3, 5, 4].map((deg, i) => ({
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 28, 48);
+            return [0, 3, 5, 4].map((deg, index) => ({
                 pitch: sp[Math.min(deg, sp.length - 1)]!,
                 velocity: 100,
-                startBeat: i * 4,
+                startBeat: index * 4,
                 durationBeats: 4,
             }));
         },
@@ -100,8 +100,8 @@ export const bassPatterns: PatternTemplate[] = [
         tags: ['bounce', '808'],
         description: '808-style bouncy bass',
         lengthBeats: 4,
-        generate: (p) => {
-            const root = (KEY_SEMITONES[p.key] ?? 0) + 36;
+        generate: (param) => {
+            const root = (KEY_SEMITONES[param.key] ?? 0) + 36;
             return [
                 { pitch: root, velocity: 110, startBeat: 0, durationBeats: 1.5 },
                 { pitch: root, velocity: 90, startBeat: 2, durationBeats: 0.25 },
@@ -118,8 +118,8 @@ export const bassPatterns: PatternTemplate[] = [
         tags: ['tumbao', 'salsa'],
         description: 'Salsa/Latin tumbao bass',
         lengthBeats: 4,
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 28, 55);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 28, 55);
             const r = sp[0]!;
             return [
                 { pitch: r, velocity: 90, startBeat: 0, durationBeats: 0.5 },
@@ -137,8 +137,8 @@ export const bassPatterns: PatternTemplate[] = [
         tags: ['offbeat', 'dub'],
         description: 'Reggae one-drop bass',
         lengthBeats: 4,
-        generate: (p) => {
-            const root = (KEY_SEMITONES[p.key] ?? 0) + 33;
+        generate: (param) => {
+            const root = (KEY_SEMITONES[param.key] ?? 0) + 33;
             return [
                 { pitch: root, velocity: 90, startBeat: 2.5, durationBeats: 0.5 },
                 { pitch: root, velocity: 85, startBeat: 3, durationBeats: 1 },
@@ -153,8 +153,8 @@ export const bassPatterns: PatternTemplate[] = [
         tags: ['aggressive', 'chug'],
         description: 'Galloping metal bass',
         lengthBeats: 4,
-        generate: (p) => {
-            const root = (KEY_SEMITONES[p.key] ?? 0) + 28;
+        generate: (param) => {
+            const root = (KEY_SEMITONES[param.key] ?? 0) + 28;
             const notes: PatternNote[] = [];
             for (let b = 0; b < 4; b++) {
                 notes.push({ pitch: root, velocity: 110, startBeat: b, durationBeats: 0.25 });
@@ -172,9 +172,9 @@ export const bassPatterns: PatternTemplate[] = [
         tags: ['pad', 'atmospheric'],
         description: 'Single sustained drone note',
         lengthBeats: 16,
-        generate: (p) => {
-            const root = (KEY_SEMITONES[p.key] ?? 0) + 36;
-            return [{ pitch: root, velocity: 55 + p.density * 3, startBeat: 0, durationBeats: 16 }];
+        generate: (param) => {
+            const root = (KEY_SEMITONES[param.key] ?? 0) + 36;
+            return [{ pitch: root, velocity: 55 + param.density * 3, startBeat: 0, durationBeats: 16 }];
         },
     },
     {
@@ -185,8 +185,8 @@ export const bassPatterns: PatternTemplate[] = [
         tags: ['groove', 'danceable'],
         description: 'Groovy disco bass line',
         lengthBeats: 4,
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 28, 55);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 28, 55);
             const r = sp[0]!;
             return [
                 { pitch: r, velocity: 95, startBeat: 0, durationBeats: 0.5 },
@@ -208,8 +208,8 @@ export const bassPatterns: PatternTemplate[] = [
         tags: ['simple', 'classic'],
         description: 'Simple root-fifth alternation',
         lengthBeats: 4,
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 28, 55);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 28, 55);
             return [
                 { pitch: sp[0]!, velocity: 90, startBeat: 0, durationBeats: 1 },
                 { pitch: sp[0]!, velocity: 80, startBeat: 1, durationBeats: 1 },
@@ -227,8 +227,8 @@ export const bassPatterns: PatternTemplate[] = [
         description: 'Aggressive DnB bass pattern',
         lengthBeats: 8,
         scaleOverride: 'minor',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 28, 48);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 28, 48);
             return [
                 { pitch: sp[0]!, velocity: 100, startBeat: 0, durationBeats: 1.5 },
                 { pitch: sp[Math.min(6, sp.length - 1)]!, velocity: 85, startBeat: 2, durationBeats: 0.5 },

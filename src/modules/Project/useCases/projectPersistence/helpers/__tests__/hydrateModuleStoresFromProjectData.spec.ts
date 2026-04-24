@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type ProjectData } from '../../../../models/ProjectData';
+import { hydrateModuleStoresFromProjectData } from '../hydrateModuleStoresFromProjectData';
 
 const mocks = vi.hoisted(() => ({
     trackStoreSet: vi.fn(),
@@ -24,8 +25,6 @@ vi.mock('#/modules/Automation/stores', async (importOriginal) => {
         automationStore: { set: mocks.automationStoreSet },
     };
 });
-
-import { hydrateModuleStoresFromProjectData } from '../hydrateModuleStoresFromProjectData';
 
 describe('hydrateModuleStoresFromProjectData', () => {
     beforeEach(() => {

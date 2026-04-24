@@ -17,6 +17,8 @@ vi.mock('#/components/daw/DawHeaderBand', () => ({
 
 // Create test components
 const TestLayoutComponent = ({ device }: DeviceLayoutProps) => <div data-testid="test-layout">{device.name}</div>;
+const PrefixLayout = () => <div>Prefix</div>;
+const ExactLayout = () => <div>Exact</div>;
 
 describe('deviceLayoutRegistry', () => {
     describe('registerDeviceLayout', () => {
@@ -54,8 +56,6 @@ describe('deviceLayoutRegistry', () => {
         });
 
         it('should prefer exact match over prefix match', () => {
-            const PrefixLayout = () => <div>Prefix</div>;
-            const ExactLayout = () => <div>Exact</div>;
             registerPrefixLayout('test-', PrefixLayout);
             registerDeviceLayout('test-specific', ExactLayout);
             const resolved = resolveDeviceLayout('test-specific');

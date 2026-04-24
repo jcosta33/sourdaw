@@ -7,8 +7,8 @@ export function setEncoderValue(encoderIndex: number, value: number): void {
     }
     pushStore.set({
         ...state,
-        encoders: state.encoders.map((e) =>
-            e.index === encoderIndex ? { ...e, value: Math.max(0, Math.min(127, value)) } : e
+        encoders: state.encoders.map((event) =>
+            event.index === encoderIndex ? { ...event, value: Math.max(0, Math.min(127, value)) } : event
         ),
     });
 }

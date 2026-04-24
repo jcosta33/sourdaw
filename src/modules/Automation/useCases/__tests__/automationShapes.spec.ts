@@ -5,7 +5,7 @@ import * as subject from '../automationShapes';
 describe('automationShapes', () => {
     it('should export insertAutomationShape', () => {
         expect(subject.insertAutomationShape).toBeDefined();
-        const t = typeof subject.insertAutomationShape;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.insertAutomationShape;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

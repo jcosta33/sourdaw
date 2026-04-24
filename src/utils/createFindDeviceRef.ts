@@ -7,7 +7,7 @@ export type GetAllTracksFn = typeof getAllTracks;
 export function createFindDeviceRef(getAllTracksFn: GetAllTracksFn) {
     return function findDeviceRef(deviceId: string): DeviceRef | null {
         for (const track of getAllTracksFn()) {
-            if (track.devices.some((d) => d.id === deviceId)) {
+            if (track.devices.some((device) => device.id === deviceId)) {
                 return { trackId: track.id, deviceId };
             }
         }

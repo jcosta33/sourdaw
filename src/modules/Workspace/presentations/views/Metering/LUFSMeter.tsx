@@ -32,11 +32,11 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return undefined;
         }
 
         // HiDPI scaling
@@ -128,12 +128,28 @@ export const LUFSMeter = ({ height = 160, width = 48, target = -14 }: LUFSMeterP
             // Momentary bar
             const barW = 10;
             const momY = lufsToY(mom);
-            ctx.fillStyle = mom > -3 ? meterClip : mom > -14 ? meterHot : meterSafe;
+            ctx.fillStyle = (() => {
+                if (mom > -3) {
+                    return meterClip;
+                }
+                if (mom > -14) {
+                    return meterHot;
+                }
+                return meterSafe;
+            })();
             ctx.fillRect(2, momY, barW, height - momY);
 
             // Short-term bar
             const stY = lufsToY(st);
-            ctx.fillStyle = st > -3 ? `${meterClip}99` : st > -14 ? `${meterHot}99` : `${meterSafe}99`;
+            ctx.fillStyle = (() => {
+                if (st > -3) {
+                    return `${meterClip}99`;
+                }
+                if (st > -14) {
+                    return `${meterHot}99`;
+                }
+                return `${meterSafe}99`;
+            })();
             ctx.fillRect(14, stY, barW, height - stY);
 
             // Integrated bar

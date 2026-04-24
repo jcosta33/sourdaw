@@ -6,6 +6,6 @@ export const handleSetAutomationMode = createHandler<'setAutomationMode'>({
     execute: (action) => {
         setAutomationMode(action.payload.trackId, action.payload.mode);
     },
-    describe: (a) => ({ label: `Set automation mode: ${a.payload.mode}` }),
+    describe: (alpha) => ({ label: `Set automation mode: ${alpha.payload.mode}` }),
     undoable: true,
 });

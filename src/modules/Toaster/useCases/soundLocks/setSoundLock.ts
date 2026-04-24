@@ -7,12 +7,12 @@ export function setSoundLock(deviceId: string, padIndex: number, stepIndex: numb
         return;
     }
 
-    const pattern = state.kit.patterns.find((p) => p.id === state.kit.activePatternId);
+    const pattern = state.kit.patterns.find((param) => param.id === state.kit.activePatternId);
     if (!pattern) {
         return;
     }
 
-    const track = pattern.tracks.find((t) => t.padIndex === padIndex);
+    const track = pattern.tracks.find((time) => time.padIndex === padIndex);
     if (!track || !track.steps[stepIndex]) {
         return;
     }

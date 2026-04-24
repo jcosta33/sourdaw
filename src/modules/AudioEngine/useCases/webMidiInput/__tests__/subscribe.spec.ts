@@ -5,7 +5,7 @@ import * as subject from '../subscribe';
 describe('subscribe', () => {
     it('should export subscribe', () => {
         expect(subject.subscribe).toBeDefined();
-        const t = typeof subject.subscribe;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.subscribe;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

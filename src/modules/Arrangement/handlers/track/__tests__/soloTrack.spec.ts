@@ -16,7 +16,7 @@ describe('handleSoloTrack', () => {
     });
 
     it('executes soloTrack with payload', () => {
-        handleSoloTrack.execute({
+        void handleSoloTrack.execute({
             type: 'soloTrack',
             payload: { trackId: 't1', soloed: true },
         });

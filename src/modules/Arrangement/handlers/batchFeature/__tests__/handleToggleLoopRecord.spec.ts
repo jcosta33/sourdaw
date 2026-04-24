@@ -16,7 +16,7 @@ describe('handleToggleLoopRecord', () => {
     });
 
     it('executes toggleRecord from Transport module with slotId', () => {
-        handleToggleLoopRecord.execute({ type: 'toggleLoopRecord', payload: { slotId: 'slot-1' } });
+        void handleToggleLoopRecord.execute({ type: 'toggleLoopRecord', payload: { slotId: 'slot-1' } });
         expect(mocks.toggleRecord).toHaveBeenCalledWith('slot-1');
     });
 

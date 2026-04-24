@@ -14,7 +14,7 @@ describe('handleSetMidiOutput', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('delegates to setMidiOutput use case', () => {
-        handleSetMidiOutput.execute({
+        void handleSetMidiOutput.execute({
             type: 'setMidiOutput',
             payload: { trackId: 't1', destinationTrackId: 't2' },
         });

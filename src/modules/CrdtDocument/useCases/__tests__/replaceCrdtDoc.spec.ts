@@ -5,7 +5,7 @@ import { replaceCrdtDoc } from '../replaceCrdtDoc';
 
 vi.mock('../../repositories/automergeRepository', () => ({
     automergeRepository: {
-        replaceDoc: vi.fn(),
+        replaceDoc: vi.fn<typeof import('../../repositories/automergeRepository').automergeRepository.replaceDoc>(),
     },
 }));
 
@@ -15,7 +15,7 @@ describe('replaceCrdtDoc', () => {
     });
 
     it('should delegate id and doc to the repository replaceDoc', () => {
-        const doc = { _state: {} } as any;
+        const doc = { _state: {} } as unknown as import('@automerge/automerge').Doc<unknown>;
 
         replaceCrdtDoc({ id: 'root', doc });
 

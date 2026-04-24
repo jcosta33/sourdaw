@@ -4,8 +4,8 @@ import { type SetlistState } from '../../../stores/setlistStore';
 import { toggleAutoAdvance } from '../toggleAutoAdvance';
 
 const mockSetlistStore = vi.hoisted(() => ({
-    value: null as any,
-    set: vi.fn(),
+    value: null as SetlistState | null,
+    set: vi.fn<(state: SetlistState) => void>(),
 }));
 
 vi.mock('../../../stores/setlistStore', () => ({

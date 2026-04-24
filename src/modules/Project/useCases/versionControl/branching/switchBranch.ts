@@ -12,7 +12,7 @@ export function switchBranch(branchId: string): void {
         return;
     }
 
-    const headVersion = state.versions.find((v) => v.id === branch.headVersionId);
+    const headVersion = state.versions.find((value) => value.id === branch.headVersionId);
     if (headVersion?.snapshot.data) {
         restoreSnapshot(headVersion.snapshot);
     }

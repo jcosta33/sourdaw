@@ -5,7 +5,7 @@ import * as subject from '../MidiRack';
 describe('MidiRack', () => {
     it('should export MidiRack', () => {
         expect(subject.MidiRack).toBeDefined();
-        const t = typeof subject.MidiRack;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.MidiRack;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

@@ -40,9 +40,9 @@ export async function tauriListen(event: string, handler: (payload: unknown) => 
  * but its type declarations don't resolve with moduleResolution: "bundler".
  * We re-export the runtime value here with a proper type annotation.
  */
-export type TauriChannel<T> = {
+export type TauriChannel<Payload> = {
     readonly id: number;
-    onmessage: (response: T) => void;
+    onmessage: (response: Payload) => void;
     toJSON(): string;
 };
 
@@ -60,8 +60,8 @@ export type TauriChannel<T> = {
  * await tauriInvoke('my_command', { onEvent: channel });
  * ```
  */
-export async function createChannel<T>(): Promise<TauriChannel<T>> {
+export async function createChannel<Payload>(): Promise<TauriChannel<Payload>> {
     const mod = (await import('@tauri-apps/api/core')) as Record<string, unknown>;
-    const ChannelClass = mod.Channel as new <U>() => TauriChannel<U>;
-    return new ChannelClass<T>();
+    const ChannelClass = mod.Channel as new <Payload>() => TauriChannel<Payload>;
+    return new ChannelClass<Payload>();
 }

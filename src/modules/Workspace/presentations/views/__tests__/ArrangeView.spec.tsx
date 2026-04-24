@@ -1,10 +1,10 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { ArrangeView } from '../ArrangeView';
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, fallback) => fallback || store.value),
+    useStore: vi.fn((store: { value: unknown }, fallback?: unknown) => fallback ?? store.value),
 }));
 
 vi.mock('#/modules/Arrangement/presentations/views/TimelineSurface', () => ({
@@ -81,8 +81,8 @@ vi.mock('#/modules/Workspace/useCases/togglePanel/panelToggles/setTrackListWidth
 vi.mock('#/modules/Workspace/presentations/components/ResizeHandle', () => ({
     ResizeHandle: ({
         direction,
-        onResize,
-        onResizeEnd,
+        onResize: _onResize,
+        onResizeEnd: _onResizeEnd,
     }: {
         direction: string;
         onResize: (delta: number) => void;

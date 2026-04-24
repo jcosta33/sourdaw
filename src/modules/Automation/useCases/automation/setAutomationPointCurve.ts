@@ -12,13 +12,15 @@ export function setAutomationPointCurve(
         return;
     }
     automationStore.set({
-        lanes: state.lanes.map((l) => {
-            if (l.id !== laneId) {
-                return l;
+        lanes: state.lanes.map((length) => {
+            if (length.id !== laneId) {
+                return length;
             }
             return {
-                ...l,
-                points: l.points.map((p) => (Math.abs(p.beat - beat) < 0.05 ? { ...p, curve, tension } : p)),
+                ...length,
+                points: length.points.map((param) =>
+                    Math.abs(param.beat - beat) < 0.05 ? { ...param, curve, tension } : param
+                ),
             };
         }),
     });

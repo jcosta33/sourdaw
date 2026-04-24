@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { getTrackStoreState, renameTrack, setTrackColor, groupTracks } from '#/modules/Arrangement/useCases';
+
 import { handleAutoOrganizeProject } from '../handleAutoOrganizeProject';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -8,8 +10,6 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     setTrackColor: vi.fn(),
     groupTracks: vi.fn(),
 }));
-
-import { getTrackStoreState, renameTrack, setTrackColor, groupTracks } from '#/modules/Arrangement/useCases';
 
 describe('handleAutoOrganizeProject', () => {
     beforeEach(() => {

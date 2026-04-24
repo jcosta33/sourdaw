@@ -3,10 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createPatternInstance } from '../createPatternInstance';
 
 const mocks = vi.hoisted(() => ({
-    getTrackStoreState: vi.fn(),
-    setTrackState: vi.fn(),
-    getNotesForClip: vi.fn(() => []),
-    setNotesForClip: vi.fn(),
+    getTrackStoreState: vi.fn<() => unknown>(),
+    setTrackState: vi.fn<(...args: unknown[]) => void>(),
+    getNotesForClip: vi.fn<() => unknown[]>(() => []),
+    setNotesForClip: vi.fn<(...args: unknown[]) => void>(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -48,8 +48,12 @@ describe('createPatternInstance', () => {
 
         // Verify track state update
         expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
-        const newState = mocks.setTrackState.mock.calls[0][0];
-        const instance = newState.tracks[0].clips.find((c: any) => c.id === instanceId);
+        const newState = mocks.setTrackState.mock.calls[0]![0] as {
+            tracks: {
+                clips: { id: string; parentClipId?: string; startBeat: number; endBeat: number; name: string }[];
+            }[];
+        };
+        const instance = newState.tracks[0]?.clips.find((context) => context.id === instanceId);
 
         expect(instance).toMatchObject({
             parentClipId: 'cBase',

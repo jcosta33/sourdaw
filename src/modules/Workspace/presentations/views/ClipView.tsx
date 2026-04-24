@@ -21,7 +21,7 @@ import { WaveformEditor } from './ClipView/WaveformEditor';
 
 export const ClipView = (): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
-    const selectedTrack = tracks.find((t) => t.id === selectedTrackId);
+    const selectedTrack = tracks.find((time) => time.id === selectedTrackId);
     const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
     // beatWidth is reported by PianoRoll when its zoom changes
     const [pianoRollBeatWidth, setPianoRollBeatWidth] = useState(40);
@@ -51,7 +51,7 @@ export const ClipView = (): ReactElement => {
     }
 
     const selectedClip =
-        selectedTrack.clips.find((c) => c.id === wsState?.selectedClipId) ?? selectedTrack.clips[0] ?? null;
+        selectedTrack.clips.find((context) => context.id === wsState?.selectedClipId) ?? selectedTrack.clips[0] ?? null;
 
     // A9: collect all selected MIDI clip IDs across all tracks for multi-clip editing
     const openedClipIds: string[] | undefined = (() => {
@@ -60,7 +60,7 @@ export const ClipView = (): ReactElement => {
             return undefined;
         }
         const midiClipIds = ids.filter((id) =>
-            tracks.some((t) => t.kind === 'midi' && t.clips.some((c) => c.id === id))
+            tracks.some((time) => time.kind === 'midi' && time.clips.some((context) => context.id === id))
         );
         return midiClipIds.length > 1 ? midiClipIds : undefined;
     })();
@@ -75,6 +75,67 @@ export const ClipView = (): ReactElement => {
         // Sync automation lane scroll
         if (automationScrollRef.current) {
             automationScrollRef.current.scrollLeft = sl;
+        }
+    };
+    const renderIife_8 = () => {
+        if (selectedTrack.kind === 'audio' && selectedClip) {
+            return (
+                <div className="flex items-center gap-1 ml-4 bg-muted/50 p-0.5 rounded-md">
+                    <Button
+                        variant={audioEditMode === 'waveform' ? 'secondary' : 'ghost'}
+                        size="xs"
+                        className="h-5 px-2 text-[10px]"
+                        onClick={() => setAudioEditMode('waveform')}
+                    >
+                        Waveform
+                    </Button>
+                    <Button
+                        variant={audioEditMode === 'pitch' ? 'secondary' : 'ghost'}
+                        size="xs"
+                        className="h-5 px-2 text-[10px]"
+                        onClick={() => setAudioEditMode('pitch')}
+                    >
+                        Knead (Pitch)
+                    </Button>
+                </div>
+            );
+        } else {
+            return null;
+        }
+    };
+    const renderIife_9 = () => {
+        if (selectedTrack.kind === 'midi' && selectedClip) {
+            return (
+                <PianoRoll
+                    clipId={selectedClip.id}
+                    trackId={selectedTrack.id}
+                    openedClipIds={openedClipIds}
+                    selectedNoteIds={selectedNoteIds}
+                    onSelectedNoteIdsChange={setSelectedNoteIds}
+                    onScrollChange={handlePianoRollScroll}
+                    onBeatWidthChange={setPianoRollBeatWidth}
+                    onContentWidthChange={setPianoRollContentWidth}
+                />
+            );
+        } else {
+            if (selectedClip && audioEditMode === 'pitch') {
+                return <KneadEditor trackId={selectedTrack.id} clipId={selectedClip.id} />;
+            } else {
+                if (selectedClip) {
+                    return <WaveformEditor clipId={selectedClip.id} />;
+                } else {
+                    return (
+                        <div className="flex flex-1 p-4">
+                            <DawEmptyState
+                                compact
+                                className="flex-1"
+                                title="No clips on this track"
+                                description="Add or record a clip in Arrange view, then return here to edit it."
+                            />
+                        </div>
+                    );
+                }
+            }
         }
     };
 
@@ -98,56 +159,9 @@ export const ClipView = (): ReactElement => {
                         ))}
                     </div>
                 ) : null}
-                {selectedTrack.kind === 'audio' && selectedClip ? (
-                    <div className="flex items-center gap-1 ml-4 bg-muted/50 p-0.5 rounded-md">
-                        <Button
-                            variant={audioEditMode === 'waveform' ? 'secondary' : 'ghost'}
-                            size="xs"
-                            className="h-5 px-2 text-[10px]"
-                            onClick={() => setAudioEditMode('waveform')}
-                        >
-                            Waveform
-                        </Button>
-                        <Button
-                            variant={audioEditMode === 'pitch' ? 'secondary' : 'ghost'}
-                            size="xs"
-                            className="h-5 px-2 text-[10px]"
-                            onClick={() => setAudioEditMode('pitch')}
-                        >
-                            Knead (Pitch)
-                        </Button>
-                    </div>
-                ) : null}
+                {renderIife_8()}
             </DawControlStrip>
-
-            <div className="flex flex-1 overflow-hidden">
-                {selectedTrack.kind === 'midi' && selectedClip ? (
-                    <PianoRoll
-                        clipId={selectedClip.id}
-                        trackId={selectedTrack.id}
-                        openedClipIds={openedClipIds}
-                        selectedNoteIds={selectedNoteIds}
-                        onSelectedNoteIdsChange={setSelectedNoteIds}
-                        onScrollChange={handlePianoRollScroll}
-                        onBeatWidthChange={setPianoRollBeatWidth}
-                        onContentWidthChange={setPianoRollContentWidth}
-                    />
-                ) : selectedClip && audioEditMode === 'pitch' ? (
-                    <KneadEditor trackId={selectedTrack.id} clipId={selectedClip.id} />
-                ) : selectedClip ? (
-                    <WaveformEditor clipId={selectedClip.id} />
-                ) : (
-                    <div className="flex flex-1 p-4">
-                        <DawEmptyState
-                            compact
-                            className="flex-1"
-                            title="No clips on this track"
-                            description="Add or record a clip in Arrange view, then return here to edit it."
-                        />
-                    </div>
-                )}
-            </div>
-
+            <div className="flex flex-1 overflow-hidden">{renderIife_9()}</div>
             <ClipEditorTray className="h-28">
                 <AutomationLane
                     clipId={selectedClip?.id ?? null}

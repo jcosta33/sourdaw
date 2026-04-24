@@ -22,19 +22,19 @@ describe('telemetryAllocator', () => {
     });
 
     it('should allocate distinct slots with zeroed views', () => {
-        const a = telemetryAllocator.allocateSlot();
+        const alpha = telemetryAllocator.allocateSlot();
         const b = telemetryAllocator.allocateSlot();
-        expect(a).not.toBeNull();
+        expect(alpha).not.toBeNull();
         expect(b).not.toBeNull();
-        if (!a || !b) {
+        if (!alpha || !b) {
             return;
         }
 
-        allocatedOffsets.push(a.byteOffset, b.byteOffset);
-        expect(a.byteOffset).not.toBe(b.byteOffset);
-        expect(a.sab).toBe(b.sab);
-        expect(a.view[0]).toBe(0);
-        a.view[0] = 1.5;
+        allocatedOffsets.push(alpha.byteOffset, b.byteOffset);
+        expect(alpha.byteOffset).not.toBe(b.byteOffset);
+        expect(alpha.sab).toBe(b.sab);
+        expect(alpha.view[0]).toBe(0);
+        alpha.view[0] = 1.5;
         expect(b.view[0]).toBe(0);
     });
 
@@ -62,14 +62,14 @@ describe('telemetryAllocator', () => {
     it('should return null and warn when no slots remain', () => {
         const slots: NonNullable<ReturnType<typeof telemetryAllocator.allocateSlot>>[] = [];
         for (;;) {
-            const s = telemetryAllocator.allocateSlot();
-            if (!s) {
+            const state = telemetryAllocator.allocateSlot();
+            if (!state) {
                 break;
             }
-            slots.push(s);
+            slots.push(state);
         }
-        for (const s of slots) {
-            allocatedOffsets.push(s.byteOffset);
+        for (const state of slots) {
+            allocatedOffsets.push(state.byteOffset);
         }
 
         expect(slots.length).toBe(64);

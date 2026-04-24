@@ -29,7 +29,7 @@ const Measured = ({ children, className = '' }: MeasuredProps): ReactElement => 
     useEffect(() => {
         const el = ref.current;
         if (!el) {
-            return;
+            return undefined;
         }
         const ro = new ResizeObserver(([entry]) => {
             if (entry) {
@@ -101,8 +101,8 @@ export const AnalysisPanel = (): ReactElement => {
                     >
                         <Measured className="w-full h-full">
                             {({ width, height }) => {
-                                const s = Math.min(width, height);
-                                return <Goniometer size={s} />;
+                                const state = Math.min(width, height);
+                                return <Goniometer size={state} />;
                             }}
                         </Measured>
                     </DawAnalysisCard>
@@ -110,8 +110,8 @@ export const AnalysisPanel = (): ReactElement => {
                     <DawAnalysisCard title="Spatial Panner" className="w-[140px] shrink-0 h-[140px]">
                         <Measured className="w-full h-full">
                             {({ width, height }) => {
-                                const s = Math.min(width, height);
-                                return <SpatialPanner size={s} />;
+                                const state = Math.min(width, height);
+                                return <SpatialPanner size={state} />;
                             }}
                         </Measured>
                     </DawAnalysisCard>

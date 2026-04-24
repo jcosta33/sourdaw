@@ -16,7 +16,7 @@ describe('handleReorderTrack', () => {
     });
 
     it('executes reorderTrack with the provided payload', () => {
-        handleReorderTrack.execute({
+        void handleReorderTrack.execute({
             type: 'reorderTrack',
             payload: { trackId: 't1', newIndex: 5 },
         });

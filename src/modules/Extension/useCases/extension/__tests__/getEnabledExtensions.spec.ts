@@ -8,7 +8,10 @@ import {
 import { getEnabledExtensions } from '../getEnabledExtensions';
 
 const mocks = vi.hoisted(() => ({
-    extensionStore: { value: null as any, set: vi.fn() },
+    extensionStore: {
+        value: null as unknown as ExtensionMarketplaceState | null,
+        set: vi.fn<(...args: unknown[]) => void>(),
+    },
 }));
 
 vi.mock('../../../stores/extension', async (importOriginal) => {
@@ -27,18 +30,20 @@ function baseState(overrides: Partial<ExtensionMarketplaceState> = {}): Extensio
     };
 }
 
-const manifest = (id: string): ExtensionManifest => ({
-    id,
-    name: 'T',
-    version: '1',
-    description: 'd',
-    author: 'a',
-    minDawVersion: '0',
-    main: 'm.js',
-    permissions: [],
-    category: 'utilities',
-    license: 'MIT',
-});
+function manifest(id: string): ExtensionManifest {
+    return {
+        id,
+        name: 'T',
+        version: '1',
+        description: 'd',
+        author: 'a',
+        minDawVersion: '0',
+        main: 'm.js',
+        permissions: [],
+        category: 'utilities',
+        license: 'MIT',
+    };
+}
 
 describe('getEnabledExtensions', () => {
     beforeEach(() => {

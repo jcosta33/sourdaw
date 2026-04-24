@@ -5,7 +5,7 @@ import * as subject from '../toggleBranchManager';
 describe('toggleBranchManager', () => {
     it('should export toggleBranchManager', () => {
         expect(subject.toggleBranchManager).toBeDefined();
-        const t = typeof subject.toggleBranchManager;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.toggleBranchManager;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

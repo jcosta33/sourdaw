@@ -9,14 +9,14 @@ export function toggleRecord(slotId: string): void {
 
     loopStationStore.set({
         ...state,
-        slots: state.slots.map((s) => {
-            if (s.id !== slotId) {
-                return s;
+        slots: state.slots.map((state1) => {
+            if (state1.id !== slotId) {
+                return state1;
             }
 
-            switch (s.state) {
+            switch (state1.state) {
                 case 'empty':
-                    return { ...s, state: 'recording' as const };
+                    return { ...state1, state: 'recording' as const };
                 case 'recording': {
                     const layer: LoopLayer = {
                         id: getNextLayerId(),
@@ -26,28 +26,28 @@ export function toggleRecord(slotId: string): void {
                         volume: 1,
                     };
                     return {
-                        ...s,
+                        ...state1,
                         state: 'playing' as const,
                         layers: [layer],
                         lengthBeats: state.fixedLoopLength || 4,
                     };
                 }
                 case 'playing':
-                    return { ...s, state: 'overdubbing' as const };
+                    return { ...state1, state: 'overdubbing' as const };
                 case 'overdubbing': {
                     const newLayer: LoopLayer = {
                         id: getNextLayerId(),
-                        layerIndex: s.layers.length,
+                        layerIndex: state1.layers.length,
                         recordedAt: new Date().toISOString(),
                         muted: false,
                         volume: 1,
                     };
-                    return { ...s, state: 'playing' as const, layers: [...s.layers, newLayer] };
+                    return { ...state1, state: 'playing' as const, layers: [...state1.layers, newLayer] };
                 }
                 case 'stopped':
-                    return { ...s, state: 'playing' as const };
+                    return { ...state1, state: 'playing' as const };
                 default:
-                    return s;
+                    return state1;
             }
         }),
     });

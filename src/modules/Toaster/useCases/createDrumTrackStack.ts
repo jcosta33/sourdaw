@@ -40,15 +40,15 @@ export const createDrumTrackStack = inject({ eventBus })(
             ];
 
             // 16 child tracks — one per pad, nested under the parent
-            const children = Array.from({ length: 16 }, (_, i) => {
+            const children = Array.from({ length: 16 }, (_, index) => {
                 const child = createTrack({
-                    name: DEFAULT_PAD_NAMES[i] ?? `Pad ${i + 1}`,
+                    name: DEFAULT_PAD_NAMES[index] ?? `Pad ${index + 1}`,
                     kind: 'midi',
                     parentId: parent.id,
                 });
                 child.devices = []; // no default synth — routes to parent Toaster
                 child.outputId = parent.id; // audio routes through parent
-                child.color = PAD_COLORS[i] ?? child.color;
+                child.color = PAD_COLORS[index] ?? child.color;
                 return child;
             });
 
@@ -60,9 +60,9 @@ export const createDrumTrackStack = inject({ eventBus })(
             });
 
             // Wire the Toaster device into the audio engine
-            addDeviceToStrip(parent.id, toasterId, 'toaster');
+            void addDeviceToStrip(parent.id, toasterId, 'toaster');
 
-            eventBus.emit('track.added', { trackId: parent.id, name: parent.name, kind: parent.kind });
+            void eventBus.emit('track.added', { trackId: parent.id, name: parent.name, kind: parent.kind });
 
             return parent.id;
         }

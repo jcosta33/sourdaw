@@ -3,10 +3,10 @@ import { setGlutenParam } from '../../stores/glutenStore';
 
 import { encodeGlutenValue, findDeviceRefGluten, flushParam, paramBatcher } from './helpers';
 
-export function setGlutenParamWithAudio<K extends keyof GlutenPatch>(
+export function setGlutenParamWithAudio<Key extends keyof GlutenPatch>(
     deviceId: string,
-    key: K,
-    value: GlutenPatch[K]
+    key: Key,
+    value: GlutenPatch[Key]
 ): void {
     setGlutenParam(deviceId, key, value);
 

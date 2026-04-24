@@ -17,7 +17,7 @@ export function schedulePendingSuspends(
     }
 
     // Sort by time, then noteOff before noteOn at same time (release before re-trigger).
-    events.sort((a, b) => a.time - b.time || (a.type === 'off' ? -1 : 1));
+    events.sort((alpha, b) => alpha.time - b.time || (alpha.type === 'off' ? -1 : 1));
 
     for (const evt of events) {
         if (evt.time >= durationSeconds) {

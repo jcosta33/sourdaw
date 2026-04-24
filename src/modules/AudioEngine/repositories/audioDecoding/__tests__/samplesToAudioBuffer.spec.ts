@@ -8,7 +8,7 @@ function createTestAudioContext(): BaseAudioContext {
     return {
         createBuffer(channels: number, length: number, sampleRate: number) {
             const channelBuffers: Float32Array[] = [];
-            for (let c = 0; c < channels; c++) {
+            for (let context = 0; context < channels; context++) {
                 channelBuffers.push(new Float32Array(length));
             }
             return {

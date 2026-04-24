@@ -449,6 +449,8 @@ function buildPatternForBar(style: DrumPatternStyle): ProbabilityMap[] {
                     velocityRange: 20,
                 },
             ];
+        default:
+            throw new Error(`Unknown drum pattern style: ${style}`);
     }
 }
 
@@ -459,7 +461,9 @@ function applySwing(beat: number, subdivisionIndex: number, swingAmount: number)
     return beat + swingAmount * 0.25 * 0.5;
 }
 
-const clampVelocity = (v: number): number => Math.max(1, Math.min(127, Math.round(v)));
+function clampVelocity(value: number): number {
+    return Math.max(1, Math.min(127, Math.round(value)));
+}
 
 export function generateDrumPattern(options: GenerateDrumPatternOptions & { seed?: number }): {
     notes: GeneratedNote[];

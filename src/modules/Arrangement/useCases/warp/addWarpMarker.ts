@@ -12,6 +12,6 @@ export function addWarpMarker(
     const marker = createWarpMarker(originalBeat, warpedBeat, options);
     warpStates.set(clipId, {
         ...current,
-        markers: [...current.markers, marker].sort((a, b) => a.originalBeat - b.originalBeat),
+        markers: [...current.markers, marker].sort((alpha, buffer) => alpha.originalBeat - buffer.originalBeat),
     });
 }

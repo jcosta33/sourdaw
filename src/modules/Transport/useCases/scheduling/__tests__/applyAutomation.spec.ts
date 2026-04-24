@@ -24,7 +24,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
         ...mod,
-        getEffectiveGain: vi.fn((_, g) => g),
+        getEffectiveGain: vi.fn((_: string, g: number) => g),
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
@@ -54,7 +54,7 @@ describe('applyAutomation', () => {
     });
 
     it('does not touch the engine when automation state is missing', () => {
-        automationStore.value = null as any;
+        automationStore.value = null as unknown as import('#/modules/Automation/stores').AutomationStoreState;
         applyAutomation(0);
         expect(setTrackGain).not.toHaveBeenCalled();
     });

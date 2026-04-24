@@ -2,7 +2,7 @@
 
 ## Context
 
-The browser panel currently splits audio effects across two tabs: "Color" (Tone FX) and "Stage" (Mix Utilities). This split relies on arbitrary technology-based checks rather than the semantic function of the plugins. Most notably, all Faust-based plugins are forced into the "Color" tab, even if their function (like "Pro Parametric EQ") logically belongs with mix utilities. Conversely, regular EQs are routed to the "Stage" tab. Premium plugins are hardcoded at the top of these tabs and are excluded from the standard semantic category lists (like "Dynamics" or "EQ & Filter"). 
+The browser panel currently splits audio effects across two tabs: "Color" (Tone FX) and "Stage" (Mix Utilities). This split relies on arbitrary technology-based checks rather than the semantic function of the plugins. Most notably, all Faust-based plugins are forced into the "Color" tab, even if their function (like "Pro Parametric EQ") logically belongs with mix utilities. Conversely, regular EQs are routed to the "Stage" tab. Premium plugins are hardcoded at the top of these tabs and are excluded from the standard semantic category lists (like "Dynamics" or "EQ & Filter").
 
 This creates a fragmented, confusing user experience where plugins of the same type are hidden in completely different tabs based on implementation details the user does not care about.
 
@@ -28,6 +28,7 @@ Provide a unified, intuitive "Effects" tab in the browser panel where all plugin
 ## Scope
 
 **In scope:**
+
 - Merging `ColorTab.tsx` and `StageTab.tsx` into a single `EffectsTab.tsx`.
 - Updating the `SidebarRoute` definitions and routing logic to use `effects` instead of `color` and `stage`.
 - Refactoring `effectsTabHelpers.tsx` to handle the unified plugin list.
@@ -35,6 +36,7 @@ Provide a unified, intuitive "Effects" tab in the browser panel where all plugin
 - Mapping premium plugins to `EFFECT_GROUPS` categories so they appear in standard lists.
 
 **Non-goals (explicitly out of scope):**
+
 - Modifying the `InstrumentsTab.tsx`. (It correctly separates generators from effects).
 - Changing the actual underlying DSP or implementation of any plugin.
 - Renaming existing plugin IDs or categories in their definitions. We will adapt the grouping logic in `effectsTabHelpers` to catch them.
@@ -66,15 +68,17 @@ Provide a unified, intuitive "Effects" tab in the browser panel where all plugin
 **Chosen:** Merge into a single "Effects" tab.
 
 **Considered and rejected:**
-- *Fixing the logic but keeping the two tabs:* Rejected because the distinction between "Color" (Tone) and "Stage" (Mix) is highly subjective and overlapping for many standard effects. A single hierarchical Effects tab with clear sub-folders is the industry standard for DAWs.
+
+- _Fixing the logic but keeping the two tabs:_ Rejected because the distinction between "Color" (Tone) and "Stage" (Mix) is highly subjective and overlapping for many standard effects. A single hierarchical Effects tab with clear sub-folders is the industry standard for DAWs.
 
 ### Decision: Handling Premium Plugins
 
-**Chosen:** Map premium plugins to `EFFECT_GROUPS` categories based on their function (e.g., `proof` goes to EQ & Filter / Dynamics) so they are discoverable in standard lists. To maintain their visual prominence and carefully chosen colors, we will render them using their existing `InstrumentCard` (or a visually identical treatment) *inside* their respective semantic category folders, pinned to the top of the list, rather than isolated at the top of the entire tab.
+**Chosen:** Map premium plugins to `EFFECT_GROUPS` categories based on their function (e.g., `proof` goes to EQ & Filter / Dynamics) so they are discoverable in standard lists. To maintain their visual prominence and carefully chosen colors, we will render them using their existing `InstrumentCard` (or a visually identical treatment) _inside_ their respective semantic category folders, pinned to the top of the list, rather than isolated at the top of the entire tab.
 
 **Considered and rejected:**
-- *Removing premium cards entirely:* Rejected because premium plugins need visual prominence.
-- *Standard rows for premium plugins:* Rejected because the existing colors and visual weight were carefully picked and must be preserved.
+
+- _Removing premium cards entirely:_ Rejected because premium plugins need visual prominence.
+- _Standard rows for premium plugins:_ Rejected because the existing colors and visual weight were carefully picked and must be preserved.
 
 ---
 
@@ -111,6 +115,7 @@ Provide a unified, intuitive "Effects" tab in the browser panel where all plugin
 ## Open questions
 
 - [ ] None.
+
 ---
 
 ## Tradeoffs and risks
@@ -127,4 +132,3 @@ Provide a unified, intuitive "Effects" tab in the browser panel where all plugin
 - **What is not implemented:** All core requirements of the refactor appear to be complete.
 - **What is done well:** The sorting logic in `EffectsTab.tsx` that pins premium plugins to the top of their respective semantic categories is a clean solution that preserves their importance while fixing the fragmentation.
 - **What needs refactoring:** None.
-

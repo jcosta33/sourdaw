@@ -16,7 +16,7 @@ describe('handleGlueClips', () => {
     });
 
     it('executes glueClips with the provided payload', () => {
-        handleGlueClips.execute({
+        void handleGlueClips.execute({
             type: 'glueClips',
             payload: { clipIds: ['c1', 'c2'] },
         });

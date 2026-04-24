@@ -28,7 +28,7 @@ export function createFlushParam(updateDeviceParamFn: UpdateDeviceParamFn, persi
 
 export function getAudioParamKeyForPedal(isPost: boolean, pedalType: string, paramKey: string): string | null {
     const prefix = isPost ? 'post' : 'pre';
-    let pedalName = '';
+    let pedalName: string;
 
     switch (pedalType) {
         case 'compressor':

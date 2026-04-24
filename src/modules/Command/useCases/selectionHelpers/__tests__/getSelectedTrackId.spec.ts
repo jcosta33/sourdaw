@@ -5,7 +5,7 @@ import * as subject from '../getSelectedTrackId';
 describe('getSelectedTrackId', () => {
     it('should export getSelectedTrackId', () => {
         expect(subject.getSelectedTrackId).toBeDefined();
-        const t = typeof subject.getSelectedTrackId;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getSelectedTrackId;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

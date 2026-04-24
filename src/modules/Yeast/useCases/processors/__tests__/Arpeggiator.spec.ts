@@ -33,7 +33,7 @@ describe('Arpeggiator', () => {
         const input2: MidiEvent[] = [];
         arp.processMidi(input2, output, transport);
 
-        const noteOns = output.filter((e) => e.kind.type === 'noteOn');
+        const noteOns = output.filter((event) => event.kind.type === 'noteOn');
         expect(noteOns.length).toBeGreaterThanOrEqual(1);
         expect(noteOns[0].kind.note).toBe(60); // Lower note first in 'up' mode
 
@@ -41,8 +41,8 @@ describe('Arpeggiator', () => {
         transport.ppqPosition = 1.1;
         arp.processMidi([], output, transport);
 
-        const noteOns2 = output.filter((e) => e.kind.type === 'noteOn');
-        expect(noteOns2.some((e) => e.kind.note === 64)).toBe(true);
+        const noteOns2 = output.filter((event) => event.kind.type === 'noteOn');
+        expect(noteOns2.some((event) => event.kind.note === 64)).toBe(true);
     });
 
     it('expands octaves', () => {
@@ -61,7 +61,7 @@ describe('Arpeggiator', () => {
         transport.ppqPosition = 1.1;
         arp.processMidi([], output, transport);
 
-        const notes = output.filter((e) => e.kind.type === 'noteOn').map((e) => e.kind.note);
+        const notes = output.filter((event) => event.kind.type === 'noteOn').map((event) => event.kind.note);
         expect(notes).toContain(60);
         expect(notes).toContain(72);
     });
@@ -79,7 +79,7 @@ describe('Arpeggiator', () => {
         transport.ppqPosition = 0.6;
         arp.processMidi([], output, transport);
 
-        const noteOn = output.find((e) => e.kind.type === 'noteOn');
+        const noteOn = output.find((event) => event.kind.type === 'noteOn');
         expect(noteOn?.kind.velocity).toBe(127);
     });
 });

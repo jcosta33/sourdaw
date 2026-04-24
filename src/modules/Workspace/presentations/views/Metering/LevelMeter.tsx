@@ -44,12 +44,12 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
         const canvas = canvasRef.current;
         const container = containerRef.current;
         if (!canvas || !container) {
-            return;
+            return () => {};
         }
 
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return () => {};
         }
 
         let w = container.clientWidth;
@@ -116,8 +116,8 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
 
             let sumSquares = 0;
             const filled = rmsFilledRef.current;
-            for (let i = 0; i < filled; i++) {
-                sumSquares += buf[i]!;
+            for (let index = 0; index < filled; index++) {
+                sumSquares += buf[index]!;
             }
             const rawRms = filled > 0 ? Math.sqrt(sumSquares / filled) : 0;
 
@@ -186,6 +186,7 @@ export const LevelMeter = ({ trackId, height = 'h-full', width = 'w-2' }: LevelM
             aria-label="Level meter"
             aria-valuemin={MIN_DB}
             aria-valuemax={0}
+            aria-valuenow={MIN_DB}
         >
             <div className="flex flex-col justify-between py-0.5 pr-px shrink-0">
                 {DB_MARKS.map((db) => (

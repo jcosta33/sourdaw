@@ -8,11 +8,11 @@ export function connectNodes(fromNodeId: string, fromOutput: number, toNodeId: s
 
     // Prevent duplicate connections
     const exists = state.connections.some(
-        (c) =>
-            c.fromNodeId === fromNodeId &&
-            c.fromOutput === fromOutput &&
-            c.toNodeId === toNodeId &&
-            c.toInput === toInput
+        (context) =>
+            context.fromNodeId === fromNodeId &&
+            context.fromOutput === fromOutput &&
+            context.toNodeId === toNodeId &&
+            context.toInput === toInput
     );
     if (exists) {
         return;

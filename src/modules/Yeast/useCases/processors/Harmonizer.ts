@@ -94,11 +94,11 @@ export class Harmonizer extends BaseMidiProcessor {
         // Find closest scale degree
         let degreeIdx = 0;
         let minDist = 12;
-        for (let i = 0; i < pattern.length; i++) {
-            const dist = Math.abs(pc - pattern[i]!);
+        for (let index = 0; index < pattern.length; index++) {
+            const dist = Math.abs(pc - pattern[index]!);
             if (dist < minDist) {
                 minDist = dist;
-                degreeIdx = i;
+                degreeIdx = index;
             }
         }
 

@@ -3,8 +3,8 @@ import { createHandler } from '#/utils/createHandler';
 import { bounceSelection } from '../../useCases/freezeBounce/bounceOperations';
 
 export const handleConsolidateSelection = createHandler<'consolidateSelection'>({
-    execute: async (a) => {
-        await bounceSelection(a.payload.trackId, a.payload.startBeat, a.payload.endBeat);
+    execute: async (alpha) => {
+        await bounceSelection(alpha.payload.trackId, alpha.payload.startBeat, alpha.payload.endBeat);
     },
     describe: () => ({ label: 'Consolidate selection' }),
     undoable: true,

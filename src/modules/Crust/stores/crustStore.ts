@@ -42,7 +42,7 @@ export const crustStore = createStore<CrustState>({
     initialData: defaultCrustState,
 });
 
-export function setCrustParam<K extends keyof CrustPatch>(key: K, value: CrustPatch[K]): void {
+export function setCrustParam<Key extends keyof CrustPatch>(key: Key, value: CrustPatch[Key]): void {
     const state = crustStore.value;
     if (!state) {
         return;

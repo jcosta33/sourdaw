@@ -4,14 +4,14 @@ import { pausePlayback } from '../pausePlayback';
 import { startPlayback } from '../startPlayback';
 
 const mocks = vi.hoisted(() => ({
-    getTransportState: vi.fn(),
-    updateTransportState: vi.fn(),
-    stopPlayheadScheduler: vi.fn(),
-    startPlayheadScheduler: vi.fn(),
-    stopAllScheduled: vi.fn(),
-    resetMidiState: vi.fn(),
-    resumeEngine: vi.fn(),
-    ensureTrackStrips: vi.fn(),
+    getTransportState: vi.fn<() => Record<string, unknown>>(),
+    updateTransportState: vi.fn<(...args: unknown[]) => void>(),
+    stopPlayheadScheduler: vi.fn<() => void>(),
+    startPlayheadScheduler: vi.fn<() => void>(),
+    stopAllScheduled: vi.fn<() => void>(),
+    resetMidiState: vi.fn<() => void>(),
+    resumeEngine: vi.fn<() => void>(),
+    ensureTrackStrips: vi.fn<() => void>(),
     playheadPositionRef: { current: 0 },
 }));
 
@@ -52,7 +52,7 @@ vi.mock('#/modules/AudioEngine/useCases/webMidiInput/resetMidiState', () => ({
 
 // ALSO mock the barrel re-export just in case
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+    ...(await importOriginal<Record<string, unknown>>()),
     resumeEngine: mocks.resumeEngine,
     stopAllScheduled: mocks.stopAllScheduled,
     resetMidiState: mocks.resetMidiState,

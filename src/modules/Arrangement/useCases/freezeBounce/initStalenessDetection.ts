@@ -14,38 +14,40 @@ let prevState: TrackStoreState | null = null;
 export function initStalenessDetection(): () => void {
     prevState = trackStore.value; // capture initial state
 
-    const unsubscribe = trackStore.subscribe(async (state) => {
-        if (isEvaluating || !state || !prevState) {
+    const unsubscribe = trackStore.subscribe((state) => {
+        void (async () => {
+            if (isEvaluating || !state || !prevState) {
+                prevState = state;
+                return;
+            }
+
+            isEvaluating = true;
+            const previous = prevState;
             prevState = state;
-            return;
-        }
 
-        isEvaluating = true;
-        const previous = prevState;
-        prevState = state;
+            try {
+                for (const track of state.tracks) {
+                    const prevTrack = previous.tracks.find((time) => time.id === track.id);
+                    if (!prevTrack) {
+                        continue;
+                    }
 
-        try {
-            for (const track of state.tracks) {
-                const prevTrack = previous.tracks.find((t) => t.id === track.id);
-                if (!prevTrack) {
-                    continue;
-                }
-
-                if (track.freezeState.status === 'frozen') {
-                    if (track.clips !== prevTrack.clips || track.devices !== prevTrack.devices) {
-                        const hash = await computeTrackHash(track.clips, track.devices);
-                        if (hash !== track.freezeState.sourceContentHash) {
-                            updateTrack(track.id, (t) => ({
-                                ...t,
-                                freezeState: { ...t.freezeState, status: 'stale' },
-                            }));
+                    if (track.freezeState.status === 'frozen') {
+                        if (track.clips !== prevTrack.clips || track.devices !== prevTrack.devices) {
+                            const hash = await computeTrackHash(track.clips, track.devices);
+                            if (hash !== track.freezeState.sourceContentHash) {
+                                updateTrack(track.id, (time) => ({
+                                    ...time,
+                                    freezeState: { ...time.freezeState, status: 'stale' },
+                                }));
+                            }
                         }
                     }
                 }
+            } finally {
+                isEvaluating = false;
             }
-        } finally {
-            isEvaluating = false;
-        }
+        })();
     });
 
     return unsubscribe;

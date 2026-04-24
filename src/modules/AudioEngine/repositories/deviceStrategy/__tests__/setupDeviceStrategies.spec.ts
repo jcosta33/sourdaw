@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 // We must mock the dependencies before importing the module that registers them
 vi.mock('../AudioDeviceStrategy', () => ({
@@ -18,20 +18,11 @@ vi.mock('../../../engine/ProofNode', () => ({ isProofDevice: vi.fn() }));
 vi.mock('../../../engine/ProofChamberNode', () => ({ isProofChamberDevice: vi.fn() }));
 vi.mock('../../../engine/ScoringNode', () => ({ isScoringDevice: vi.fn() }));
 
-import { isBacteriaDevice } from '../../../engine/BacteriaNode';
 import { isFermenterDevice } from '../../../engine/FermenterNode';
-import { isGlutenDevice } from '../../../engine/GlutenNode';
-import { isGrinderDevice } from '../../../engine/GrinderNode';
-import { isLevainDevice } from '../../../engine/LevainNode';
 import { isProofChamberDevice } from '../../../engine/ProofChamberNode';
-import { isProofDevice } from '../../../engine/ProofNode';
-import { isScoringDevice } from '../../../engine/ScoringNode';
-import { isToasterDevice } from '../../../engine/ToasterNode';
 import { isFaustModule } from '../../faustDeviceFactory';
 import { deviceRegistry } from '../AudioDeviceStrategy';
-import { createFaustStrategy } from '../FaustDeviceStrategy';
 import { createNativeDspStrategy } from '../NativeDspDeviceStrategy';
-import { createWebAudioDevice } from '../WebAudioDeviceStrategy';
 
 // Now import the module under test
 import '../setupDeviceStrategies';
@@ -47,7 +38,7 @@ describe('setupDeviceStrategies', () => {
 
     it('should register native DSP devices with a custom matcher', () => {
         const calls = vi.mocked(deviceRegistry.register).mock.calls;
-        const nativeCall = calls.find((c) => c[1] === createNativeDspStrategy);
+        const nativeCall = calls.find((context) => context[1] === createNativeDspStrategy);
 
         expect(nativeCall).toBeDefined();
 

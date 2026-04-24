@@ -4,8 +4,8 @@ import { type PunchRecordingState } from '../../../stores/punchRecordingStore';
 import { updateCapturePosition } from '../updateCapturePosition';
 
 const mockPunchRecordingStore = vi.hoisted(() => ({
-    value: null as any,
-    set: vi.fn(),
+    value: null as PunchRecordingState | null,
+    set: vi.fn<[state: PunchRecordingState | ((prev: PunchRecordingState) => PunchRecordingState)], void>(),
 }));
 
 vi.mock('../../../stores/punchRecordingStore', () => ({

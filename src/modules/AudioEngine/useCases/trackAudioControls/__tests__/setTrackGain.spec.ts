@@ -5,7 +5,7 @@ import * as subject from '../setTrackGain';
 describe('setTrackGain', () => {
     it('should export setTrackGain', () => {
         expect(subject.setTrackGain).toBeDefined();
-        const t = typeof subject.setTrackGain;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setTrackGain;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

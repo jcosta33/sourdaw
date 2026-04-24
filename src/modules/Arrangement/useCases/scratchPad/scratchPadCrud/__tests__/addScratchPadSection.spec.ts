@@ -5,7 +5,7 @@ import * as subject from '../addScratchPadSection';
 describe('addScratchPadSection', () => {
     it('should export addScratchPadSection', () => {
         expect(subject.addScratchPadSection).toBeDefined();
-        const t = typeof subject.addScratchPadSection;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.addScratchPadSection;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

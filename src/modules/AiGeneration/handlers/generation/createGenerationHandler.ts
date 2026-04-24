@@ -14,7 +14,7 @@ type CommonGenerationPayload = { style: string; trackId?: string; startBeat?: nu
 /** What the apply function reports back so the handler can surface feedback. */
 type ApplyResult = { clipId: string; noteCount: number } | null | void;
 
-type GenerationHandlerConfig<K extends GenerationActionType> = {
+type GenerationHandlerConfig<ActionType extends GenerationActionType> = {
     /** The set of valid style values for this generation type. */
     validStyles: ReadonlySet<string>;
     /** The default style when the payload style is not in validStyles. */
@@ -31,16 +31,19 @@ type GenerationHandlerConfig<K extends GenerationActionType> = {
      */
     applyToTrack: (
         trackId: string,
-        action: Extract<AppAction, { type: K }>,
+        action: Extract<AppAction, { type: ActionType }>,
         style: string,
         playheadBeat: number
     ) => ApplyResult;
 };
 
-export function createGenerationHandler<K extends GenerationActionType>(config: GenerationHandlerConfig<K>) {
-    return createHandler<K>({
-        execute: (a) => {
-            const payload = (a as unknown as { payload: CommonGenerationPayload }).payload;
+export function createGenerationHandler<ActionType extends GenerationActionType>(
+    config: GenerationHandlerConfig<ActionType>
+) {
+    return createHandler<ActionType>({
+        execute: (alpha) => {
+            // alpha is the specific action union member; cast to shared payload shape for uniform handling
+            const payload = (alpha as { payload: CommonGenerationPayload }).payload;
             const style = config.validStyles.has(payload.style) ? payload.style : config.defaultStyle;
 
             const trackId = resolveOrCreateMidiTrack(payload.trackId, `${config.trackNamePrefix} (${style})`, {
@@ -61,7 +64,12 @@ export function createGenerationHandler<K extends GenerationActionType>(config: 
                     ? Math.max(0, payload.startBeat)
                     : getPlayheadBeat();
 
-            const result = config.applyToTrack(trackId, a as Extract<AppAction, { type: K }>, style, placementBeat);
+            const result = config.applyToTrack(
+                trackId,
+                alpha as Extract<AppAction, { type: ActionType }>,
+                style,
+                placementBeat
+            );
             // §14.3 / G3 — after a successful generation, focus the new clip
             // (so the inspector/piano-roll surfaces see it) and surface a
             // notification. An empty-note result is still "success" in the
@@ -79,8 +87,9 @@ export function createGenerationHandler<K extends GenerationActionType>(config: 
                 }
             }
         },
-        describe: (a) => ({
-            label: `Generate ${(a as unknown as { payload: CommonGenerationPayload }).payload.style} ${config.labelSuffix}`,
+        describe: (alpha) => ({
+            // alpha is the specific action union member; cast to shared payload shape for uniform handling
+            label: `Generate ${(alpha as { payload: CommonGenerationPayload }).payload.style} ${config.labelSuffix}`,
         }),
         undoable: true,
     });

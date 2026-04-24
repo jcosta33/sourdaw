@@ -21,7 +21,7 @@ describe('handleStripSilenceAiMidi', () => {
     });
 
     it('executes strip silence with threshold and logs it', () => {
-        handleStripSilenceAiMidi.execute({
+        void handleStripSilenceAiMidi.execute({
             type: 'stripSilence',
             payload: { clipId: 'c1', threshold: -30 },
         });
@@ -31,7 +31,7 @@ describe('handleStripSilenceAiMidi', () => {
     });
 
     it('falls back to -40 if threshold is omitted', () => {
-        handleStripSilenceAiMidi.execute({
+        void handleStripSilenceAiMidi.execute({
             type: 'stripSilence',
             payload: { clipId: 'c2' },
         });

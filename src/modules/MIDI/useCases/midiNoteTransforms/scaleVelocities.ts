@@ -6,22 +6,22 @@ export function scaleVelocities(clipId: string, curve: VelocityCurve, minVelocit
     updateNotesForClip(clipId, (notes) => {
         let currentMin = Infinity;
         let currentMax = -Infinity;
-        for (const n of notes) {
-            if (n.velocity < currentMin) {
-                currentMin = n.velocity;
+        for (const node of notes) {
+            if (node.velocity < currentMin) {
+                currentMin = node.velocity;
             }
-            if (n.velocity > currentMax) {
-                currentMax = n.velocity;
+            if (node.velocity > currentMax) {
+                currentMax = node.velocity;
             }
         }
         const range = currentMax - currentMin || 1;
 
-        return notes.map((n) => {
-            const normalized = (n.velocity - currentMin) / range;
+        return notes.map((node) => {
+            const normalized = (node.velocity - currentMin) / range;
             const curved = applyVelocityCurve(normalized, curve);
             const newVelocity = Math.round(minVelocity + curved * (maxVelocity - minVelocity));
             return {
-                ...n,
+                ...node,
                 velocity: Math.max(1, Math.min(127, newVelocity)),
             };
         });

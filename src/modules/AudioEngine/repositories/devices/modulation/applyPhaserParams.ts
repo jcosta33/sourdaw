@@ -24,8 +24,8 @@ export function applyPhaserParams(dn: OfflineDeviceNode, params: Record<string, 
         feedbackP.gain.value = params['phaser-feedback'];
     }
     if (params['phaser-stages'] !== undefined) {
-        for (const f of filtersP) {
-            f.Q.value = params['phaser-stages'] > 6 ? 1 : 0.5;
+        for (const freq of filtersP) {
+            freq.Q.value = params['phaser-stages'] > 6 ? 1 : 0.5;
         }
     }
 }

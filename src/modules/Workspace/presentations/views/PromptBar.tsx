@@ -27,7 +27,7 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { toggleAiHistoryPanel } from '#/modules/AiRuntime/stores';
-import { describeAction } from '#/modules/Command/useCases';
+import { describeAction, type AppAction } from '#/modules/Command/useCases';
 
 import { usePromptExecution, type PromptFuzzyResult, type SelectionTag } from '../hooks/usePromptExecution';
 
@@ -67,9 +67,9 @@ const SelectionTagChip = ({ tag, onRemove }: { tag: SelectionTag; onRemove: () =
             <span className="truncate max-w-20">{tag.label}</span>
             <button
                 type="button"
-                onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
+                onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
                     onRemove();
                 }}
                 className="ml-0.5 hover:text-primary transition-colors"
@@ -99,8 +99,8 @@ const FuzzyResultItem = ({
                     ? 'bg-white/[0.08] text-foreground'
                     : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground'
             }`}
-            onMouseDown={(e) => {
-                e.preventDefault();
+            onMouseDown={(event) => {
+                event.preventDefault();
                 onExecute();
             }}
             role="option"
@@ -131,9 +131,9 @@ export const PromptBar = (): ReactElement => {
                 <Sparkles className="size-3.5 shrink-0 text-[var(--color-accent-peach)]" aria-hidden="true" />
                 <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap gap-1">
-                        {prompt.preview.actions.map((a, i: number) => (
-                            <DawMicroBadge key={i} className="text-[10px] text-foreground">
-                                {describeAction(a)}
+                        {prompt.preview.actions.map((alpha: AppAction, index: number) => (
+                            <DawMicroBadge key={index} className="text-[10px] text-foreground">
+                                {describeAction(alpha)}
                             </DawMicroBadge>
                         ))}
                     </div>
@@ -149,6 +149,70 @@ export const PromptBar = (): ReactElement => {
     }
 
     // ── Main render ─────────────────────────────────────────────────────
+    const renderIife_4 = () => {
+        if (prompt.isProcessing) {
+            return (
+                <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    type="button"
+                    aria-label="Cancel AI processing"
+                    onClick={prompt.cancelProcessing}
+                >
+                    <X className="size-3 text-destructive-foreground" />
+                </Button>
+            );
+        }
+        if (prompt.willUseLlm) {
+            return <Brain className="size-3.5 shrink-0 text-primary" aria-hidden="true" />;
+        }
+        return <Zap className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />;
+    };
+    const renderIife_5 = () => {
+        if (prompt.isProcessing) {
+            return prompt.llmStatus?.state === 'generating' ? 'AI is thinking...' : 'Processing...';
+        } else {
+            if (prompt.selectionTags.length > 0) {
+                return 'What do you want to do with this?';
+            } else {
+                return 'Type a command... (⌘K for palette)';
+            }
+        }
+    };
+    const renderIife_6 = () => {
+        if (prompt.fuzzyResults.length > 0) {
+            return (
+                <div
+                    id="prompt-results"
+                    role="listbox"
+                    aria-label="Command suggestions"
+                    className="daw-floating-surface absolute top-full left-0 right-0 z-50 mt-1 max-h-80 overflow-y-auto rounded-md py-1"
+                >
+                    {prompt.value.trim().length === 0 ? (
+                        <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-muted-foreground/50 font-medium">
+                            Available commands
+                        </div>
+                    ) : null}
+                    {prompt.fuzzyResults.map((result, index) => (
+                        <FuzzyResultItem
+                            key={result.preset.id}
+                            result={result}
+                            isSelected={index === prompt.selectedIndex}
+                            onExecute={() => void prompt.executePreset(result)}
+                        />
+                    ))}
+                    {prompt.value.trim().length > 0 && prompt.fuzzyResults.length === 0 ? (
+                        <div className="px-3 py-2 text-xs text-muted-foreground/60 italic">
+                            No matching commands — press Enter to try AI
+                        </div>
+                    ) : null}
+                </div>
+            );
+        } else {
+            return null;
+        }
+    };
+
     return (
         <div className="relative flex-1 max-w-lg">
             <form
@@ -156,21 +220,7 @@ export const PromptBar = (): ReactElement => {
                 onSubmit={prompt.handleSubmit}
                 className="daw-readout-well flex items-center gap-1.5 rounded-sm px-2 py-0.5"
             >
-                {prompt.isProcessing ? (
-                    <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        type="button"
-                        aria-label="Cancel AI processing"
-                        onClick={prompt.cancelProcessing}
-                    >
-                        <X className="size-3 text-destructive-foreground" />
-                    </Button>
-                ) : prompt.willUseLlm ? (
-                    <Brain className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
-                ) : (
-                    <Zap className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                )}
+                {renderIife_4()}
                 {prompt.selectionTags.map((tag) => (
                     <SelectionTagChip key={tag.id} tag={tag} onRemove={() => prompt.dismissTag(tag.id)} />
                 ))}
@@ -178,21 +228,13 @@ export const PromptBar = (): ReactElement => {
                     ref={prompt.inputRef}
                     type="text"
                     value={prompt.value}
-                    onChange={(e) => prompt.setValue(e.target.value)}
+                    onChange={(event) => prompt.setValue(event.target.value)}
                     onKeyDown={prompt.handleKeyDown}
                     onFocus={() => prompt.setIsFocused(true)}
                     onBlur={() => {
                         setTimeout(() => prompt.setIsFocused(false), 200);
                     }}
-                    placeholder={
-                        prompt.isProcessing
-                            ? prompt.llmStatus?.state === 'generating'
-                                ? 'AI is thinking...'
-                                : 'Processing...'
-                            : prompt.selectionTags.length > 0
-                              ? 'What do you want to do with this?'
-                              : 'Type a command... (⌘K for palette)'
-                    }
+                    placeholder={renderIife_5()}
                     className="h-7 border-0 bg-transparent text-xs shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/60"
                     aria-label="Prompt command input"
                     aria-autocomplete="list"
@@ -212,34 +254,7 @@ export const PromptBar = (): ReactElement => {
                 </Button>
                 <LlmStatusBadge status={prompt.llmStatus ?? { state: 'idle' }} onLoad={prompt.handleLoadModel} />
             </form>
-
-            {prompt.fuzzyResults.length > 0 ? (
-                <div
-                    id="prompt-results"
-                    role="listbox"
-                    aria-label="Command suggestions"
-                    className="daw-floating-surface absolute top-full left-0 right-0 z-50 mt-1 max-h-80 overflow-y-auto rounded-md py-1"
-                >
-                    {prompt.value.trim().length === 0 ? (
-                        <div className="px-3 py-1 text-[9px] uppercase tracking-wider text-muted-foreground/50 font-medium">
-                            Available commands
-                        </div>
-                    ) : null}
-                    {prompt.fuzzyResults.map((result, i) => (
-                        <FuzzyResultItem
-                            key={result.preset.id}
-                            result={result}
-                            isSelected={i === prompt.selectedIndex}
-                            onExecute={() => void prompt.executePreset(result)}
-                        />
-                    ))}
-                    {prompt.value.trim().length > 0 && prompt.fuzzyResults.length === 0 ? (
-                        <div className="px-3 py-2 text-xs text-muted-foreground/60 italic">
-                            No matching commands — press Enter to try AI
-                        </div>
-                    ) : null}
-                </div>
-            ) : null}
+            {renderIife_6()}
         </div>
     );
 };

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { type Logger } from '#/infra/logger/types';
 
 import { midiLearnStore } from '../../stores/midiLearnStore';
 import { type MidiLearnState } from '../../stores/midiLearnStore';
@@ -10,8 +11,6 @@ import { findMappingForTarget } from '../midiLearn/findMappingForTarget';
 import { scaleMidiValue } from '../midiLearn/handleMidiMessage';
 import { startMidiLearn } from '../midiLearn/startMidiLearn';
 import { stopMidiLearn } from '../midiLearn/stopMidiLearn';
-
-import { type Logger } from '#/infra/logger/types';
 
 vi.mock('../../stores/midiLearnStore', () => {
     const midiLearnStore: {

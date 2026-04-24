@@ -8,7 +8,7 @@ export function restoreVersion(versionId: string): void {
         return;
     }
 
-    const version = state.versions.find((v) => v.id === versionId);
+    const version = state.versions.find((value) => value.id === versionId);
     if (!version || !version.snapshot.data) {
         return;
     }

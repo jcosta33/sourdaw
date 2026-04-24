@@ -50,7 +50,7 @@ export const QrInvite = ({ inviteString }: QrInviteProps): ReactElement => {
     }, [inviteString]);
 
     const handleCopy = () => {
-        navigator.clipboard.writeText(inviteString);
+        void navigator.clipboard.writeText(inviteString);
         setCopied(true);
         if (copiedTimerRef.current !== null) {
             clearTimeout(copiedTimerRef.current);

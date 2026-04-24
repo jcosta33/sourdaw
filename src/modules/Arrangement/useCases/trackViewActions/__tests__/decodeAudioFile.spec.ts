@@ -5,7 +5,7 @@ import * as subject from '../decodeAudioFile';
 describe('decodeAudioFile', () => {
     it('should export decodeAudioFile', () => {
         expect(subject.decodeAudioFile).toBeDefined();
-        const t = typeof subject.decodeAudioFile;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.decodeAudioFile;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

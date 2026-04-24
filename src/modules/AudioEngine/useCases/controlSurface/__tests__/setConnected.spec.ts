@@ -17,20 +17,22 @@ vi.mock('../../../stores/controlSurface', () => ({
     },
 }));
 
-const minimalState = (): ControlSurfaceState => ({
-    protocol: 'mcu',
-    mcu: {
-        faders: [],
-        bankOffset: 0,
-        vpots: [],
-        mode: 'pan',
-        timecodeDisplay: '',
-        assignmentDisplay: '',
-    },
-    oscEndpoints: [],
-    oscMappings: [],
-    connected: false,
-});
+function minimalState(): ControlSurfaceState {
+    return {
+        protocol: 'mcu',
+        mcu: {
+            faders: [],
+            bankOffset: 0,
+            vpots: [],
+            mode: 'pan',
+            timecodeDisplay: '',
+            assignmentDisplay: '',
+        },
+        oscEndpoints: [],
+        oscMappings: [],
+        connected: false,
+    };
+}
 
 describe('setConnected', () => {
     beforeEach(() => {

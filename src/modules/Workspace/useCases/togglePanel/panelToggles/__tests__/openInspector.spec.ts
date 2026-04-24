@@ -5,7 +5,7 @@ import * as subject from '../openInspector';
 describe('openInspector', () => {
     it('should export openInspector', () => {
         expect(subject.openInspector).toBeDefined();
-        const t = typeof subject.openInspector;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.openInspector;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

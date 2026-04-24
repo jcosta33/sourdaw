@@ -14,7 +14,7 @@ import {
     migrateGrinderPatch,
 } from '../models/GrinderPatch';
 
-import { updateGrinderTelemetry } from './grinderTelemetryStore';
+import { updateGrinderTelemetry, type GrinderTelemetry } from './grinderTelemetryStore';
 
 export type GrinderState = {
     patch: GrinderPatch;
@@ -56,7 +56,11 @@ export function getGrinderState(deviceId: string): GrinderState {
     return normalizeGrinderState(grinderStore.value?.[deviceId]);
 }
 
-export function setGrinderParam<K extends keyof GrinderPatch>(deviceId: string, key: K, value: GrinderPatch[K]): void {
+export function setGrinderParam<Key extends keyof GrinderPatch>(
+    deviceId: string,
+    key: Key,
+    value: GrinderPatch[Key]
+): void {
     const instances = grinderStore.value ?? {};
     const state = normalizeGrinderState(instances[deviceId]);
     grinderStore.set({
@@ -146,11 +150,11 @@ export function setGrinderPedalParam(
     });
 }
 
-export function setGrinderMicParam<K extends keyof GrinderMic>(
+export function setGrinderMicParam<Key extends keyof GrinderMic>(
     deviceId: string,
     micIndex: 1 | 2,
-    key: K,
-    value: GrinderMic[K]
+    key: Key,
+    value: GrinderMic[Key]
 ): void {
     const instances = grinderStore.value ?? {};
     const state = normalizeGrinderState(instances[deviceId]);
@@ -272,6 +276,6 @@ export function recallGrinderSnapshot(deviceId: string, snapshotIndex: number): 
     return nextPatch;
 }
 
-export function updateGrinderMeters(deviceId: string, meters: any): void {
+export function updateGrinderMeters(deviceId: string, meters: Partial<GrinderTelemetry>): void {
     updateGrinderTelemetry(deviceId, meters);
 }

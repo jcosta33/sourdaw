@@ -5,7 +5,7 @@ import * as subject from '../scanCustomPaths';
 describe('scanCustomPaths', () => {
     it('should export scanCustomPaths', () => {
         expect(subject.scanCustomPaths).toBeDefined();
-        const t = typeof subject.scanCustomPaths;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.scanCustomPaths;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

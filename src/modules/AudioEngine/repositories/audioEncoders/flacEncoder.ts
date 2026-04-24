@@ -41,8 +41,8 @@ function md5(data: Uint8Array): Uint8Array {
     const view = new DataView(padded.buffer);
     for (let off = 0; off < padded.length; off += 64) {
         const M = new Uint32Array(16);
-        for (let j = 0; j < 16; j++) {
-            M[j] = view.getUint32(off + j * 4, true);
+        for (let jIndex = 0; jIndex < 16; jIndex++) {
+            M[jIndex] = view.getUint32(off + jIndex * 4, true);
         }
 
         let A = a0,
@@ -50,26 +50,26 @@ function md5(data: Uint8Array): Uint8Array {
             C = c0,
             D = d0;
 
-        for (let i = 0; i < 64; i++) {
+        for (let index = 0; index < 64; index++) {
             let F: number, g: number;
-            if (i < 16) {
+            if (index < 16) {
                 F = (B & C) | (~B & D);
-                g = i;
-            } else if (i < 32) {
+                g = index;
+            } else if (index < 32) {
                 F = (D & B) | (~D & C);
-                g = (5 * i + 1) & 15;
-            } else if (i < 48) {
+                g = (5 * index + 1) & 15;
+            } else if (index < 48) {
                 F = B ^ C ^ D;
-                g = (3 * i + 5) & 15;
+                g = (3 * index + 5) & 15;
             } else {
                 F = C ^ (B | ~D);
-                g = (7 * i) & 15;
+                g = (7 * index) & 15;
             }
-            F = (F + A + MD5_K[i]! + M[g]!) >>> 0;
+            F = (F + A + MD5_K[index]! + M[g]!) >>> 0;
             A = D;
             D = C;
             C = B;
-            const rot = MD5_S[i]!;
+            const rot = MD5_S[index]!;
             B = (B + ((F << rot) | (F >>> (32 - rot)))) >>> 0;
         }
 
@@ -93,9 +93,9 @@ function computePcmMd5(channels: Float32Array[], totalSamples: number, numChanne
     const pcm = new Uint8Array(totalSamples * numChannels * 2);
     const view = new DataView(pcm.buffer);
     let pos = 0;
-    for (let i = 0; i < totalSamples; i++) {
+    for (let index = 0; index < totalSamples; index++) {
         for (let ch = 0; ch < numChannels; ch++) {
-            const sample = Math.max(-1, Math.min(1, channels[ch]![i]!));
+            const sample = Math.max(-1, Math.min(1, channels[ch]![index]!));
             const int16 = sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7fff);
             view.setInt16(pos, int16, true); // little-endian
             pos += 2;
@@ -109,24 +109,24 @@ const CRC16_POLY = 0x8005;
 
 function buildCrc8Table(): Uint8Array {
     const table = new Uint8Array(256);
-    for (let i = 0; i < 256; i++) {
-        let crc = i;
-        for (let j = 0; j < 8; j++) {
+    for (let index = 0; index < 256; index++) {
+        let crc = index;
+        for (let jIndex = 0; jIndex < 8; jIndex++) {
             crc = (crc & 0x80) !== 0 ? ((crc << 1) ^ CRC8_POLY) & 0xff : (crc << 1) & 0xff;
         }
-        table[i] = crc;
+        table[index] = crc;
     }
     return table;
 }
 
 function buildCrc16Table(): Uint16Array {
     const table = new Uint16Array(256);
-    for (let i = 0; i < 256; i++) {
-        let crc = i << 8;
-        for (let j = 0; j < 8; j++) {
+    for (let index = 0; index < 256; index++) {
+        let crc = index << 8;
+        for (let jIndex = 0; jIndex < 8; jIndex++) {
             crc = (crc & 0x8000) !== 0 ? ((crc << 1) ^ CRC16_POLY) & 0xffff : (crc << 1) & 0xffff;
         }
-        table[i] = crc;
+        table[index] = crc;
     }
     return table;
 }
@@ -136,49 +136,49 @@ const CRC16_TABLE = buildCrc16Table();
 
 function crc8(data: Uint8Array, start: number, end: number): number {
     let crc = 0;
-    for (let i = start; i < end; i++) {
-        crc = CRC8_TABLE[crc ^ data[i]!]!;
+    for (let index = start; index < end; index++) {
+        crc = CRC8_TABLE[crc ^ data[index]!]!;
     }
     return crc;
 }
 
 function crc16(data: Uint8Array, start: number, end: number): number {
     let crc = 0;
-    for (let i = start; i < end; i++) {
-        crc = ((crc << 8) ^ CRC16_TABLE[((crc >> 8) ^ data[i]!) & 0xff]!) & 0xffff;
+    for (let index = start; index < end; index++) {
+        crc = ((crc << 8) ^ CRC16_TABLE[((crc >> 8) ^ data[index]!) & 0xff]!) & 0xffff;
     }
     return crc;
 }
 
-function encodeUtf8Number(n: number): number[] {
-    if (n < 0x80) {
-        return [n];
+function encodeUtf8Number(node: number): number[] {
+    if (node < 0x80) {
+        return [node];
     }
-    if (n < 0x800) {
-        return [0xc0 | (n >> 6), 0x80 | (n & 0x3f)];
+    if (node < 0x800) {
+        return [0xc0 | (node >> 6), 0x80 | (node & 0x3f)];
     }
-    if (n < 0x10000) {
-        return [0xe0 | (n >> 12), 0x80 | ((n >> 6) & 0x3f), 0x80 | (n & 0x3f)];
+    if (node < 0x10000) {
+        return [0xe0 | (node >> 12), 0x80 | ((node >> 6) & 0x3f), 0x80 | (node & 0x3f)];
     }
-    if (n < 0x200000) {
-        return [0xf0 | (n >> 18), 0x80 | ((n >> 12) & 0x3f), 0x80 | ((n >> 6) & 0x3f), 0x80 | (n & 0x3f)];
+    if (node < 0x200000) {
+        return [0xf0 | (node >> 18), 0x80 | ((node >> 12) & 0x3f), 0x80 | ((node >> 6) & 0x3f), 0x80 | (node & 0x3f)];
     }
-    if (n < 0x4000000) {
+    if (node < 0x4000000) {
         return [
-            0xf8 | (n >> 24),
-            0x80 | ((n >> 18) & 0x3f),
-            0x80 | ((n >> 12) & 0x3f),
-            0x80 | ((n >> 6) & 0x3f),
-            0x80 | (n & 0x3f),
+            0xf8 | (node >> 24),
+            0x80 | ((node >> 18) & 0x3f),
+            0x80 | ((node >> 12) & 0x3f),
+            0x80 | ((node >> 6) & 0x3f),
+            0x80 | (node & 0x3f),
         ];
     }
     return [
-        0xfc | (n >> 30),
-        0x80 | ((n >> 24) & 0x3f),
-        0x80 | ((n >> 18) & 0x3f),
-        0x80 | ((n >> 12) & 0x3f),
-        0x80 | ((n >> 6) & 0x3f),
-        0x80 | (n & 0x3f),
+        0xfc | (node >> 30),
+        0x80 | ((node >> 24) & 0x3f),
+        0x80 | ((node >> 18) & 0x3f),
+        0x80 | ((node >> 12) & 0x3f),
+        0x80 | ((node >> 6) & 0x3f),
+        0x80 | (node & 0x3f),
     ];
 }
 
@@ -199,8 +199,8 @@ class BitWriter {
         this.buf[this.pos] = 0;
     }
 
-    writeBit(v: 0 | 1): void {
-        if (v) {
+    writeBit(value: 0 | 1): void {
+        if (value) {
             this.buf[this.pos]! |= 0x80 >> this.bit;
         }
         if (++this.bit === 8) {
@@ -209,29 +209,29 @@ class BitWriter {
         }
     }
 
-    writeBits(v: number, n: number): void {
-        for (let i = n - 1; i >= 0; i--) {
-            this.writeBit(((v >> i) & 1) as 0 | 1);
+    writeBits(value: number, node: number): void {
+        for (let index = node - 1; index >= 0; index--) {
+            this.writeBit(((value >> index) & 1) as 0 | 1);
         }
     }
 
-    writeByte(v: number): void {
+    writeByte(value: number): void {
         if (this.bit === 0) {
-            this.buf[this.pos++] = v & 0xff;
+            this.buf[this.pos++] = value & 0xff;
             this.buf[this.pos] = 0;
         } else {
-            this.writeBits(v, 8);
+            this.writeBits(value, 8);
         }
     }
 
-    writeBe16(v: number): void {
-        this.writeByte((v >> 8) & 0xff);
-        this.writeByte(v & 0xff);
+    writeBe16(value: number): void {
+        this.writeByte((value >> 8) & 0xff);
+        this.writeByte(value & 0xff);
     }
 
     /** Write `n` one-bits then a zero-bit (unary coding). */
-    writeUnary(n: number): void {
-        for (let i = 0; i < n; i++) {
+    writeUnary(node: number): void {
+        for (let index = 0; index < node; index++) {
             this.writeBit(1);
         }
         this.writeBit(0);
@@ -250,11 +250,19 @@ class BitWriter {
 // ── FIXED predictor helpers ───────────────────────────────────────────────────
 
 /** Convert float32 channel data to int16 values stored in an Int32Array. */
-function toInt16Channel(floats: Float32Array, n: number): Int32Array {
-    const out = new Int32Array(n);
-    for (let i = 0; i < n; i++) {
-        const s = floats[i]! < -1 ? -1 : floats[i]! > 1 ? 1 : floats[i]!;
-        out[i] = s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7fff);
+function toInt16Channel(floats: Float32Array, node: number): Int32Array {
+    const out = new Int32Array(node);
+    for (let index = 0; index < node; index++) {
+        const state = (() => {
+            if (floats[index]! < -1) {
+                return -1;
+            }
+            if (floats[index]! > 1) {
+                return 1;
+            }
+            return floats[index]!;
+        })();
+        out[index] = state < 0 ? Math.round(state * 0x8000) : Math.round(state * 0x7fff);
     }
     return out;
 }
@@ -270,27 +278,27 @@ function toInt16Channel(floats: Float32Array, n: number): Int32Array {
 function fixedResiduals(int16: Int32Array, blockStart: number, blockSize: number, order: number): Int32Array {
     const count = blockSize - order;
     const res = new Int32Array(count);
-    for (let i = 0; i < count; i++) {
-        const n = blockStart + order + i;
+    for (let index = 0; index < count; index++) {
+        const node = blockStart + order + index;
         let pred: number;
         switch (order) {
             case 0:
                 pred = 0;
                 break;
             case 1:
-                pred = int16[n - 1]!;
+                pred = int16[node - 1]!;
                 break;
             case 2:
-                pred = 2 * int16[n - 1]! - int16[n - 2]!;
+                pred = 2 * int16[node - 1]! - int16[node - 2]!;
                 break;
             case 3:
-                pred = 3 * int16[n - 1]! - 3 * int16[n - 2]! + int16[n - 3]!;
+                pred = 3 * int16[node - 1]! - 3 * int16[node - 2]! + int16[node - 3]!;
                 break;
             default:
-                pred = 4 * int16[n - 1]! - 6 * int16[n - 2]! + 4 * int16[n - 3]! - int16[n - 4]!;
+                pred = 4 * int16[node - 1]! - 6 * int16[node - 2]! + 4 * int16[node - 3]! - int16[node - 4]!;
                 break;
         }
-        res[i] = int16[n]! - pred;
+        res[index] = int16[node]! - pred;
     }
     return res;
 }
@@ -301,8 +309,8 @@ function bestRiceK(res: Int32Array, start: number, count: number): number {
         return 0;
     }
     let sum = 0;
-    for (let i = 0; i < count; i++) {
-        const r = res[start + i]!;
+    for (let index = 0; index < count; index++) {
+        const r = res[start + index]!;
         sum += r >= 0 ? 2 * r : -2 * r - 1; // zigzag to unsigned
     }
     const mean = sum / count;
@@ -313,12 +321,12 @@ function bestRiceK(res: Int32Array, start: number, count: number): number {
 }
 
 /** Exact Rice-coded bit count for a residual array with parameter k. */
-function riceBits(res: Int32Array, start: number, count: number, k: number): number {
+function riceBits(res: Int32Array, start: number, count: number, kIndex: number): number {
     let bits = 0;
-    for (let i = 0; i < count; i++) {
-        const r = res[start + i]!;
-        const u = r >= 0 ? 2 * r : -2 * r - 1;
-        bits += (u >> k) + 1 + k;
+    for (let index = 0; index < count; index++) {
+        const r = res[start + index]!;
+        const user = r >= 0 ? 2 * r : -2 * r - 1;
+        bits += (user >> kIndex) + 1 + kIndex;
     }
     return bits;
 }
@@ -326,8 +334,8 @@ function riceBits(res: Int32Array, start: number, count: number, k: number): num
 /** Total bit cost for a FIXED subframe (header + warmup + Rice residuals). */
 function fixedSubframeBits(res: Int32Array, residualCount: number, order: number): number {
     // 8 (header) + order*16 (warmup) + 2 (coding method) + 4 (partition order) + 4 (rice k) + rice bits
-    const k = bestRiceK(res, 0, residualCount);
-    return 8 + order * BITS_PER_SAMPLE + 2 + 4 + 4 + riceBits(res, 0, residualCount, k);
+    const kIndex = bestRiceK(res, 0, residualCount);
+    return 8 + order * BITS_PER_SAMPLE + 2 + 4 + 4 + riceBits(res, 0, residualCount, kIndex);
 }
 
 /** Total bit cost for a verbatim subframe. */
@@ -339,8 +347,8 @@ function verbatimSubframeBits(blockSize: number): number {
 
 function writeSubframeVerbatim(bw: BitWriter, int16: Int32Array, blockStart: number, blockSize: number): void {
     bw.writeByte(0x02); // subframe type: verbatim, no wasted bits
-    for (let i = 0; i < blockSize; i++) {
-        bw.writeBits(int16[blockStart + i]! & 0xffff, BITS_PER_SAMPLE);
+    for (let index = 0; index < blockSize; index++) {
+        bw.writeBits(int16[blockStart + index]! & 0xffff, BITS_PER_SAMPLE);
     }
 }
 
@@ -355,22 +363,22 @@ function writeSubframeFixed(
     // Subframe header: 0 | 001kkk0 where kkk = order (FIXED predictor, no wasted bits)
     bw.writeByte((8 + order) << 1);
     // Warmup samples (verbatim at full bitsPerSample)
-    for (let i = 0; i < order; i++) {
-        bw.writeBits(int16[blockStart + i]! & 0xffff, BITS_PER_SAMPLE);
+    for (let index = 0; index < order; index++) {
+        bw.writeBits(int16[blockStart + index]! & 0xffff, BITS_PER_SAMPLE);
     }
     const residualCount = blockSize - order;
     // Residual coding: PARTITIONED_RICE, partition order 0 (single partition)
     bw.writeBits(0, 2); // coding method: PARTITIONED_RICE
     bw.writeBits(0, 4); // partition order: 0
-    const k = bestRiceK(res, 0, residualCount);
-    bw.writeBits(k, 4); // Rice parameter
+    const kIndex = bestRiceK(res, 0, residualCount);
+    bw.writeBits(kIndex, 4); // Rice parameter
     // Rice-encode residuals
-    for (let i = 0; i < residualCount; i++) {
-        const r = res[i]!;
-        const u = r >= 0 ? 2 * r : -2 * r - 1; // zigzag
-        bw.writeUnary(u >> k);
-        if (k > 0) {
-            bw.writeBits(u & ((1 << k) - 1), k);
+    for (let index = 0; index < residualCount; index++) {
+        const r = res[index]!;
+        const user = r >= 0 ? 2 * r : -2 * r - 1; // zigzag
+        bw.writeUnary(user >> kIndex);
+        if (kIndex > 0) {
+            bw.writeBits(user & ((1 << kIndex) - 1), kIndex);
         }
     }
 }
@@ -431,14 +439,14 @@ async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => vo
     function wb(b: number) {
         out[pos++] = b & 0xff;
     }
-    function wbe16(v: number) {
-        out[pos++] = (v >> 8) & 0xff;
-        out[pos++] = v & 0xff;
+    function wbe16(value: number) {
+        out[pos++] = (value >> 8) & 0xff;
+        out[pos++] = value & 0xff;
     }
-    function wbe24(v: number) {
-        out[pos++] = (v >> 16) & 0xff;
-        out[pos++] = (v >> 8) & 0xff;
-        out[pos++] = v & 0xff;
+    function wbe24(value: number) {
+        out[pos++] = (value >> 16) & 0xff;
+        out[pos++] = (value >> 8) & 0xff;
+        out[pos++] = value & 0xff;
     }
 
     out[pos++] = 0x66;
@@ -459,8 +467,8 @@ async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => vo
     out[pos++] = (totalSamples >>> 16) & 0xff;
     out[pos++] = (totalSamples >>> 8) & 0xff;
     out[pos++] = totalSamples & 0xff;
-    for (let i = 0; i < 16; i++) {
-        wb(pcmMd5[i]!);
+    for (let index = 0; index < 16; index++) {
+        wb(pcmMd5[index]!);
     }
 
     // ── Frames ────────────────────────────────────────────────────────────────
@@ -512,7 +520,7 @@ async function encodeFlac(buffer: AudioBuffer, onProgress?: (frac: number) => vo
 
         if (frameNumber % 16 === 0) {
             onProgress?.(sampleOffset / totalSamples);
-            await new Promise<void>((r) => setTimeout(r, 0));
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
         }
     }
 

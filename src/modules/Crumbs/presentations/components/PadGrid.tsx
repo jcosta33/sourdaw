@@ -72,24 +72,28 @@ export const PadGrid = ({
                 const isDragTarget = dragOver === index && dragFrom !== null && dragFrom !== index;
                 const peaks = padPeaks?.[index] ?? null;
 
+                let padClassName = 'border-white/8 bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.04]';
+                if (isDragTarget) {
+                    padClassName = 'border-white/40 bg-white/[0.1]';
+                } else if (isSelected) {
+                    padClassName = 'border-white/25 bg-white/[0.06]';
+                }
+
+                let padBoxShadow: string | undefined = undefined;
+                if (isFlashing) {
+                    padBoxShadow = `0 0 20px ${pad.color}88, inset 0 0 12px ${pad.color}44`;
+                } else if (isSelected) {
+                    padBoxShadow = `0 0 12px ${pad.color}33`;
+                }
+
                 return (
                     <button
                         key={pad.id}
                         type="button"
                         draggable={onReorderPad !== undefined}
-                        className={`relative flex aspect-square flex-col items-center justify-center rounded-xl border transition-all ${
-                            isDragTarget
-                                ? 'border-white/40 bg-white/[0.1]'
-                                : isSelected
-                                  ? 'border-white/25 bg-white/[0.06]'
-                                  : 'border-white/8 bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.04]'
-                        }`}
+                        className={`relative flex aspect-square flex-col items-center justify-center rounded-xl border transition-all ${padClassName}`}
                         style={{
-                            boxShadow: isFlashing
-                                ? `0 0 20px ${pad.color}88, inset 0 0 12px ${pad.color}44`
-                                : isSelected
-                                  ? `0 0 12px ${pad.color}33`
-                                  : undefined,
+                            boxShadow: padBoxShadow,
                         }}
                         onClick={() => onSelectPad(index)}
                         onMouseDown={(e) => {

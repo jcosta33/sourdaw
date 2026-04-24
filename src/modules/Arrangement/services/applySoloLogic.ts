@@ -25,7 +25,7 @@ function isRoutedToSoloedTrack(track: Track, allTracks: Track[], visited = new S
         return false;
     }
     visited.add(track.id);
-    const outputTrack = allTracks.find((t) => t.id === track.outputId);
+    const outputTrack = allTracks.find((time) => time.id === track.outputId);
     if (!outputTrack) {
         return false;
     }
@@ -42,7 +42,7 @@ export function applySoloLogic(): void {
     }
 
     const soloMode = getWorkspaceState()?.soloMode ?? 'sip';
-    const anySoloed = state.tracks.some((t) => t.soloed);
+    const anySoloed = state.tracks.some((time) => time.soloed);
 
     for (const track of state.tracks) {
         if (track.kind === 'folder' || track.kind === 'master') {

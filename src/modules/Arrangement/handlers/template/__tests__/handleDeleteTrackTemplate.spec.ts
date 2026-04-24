@@ -16,7 +16,7 @@ describe('handleDeleteTrackTemplate', () => {
     });
 
     it('executes deleteTrackTemplate', () => {
-        handleDeleteTrackTemplate.execute({
+        void handleDeleteTrackTemplate.execute({
             type: 'deleteTrackTemplate',
             payload: { templateId: 'tmpl-1' },
         });

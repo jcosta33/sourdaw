@@ -14,7 +14,7 @@ export const getAutomatableParams = (
     ];
 
     for (const device of devices) {
-        const plugin = getBuiltinPlugins().find((p) => p.id === device.type);
+        const plugin = getBuiltinPlugins().find((param1) => param1.id === device.type);
         if (!plugin) {
             continue;
         }
@@ -36,12 +36,12 @@ export const getAutomatableParams = (
 /**
  * Apply tension to a normalized t value using power curve.
  */
-function applyTension(t: number, tension: number): number {
+function applyTension(time: number, tension: number): number {
     if (Math.abs(tension) < 0.01) {
-        return t;
+        return time;
     }
     const power = 2 ** (tension * 3);
-    return Math.max(0, Math.min(1, t)) ** power;
+    return Math.max(0, Math.min(1, time)) ** power;
 }
 
 /**
@@ -72,9 +72,9 @@ export const buildCurvePath = (
     if (p1.curve === 'stairs') {
         const steps = p1.stairSteps ?? 4;
         let path = '';
-        for (let s = 0; s < steps; s++) {
-            const t1 = s / steps;
-            const t2 = (s + 1) / steps;
+        for (let state = 0; state < steps; state++) {
+            const t1 = state / steps;
+            const t2 = (state + 1) / steps;
             const stepValue = p1.value + (p2.value - p1.value) * t1;
             const sx1 = x1 + (x2 - x1) * t1;
             const sx2 = x1 + (x2 - x1) * t2;
@@ -82,7 +82,7 @@ export const buildCurvePath = (
             const nextStepValue = p1.value + (p2.value - p1.value) * t2;
             const nextSy = valueToY(nextStepValue);
             path += `L ${sx1} ${sy} L ${sx2} ${sy}`;
-            if (s < steps - 1) {
+            if (state < steps - 1) {
                 path += ` L ${sx2} ${nextSy}`;
             }
         }
@@ -99,14 +99,14 @@ export const buildCurvePath = (
 
         const segments = 20;
         let path = '';
-        for (let i = 1; i <= segments; i++) {
-            const t = i / segments;
-            const t2 = t * t;
-            const t3 = t2 * t;
+        for (let index = 1; index <= segments; index++) {
+            const time = index / segments;
+            const t2 = time * time;
+            const t3 = t2 * time;
             const interpValue =
                 0.5 *
-                (2 * v1 + (-v0 + v2) * t + (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 + (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
-            const sx = x1 + (x2 - x1) * t;
+                (2 * v1 + (-v0 + v2) * time + (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 + (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
+            const sx = x1 + (x2 - x1) * time;
             const sy = valueToY(interpValue);
             path += `L ${sx} ${sy}`;
         }
@@ -127,10 +127,10 @@ export const buildCurvePath = (
         const tension = p1.tension ?? 0;
         const segments = 16;
         let path = '';
-        for (let i = 1; i <= segments; i++) {
-            const t = i / segments;
-            const curved = applyTension(t, tension);
-            const sx = x1 + (x2 - x1) * t;
+        for (let index = 1; index <= segments; index++) {
+            const time = index / segments;
+            const curved = applyTension(time, tension);
+            const sx = x1 + (x2 - x1) * time;
             const sy = valueToY(p1.value + (p2.value - p1.value) * curved);
             path += `L ${sx} ${sy}`;
         }

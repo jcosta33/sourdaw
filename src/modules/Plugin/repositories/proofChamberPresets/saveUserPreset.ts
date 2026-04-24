@@ -10,5 +10,5 @@ export function saveUserPreset(name: string, params: ProofChamberEngineState): v
         category: 'user',
         params: { ...params },
     });
-    localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(presets));
+    window.localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(presets));
 }

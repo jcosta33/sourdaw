@@ -1,3 +1,5 @@
 import { pluginScanStore, defaultPluginScanState } from '../../../stores/pluginScanStore';
 
-export const getState = () => pluginScanStore.value ?? defaultPluginScanState;
+export function getState() {
+    return pluginScanStore.value ?? defaultPluginScanState;
+}

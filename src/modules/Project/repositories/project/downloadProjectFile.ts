@@ -6,12 +6,19 @@ import { isTauri } from '#/utils/tauriBridge';
 import { type ProjectData } from '../../models/ProjectData';
 import { saveProjectToFile } from '../nativeProjectFiles/saveProjectToFile';
 
+type WindowWithFilePicker = Window & {
+    showSaveFilePicker: (opts: {
+        suggestedName?: string;
+        types?: Array<{ description: string; accept: Record<string, string[]> }>;
+    }) => Promise<FileSystemFileHandle>;
+};
+
 /**
  * Download a project as a .sourdaw file.
  * Uses Tauri native save for desktop, and File System Access API for web (with anchor fallback).
  */
 export async function downloadProjectFile(data: ProjectData): Promise<void> {
-    const safeName = data.meta.name.replaceAll(/[^a-zA-Z0-9_\-]/g, '_');
+    const safeName = data.meta.name.replaceAll(/[^a-zA-Z0-9_-]/g, '_');
     const filename = `${safeName}.sourdaw`;
 
     if (isTauri()) {
@@ -31,9 +38,7 @@ export async function downloadProjectFile(data: ProjectData): Promise<void> {
     // Try File System Access API for a proper native Save dialog
     if ('showSaveFilePicker' in window) {
         try {
-            const handle = await (
-                window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<FileSystemFileHandle> }
-            ).showSaveFilePicker({
+            const handle = await (window as WindowWithFilePicker).showSaveFilePicker({
                 suggestedName: filename,
                 types: [
                     {
@@ -57,14 +62,14 @@ export async function downloadProjectFile(data: ProjectData): Promise<void> {
 
     // Fallback: anchor download
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
+    const alpha = document.createElement('a');
+    alpha.href = url;
+    alpha.download = filename;
+    alpha.style.display = 'none';
+    document.body.appendChild(alpha);
+    alpha.click();
     setTimeout(() => {
-        document.body.removeChild(a);
+        document.body.removeChild(alpha);
         URL.revokeObjectURL(url);
     }, 1000);
 }

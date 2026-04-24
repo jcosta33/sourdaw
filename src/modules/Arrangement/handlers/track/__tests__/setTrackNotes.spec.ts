@@ -16,7 +16,7 @@ describe('handleSetTrackNotes', () => {
     });
 
     it('executes setTrackNotes with the provided payload', () => {
-        handleSetTrackNotes.execute({
+        void handleSetTrackNotes.execute({
             type: 'setTrackNotes',
             payload: { trackId: 't1', notes: 'Testing notes' },
         });

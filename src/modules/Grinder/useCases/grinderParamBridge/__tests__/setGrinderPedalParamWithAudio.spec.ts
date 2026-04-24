@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { setGrinderPedalParam } from '../../../stores/grinderStore';
-import { paramBatcher } from '../helpers';
 import { setGrinderPedalParamWithAudio } from '../setGrinderPedalParamWithAudio';
 
 vi.mock('../../../stores/grinderStore', () => ({

@@ -67,12 +67,13 @@ describe('inject', () => {
     });
 
     it('should throw with full chain on circular dependencies', () => {
-        const fnB: any = inject({ a: () => fnA })((deps) => {
+        let fnA: () => void;
+        const fnB: () => void = inject({ a: () => fnA })((deps) => {
             deps.a()();
             return () => {};
         });
 
-        const fnA: any = inject({ b: () => fnB })((deps) => {
+        fnA = inject({ b: () => fnB })((deps) => {
             deps.b()();
             return () => {};
         });

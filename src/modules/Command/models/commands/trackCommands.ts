@@ -72,7 +72,7 @@ export const trackCommands: CommandEntry[] = [
             if (id) {
                 const name = window.prompt('New track name:');
                 if (name) {
-                    executeAppAction({ type: 'renameTrack', payload: { trackId: id, name } });
+                    void executeAppAction({ type: 'renameTrack', payload: { trackId: id, name } });
                 }
             }
         },
@@ -85,7 +85,7 @@ export const trackCommands: CommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                executeAppAction({ type: 'freezeTrack', payload: { trackId: id } });
+                void executeAppAction({ type: 'freezeTrack', payload: { trackId: id } });
             }
         },
     },
@@ -97,7 +97,7 @@ export const trackCommands: CommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                executeAppAction({ type: 'unfreezeTrack', payload: { trackId: id } });
+                void executeAppAction({ type: 'unfreezeTrack', payload: { trackId: id } });
             }
         },
     },
@@ -109,7 +109,7 @@ export const trackCommands: CommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                executeAppAction({ type: 'flattenTrack', payload: { trackId: id } });
+                void executeAppAction({ type: 'flattenTrack', payload: { trackId: id } });
             }
         },
     },
@@ -121,7 +121,7 @@ export const trackCommands: CommandEntry[] = [
         action: () => {
             const trackId = getSelectedTrackId();
             if (trackId) {
-                executeAppAction({ type: 'bounceToNewTrack', payload: { trackId } });
+                void executeAppAction({ type: 'bounceToNewTrack', payload: { trackId } });
             }
         },
     },
@@ -133,7 +133,7 @@ export const trackCommands: CommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                executeAppAction({ type: 'bounceInPlace', payload: { trackId: id } });
+                void executeAppAction({ type: 'bounceInPlace', payload: { trackId: id } });
             }
         },
     },
@@ -145,7 +145,7 @@ export const trackCommands: CommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                executeAppAction({ type: 'armTrack', payload: { trackId: id, armed: true } });
+                void executeAppAction({ type: 'armTrack', payload: { trackId: id, armed: true } });
             }
         },
     },
@@ -157,7 +157,7 @@ export const trackCommands: CommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                executeAppAction({ type: 'soloTrack', payload: { trackId: id, soloed: true } });
+                void executeAppAction({ type: 'soloTrack', payload: { trackId: id, soloed: true } });
             }
         },
     },
@@ -169,7 +169,7 @@ export const trackCommands: CommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                executeAppAction({ type: 'muteTrack', payload: { trackId: id, muted: true } });
+                void executeAppAction({ type: 'muteTrack', payload: { trackId: id, muted: true } });
             }
         },
     },
@@ -181,7 +181,7 @@ export const trackCommands: CommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                executeAppAction({ type: 'groupTracks', payload: { trackIds: [id], name: 'Group' } });
+                void executeAppAction({ type: 'groupTracks', payload: { trackIds: [id], name: 'Group' } });
             }
         },
     },
@@ -208,9 +208,9 @@ export const trackCommands: CommandEntry[] = [
         action: () => {
             const id = getSelectedTrackId();
             if (id) {
-                const track = trackStore.value?.tracks.find((t) => t.id === id);
+                const track = trackStore.value?.tracks.find((time) => time.id === id);
                 if (track?.groupId) {
-                    executeAppAction({ type: 'ungroupTracks', payload: { groupId: track.groupId } });
+                    void executeAppAction({ type: 'ungroupTracks', payload: { groupId: track.groupId } });
                 }
             }
         },

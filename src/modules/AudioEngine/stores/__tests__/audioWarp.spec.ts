@@ -14,10 +14,10 @@ describe('DEFAULT_WARP_SETTINGS', () => {
 
 describe('getNextWarpMarkerId', () => {
     it('returns unique warp marker ids', () => {
-        const a = getNextWarpMarkerId();
+        const alpha = getNextWarpMarkerId();
         const b = getNextWarpMarkerId();
-        expect(a).toMatch(/^wm-.+$/);
+        expect(alpha).toMatch(/^wm-.+$/);
         expect(b).toMatch(/^wm-.+$/);
-        expect(a).not.toBe(b);
+        expect(alpha).not.toBe(b);
     });
 });

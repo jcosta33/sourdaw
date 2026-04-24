@@ -16,7 +16,7 @@ describe('handleFlattenTrack', () => {
     });
 
     it('executes flattenTrack with the provided payload', () => {
-        handleFlattenTrack.execute({
+        void handleFlattenTrack.execute({
             type: 'flattenTrack',
             payload: { trackId: 't1' },
         });

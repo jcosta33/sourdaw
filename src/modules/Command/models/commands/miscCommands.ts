@@ -17,7 +17,7 @@ export const miscCommands: CommandEntry[] = [
         category: 'App',
         shortcut: '⌘,',
         action: () => {
-            eventBus.emit('dialog.openPreferences', undefined);
+            void eventBus.emit('dialog.openPreferences', undefined);
         },
     },
 
@@ -253,7 +253,7 @@ export const miscCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'detectTransients', payload: { clipId } });
+                void executeAppAction({ type: 'detectTransients', payload: { clipId } });
             }
         },
     },
@@ -340,7 +340,7 @@ export const miscCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'enableWarping', payload: { clipId } });
+                void executeAppAction({ type: 'enableWarping', payload: { clipId } });
             }
         },
     },
@@ -352,7 +352,7 @@ export const miscCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'setWarpAlgorithm', payload: { clipId, algorithm: 'elastique-pro' } });
+                void executeAppAction({ type: 'setWarpAlgorithm', payload: { clipId, algorithm: 'elastique-pro' } });
             }
         },
     },

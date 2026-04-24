@@ -32,7 +32,7 @@ export const PresetItem = ({
     preview,
     hideCategory,
 }: PresetItemProps): ReactElement => {
-    const chain = preset.devices.map((d) => d.name).join(' → ');
+    const chain = preset.devices.map((data) => data.name).join(' → ');
 
     return (
         <div
@@ -68,8 +68,8 @@ export const PresetItem = ({
                         'size-4 flex items-center justify-center shrink-0 rounded hover:bg-accent opacity-0 group-hover:opacity-100 transition-all',
                         favorites.has(preset.id) ? 'opacity-100 scale-100' : 'scale-95'
                     )}
-                    onClick={(e) => {
-                        e.stopPropagation();
+                    onClick={(event) => {
+                        event.stopPropagation();
                         onToggleFavorite(preset.id);
                     }}
                     aria-label={favorites.has(preset.id) ? 'Remove from favorites' : 'Add to favorites'}

@@ -7,8 +7,8 @@ vi.mock('../../../stores/trackStore', () => {
             get value() {
                 return internal.value;
             },
-            set: vi.fn((v) => {
-                internal.value = v;
+            set: vi.fn((value) => {
+                internal.value = value;
             }),
             update: vi.fn((cb) => {
                 internal.value = cb(internal.value);
@@ -35,7 +35,7 @@ describe('updateClipsOnAllTracks', () => {
         const t2 = TrackDummy.create({ id: 't2', clips: [c2] });
         trackStore.set({ tracks: [t1, t2], selectedTrackId: null });
 
-        updateClipsOnAllTracks((c) => ({ ...c, muted: true }));
+        updateClipsOnAllTracks((context) => ({ ...context, muted: true }));
 
         expect(trackStore.value!.tracks[0].clips[0].muted).toBe(true);
         expect(trackStore.value!.tracks[1].clips[0].muted).toBe(true);

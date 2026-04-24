@@ -16,7 +16,7 @@ describe('handleToggleSoloSafe', () => {
     });
 
     it('executes toggleSoloSafe with payload', () => {
-        handleToggleSoloSafe.execute({
+        void handleToggleSoloSafe.execute({
             type: 'toggleSoloSafe',
             payload: { trackId: 't1' },
         });

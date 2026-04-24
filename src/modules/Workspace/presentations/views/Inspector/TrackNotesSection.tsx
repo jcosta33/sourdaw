@@ -47,7 +47,7 @@ export const TrackNotesSection = ({ track }: TrackNotesSectionProps): ReactEleme
                 className="min-h-[60px] flex-1 resize-y"
                 placeholder="Add notes…"
                 value={notesValue}
-                onChange={(e) => setDraft({ trackId: track.id, lastSeen: track.notes, value: e.target.value })}
+                onChange={(event) => setDraft({ trackId: track.id, lastSeen: track.notes, value: event.target.value })}
                 onBlur={() => {
                     if (notesValue !== track.notes) {
                         setTrackNotes(track.id, notesValue);

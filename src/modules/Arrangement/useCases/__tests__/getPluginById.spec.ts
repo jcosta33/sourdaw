@@ -1,9 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { type PluginDescriptor } from '../../models/DeviceParameter';
 import { getPluginById } from '../getPluginById';
 
 const mocks = vi.hoisted(() => ({
-    getPluginById: vi.fn(),
+    getPluginById: vi.fn<typeof import('../../models/DeviceParameter').getPluginById>(),
 }));
 
 vi.mock('../../models/DeviceParameter', () => ({
@@ -12,7 +13,7 @@ vi.mock('../../models/DeviceParameter', () => ({
 
 describe('getPluginById', () => {
     it('should forward the id to the model and return its result', () => {
-        const descriptor = { id: 'builtin-1', name: 'Test' } as any;
+        const descriptor = { id: 'builtin-1', name: 'Test' } as unknown as PluginDescriptor;
         mocks.getPluginById.mockReturnValue(descriptor);
 
         expect(getPluginById('builtin-1')).toBe(descriptor);

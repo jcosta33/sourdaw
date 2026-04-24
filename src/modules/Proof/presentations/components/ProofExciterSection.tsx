@@ -22,7 +22,15 @@ export const ProofExciterSection = ({ patch, onPatchChange, onSendParam }: Props
     const updateBand = (idx: number, key: string, value: number | boolean) => {
         const bands = patch.excBands.map((b, i) => (i === idx ? { ...b, [key]: value } : b));
         onPatchChange({ excBands: bands });
-        onSendParam(`exc_band${idx}_${key}`, typeof value === 'boolean' ? (value ? 1 : 0) : value);
+        onSendParam(
+            `exc_band${idx}_${key}`,
+            (() => {
+                if (typeof value === 'boolean') {
+                    return value ? 1 : 0;
+                }
+                return value;
+            })()
+        );
     };
 
     return (

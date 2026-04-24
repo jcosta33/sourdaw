@@ -19,7 +19,7 @@ describe('toggleOverdub', () => {
     });
 
     it('should flip overdubEnabled when transport state exists', () => {
-        const update = vi.fn();
+        const update = vi.fn<typeof updateTransportState>();
         vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, overdubEnabled: false });
         vi.mocked(updateTransportState).mockImplementation(update);
 
@@ -29,8 +29,8 @@ describe('toggleOverdub', () => {
     });
 
     it('should not update when transport state is missing', () => {
-        const update = vi.fn();
-        vi.mocked(getTransportState).mockReturnValue(null as any);
+        const update = vi.fn<typeof updateTransportState>();
+        vi.mocked(getTransportState).mockReturnValue(null);
         vi.mocked(updateTransportState).mockImplementation(update);
 
         toggleOverdub();

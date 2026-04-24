@@ -12,8 +12,8 @@ export function createVcaGroup(name: string, trackIds: string[]): VcaGroup {
     setVcaGroupsState([...getVcaGroupsState(), group]);
 
     updateTracks(
-        (t) => trackIds.includes(t.id),
-        (t) => ({ ...t, vcaGroupId: group.id })
+        (time) => trackIds.includes(time.id),
+        (time) => ({ ...time, vcaGroupId: group.id })
     );
 
     return group;

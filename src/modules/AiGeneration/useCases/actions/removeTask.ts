@@ -4,6 +4,6 @@ export function removeTask(id: string) {
     const snapshot = getAiSnapshot();
     aiStore.set({
         ...snapshot,
-        tasks: snapshot.tasks.filter((t: AiTaskResult) => t.id !== id),
+        tasks: snapshot.tasks.filter((time: AiTaskResult) => time.id !== id),
     });
 }

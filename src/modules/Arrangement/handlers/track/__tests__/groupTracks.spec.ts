@@ -16,7 +16,7 @@ describe('handleGroupTracks', () => {
     });
 
     it('executes groupTracks with the provided payload', () => {
-        handleGroupTracks.execute({
+        void handleGroupTracks.execute({
             type: 'groupTracks',
             payload: { trackIds: ['t1', 't2'], name: 'Guitars' },
         });

@@ -5,7 +5,10 @@ import { loopStationStore } from '../../../stores/loopStationStore';
 import { triggerScene } from '../triggerScene';
 
 vi.mock('../../../stores/loopStationStore', () => ({
-    loopStationStore: { value: null, set: vi.fn() },
+    loopStationStore: {
+        value: null,
+        set: vi.fn<(state: import('../../../stores/loopStationStore').LoopStationState) => void>(),
+    },
 }));
 
 function emptyLoopState(): LoopStationState {
@@ -25,7 +28,7 @@ describe('triggerScene', () => {
     });
 
     it('sets activeScene', () => {
-        loopStationStore.value = emptyLoopState() as any;
+        loopStationStore.value = emptyLoopState();
 
         triggerScene(3);
 

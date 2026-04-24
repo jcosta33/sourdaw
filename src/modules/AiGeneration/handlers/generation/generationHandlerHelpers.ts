@@ -61,13 +61,13 @@ export function resolveOrCreateMidiTrack(
     const selectedId = state?.selectedTrackId;
 
     if (selectedId) {
-        const selected = state?.tracks.find((t) => t.id === selectedId);
+        const selected = state?.tracks.find((time) => time.id === selectedId);
         if (selected && selected.kind === 'midi') {
             return selectedId;
         }
     }
 
-    const firstMidi = state?.tracks.find((t) => t.kind === 'midi');
+    const firstMidi = state?.tracks.find((time) => time.kind === 'midi');
     if (firstMidi) {
         return firstMidi.id;
     }

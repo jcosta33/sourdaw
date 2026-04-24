@@ -63,7 +63,7 @@ vi.mock('#/components/ui/bipolar-slider', () => ({
             type="range"
             data-testid="bipolar-slider"
             value={value}
-            onChange={(e) => onValueChange(Number(e.target.value))}
+            onChange={(event) => onValueChange(Number(event.target.value))}
         />
     ),
 }));

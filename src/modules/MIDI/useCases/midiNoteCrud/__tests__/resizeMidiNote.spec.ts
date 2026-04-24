@@ -3,13 +3,15 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { midiStore } from '../../../stores/midiStore';
 import { resizeMidiNote } from '../resizeMidiNote';
 
-const note = (id: string, startBeat: number, duration: number) => ({
-    id,
-    pitch: 60,
-    startBeat,
-    duration,
-    velocity: 100,
-});
+function note(id: string, startBeat: number, duration: number) {
+    return {
+        id,
+        pitch: 60,
+        startBeat,
+        duration,
+        velocity: 100,
+    };
+}
 
 describe('resizeMidiNote', () => {
     beforeEach(() => {
@@ -24,9 +26,9 @@ describe('resizeMidiNote', () => {
 
     it('should update start and duration when provided', () => {
         resizeMidiNote('c1', 'n1', 2, 0.5);
-        const n = midiStore.value?.notesByClipId.c1?.[0];
-        expect(n?.startBeat).toBe(2);
-        expect(n?.duration).toBe(0.5);
+        const node = midiStore.value?.notesByClipId.c1?.[0];
+        expect(node?.startBeat).toBe(2);
+        expect(node?.duration).toBe(0.5);
     });
 
     it('should enforce a minimum duration of 0.0625 beats (64th note, matching addMidiNote)', () => {

@@ -44,6 +44,23 @@ const EXPORT_SETTINGS_KEY = 'sourdaw:export-settings';
 
 type Mp3BitRate = 96 | 128 | 192 | 320;
 
+type StoredExportSettings = {
+    formats?: ExportFormat[];
+    format?: ExportFormat;
+    sampleRate?: number;
+    bitDepth?: number;
+    mp3BitRate?: number;
+};
+
+type WebFileHandle = {
+    createWritable: () => Promise<{
+        write: (data: Uint8Array) => Promise<void>;
+        close: () => Promise<void>;
+    }>;
+};
+
+const validMp3BitRates: readonly number[] = [96, 128, 192, 320];
+
 const loadExportSettings = (): {
     formats: ExportFormat[];
     sampleRate: number;
@@ -51,14 +68,21 @@ const loadExportSettings = (): {
     mp3BitRate: Mp3BitRate;
 } => {
     try {
-        const stored = localStorage.getItem(EXPORT_SETTINGS_KEY);
+        const stored = window.localStorage.getItem(EXPORT_SETTINGS_KEY);
         if (stored) {
-            const parsed = JSON.parse(stored);
+            const parsed = JSON.parse(stored) as StoredExportSettings;
+            let parsedFormats: ExportFormat[] = ['wav'];
+            if (Array.isArray(parsed.formats)) {
+                parsedFormats = parsed.formats;
+            } else if (parsed.format) {
+                parsedFormats = [parsed.format];
+            }
+
             return {
-                formats: Array.isArray(parsed.formats) ? parsed.formats : parsed.format ? [parsed.format] : ['wav'],
+                formats: parsedFormats,
                 sampleRate: parsed.sampleRate ?? 44100,
                 bitDepth: parsed.bitDepth ?? 24,
-                mp3BitRate: ([96, 128, 192, 320] as Mp3BitRate[]).includes(parsed.mp3BitRate)
+                mp3BitRate: validMp3BitRates.includes(parsed.mp3BitRate ?? -1)
                     ? (parsed.mp3BitRate as Mp3BitRate)
                     : 128,
             };
@@ -76,7 +100,7 @@ const saveExportSettings = (settings: {
     mp3BitRate: Mp3BitRate;
 }): void => {
     try {
-        localStorage.setItem(EXPORT_SETTINGS_KEY, JSON.stringify(settings));
+        window.localStorage.setItem(EXPORT_SETTINGS_KEY, JSON.stringify(settings));
     } catch {
         /* ignore */
     }
@@ -133,14 +157,14 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         return Math.max(0, Math.min(30, detected));
     };
 
-    const toggleFormat = (f: ExportFormat) => {
+    const toggleFormat = (freq: ExportFormat) => {
         setFormats((prev) => {
             const next = new Set(prev);
             // Don't allow empty selections
-            if (next.has(f) && next.size > 1) {
-                next.delete(f);
+            if (next.has(freq) && next.size > 1) {
+                next.delete(freq);
             } else {
-                next.add(f);
+                next.add(freq);
             }
             saveExportSettings({ formats: Array.from(next), sampleRate, bitDepth, mp3BitRate });
             return next;
@@ -176,16 +200,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             '.flac': 'audio/flac',
             '.zip': 'application/zip',
         };
+        // eslint-disable-next-line sourdaw/no-type-assertion-escape -- Uint8Array<ArrayBufferLike> requires cast to BlobPart; structurally safe at runtime
         const blob = new Blob([data as unknown as BlobPart], { type: mimeMap[ext] || 'application/octet-stream' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${blobName}${ext}`;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
+        const alpha = document.createElement('a');
+        alpha.href = url;
+        alpha.download = `${blobName}${ext}`;
+        alpha.style.display = 'none';
+        document.body.appendChild(alpha);
+        alpha.click();
         setTimeout(() => {
-            document.body.removeChild(a);
+            document.body.removeChild(alpha);
             URL.revokeObjectURL(url);
         }, 1500); // 1.5s to ensure click dispatches
     };
@@ -200,8 +225,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         let tauriFilePath: string | null = null;
 
         // This Handle uses the new FileSystem Access API
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let webFileHandle: any = null;
+        let webFileHandle: WebFileHandle | null = null;
 
         // ── 1. SECURE THE DESTINATION EARLY ──
         if (mode !== 'render-to-clip') {
@@ -242,7 +266,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 : 'audio/mpeg';
 
                         webFileHandle = await (
-                            window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<unknown> }
+                            window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<WebFileHandle> }
                         ).showSaveFilePicker({
                             suggestedName: `${baseName}${fileExt}`,
                             types: [{ accept: { [mime]: [fileExt] } }],
@@ -275,7 +299,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 // that unrelated takes from other sessions are not mass-loaded.
                 const exportTracks = trackStore.value?.tracks ?? [];
                 const neededIds = exportTracks
-                    .flatMap((t) => t.clips.map((c) => c.audioBufferId))
+                    .flatMap((time) => time.clips.map((context) => context.audioBufferId))
                     .filter((id): id is string => Boolean(id));
                 await audioBufferCache.restoreFromIdb(ctx, neededIds.length > 0 ? neededIds : undefined);
             } else {
@@ -302,7 +326,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 fractionRange: number
             ) => {
                 let currentPass = 0;
-                for (const f of formatList) {
+                for (const freq of formatList) {
                     if (cancelledRef.current) {
                         return;
                     }
@@ -312,19 +336,19 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         setProgress(fractionOffset + subFraction * fractionRange);
                     };
 
-                    setStatusText(`Kneading ${name} (${f.toUpperCase()})...`);
+                    setStatusText(`Kneading ${name} (${freq.toUpperCase()})...`);
                     let fileData: Uint8Array | ArrayBuffer;
 
-                    if (f === 'mp3') {
+                    if (freq === 'mp3') {
                         fileData = await encodeMp3(buffer, mp3BitRate, passProgress);
-                    } else if (f === 'flac') {
+                    } else if (freq === 'flac') {
                         fileData = await encodeFlac(buffer, passProgress);
                     } else {
                         fileData = await encodeWav(buffer, bd, passProgress);
                     }
 
                     const uint8Data = fileData instanceof ArrayBuffer ? new Uint8Array(fileData) : fileData;
-                    const finalFileName = `${name}.${f}`;
+                    const finalFileName = `${name}.${freq}`;
 
                     if (isTauri()) {
                         const { writeFile } = await import('@tauri-apps/plugin-fs');
@@ -335,7 +359,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             await writeFile(fullPath, uint8Data);
                         } else if (tauriFilePath) {
                             // Single fallback mapping for mixdown
-                            const adjustedPath = tauriFilePath.replace(/\.[a-z0-9]+$/i, `.${f}`);
+                            const adjustedPath = tauriFilePath.replace(/\.[a-z0-9]+$/i, `.${freq}`);
                             await writeFile(adjustedPath, uint8Data);
                         }
                     } else {
@@ -442,7 +466,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     if (cancelledRef.current) {
                         return;
                     }
-                    const track = tracks.find((t) => t.id === trackId);
+                    const track = tracks.find((time) => time.id === trackId);
                     const safeTName = (track?.name || trackId).replaceAll(/[^a-zA-Z0-9_\- ]/g, '_');
 
                     // We map the remaining 50% of the progress bar to encoding the slices
@@ -516,11 +540,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
                 if (webFileHandle) {
                     // File System Access Method
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     const writable = await webFileHandle.createWritable();
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     await writable.write(finalBytes);
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     await writable.close();
                 } else {
                     // Fallback
@@ -569,6 +590,53 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
     const sampleRates = [44100, 48000, 88200, 96000];
     const bitDepths = [16, 24, 32];
+
+    const renderOvenStatus = (): ReactElement => {
+        if (exporting || progress === 100) {
+            return (
+                <div className="space-y-1.5 animate-in fade-in duration-300">
+                    <div className="flex items-end justify-between text-xs">
+                        <span className={`font-medium ${progress === 100 ? 'text-green-400' : 'text-orange-400'}`}>
+                            {statusText}
+                        </span>
+                        <span className="font-mono text-[10px] text-orange-500/50">{progress.toFixed(0)}%</span>
+                    </div>
+                    <div
+                        className="h-2 w-full overflow-hidden rounded-full border border-stone-800 bg-stone-900 shadow-inner"
+                        role="progressbar"
+                        aria-valuenow={Math.round(progress)}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                    >
+                        <div
+                            className={`h-full rounded-full transition-all duration-300 ease-out ${
+                                progress === 100
+                                    ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]'
+                                    : 'bg-gradient-to-r from-amber-600 to-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.6)]'
+                            }`}
+                            style={{ width: `${progress}%` }}
+                        >
+                            {progress < 100 ? (
+                                <div className="absolute inset-0 w-[30%] animate-[shimmer_1.5s_infinite] bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.4)_50%,transparent_100%)]" />
+                            ) : null}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+        if (errorText) {
+            return (
+                <div className="flex h-full items-center rounded-lg border border-red-900/30 bg-red-950/20 px-3 text-xs text-red-400 animate-in fade-in">
+                    {errorText}
+                </div>
+            );
+        }
+        return (
+            <div className="flex h-full flex-col justify-center text-center text-[10px] uppercase tracking-widest text-stone-500">
+                {isTauri() ? 'Desktop Oven Ready' : 'Web Oven Ready'}
+            </div>
+        );
+    };
 
     return (
         <Dialog
@@ -755,18 +823,18 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     <>
                     <DawDialogSection tone="warm" title="Ingredients">
                         <div className="grid grid-cols-3 gap-2">
-                            {FORMAT_OPTIONS.map((f) => {
-                                const active = formats.has(f.value);
+                            {FORMAT_OPTIONS.map((freq) => {
+                                const active = formats.has(freq.value);
                                 return (
                                     <button
                                         type="button"
-                                        key={f.value}
+                                        key={freq.value}
                                         className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
                                             active
                                                 ? 'border-orange-500/40 bg-orange-950/40 shadow-[inset_0_1px_0_rgba(251,146,60,0.1)]'
                                                 : 'border-stone-800 bg-stone-900/50 hover:border-stone-700 hover:bg-stone-800/80'
                                         }`}
-                                        onClick={() => toggleFormat(f.value)}
+                                        onClick={() => toggleFormat(freq.value)}
                                         aria-pressed={active}
                                         role="checkbox"
                                         aria-checked={active}
@@ -775,12 +843,12 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         <div
                                             className={`text-sm font-semibold ${active ? 'text-orange-200' : 'text-stone-400'}`}
                                         >
-                                            {f.label}
+                                            {freq.label}
                                         </div>
                                         <div
                                             className={`mt-0.5 text-[10px] ${active ? 'text-orange-400/80' : 'text-stone-600'}`}
                                         >
-                                            {f.desc}
+                                            {freq.desc}
                                         </div>
                                     </button>
                                 );
@@ -879,50 +947,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         title="Oven Status"
                         detail={isTauri() ? 'Desktop oven ready' : 'Web oven ready'}
                     >
-                        <div className="h-10">
-                            {exporting || progress === 100 ? (
-                                <div className="space-y-1.5 animate-in fade-in duration-300">
-                                    <div className="flex items-end justify-between text-xs">
-                                        <span
-                                            className={`font-medium ${progress === 100 ? 'text-green-400' : 'text-orange-400'}`}
-                                        >
-                                            {statusText}
-                                        </span>
-                                        <span className="font-mono text-[10px] text-orange-500/50">
-                                            {progress.toFixed(0)}%
-                                        </span>
-                                    </div>
-                                    <div
-                                        className="h-2 w-full overflow-hidden rounded-full border border-stone-800 bg-stone-900 shadow-inner"
-                                        role="progressbar"
-                                        aria-valuenow={Math.round(progress)}
-                                        aria-valuemin={0}
-                                        aria-valuemax={100}
-                                    >
-                                        <div
-                                            className={`h-full rounded-full transition-all duration-300 ease-out ${
-                                                progress === 100
-                                                    ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]'
-                                                    : 'bg-gradient-to-r from-amber-600 to-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.6)]'
-                                            }`}
-                                            style={{ width: `${progress}%` }}
-                                        >
-                                            {progress < 100 ? (
-                                                <div className="absolute inset-0 w-[30%] animate-[shimmer_1.5s_infinite] bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.4)_50%,transparent_100%)]" />
-                                            ) : null}
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : errorText ? (
-                                <div className="flex h-full items-center rounded-lg border border-red-900/30 bg-red-950/20 px-3 text-xs text-red-400 animate-in fade-in">
-                                    {errorText}
-                                </div>
-                            ) : (
-                                <div className="flex h-full flex-col justify-center text-center text-[10px] uppercase tracking-widest text-stone-500">
-                                    {isTauri() ? 'Desktop Oven Ready' : 'Web Oven Ready'}
-                                </div>
-                            )}
-                        </div>
+                        <div className="h-10">{renderOvenStatus()}</div>
                     </DawDialogSection>
                 </DawDialogBody>
 

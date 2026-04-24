@@ -36,8 +36,8 @@ export function hitTestClip(canvasX: number, canvasY: number): ClipHitResult | n
     const beat = canvasX / pixelsPerBeat + viewportStartBeat;
 
     let trackYOffset = 0;
-    for (let i = 0; i < hit.index; i++) {
-        trackYOffset += model.tracks[i]!.height;
+    for (let index = 0; index < hit.index; index++) {
+        trackYOffset += model.tracks[index]!.height;
     }
 
     for (const clip of track.clips) {
@@ -49,8 +49,8 @@ export function hitTestClip(canvasX: number, canvasY: number): ClipHitResult | n
                 const contentHeight = track.height - padding * 2;
                 const notes = clip.midiNotes;
 
-                const minPitch = Math.min(...notes.map((n) => n.pitch)) - 2;
-                const maxPitch = Math.max(...notes.map((n) => n.pitch)) + 2;
+                const minPitch = Math.min(...notes.map((node) => node.pitch)) - 2;
+                const maxPitch = Math.max(...notes.map((node) => node.pitch)) + 2;
                 const pitchRange = Math.max(maxPitch - minPitch, 1);
                 const noteHeight = contentHeight / (pitchRange + 1);
 
@@ -77,9 +77,9 @@ export function hitTestClip(canvasX: number, canvasY: number): ClipHitResult | n
     // H3: Hit testing for variation lanes
     if (track.variationLanes && track.variationLanes.length > 0) {
         const varLaneHeight = 24;
-        for (let i = 0; i < track.variationLanes.length; i++) {
-            const lane = track.variationLanes[i]!;
-            const ly = trackYOffset + track.height + i * varLaneHeight;
+        for (let index = 0; index < track.variationLanes.length; index++) {
+            const lane = track.variationLanes[index]!;
+            const ly = trackYOffset + track.height + index * varLaneHeight;
             if (contentY >= ly && contentY <= ly + varLaneHeight) {
                 for (const clip of lane.clips) {
                     if (beat >= clip.startBeat && beat < clip.endBeat) {

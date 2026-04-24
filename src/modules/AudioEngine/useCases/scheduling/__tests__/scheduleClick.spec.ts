@@ -5,7 +5,7 @@ import * as subject from '../scheduleClick';
 describe('scheduleClick', () => {
     it('should export scheduleClick', () => {
         expect(subject.scheduleClick).toBeDefined();
-        const t = typeof subject.scheduleClick;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.scheduleClick;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

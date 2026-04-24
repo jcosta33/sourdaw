@@ -48,7 +48,7 @@ export function planRippleMove({
         return null;
     }
 
-    const track = state.tracks.find((t) => t.id === trackId);
+    const track = state.tracks.find((time) => time.id === trackId);
     if (!track) {
         return null;
     }

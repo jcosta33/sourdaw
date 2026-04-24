@@ -68,7 +68,9 @@ export function setScrollY(scrollY: number, viewportHeight = 200): void {
     // viewportHeight is the visible track area height — callers should pass
     // the actual container height for correct clamping.
     const tracks = trackStore.value?.tracks ?? [];
-    const totalHeight = tracks.filter((t) => t.kind !== 'master').reduce((sum, t) => sum + (t.height ?? 64), 0);
+    const totalHeight = tracks
+        .filter((time) => time.kind !== 'master')
+        .reduce((sum, time) => sum + (time.height ?? 64), 0);
     const maxY = Math.max(0, totalHeight - viewportHeight);
     const clamped = Math.max(0, Math.min(maxY, scrollY));
     if (state.scrollY !== clamped) {

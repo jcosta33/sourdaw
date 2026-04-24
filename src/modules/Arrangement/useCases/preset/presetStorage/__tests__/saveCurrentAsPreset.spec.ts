@@ -5,12 +5,12 @@ import * as subject from '../saveCurrentAsPreset';
 describe('saveCurrentAsPreset', () => {
     it('should export saveCurrentAsPreset', () => {
         expect(subject.saveCurrentAsPreset).toBeDefined();
-        const t = typeof subject.saveCurrentAsPreset;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.saveCurrentAsPreset;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export saveUserPreset', () => {
         expect(subject.saveUserPreset).toBeDefined();
-        const t = typeof subject.saveUserPreset;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.saveUserPreset;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

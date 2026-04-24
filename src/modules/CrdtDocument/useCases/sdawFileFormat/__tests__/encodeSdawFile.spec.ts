@@ -5,7 +5,7 @@ import * as subject from '../encodeSdawFile';
 describe('encodeSdawFile', () => {
     it('should export encodeSdawFile', () => {
         expect(subject.encodeSdawFile).toBeDefined();
-        const t = typeof subject.encodeSdawFile;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.encodeSdawFile;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

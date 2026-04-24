@@ -5,6 +5,6 @@ import { inject } from '#/infra/di/inject';
 export const showYeastPanel = inject({ eventBus })(
     ({ eventBus }) =>
         function showYeastPanel(deviceId: string | null): void {
-            eventBus.emit('panel.showYeast', { deviceId });
+            void eventBus.emit('panel.showYeast', { deviceId });
         }
 );

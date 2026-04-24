@@ -13,7 +13,7 @@ describe('audioRecordingStore', () => {
     });
 
     it('should update state', () => {
-        audioRecordingStore.update((s) => ({ ...s!, isRecording: true, micPermissionGranted: true }));
+        audioRecordingStore.update((state) => ({ ...state!, isRecording: true, micPermissionGranted: true }));
         expect(audioRecordingStore.value?.isRecording).toBe(true);
         expect(audioRecordingStore.value?.micPermissionGranted).toBe(true);
     });

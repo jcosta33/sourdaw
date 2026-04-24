@@ -31,34 +31,34 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
     return (
         <MixerSection label="Devices">
             <div className="max-h-[100px] space-y-0.5 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10">
-                {track.devices.map((d, deviceIndex) => (
-                    <div key={d.id} className="group relative">
+                {track.devices.map((data, deviceIndex) => (
+                    <div key={data.id} className="group relative">
                         <MixerInsetButton
                             className={cn(
                                 'cursor-grab active:cursor-grabbing shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)]',
-                                d.bypassed && 'opacity-40 line-through'
+                                data.bypassed && 'opacity-40 line-through'
                             )}
-                            onClick={(e) => {
-                                e.stopPropagation();
+                            onClick={(event) => {
+                                event.stopPropagation();
                                 handleOpenInspector();
                             }}
-                            onDoubleClick={(e) => {
-                                e.stopPropagation();
-                                bypassDevice(d.id, !d.bypassed);
+                            onDoubleClick={(event) => {
+                                event.stopPropagation();
+                                bypassDevice(data.id, !data.bypassed);
                             }}
-                            title={`${d.name} — click to inspect, double-click to ${d.bypassed ? 'enable' : 'bypass'}`}
+                            title={`${data.name} — click to inspect, double-click to ${data.bypassed ? 'enable' : 'bypass'}`}
                             draggable
-                            onDragStart={(e) => {
-                                e.dataTransfer.setData('text/plain', String(deviceIndex));
-                                e.dataTransfer.effectAllowed = 'move';
+                            onDragStart={(event) => {
+                                event.dataTransfer.setData('text/plain', String(deviceIndex));
+                                event.dataTransfer.effectAllowed = 'move';
                             }}
-                            onDragOver={(e) => {
-                                e.preventDefault();
-                                e.dataTransfer.dropEffect = 'move';
+                            onDragOver={(event) => {
+                                event.preventDefault();
+                                event.dataTransfer.dropEffect = 'move';
                             }}
-                            onDrop={(e) => {
-                                e.preventDefault();
-                                const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                            onDrop={(event) => {
+                                event.preventDefault();
+                                const fromIndex = parseInt(event.dataTransfer.getData('text/plain'), 10);
                                 if (!isNaN(fromIndex) && fromIndex !== deviceIndex) {
                                     reorderDevices(track.id, fromIndex, deviceIndex);
                                 }
@@ -66,18 +66,18 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                         >
                             <span className="text-[10px] text-muted-foreground">
                                 <span className="text-[9px] text-muted-foreground/50 mr-0.5">≡</span>
-                                {d.name}
+                                {data.name}
                             </span>
                         </MixerInsetButton>
                         <button
                             type="button"
                             className="absolute -right-0.5 -top-0.5 hidden size-3.5 items-center justify-center rounded-full bg-destructive/80 text-[10px] text-destructive-foreground hover:bg-destructive group-hover:flex"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                removeDevice(d.id);
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                removeDevice(data.id);
                             }}
-                            aria-label={`Remove ${d.name}`}
-                            title={`Remove ${d.name}`}
+                            aria-label={`Remove ${data.name}`}
+                            title={`Remove ${data.name}`}
                         >
                             ×
                         </button>
@@ -86,16 +86,16 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
             </div>
             {showAdd ? (
                 <div className="space-y-0.5">
-                    {getPlatformPlugins().map((p) => (
+                    {getPlatformPlugins().map((param) => (
                         <MixerInsetButton
-                            key={p.id}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                addDevice(track.id, p.name);
+                            key={param.id}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                addDevice(track.id, param.name);
                                 setShowAdd(false);
                             }}
                         >
-                            + {p.name}
+                            + {param.name}
                         </MixerInsetButton>
                     ))}
                     <div
@@ -108,8 +108,8 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                         <MixerInsetButton
                             key={fx.id}
                             tone="accent"
-                            onClick={(e) => {
-                                e.stopPropagation();
+                            onClick={(event) => {
+                                event.stopPropagation();
                                 addDevice(track.id, fx.name);
                                 setShowAdd(false);
                             }}
@@ -120,8 +120,8 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                     <button
                         type="button"
                         className="w-full text-[10px] text-muted-foreground hover:text-foreground"
-                        onClick={(e) => {
-                            e.stopPropagation();
+                        onClick={(event) => {
+                            event.stopPropagation();
                             setShowAdd(false);
                         }}
                     >
@@ -130,8 +130,8 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                 </div>
             ) : (
                 <MixerInsetButton
-                    onClick={(e) => {
-                        e.stopPropagation();
+                    onClick={(event) => {
+                        event.stopPropagation();
                         setShowAdd(true);
                     }}
                 >

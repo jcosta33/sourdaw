@@ -24,7 +24,7 @@ export const autoSaveHealth = { consecutiveFailures: 0 };
 export function startCrdtAutoSave(): () => void {
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const schedule = (): void => {
+    function schedule(): void {
         if (timer !== null) {
             clearTimeout(timer);
         }
@@ -33,6 +33,7 @@ export function startCrdtAutoSave(): () => void {
             persistCrdtProject()
                 .then(() => {
                     autoSaveHealth.consecutiveFailures = 0;
+                    return null;
                 })
                 .catch((error) => {
                     autoSaveHealth.consecutiveFailures++;
@@ -46,9 +47,10 @@ export function startCrdtAutoSave(): () => void {
                             )
                         );
                     }
+                    return null;
                 });
         }, DEBOUNCE_MS);
-    };
+    }
 
     const unsubscribe = automergeRepository.onChange(schedule);
 

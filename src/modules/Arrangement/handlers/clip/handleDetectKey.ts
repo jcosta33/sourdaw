@@ -5,10 +5,10 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 export const handleDetectKey = createHandler<'detectKey'>({
-    execute: (a) => {
+    execute: (alpha) => {
         const clip = getTrackStoreState()
-            ?.tracks.flatMap((t) => t.clips)
-            .find((c) => c.id === a.payload.clipId);
+            ?.tracks.flatMap((time) => time.clips)
+            .find((context) => context.id === alpha.payload.clipId);
         if (clip?.audioBufferId) {
             const result = detectKey(clip.audioBufferId);
             if (result) {

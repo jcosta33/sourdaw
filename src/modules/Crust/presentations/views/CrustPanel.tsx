@@ -89,7 +89,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const normalizationLoss = lufsTarget !== null ? Math.max(0, lufsShortTerm - lufsTarget) : 0;
     const streamingLabel = activeStreamingPreset ? activeStreamingPreset.label : 'Custom';
 
-    function handleSetParam<K extends keyof CrustPatch>(key: K, value: CrustPatch[K]): void {
+    function handleSetParam<TKey extends keyof CrustPatch>(key: TKey, value: CrustPatch[TKey]): void {
         setCrustParamWithAudio(deviceId, key, value);
     }
 

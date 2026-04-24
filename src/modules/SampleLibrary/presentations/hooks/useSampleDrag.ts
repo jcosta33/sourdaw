@@ -33,6 +33,7 @@ export const useSampleDrag = (sample: SampleRecord) => {
  * R-G4: Contextual auditioning.
  */
 export const sampleAuditionEngine = {
+    // eslint-disable-next-line @typescript-eslint/require-await -- stub implementation; async for future real-time time-stretching
     async audition(sample: SampleRecord, projectBpm: number): Promise<void> {
         // Logic for playing the sample with real-time time-stretching
         // if sample BPM differs from project BPM.

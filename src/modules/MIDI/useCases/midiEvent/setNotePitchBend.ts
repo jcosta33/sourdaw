@@ -15,8 +15,8 @@ export function setNotePitchBend(clipId: string, noteId: string, pitchBend: numb
         ...state,
         notesByClipId: {
             ...state.notesByClipId,
-            [clipId]: existing.map((n) =>
-                n.id === noteId ? { ...n, pitchBend: Math.max(-8192, Math.min(8191, pitchBend)) } : n
+            [clipId]: existing.map((node) =>
+                node.id === noteId ? { ...node, pitchBend: Math.max(-8192, Math.min(8191, pitchBend)) } : node
             ),
         },
     });

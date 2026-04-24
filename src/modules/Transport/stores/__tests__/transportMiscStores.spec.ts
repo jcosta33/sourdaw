@@ -24,7 +24,7 @@ describe('Transport Misc Stores', () => {
         });
 
         it('should update state', () => {
-            loopStationStore.update((s) => ({ ...s!, armed: true }));
+            loopStationStore.update((state) => ({ ...state!, armed: true }));
             expect(loopStationStore.value?.armed).toBe(true);
         });
     });
@@ -46,7 +46,7 @@ describe('Transport Misc Stores', () => {
         });
 
         it('should update state', () => {
-            punchRecordingStore.update((s) => ({ ...s!, enabled: true }));
+            punchRecordingStore.update((state) => ({ ...state!, enabled: true }));
             expect(punchRecordingStore.value?.enabled).toBe(true);
         });
     });
@@ -69,7 +69,7 @@ describe('Transport Misc Stores', () => {
         });
 
         it('should update state', () => {
-            setlistStore.update((s) => ({ ...s!, name: 'Tour 2026' }));
+            setlistStore.update((state) => ({ ...state!, name: 'Tour 2026' }));
             expect(setlistStore.value?.name).toBe('Tour 2026');
         });
     });

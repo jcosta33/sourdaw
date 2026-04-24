@@ -16,7 +16,7 @@ describe('getCollaborationStoreValue', () => {
 
     it('returns the injected store snapshot', () => {
         const snapshot = { isEnabled: false };
-        (collaborationStore as any).value = snapshot;
+        Object.assign(collaborationStore, { value: snapshot });
 
         expect(getCollaborationStoreValue()).toBe(snapshot);
     });

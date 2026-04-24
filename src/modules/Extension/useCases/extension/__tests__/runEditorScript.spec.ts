@@ -4,9 +4,12 @@ import { type ExtensionMarketplaceState } from '../../../stores/extension';
 import { runEditorScript } from '../runEditorScript';
 
 const mocks = vi.hoisted(() => ({
-    extensionStore: { value: null as any, set: vi.fn() },
-    appendLog: vi.fn(),
-    createDawApi: vi.fn(() => ({})),
+    extensionStore: {
+        value: null as unknown as ExtensionMarketplaceState,
+        set: vi.fn<(state: ExtensionMarketplaceState) => void>(),
+    },
+    appendLog: vi.fn<(...args: unknown[]) => void>(),
+    createDawApi: vi.fn<() => Record<string, unknown>>(() => ({})),
 }));
 
 vi.mock('../../../stores/extension', async (importOriginal) => {

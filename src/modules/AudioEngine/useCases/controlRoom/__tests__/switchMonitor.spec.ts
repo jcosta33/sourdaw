@@ -5,7 +5,7 @@ import * as subject from '../switchMonitor';
 describe('switchMonitor', () => {
     it('should export switchMonitor', () => {
         expect(subject.switchMonitor).toBeDefined();
-        const t = typeof subject.switchMonitor;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.switchMonitor;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

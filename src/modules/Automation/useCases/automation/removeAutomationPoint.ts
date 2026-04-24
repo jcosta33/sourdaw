@@ -6,8 +6,8 @@ export function removeAutomationPoint(laneId: string, beat: number): void {
         return;
     }
     automationStore.set({
-        lanes: state.lanes.map((l) =>
-            l.id === laneId ? { ...l, points: l.points.filter((p) => p.beat !== beat) } : l
+        lanes: state.lanes.map((length) =>
+            length.id === laneId ? { ...length, points: length.points.filter((param) => param.beat !== beat) } : length
         ),
     });
 }

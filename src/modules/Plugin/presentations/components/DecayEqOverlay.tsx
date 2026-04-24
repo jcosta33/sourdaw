@@ -178,15 +178,15 @@ export const DecayEqOverlay = ({ multipliers, onChange, width, height }: DecayEq
         return nearest >= 0 ? nearest : null;
     };
 
-    const handlePointerDown = (e: PointerEvent<HTMLCanvasElement>): void => {
-        const band = findNearestBand(e.clientX, e.clientY);
+    const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>): void => {
+        const band = findNearestBand(event.clientX, event.clientY);
         if (band !== null) {
             dragRef.current = { bandIndex: band };
-            (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+            (event.target as HTMLCanvasElement).setPointerCapture(event.pointerId);
         }
     };
 
-    const handlePointerMove = (e: PointerEvent<HTMLCanvasElement>): void => {
+    const handlePointerMove = (event: PointerEvent<HTMLCanvasElement>): void => {
         if (!dragRef.current) {
             return;
         }
@@ -195,7 +195,7 @@ export const DecayEqOverlay = ({ multipliers, onChange, width, height }: DecayEq
             return;
         }
         const rect = canvas.getBoundingClientRect();
-        const y = (e.clientY - rect.top) * (height / rect.height);
+        const y = (event.clientY - rect.top) * (height / rect.height);
         const mult = yToMult(y, height);
         onChange(dragRef.current.bandIndex, Math.max(MIN_MULT, Math.min(MAX_MULT, mult)));
     };

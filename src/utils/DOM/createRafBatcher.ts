@@ -24,13 +24,13 @@
  * module-level context.
  */
 
-export type RafBatcher<V> = {
+export type RafBatcher<Value> = {
     /**
      * Record \`value\` as the latest for \`key\` and ensure exactly one rAF
      * is pending for it. Subsequent calls before the rAF fires overwrite
      * the value without scheduling another frame.
      */
-    schedule: (key: string, value: V, flush: (key: string, value: V) => void) => void;
+    schedule: (key: string, value: Value, flush: (key: string, value: Value) => void) => void;
     /**
      * Drop any pending entry for \`key\` without flushing. Callers use this
      * when a higher-priority synchronous write has already applied the
@@ -43,11 +43,11 @@ export type RafBatcher<V> = {
     readonly pendingSize: number;
 };
 
-export const createRafBatcher = <V>(): RafBatcher<V> => {
-    type Entry = { rafId: number; value: V; flush: (key: string, value: V) => void };
+export const createRafBatcher = <Value>(): RafBatcher<Value> => {
+    type Entry = { rafId: number; value: Value; flush: (key: string, value: Value) => void };
     const pending = new Map<string, Entry>();
 
-    const schedule = (key: string, value: V, flush: (key: string, value: V) => void): void => {
+    const schedule = (key: string, value: Value, flush: (key: string, value: Value) => void): void => {
         const existing = pending.get(key);
         if (existing) {
             // rAF already scheduled for this key — just update the latest value

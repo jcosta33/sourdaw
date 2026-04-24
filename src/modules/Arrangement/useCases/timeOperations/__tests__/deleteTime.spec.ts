@@ -5,7 +5,7 @@ import * as subject from '../deleteTime';
 describe('deleteTime', () => {
     it('should export deleteTime', () => {
         expect(subject.deleteTime).toBeDefined();
-        const t = typeof subject.deleteTime;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.deleteTime;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

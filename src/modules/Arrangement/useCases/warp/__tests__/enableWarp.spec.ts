@@ -5,7 +5,7 @@ import * as subject from '../enableWarp';
 describe('enableWarp', () => {
     it('should export enableWarp', () => {
         expect(subject.enableWarp).toBeDefined();
-        const t = typeof subject.enableWarp;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.enableWarp;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

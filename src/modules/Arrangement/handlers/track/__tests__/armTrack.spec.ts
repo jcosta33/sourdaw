@@ -16,7 +16,7 @@ describe('handleArmTrack', () => {
     });
 
     it('executes armTrack with the provided payload', () => {
-        handleArmTrack.execute({
+        void handleArmTrack.execute({
             type: 'armTrack',
             payload: { trackId: 't1', armed: true },
         });

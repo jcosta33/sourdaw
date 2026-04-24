@@ -10,9 +10,8 @@ export const setOutputDevice = inject({ logger })(
         async function setOutputDevice(deviceId: string): Promise<void> {
             if ('setSinkId' in audioEngine.context) {
                 try {
-                    await (audioEngine.context as unknown as { setSinkId(id: string): Promise<void> }).setSinkId(
-                        deviceId
-                    );
+                    type AudioContextWithSinkId = AudioContext & { setSinkId(id: string): Promise<void> };
+                    await (audioEngine.context as AudioContextWithSinkId).setSinkId(deviceId);
                 } catch (error) {
                     logger.warn(`Failed to set output device: ${error}`);
                 }

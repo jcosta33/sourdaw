@@ -77,7 +77,7 @@ describe('clearUndoHistory', () => {
         vi.clearAllMocks();
     });
 
-    it('clears undo stacks', async () => {
+    it('clears undo stacks', () => {
         clearUndoHistory();
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [] });
     });
@@ -89,7 +89,7 @@ describe('resetModuleStoresToDefault', () => {
         vi.clearAllMocks();
     });
 
-    it('resets all module stores and sidechain routes', async () => {
+    it('resets all module stores and sidechain routes', () => {
         resetModuleStoresToDefault();
 
         expect(mocks.trackStoreSet).toHaveBeenCalledWith({ tracks: [], selectedTrackId: null });
@@ -114,7 +114,7 @@ describe('hydrateModuleStoresFromProjectData', () => {
         vi.clearAllMocks();
     });
 
-    it('applies arrangement tracks', async () => {
+    it('applies arrangement tracks', () => {
         const data = {
             version: 1,
             arrangement: { tracks: [] },
@@ -175,7 +175,7 @@ describe('verifyAudioBufferReferences', () => {
                 },
             ],
             selectedTrackId: null,
-        } as any;
+        } as unknown as typeof trackStore.value;
 
         verifyAudioBufferReferences();
 

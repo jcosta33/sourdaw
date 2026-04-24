@@ -12,7 +12,7 @@ export class ShortTermLUFS {
 
     constructor(sampleRate = 48000) {
         this.maxBlocks = Math.ceil((3 * sampleRate) / (0.4 * sampleRate));
-        this.blocks = new Array<number>(this.maxBlocks).fill(0);
+        this.blocks = Array.from({ length: this.maxBlocks }, () => 0);
     }
 
     push(momentaryLUFS: number): void {
@@ -30,8 +30,8 @@ export class ShortTermLUFS {
             return -70;
         }
         let sum = 0;
-        for (let i = 0; i < this.count; i++) {
-            sum += 10 ** (this.blocks[(this.head + i) % this.maxBlocks]! / 10);
+        for (let index = 0; index < this.count; index++) {
+            sum += 10 ** (this.blocks[(this.head + index) % this.maxBlocks]! / 10);
         }
         const avg = sum / this.count;
         if (avg <= 0) {

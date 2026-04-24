@@ -4,11 +4,11 @@ import { updateClip } from '#/modules/Arrangement/useCases';
  * Detach a pattern instance — break the link, making it independent.
  */
 export function detachPatternInstance(clipId: string): void {
-    updateClip(clipId, (c) => {
-        if (!c.parentClipId) {
-            return c;
+    updateClip(clipId, (context) => {
+        if (!context.parentClipId) {
+            return context;
         }
-        const { parentClipId: _, overrides: __, ...rest } = c;
+        const { parentClipId: _, overrides: __, ...rest } = context;
         return rest;
     });
 }

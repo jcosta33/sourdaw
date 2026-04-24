@@ -14,7 +14,7 @@ describe('handleClearMidiOutput', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('delegates to clearMidiOutput use case', () => {
-        handleClearMidiOutput.execute({
+        void handleClearMidiOutput.execute({
             type: 'clearMidiOutput',
             payload: { trackId: 't1' },
         });

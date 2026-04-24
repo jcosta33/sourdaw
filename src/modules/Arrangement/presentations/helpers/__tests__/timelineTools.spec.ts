@@ -1,9 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { automationStore } from '#/modules/Automation/stores';
-import { addAutomationPoint, addAutomationLane } from '#/modules/Automation/useCases';
+import { addAutomationPoint } from '#/modules/Automation/useCases';
 
-import { timelineViewStore } from '../../../stores/timelineViewStore';
 import { trackStore } from '../../../stores/trackStore';
 import { splitClip } from '../../../useCases/clipEditing/splitClip';
 import { hitTestAutomationSubLane } from '../../../useCases/timelineInteractions/hitTestAutomationSubLane';

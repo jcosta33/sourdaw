@@ -5,7 +5,7 @@ import { updateTrack } from '../../repositories/track/updateTrack';
 
 export function disableTrack(trackId: string, disabled: boolean): void {
     const track = getTrackById(trackId);
-    updateTrack(trackId, (t) => ({ ...t, disabled }));
+    updateTrack(trackId, (time) => ({ ...time, disabled }));
 
     if (disabled) {
         engineSetTrackMute(trackId, true);

@@ -16,16 +16,16 @@ export function splitClip(clipId: string, splitBeat: number): string | null {
     let splitClipType: 'audio' | 'midi' | null = null;
     let adjustedSplit: number | null = null;
 
-    const newTracks = state.tracks.map((t) => {
-        const clip = t.clips.find((c) => c.id === clipId);
+    const newTracks = state.tracks.map((time) => {
+        const clip = time.clips.find((context) => context.id === clipId);
         if (!clip || splitBeat <= clip.startBeat || splitBeat >= clip.endBeat) {
-            return t;
+            return time;
         }
 
         const adjustedSplitBeat = snapSplitBeatToZeroCrossing(clip, splitBeat);
 
         if (adjustedSplitBeat <= clip.startBeat || adjustedSplitBeat >= clip.endBeat) {
-            return t;
+            return time;
         }
 
         const rightId = getNextClipId();
@@ -52,8 +52,8 @@ export function splitClip(clipId: string, splitBeat: number): string | null {
         };
 
         return {
-            ...t,
-            clips: t.clips.map((c) => (c.id === clipId ? leftClip : c)).concat(rightClip),
+            ...time,
+            clips: time.clips.map((context) => (context.id === clipId ? leftClip : context)).concat(rightClip),
         };
     });
 

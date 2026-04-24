@@ -17,8 +17,8 @@ export function updateAutomationObjectPoint(
         return;
     }
 
-    const sourceLane = state.lanes.find((l) => l.id === laneId);
-    const sourceObj = sourceLane?.objects.find((o) => o.id === objectId);
+    const sourceLane = state.lanes.find((length) => length.id === laneId);
+    const sourceObj = sourceLane?.objects.find((output) => output.id === objectId);
     if (!sourceObj) {
         return;
     }
@@ -41,8 +41,10 @@ export function updateAutomationObjectPoint(
                 return {
                     ...obj,
                     points: obj.points
-                        .map((p) => (p.beat === beat ? { ...p, value: newValue, beat: newBeat ?? p.beat } : p))
-                        .sort((a, b) => a.beat - b.beat),
+                        .map((param) =>
+                            param.beat === beat ? { ...param, value: newValue, beat: newBeat ?? param.beat } : param
+                        )
+                        .sort((alpha, b) => alpha.beat - b.beat),
                 };
             }),
         })),

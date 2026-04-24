@@ -21,7 +21,7 @@ export async function mixHealthAnalysis(onToken: (text: string) => void): Promis
         let audioAnalyzed = false;
 
         // Try to analyze the first audio clip
-        const audioClip = track.clips.find((c) => c.type === 'audio' && c.audioBufferId);
+        const audioClip = track.clips.find((context) => context.type === 'audio' && context.audioBufferId);
         if (audioClip && audioClip.audioBufferId) {
             const features = summarizeFeatures(audioClip.audioBufferId);
             if (features) {

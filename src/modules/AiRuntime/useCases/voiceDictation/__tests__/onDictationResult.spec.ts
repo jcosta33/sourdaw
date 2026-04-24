@@ -12,10 +12,12 @@ vi.mock('#/modules/AiRuntime/repositories/voiceTauriAdapter/onDictationResult', 
 
 describe('onDictationResult (useCase)', () => {
     it('forwards to the voiceTauriAdapter and maps snake_case to camelCase', async () => {
-        mocks.onVoiceDictationResult.mockImplementation(async (handler: any) => {
-            handler({ text: 'test text', duration_ms: 2000 });
-            return vi.fn(); // unlisten function
-        });
+        mocks.onVoiceDictationResult.mockImplementation(
+            (handler: (payload: { text: string; duration_ms: number }) => void) => {
+                handler({ text: 'test text', duration_ms: 2000 });
+                return Promise.resolve(vi.fn()); // unlisten function
+            }
+        );
 
         const callback = vi.fn();
         await onDictationResult(callback);

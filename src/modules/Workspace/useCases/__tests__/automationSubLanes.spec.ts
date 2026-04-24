@@ -18,7 +18,7 @@ describe('automationSubLanes injectables', () => {
         vi.mocked(getWorkspaceState).mockReturnValue({
             ...defaultWorkspaceState,
             automationSubLanes: {},
-        } as any);
+        });
     });
 
     it('should merge automation sub-lanes for a track', () => {
@@ -41,7 +41,7 @@ describe('automationSubLanes injectables', () => {
         vi.mocked(getWorkspaceState).mockReturnValue({
             ...defaultWorkspaceState,
             automationSubLanes: { t1: ['a', 'b', 'c'] },
-        } as any);
+        });
 
         removeAutomationSubLane('t1', 1);
 
@@ -54,7 +54,7 @@ describe('automationSubLanes injectables', () => {
         vi.mocked(getWorkspaceState).mockReturnValue({
             ...defaultWorkspaceState,
             automationSubLanes: { t1: ['a', 'b'] },
-        } as any);
+        });
 
         swapAutomationSubLaneParam('t1', 0, 'z');
 

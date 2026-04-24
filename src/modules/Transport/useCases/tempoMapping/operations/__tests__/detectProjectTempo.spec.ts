@@ -36,22 +36,22 @@ describe('detectTempoFromOnsets', () => {
 describe('detectProjectTempo module exports', () => {
     it('should export applyTempoMap', () => {
         expect(subject.applyTempoMap).toBeDefined();
-        const t = typeof subject.applyTempoMap;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.applyTempoMap;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export detectProjectTempo', () => {
         expect(subject.detectProjectTempo).toBeDefined();
-        const t = typeof subject.detectProjectTempo;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.detectProjectTempo;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export detectTempoFromOnsets', () => {
         expect(subject.detectTempoFromOnsets).toBeDefined();
-        const t = typeof subject.detectTempoFromOnsets;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.detectTempoFromOnsets;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export estimateOnsetsFromClips', () => {
         expect(subject.estimateOnsetsFromClips).toBeDefined();
-        const t = typeof subject.estimateOnsetsFromClips;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.estimateOnsetsFromClips;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

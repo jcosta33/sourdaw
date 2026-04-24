@@ -2,9 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { addScratchPadSection } from '../scratchPadCrud/addScratchPadSection';
 
+import type { ScratchPadStoreState } from '../../../stores/scratchPadStore';
+
 const mocks = vi.hoisted(() => ({
-    scratchPadStoreValue: { value: { sections: [] } },
-    scratchPadStoreSet: vi.fn(),
+    scratchPadStoreValue: { value: { sections: [] } as { sections: unknown[] } | null },
+    scratchPadStoreSet: vi.fn<(...args: unknown[]) => void>(),
 }));
 
 vi.mock('../../../stores/scratchPadStore', () => ({
@@ -26,7 +28,7 @@ describe('addScratchPadSection', () => {
         addScratchPadSection(0, 16, 'Idea 1', '#f00');
 
         expect(mocks.scratchPadStoreSet).toHaveBeenCalledTimes(1);
-        const newState = mocks.scratchPadStoreSet.mock.calls[0][0];
+        const newState = mocks.scratchPadStoreSet.mock.calls[0]![0] as ScratchPadStoreState;
         expect(newState.sections).toHaveLength(1);
         expect(newState.sections[0]).toMatchObject({
             startBeat: 0,

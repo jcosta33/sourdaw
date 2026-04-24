@@ -10,8 +10,8 @@ vi.mock('../../../stores/transportStore', () => {
             get value() {
                 return internal.value;
             },
-            set: vi.fn((v) => {
-                internal.value = v;
+            set: vi.fn((value) => {
+                internal.value = value;
             }),
         },
     };

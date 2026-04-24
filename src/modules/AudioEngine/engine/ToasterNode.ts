@@ -46,8 +46,8 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
     let bypassed = false;
 
     const handshake = createReadyHandshake({ pluginName: 'ToasterNode' });
-    node.port.onmessage = (e: MessageEvent) => {
-        handshake.onMessage(e);
+    node.port.onmessage = (event: MessageEvent) => {
+        handshake.onMessage(event);
     };
     const readyPromise = handshake.promise;
 
@@ -90,12 +90,16 @@ export async function createToasterNode(ctx: BaseAudioContext, wasmUrl?: string)
         disconnect() {
             try {
                 node.disconnect();
-            } catch {}
+            } catch {
+                // ignore
+            }
         },
         destroy() {
             try {
                 node.disconnect();
-            } catch {}
+            } catch {
+                // ignore
+            }
             node.port.close();
         },
         ready: readyPromise,

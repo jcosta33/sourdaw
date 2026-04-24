@@ -20,14 +20,16 @@ export type GrandBouleMidiCalibration = {
     afterTouchSensitivity: number;
 };
 
-export const createDefaultMidiCalibration = (): GrandBouleMidiCalibration => ({
-    velocityCurveExponent: 1.0,
-    velocityFloor: 0.0,
-    velocityCeiling: 1.0,
-    ccSmoothingMs: 5,
-    sustainThreshold: 0.15,
-    afterTouchSensitivity: 1.0,
-});
+export function createDefaultMidiCalibration(): GrandBouleMidiCalibration {
+    return {
+        velocityCurveExponent: 1.0,
+        velocityFloor: 0.0,
+        velocityCeiling: 1.0,
+        ccSmoothingMs: 5,
+        sustainThreshold: 0.15,
+        afterTouchSensitivity: 1.0,
+    };
+}
 
 /** Parameter range definitions used for clamping and UI display. */
 export const MIDI_CALIBRATION_RANGES = {

@@ -14,7 +14,7 @@ describe('generation handlers', () => {
     it('handleExtractGroove forwards clip id', async () => {
         const { extractGroove } = await import('../../../useCases/grooveTemplate/operations/extractGroove');
 
-        handleExtractGroove.execute({ type: 'extractGroove', payload: { clipId: 'c1' } });
+        void handleExtractGroove.execute({ type: 'extractGroove', payload: { clipId: 'c1' } });
 
         expect(extractGroove).toHaveBeenCalledWith('c1');
     });

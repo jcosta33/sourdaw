@@ -27,12 +27,14 @@ export const ProofImagerSection = ({ patch, correlation, onPatchChange, onSendPa
     };
 
     // Correlation bar color
-    const corrColor =
-        correlation > 0.5
-            ? 'var(--color-accent-mint)'
-            : correlation > 0
-              ? 'var(--color-accent-peach)'
-              : 'var(--color-state-danger)';
+    let corrColor: string;
+    if (correlation > 0.5) {
+        corrColor = 'var(--color-accent-mint)';
+    } else if (correlation > 0) {
+        corrColor = 'var(--color-accent-peach)';
+    } else {
+        corrColor = 'var(--color-state-danger)';
+    }
 
     return (
         <div className="flex flex-col gap-1.5 px-2">

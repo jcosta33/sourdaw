@@ -1,5 +1,5 @@
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 
 export function ungroupTracks(groupId: string): void {
-    mapAllTracks((t) => (t.groupId === groupId ? { ...t, groupId: null } : t));
+    mapAllTracks((time) => (time.groupId === groupId ? { ...time, groupId: null } : time));
 }

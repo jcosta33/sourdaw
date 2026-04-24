@@ -16,13 +16,15 @@ export function commitPunchRegion(captureId: string, regionId: string): void {
     const previous: PunchRecordingState = state;
     const next: PunchRecordingState = {
         ...state,
-        captures: state.captures.map((c) =>
-            c.id === captureId
+        captures: state.captures.map((context) =>
+            context.id === captureId
                 ? {
-                      ...c,
-                      punchRegions: c.punchRegions.map((r) => (r.id === regionId ? { ...r, committed: true } : r)),
+                      ...context,
+                      punchRegions: context.punchRegions.map((r) =>
+                          r.id === regionId ? { ...r, committed: true } : r
+                      ),
                   }
-                : c
+                : context
         ),
     };
     punchRecordingStore.set(next);

@@ -5,7 +5,7 @@ import * as subject from '../loadWAMPlugin';
 describe('loadWAMPlugin', () => {
     it('should export loadWAMPlugin', () => {
         expect(subject.loadWAMPlugin).toBeDefined();
-        const t = typeof subject.loadWAMPlugin;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.loadWAMPlugin;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

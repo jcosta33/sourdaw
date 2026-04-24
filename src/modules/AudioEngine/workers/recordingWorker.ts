@@ -58,8 +58,8 @@ async function drain(): Promise<void> {
     // Copy the available samples out of the ring (handles wrap-around).
     const chunk = new Float32Array(available);
     const ringSize = ring.length;
-    for (let i = 0; i < available; i++) {
-        chunk[i] = ring[(localReadHead + i) % ringSize] ?? 0;
+    for (let index = 0; index < available; index++) {
+        chunk[index] = ring[(localReadHead + index) % ringSize] ?? 0;
     }
     localReadHead += available;
 
@@ -74,10 +74,10 @@ function startPolling(): void {
         }
         await drain();
         pollTimer = setTimeout(() => {
-            tick();
+            void tick();
         }, POLL_MS);
     };
-    tick();
+    void tick();
 }
 
 async function stopWorker(): Promise<void> {
@@ -137,18 +137,24 @@ async function stopWorker(): Promise<void> {
     opfsFileHandle = null;
 }
 
-self.onmessage = ({ data }: MessageEvent): void => {
-    switch ((data as { type: string }).type) {
+type WorkerMessage =
+    | { type: 'init'; sab: SharedArrayBuffer; sampleRate: number }
+    | { type: 'start' }
+    | { type: 'stop' };
+
+self.onmessage = ({ data }: MessageEvent<WorkerMessage>): void => {
+    switch (data.type) {
         case 'init':
-            initWorker(data.sab as SharedArrayBuffer, data.sampleRate as number).then(() => {
+            void initWorker(data.sab, data.sampleRate).then(() => {
                 self.postMessage({ type: 'ready' });
+                return null;
             });
             break;
         case 'start':
             startPolling();
             break;
         case 'stop':
-            stopWorker();
+            void stopWorker();
             break;
     }
 };

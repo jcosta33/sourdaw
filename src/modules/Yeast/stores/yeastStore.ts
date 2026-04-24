@@ -135,11 +135,11 @@ export function syncStoreFromRack(): void {
     const names = rack.getProcessorNames();
     yeastStore.set({
         ...state,
-        processors: names.map((n) => ({
-            id: n.id,
-            type: session.processorTypeMap.get(n.id) ?? inferType(n.name),
-            name: n.name,
-            bypassed: n.bypassed,
+        processors: names.map((node) => ({
+            id: node.id,
+            type: session.processorTypeMap.get(node.id) ?? inferType(node.name),
+            name: node.name,
+            bypassed: node.bypassed,
         })),
     });
 }

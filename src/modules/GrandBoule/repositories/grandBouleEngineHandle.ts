@@ -43,17 +43,19 @@ export type GrandBouleEngineHandle = {
  * module. Keeps the call sites in use cases branchless and allows them to
  * be exercised in unit tests without WASM.
  */
-export const createDisconnectedGrandBouleEngineHandle = (): GrandBouleEngineHandle => ({
-    noteOn: () => {},
-    noteOnMidi2: () => {},
-    noteOff: () => {},
-    setParam: () => {},
-    setSustain: () => {},
-    setUnaCorda: () => {},
-    setSostenuto: () => {},
-    setTemperament: () => {},
-    loadAttackClip: () => {},
-    allNotesOff: () => {},
-    isReady: () => false,
-    getAnalyserNode: () => null,
-});
+export function createDisconnectedGrandBouleEngineHandle(): GrandBouleEngineHandle {
+    return {
+        noteOn: () => {},
+        noteOnMidi2: () => {},
+        noteOff: () => {},
+        setParam: () => {},
+        setSustain: () => {},
+        setUnaCorda: () => {},
+        setSostenuto: () => {},
+        setTemperament: () => {},
+        loadAttackClip: () => {},
+        allNotesOff: () => {},
+        isReady: () => false,
+        getAnalyserNode: () => null,
+    };
+}

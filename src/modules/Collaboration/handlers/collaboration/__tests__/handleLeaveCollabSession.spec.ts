@@ -14,7 +14,7 @@ describe('handleLeaveCollabSession', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('delegates to leaveSession use case', () => {
-        handleLeaveCollabSession.execute({
+        void handleLeaveCollabSession.execute({
             type: 'leaveCollabSession',
             payload: {},
         });

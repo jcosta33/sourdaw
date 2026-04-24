@@ -59,17 +59,17 @@ describe('batchAddAutomationPoints', () => {
             { beat: 2, value: 0.75, curve: 'linear', tension: 0 },
         ]);
 
-        const laneA = storeCell.state!.lanes.find((l) => l.id === 'lane-a');
-        const laneB = storeCell.state!.lanes.find((l) => l.id === 'lane-b');
+        const laneA = storeCell.state!.lanes.find((length) => length.id === 'lane-a');
+        const laneB = storeCell.state!.lanes.find((length) => length.id === 'lane-b');
 
-        expect(laneA?.points.map((p) => p.beat)).toEqual([1, 2, 4]);
+        expect(laneA?.points.map((param) => param.beat)).toEqual([1, 2, 4]);
         expect(laneB?.points).toEqual([{ beat: 10, value: 1, curve: 'linear', tension: 0 }]);
     });
 
     it('replaces an existing point when the new point is within 0.05 beats', () => {
         batchAddAutomationPoints('lane-a', [{ beat: 1.02, value: 0.9, curve: 'linear', tension: 0 }]);
 
-        const laneA = storeCell.state!.lanes.find((l) => l.id === 'lane-a');
+        const laneA = storeCell.state!.lanes.find((length) => length.id === 'lane-a');
         expect(laneA?.points).toHaveLength(1);
         expect(laneA?.points[0]).toMatchObject({ beat: 1.02, value: 0.9 });
     });

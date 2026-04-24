@@ -16,7 +16,7 @@ describe('handleClearSolos', () => {
     });
 
     it('executes clearSolos', () => {
-        handleClearSolos.execute({
+        void handleClearSolos.execute({
             type: 'clearSolos',
             payload: {},
         });

@@ -28,8 +28,8 @@ export function rippleMoveClip({ trackId, clipId, newStartBeat, clipDuration, pl
     }
 
     // Build shift deltas for other clips
-    const gapCloseSet = new Set(plan.gapClosedClips.map((c) => c.clipId));
-    const destOpenSet = new Set(plan.destinationOpenedClips.map((c) => c.clipId));
+    const gapCloseSet = new Set(plan.gapClosedClips.map((context) => context.clipId));
+    const destOpenSet = new Set(plan.destinationOpenedClips.map((context) => context.clipId));
 
     // gap close = -duration, destination open = +duration
     // A clip in both sets gets net zero shift (adjacent positions)

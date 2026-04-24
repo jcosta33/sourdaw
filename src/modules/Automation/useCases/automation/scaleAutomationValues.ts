@@ -12,9 +12,9 @@ export function scaleAutomationValues(laneId: string, factor: number, anchor = 0
             }
             return {
                 ...lane,
-                points: lane.points.map((p) => ({
-                    ...p,
-                    value: Math.min(lane.maxValue, Math.max(lane.minValue, anchor + (p.value - anchor) * factor)),
+                points: lane.points.map((param) => ({
+                    ...param,
+                    value: Math.min(lane.maxValue, Math.max(lane.minValue, anchor + (param.value - anchor) * factor)),
                 })),
             };
         }),

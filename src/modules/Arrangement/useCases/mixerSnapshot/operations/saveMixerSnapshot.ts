@@ -13,12 +13,12 @@ export function saveMixerSnapshot(name: string): MixerSnapshot | null {
         id: `snap-${crypto.randomUUID().slice(0, 8)}`,
         name,
         createdAt: Date.now(),
-        channels: state.tracks.map((t) => ({
-            trackId: t.id,
-            gain: t.gain,
-            pan: t.pan,
-            muted: t.muted,
-            soloed: t.soloed,
+        channels: state.tracks.map((time) => ({
+            trackId: time.id,
+            gain: time.gain,
+            pan: time.pan,
+            muted: time.muted,
+            soloed: time.soloed,
         })),
     };
 

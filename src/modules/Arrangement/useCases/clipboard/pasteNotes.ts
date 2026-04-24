@@ -17,16 +17,16 @@ export function pasteNotes(clipId: string, beatOffset: number): void {
     const existing = midiState.notesByClipId[clipId] ?? [];
 
     let minStart = Infinity;
-    for (const n of noteClipboard.notes) {
-        if (n.startBeat < minStart) {
-            minStart = n.startBeat;
+    for (const node of noteClipboard.notes) {
+        if (node.startBeat < minStart) {
+            minStart = node.startBeat;
         }
     }
 
-    const pastedNotes: MidiNote[] = noteClipboard.notes.map((n) => ({
-        ...n,
+    const pastedNotes: MidiNote[] = noteClipboard.notes.map((node) => ({
+        ...node,
         id: `note-${crypto.randomUUID().slice(0, 8)}`,
-        startBeat: n.startBeat - minStart + beatOffset,
+        startBeat: node.startBeat - minStart + beatOffset,
     }));
 
     midiStore.set({

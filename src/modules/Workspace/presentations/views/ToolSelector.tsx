@@ -48,7 +48,7 @@ export const ToolSelector = ({ rippleEditing, onToggleRipple }: ToolSelectorProp
                     <TooltipContent>{TOOL_LABELS[tool]}</TooltipContent>
                 </Tooltip>
             ))}
-            {onToggleRipple != null ? (
+            {onToggleRipple !== null && onToggleRipple !== undefined ? (
                 <>
                     <div className="mx-0.5 h-4 w-px daw-seam" />
                     <Tooltip>

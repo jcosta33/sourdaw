@@ -9,6 +9,6 @@ export function switchMonitor(monitorId: string): void {
     controlRoomStore.set({
         ...state,
         activeMonitorId: monitorId,
-        monitors: state.monitors.map((m) => ({ ...m, active: m.id === monitorId })),
+        monitors: state.monitors.map((message) => ({ ...message, active: message.id === monitorId })),
     });
 }

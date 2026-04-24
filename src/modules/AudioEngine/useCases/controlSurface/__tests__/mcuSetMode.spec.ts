@@ -5,7 +5,7 @@ import * as subject from '../mcuSetMode';
 describe('mcuSetMode', () => {
     it('should export mcuSetMode', () => {
         expect(subject.mcuSetMode).toBeDefined();
-        const t = typeof subject.mcuSetMode;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.mcuSetMode;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

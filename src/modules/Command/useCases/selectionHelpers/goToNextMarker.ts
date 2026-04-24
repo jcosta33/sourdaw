@@ -7,8 +7,8 @@ export function goToNextMarker(): void {
     if (!markers || markers.length === 0) {
         return;
     }
-    const sorted = [...markers].sort((a, b) => a.beat - b.beat);
-    const next = sorted.find((m) => m.beat > playhead);
+    const sorted = [...markers].sort((alpha, b) => alpha.beat - b.beat);
+    const next = sorted.find((message) => message.beat > playhead);
     if (next) {
         seekPlayhead(next.beat);
     }

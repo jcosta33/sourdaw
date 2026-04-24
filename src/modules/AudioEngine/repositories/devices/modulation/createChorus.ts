@@ -27,9 +27,9 @@ export function createChorus(ctx: BaseAudioContext): OfflineDeviceNode {
     splitter.connect(delay1);
     splitter.connect(delay2);
     lfo1.connect(lfoGain1);
-    lfoGain1.connect(delay1.delayTime as unknown as AudioNode);
+    lfoGain1.connect(delay1.delayTime);
     lfo2.connect(lfoGain2);
-    lfoGain2.connect(delay2.delayTime as unknown as AudioNode);
+    lfoGain2.connect(delay2.delayTime);
     delay1.connect(wet);
     delay2.connect(wet);
     dry.connect(merger);
@@ -44,8 +44,8 @@ export function createChorus(ctx: BaseAudioContext): OfflineDeviceNode {
         dispose() {
             lfo1.stop();
             lfo2.stop();
-            for (const n of [splitter, dry, wet, delay1, delay2, lfo1, lfo2, lfoGain1, lfoGain2, merger]) {
-                n.disconnect();
+            for (const node of [splitter, dry, wet, delay1, delay2, lfo1, lfo2, lfoGain1, lfoGain2, merger]) {
+                node.disconnect();
             }
         },
     };

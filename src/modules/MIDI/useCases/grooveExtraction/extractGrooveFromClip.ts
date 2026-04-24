@@ -25,11 +25,11 @@ export function extractGrooveFromClip(clipId: string, gridDivision = 0.25): Groo
     // Find clip bounds
     let minBeat = Infinity;
     let maxBeat = -Infinity;
-    for (const n of notes) {
-        if (n.startBeat < minBeat) {
-            minBeat = n.startBeat;
+    for (const node of notes) {
+        if (node.startBeat < minBeat) {
+            minBeat = node.startBeat;
         }
-        const end = n.startBeat + n.duration;
+        const end = node.startBeat + node.duration;
         if (end > maxBeat) {
             maxBeat = end;
         }
@@ -42,12 +42,12 @@ export function extractGrooveFromClip(clipId: string, gridDivision = 0.25): Groo
     // For each grid position, find notes near it and compute average offset
     const offsets: GrooveTemplate['offsets'] = [];
 
-    for (let i = 0; i < gridCount; i++) {
-        const gridBeat = minBeat + i * gridDivision;
+    for (let index = 0; index < gridCount; index++) {
+        const gridBeat = minBeat + index * gridDivision;
 
         // Find notes within half a grid division of this position
-        const nearbyNotes = notes.filter((n) => {
-            const distance = Math.abs(n.startBeat - gridBeat);
+        const nearbyNotes = notes.filter((node) => {
+            const distance = Math.abs(node.startBeat - gridBeat);
             return distance < gridDivision * 0.5;
         });
 
@@ -56,14 +56,14 @@ export function extractGrooveFromClip(clipId: string, gridDivision = 0.25): Groo
         }
 
         // Average timing offset
-        const avgOffset = nearbyNotes.reduce((sum, n) => sum + (n.startBeat - gridBeat), 0) / nearbyNotes.length;
+        const avgOffset = nearbyNotes.reduce((sum, node) => sum + (node.startBeat - gridBeat), 0) / nearbyNotes.length;
 
         // Average velocity relative to 100 (default)
-        const avgVelocity = nearbyNotes.reduce((sum, n) => sum + n.velocity, 0) / nearbyNotes.length;
+        const avgVelocity = nearbyNotes.reduce((sum, node) => sum + node.velocity, 0) / nearbyNotes.length;
         const velocityScale = Math.max(0.5, Math.min(1.5, avgVelocity / 100));
 
         offsets.push({
-            gridPosition: i % Math.round(1 / gridDivision), // Wrap to one beat
+            gridPosition: index % Math.round(1 / gridDivision), // Wrap to one beat
             timingOffset: avgOffset,
             velocityScale,
         });

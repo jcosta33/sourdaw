@@ -31,18 +31,18 @@ describe('finalFeatureMiscHandlers', () => {
     });
 
     it('handleAddCvOutput should delegate to addCvOutput', () => {
-        handleAddCvOutput.execute({ type: 'addCvOutput', payload: { name: 'Gate 1', channel: 0, type: 'gate' } });
+        void handleAddCvOutput.execute({ type: 'addCvOutput', payload: { name: 'Gate 1', channel: 0, type: 'gate' } });
         expect(addCvOutput).toHaveBeenCalledWith('Gate 1', 0, 'gate');
     });
 
     it('handleConnectPush should delegate to connectPush and notify user', () => {
-        handleConnectPush.execute({ type: 'connectPush', payload: { model: 'push2' } });
+        void handleConnectPush.execute({ type: 'connectPush', payload: { model: 'push2' } });
         expect(connectPush).toHaveBeenCalledWith('push2');
         expect(notifyUser).toHaveBeenCalledWith('Ableton Push 2 connected', 'success');
     });
 
     it('handleDisconnectPush should delegate to disconnectPush', () => {
-        handleDisconnectPush.execute({ type: 'disconnectPush', payload: {} });
+        void handleDisconnectPush.execute({ type: 'disconnectPush', payload: {} });
         expect(disconnectPush).toHaveBeenCalled();
     });
 
@@ -52,18 +52,18 @@ describe('finalFeatureMiscHandlers', () => {
     });
 
     it('handleLoadRaveModel should delegate to loadModel', () => {
-        handleLoadRaveModel.execute({ type: 'loadRaveModel', payload: { modelId: 'rave-1' } });
+        void handleLoadRaveModel.execute({ type: 'loadRaveModel', payload: { modelId: 'rave-1' } });
         expect(loadModel).toHaveBeenCalledWith('rave-1');
     });
 
     it('handleSetControlSurface should delegate to setProtocol and notify', () => {
-        handleSetControlSurface.execute({ type: 'setControlSurface', payload: { protocol: 'mcu' } });
+        void handleSetControlSurface.execute({ type: 'setControlSurface', payload: { protocol: 'mcu' } });
         expect(setProtocol).toHaveBeenCalledWith('mcu');
         expect(notifyUser).toHaveBeenCalledWith('Control surface: mcu');
     });
 
     it('handleSetRaveBlend should delegate to setTransferBlend', () => {
-        handleSetRaveBlend.execute({ type: 'setRaveBlend', payload: { blend: 0.5 } });
+        void handleSetRaveBlend.execute({ type: 'setRaveBlend', payload: { blend: 0.5 } });
         expect(setTransferBlend).toHaveBeenCalledWith(0.5);
     });
 });

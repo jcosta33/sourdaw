@@ -30,7 +30,7 @@ describe('handleSetDeviceParameter', () => {
             tracks: [{ id: 't1', devices: [{ id: 'd1' }] }],
         });
 
-        handleSetDeviceParameter.execute({
+        void handleSetDeviceParameter.execute({
             type: 'setDeviceParameter',
             payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
         });
@@ -42,7 +42,7 @@ describe('handleSetDeviceParameter', () => {
     it('updates audio engine with empty string track ID if track cannot be found', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
 
-        handleSetDeviceParameter.execute({
+        void handleSetDeviceParameter.execute({
             type: 'setDeviceParameter',
             payload: { deviceId: 'd1', paramId: 'gain', value: 0.5 },
         });

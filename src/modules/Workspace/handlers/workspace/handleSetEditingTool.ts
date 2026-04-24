@@ -4,9 +4,9 @@ import { setEditingTool } from '../../useCases/setEditingTool';
 import { type EditingTool } from '../../useCases/workspaceQueries/helpers';
 
 export const handleSetEditingTool = createHandler<'setEditingTool'>({
-    execute: (a) => {
-        setEditingTool(a.payload.tool as EditingTool);
+    execute: (alpha) => {
+        setEditingTool(alpha.payload.tool as EditingTool);
     },
-    describe: (a) => ({ label: `Set tool: ${a.payload.tool}` }),
+    describe: (alpha) => ({ label: `Set tool: ${alpha.payload.tool}` }),
     undoable: false,
 });

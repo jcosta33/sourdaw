@@ -16,7 +16,7 @@ describe('handleAudioToMidi', () => {
     });
 
     it('executes audioToMidi with the provided payload', () => {
-        handleAudioToMidi.execute({
+        void handleAudioToMidi.execute({
             type: 'audioToMidi',
             payload: {
                 clipId: 'c1',
@@ -35,7 +35,7 @@ describe('handleAudioToMidi', () => {
     });
 
     it('uses defaults for missing parameters', () => {
-        handleAudioToMidi.execute({
+        void handleAudioToMidi.execute({
             type: 'audioToMidi',
             payload: {
                 clipId: 'c1',

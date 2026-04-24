@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- test file: must mock Tauri APIs at their source
 import { invoke } from '@tauri-apps/api/core';
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- test file: must mock Tauri APIs at their source
 import { listen } from '@tauri-apps/api/event';
 
 import { trackStore } from '#/modules/Arrangement/stores';

@@ -5,7 +5,7 @@ import * as subject from '../getActiveBranch';
 describe('getActiveBranch', () => {
     it('should export getActiveBranch', () => {
         expect(subject.getActiveBranch).toBeDefined();
-        const t = typeof subject.getActiveBranch;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getActiveBranch;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

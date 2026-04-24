@@ -3,6 +3,6 @@ import { setTrackOutput as engineSetTrackOutput } from '#/modules/AudioEngine/us
 import { updateTrack } from '../../repositories/track/updateTrack';
 
 export function setTrackOutput(trackId: string, outputId: string): void {
-    updateTrack(trackId, (t) => ({ ...t, outputId }));
+    updateTrack(trackId, (time) => ({ ...time, outputId }));
     engineSetTrackOutput(trackId, outputId);
 }

@@ -6,8 +6,8 @@ export function updateTempoChange(changeId: string, tempo: number): void {
         return;
     }
     tempoMapStore.set({
-        changes: state.changes.map((c) =>
-            c.id === changeId ? { ...c, tempo: Math.max(20, Math.min(999, tempo)) } : c
+        changes: state.changes.map((context) =>
+            context.id === changeId ? { ...context, tempo: Math.max(20, Math.min(999, tempo)) } : context
         ),
     });
 }

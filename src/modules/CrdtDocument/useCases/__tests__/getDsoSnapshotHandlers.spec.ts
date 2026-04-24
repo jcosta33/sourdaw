@@ -5,7 +5,7 @@ import * as subject from '../getDsoSnapshotHandlers';
 describe('getDsoSnapshotHandlers', () => {
     it('should export getDsoSnapshotHandlers', () => {
         expect(subject.getDsoSnapshotHandlers).toBeDefined();
-        const t = typeof subject.getDsoSnapshotHandlers;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getDsoSnapshotHandlers;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

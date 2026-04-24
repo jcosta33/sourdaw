@@ -6,12 +6,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useTimelineGestures } from '../useTimelineGestures';
 
 const mocks = vi.hoisted(() => ({
-    zoomTimeline: vi.fn(),
-    scrollTimeline: vi.fn(),
-    setAutoScroll: vi.fn(),
-    setScrollY: vi.fn(),
+    zoomTimeline: vi.fn<(...args: unknown[]) => void>(),
+    scrollTimeline: vi.fn<(...args: unknown[]) => void>(),
+    setAutoScroll: vi.fn<(...args: unknown[]) => void>(),
+    setScrollY: vi.fn<(...args: unknown[]) => void>(),
     timelineViewStoreValue: { value: { scrollY: 0 } },
-    trackStoreValue: { value: { tracks: [] } },
+    trackStoreValue: { value: { tracks: [] as { height: number }[] } },
     transportStoreValue: { value: { isPlaying: false } },
 }));
 

@@ -5,7 +5,7 @@ import * as subject from '../unwireSidechainRoute';
 describe('unwireSidechainRoute', () => {
     it('should export unwireSidechainRoute', () => {
         expect(subject.unwireSidechainRoute).toBeDefined();
-        const t = typeof subject.unwireSidechainRoute;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.unwireSidechainRoute;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

@@ -2,12 +2,12 @@ import { audioToMidi } from '#/modules/AudioAnalysis/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 export const handleAudioToMidi = createHandler<'audioToMidi'>({
-    execute: (a) => {
+    execute: (alpha) => {
         audioToMidi({
-            clipId: a.payload.clipId,
-            trackId: a.payload.trackId ?? '',
-            sensitivity: a.payload.sensitivity,
-            mode: (a.payload.mode as 'rhythm' | 'pitched') ?? 'rhythm',
+            clipId: alpha.payload.clipId,
+            trackId: alpha.payload.trackId ?? '',
+            sensitivity: alpha.payload.sensitivity,
+            mode: (alpha.payload.mode as 'rhythm' | 'pitched') ?? 'rhythm',
         });
     },
     describe: () => ({ label: 'Convert audio to MIDI' }),

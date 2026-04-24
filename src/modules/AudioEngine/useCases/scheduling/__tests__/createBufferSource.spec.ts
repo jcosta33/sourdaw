@@ -5,7 +5,7 @@ import * as subject from '../createBufferSource';
 describe('createBufferSource', () => {
     it('should export createBufferSource', () => {
         expect(subject.createBufferSource).toBeDefined();
-        const t = typeof subject.createBufferSource;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.createBufferSource;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

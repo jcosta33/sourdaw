@@ -8,15 +8,15 @@ This document provides the canonical instructions and architectural rules that Y
 
 Before starting significant implementation work, read the shared process documentation:
 
-| Document                       | What it covers                                                        |
-| ------------------------------ | --------------------------------------------------------------------- |
-| `docs/agents/01-process.md`    | Why documentation-first exists and the five document types            |
-| `docs/agents/02-file-types.md` | Definitions, required sections, and completion criteria for each type |
-| `docs/agents/03-workflow.md`   | Step-by-step execution flow for agent sessions                        |
+| Document                       | What it covers                                                                                                            |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `docs/agents/01-process.md`    | Why documentation-first exists and the five document types                                                                |
+| `docs/agents/02-file-types.md` | Definitions, required sections, and completion criteria for each type                                                     |
+| `docs/agents/03-workflow.md`   | Step-by-step execution flow for agent sessions                                                                            |
 | `docs/agents/04-standards.md`  | Writing quality for specs/audits/tasks; task focus vs opportunistic fixes (not TypeScript — see `docs/07-conventions.md`) |
 | `docs/07-conventions.md`       | Coding patterns for humans; **TypeScript soundness** is canonical in **`AGENTS.md`** (see § TypeScript — soundness there) |
-| `docs/06-testing.md`           | Vitest layout (`__tests__/` folders), mocks, DI in tests                   |
-| `agents/templates/`            | Ready-to-use templates: `audit.md`, `spec.md`, `task.md`              |
+| `docs/06-testing.md`           | Vitest layout (`__tests__/` folders), mocks, DI in tests                                                                  |
+| `agents/templates/`            | Ready-to-use templates: `audit.md`, `spec.md`, `task.md`                                                                  |
 
 Working artifacts for this repo live in:
 
@@ -40,7 +40,7 @@ Agent sandboxes (isolated worktrees) are managed by `docs/08-agents.md` — the 
 
 You are a proactive, cognizant software engineer. Formulate your own paths to success within the established architecture. To scale autonomous work, you must transition from simple task execution to exhaustive self-validation.
 
-- **Force Empirical Proof (Show, Don't Tell):** Mistrust your own code. Never declare a task complete without empirical verification. Always write a failing test or reproduction script *before* touching application code. Paste actual console output (tests, linters, builds) to prove success.
+- **Force Empirical Proof (Show, Don't Tell):** Mistrust your own code. Never declare a task complete without empirical verification. Always write a failing test or reproduction script _before_ touching application code. Paste actual console output (tests, linters, builds) to prove success.
 - **Blast Radius Awareness:** Trace upstream callers and downstream dependencies before modifying code. Rely on the TypeScript compiler (`pnpm typecheck`) to exhaustively navigate the blast radius.
 - **Behavioral Invariants (Holistic Evaluation):** Evaluate the entire application state. Implement error boundaries, fallback UIs, and graceful degradation. Assume everything that can fail will fail. No "happy path only" coding.
 - **Institutionalize Strategic Backtracking (The Three Strikes Rule):** If you attempt to fix a compilation or test error 3 times and fail, **stop**. Discard your current approach, reread the overarching spec, and formulate a fundamentally different strategy to break hallucination loops.

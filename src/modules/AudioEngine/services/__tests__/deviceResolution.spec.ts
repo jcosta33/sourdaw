@@ -19,7 +19,7 @@ describe('resolveDrumKit', () => {
     });
 
     it('should prefer kit from the first matching device in the list', () => {
-        const a = resolveDrumKit([
+        const alpha = resolveDrumKit([
             { type: 'builtin-drum-kit', parameterValues: { kit: 0 } },
             { type: 'builtin-drum-kit', parameterValues: { kit: 1 } },
         ]);
@@ -27,7 +27,7 @@ describe('resolveDrumKit', () => {
             { type: 'builtin-drum-kit', parameterValues: { kit: 1 } },
             { type: 'builtin-drum-kit', parameterValues: { kit: 0 } },
         ]);
-        expect(a?.id).not.toBe(b?.id);
+        expect(alpha?.id).not.toBe(b?.id);
     });
 });
 

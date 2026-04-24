@@ -121,7 +121,7 @@ export const executeDsoEdit = inject({ logger })(
                 // 7. Resolve names to IDs (LLM outputs human names, we look up the real IDs)
                 const resolutionErrors = resolveDsoNames(plan.dsos);
                 if (resolutionErrors.length > 0) {
-                    const errorText = resolutionErrors.map((e) => e.reason).join('; ');
+                    const errorText = resolutionErrors.map((event) => event.reason).join('; ');
                     updateChatMessage(assistantMsgId, {
                         content: `Could not resolve references: ${errorText}`,
                         isStreaming: false,
@@ -136,7 +136,7 @@ export const executeDsoEdit = inject({ logger })(
                 // 8. Validate DSOs (now with resolved IDs)
                 const validationErrors = validateDsos(plan.dsos);
                 if (validationErrors.length > 0) {
-                    const errorText = validationErrors.map((e) => e.reason).join('; ');
+                    const errorText = validationErrors.map((event) => event.reason).join('; ');
                     updateChatMessage(assistantMsgId, {
                         content: `Edit rejected — ${errorText}`,
                         isStreaming: false,
@@ -152,8 +152,8 @@ export const executeDsoEdit = inject({ logger })(
                 if (classification === 'confirmation_required') {
                     const summaries = await commitDsos(plan, userRequest, assistantMsgId, reasoning, executeDsos);
                     const descriptions = plan.dsos
-                        .filter((d) => d.op.startsWith('remove'))
-                        .map((d) => d.op.replaceAll('_', ' '));
+                        .filter((data) => data.op.startsWith('remove'))
+                        .map((data) => data.op.replaceAll('_', ' '));
                     updateChatMessage(assistantMsgId, {
                         content: `Done (destructive): ${summaries.join('. ')}.\n\nRemoved: ${descriptions.join(', ')}. Use Ctrl+Z to undo.`,
                         isStreaming: false,
@@ -278,15 +278,15 @@ async function commitDsos(
     pushAiActionGroup({
         id: `dso-edit-${Date.now()}`,
         prompt: userRequest,
-        actions: summaries.map((s) => ({ kind: 'jsonEdit' as const, label: s })),
+        actions: summaries.map((state) => ({ kind: 'jsonEdit' as const, label: state })),
         groupId,
         timestamp: Date.now(),
         reverted: false,
     });
 
     // Log for future prompt context
-    for (const s of summaries) {
-        logEdit(s);
+    for (const state of summaries) {
+        logEdit(state);
     }
 
     // Update chat
@@ -305,12 +305,12 @@ async function commitDsos(
 async function invokeLlm(backend: string, system: string, user: string, chatMsgId: string): Promise<string> {
     let tokenCount = 0;
 
-    const onProgress = (): void => {
+    function onProgress(): void {
         tokenCount++;
         if (tokenCount % 15 === 0) {
             updateChatMessage(chatMsgId, { content: `Planning... (${tokenCount} tokens)` });
         }
-    };
+    }
 
     // Native (Tauri + mistral.rs): use schema-constrained generation
     if (backend === 'native' && isNativeEngineReady() && isTauri()) {

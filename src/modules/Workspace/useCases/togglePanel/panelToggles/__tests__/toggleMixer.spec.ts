@@ -5,7 +5,7 @@ import * as subject from '../toggleMixer';
 describe('toggleMixer', () => {
     it('should export toggleMixer', () => {
         expect(subject.toggleMixer).toBeDefined();
-        const t = typeof subject.toggleMixer;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.toggleMixer;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

@@ -25,11 +25,11 @@ export async function readMidiFile(file: File): Promise<ParsedTrack[]> {
             type: 'module',
         });
 
-        const cleanup = (): void => {
+        function cleanup(): void {
             worker.onmessage = null;
             worker.onerror = null;
             worker.terminate();
-        };
+        }
 
         worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
             const msg = event.data;

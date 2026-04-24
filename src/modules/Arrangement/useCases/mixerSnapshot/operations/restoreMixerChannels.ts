@@ -8,17 +8,17 @@ export function restoreMixerChannels(channels: MixerChannelSnapshot[]): void {
         return;
     }
 
-    const channelMap = new Map(channels.map((c) => [c.trackId, c]));
+    const channelMap = new Map(channels.map((context) => [context.trackId, context]));
 
     setTrackState({
         ...state,
-        tracks: state.tracks.map((t) => {
-            const saved = channelMap.get(t.id);
+        tracks: state.tracks.map((time) => {
+            const saved = channelMap.get(time.id);
             if (!saved) {
-                return t;
+                return time;
             }
             return {
-                ...t,
+                ...time,
                 gain: saved.gain,
                 pan: saved.pan,
                 muted: saved.muted,

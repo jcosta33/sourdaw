@@ -5,7 +5,7 @@ import * as subject from '../removeAutomationSubLane';
 describe('removeAutomationSubLane', () => {
     it('should export removeAutomationSubLane', () => {
         expect(subject.removeAutomationSubLane).toBeDefined();
-        const t = typeof subject.removeAutomationSubLane;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.removeAutomationSubLane;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

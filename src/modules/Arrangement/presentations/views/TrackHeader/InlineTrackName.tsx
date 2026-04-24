@@ -38,17 +38,17 @@ export const InlineTrackName = ({ track }: InlineTrackNameProps): ReactElement =
             <DawCompactInput
                 ref={inputRef}
                 value={value}
-                onChange={(e) => setValue(e.target.value)}
+                onChange={(event) => setValue(event.target.value)}
                 onBlur={commit}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
+                onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
                         commit();
                     }
-                    if (e.key === 'Escape') {
+                    if (event.key === 'Escape') {
                         cancel();
                     }
                 }}
-                onClick={(e) => e.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
                 size="micro"
                 className="flex-1 min-w-0 truncate bg-transparent px-0.5 text-xs font-medium text-foreground"
                 aria-label={`Rename track ${track.name}`}
@@ -60,8 +60,8 @@ export const InlineTrackName = ({ track }: InlineTrackNameProps): ReactElement =
     return (
         <span
             className="flex-1 truncate text-xs font-medium text-foreground"
-            onDoubleClick={(e) => {
-                e.stopPropagation();
+            onDoubleClick={(event) => {
+                event.stopPropagation();
                 setValue(track.name);
                 setEditing(true);
             }}

@@ -2,9 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { addSection } from '../addSection';
 
+import type { MarkerStoreState } from '../../../../stores/markerStore';
+
 const mocks = vi.hoisted(() => ({
-    markerStoreValue: { value: { sections: [] } },
-    markerStoreSet: vi.fn(),
+    markerStoreValue: { value: { sections: [] } as { sections: unknown[] } | null },
+    markerStoreSet: vi.fn<(...args: unknown[]) => void>(),
 }));
 
 vi.mock('../../../../stores/markerStore', () => ({
@@ -26,7 +28,7 @@ describe('addSection', () => {
         addSection(0, 32, 'Intro');
 
         expect(mocks.markerStoreSet).toHaveBeenCalledTimes(1);
-        const newState = mocks.markerStoreSet.mock.calls[0][0];
+        const newState = mocks.markerStoreSet.mock.calls[0]![0] as MarkerStoreState;
         expect(newState.sections).toHaveLength(1);
         expect(newState.sections[0]).toMatchObject({
             startBeat: 0,

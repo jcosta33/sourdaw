@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useState, useMemo } from 'react';
+import { type ReactElement, useEffect, useState } from 'react';
 
 import { Cpu, Power } from 'lucide-react';
 
@@ -128,7 +128,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     const trackState = useStore(trackStore, defaultTrackState);
     const engine: ResolvedGrandBouleEngine = resolveGrandBouleEngine({ deviceId, tracks: trackState.tracks });
     // §209.1 — Typed default instead of non-null assertion on live value.
-    const store = useMemo(() => createGrandBouleStore(deviceId), [deviceId]);
+    const store = createGrandBouleStore(deviceId);
     const state = useStore(store, defaultGrandBouleState);
     const [activeNotes, setActiveNotes] = useState<ReadonlyMap<number, number>>(() => new Map());
     const [lidPosition, setLidPosition] = useState(1.0);
@@ -189,6 +189,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     // On mount (or when the engine becomes available), dispatch the active
     // piano model's parameters so the DSP matches the UI from the start.
     const engineReady = engine.isReady();
+    // eslint-disable-next-line sourdaw/no-useeffect-derived-state -- side-effectful use-case call triggered by engine readiness, not state derivation
     useEffect(() => {
         if (!engineReady) {
             return;
@@ -197,16 +198,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
     }, [engineReady]);
 
     // Read FFT data from the track's AnalyserNode for the spectral waterfall.
-    const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
-    useEffect(() => {
-        if (!engineReady) {
-            return;
-        }
-        const node = engine.getAnalyserNode();
-        if (node !== null) {
-            setAnalyser(node);
-        }
-    }, [engineReady, engine]);
+    const analyser = engineReady ? engine.getAnalyserNode() : null;
 
     const liveState = state ?? store.value;
     if (liveState === null) {
@@ -237,6 +229,20 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
             return next;
         });
     };
+
+    let velocityCurveReadout = 'linear';
+    if (parameters.velocityCurve < 0.95) {
+        velocityCurveReadout = 'soft';
+    } else if (parameters.velocityCurve > 1.05) {
+        velocityCurveReadout = 'hard';
+    }
+
+    let lidPositionReadout = 'full';
+    if (lidPosition < 0.3) {
+        lidPositionReadout = 'closed';
+    } else if (lidPosition < 0.7) {
+        lidPositionReadout = 'half';
+    }
 
     return (
         <div className="grand-boule-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
@@ -542,13 +548,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             max={2}
                             step={0.05}
                             defaultValue={1.0}
-                            readout={
-                                parameters.velocityCurve < 0.95
-                                    ? 'soft'
-                                    : parameters.velocityCurve > 1.05
-                                      ? 'hard'
-                                      : 'linear'
-                            }
+                            readout={velocityCurveReadout}
                         />
                     </SectionCard>
 
@@ -581,7 +581,7 @@ export const GrandBoulePanel = ({ deviceId }: { deviceId: string }): ReactElemen
                             max={1}
                             step={0.01}
                             defaultValue={1.0}
-                            readout={lidPosition < 0.3 ? 'closed' : lidPosition < 0.7 ? 'half' : 'full'}
+                            readout={lidPositionReadout}
                         />
                     </SectionCard>
                 </aside>

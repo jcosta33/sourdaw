@@ -2,16 +2,22 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { updateProofChamberParam } from '../proofChamberParamBridge';
 
-const getAllTracks = vi.fn(() => []);
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
-    getAllTracks: (...args: any[]) => getAllTracks(...args),
+import type { getAllTracks } from '#/modules/Arrangement/useCases';
+import type { updateDeviceParam } from '#/modules/AudioEngine/useCases';
+
+const mocks = vi.hoisted(() => ({
+    getAllTracks: vi.fn<typeof getAllTracks>().mockReturnValue([]),
+    updateDeviceParam: vi.fn<typeof updateDeviceParam>(),
 }));
 
-const updateDeviceParam = vi.fn();
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+    getAllTracks: mocks.getAllTracks,
+}));
+
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
-    updateDeviceParam: (...args: any[]) => updateDeviceParam(...args),
+    updateDeviceParam: mocks.updateDeviceParam,
 }));
 
 describe('updateProofChamberParam', () => {
@@ -22,6 +28,6 @@ describe('updateProofChamberParam', () => {
     it('does not call updateDeviceParam when the device is unknown', () => {
         updateProofChamberParam('missing-device', 'some_param', 0.5);
 
-        expect(updateDeviceParam).not.toHaveBeenCalled();
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
     });
 });

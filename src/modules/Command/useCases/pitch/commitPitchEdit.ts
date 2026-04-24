@@ -1,9 +1,9 @@
-import { invoke } from '@tauri-apps/api/core';
-
 import { trackStore } from '#/modules/Arrangement/stores';
+import { type Track, type Clip } from '#/modules/Arrangement/stores';
 import { getBufferForClip } from '#/modules/Arrangement/useCases';
 import { processPitchEditWasm } from '#/modules/AudioEngine/useCases';
-import { isTauri } from '#/utils/tauriBridge';
+import { type PitchContour } from '#/modules/Knead/stores/kneadStore';
+import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { createCallbackUndoEntry } from '../commandQueries';
 import { commitUndoEntry } from '../commitUndoEntry';
@@ -14,34 +14,34 @@ type NoteSegment = {
     shift_semitones: number;
 };
 
-export async function commitPitchEditCommand(clipId: string, segments: NoteSegment[], contour: any): Promise<void> {
+export async function commitPitchEditCommand(
+    clipId: string,
+    segments: NoteSegment[],
+    contour: PitchContour
+): Promise<void> {
     const tracksState = trackStore.value;
-    let targetClip: any = null;
-    if (tracksState && tracksState.tracks) {
-        for (const track of Object.values(tracksState.tracks)) {
+    let targetClip: Clip | null = null;
+    if (tracksState?.tracks) {
+        outer: for (const track of tracksState.tracks) {
             for (const clip of track.clips) {
                 if (clip.id === clipId && clip.type === 'audio') {
                     targetClip = clip;
-                    break;
+                    break outer;
                 }
-            }
-            if (targetClip) {
-                break;
             }
         }
     }
 
-    if (!targetClip || !targetClip.fileId) {
+    if (!targetClip?.audioBufferId) {
         return;
     }
 
-    const originalFileId = targetClip.fileId;
+    const originalFileId = targetClip.audioBufferId;
     const outputAudioPath = originalFileId.replace('.wav', '_pitch.wav');
 
     try {
         if (isTauri()) {
-            // 1. Process offline via Tauri
-            await invoke('commit_pitch_edit', {
+            await tauriInvoke('commit_pitch_edit', {
                 request: {
                     inputAudioPath: originalFileId,
                     outputAudioPath,
@@ -50,7 +50,6 @@ export async function commitPitchEditCommand(clipId: string, segments: NoteSegme
                 },
             });
         } else {
-            // WASM fallback
             const result = getBufferForClip(clipId);
             if (!result || !result.buffer) {
                 throw new Error('Could not get audio buffer for clip');
@@ -58,34 +57,35 @@ export async function commitPitchEditCommand(clipId: string, segments: NoteSegme
             processPitchEditWasm(result.buffer, segments, contour, outputAudioPath);
         }
 
-        const undoFn = () => {
+        function updateTracks(fileId: string): Track[] {
+            const state = trackStore.value;
+            if (!state) {
+                return [];
+            }
+            return state.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => (clip.id === clipId ? { ...clip, audioBufferId: fileId } : clip)),
+            }));
+        }
+
+        function undoFn() {
             const state = trackStore.value;
             if (!state) {
                 return;
             }
-            const newTracks = state.tracks.map((t: any) => ({
-                ...t,
-                clips: t.clips.map((c: any) => (c.id === clipId ? { ...c, fileId: originalFileId } : c)),
-            }));
-            trackStore.set({ ...state, tracks: newTracks });
-        };
+            trackStore.set({ ...state, tracks: updateTracks(originalFileId) });
+        }
 
-        const redoFn = () => {
+        function redoFn() {
             const state = trackStore.value;
             if (!state) {
                 return;
             }
-            const newTracks = state.tracks.map((t: any) => ({
-                ...t,
-                clips: t.clips.map((c: any) => (c.id === clipId ? { ...c, fileId: outputAudioPath } : c)),
-            }));
-            trackStore.set({ ...state, tracks: newTracks });
-        };
+            trackStore.set({ ...state, tracks: updateTracks(outputAudioPath) });
+        }
 
-        // Apply immediately
         redoFn();
 
-        // 3. Register Undo Command
         const entry = createCallbackUndoEntry('Commit Pitch Edit', undoFn, redoFn, 'manual');
         commitUndoEntry(entry);
     } catch (error) {

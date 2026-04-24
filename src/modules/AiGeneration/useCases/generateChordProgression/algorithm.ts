@@ -125,16 +125,21 @@ function getQualitiesForStyle(scale: 'major' | 'minor', style: ChordProgressionS
     return scale === 'major' ? MAJOR_DEGREE_QUALITIES : MINOR_DEGREE_QUALITIES;
 }
 
-const getScaleIntervals = (scale: 'major' | 'minor'): readonly number[] =>
-    scale === 'major' ? MAJOR_SCALE_INTERVALS : MINOR_SCALE_INTERVALS;
+function getScaleIntervals(scale: 'major' | 'minor'): readonly number[] {
+    return scale === 'major' ? MAJOR_SCALE_INTERVALS : MINOR_SCALE_INTERVALS;
+}
 
-const clampMidi = (n: number): number => Math.max(0, Math.min(127, n));
-const clampVelocity = (v: number): number => Math.max(1, Math.min(127, Math.round(v)));
+function clampMidi(node: number): number {
+    return Math.max(0, Math.min(127, node));
+}
+function clampVelocity(value: number): number {
+    return Math.max(1, Math.min(127, Math.round(value)));
+}
 
 function applyVoicing(intervals: readonly number[], rootMidi: number, voicing: ChordVoicing): number[] {
     switch (voicing) {
         case 'close': {
-            return intervals.map((i) => clampMidi(rootMidi + i));
+            return intervals.map((index) => clampMidi(rootMidi + index));
         }
         case 'open': {
             return intervals.map((interval, idx) => {
@@ -151,6 +156,8 @@ function applyVoicing(intervals: readonly number[], rootMidi: number, voicing: C
             return [root, fifth];
         }
     }
+
+    return [];
 }
 
 type RhythmEvent = { offsetBeat: number; durationBeats: number };
@@ -169,8 +176,8 @@ function buildRhythmEvents(rhythm: 'whole' | 'half' | 'quarter' | 'syncopated', 
         }
         case 'quarter': {
             const events: RhythmEvent[] = [];
-            for (let i = 0; i < beatsPerBar; i++) {
-                events.push({ offsetBeat: i, durationBeats: 1 });
+            for (let index = 0; index < beatsPerBar; index++) {
+                events.push({ offsetBeat: index, durationBeats: 1 });
             }
             return events;
         }
@@ -181,6 +188,8 @@ function buildRhythmEvents(rhythm: 'whole' | 'half' | 'quarter' | 'syncopated', 
             ];
         }
     }
+
+    return [];
 }
 
 export function generateChordProgression(options: GenerateChordProgressionOptions & { seed?: number }): {

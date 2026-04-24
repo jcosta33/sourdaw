@@ -27,12 +27,12 @@ export const MidiFxSection = ({ track }: MidiFxSectionProps): ReactElement | nul
     return (
         <MixerSection label="MIDI FX">
             <div className="max-h-[80px] space-y-0.5 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10">
-                {(track as any).midiFx?.map((fx: any) => (
+                {track.midiFx.map((fx) => (
                     <div key={fx.id} className="group relative">
                         <MixerInsetButton
                             className={cn(
                                 'shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)]',
-                                fx.bypassed && 'opacity-40 line-through'
+                                fx.bypassed ? 'opacity-40 line-through' : undefined
                             )}
                             tone="accent"
                         >
@@ -41,14 +41,13 @@ export const MidiFxSection = ({ track }: MidiFxSectionProps): ReactElement | nul
                     </div>
                 ))}
             </div>
-
             {showAdd ? (
                 <div className="space-y-0.5 mt-0.5">
                     {MIDI_FX_TYPES.map((fx) => (
                         <MixerInsetButton
                             key={fx.type}
-                            onClick={(e) => {
-                                e.stopPropagation();
+                            onClick={(event) => {
+                                event.stopPropagation();
                                 addMidiFx(track.id, fx.type, fx.label);
                                 setShowAdd(false);
                             }}
@@ -59,8 +58,8 @@ export const MidiFxSection = ({ track }: MidiFxSectionProps): ReactElement | nul
                     <button
                         type="button"
                         className="w-full text-[10px] text-muted-foreground hover:text-foreground"
-                        onClick={(e) => {
-                            e.stopPropagation();
+                        onClick={(event) => {
+                            event.stopPropagation();
                             setShowAdd(false);
                         }}
                     >
@@ -69,8 +68,8 @@ export const MidiFxSection = ({ track }: MidiFxSectionProps): ReactElement | nul
                 </div>
             ) : (
                 <MixerInsetButton
-                    onClick={(e) => {
-                        e.stopPropagation();
+                    onClick={(event) => {
+                        event.stopPropagation();
                         setShowAdd(true);
                     }}
                 >

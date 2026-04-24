@@ -5,7 +5,7 @@ import * as subject from '../getTrackPeakLevel';
 describe('getTrackPeakLevel', () => {
     it('should export getTrackPeakLevel', () => {
         expect(subject.getTrackPeakLevel).toBeDefined();
-        const t = typeof subject.getTrackPeakLevel;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getTrackPeakLevel;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

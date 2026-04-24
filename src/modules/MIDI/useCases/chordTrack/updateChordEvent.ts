@@ -10,15 +10,15 @@ export function updateChordEvent(
         return;
     }
 
-    const events = state.events.map((e) =>
-        e.id === eventId
+    const events = state.events.map((event) =>
+        event.id === eventId
             ? {
-                  ...e,
+                  ...event,
                   ...(partial.root !== undefined ? { root: partial.root % 12 } : {}),
                   ...(partial.quality !== undefined ? { quality: partial.quality } : {}),
                   ...(partial.duration !== undefined ? { duration: Math.max(0.25, partial.duration) } : {}),
               }
-            : e
+            : event
     );
 
     chordTrackStore.set({ ...state, events });

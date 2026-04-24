@@ -1,0 +1,5 @@
+src/modules/Project/useCases/importSclFile.ts
+src/modules/Routing/useCases/__tests__/sidechain.spec.ts
+src/modules/Scoring/presentations/views/__tests__/ScoringPanel.spec.tsx
+src/modules/Workspace/presentations/views/Mixer/__tests__/MasterChannelStrip.spec.tsx
+src/modules/Workspace/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx

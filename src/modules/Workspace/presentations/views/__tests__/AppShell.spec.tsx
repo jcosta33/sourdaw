@@ -69,10 +69,10 @@ describe('AppShell', () => {
         vi.clearAllMocks();
         // Default implementation to avoid errors
         vi.mocked(useStore).mockImplementation((store, defaultValue) => {
-            if (store && store.name === 'preferencesStore') {
+            if (store.name === 'preferencesStore') {
                 return { panelPlacementSidebar: 'left' };
             }
-            if (store && store.name === 'projectStore') {
+            if (store.name === 'projectStore') {
                 return { initialized: true, loading: false };
             }
             return defaultValue || { past: [], future: [] };
@@ -92,7 +92,7 @@ describe('AppShell', () => {
             chatPanelWidth: 200,
             aiPanelWidth: 200,
             virtualKeyboardOpen: false,
-        } as any);
+        } as ReturnType<typeof useWorkspaceState>);
     });
 
     it('should render correctly when project is loaded', () => {
@@ -104,7 +104,7 @@ describe('AppShell', () => {
     it('should not render sidebar when closed', () => {
         vi.mocked(useWorkspaceState).mockReturnValue({
             sidebarOpen: false,
-        } as any);
+        } as ReturnType<typeof useWorkspaceState>);
 
         render(<AppShell>Content</AppShell>);
         expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();

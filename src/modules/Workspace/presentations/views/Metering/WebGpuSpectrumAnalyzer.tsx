@@ -24,7 +24,7 @@ export const WebGpuSpectrumAnalyzer = ({
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
 
         let disposed = false;
@@ -42,7 +42,7 @@ export const WebGpuSpectrumAnalyzer = ({
             renderer?.resize(width, height);
         }
 
-        init();
+        void init();
 
         let rafId = 0;
         const freqData = new Float32Array(numBins);

@@ -86,18 +86,18 @@ function groupParameters(params: DeviceParam[]): ParamSection[] {
     const groups = new Map<string, DeviceParam[]>();
     const ungrouped: DeviceParam[] = [];
 
-    for (const p of params) {
-        if (isPrimary(p)) {
-            primary.push(p);
+    for (const param of params) {
+        if (isPrimary(param)) {
+            primary.push(param);
             continue;
         }
-        const group = getGroup(p);
+        const group = getGroup(param);
         if (group) {
             const existing = groups.get(group) ?? [];
-            existing.push(p);
+            existing.push(param);
             groups.set(group, existing);
         } else {
-            ungrouped.push(p);
+            ungrouped.push(param);
         }
     }
 

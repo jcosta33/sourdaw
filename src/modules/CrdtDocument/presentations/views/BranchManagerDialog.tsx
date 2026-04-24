@@ -102,12 +102,12 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
                     <div className="flex gap-1.5">
                         <Input
                             value={newBranchName}
-                            onChange={(e) => setNewBranchName(e.target.value)}
+                            onChange={(event) => setNewBranchName(event.target.value)}
                             placeholder="New branch name"
                             className="h-7 flex-1 text-xs"
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                    handleCreate();
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                    void handleCreate();
                                 }
                             }}
                         />

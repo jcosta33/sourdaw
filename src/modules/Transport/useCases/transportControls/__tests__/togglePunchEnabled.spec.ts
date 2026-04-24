@@ -19,7 +19,7 @@ describe('togglePunchEnabled', () => {
     });
 
     it('should flip punchInEnabled when transport state exists', () => {
-        const update = vi.fn();
+        const update = vi.fn<typeof updateTransportState>();
         vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, punchInEnabled: false });
         vi.mocked(updateTransportState).mockImplementation(update);
 
@@ -29,8 +29,8 @@ describe('togglePunchEnabled', () => {
     });
 
     it('should not update when transport state is missing', () => {
-        const update = vi.fn();
-        vi.mocked(getTransportState).mockReturnValue(null as any);
+        const update = vi.fn<typeof updateTransportState>();
+        vi.mocked(getTransportState).mockReturnValue(null);
         vi.mocked(updateTransportState).mockImplementation(update);
 
         togglePunchEnabled();

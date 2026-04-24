@@ -139,7 +139,11 @@ function getModuleMeta(moduleId: string) {
     return EFFECT_MODULES[0];
 }
 
-function setGlobalParam<K extends keyof BacteriaPatch>(deviceId: string, key: K, value: BacteriaPatch[K]): void {
+function setGlobalParam<ParamKey extends keyof BacteriaPatch>(
+    deviceId: string,
+    key: ParamKey,
+    value: BacteriaPatch[ParamKey]
+): void {
     setBacteriaParamWithAudio(deviceId, key, value);
 }
 
@@ -797,7 +801,10 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
     const band = patch.bands[state.activeBand] ?? patch.bands[0]!;
     const activeModule = state.activeModule;
 
-    const setBandParam = <K extends keyof BacteriaPatch['bands'][0]>(key: K, value: BacteriaPatch['bands'][0][K]) => {
+    const setBandParam = <TKey extends keyof BacteriaPatch['bands'][0]>(
+        key: TKey,
+        value: BacteriaPatch['bands'][0][TKey]
+    ) => {
         setBacteriaBandParamWithAudio(deviceId, state.activeBand, key, value);
     };
 
@@ -826,7 +833,6 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                     })}
                 </Row>
             </Stack>
-
             <Stack gap={3} className="bacteria-window p-3">
                 <SectionHeader
                     eyebrow="Controls"
@@ -855,7 +861,6 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 ))}
                             </Row>
                         </Row>
-
                         <Row wrap gap={4}>
                             <K
                                 v={band.drive}
@@ -1380,7 +1385,6 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                     </Stack>
                 ) : null}
             </Stack>
-
             <Stack gap={3} className="bacteria-window p-3">
                 <SectionHeader
                     eyebrow="Quick modulation"
@@ -1510,15 +1514,24 @@ const RouteDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                 description="Choose how the bands behave before you dive into the per-band overrides."
             />
             <Row wrap gap={2}>
-                {ROUTING_MODES.map((mode) => (
-                    <BChip
-                        key={mode}
-                        active={state.patch.globalRouting === mode}
-                        onClick={() => setGlobalParam(deviceId, 'globalRouting', mode)}
-                    >
-                        {mode === 'serial' ? 'Serial' : mode === 'parallel' ? 'Parallel' : 'Mid/side'}
-                    </BChip>
-                ))}
+                {ROUTING_MODES.map((mode) => {
+                    let modeLabel = 'Mid/side';
+                    if (mode === 'serial') {
+                        modeLabel = 'Serial';
+                    } else if (mode === 'parallel') {
+                        modeLabel = 'Parallel';
+                    }
+
+                    return (
+                        <BChip
+                            key={mode}
+                            active={state.patch.globalRouting === mode}
+                            onClick={() => setGlobalParam(deviceId, 'globalRouting', mode)}
+                        >
+                            {modeLabel}
+                        </BChip>
+                    );
+                })}
             </Row>
         </Stack>
 

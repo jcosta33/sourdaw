@@ -5,26 +5,26 @@ import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { saveCurrentAsPreset } from '../../useCases/preset/presetStorage/saveCurrentAsPreset';
 
 export const handleSavePreset = createHandler<'savePreset'>({
-    execute: (a) => {
+    execute: (alpha) => {
         const state = getTrackStoreState();
-        const track = state?.tracks.find((t) => t.id === a.payload.trackId);
+        const track = state?.tracks.find((time) => time.id === alpha.payload.trackId);
         if (!track) {
             return;
         }
         saveCurrentAsPreset({
-            name: a.payload.name,
-            category: a.payload.category as SoundPresetCategory,
+            name: alpha.payload.name,
+            category: alpha.payload.category as SoundPresetCategory,
             trackKind: track.kind === 'midi' ? 'midi' : 'audio',
-            devices: track.devices.map((d) => ({
-                type: d.type,
-                name: d.name,
-                parameterValues: d.parameterValues,
+            devices: track.devices.map((data) => ({
+                type: data.type,
+                name: data.name,
+                parameterValues: data.parameterValues,
             })),
         });
     },
-    describe: (a) => {
-        const track = getTrackStoreState()?.tracks.find((t) => t.id === a.payload.trackId);
-        return { label: `Save preset "${a.payload.name}" from ${track?.name ?? 'track'}` };
+    describe: (alpha) => {
+        const track = getTrackStoreState()?.tracks.find((time) => time.id === alpha.payload.trackId);
+        return { label: `Save preset "${alpha.payload.name}" from ${track?.name ?? 'track'}` };
     },
     undoable: false,
 });

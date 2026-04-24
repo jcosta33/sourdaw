@@ -5,7 +5,7 @@ import * as subject from '../scaleAutomationValues';
 describe('scaleAutomationValues', () => {
     it('should export scaleAutomationValues', () => {
         expect(subject.scaleAutomationValues).toBeDefined();
-        const t = typeof subject.scaleAutomationValues;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.scaleAutomationValues;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

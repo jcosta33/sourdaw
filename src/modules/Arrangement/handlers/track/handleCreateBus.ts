@@ -6,6 +6,6 @@ export const handleCreateBus = createHandler<'createBus'>({
     execute: (action) => {
         addTrack({ name: action.payload.name, kind: 'bus' });
     },
-    describe: (a) => ({ label: `Create bus "${a.payload.name}"` }),
+    describe: (alpha) => ({ label: `Create bus "${alpha.payload.name}"` }),
     undoable: true,
 });

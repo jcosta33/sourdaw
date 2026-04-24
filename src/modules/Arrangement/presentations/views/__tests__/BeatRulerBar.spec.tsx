@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { disableLooping } from '#/modules/Transport/useCases/setLooping';
@@ -8,7 +8,7 @@ import { BeatRulerBar } from '../BeatRulerBar';
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => defaultValue),
+    useStore: vi.fn((_store: unknown, defaultValue: unknown) => defaultValue),
 }));
 
 vi.mock('../../../stores/timelineViewStore', () => ({
@@ -43,7 +43,9 @@ vi.mock('#/modules/Transport/useCases/setLooping', () => ({
 }));
 
 vi.mock('../TimelineChromeSurface', () => ({
-    TimelineChromeSurface: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+    TimelineChromeSurface: ({ children, ...props }: import('react').ComponentProps<'div'>) => (
+        <div {...props}>{children}</div>
+    ),
 }));
 
 describe('BeatRulerBar', () => {
@@ -73,14 +75,14 @@ describe('BeatRulerBar', () => {
         expect(container.firstChild).toHaveAttribute('title', expect.stringContaining('drag to set loop'));
     });
 
-    it('should call seekPlayhead on mouse down', async () => {
+    it('should call seekPlayhead on mouse down', () => {
         const { container } = render(<BeatRulerBar />);
         const surface = container.firstChild as HTMLElement;
         fireEvent.mouseDown(surface, { button: 0, clientX: 100 });
         expect(seekPlayhead).toHaveBeenCalled();
     });
 
-    it('should handle double click to disable looping', async () => {
+    it('should handle double click to disable looping', () => {
         const { container } = render(<BeatRulerBar />);
         const surface = container.firstChild as HTMLElement;
         fireEvent.doubleClick(surface);
@@ -92,7 +94,7 @@ describe('BeatRulerBar', () => {
         expect(container.firstChild).toHaveClass('select-none');
     });
 
-    it('should handle mouse move during drag', async () => {
+    it('should handle mouse move during drag', () => {
         const { container } = render(<BeatRulerBar />);
         const surface = container.firstChild as HTMLElement;
         fireEvent.mouseDown(surface, { button: 0, clientX: 100 });

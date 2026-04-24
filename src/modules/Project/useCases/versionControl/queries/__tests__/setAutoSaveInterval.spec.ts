@@ -5,7 +5,7 @@ import * as subject from '../setAutoSaveInterval';
 describe('setAutoSaveInterval', () => {
     it('should export setAutoSaveInterval', () => {
         expect(subject.setAutoSaveInterval).toBeDefined();
-        const t = typeof subject.setAutoSaveInterval;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setAutoSaveInterval;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

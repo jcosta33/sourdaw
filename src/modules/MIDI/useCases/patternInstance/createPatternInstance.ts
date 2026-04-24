@@ -16,7 +16,7 @@ export function createPatternInstance(sourceClipId: string, targetTrackId: strin
 
     let sourceClip: Clip | undefined;
     for (const track of state.tracks) {
-        sourceClip = track.clips.find((c) => c.id === sourceClipId);
+        sourceClip = track.clips.find((context) => context.id === sourceClipId);
         if (sourceClip) {
             break;
         }
@@ -49,22 +49,24 @@ export function createPatternInstance(sourceClipId: string, targetTrackId: strin
     const sourceNotes = getNotesForClip(sourceClipId);
     if (sourceNotes.length > 0) {
         const offset = startBeat - sourceClip.startBeat;
-        const clonedNotes = sourceNotes.map((n) => ({
-            ...n,
+        const clonedNotes = sourceNotes.map((node) => ({
+            ...node,
             id: `note-inst-${crypto.randomUUID().slice(0, 8)}`,
-            startBeat: n.startBeat + offset,
+            startBeat: node.startBeat + offset,
         }));
         setNotesForClip(instanceId, clonedNotes);
     }
 
-    const targetTrack = state.tracks.find((t) => t.id === targetTrackId);
+    const targetTrack = state.tracks.find((time) => time.id === targetTrackId);
     if (!targetTrack) {
         return null;
     }
 
     setTrackState({
         ...state,
-        tracks: state.tracks.map((t) => (t.id === targetTrackId ? { ...t, clips: [...t.clips, instance] } : t)),
+        tracks: state.tracks.map((time) =>
+            time.id === targetTrackId ? { ...time, clips: [...time.clips, instance] } : time
+        ),
     });
 
     return instanceId;

@@ -66,8 +66,8 @@ describe('extractGroove', () => {
     it('returns empty template if there are no notes or state is missing', () => {
         const template = extractGroove('missing', 16);
 
-        expect(template.offsets.every((o) => o === 0)).toBe(true);
-        expect(template.velocities.every((v) => v === 1)).toBe(true);
+        expect(template.offsets.every((output) => output === 0)).toBe(true);
+        expect(template.velocities.every((value) => value === 1)).toBe(true);
     });
 
     it('averages offsets and velocities when multiple notes fall on the same step', () => {

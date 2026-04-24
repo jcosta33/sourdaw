@@ -169,6 +169,9 @@ function flushParam(compositeKey: string, value: number): void {
             case 'Release':
                 device.setParam('release', value);
                 break;
+            case undefined:
+            default:
+                break;
         }
     }
 

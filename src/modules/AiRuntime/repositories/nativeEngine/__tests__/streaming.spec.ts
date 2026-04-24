@@ -78,11 +78,11 @@ describe('streamNativeCompletion', () => {
 
             let readIndex = 0;
             const mockReader = {
-                read: vi.fn().mockImplementation(async () => {
+                read: vi.fn().mockImplementation(() => {
                     if (readIndex < mockReadChunks.length) {
-                        return { done: false, value: mockReadChunks[readIndex++] };
+                        return Promise.resolve({ done: false, value: mockReadChunks[readIndex++] });
                     }
-                    return { done: true, value: undefined };
+                    return Promise.resolve({ done: true, value: undefined });
                 }),
             };
 
@@ -92,7 +92,9 @@ describe('streamNativeCompletion', () => {
             });
 
             const tokens: string[] = [];
-            const onToken = (t: string) => tokens.push(t);
+            function onToken(time: string) {
+                tokens.push(time);
+            }
 
             await streamNativeCompletion([{ role: 'user', content: 'hi' }], onToken);
 
@@ -104,10 +106,12 @@ describe('streamNativeCompletion', () => {
             mocks.fetch.mockResolvedValue({
                 ok: false,
                 status: 404,
-                text: async () => 'Not Found',
+                text: () => Promise.resolve('Not Found'),
             });
 
-            await expect(streamNativeCompletion([], vi.fn())).rejects.toThrow('llama-server error 404: Not Found');
+            await expect(streamNativeCompletion([], vi.fn<(...args: unknown[]) => void>())).rejects.toThrow(
+                'llama-server error 404: Not Found'
+            );
         });
 
         it('throws if no body is returned', async () => {
@@ -116,7 +120,9 @@ describe('streamNativeCompletion', () => {
                 body: null,
             });
 
-            await expect(streamNativeCompletion([], vi.fn())).rejects.toThrow('No response body');
+            await expect(streamNativeCompletion([], vi.fn<(...args: unknown[]) => void>())).rejects.toThrow(
+                'No response body'
+            );
         });
     });
 });

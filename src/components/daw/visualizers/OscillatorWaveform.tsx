@@ -22,8 +22,8 @@ type OscillatorWaveformProps = {
 };
 
 /** Generate one cycle of a waveform at normalized position (0–1) → amplitude (-1 to 1) */
-function waveformSample(type: string, t: number): number {
-    const phase = t % 1;
+function waveformSample(type: string, time: number): number {
+    const phase = time % 1;
     switch (type) {
         case 'sine':
             return Math.sin(phase * Math.PI * 2);
@@ -98,15 +98,15 @@ export const OscillatorWaveform = ({
         // Draw osc2 first (behind) if mix > 0
         if (osc2Mix > 0 && osc2Waveform) {
             ctx.beginPath();
-            for (let i = 0; i <= plotW; i++) {
-                const t = (i / plotW) * cycles * detuneRatio;
-                const sample = waveformSample(osc2Waveform, t);
-                const x = pad + i;
-                const y = height / 2 - sample * (plotH / 2) * 0.85;
-                if (i === 0) {
-                    ctx.moveTo(x, y);
+            for (let index = 0; index <= plotW; index++) {
+                const time = (index / plotW) * cycles * detuneRatio;
+                const sample = waveformSample(osc2Waveform, time);
+                const xPos = pad + index;
+                const yPos = height / 2 - sample * (plotH / 2) * 0.85;
+                if (index === 0) {
+                    ctx.moveTo(xPos, yPos);
                 } else {
-                    ctx.lineTo(x, y);
+                    ctx.lineTo(xPos, yPos);
                 }
             }
             ctx.strokeStyle = `${accent2}${Math.round(osc2Mix * 180)
@@ -118,15 +118,15 @@ export const OscillatorWaveform = ({
 
         // Draw osc1 (main waveform) — glow pass
         ctx.beginPath();
-        for (let i = 0; i <= plotW; i++) {
-            const t = (i / plotW) * cycles;
-            const sample = waveformSample(waveform, t);
-            const x = pad + i;
-            const y = height / 2 - sample * (plotH / 2) * 0.85;
-            if (i === 0) {
-                ctx.moveTo(x, y);
+        for (let index = 0; index <= plotW; index++) {
+            const time = (index / plotW) * cycles;
+            const sample = waveformSample(waveform, time);
+            const xPos = pad + index;
+            const yPos = height / 2 - sample * (plotH / 2) * 0.85;
+            if (index === 0) {
+                ctx.moveTo(xPos, yPos);
             } else {
-                ctx.lineTo(x, y);
+                ctx.lineTo(xPos, yPos);
             }
         }
         ctx.strokeStyle = `${accent}30`;
@@ -135,15 +135,15 @@ export const OscillatorWaveform = ({
 
         // Draw osc1 (main waveform) — sharp stroke
         ctx.beginPath();
-        for (let i = 0; i <= plotW; i++) {
-            const t = (i / plotW) * cycles;
-            const sample = waveformSample(waveform, t);
-            const x = pad + i;
-            const y = height / 2 - sample * (plotH / 2) * 0.85;
-            if (i === 0) {
-                ctx.moveTo(x, y);
+        for (let index = 0; index <= plotW; index++) {
+            const time = (index / plotW) * cycles;
+            const sample = waveformSample(waveform, time);
+            const xPos = pad + index;
+            const yPos = height / 2 - sample * (plotH / 2) * 0.85;
+            if (index === 0) {
+                ctx.moveTo(xPos, yPos);
             } else {
-                ctx.lineTo(x, y);
+                ctx.lineTo(xPos, yPos);
             }
         }
         ctx.strokeStyle = accent;

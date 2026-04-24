@@ -19,7 +19,7 @@ describe('removeMidiCC', () => {
 
     it('should remove only the CC with the given id', () => {
         removeMidiCC('c1', 'a');
-        expect(midiStore.value?.ccByClipId.c1?.map((c) => c.id)).toEqual(['b']);
+        expect(midiStore.value?.ccByClipId.c1?.map((context) => context.id)).toEqual(['b']);
     });
 
     it('should not mutate when the clip or store is missing', () => {

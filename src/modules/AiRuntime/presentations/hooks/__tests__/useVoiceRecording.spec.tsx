@@ -5,14 +5,14 @@ import { voiceStatusStore } from '../../../stores/voiceStatusStore';
 import { useVoiceRecording } from '../useVoiceRecording';
 
 const mocks = vi.hoisted(() => ({
-    onVoiceToggle: vi.fn(() => () => {}),
-    isTauri: vi.fn(() => false),
-    injectPromptCommand: vi.fn(),
-    ensureWhisperReady: vi.fn().mockResolvedValue(undefined),
-    startDictation: vi.fn().mockResolvedValue(undefined),
-    stopDictation: vi.fn().mockResolvedValue(undefined),
-    onDictationResult: vi.fn().mockResolvedValue(() => {}),
-    SpeechRecognition: vi.fn(),
+    onVoiceToggle: vi.fn<() => () => void>(() => () => {}),
+    isTauri: vi.fn<() => boolean>(() => false),
+    injectPromptCommand: vi.fn<() => void>(),
+    ensureWhisperReady: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    startDictation: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    stopDictation: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    onDictationResult: vi.fn<() => Promise<() => void>>().mockResolvedValue(() => {}),
+    SpeechRecognition: vi.fn<() => void>(),
 }));
 
 vi.mock('../../../useCases/voiceToggle/onVoiceToggle', () => ({
@@ -49,8 +49,8 @@ describe('useVoiceRecording', () => {
         voiceStatusStore.set({ isListening: false, transcribing: false });
 
         // Mock global window.SpeechRecognition
-        (window as any).SpeechRecognition = undefined;
-        (window as any).webkitSpeechRecognition = undefined;
+        Object.defineProperty(window, 'SpeechRecognition', { value: undefined, configurable: true });
+        Object.defineProperty(window, 'webkitSpeechRecognition', { value: undefined, configurable: true });
     });
 
     it('initializes with default state', () => {
@@ -64,6 +64,7 @@ describe('useVoiceRecording', () => {
         mocks.isTauri.mockReturnValue(true);
         const { result } = renderHook(() => useVoiceRecording());
 
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
         await act(async () => {
             result.current.toggleListening();
         });
@@ -93,12 +94,14 @@ describe('useVoiceRecording', () => {
         mocks.isTauri.mockReturnValue(true);
         const { result } = renderHook(() => useVoiceRecording());
 
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
         await act(async () => {
             result.current.toggleListening();
         });
 
         expect(result.current.isListening).toBe(true);
 
+        // eslint-disable-next-line @typescript-eslint/require-await -- act(async) is required by React 18 for flushing concurrent state updates
         await act(async () => {
             result.current.stopListening();
         });

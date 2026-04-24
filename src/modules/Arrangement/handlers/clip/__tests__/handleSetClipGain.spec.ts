@@ -16,7 +16,7 @@ describe('handleSetClipGain', () => {
     });
 
     it('executes setClipGain with the provided payload', () => {
-        handleSetClipGain.execute({
+        void handleSetClipGain.execute({
             type: 'setClipGain',
             payload: { clipId: 'c1', gain: 0.5 },
         });

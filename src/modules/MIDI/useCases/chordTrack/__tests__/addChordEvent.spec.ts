@@ -2,9 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { addChordEvent } from '../addChordEvent';
 
+type ChordTrackState = {
+    enabled: boolean;
+    events: Array<{ id: string; beat: number; root: number; quality: string; duration: number }>;
+};
+
 const mocks = vi.hoisted(() => ({
-    state: { enabled: true, events: [] } as { enabled: boolean; events: unknown[] } | null,
-    set: vi.fn(),
+    state: { enabled: true, events: [] } as ChordTrackState | null,
+    set: vi.fn<(newState: ChordTrackState) => void>(),
 }));
 
 vi.mock('../../../stores/chordTrackStore', () => ({
@@ -33,7 +38,7 @@ describe('addChordEvent', () => {
         mocks.state = {
             enabled: true,
             events: [{ id: 'existing', beat: 8, root: 0, quality: 'major', duration: 4 }],
-        } as any;
+        };
 
         const created = addChordEvent(2, 5, 'minor', 2);
 
@@ -43,7 +48,7 @@ describe('addChordEvent', () => {
         expect(created!.quality).toBe('minor');
         expect(created!.duration).toBe(2);
 
-        const call = mocks.set.mock.calls[0]![0] as { events: Array<{ beat: number }> };
-        expect(call.events.map((e) => e.beat)).toEqual([2, 8]);
+        const call = mocks.set.mock.calls[0]![0];
+        expect(call.events.map((event) => event.beat)).toEqual([2, 8]);
     });
 });

@@ -7,7 +7,7 @@ export function deleteCompGroup(grpId: string): void {
     }
     groupCompingStore.set({
         ...state,
-        groups: state.groups.filter((g) => g.id !== grpId),
+        groups: state.groups.filter((gain) => gain.id !== grpId),
         activeGroupId: state.activeGroupId === grpId ? null : state.activeGroupId,
     });
 }

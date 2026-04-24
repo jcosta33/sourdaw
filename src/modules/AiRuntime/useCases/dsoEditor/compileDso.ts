@@ -142,24 +142,24 @@ const DRUM_STYLE_MAP: Record<string, DrumPatternStyle> = {
     punk: 'punk',
 };
 
-function toMelodyStyle(s: string): MelodyStyle {
-    return MELODY_STYLE_MAP[s.toLowerCase()] ?? 'simple';
+function toMelodyStyle(state: string): MelodyStyle {
+    return MELODY_STYLE_MAP[state.toLowerCase()] ?? 'simple';
 }
 
-function toScaleType(s: string): ScaleType {
-    return SCALE_MAP[s.toLowerCase()] ?? 'major';
+function toScaleType(state: string): ScaleType {
+    return SCALE_MAP[state.toLowerCase()] ?? 'major';
 }
 
-function toChordStyle(s: string): ChordProgressionStyle {
-    return CHORD_STYLE_MAP[s] ?? CHORD_STYLE_MAP[s.toLowerCase()] ?? 'pop';
+function toChordStyle(state: string): ChordProgressionStyle {
+    return CHORD_STYLE_MAP[state] ?? CHORD_STYLE_MAP[state.toLowerCase()] ?? 'pop';
 }
 
-function toChordVoicing(s: string): ChordVoicing {
-    return CHORD_VOICING_MAP[s.toLowerCase()] ?? 'close';
+function toChordVoicing(state: string): ChordVoicing {
+    return CHORD_VOICING_MAP[state.toLowerCase()] ?? 'close';
 }
 
-function toDrumStyle(s: string): DrumPatternStyle {
-    return DRUM_STYLE_MAP[s.toLowerCase()] ?? 'rock';
+function toDrumStyle(state: string): DrumPatternStyle {
+    return DRUM_STYLE_MAP[state.toLowerCase()] ?? 'rock';
 }
 
 /**
@@ -187,27 +187,27 @@ type DsoExecContext = {
  * Handles typos, partial matches, and case differences.
  */
 function fuzzyScore(query: string, candidate: string): number {
-    const q = query.toLowerCase();
-    const c = candidate.toLowerCase();
+    const query1 = query.toLowerCase();
+    const context = candidate.toLowerCase();
 
     // Exact match
-    if (q === c) {
+    if (query1 === context) {
         return 100;
     }
 
     // Candidate contains query as substring
-    if (c.includes(q)) {
+    if (context.includes(query1)) {
         return 80;
     }
 
     // Query contains candidate
-    if (q.includes(c)) {
+    if (query1.includes(context)) {
         return 70;
     }
 
     // Token overlap (handles "drum bus" matching "Drum Bus Send")
-    const qTokens = q.split(/[\s_-]+/);
-    const cTokens = c.split(/[\s_-]+/);
+    const qTokens = query1.split(/[\s_-]+/);
+    const cTokens = context.split(/[\s_-]+/);
     let tokenHits = 0;
     for (const qt of qTokens) {
         if (qt.length < 2) {
@@ -222,9 +222,9 @@ function fuzzyScore(query: string, candidate: string): number {
     }
 
     // Levenshtein-based typo tolerance (only for short strings to avoid expense)
-    if (q.length <= 15 && c.length <= 20) {
-        const dist = levenshtein(q, c);
-        const maxLen = Math.max(q.length, c.length);
+    if (query1.length <= 15 && context.length <= 20) {
+        const dist = levenshtein(query1, context);
+        const maxLen = Math.max(query1.length, context.length);
         const similarity = 1 - dist / maxLen;
         if (similarity > 0.6) {
             return similarity * 50;
@@ -234,25 +234,38 @@ function fuzzyScore(query: string, candidate: string): number {
     return 0;
 }
 
-function levenshtein(a: string, b: string): number {
-    const m = a.length;
-    const n = b.length;
-    const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
-        Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+function levenshtein(alpha: string, b: string): number {
+    const message = alpha.length;
+    const node = b.length;
+    const dp: number[][] = Array.from({ length: message + 1 }, (_, index) =>
+        Array.from({ length: node + 1 }, (_, jIndex) => {
+            if (index === 0) {
+                return jIndex;
+            }
+            if (jIndex === 0) {
+                return index;
+            }
+            return 0;
+        })
     );
-    for (let i = 1; i <= m; i++) {
-        for (let j = 1; j <= n; j++) {
-            dp[i]![j] =
-                a[i - 1] === b[j - 1]
-                    ? dp[i - 1]![j - 1]!
-                    : 1 + Math.min(dp[i - 1]![j]!, dp[i]![j - 1]!, dp[i - 1]![j - 1]!);
+    for (let index = 1; index <= message; index++) {
+        for (let jIndex = 1; jIndex <= node; jIndex++) {
+            dp[index]![jIndex] =
+                alpha[index - 1] === b[jIndex - 1]
+                    ? dp[index - 1]![jIndex - 1]!
+                    : 1 + Math.min(dp[index - 1]![jIndex]!, dp[index]![jIndex - 1]!, dp[index - 1]![jIndex - 1]!);
         }
     }
-    return dp[m]![n]!;
+    return dp[message]![node]!;
 }
 
-function bestMatch<T>(query: string, items: T[], getName: (item: T) => string, threshold = 30): T | null {
-    let best: T | null = null;
+function bestMatch<TItem>(
+    query: string,
+    items: TItem[],
+    getName: (item: TItem) => string,
+    threshold = 30
+): TItem | null {
+    let best: TItem | null = null;
     let bestScore = 0;
     for (const item of items) {
         const score = fuzzyScore(query, getName(item));
@@ -279,49 +292,49 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
     }
 
     const errors: DsoValidationError[] = [];
-    const allClips = state.tracks.flatMap((t) => t.clips);
-    const allDevices = state.tracks.flatMap((t) => t.devices);
+    const allClips = state.tracks.flatMap((time) => time.clips);
+    const allDevices = state.tracks.flatMap((time) => time.devices);
 
     // Keep track of dynamically created tracks during this resolve pass
     const mockTracks: { id: string; name: string }[] = [];
 
-    const findTrackId = (nameOrId: string): string | null => {
-        if (state.tracks.some((t) => t.id === nameOrId)) {
+    function findTrackId(nameOrId: string): string | null {
+        if (state!.tracks.some((time) => time.id === nameOrId)) {
             return nameOrId;
         }
-        if (mockTracks.some((t) => t.id === nameOrId)) {
+        if (mockTracks.some((time) => time.id === nameOrId)) {
             return nameOrId;
         }
 
-        let match = bestMatch(nameOrId, state.tracks, (t) => t.name);
+        let match: { id: string } | null = bestMatch(nameOrId, state!.tracks, (time) => time.name);
         if (!match) {
-            match = bestMatch(nameOrId, mockTracks, (t) => t.name) as any;
+            match = bestMatch(nameOrId, mockTracks, (time) => time.name);
         }
         return match?.id ?? null;
-    };
+    }
 
-    const findClipId = (nameOrId: string): string | null => {
-        if (allClips.some((c) => c.id === nameOrId)) {
+    function findClipId(nameOrId: string): string | null {
+        if (allClips.some((context) => context.id === nameOrId)) {
             return nameOrId;
         }
-        const match = bestMatch(nameOrId, allClips, (c) => c.name);
+        const match = bestMatch(nameOrId, allClips, (context) => context.name);
         return match?.id ?? null;
-    };
+    }
 
-    const findDeviceId = (nameOrId: string): string | null => {
+    function findDeviceId(nameOrId: string): string | null {
         if (nameOrId === 'latest') {
             return 'latest';
         }
-        if (allDevices.some((d) => d.id === nameOrId)) {
+        if (allDevices.some((data) => data.id === nameOrId)) {
             return nameOrId;
         }
-        const match = bestMatch(nameOrId, allDevices, (d) => d.type);
+        const match = bestMatch(nameOrId, allDevices, (data) => data.type);
         return match?.id ?? null;
-    };
+    }
 
-    let i = 0;
-    while (i < dsos.length) {
-        const dso = dsos[i]!;
+    let index = 0;
+    while (index < dsos.length) {
+        const dso = dsos[index]!;
 
         // Resolve track_id fields
         if ('track_id' in dso && typeof dso.track_id === 'string') {
@@ -331,7 +344,7 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
             } else if (!['add_track'].includes(dso.op)) {
                 // Check if the LLM meant the selected track
                 const selectedTrackId = state.selectedTrackId;
-                const selectedTrack = selectedTrackId ? state.tracks.find((t) => t.id === selectedTrackId) : null;
+                const selectedTrack = selectedTrackId ? state.tracks.find((time) => time.id === selectedTrackId) : null;
                 const lowerName = dso.track_id.toLowerCase();
                 const isSelectedRef =
                     lowerName.includes('selected') || lowerName.includes('current') || lowerName.includes('this');
@@ -347,16 +360,16 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
                             ? 'midi'
                             : 'audio';
 
-                    dsos.splice(i, 0, {
+                    dsos.splice(index, 0, {
                         op: 'add_track',
                         name: dso.track_id,
-                        kind: kindFallback as any,
+                        kind: kindFallback,
                         track_id: newId,
-                    } as any);
+                    } as Dso);
 
                     mockTracks.push({ id: newId, name: dso.track_id });
                     (dso as Record<string, unknown>).track_id = newId;
-                    i++;
+                    index++;
                 }
             }
         }
@@ -409,7 +422,7 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
             }
         }
 
-        i++;
+        index++;
     }
 
     return errors;
@@ -425,9 +438,9 @@ export type DsoValidationError = {
 export function validateDsos(dsos: Dso[]): DsoValidationError[] {
     const errors: DsoValidationError[] = [];
     const state = trackStore.value;
-    const trackIds = new Set(state?.tracks.map((t) => t.id) ?? []);
-    const clipIds = new Set(state?.tracks.flatMap((t) => t.clips.map((c) => c.id)) ?? []);
-    const deviceIds = new Set(state?.tracks.flatMap((t) => t.devices.map((d) => d.id)) ?? []);
+    const trackIds = new Set(state?.tracks.map((time) => time.id) ?? []);
+    const clipIds = new Set(state?.tracks.flatMap((time) => time.clips.map((context) => context.id)) ?? []);
+    const deviceIds = new Set(state?.tracks.flatMap((time) => time.devices.map((data) => data.id)) ?? []);
 
     // Pre-register IDs injected by resolveDsoNames for add_track DSOs so that
     // subsequent DSOs in the same batch that target those new tracks are not
@@ -445,8 +458,6 @@ export function validateDsos(dsos: Dso[]): DsoValidationError[] {
         switch (dso.op) {
             case 'remove_track':
             case 'rename_track':
-            case 'set_track_volume':
-            case 'set_track_pan':
             case 'mute_track':
             case 'solo_track':
             case 'arm_track':
@@ -506,12 +517,18 @@ export function validateDsos(dsos: Dso[]): DsoValidationError[] {
                 break;
 
             case 'set_track_volume':
+                if (!trackIds.has(dso.track_id)) {
+                    errors.push({ dso, reason: `Track "${dso.track_id}" does not exist` });
+                }
                 if (dso.gain < 0 || dso.gain > 1.5) {
                     errors.push({ dso, reason: `Gain ${dso.gain} out of range (0-1.5)` });
                 }
                 break;
 
             case 'set_track_pan':
+                if (!trackIds.has(dso.track_id)) {
+                    errors.push({ dso, reason: `Track "${dso.track_id}" does not exist` });
+                }
                 if (dso.pan < -50 || dso.pan > 50) {
                     errors.push({ dso, reason: `Pan ${dso.pan} out of range (-50 to 50)` });
                 }
@@ -536,13 +553,13 @@ export function validateDsos(dsos: Dso[]): DsoValidationError[] {
                 if (!clipIds.has(dso.clip_id)) {
                     errors.push({ dso, reason: `Clip "${dso.clip_id}" does not exist` });
                 }
-                for (let i = 0; i < dso.notes.length; i++) {
-                    const n = dso.notes[i]!;
-                    if (n.pitch < 0 || n.pitch > 127) {
-                        errors.push({ dso, reason: `Note ${i} pitch ${n.pitch} out of range (0-127)` });
+                for (let index = 0; index < dso.notes.length; index++) {
+                    const node = dso.notes[index]!;
+                    if (node.pitch < 0 || node.pitch > 127) {
+                        errors.push({ dso, reason: `Note ${index} pitch ${node.pitch} out of range (0-127)` });
                     }
-                    if (n.velocity < 0 || n.velocity > 127) {
-                        errors.push({ dso, reason: `Note ${i} velocity ${n.velocity} out of range (0-127)` });
+                    if (node.velocity < 0 || node.velocity > 127) {
+                        errors.push({ dso, reason: `Note ${index} velocity ${node.velocity} out of range (0-127)` });
                     }
                 }
                 break;
@@ -562,6 +579,11 @@ export function validateDsos(dsos: Dso[]): DsoValidationError[] {
                 if (!trackIds.has(dso.track_id)) {
                     errors.push({ dso, reason: `Track "${dso.track_id}" does not exist` });
                 }
+                break;
+
+            case 'add_track':
+            case 'set_time_signature':
+            case 'set_loop':
                 break;
         }
     }
@@ -584,7 +606,7 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
     switch (dso.op) {
         case 'add_track': {
             addTrack({
-                id: (dso as any).track_id,
+                id: dso.track_id ?? '',
                 name: dso.name,
                 kind: dso.kind as 'audio' | 'midi' | 'bus' | 'master',
             });
@@ -700,8 +722,8 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
         }
 
         case 'duplicate_clip': {
-            const allClips = state.tracks.flatMap((t) => t.clips);
-            const sourceClip = allClips.find((c) => c.id === dso.clip_id);
+            const allClips = state.tracks.flatMap((time) => time.clips);
+            const sourceClip = allClips.find((context1) => context1.id === dso.clip_id);
             if (sourceClip) {
                 const duration = sourceClip.endBeat - sourceClip.startBeat;
                 addClip({
@@ -726,14 +748,14 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
 
         case 'insert_device': {
             // Capture device count before adding so we can find the new one
-            const track = state.tracks.find((t) => t.id === dso.track_id);
+            const track = state.tracks.find((time) => time.id === dso.track_id);
             const deviceCountBefore = track?.devices.length ?? 0;
 
             addDevice(dso.track_id, dso.device_type);
 
             // Track the newly inserted device ID for "latest" resolution
             const updatedState = trackStore.value;
-            const updatedTrack = updatedState?.tracks.find((t) => t.id === dso.track_id);
+            const updatedTrack = updatedState?.tracks.find((time) => time.id === dso.track_id);
             if (updatedTrack && updatedTrack.devices.length > deviceCountBefore) {
                 const newDevice = updatedTrack.devices[updatedTrack.devices.length - 1];
                 if (newDevice) {
@@ -805,17 +827,20 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
             const ms = midiStore.value;
             if (ms) {
                 // Find the clip's start beat so we can offset relative note positions to absolute
-                const clip = state.tracks.flatMap((t) => t.clips).find((c) => c.id === dso.clip_id);
+                const clip = state.tracks.flatMap((time) => time.clips).find((context1) => context1.id === dso.clip_id);
                 const clipStartBeat = clip?.startBeat ?? 0;
 
                 const existing = ms.notesByClipId[dso.clip_id] ?? [];
                 const newNotes = dso.notes.map(
-                    (n: { pitch: number; start_beat: number; duration: number; velocity: number }, i: number) => ({
-                        id: `note-ai-${Date.now()}-${i}`,
-                        pitch: Math.max(0, Math.min(127, n.pitch)),
-                        startBeat: Math.max(0, clipStartBeat + n.start_beat),
-                        duration: Math.max(0.01, n.duration),
-                        velocity: Math.max(1, Math.min(127, n.velocity)),
+                    (
+                        node: { pitch: number; start_beat: number; duration: number; velocity: number },
+                        index: number
+                    ) => ({
+                        id: `note-ai-${Date.now()}-${index}`,
+                        pitch: Math.max(0, Math.min(127, node.pitch)),
+                        startBeat: Math.max(0, clipStartBeat + node.start_beat),
+                        duration: Math.max(0.01, node.duration),
+                        velocity: Math.max(1, Math.min(127, node.velocity)),
                     })
                 );
                 midiStore.set({

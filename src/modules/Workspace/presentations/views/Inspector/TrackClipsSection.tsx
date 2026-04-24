@@ -51,8 +51,8 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                                         variant="secondary"
                                         size="xs"
                                         className="h-5 flex-1 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
+                                        onClick={(event) => {
+                                            event.stopPropagation();
                                             acceptGhostClip(clip.id);
                                         }}
                                     >
@@ -62,8 +62,8 @@ export const TrackClipsSection = ({ track, onSelectClip }: TrackClipsSectionProp
                                         variant="ghost"
                                         size="xs"
                                         className="h-5 flex-1 text-[10px] text-muted-foreground hover:text-destructive"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
+                                        onClick={(event) => {
+                                            event.stopPropagation();
                                             dismissGhostClip(clip.id);
                                         }}
                                     >

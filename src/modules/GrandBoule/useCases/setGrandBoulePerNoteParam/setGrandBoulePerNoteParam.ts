@@ -24,7 +24,7 @@ type SetGrandBoulePerNoteParamInput = {
     store: Store<GrandBouleState>;
 };
 
-export const setGrandBoulePerNoteParam = (input: SetGrandBoulePerNoteParamInput): void => {
+export function setGrandBoulePerNoteParam(input: SetGrandBoulePerNoteParamInput): void {
     const state = input.store.value;
     if (state === null) {
         return;
@@ -50,4 +50,4 @@ export const setGrandBoulePerNoteParam = (input: SetGrandBoulePerNoteParamInput)
         name: `perNote.${input.key}.${input.param}`,
         value: clamped,
     });
-};
+}

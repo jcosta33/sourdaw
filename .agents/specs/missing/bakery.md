@@ -16,7 +16,7 @@ This differentiates The Bakery from:
 
 **Research reference:** [`.agents/research/factory/bakery.md`](../../research/factory/bakery.md) — §1 "The Bakery". Research notes on Bitwig Grid / Reaktor / Max / VCV Rack competitive baseline are consolidated there. This spec does not restate research; it derives requirements from it.
 
-**Research alignment (informative):** The consolidated research file lists browser/WASM patch execution, a full Crumb-grade sampler product, and a factory samples / sfizz pipeline as long-term mission goals. v1 ships the native desktop runtime with sampler *nodes* only; WASM runtime, a standalone Crumb instrument, and the free-resources delivery story remain tracked follow-ups (see Non-goals and the "Relationship to Crumb and factory samples" section) — not dropped requirements.
+**Research alignment (informative):** The consolidated research file lists browser/WASM patch execution, a full Crumb-grade sampler product, and a factory samples / sfizz pipeline as long-term mission goals. v1 ships the native desktop runtime with sampler _nodes_ only; WASM runtime, a standalone Crumb instrument, and the free-resources delivery story remain tracked follow-ups (see Non-goals and the "Relationship to Crumb and factory samples" section) — not dropped requirements.
 
 ---
 
@@ -89,7 +89,7 @@ The patcher canvas supports pan, zoom, multi-select, copy/paste, undo/redo, and 
 
 ### R2: Containers — Poly / FX / Note
 
-- **R2.1** — **Poly Bakery** exposes a *Voice domain* (per-voice subgraph: oscillators, envelopes, per-voice filters) and a *Global domain* (shared post-voice DSP: reverb, EQ, limiter). The compiler replicates the Voice domain graph per active voice and runs the Global domain once.
+- **R2.1** — **Poly Bakery** exposes a _Voice domain_ (per-voice subgraph: oscillators, envelopes, per-voice filters) and a _Global domain_ (shared post-voice DSP: reverb, EQ, limiter). The compiler replicates the Voice domain graph per active voice and runs the Global domain once.
 - **R2.2** — Poly patches declare a polyphony cap (default 16, user-adjustable 1–64). The host voice manager allocates, retriggers, and steals voices; the patch chooses steal policy from a fixed enum (`oldest | quietest | lowestVelocity`).
 - **R2.3** — **FX Bakery** has a single global graph and no voice domain. It exposes stereo audio in and stereo audio out and may process arbitrary DAW audio.
 - **R2.4** — **Note Bakery** has a single graph that receives note events on a MIDI-in node and emits note events on a MIDI-out node. It has no audio path.
@@ -124,15 +124,15 @@ Each module below must exist at v1 release. Each module exposes ports and parame
 
 - **R5.1** — Compilation is deterministic: the same patch JSON on the same engine version produces byte-identical `ProcessTask` slices. No random tie-breaking in topological ordering.
 - **R5.2** — Pipeline stages (in order):
-  1. **Parse** — JSON → in-memory patch (schema-validated with Zod on TS side, `serde` on Rust side).
-  2. **Resolve** — bind node types against module registry; fail with a list of unknown nodes if any.
-  3. **Type-check** — walk cables, verify port type compatibility, insert implicit coercions.
-  4. **Expand** — for Poly Bakery, clone the voice domain once per configured polyphony and wire up the voice-manager bridge nodes; expand sub-patches inline.
-  5. **Topologically sort** — produce linear node order; break ties by `NodeId` lexicographic order for determinism.
-  6. **Allocate buffers** — linear-scan buffer allocator (register-allocation style) reuses buffers whose live range has ended; output a buffer assignment map.
-  7. **Constant-fold** — nodes whose inputs are all `Constant` values are computed once at compile and replaced with a constant.
-  8. **Dead-code-eliminate** — nodes with no path to an `AudioOut` / `NoteOut` are dropped.
-  9. **Emit** — produce `Vec<ProcessTask>` with buffer indices resolved to indices into a pre-allocated `Vec<Vec<f32>>` scratch pool owned by the instance.
+    1. **Parse** — JSON → in-memory patch (schema-validated with Zod on TS side, `serde` on Rust side).
+    2. **Resolve** — bind node types against module registry; fail with a list of unknown nodes if any.
+    3. **Type-check** — walk cables, verify port type compatibility, insert implicit coercions.
+    4. **Expand** — for Poly Bakery, clone the voice domain once per configured polyphony and wire up the voice-manager bridge nodes; expand sub-patches inline.
+    5. **Topologically sort** — produce linear node order; break ties by `NodeId` lexicographic order for determinism.
+    6. **Allocate buffers** — linear-scan buffer allocator (register-allocation style) reuses buffers whose live range has ended; output a buffer assignment map.
+    7. **Constant-fold** — nodes whose inputs are all `Constant` values are computed once at compile and replaced with a constant.
+    8. **Dead-code-eliminate** — nodes with no path to an `AudioOut` / `NoteOut` are dropped.
+    9. **Emit** — produce `Vec<ProcessTask>` with buffer indices resolved to indices into a pre-allocated `Vec<Vec<f32>>` scratch pool owned by the instance.
 - **R5.3** — Compilation runs on a non-realtime thread. The compiled schedule is handed to the audio thread via an `rtrb` lock-free ring or equivalent atomic pointer swap; the audio thread never allocates, locks, or parses JSON.
 - **R5.4** — Compile errors are enumerable TypeScript types (`BakeryCompileError`) with a `nodeId` field so the UI can highlight the offending node.
 - **R5.5 — AC:** A unit test compiles a 20-node test patch, asserts the resulting `ProcessTask` count matches expected, and asserts that two subsequent compiles produce identical output.
@@ -197,30 +197,30 @@ Each module below must exist at v1 release. Each module exposes ports and parame
 
 ```json
 {
-  "schemaVersion": 1,
-  "kind": "poly",
-  "metadata": {
-    "title": "Basic Subtractive",
-    "author": "…",
-    "createdAt": "2026-04-17T00:00:00Z",
-    "appVersion": "0.x.y",
-    "description": "…",
-    "tags": ["synth", "subtractive"]
-  },
-  "graph": {
-    "nodes": [
-      { "id": "n1", "type": "Oscillator", "params": { "waveform": "saw" } },
-      { "id": "n2", "type": "LadderFilter", "params": { "cutoff": 0.4 } },
-      { "id": "n3", "type": "AudioOut", "params": {} }
-    ],
-    "cables": [
-      { "from": ["n1", "out"], "to": ["n2", "in"] },
-      { "from": ["n2", "out"], "to": ["n3", "in"] }
-    ],
-    "subPatches": []
-  },
-  "polyphony": { "voices": 16, "steal": "oldest" },
-  "sampleRefs": []
+    "schemaVersion": 1,
+    "kind": "poly",
+    "metadata": {
+        "title": "Basic Subtractive",
+        "author": "…",
+        "createdAt": "2026-04-17T00:00:00Z",
+        "appVersion": "0.x.y",
+        "description": "…",
+        "tags": ["synth", "subtractive"]
+    },
+    "graph": {
+        "nodes": [
+            { "id": "n1", "type": "Oscillator", "params": { "waveform": "saw" } },
+            { "id": "n2", "type": "LadderFilter", "params": { "cutoff": 0.4 } },
+            { "id": "n3", "type": "AudioOut", "params": {} }
+        ],
+        "cables": [
+            { "from": ["n1", "out"], "to": ["n2", "in"] },
+            { "from": ["n2", "out"], "to": ["n3", "in"] }
+        ],
+        "subPatches": []
+    },
+    "polyphony": { "voices": 16, "steal": "oldest" },
+    "sampleRefs": []
 }
 ```
 
@@ -381,9 +381,9 @@ Factory sample delivery (sfizz WASM status, ~1.5–2.5 GB memory ceiling, Salama
 
 ## Open questions
 
-- [ ] **[CRITICAL]** *Hot-reload safety when a port's type changes mid-edit.* If the user rewires a cable such that a previously valid graph becomes invalid, what does the audio engine render during the invalid window? Options: (a) continue the last valid schedule (preferred) — requires the editor to retain the last-valid compiled schedule alongside the live model; (b) crossfade to silence; (c) hard mute the instance. Resolve before writing the compiler's swap path.
-- [ ] **[CRITICAL]** *Deallocation strategy for removed nodes on the audio thread.* When a node is removed from the compiled schedule, where is its state freed? Options: (a) `basedrop`-style deferred drop ring, moved to a GC thread; (b) the UI thread owns all node state and the audio thread holds only pointers, with drops happening on schedule swap on the UI side; (c) per-instance arena freed only when the instance itself is destroyed. Decision affects R6.2 and R7.2.
-- [ ] **[CRITICAL]** *Patch signing / trust boundary for community sharing.* R11.6 forbids embedded executable code, but sample references (R11.3) still mean a malicious patch can point at resource-exhausting content. Do we require signed metadata, a content-length cap, or both? If signed, what is the trust anchor — Sourdaw CA, author's self-signed key, or none in v1? Decision affects R11 and the community-sharing UX shipping criteria.
+- [ ] **[CRITICAL]** _Hot-reload safety when a port's type changes mid-edit._ If the user rewires a cable such that a previously valid graph becomes invalid, what does the audio engine render during the invalid window? Options: (a) continue the last valid schedule (preferred) — requires the editor to retain the last-valid compiled schedule alongside the live model; (b) crossfade to silence; (c) hard mute the instance. Resolve before writing the compiler's swap path.
+- [ ] **[CRITICAL]** _Deallocation strategy for removed nodes on the audio thread._ When a node is removed from the compiled schedule, where is its state freed? Options: (a) `basedrop`-style deferred drop ring, moved to a GC thread; (b) the UI thread owns all node state and the audio thread holds only pointers, with drops happening on schedule swap on the UI side; (c) per-instance arena freed only when the instance itself is destroyed. Decision affects R6.2 and R7.2.
+- [ ] **[CRITICAL]** _Patch signing / trust boundary for community sharing._ R11.6 forbids embedded executable code, but sample references (R11.3) still mean a malicious patch can point at resource-exhausting content. Do we require signed metadata, a content-length cap, or both? If signed, what is the trust anchor — Sourdaw CA, author's self-signed key, or none in v1? Decision affects R11 and the community-sharing UX shipping criteria.
 - [ ] **[MINOR]** Polyphony cap default — 16 (current draft) vs 8. Will default once we have perf numbers on CI baseline.
 - [ ] **[MINOR]** Sub-patch reuse across patches (v1 inlines per-instance; a library of sub-patches is deferred). Confirm deferral does not block first community release.
 - [ ] **[MINOR]** WebGPU vs Canvas 2D preference for the canvas renderer — decide after a spike on Safari/Linux compatibility.
@@ -394,15 +394,15 @@ Factory sample delivery (sfizz WASM status, ~1.5–2.5 GB memory ceiling, Salama
 
 ## Tradeoffs and risks
 
-| Risk | Impact | Mitigation |
-| ---- | ------ | ---------- |
-| Compile time visible during editing | User perceives lag on large patches | Compilation runs on a non-RT thread (R5.3); incremental recompile planned but not required for v1 |
-| User patches underperform equivalent factory devices | Breaks the core product promise | Parity test in R6.5; hold release until the gap is ≤ 15 % |
-| Hot-reload click on topology change | Audible artefacts | Pre-allocate scratch buffers and do atomic pointer swap; crossfade only if measurement shows need |
-| Schema version churn breaks user patches | Loss of user work | Loader is backward-compatible for `schemaVersion ≤ N` (R11.4); forward-version params preserved (R1.4) |
-| Module registry drift between TS and Rust | Patches reference modules that only one side knows | Build-time check (R4.11) fails CI on mismatch |
-| Community-shared patch points at missing sample | Confusing silent playback | Missing-sample warning surfaced on load (R11.3); patch opens in preview mode with silent sample nodes |
-| React canvas performance degrades with patch size | UI frame drops | Hybrid rendering (R10.6); perf test on 200-node patch (R10.7) |
+| Risk                                                 | Impact                                             | Mitigation                                                                                             |
+| ---------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Compile time visible during editing                  | User perceives lag on large patches                | Compilation runs on a non-RT thread (R5.3); incremental recompile planned but not required for v1      |
+| User patches underperform equivalent factory devices | Breaks the core product promise                    | Parity test in R6.5; hold release until the gap is ≤ 15 %                                              |
+| Hot-reload click on topology change                  | Audible artefacts                                  | Pre-allocate scratch buffers and do atomic pointer swap; crossfade only if measurement shows need      |
+| Schema version churn breaks user patches             | Loss of user work                                  | Loader is backward-compatible for `schemaVersion ≤ N` (R11.4); forward-version params preserved (R1.4) |
+| Module registry drift between TS and Rust            | Patches reference modules that only one side knows | Build-time check (R4.11) fails CI on mismatch                                                          |
+| Community-shared patch points at missing sample      | Confusing silent playback                          | Missing-sample warning surfaced on load (R11.3); patch opens in preview mode with silent sample nodes  |
+| React canvas performance degrades with patch size    | UI frame drops                                     | Hybrid rendering (R10.6); perf test on 200-node patch (R10.7)                                          |
 
 ---
 

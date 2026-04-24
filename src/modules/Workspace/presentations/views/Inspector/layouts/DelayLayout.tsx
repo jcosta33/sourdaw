@@ -13,23 +13,23 @@ import { SectionHeader } from '../SectionHeader';
 
 type P = DeviceLayoutProps['parameters'][number];
 const Param = ({
-    p,
+    param,
     device,
     trackId,
 }: {
-    p: P;
+    param: P;
     device: DeviceLayoutProps['device'];
     trackId: string;
 }): ReactElement => (
     <SurfaceCard className="rounded-md bg-surface-base p-2 w-full">
-        <DeviceParameterControl param={p} device={device} trackId={trackId} />
+        <DeviceParameterControl param={param} device={device} trackId={trackId} />
     </SurfaceCard>
 );
 
 const DelayLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {
     const pv = device.parameterValues;
-    const change = (id: string, v: number): void => {
-        setDeviceParameter(device.id, id, v);
+    const change = (id: string, value: number): void => {
+        setDeviceParameter(device.id, id, value);
     };
 
     return (
@@ -45,20 +45,19 @@ const DelayLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactE
                     onParamChange={change}
                 />
             </div>
-
             <SectionHeader title="Controls" />
             <div className="grid grid-cols-2 gap-2">
-                {filterParams(parameters, ['delay-time', 'delay-feedback']).map((p) => (
-                    <Param key={p.id} p={p} device={device} trackId={trackId} />
+                {filterParams(parameters, ['delay-time', 'delay-feedback']).map((param) => (
+                    <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
             </div>
             <div className="grid grid-cols-2 gap-2">
-                {filterParams(parameters, ['delay-lowcut', 'delay-highcut']).map((p) => (
-                    <Param key={p.id} p={p} device={device} trackId={trackId} />
+                {filterParams(parameters, ['delay-lowcut', 'delay-highcut']).map((param) => (
+                    <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
             </div>
-            {filterParams(parameters, ['delay-mix']).map((p) => (
-                <Param key={p.id} p={p} device={device} trackId={trackId} />
+            {filterParams(parameters, ['delay-mix']).map((param) => (
+                <Param key={param.id} param={param} device={device} trackId={trackId} />
             ))}
         </div>
     );

@@ -5,7 +5,7 @@ import * as subject from '../getAllSidechainRoutes';
 describe('getAllSidechainRoutes', () => {
     it('should export getAllSidechainRoutes', () => {
         expect(subject.getAllSidechainRoutes).toBeDefined();
-        const t = typeof subject.getAllSidechainRoutes;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getAllSidechainRoutes;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

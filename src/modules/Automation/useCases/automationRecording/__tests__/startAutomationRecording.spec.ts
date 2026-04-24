@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { getAllTracks } from '#/modules/Arrangement/useCases';
+
 import { startAutomationRecording } from '../startAutomationRecording';
 
 const { activeRecording, pendingPoints, touchActive, automationSnapshot } = vi.hoisted(() => {
@@ -36,8 +38,6 @@ vi.mock('../../../stores/automationStore', () => ({
     },
 }));
 
-import { getAllTracks } from '#/modules/Arrangement/useCases';
-
 describe('startAutomationRecording', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -61,7 +61,9 @@ describe('startAutomationRecording', () => {
     });
 
     it('returns early when automation store has no snapshot', () => {
-        vi.mocked(getAllTracks).mockReturnValue([{ id: 't1', kind: 'audio', automationMode: 'write' }] as any);
+        vi.mocked(getAllTracks).mockReturnValue([
+            { id: 't1', kind: 'audio', automationMode: 'write' },
+        ] as unknown as ReturnType<typeof getAllTracks>);
 
         startAutomationRecording();
 
@@ -91,7 +93,7 @@ describe('startAutomationRecording', () => {
         vi.mocked(getAllTracks).mockReturnValue([
             { id: 't1', kind: 'audio', automationMode: 'write' },
             { id: 't2', kind: 'audio', automationMode: 'read' },
-        ] as any);
+        ] as unknown as ReturnType<typeof getAllTracks>);
 
         startAutomationRecording();
 

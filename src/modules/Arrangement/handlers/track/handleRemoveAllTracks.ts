@@ -7,8 +7,8 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
     execute: () => {
         const state = getTrackStoreState();
         if (state) {
-            for (const t of state.tracks) {
-                removeTrack(t.id);
+            for (const time of state.tracks) {
+                removeTrack(time.id);
             }
         }
     },

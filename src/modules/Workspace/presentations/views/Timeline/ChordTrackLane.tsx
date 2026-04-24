@@ -109,13 +109,13 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
     // ── Close menus on outside click ──────────────────────────────────
     useEffect(() => {
         if (contextMenu.kind === 'none' && !showAddMenu) {
-            return;
+            return () => {};
         }
-        const handleClick = (e: globalThis.MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        const handleClick = (event: globalThis.MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
                 setContextMenu({ kind: 'none' });
             }
-            if (addRef.current && !addRef.current.contains(e.target as Node)) {
+            if (addRef.current && !addRef.current.contains(event.target as Node)) {
                 setShowAddMenu(false);
             }
         };
@@ -124,19 +124,19 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
     }, [contextMenu.kind, showAddMenu]);
 
     // ── Drag handling ─────────────────────────────────────────────────
-    const handleMouseDown = (e: MouseEvent, event: ChordTrackEvent): void => {
-        if (e.button !== 0) {
+    const handleMouseDown = (event1: MouseEvent, event: ChordTrackEvent): void => {
+        if (event1.button !== 0) {
             return;
         }
-        e.stopPropagation();
-        setDragState({ eventId: event.id, startX: e.clientX, originalBeat: event.beat });
+        event1.stopPropagation();
+        setDragState({ eventId: event.id, startX: event1.clientX, originalBeat: event.beat });
     };
 
-    const handleMouseMove = (e: MouseEvent): void => {
+    const handleMouseMove = (event: MouseEvent): void => {
         if (!dragState) {
             return;
         }
-        const dx = e.clientX - dragState.startX;
+        const dx = event.clientX - dragState.startX;
         const beatDelta = dx / pixelsPerBeat;
         const newBeat = Math.max(0, Math.round((dragState.originalBeat + beatDelta) * 4) / 4);
         moveChordEvent(dragState.eventId, newBeat);
@@ -147,10 +147,10 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
     };
 
     // ── Context menu ──────────────────────────────────────────────────
-    const handleContextMenu = (e: MouseEvent<HTMLDivElement>): void => {
-        e.preventDefault();
-        const rect = e.currentTarget.getBoundingClientRect();
-        const localX = e.clientX - rect.left;
+    const handleContextMenu = (event: MouseEvent<HTMLDivElement>): void => {
+        event.preventDefault();
+        const rect = event.currentTarget.getBoundingClientRect();
+        const localX = event.clientX - rect.left;
         const beat = (localX + scrollX) / pixelsPerBeat;
 
         // Check if clicked on an existing chord block
@@ -161,9 +161,9 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
         });
 
         if (hitEvent) {
-            setContextMenu({ kind: 'chord', x: e.clientX, y: e.clientY, event: hitEvent });
+            setContextMenu({ kind: 'chord', x: event.clientX, y: event.clientY, event: hitEvent });
         } else {
-            setContextMenu({ kind: 'empty', x: e.clientX, y: e.clientY, beat });
+            setContextMenu({ kind: 'empty', x: event.clientX, y: event.clientY, beat });
         }
     };
 
@@ -242,7 +242,6 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                     </button>
                 ) : null}
             </div>
-
             {/* ── Chord blocks ── */}
             <div className="relative flex-1 h-full">
                 {state.events.map((event) => {
@@ -268,7 +267,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                                 width: Math.max(width, 24),
                                 backgroundColor: color,
                             }}
-                            onMouseDown={(e) => handleMouseDown(e, event)}
+                            onMouseDown={(event1) => handleMouseDown(event1, event)}
                             title={`${formatChordName(event)} — ${event.duration} beats`}
                         >
                             <span className="text-[9px] font-bold text-white/90 tracking-tight whitespace-nowrap overflow-hidden text-ellipsis px-1.5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">
@@ -285,7 +284,6 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                     </div>
                 ) : null}
             </div>
-
             {/* ── Context menus ── */}
             {contextMenu.kind !== 'none' ? (
                 <div
@@ -313,22 +311,22 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
                             <DawMenuMutedRow className="px-2">{formatChordName(contextMenu.event)}</DawMenuMutedRow>
                             <DawMenuMutedRow className="px-2">Quality</DawMenuMutedRow>
                             <div className="flex flex-wrap gap-0.5 px-2 pb-1">
-                                {ADD_MENU_QUALITIES.map((q) => (
+                                {ADD_MENU_QUALITIES.map((query) => (
                                     <button
                                         type="button"
-                                        key={q}
+                                        key={query}
                                         className={cn(
                                             'rounded px-1.5 py-0.5 text-[9px] transition-colors',
-                                            contextMenu.event.quality === q
+                                            contextMenu.event.quality === query
                                                 ? 'bg-accent text-accent-foreground'
                                                 : 'text-popover-foreground hover:bg-accent/50'
                                         )}
                                         onClick={() => {
-                                            updateChordEvent(contextMenu.event.id, { quality: q });
+                                            updateChordEvent(contextMenu.event.id, { quality: query });
                                             setContextMenu({ kind: 'none' });
                                         }}
                                     >
-                                        {q}
+                                        {query}
                                     </button>
                                 ))}
                             </div>

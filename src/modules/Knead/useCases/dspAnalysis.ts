@@ -20,7 +20,7 @@ export function ingestDspAnalysis(
     let currentPitchPoints: { cents: number; confidence: number; time: number }[] = [];
     let gapCounter = 0;
 
-    const finalizeBlob = () => {
+    function finalizeBlob() {
         if (currentPitchPoints.length < MIN_BLOB_FRAMES) {
             currentPitchPoints = [];
             gapCounter = 0;
@@ -45,7 +45,7 @@ export function ingestDspAnalysis(
             endTime,
             pitchCenterCents: avgCents,
             originalPitchCenterCents: avgCents,
-            pitchCurveCents: currentPitchPoints.map((p) => Math.round(p.cents - avgCents)),
+            pitchCurveCents: currentPitchPoints.map((param) => Math.round(param.cents - avgCents)),
             voicedConfidence: totalConfidence / currentPitchPoints.length,
             driftPercent: 0,
             vibratoDepthPercent: 0,
@@ -57,7 +57,7 @@ export function ingestDspAnalysis(
 
         currentPitchPoints = [];
         gapCounter = 0;
-    };
+    }
 
     for (const frame of frames) {
         const isVoiced = frame.f0 !== null && frame.periodicity > 0.6;

@@ -121,11 +121,11 @@ export async function exportProjectFile(): Promise<void> {
         },
         tempoMap: tempoMapStore.value ?? undefined,
         timeSignatureMap: timeSignatureMapStore.value ?? undefined,
-        markers: (markerStore.value?.markers || []).map((m) => ({
-            id: m.id,
-            beat: m.beat,
-            name: (m as any).name || (m as any).label || 'Untitled',
-            color: m.color,
+        markers: (markerStore.value?.markers || []).map((message) => ({
+            id: message.id,
+            beat: message.beat,
+            name: message.name || (message as { label?: string }).label || 'Untitled',
+            color: message.color,
         })),
         takeLanes: takeLaneStore.value ?? undefined,
         sidechainRoutes: getAllSidechainRoutes(),

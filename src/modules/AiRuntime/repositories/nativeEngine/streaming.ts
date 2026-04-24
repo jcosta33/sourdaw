@@ -22,18 +22,18 @@ export async function streamNativeCompletion(
 
         // Errors thrown inside onmessage (a synchronous callback) do not propagate
         // to the awaiting tauriInvoke call — capture and rethrow after the invoke.
-        let streamError: Error | null = null;
+        const streamState = { error: null as Error | null };
         channel.onmessage = (event: LlmStreamEvent) => {
             if (event.event === 'token') {
                 onToken(event.data.text);
             }
             if (event.event === 'error') {
-                streamError = new Error(event.data.message);
+                streamState.error = new Error(event.data.message);
             }
         };
 
-        const systemPrompt = messages.find((m) => m.role === 'system')?.content ?? '';
-        const nonSystemMessages = messages.filter((m) => m.role !== 'system');
+        const systemPrompt = messages.find((message) => message.role === 'system')?.content ?? '';
+        const nonSystemMessages = messages.filter((message) => message.role !== 'system');
 
         await tauriInvoke('stream_native_completion', {
             systemPrompt,
@@ -43,8 +43,8 @@ export async function streamNativeCompletion(
             onEvent: channel,
         });
 
-        if (streamError) {
-            throw streamError;
+        if (streamState.error) {
+            throw streamState.error;
         }
         return;
     }

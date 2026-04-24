@@ -17,9 +17,9 @@ describe('clearUndoHistory', () => {
     });
 
     it('should clear past and future stacks', () => {
-        const a = createUndoEntry('a', { type: 'togglePlayback' }, { type: 'stopPlayback' });
+        const alpha = createUndoEntry('a', { type: 'togglePlayback' }, { type: 'stopPlayback' });
         const b = createUndoEntry('b', { type: 'toggleLoop' }, { type: 'toggleLoop' });
-        undoStore.set({ past: [a, b], future: [a] });
+        undoStore.set({ past: [alpha, b], future: [alpha] });
 
         clearUndoHistory();
 

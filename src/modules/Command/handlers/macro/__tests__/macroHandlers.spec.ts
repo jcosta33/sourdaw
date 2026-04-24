@@ -20,12 +20,12 @@ describe('Command Macro Handlers', () => {
     });
 
     it('handleStartMacroRecording should delegate to startMacroRecording', () => {
-        handleStartMacroRecording.execute({ type: 'startMacroRecording', payload: {} });
+        void handleStartMacroRecording.execute({ type: 'startMacroRecording', payload: {} });
         expect(startMacroRecording).toHaveBeenCalled();
     });
 
     it('handleStopMacroRecording should delegate to stopMacroRecording', () => {
-        handleStopMacroRecording.execute({ type: 'stopMacroRecording', payload: { name: 'My Macro' } });
+        void handleStopMacroRecording.execute({ type: 'stopMacroRecording', payload: { name: 'My Macro' } });
         expect(stopMacroRecording).toHaveBeenCalledWith('My Macro');
     });
 
@@ -35,7 +35,7 @@ describe('Command Macro Handlers', () => {
     });
 
     it('handleDeleteMacro should delegate to deleteMacro', () => {
-        handleDeleteMacro.execute({ type: 'deleteMacro', payload: { macroId: 'm1' } });
+        void handleDeleteMacro.execute({ type: 'deleteMacro', payload: { macroId: 'm1' } });
         expect(deleteMacro).toHaveBeenCalledWith('m1');
     });
 });

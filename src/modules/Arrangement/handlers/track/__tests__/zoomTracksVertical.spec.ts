@@ -16,7 +16,7 @@ describe('handleZoomTracksVertical', () => {
     });
 
     it('executes zoomTracksVertical with the provided payload', () => {
-        handleZoomTracksVertical.execute({
+        void handleZoomTracksVertical.execute({
             type: 'zoomTracksVertical',
             payload: { delta: 1 },
         });

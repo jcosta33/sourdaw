@@ -74,13 +74,13 @@ export const NotePropertyLane = ({
 
     const notes = clipId ? (midiState.notesByClipId[clipId] ?? []) : [];
 
-    const activeTrack = trackState.tracks.find((t) => t.id === trackId);
-    const activeClip = activeTrack?.clips.find((c) => c.id === clipId);
+    const activeTrack = trackState.tracks.find((time) => time.id === trackId);
+    const activeClip = activeTrack?.clips.find((context) => context.id === clipId);
     const clipColor = activeClip?.color || activeTrack?.color || 'oklch(0.45 0.06 250)';
     const selectedColor = brightenColor(clipColor, 0.22);
 
-    const selectedNotes = notes.filter((n) => selectedNoteIds.has(n.id));
-    const sortedSelected = [...selectedNotes].sort((a, b) => a.startBeat - b.startBeat);
+    const selectedNotes = notes.filter((node) => selectedNoteIds.has(node.id));
+    const sortedSelected = [...selectedNotes].sort((alpha, b) => alpha.startBeat - b.startBeat);
 
     useLayoutEffect(() => {
         const canvas = canvasRef.current;
@@ -153,7 +153,7 @@ export const NotePropertyLane = ({
         return null;
     };
 
-    const handleMouseDown = (e: MouseEvent<HTMLCanvasElement>): void => {
+    const handleMouseDown = (event: MouseEvent<HTMLCanvasElement>): void => {
         if (!clipId) {
             return;
         }
@@ -163,7 +163,7 @@ export const NotePropertyLane = ({
             return;
         }
         const rect = canvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
+        const mx = event.clientX - rect.left;
         const h = container.getBoundingClientRect().height;
 
         const hitNote = hitNoteAtX(mx);
@@ -175,23 +175,23 @@ export const NotePropertyLane = ({
         // ── A7: Shift+drag ramp ────────────────────────────────────────────
         // If Shift is held and 2+ notes are selected, draw a velocity ramp:
         // the first selected note is the anchor (start), the drag target defines the end.
-        if (e.shiftKey && sortedSelected.length >= 2) {
+        if (event.shiftKey && sortedSelected.length >= 2) {
             const firstNote = sortedSelected[0]!;
             const lastNote = sortedSelected[sortedSelected.length - 1]!;
             const initialValues = new Map<string, number>(
-                sortedSelected.map((n: MidiNote) => [n.id, getValue(n)] as [string, number])
+                sortedSelected.map((node: MidiNote) => [node.id, getValue(node)] as [string, number])
             );
             const startVal = initialValues.get(firstNote.id) ?? getValue(firstNote);
             const beatSpan = lastNote.startBeat - firstNote.startBeat;
 
             const applyRamp = (endVal: number): void => {
-                for (const n of sortedSelected) {
+                for (const node of sortedSelected) {
                     let interpolated = startVal;
                     if (beatSpan > 0) {
-                        const t = (n.startBeat - firstNote.startBeat) / beatSpan;
-                        interpolated = startVal + (endVal - startVal) * t;
+                        const time = (node.startBeat - firstNote.startBeat) / beatSpan;
+                        interpolated = startVal + (endVal - startVal) * time;
                     }
-                    setValue(clipId, n.id, Math.round(interpolated));
+                    setValue(clipId, node.id, Math.round(interpolated));
                 }
             };
 
@@ -202,7 +202,7 @@ export const NotePropertyLane = ({
             };
 
             // Apply initial ramp from anchor position
-            applyRamp(getEndVal(e.clientY));
+            applyRamp(getEndVal(event.clientY));
 
             const onMove = (me: globalThis.MouseEvent): void => {
                 applyRamp(getEndVal(me.clientY));
@@ -214,7 +214,7 @@ export const NotePropertyLane = ({
                 const stateNotes = midiStore.value?.notesByClipId[clipId] ?? [];
                 const changes: { id: string; oldVal: number; newVal: number }[] = [];
                 for (const [id, oldVal] of initialValues.entries()) {
-                    const finalNote = stateNotes.find((n) => n.id === id);
+                    const finalNote = stateNotes.find((node) => node.id === id);
                     if (finalNote) {
                         const newVal = getValue(finalNote);
                         if (newVal !== oldVal) {
@@ -226,13 +226,13 @@ export const NotePropertyLane = ({
                     pushUndoEntry(
                         `${undoLabel} ramp`,
                         () => {
-                            for (const c of changes) {
-                                setValue(clipId, c.id, c.oldVal);
+                            for (const context of changes) {
+                                setValue(clipId, context.id, context.oldVal);
                             }
                         },
                         () => {
-                            for (const c of changes) {
-                                setValue(clipId, c.id, c.newVal);
+                            for (const context of changes) {
+                                setValue(clipId, context.id, context.newVal);
                             }
                         }
                     );
@@ -246,7 +246,7 @@ export const NotePropertyLane = ({
 
         // ── A8: Continuous velocity painting (single or drag-through) ─────
         const noteId = hitNote.id;
-        const origValues = new Map<string, number>(notes.map((n) => [n.id, getValue(n)]));
+        const origValues = new Map<string, number>(notes.map((node) => [node.id, getValue(node)]));
 
         const getVal = (clientY: number): number => {
             const containerRect = container.getBoundingClientRect();
@@ -254,16 +254,16 @@ export const NotePropertyLane = ({
             return Math.round((1 - Math.max(0, Math.min(1, (ry - 2) / (h - 4)))) * 127);
         };
 
-        setValue(clipId, noteId, getVal(e.clientY));
+        setValue(clipId, noteId, getVal(event.clientY));
 
         const onMove = (me: globalThis.MouseEvent): void => {
             const containerRect = container.getBoundingClientRect();
             const rx = me.clientX - containerRect.left;
-            const v = getVal(me.clientY);
+            const value = getVal(me.clientY);
             // Paint the note currently under the cursor (horizontal movement)
             const noteAtX = hitNoteAtX(rx);
             if (noteAtX) {
-                setValue(clipId, noteAtX.id, v);
+                setValue(clipId, noteAtX.id, value);
             }
         };
 
@@ -272,12 +272,12 @@ export const NotePropertyLane = ({
             window.removeEventListener('mouseup', onUp);
             const stateNotes = midiStore.value?.notesByClipId[clipId] ?? [];
             const changes: { id: string; oldVal: number; newVal: number }[] = [];
-            for (const n of stateNotes) {
-                const oldVal = origValues.get(n.id);
+            for (const node of stateNotes) {
+                const oldVal = origValues.get(node.id);
                 if (oldVal !== undefined) {
-                    const newVal = getValue(n);
+                    const newVal = getValue(node);
                     if (newVal !== oldVal) {
-                        changes.push({ id: n.id, oldVal, newVal });
+                        changes.push({ id: node.id, oldVal, newVal });
                     }
                 }
             }
@@ -285,13 +285,13 @@ export const NotePropertyLane = ({
                 pushUndoEntry(
                     undoLabel,
                     () => {
-                        for (const c of changes) {
-                            setValue(clipId, c.id, c.oldVal);
+                        for (const context of changes) {
+                            setValue(clipId, context.id, context.oldVal);
                         }
                     },
                     () => {
-                        for (const c of changes) {
-                            setValue(clipId, c.id, c.newVal);
+                        for (const context of changes) {
+                            setValue(clipId, context.id, context.newVal);
                         }
                     }
                 );
@@ -302,7 +302,7 @@ export const NotePropertyLane = ({
         window.addEventListener('mouseup', onUp);
     };
 
-    const handleRampDrag = (side: 'left' | 'right', e: PointerEvent<HTMLDivElement>) => {
+    const handleRampDrag = (side: 'left' | 'right', event: PointerEvent<HTMLDivElement>) => {
         if (!clipId) {
             return;
         }
@@ -311,8 +311,8 @@ export const NotePropertyLane = ({
             return;
         }
 
-        e.stopPropagation();
-        e.preventDefault();
+        event.stopPropagation();
+        event.preventDefault();
 
         const firstNote = sortedSelected[0];
         const lastNote = sortedSelected[sortedSelected.length - 1];
@@ -324,7 +324,7 @@ export const NotePropertyLane = ({
         const startLeftVal = getValue(firstNote);
         const startRightVal = getValue(lastNote);
 
-        const initialValues = new Map(sortedSelected.map((n) => [n.id, getValue(n)]));
+        const initialValues = new Map(sortedSelected.map((node) => [node.id, getValue(node)]));
 
         const onMove = (me: globalThis.PointerEvent) => {
             const containerRect = container.getBoundingClientRect();
@@ -337,13 +337,13 @@ export const NotePropertyLane = ({
 
             const beatSpan = lastNote.startBeat - firstNote.startBeat;
 
-            for (const n of sortedSelected) {
+            for (const node of sortedSelected) {
                 let interpolated = currentLeft;
                 if (beatSpan > 0) {
-                    const t = (n.startBeat - firstNote.startBeat) / beatSpan;
-                    interpolated = currentLeft + (currentRight - currentLeft) * t;
+                    const time = (node.startBeat - firstNote.startBeat) / beatSpan;
+                    interpolated = currentLeft + (currentRight - currentLeft) * time;
                 }
-                setValue(clipId, n.id, Math.round(interpolated));
+                setValue(clipId, node.id, Math.round(interpolated));
             }
         };
 
@@ -355,7 +355,7 @@ export const NotePropertyLane = ({
             const changes: { id: string; oldVal: number; newVal: number }[] = [];
 
             for (const [id, oldVal] of initialValues.entries()) {
-                const finalNote = stateNotes.find((n) => n.id === id);
+                const finalNote = stateNotes.find((node) => node.id === id);
                 if (finalNote) {
                     const newVal = getValue(finalNote);
                     if (newVal !== oldVal) {
@@ -371,11 +371,11 @@ export const NotePropertyLane = ({
                         if (setValues) {
                             setValues(
                                 clipId,
-                                changes.map((c) => ({ noteId: c.id, velocity: c.oldVal }))
+                                changes.map((context) => ({ noteId: context.id, velocity: context.oldVal }))
                             );
                         } else {
-                            for (const c of changes) {
-                                setValue(clipId, c.id, c.oldVal);
+                            for (const context of changes) {
+                                setValue(clipId, context.id, context.oldVal);
                             }
                         }
                     },
@@ -383,11 +383,11 @@ export const NotePropertyLane = ({
                         if (setValues) {
                             setValues(
                                 clipId,
-                                changes.map((c) => ({ noteId: c.id, velocity: c.newVal }))
+                                changes.map((context) => ({ noteId: context.id, velocity: context.newVal }))
                             );
                         } else {
-                            for (const c of changes) {
-                                setValue(clipId, c.id, c.newVal);
+                            for (const context of changes) {
+                                setValue(clipId, context.id, context.newVal);
                             }
                         }
                     }
@@ -417,7 +417,6 @@ export const NotePropertyLane = ({
     return (
         <div ref={containerRef} className="relative h-full w-full" role="group" aria-label={`${label} lane`}>
             <canvas ref={canvasRef} className="cursor-ns-resize" onMouseDown={handleMouseDown} />
-
             {sortedSelected.length > 1 ? (
                 <>
                     <svg className="absolute inset-0 pointer-events-none w-full h-full overflow-visible">
@@ -434,12 +433,12 @@ export const NotePropertyLane = ({
                     <div
                         className="absolute w-3 h-3 bg-white border border-black rounded-full cursor-ns-resize transform -translate-x-1/2 -translate-y-1/2 shadow-sm z-10"
                         style={{ left: leftX + 1, top: getYPercent(leftVal) }}
-                        onPointerDown={(e) => handleRampDrag('left', e)}
+                        onPointerDown={(event) => handleRampDrag('left', event)}
                     />
                     <div
                         className="absolute w-3 h-3 bg-white border border-black rounded-full cursor-ns-resize transform -translate-x-1/2 -translate-y-1/2 shadow-sm z-10"
                         style={{ left: rightX + 1, top: getYPercent(rightVal) }}
-                        onPointerDown={(e) => handleRampDrag('right', e)}
+                        onPointerDown={(event) => handleRampDrag('right', event)}
                     />
                 </>
             ) : null}

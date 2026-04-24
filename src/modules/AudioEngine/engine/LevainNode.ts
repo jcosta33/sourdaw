@@ -57,10 +57,17 @@ export async function createLevainNode(ctx: BaseAudioContext, wasmUrl?: string):
     let bypassed = false;
 
     const handshake = createReadyHandshake({ pluginName: 'LevainNode' });
-    node.port.onmessage = (e: MessageEvent) => {
-        const outcome = handshake.onMessage(e);
-        if (outcome === 'late' && e.data?.type === 'error') {
-            logger.warn('LevainNode runtime fault (WASM panic — processor faulted):', e.data.message);
+    node.port.onmessage = (event: MessageEvent<unknown>) => {
+        const outcome = handshake.onMessage(event);
+        if (
+            outcome === 'late' &&
+            event.data &&
+            typeof event.data === 'object' &&
+            'type' in event.data &&
+            event.data.type === 'error'
+        ) {
+            const message = 'message' in event.data ? String(event.data.message) : 'Unknown error';
+            logger.warn('LevainNode runtime fault (WASM panic — processor faulted):', message);
         }
     };
     const readyPromise = handshake.promise;

@@ -2,8 +2,10 @@ import { describe, it, expect, vi } from 'vitest';
 
 import { getMentorTip } from '../queries';
 
+import type { MentorLesson } from '#/modules/AiRuntime/useCases/musicMentor/generateLessons';
+
 const mocks = vi.hoisted(() => ({
-    generateMentorLessons: vi.fn(),
+    generateMentorLessons: vi.fn<() => MentorLesson[]>(),
 }));
 
 vi.mock('../generateLessons', () => ({
@@ -13,8 +15,8 @@ vi.mock('../generateLessons', () => ({
 describe('musicMentor queries', () => {
     describe('getMentorTip', () => {
         it('returns the first lesson if any are generated', () => {
-            const lesson = { id: 'l1', title: 'Tip 1', content: 'Do this.' } as any;
-            mocks.generateMentorLessons.mockReturnValue([lesson, { id: 'l2' }]);
+            const lesson = { id: 'l1', title: 'Tip 1', content: 'Do this.' } as unknown as MentorLesson;
+            mocks.generateMentorLessons.mockReturnValue([lesson, { id: 'l2' } as unknown as MentorLesson]);
 
             const tip = getMentorTip();
             expect(tip).toBe(lesson);

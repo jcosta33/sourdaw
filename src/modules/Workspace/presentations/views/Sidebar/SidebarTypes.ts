@@ -9,7 +9,7 @@
 export type SidebarRoute = {
     id: string;
     title: string;
-    payload?: Record<string, any>;
+    payload?: Record<string, unknown>;
     /** Optional icon component for the back bar */
     icon?: React.ComponentType<{ className?: string }>;
     /** Optional color class for the icon */
