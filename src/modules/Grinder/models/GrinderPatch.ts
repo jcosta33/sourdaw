@@ -50,6 +50,10 @@ export type GrinderPedal = {
     params: Record<string, number>;
 };
 
+export const SUPPORTED_GRINDER_CHAIN_PEDAL_TYPES = ['compressor', 'overdrive', 'distortion', 'fuzz'] as const;
+
+export type GrinderSupportedChainPedalType = (typeof SUPPORTED_GRINDER_CHAIN_PEDAL_TYPES)[number];
+
 // ── Mic configuration ────────────────────────────────────────────────────────
 
 export type GrinderMic = {
@@ -302,6 +306,32 @@ function cloneSnapshot(snapshot: Partial<GrinderSnapshot>, index: number): Grind
         paramOverrides: { ...(snapshot.paramOverrides ?? {}) },
         bypassStates: { ...(snapshot.bypassStates ?? {}) },
     };
+}
+
+export function isSupportedGrinderChainPedalType(
+    pedal_type: GrinderPedalType | string
+): pedal_type is GrinderSupportedChainPedalType {
+    return (SUPPORTED_GRINDER_CHAIN_PEDAL_TYPES as readonly string[]).includes(pedal_type);
+}
+
+export function getGrinderSupportedChainOrder(
+    pedals: readonly GrinderPedal[],
+    input?: { include_missing?: boolean }
+): GrinderSupportedChainPedalType[] {
+    const present = pedals
+        .map((pedal) => pedal.type)
+        .filter((pedal_type, index, items): pedal_type is GrinderSupportedChainPedalType => {
+            return isSupportedGrinderChainPedalType(pedal_type) && items.indexOf(pedal_type) === index;
+        });
+
+    if (input?.include_missing === false) {
+        return present;
+    }
+
+    return [
+        ...present,
+        ...SUPPORTED_GRINDER_CHAIN_PEDAL_TYPES.filter((pedal_type) => !present.includes(pedal_type)),
+    ];
 }
 
 export function migrateGrinderPatch(patch: Partial<GrinderPatch> | GrinderPatch): GrinderPatch {
