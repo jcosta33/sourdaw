@@ -3,31 +3,34 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { LevainPanel } from '../LevainPanel';
 
-// Mock external dependencies
+// Mock external dependencies. LevainPanel reads an instances map keyed by
+// deviceId (multi-instance refactor), so wrap the panel state under the id
+// the test passes in as `deviceId`.
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(() => ({
-        mappings: [],
-        patch: {
-            instrumentId: 'violin-1',
-            instrumentFamily: 'Strings',
-            articulations: [],
-            currentArticulation: '',
-            expression: {},
-            legato: { enabled: false },
-            humanize: { amount: 0 },
-            micPositions: [],
-            macros: [],
-            macroLabels: [],
-            masterGain: 0.8,
-            releaseTriggers: { enabled: false, dynamicScale: false },
+        'test-device': {
+            patch: {
+                instrumentId: 'violin-1',
+                instrumentFamily: 'Strings',
+                articulations: [],
+                currentArticulation: '',
+                expression: {},
+                legato: { enabled: false },
+                humanize: { amount: 0 },
+                micPositions: [],
+                macros: [],
+                macroLabels: [],
+                masterGain: 0.8,
+                releaseTriggers: { enabled: false, dynamicScale: false },
+            },
+            uiLevel: 1,
+            engineReady: true,
+            sampleLoadProgress: null,
+            activeVoices: 0,
+            peakL: 0,
+            peakR: 0,
+            currentArticulationDisplay: 'Long',
         },
-        uiLevel: 1,
-        engineReady: true,
-        sampleLoadProgress: null,
-        activeVoices: 0,
-        peakL: 0,
-        peakR: 0,
-        currentArticulationDisplay: 'Long',
     })),
 }));
 

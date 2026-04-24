@@ -1,12 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+type ForwardedTickRecord = {
+    layerId: string;
+    trackId: string;
+    effectType: string;
+    parameters: Record<string, number>;
+    blend: number;
+};
+
 const mocks = vi.hoisted(() => {
     const subscribers = new Set<() => void>();
     return {
-        setTrackGain: vi.fn(),
-        setTrackPan: vi.fn(),
-        applyAdjustmentLayerTick: vi.fn(),
-        resetAdjustmentLayers: vi.fn(),
+        setTrackGain: vi.fn<(trackId: string, gain: number) => void>(),
+        setTrackPan: vi.fn<(trackId: string, pan: number) => void>(),
+        applyAdjustmentLayerTick: vi.fn<(records: Array<{
+            layerId: string;
+            trackId: string;
+            effectType: string;
+            parameters: Record<string, number>;
+            blend: number;
+        }>) => void>(),
+        resetAdjustmentLayers: vi.fn<() => void>(),
         trackStoreValue: { tracks: [{ id: 't1', gain: 1, pan: 0 }] } as {
             tracks: Array<{ id: string; gain: number; pan: number }>;
         },
@@ -75,12 +89,7 @@ describe('sharedAdjustmentLayerApplier engine wiring', () => {
         });
 
         expect(mocks.applyAdjustmentLayerTick).toHaveBeenCalledTimes(1);
-        const firstCall = mocks.applyAdjustmentLayerTick.mock.calls[0]![0] as Array<{
-            layerId: string;
-            trackId: string;
-            effectType: string;
-            blend: number;
-        }>;
+        const firstCall: ForwardedTickRecord[] = mocks.applyAdjustmentLayerTick.mock.calls[0]![0];
         expect(firstCall).toHaveLength(1);
         expect(firstCall[0]).toMatchObject({
             layerId: 'L1',
@@ -113,7 +122,7 @@ describe('sharedAdjustmentLayerApplier engine wiring', () => {
 
         expect(mocks.setTrackGain).toHaveBeenCalled();
         expect(mocks.applyAdjustmentLayerTick).toHaveBeenCalledTimes(1);
-        const forwarded = mocks.applyAdjustmentLayerTick.mock.calls[0]![0] as unknown[];
+        const forwarded: ForwardedTickRecord[] = mocks.applyAdjustmentLayerTick.mock.calls[0]![0];
         expect(forwarded).toEqual([]);
     });
 

@@ -56,7 +56,7 @@ export const TrackAiSection = ({ track }: TrackAiSectionProps): ReactElement | n
     };
 
     return (
-        <section>
+        <section data-onboarding="track-ai-section">
             <DawHeaderBand
                 compact
                 className="mb-2 rounded-sm"

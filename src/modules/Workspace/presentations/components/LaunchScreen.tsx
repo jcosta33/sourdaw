@@ -5,6 +5,7 @@ import {
     Sparkles,
     FolderOpen,
     Upload,
+    Download,
     ArrowLeft,
     Music,
     Mic,
@@ -19,6 +20,7 @@ import {
 
 import { addTrack, addClip, importMidiFile } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import {
     newProject,
     createFromTemplate,
@@ -274,6 +276,10 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         })();
     };
 
+    const handleExportDawProject = (): void => {
+        void executeAppAction({ type: 'exportDawProject', payload: {} });
+    };
+
     const handleOpenGrid = (category: LaunchTemplateCategory | 'all'): void => {
         setActiveCategory(category);
         setView('grid');
@@ -459,16 +465,27 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                             <span className="text-[11px]">Drop audio or MIDI to start instantly</span>
                         </div>
 
-                        <button
-                            type="button"
-                            id="launch-import-dawproject"
-                            onClick={handleImportDawProject}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] text-white/45 border border-white/[0.07] hover:border-white/[0.18] hover:text-white/80 transition-colors cursor-pointer"
-                        >
-                            <Upload className="size-3" aria-hidden="true" />
-                            Import .dawproject
-                            <span className="text-white/25">from Ableton, Bitwig, Studio One, Reaper…</span>
-                        </button>
+                        <div className="flex flex-wrap items-center justify-center gap-2">
+                            <button
+                                type="button"
+                                id="launch-import-dawproject"
+                                onClick={handleImportDawProject}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] text-white/45 border border-white/[0.07] hover:border-white/[0.18] hover:text-white/80 transition-colors cursor-pointer"
+                            >
+                                <Upload className="size-3" aria-hidden="true" />
+                                Import .dawproject
+                                <span className="text-white/25">from Ableton, Bitwig, Studio One…</span>
+                            </button>
+                            <button
+                                type="button"
+                                id="launch-export-dawproject"
+                                onClick={handleExportDawProject}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] text-white/45 border border-white/[0.07] hover:border-white/[0.18] hover:text-white/80 transition-colors cursor-pointer"
+                            >
+                                <Download className="size-3" aria-hidden="true" />
+                                Export .dawproject
+                            </button>
+                        </div>
 
                         <p className="text-[9px] text-white/12 tracking-wider">Sourdaw Studio · Time to cook</p>
                     </div>

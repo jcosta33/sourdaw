@@ -10,9 +10,12 @@ import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { useStore } from '#/infra/store/useStore';
+import { trackStore, defaultTrackState } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
+import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
 
@@ -24,10 +27,13 @@ import {
     encodeWav,
     encodeMp3,
     encodeFlac,
+    getAutoDetectedTailSeconds,
+    renderToClip,
 } from '../../useCases/exportActions';
 
 type ExportFormat = 'wav' | 'mp3' | 'flac';
-type ExportMode = 'mixdown' | 'stems';
+type ExportMode = 'mixdown' | 'stems' | 'render-to-clip';
+type ExportRange = 'project' | 'loop' | 'marquee';
 
 type ExportDialogProps = {
     open: boolean;
@@ -78,8 +84,15 @@ const saveExportSettings = (settings: {
 
 export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement => {
     const defaults = loadExportSettings();
+    const transport = useStore(transportStore, defaultTransportState);
+    const workspace = useStore(workspaceStore, defaultWorkspaceState);
+    const tracksState = useStore(trackStore, defaultTrackState);
     const [formats, setFormats] = useState<Set<ExportFormat>>(() => new Set(defaults.formats));
     const [mode, setMode] = useState<ExportMode>('mixdown');
+    const [range, setRange] = useState<ExportRange>('project');
+    const [tailSeconds, setTailSeconds] = useState(2);
+    const [autoTail, setAutoTail] = useState(false);
+    const [renderTargetTrackId, setRenderTargetTrackId] = useState<string>('new');
     const [sampleRate, setSampleRate] = useState(defaults.sampleRate);
     const [bitDepth, setBitDepth] = useState(defaults.bitDepth);
     const [mp3BitRate, setMp3BitRate] = useState<Mp3BitRate>(defaults.mp3BitRate);
@@ -88,6 +101,37 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const [statusText, setStatusText] = useState('');
     const [errorText, setErrorText] = useState('');
     const cancelledRef = useRef(false);
+
+    const loopAvailable = transport.loopEnd > transport.loopStart;
+    const marqueeAvailable = workspace.marqueeSelection !== null;
+    const audioTracks = tracksState.tracks.filter((t) => t.kind === 'audio');
+
+    const resolveRange = (): { startBeat: number; durationBeats: number } => {
+        const tracks = tracksState.tracks;
+        const projectMaxBeat = Math.max(16, ...tracks.flatMap((t) => t.clips.map((c) => c.endBeat)));
+        if (range === 'loop' && loopAvailable) {
+            return {
+                startBeat: transport.loopStart,
+                durationBeats: Math.max(0.0001, transport.loopEnd - transport.loopStart),
+            };
+        }
+        if (range === 'marquee' && workspace.marqueeSelection) {
+            const sel = workspace.marqueeSelection;
+            return {
+                startBeat: sel.startBeat,
+                durationBeats: Math.max(0.0001, sel.endBeat - sel.startBeat),
+            };
+        }
+        return { startBeat: 0, durationBeats: projectMaxBeat };
+    };
+
+    const effectiveTailSeconds = (): number => {
+        if (!autoTail) {
+            return Math.max(0, Math.min(30, tailSeconds));
+        }
+        const detected = getAutoDetectedTailSeconds();
+        return Math.max(0, Math.min(30, detected));
+    };
 
     const toggleFormat = (f: ExportFormat) => {
         setFormats((prev) => {
@@ -160,56 +204,58 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         let webFileHandle: any = null;
 
         // ── 1. SECURE THE DESTINATION EARLY ──
-        try {
-            if (isTauri()) {
-                const { save, open } = await import('@tauri-apps/plugin-dialog');
-                if (mode === 'stems') {
-                    tauriDirPath = (await open({
-                        directory: true,
-                        multiple: false,
-                        title: 'Select Output Folder for Slices (Stems)',
-                    })) as string | null;
-                    if (!tauriDirPath) {
-                        return;
-                    } // User cancelled
+        if (mode !== 'render-to-clip') {
+            try {
+                if (isTauri()) {
+                    const { save, open } = await import('@tauri-apps/plugin-dialog');
+                    if (mode === 'stems') {
+                        tauriDirPath = (await open({
+                            directory: true,
+                            multiple: false,
+                            title: 'Select Output Folder for Slices (Stems)',
+                        })) as string | null;
+                        if (!tauriDirPath) {
+                            return;
+                        } // User cancelled
+                    } else {
+                        const primaryExt = Array.from(formats)[0] || 'wav';
+                        tauriFilePath = await save({
+                            defaultPath: `${baseName}.${primaryExt}`,
+                            filters: [{ name: 'Audio File', extensions: Array.from(formats) }],
+                        });
+                        if (!tauriFilePath) {
+                            return;
+                        } // User cancelled
+                    }
                 } else {
-                    const primaryExt = Array.from(formats)[0] || 'wav';
-                    tauriFilePath = await save({
-                        defaultPath: `${baseName}.${primaryExt}`,
-                        filters: [{ name: 'Audio File', extensions: Array.from(formats) }],
-                    });
-                    if (!tauriFilePath) {
-                        return;
-                    } // User cancelled
-                }
-            } else {
-                // Web Environment
-                if ('showSaveFilePicker' in window) {
-                    const isZip = mode === 'stems' || formats.size > 1; // Zipping required for >1 file
-                    const primaryExt = Array.from(formats)[0] || 'wav';
-                    const fileExt = isZip ? '.zip' : `.${primaryExt}`;
-                    const mime = isZip
-                        ? 'application/zip'
-                        : primaryExt === 'wav'
-                          ? 'audio/wav'
-                          : primaryExt === 'flac'
-                            ? 'audio/flac'
-                            : 'audio/mpeg';
+                    // Web Environment
+                    if ('showSaveFilePicker' in window) {
+                        const isZip = mode === 'stems' || formats.size > 1; // Zipping required for >1 file
+                        const primaryExt = Array.from(formats)[0] || 'wav';
+                        const fileExt = isZip ? '.zip' : `.${primaryExt}`;
+                        const mime = isZip
+                            ? 'application/zip'
+                            : primaryExt === 'wav'
+                              ? 'audio/wav'
+                              : primaryExt === 'flac'
+                                ? 'audio/flac'
+                                : 'audio/mpeg';
 
-                    webFileHandle = await (
-                        window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<unknown> }
-                    ).showSaveFilePicker({
-                        suggestedName: `${baseName}${fileExt}`,
-                        types: [{ accept: { [mime]: [fileExt] } }],
-                    });
+                        webFileHandle = await (
+                            window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<unknown> }
+                        ).showSaveFilePicker({
+                            suggestedName: `${baseName}${fileExt}`,
+                            types: [{ accept: { [mime]: [fileExt] } }],
+                        });
+                    }
                 }
+            } catch (error) {
+                // If user clicked cancel, abort quietly
+                if (error instanceof Error && error.name === 'AbortError') {
+                    return;
+                }
+                // Otherwise, allow it to drop to fallback `<a download>` memory mode
             }
-        } catch (error) {
-            // If user clicked cancel, abort quietly
-            if (error instanceof Error && error.name === 'AbortError') {
-                return;
-            }
-            // Otherwise, allow it to drop to fallback `<a download>` memory mode
         }
 
         // ── 2. PREPARATIONS COMPLETE. START INTENSIVE BAKING ──
@@ -241,7 +287,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             }
 
             const tracks = trackStore.value?.tracks ?? [];
-            const maxBeat = Math.max(16, ...tracks.flatMap((t) => t.clips.map((c) => c.endBeat)));
+            const { startBeat, durationBeats } = resolveRange();
+            const tail = effectiveTailSeconds();
             const bd = bitDepth as 16 | 24 | 32;
             const formatList = Array.from(formats);
 
@@ -301,12 +348,68 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             };
 
             // ── ACTUAL PROCESS ORCHESTRATION ──
+            if (mode === 'render-to-clip') {
+                setStatusText('Rendering clip (offline)...');
+                const rtcWarnings = new Set<string>();
+                const buffer = await renderOffline({
+                    durationBeats,
+                    startBeat,
+                    tailSeconds: tail,
+                    sampleRate,
+                    onProgress: (frac) => {
+                        const barPct = frac * 100;
+                        setProgress(barPct);
+                        if (Math.round(barPct) % 5 === 0) {
+                            setStatusText('Rendering clip...');
+                        }
+                    },
+                    onWarning: (msg) => {
+                        logger.warn(msg);
+                        rtcWarnings.add(msg);
+                    },
+                });
+                if (rtcWarnings.size > 0) {
+                    notifyUser(
+                        rtcWarnings.size === 1
+                            ? `Render warning: ${[...rtcWarnings][0]}`
+                            : `Render completed with ${rtcWarnings.size} warnings — check the console for details.`,
+                        'warning'
+                    );
+                }
+                if (cancelledRef.current) {
+                    return;
+                }
+                const endBeat = startBeat + durationBeats;
+                const clipName = `Render ${new Date(ts).toLocaleTimeString()}`;
+                const result = renderToClip({
+                    targetTrackId: renderTargetTrackId,
+                    startBeat,
+                    endBeat,
+                    buffer,
+                    name: clipName,
+                });
+                if (!result) {
+                    throw new Error('Render to Clip: failed to place clip on target track.');
+                }
+                setProgress(100);
+                setStatusText('Clip ready in the timeline.');
+                notifyUser('Rendered audio placed as a new clip', 'success');
+                setTimeout(() => {
+                    if (open) {
+                        onClose();
+                    }
+                }, 1500);
+                return;
+            }
+
             if (mode === 'stems') {
                 setStatusText('Proofing Slices (rendering stems)...');
                 // Accumulate warnings and emit a single summary toast to avoid notification spam
                 const stemWarnings = new Set<string>();
                 const stems = await exportStems({
-                    durationBeats: maxBeat,
+                    durationBeats,
+                    startBeat,
+                    tailSeconds: tail,
                     sampleRate,
                     onProgress: (frac) => {
                         const barPct = frac * 50;
@@ -354,7 +457,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 // Accumulate warnings and emit a single summary toast to avoid notification spam
                 const mixWarnings = new Set<string>();
                 const buffer = await renderOffline({
-                    durationBeats: maxBeat,
+                    durationBeats,
+                    startBeat,
+                    tailSeconds: tail,
                     sampleRate,
                     onProgress: (frac) => {
                         const barPct = frac * 60;
@@ -498,7 +603,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
                 <DawDialogBody className="gap-4 bg-transparent px-6 py-5">
                     <DawDialogSection tone="warm" title="Render Order">
-                        <div className="flex gap-2">
+                        <div className="grid grid-cols-3 gap-2">
                             <Button
                                 variant={mode === 'mixdown' ? 'default' : 'outline'}
                                 size="sm"
@@ -527,9 +632,127 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             >
                                 Slices <span className="ml-1 text-[10px] opacity-60">(Stems)</span>
                             </Button>
+                            <Button
+                                variant={mode === 'render-to-clip' ? 'default' : 'outline'}
+                                size="sm"
+                                onClick={() => setMode('render-to-clip')}
+                                className={
+                                    mode === 'render-to-clip'
+                                        ? 'w-full border-amber-500/30 bg-amber-700/20 text-amber-300 hover:bg-amber-700/30'
+                                        : 'w-full border-orange-900/40 text-muted-foreground hover:border-amber-500/20 hover:bg-amber-950/20 hover:text-amber-200'
+                                }
+                                disabled={exporting}
+                                style={
+                                    mode === 'render-to-clip' ? { boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)' } : {}
+                                }
+                            >
+                                To Clip <span className="ml-1 text-[10px] opacity-60">(Inline)</span>
+                            </Button>
                         </div>
                     </DawDialogSection>
 
+                    <DawDialogSection tone="warm" title="Render Range">
+                        <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="Render range">
+                            <RangeRadio
+                                label="Whole project"
+                                value="project"
+                                activeValue={range}
+                                onChange={setRange}
+                                disabled={exporting}
+                            />
+                            <RangeRadio
+                                label={
+                                    loopAvailable
+                                        ? `Loop region (beat ${transport.loopStart.toFixed(2)} → ${transport.loopEnd.toFixed(2)})`
+                                        : 'Loop region (set a loop first)'
+                                }
+                                value="loop"
+                                activeValue={range}
+                                onChange={setRange}
+                                disabled={exporting || !loopAvailable}
+                            />
+                            <RangeRadio
+                                label={
+                                    marqueeAvailable
+                                        ? `Marquee selection (${(workspace.marqueeSelection?.endBeat ?? 0) - (workspace.marqueeSelection?.startBeat ?? 0)} beats)`
+                                        : 'Marquee selection (none)'
+                                }
+                                value="marquee"
+                                activeValue={range}
+                                onChange={setRange}
+                                disabled={exporting || !marqueeAvailable}
+                            />
+                        </div>
+                    </DawDialogSection>
+
+                    <DawDialogSection
+                        tone="warm"
+                        title="Tail"
+                        detail="Extra seconds so reverb/delay can ring out."
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="number"
+                                    min={0}
+                                    max={30}
+                                    step={0.1}
+                                    value={autoTail ? '' : tailSeconds}
+                                    disabled={exporting || autoTail}
+                                    onChange={(e) => {
+                                        const next = Number(e.target.value);
+                                        if (Number.isFinite(next)) {
+                                            setTailSeconds(Math.max(0, Math.min(30, next)));
+                                        }
+                                    }}
+                                    aria-label="Tail seconds"
+                                    className="w-20 rounded-md border border-stone-800 bg-stone-900/70 px-2 py-1 text-xs text-stone-200 disabled:opacity-40"
+                                />
+                                <span className="text-[10px] text-stone-500">seconds</span>
+                            </div>
+                            <label className="flex items-center gap-1.5 text-[11px] text-stone-400">
+                                <input
+                                    type="checkbox"
+                                    checked={autoTail}
+                                    onChange={(e) => setAutoTail(e.target.checked)}
+                                    disabled={exporting}
+                                    className="accent-orange-500"
+                                />
+                                Auto-detect
+                            </label>
+                            {autoTail ? (
+                                <span className="text-[10px] text-orange-400/70">
+                                    {getAutoDetectedTailSeconds().toFixed(2)}s detected
+                                </span>
+                            ) : null}
+                        </div>
+                    </DawDialogSection>
+
+                    {mode === 'render-to-clip' ? (
+                        <DawDialogSection
+                            tone="warm"
+                            title="Target Track"
+                            detail="Where to place the rendered audio clip."
+                        >
+                            <select
+                                value={renderTargetTrackId}
+                                onChange={(e) => setRenderTargetTrackId(e.target.value)}
+                                disabled={exporting}
+                                aria-label="Target track"
+                                className="w-full rounded-md border border-stone-800 bg-stone-900/70 px-2 py-1.5 text-xs text-stone-200"
+                            >
+                                <option value="new">New audio track</option>
+                                {audioTracks.map((t) => (
+                                    <option key={t.id} value={t.id}>
+                                        {t.name || t.id}
+                                    </option>
+                                ))}
+                            </select>
+                        </DawDialogSection>
+                    ) : null}
+
+                    {mode !== 'render-to-clip' ? (
+                    <>
                     <DawDialogSection tone="warm" title="Ingredients">
                         <div className="grid grid-cols-3 gap-2">
                             {FORMAT_OPTIONS.map((f) => {
@@ -648,6 +871,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             </div>
                         ) : null}
                     </DawDialogSection>
+                    </>
+                    ) : null}
 
                     <DawDialogSection
                         tone="warm"
@@ -735,16 +960,48 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             <Button
                                 size="sm"
                                 onClick={handleExport}
-                                disabled={formats.size === 0 || isExportActive()}
+                                disabled={(mode !== 'render-to-clip' && formats.size === 0) || isExportActive()}
                                 className="border-t border-orange-400/30 bg-orange-600 font-medium text-white shadow-[0_0_15px_rgba(234,88,12,0.3)] transition-all hover:bg-orange-500 hover:shadow-[0_0_20px_rgba(249,115,22,0.5)]"
                             >
                                 <Flame className="mr-1.5 size-3.5 opacity-80" />
-                                Start Baking
+                                {mode === 'render-to-clip' ? 'Render to Clip' : 'Start Baking'}
                             </Button>
                         </>
                     )}
                 </DawDialogFooter>
             </DialogContent>
         </Dialog>
+    );
+};
+
+type RangeRadioProps = {
+    label: string;
+    value: ExportRange;
+    activeValue: ExportRange;
+    disabled: boolean;
+    onChange: (value: ExportRange) => void;
+};
+
+const RangeRadio = ({ label, value, activeValue, disabled, onChange }: RangeRadioProps): ReactElement => {
+    const active = activeValue === value;
+    return (
+        <label
+            className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-[11px] transition-all ${
+                active
+                    ? 'border-orange-500/30 bg-orange-950/40 text-orange-200'
+                    : 'border-stone-800 bg-stone-900/40 text-stone-400 hover:border-stone-700 hover:text-stone-200'
+            } ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
+        >
+            <input
+                type="radio"
+                name="export-range"
+                value={value}
+                checked={active}
+                disabled={disabled}
+                onChange={() => onChange(value)}
+                className="accent-orange-500"
+            />
+            {label}
+        </label>
     );
 };

@@ -544,7 +544,7 @@ export const ModulationMatrix = (): ReactElement => {
     );
 
     return (
-        <DawPanelSurface>
+        <DawPanelSurface role="region" aria-label="Modulation matrix">
             <DawHeaderBand
                 className="shrink-0"
                 title="Modulation"

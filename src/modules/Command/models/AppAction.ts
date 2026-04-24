@@ -378,6 +378,16 @@ export type AppAction =
     | { type: 'setLayerInsertionIndex'; payload: { layerId: string; insertionIndex: number } }
     | { type: 'detectTransients'; payload: { clipId: string; sensitivity?: number } }
     | { type: 'quantizeTransients'; payload: { clipId: string } }
+    | { type: 'openElasticEditor'; payload: { clipId: string } }
+    | { type: 'closeElasticEditor'; payload?: undefined }
+    | { type: 'elasticSetSensitivity'; payload: { sensitivity: number } }
+    | { type: 'elasticAddMarker'; payload: { clipId: string; localBeat: number } }
+    | { type: 'elasticRemoveMarker'; payload: { markerId: string } }
+    | { type: 'elasticToggleMarkerLock'; payload: { markerId: string } }
+    | {
+          type: 'elasticSetTool';
+          payload: { tool: 'select' | 'add-marker' | 'remove-marker' | 'lock-marker' };
+      }
     | { type: 'toggleNodeView'; payload?: undefined }
     | { type: 'setControlSurface'; payload: { protocol: 'mcu' | 'osc' | 'hui' | null } }
     | { type: 'addCvOutput'; payload: { name: string; channel: number; type: string } }

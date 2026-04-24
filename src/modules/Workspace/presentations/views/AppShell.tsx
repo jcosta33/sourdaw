@@ -6,6 +6,7 @@ import { Button } from '#/components/ui/button';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 import { useStore } from '#/infra/store/useStore';
 import { aiStore } from '#/modules/AiGeneration/stores';
+import { ElasticEditorPanel } from '#/modules/AudioEngine/presentations/views';
 import {
     GenerativeAiPanel,
     ChatPanel,
@@ -138,6 +139,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     const project = useProjectState();
     const prefs = useStore(preferencesStore, defaultPreferences);
+    const tracksSnapshot = useStore(trackStore, { tracks: [], selectedTrackId: null });
+    const isAudioClipSelected = selectedClipId !== null
+        && tracksSnapshot.tracks.some((track) =>
+            track.clips.some((clip) => clip.id === selectedClipId && clip.type === 'audio')
+        );
     const aiState = useStore(aiStore, { tasks: [], isPanelOpen: false });
     const aiPanelOpen = aiState.isPanelOpen;
     const [exportOpen, setExportOpen] = useState(false);
@@ -153,6 +159,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         | 'setlist'
         | 'loopStation'
         | 'modulation'
+        | 'elastic'
     >('mixer');
     // One unified "active device panel" slot. The "only one panel open at a
     // time" invariant is enforced by the discriminated union in
@@ -248,6 +255,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             }
         });
     }, [mixerOpen]);
+
+    // Fall back to editor when the Elastic tab's audio-clip precondition disappears.
+    useEffect(() => {
+        if (bottomTab === 'elastic' && !isAudioClipSelected) {
+            setBottomTab('editor');
+        }
+    }, [bottomTab, isAudioClipSelected]);
 
     // ─── Panel dimension setters (persisted via workspace store) ───
     // All 14 setters share the pattern `fn => updateWorkspaceState({ [key]: fn(current) })`
@@ -644,6 +658,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                             size="xs"
                                             className={bottomTab === 'setlist' ? 'text-[var(--color-accent-amber)]' : ''}
                                             onClick={() => setBottomTab('setlist')}
+                                            data-onboarding="setlist-tab"
                                         >
                                             Setlist
                                         </Button>
@@ -654,6 +669,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                                 bottomTab === 'loopStation' ? 'text-[var(--color-accent-mint)]' : ''
                                             }
                                             onClick={() => setBottomTab('loopStation')}
+                                            data-onboarding="loop-station-tab"
                                         >
                                             Loop Station
                                         </Button>
@@ -664,9 +680,23 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                                 bottomTab === 'modulation' ? 'text-[var(--color-accent-cyan)]' : ''
                                             }
                                             onClick={() => setBottomTab('modulation')}
+                                            data-onboarding="modulation-tab"
                                         >
                                             Modulation
                                         </Button>
+                                        {isAudioClipSelected ? (
+                                            <Button
+                                                variant={bottomTab === 'elastic' ? 'secondary' : 'ghost'}
+                                                size="xs"
+                                                className={
+                                                    bottomTab === 'elastic' ? 'text-[var(--color-accent-peach)]' : ''
+                                                }
+                                                data-testid="elastic-tab-button"
+                                                onClick={() => setBottomTab('elastic')}
+                                            >
+                                                Elastic
+                                            </Button>
+                                        ) : null}
 
                                         <div className="flex-1" />
 
@@ -697,6 +727,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                             <LoopStationPanel />
                                         ) : bottomTab === 'modulation' ? (
                                             <ModulationMatrix />
+                                        ) : bottomTab === 'elastic' ? (
+                                            <ElasticEditorPanel />
                                         ) : (
                                             <RoutingMatrix />
                                         )}

@@ -7,7 +7,17 @@ import { advanceOnboardingStep } from '../../useCases/onboarding/advanceOnboardi
 import { dismissOnboardingTour } from '../../useCases/onboarding/dismissOnboardingTour';
 import { regressOnboardingStep } from '../../useCases/onboarding/regressOnboardingStep';
 
-type OnboardingAnchor = 'transport-play' | 'track-list' | 'inspector' | 'mixer-button' | null;
+type OnboardingAnchor =
+    | 'transport-play'
+    | 'track-list'
+    | 'inspector'
+    | 'mixer-button'
+    | 'loop-station-tab'
+    | 'setlist-tab'
+    | 'modulation-tab'
+    | 'adjustment-layer-strip'
+    | 'track-ai-section'
+    | null;
 
 type OnboardingStep = {
     anchor: OnboardingAnchor;
@@ -39,6 +49,36 @@ const TOUR_STEPS: OnboardingStep[] = [
         title: 'Mixer',
         description:
             'The mixer shows every track strip with faders, meters, and sends. Use VCA groups to control related tracks together.',
+    },
+    {
+        anchor: 'adjustment-layer-strip',
+        title: 'Adjustment Layers',
+        description:
+            'Non-destructive effect regions that span multiple tracks. Drop an EQ, compressor, or reverb that affects everything below it — perfect for bus-style processing without rewiring routing.',
+    },
+    {
+        anchor: 'loop-station-tab',
+        title: 'Loop Station',
+        description:
+            'Ableton-style clip slots — record loops into slots and fire them live with the QWERTY grid. Great for building up ideas without committing to a timeline position.',
+    },
+    {
+        anchor: 'setlist-tab',
+        title: 'Setlist',
+        description:
+            'Performance cue list — drag to reorder, auto-advance for live sets. Build a sequence of sections, intros, and songs you can trigger seamlessly on stage.',
+    },
+    {
+        anchor: 'modulation-tab',
+        title: 'Modulation Matrix',
+        description:
+            'Add LFOs, envelopes, and step modulators then route them to any device parameter. Assign once, automate forever — modulation travels with the source.',
+    },
+    {
+        anchor: 'track-ai-section',
+        title: 'AI Generation',
+        description:
+            'Select a MIDI track to expose AI drum, melody, chord, and bassline generation right in the inspector. Great for breaking writer’s block or laying down a starting point.',
     },
     {
         anchor: null,

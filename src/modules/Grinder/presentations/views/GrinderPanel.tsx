@@ -1301,6 +1301,16 @@ function ControlDeck({
                     step={0.01}
                     defaultValue={0.2}
                 />
+                <GrinderKnob
+                    deviceId={deviceId}
+                    value={patch.roomAmount}
+                    param="roomAmount"
+                    label="Room"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    defaultValue={0.1}
+                />
                 <div className="grinder-window flex min-w-[210px] flex-col gap-3 px-3 py-3">
                     <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
                         Cab toggles

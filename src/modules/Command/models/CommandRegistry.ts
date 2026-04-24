@@ -19,6 +19,7 @@ import { aiCommands } from './commands/aiCommands';
 import { automationCommands } from './commands/automationCommands';
 import { clipCommands } from './commands/clipCommands';
 import { editCommands } from './commands/editCommands';
+import { elasticCommands } from './commands/elasticCommands';
 import { midiCommands } from './commands/midiCommands';
 import { miscCommands } from './commands/miscCommands';
 import { projectCommands } from './commands/projectCommands';
@@ -44,6 +45,7 @@ export const commandRegistry: CommandEntry[] = [
     ...projectCommands,
     ...viewCommands,
     ...miscCommands,
+    ...elasticCommands,
 ];
 
 /** Search the aggregated catalog. */

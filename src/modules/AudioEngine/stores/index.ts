@@ -15,3 +15,6 @@ export { linkStatusStore, defaultLinkStatus, subscribeToLinkStatus, getLinkStatu
 
 export type { AdjustmentApplicationState } from './adjustmentApplicationStore';
 export { adjustmentApplicationStore } from './adjustmentApplicationStore';
+
+export type { ElasticAudioState, ElasticEditorTool } from './elasticAudio';
+export { elasticAudioStore, defaultElasticAudioState } from './elasticAudio';

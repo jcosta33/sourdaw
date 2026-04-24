@@ -244,7 +244,7 @@ export const LoopStationPanel = (): ReactElement => {
         : 'Free';
 
     return (
-        <DawPanelSurface>
+        <DawPanelSurface role="region" aria-label="Loop station">
             <DawHeaderBand
                 className="shrink-0"
                 title="Loop Station"
@@ -320,7 +320,7 @@ export const LoopStationPanel = (): ReactElement => {
                 </div>
             ) : (
                 <div className="flex-1 overflow-auto">
-                    <div className="flex min-w-max">
+                    <div className="flex min-w-max" role="grid" aria-label="Loop slots">
                         <div className="flex w-16 shrink-0 flex-col border-r border-border-hairline bg-black/20">
                             <div className="flex h-6 items-center justify-center border-b border-border-hairline text-[9px] uppercase tracking-wider text-muted-foreground">
                                 Slot

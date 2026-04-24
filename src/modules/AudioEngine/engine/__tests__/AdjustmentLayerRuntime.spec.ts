@@ -1,14 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
+import {
+    asAudioNode,
+    asBaseAudioContext,
+    createMockAudioContext,
+    createMockAudioNode,
+} from '../../../../helpers/__tests__/audioContext.mock';
 import { createAdjustmentLayerRuntime, type TrackRerouteDeps } from '../AdjustmentLayerRuntime';
 
 describe('AdjustmentLayerRuntime', () => {
     let ctx: ReturnType<typeof createMockAudioContext>;
     let rerouteTrack: ReturnType<typeof vi.fn>;
     let deps: TrackRerouteDeps;
-    let trackOutputs: Map<string, unknown>;
-    let trackDestinations: Map<string, unknown>;
+    let trackOutputs: Map<string, AudioNode>;
+    let trackDestinations: Map<string, AudioNode>;
 
     beforeEach(() => {
         ctx = createMockAudioContext();
@@ -17,16 +22,16 @@ describe('AdjustmentLayerRuntime', () => {
         rerouteTrack = vi.fn();
 
         deps = {
-            getContext: () => ctx as any,
-            getTrackOutputNode: (id) => (trackOutputs.get(id) as any) ?? null,
-            getTrackDefaultDestination: (id) => (trackDestinations.get(id) as any) ?? null,
+            getContext: () => asBaseAudioContext(ctx),
+            getTrackOutputNode: (id) => trackOutputs.get(id) ?? null,
+            getTrackDefaultDestination: (id) => trackDestinations.get(id) ?? null,
             rerouteTrack,
         };
 
-        trackOutputs.set('t1', ctx.createGain());
-        trackDestinations.set('t1', ctx.createGain());
-        trackOutputs.set('t2', ctx.createGain());
-        trackDestinations.set('t2', ctx.createGain());
+        trackOutputs.set('t1', asAudioNode(createMockAudioNode('gain')));
+        trackDestinations.set('t1', asAudioNode(createMockAudioNode('gain')));
+        trackOutputs.set('t2', asAudioNode(createMockAudioNode('gain')));
+        trackDestinations.set('t2', asAudioNode(createMockAudioNode('gain')));
     });
 
     it('creates a bus for a new (layer, track) pair and reroutes the track', () => {
@@ -104,7 +109,6 @@ describe('AdjustmentLayerRuntime', () => {
             { layerId: 'L1', trackId: 't1', effectType: 'eq', parameters: { 'High Gain': 6 }, blend: 1 },
         ]);
 
-        // ctx.createBiquadFilter was called as part of the bus construction (exactly once — params delta does not rebuild the chain)
         expect(vi.mocked(ctx.createBiquadFilter).mock.calls.length).toBeGreaterThanOrEqual(3);
     });
 

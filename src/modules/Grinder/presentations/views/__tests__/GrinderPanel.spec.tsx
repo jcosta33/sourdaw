@@ -101,6 +101,21 @@ describe('GrinderPanel', () => {
         expect(screen.getByRole('button', { name: /2 Overdrive/i })).toBeInTheDocument();
     });
 
+    it('should expose a direct room control in the cab section', () => {
+        grinderStore.set({
+            [device_id]: {
+                patch: {
+                    ...DEFAULT_PATCH,
+                    uiSection: 'cab',
+                },
+            },
+        });
+
+        render(<GrinderPanel deviceId={device_id} />);
+
+        expect(screen.getByText('Room')).toBeInTheDocument();
+    });
+
     it('should show snapshot recall controls when the patch contains stored snapshots', () => {
         grinderStore.set({
             [device_id]: {

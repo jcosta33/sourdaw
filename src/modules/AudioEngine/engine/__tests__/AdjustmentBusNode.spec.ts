@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
+import {
+    asAudioNode,
+    asBaseAudioContext,
+    createMockAudioContext,
+    createMockAudioNode,
+} from '../../../../helpers/__tests__/audioContext.mock';
 import { AdjustmentBusNode } from '../AdjustmentBusNode';
 
 describe('AdjustmentBusNode', () => {
@@ -13,7 +18,7 @@ describe('AdjustmentBusNode', () => {
 
     it('creates an EQ bus with an input and output node', () => {
         const bus = new AdjustmentBusNode({
-            context: ctx as any,
+            context: asBaseAudioContext(ctx),
             effectType: 'eq',
             parameters: { 'High Gain': 6 },
         });
@@ -25,32 +30,33 @@ describe('AdjustmentBusNode', () => {
 
     it('connects a source to the input and tracks it', () => {
         const bus = new AdjustmentBusNode({
-            context: ctx as any,
+            context: asBaseAudioContext(ctx),
             effectType: 'eq',
             parameters: {},
         });
-        const source = ctx.createGain();
+        const source = createMockAudioNode('gain');
+        const audioSource = asAudioNode(source);
 
-        bus.connectSource(source as any);
+        bus.connectSource(audioSource);
         expect(source.connect).toHaveBeenCalledWith(bus.inputNode);
-        expect(bus.hasSource(source as any)).toBe(true);
+        expect(bus.hasSource(audioSource)).toBe(true);
     });
 
     it('connects the output to a destination node', () => {
         const bus = new AdjustmentBusNode({
-            context: ctx as any,
+            context: asBaseAudioContext(ctx),
             effectType: 'eq',
             parameters: {},
         });
-        const dest = ctx.createGain();
+        const dest = createMockAudioNode('gain');
 
-        bus.connectDestination(dest as any);
+        bus.connectDestination(asAudioNode(dest));
         expect(bus.outputNode.connect).toHaveBeenCalledWith(dest);
     });
 
     it('setBlend schedules wet and dry ramps inversely', () => {
         const bus = new AdjustmentBusNode({
-            context: ctx as any,
+            context: asBaseAudioContext(ctx),
             effectType: 'eq',
             parameters: {},
         });
@@ -58,11 +64,13 @@ describe('AdjustmentBusNode', () => {
         bus.setBlend(0.7);
 
         const gainNodes = vi.mocked(ctx.createGain).mock.results.map((r) => r.value);
-        const sawWetTarget = gainNodes.some((g) =>
-            vi.mocked(g.gain.setTargetAtTime).mock.calls.some((c) => c[0] === 0.7)
+        const sawWetTarget = gainNodes.some((gainNode) =>
+            vi.mocked(gainNode.gain.setTargetAtTime).mock.calls.some((call) => call[0] === 0.7)
         );
-        const sawDryTarget = gainNodes.some((g) =>
-            vi.mocked(g.gain.setTargetAtTime).mock.calls.some((c) => Math.abs((c[0] as number) - 0.3) < 1e-6)
+        const sawDryTarget = gainNodes.some((gainNode) =>
+            vi.mocked(gainNode.gain.setTargetAtTime).mock.calls.some(
+                (call) => Math.abs((call[0] as number) - 0.3) < 1e-6
+            )
         );
 
         expect(sawWetTarget).toBe(true);
@@ -71,7 +79,7 @@ describe('AdjustmentBusNode', () => {
 
     it('pan effect type uses a StereoPanner and setParams updates it', () => {
         const bus = new AdjustmentBusNode({
-            context: ctx as any,
+            context: asBaseAudioContext(ctx),
             effectType: 'pan',
             parameters: { Pan: 50 },
         });
@@ -86,14 +94,14 @@ describe('AdjustmentBusNode', () => {
 
     it('disconnects nodes on dispose', () => {
         const bus = new AdjustmentBusNode({
-            context: ctx as any,
+            context: asBaseAudioContext(ctx),
             effectType: 'eq',
             parameters: {},
         });
-        const source = ctx.createGain();
-        const dest = ctx.createGain();
-        bus.connectSource(source as any);
-        bus.connectDestination(dest as any);
+        const source = createMockAudioNode('gain');
+        const dest = createMockAudioNode('gain');
+        bus.connectSource(asAudioNode(source));
+        bus.connectDestination(asAudioNode(dest));
 
         bus.dispose();
 
@@ -103,14 +111,15 @@ describe('AdjustmentBusNode', () => {
 
     it('ignores operations after dispose', () => {
         const bus = new AdjustmentBusNode({
-            context: ctx as any,
+            context: asBaseAudioContext(ctx),
             effectType: 'eq',
             parameters: {},
         });
         bus.dispose();
 
-        const source = ctx.createGain();
-        bus.connectSource(source as any);
-        expect(bus.hasSource(source as any)).toBe(false);
+        const source = createMockAudioNode('gain');
+        const audioSource = asAudioNode(source);
+        bus.connectSource(audioSource);
+        expect(bus.hasSource(audioSource)).toBe(false);
     });
 });
