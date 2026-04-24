@@ -5,6 +5,7 @@ import {
     Sparkles,
     FolderOpen,
     Upload,
+    Download,
     ArrowLeft,
     Music,
     Mic,
@@ -14,13 +15,26 @@ import {
     Headphones,
     Piano,
     Layers,
+    Clock,
 } from 'lucide-react';
 
 import { addTrack, addClip, importMidiFile } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
-import { newProject, createFromTemplate, getTemplates } from '#/modules/Project/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
+import {
+    newProject,
+    createFromTemplate,
+    getTemplates,
+    getRecentProjects,
+    loadRecentProject,
+    pickAndImportDawProject,
+    previewLoops,
+    templatePreviewPlayer,
+} from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { TemplatePreviewThumb } from '../views/TemplatePreviewThumb';
 
 import { SourdawLogo } from './SourdawLogo';
 
@@ -139,6 +153,31 @@ const AmbientGlows = (): ReactElement => (
     </div>
 );
 
+type RecentProject = ReturnType<typeof getRecentProjects>[number];
+
+const RECENT_PROJECTS_LIMIT = 5;
+
+const formatRelativeTime = (timestamp: number): string => {
+    const diff = Date.now() - timestamp;
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    if (seconds < 60) {
+        return 'just now';
+    }
+    if (minutes < 60) {
+        return `${String(minutes)}m ago`;
+    }
+    if (hours < 24) {
+        return `${String(hours)}h ago`;
+    }
+    if (days < 7) {
+        return `${String(days)}d ago`;
+    }
+    return new Date(timestamp).toLocaleDateString();
+};
+
 const LogoBlock = (): ReactElement => (
     <div className="flex flex-col items-center gap-3">
         <div className="relative">
@@ -164,7 +203,11 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     const [loadingName, setLoadingName] = useState('');
     const [isDragOver, setIsDragOver] = useState(false);
     const [quipIndex, setQuipIndex] = useState(0);
+    const [recentProjects, setRecentProjects] = useState<RecentProject[]>(() =>
+        getRecentProjects().slice(0, RECENT_PROJECTS_LIMIT)
+    );
     const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
+    const hoverDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
     const allTemplates: LaunchTemplate[] = getTemplates().map((template) => ({
         id: template.id,
@@ -173,19 +216,42 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         category: template.category,
     }));
     const filteredTemplates =
-        activeCategory === 'all' ? allTemplates : allTemplates.filter((time) => time.category === activeCategory);
+        activeCategory === 'all' ? allTemplates : allTemplates.filter((t) => t.category === activeCategory);
 
     // Rotate quips during loading
     useEffect(() => {
         if (view !== 'loading') {
             clearInterval(intervalRef.current);
-        } else {
-            intervalRef.current = setInterval(() => {
-                setQuipIndex((index) => (index + 1) % LOADING_QUIPS.length);
-            }, 2200);
+            return;
         }
+        intervalRef.current = setInterval(() => {
+            setQuipIndex((i) => (i + 1) % LOADING_QUIPS.length);
+        }, 2200);
         return () => clearInterval(intervalRef.current);
     }, [view]);
+
+    useEffect(() => {
+        return () => {
+            clearTimeout(hoverDebounceRef.current);
+            templatePreviewPlayer.stop();
+        };
+    }, []);
+
+    const handleTemplateHoverEnter = (templateId: string): void => {
+        clearTimeout(hoverDebounceRef.current);
+        const preview = previewLoops[templateId];
+        if (!preview) {
+            return;
+        }
+        hoverDebounceRef.current = setTimeout(() => {
+            templatePreviewPlayer.play(preview);
+        }, 150);
+    };
+
+    const handleTemplateHoverLeave = (): void => {
+        clearTimeout(hoverDebounceRef.current);
+        templatePreviewPlayer.stop();
+    };
 
     // ── Actions ──
 
@@ -198,30 +264,60 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         }, 280);
     };
 
+    const handleImportDawProject = (): void => {
+        (async () => {
+            const ok = await pickAndImportDawProject();
+            if (!ok) {
+                return;
+            }
+            setLoadingName('Imported DAWproject');
+            setView('loading');
+            setRecentProjects(getRecentProjects().slice(0, RECENT_PROJECTS_LIMIT));
+        })();
+    };
+
+    const handleExportDawProject = (): void => {
+        void executeAppAction({ type: 'exportDawProject', payload: {} });
+    };
+
     const handleOpenGrid = (category: LaunchTemplateCategory | 'all'): void => {
         setActiveCategory(category);
         setView('grid');
     };
 
+    const handleRecentProjectSelect = (entry: RecentProject): void => {
+        setLoadingName(entry.name);
+        setView('loading');
+        (async () => {
+            await new Promise<void>((r) => setTimeout(r, 80));
+            const ok = await loadRecentProject(entry.key);
+            if (!ok) {
+                notifyUser(`Failed to open "${entry.name}"`, 'error');
+                setRecentProjects(getRecentProjects().slice(0, RECENT_PROJECTS_LIMIT));
+                setView('home');
+            }
+        })();
+    };
+
     const handleTemplateSelect = (template: LaunchTemplate): void => {
         setLoadingName(template.name);
         setView('loading');
-        void (async () => {
-            await new Promise<void>((resolve) => setTimeout(resolve, 80));
+        (async () => {
+            await new Promise<void>((r) => setTimeout(r, 80));
             await createFromTemplate(template.id);
         })();
     };
 
-    const handleDrop = (event: DragEvent<HTMLDivElement>): void => {
-        event.preventDefault();
-        event.stopPropagation();
+    const handleDrop = (e: DragEvent<HTMLDivElement>): void => {
+        e.preventDefault();
+        e.stopPropagation();
         setIsDragOver(false);
         setLoadingName('Importing files…');
         setView('loading');
-        void (async () => {
-            await new Promise<void>((resolve) => setTimeout(resolve, 100));
+        (async () => {
+            await new Promise<void>((r) => setTimeout(r, 100));
             newProject();
-            for (const file of Array.from(event.dataTransfer.files)) {
+            for (const file of Array.from(e.dataTransfer.files)) {
                 const ext = file.name.toLowerCase().split('.').pop() ?? '';
                 if (['mid', 'midi'].includes(ext) || file.type === 'audio/midi') {
                     await importMidiFile(file);
@@ -257,167 +353,6 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     };
 
     // ── Render ──
-    const renderIife_2 = () => {
-        if (view === 'home') {
-            return (
-                <div
-                    key="home"
-                    className={`animate-in fade-in zoom-in-95 duration-500 relative flex flex-col items-center gap-8 rounded-2xl border shadow-[0_24px_80px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.05)] max-w-[440px] w-full p-10 transition-all duration-300 ${
-                        isDragOver
-                            ? 'border-[var(--color-accent-orange)]/60 bg-[var(--color-accent-orange)]/5 scale-[1.01]'
-                            : 'border-white/[0.07] bg-white/[0.03] backdrop-blur-xl'
-                    }`}
-                >
-                    <LogoBlock />
-                    <div className="grid grid-cols-3 gap-3 w-full">
-                        <ActionCard
-                            id="launch-new-project"
-                            label="New Project"
-                            sub="Blank canvas"
-                            icon={<FolderOpen className="size-5" aria-hidden="true" />}
-                            colorVar="--color-accent-orange"
-                            onClick={handleNewProject}
-                        />
-                        <ActionCard
-                            id="launch-from-template"
-                            label="Templates"
-                            sub="Pre-baked recipes"
-                            icon={<LayoutTemplate className="size-5" aria-hidden="true" />}
-                            colorVar="--color-accent-lavender"
-                            onClick={() => handleOpenGrid('all')}
-                        />
-                        <ActionCard
-                            id="launch-demo-project"
-                            label="Demos"
-                            sub="Hear what's cooking"
-                            icon={<Sparkles className="size-5" aria-hidden="true" />}
-                            colorVar="--color-accent-mint"
-                            onClick={() => handleOpenGrid('demo')}
-                        />
-                    </div>
-                    <div
-                        className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed transition-all w-full justify-center ${
-                            isDragOver
-                                ? 'border-[var(--color-accent-orange)] bg-[var(--color-accent-orange)]/10 text-[var(--color-accent-orange)]'
-                                : 'border-white/[0.10] text-white/20'
-                        }`}
-                    >
-                        <Upload className="size-3.5 shrink-0" aria-hidden="true" />
-                        <span className="text-[11px]">Drop audio or MIDI to start instantly</span>
-                    </div>
-                    <p className="text-[9px] text-white/12 tracking-wider">Sourdaw Studio · Time to cook</p>
-                </div>
-            );
-        } else {
-            return null;
-        }
-    };
-    const renderIife_3 = () => {
-        if (view === 'grid') {
-            return (
-                <div
-                    key="grid"
-                    className="animate-in fade-in slide-in-from-bottom-3 duration-400 flex flex-col gap-4 max-w-[620px] w-full"
-                >
-                    {/* Header */}
-                    <div className="flex items-center gap-3">
-                        <button
-                            type="button"
-                            aria-label="Back to home"
-                            className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-colors cursor-pointer"
-                            onClick={() => setView('home')}
-                        >
-                            <ArrowLeft className="size-3.5" aria-hidden="true" />
-                            Back
-                        </button>
-                        <div className="h-3 w-px bg-white/10" />
-                        <p className="text-xs text-white/50 font-medium">Start a new project</p>
-                    </div>
-                    {/* Category pills */}
-                    <div className="flex gap-1.5 flex-wrap">
-                        {CATEGORY_ORDER.map((cat) => {
-                            const colors = CATEGORY_COLORS[cat] ?? CATEGORY_COLORS.all!;
-                            const isActive = activeCategory === cat;
-                            const renderIife_4 = () => {
-                                if (cat === 'all') {
-                                    return <Layers className="size-3" aria-hidden="true" />;
-                                } else {
-                                    if (cat === 'demo') {
-                                        return <Sparkles className="size-3" aria-hidden="true" />;
-                                    } else {
-                                        if (cat === 'music') {
-                                            return <Music className="size-3" aria-hidden="true" />;
-                                        } else {
-                                            if (cat === 'podcast') {
-                                                return <Mic className="size-3" aria-hidden="true" />;
-                                            } else {
-                                                return <Film className="size-3" aria-hidden="true" />;
-                                            }
-                                        }
-                                    }
-                                }
-                            };
-
-                            return (
-                                <button
-                                    key={cat}
-                                    type="button"
-                                    onClick={() => setActiveCategory(cat)}
-                                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all cursor-pointer ${
-                                        isActive
-                                            ? `${colors.activeBg} ${colors.text} ${colors.border}`
-                                            : 'bg-white/[0.03] text-white/35 border-white/[0.06] hover:bg-white/[0.06] hover:text-white/60'
-                                    }`}
-                                >
-                                    {renderIife_4()}
-                                    {CATEGORY_LABELS[cat]}
-                                </button>
-                            );
-                        })}
-                    </div>
-                    {/* Template grid */}
-                    <div className="grid grid-cols-2 gap-2.5 max-h-[400px] overflow-y-auto pr-1 scrollbar-thin">
-                        {filteredTemplates.map((template) => {
-                            const colors = CATEGORY_COLORS[template.category] ?? CATEGORY_COLORS.empty!;
-                            const icon = TEMPLATE_ICONS[template.id] ?? (
-                                <FileText className="size-4" aria-hidden="true" />
-                            );
-                            return (
-                                <button
-                                    key={template.id}
-                                    type="button"
-                                    onClick={() => handleTemplateSelect(template)}
-                                    className={`group flex items-start gap-3 p-4 rounded-xl border transition-all duration-150 cursor-pointer text-left hover:shadow-[0_4px_16px_rgba(0,0,0,0.4)] hover:brightness-110 ${colors.border} bg-white/[0.03] hover:bg-white/[0.06] backdrop-blur-sm`}
-                                >
-                                    <div
-                                        className={`mt-0.5 shrink-0 size-8 rounded-lg ${colors.bg} flex items-center justify-center ${colors.text} transition-colors group-hover:${colors.activeBg}`}
-                                    >
-                                        {icon}
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className={`text-xs font-semibold text-white/80 truncate`}>
-                                            {template.name}
-                                        </p>
-                                        <p className={`text-[10px] mt-0.5 ${colors.text}/70 capitalize`}>
-                                            {template.category === 'empty' ? 'Blank' : template.category}
-                                        </p>
-                                        <p className="text-[10px] text-white/30 mt-1 leading-relaxed line-clamp-2">
-                                            {template.description}
-                                        </p>
-                                    </div>
-                                </button>
-                            );
-                        })}
-                    </div>
-                    <p className="text-[9px] text-white/15 text-center">
-                        Or drop audio / MIDI files on the home screen to import instantly
-                    </p>
-                </div>
-            );
-        } else {
-            return null;
-        }
-    };
 
     return (
         <div
@@ -435,17 +370,17 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
             }}
             onDragOver={
                 view === 'home'
-                    ? (event) => {
-                          event.preventDefault();
-                          event.dataTransfer.dropEffect = 'copy';
+                    ? (e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'copy';
                           setIsDragOver(true);
                       }
                     : undefined
             }
             onDragLeave={
                 view === 'home'
-                    ? (event) => {
-                          if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+                    ? (e) => {
+                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
                               setIsDragOver(false);
                           }
                       }
@@ -454,12 +389,209 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
             onDrop={view === 'home' ? handleDrop : undefined}
         >
             <AmbientGlows />
+
             <div className="flex h-full items-center justify-center p-6">
                 {/* ── HOME ── */}
-                {renderIife_2()}
+                {view === 'home' ? (
+                    <div
+                        key="home"
+                        className={`animate-in fade-in zoom-in-95 duration-500 relative flex flex-col items-center gap-8 rounded-2xl border shadow-[0_24px_80px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.05)] max-w-[440px] w-full p-10 transition-all duration-300 ${
+                            isDragOver
+                                ? 'border-[var(--color-accent-orange)]/60 bg-[var(--color-accent-orange)]/5 scale-[1.01]'
+                                : 'border-white/[0.07] bg-white/[0.03] backdrop-blur-xl'
+                        }`}
+                    >
+                        <LogoBlock />
+
+                        {recentProjects.length > 0 ? (
+                            <div className="flex flex-col gap-2 w-full">
+                                <div className="flex items-center gap-1.5 px-0.5">
+                                    <Clock className="size-3 text-white/35" aria-hidden="true" />
+                                    <span className="text-[10px] font-semibold text-white/45 uppercase tracking-wider">
+                                        Recent Projects
+                                    </span>
+                                </div>
+                                <div
+                                    className="flex gap-2 overflow-x-auto scrollbar-thin -mx-1 px-1 pb-1"
+                                    role="list"
+                                    aria-label="Recent projects"
+                                >
+                                    {recentProjects.map((entry) => (
+                                        <RecentProjectCard
+                                            key={entry.key}
+                                            entry={entry}
+                                            onOpen={handleRecentProjectSelect}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        ) : null}
+
+                        <div className="grid grid-cols-3 gap-3 w-full">
+                            <ActionCard
+                                id="launch-new-project"
+                                label="New Project"
+                                sub="Blank canvas"
+                                icon={<FolderOpen className="size-5" aria-hidden="true" />}
+                                colorVar="--color-accent-orange"
+                                onClick={handleNewProject}
+                            />
+                            <ActionCard
+                                id="launch-from-template"
+                                label="Templates"
+                                sub="Pre-baked recipes"
+                                icon={<LayoutTemplate className="size-5" aria-hidden="true" />}
+                                colorVar="--color-accent-lavender"
+                                onClick={() => handleOpenGrid('all')}
+                            />
+                            <ActionCard
+                                id="launch-demo-project"
+                                label="Demos"
+                                sub="Hear what's cooking"
+                                icon={<Sparkles className="size-5" aria-hidden="true" />}
+                                colorVar="--color-accent-mint"
+                                onClick={() => handleOpenGrid('demo')}
+                            />
+                        </div>
+
+                        <div
+                            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border border-dashed transition-all w-full justify-center ${
+                                isDragOver
+                                    ? 'border-[var(--color-accent-orange)] bg-[var(--color-accent-orange)]/10 text-[var(--color-accent-orange)]'
+                                    : 'border-white/[0.10] text-white/20'
+                            }`}
+                        >
+                            <Upload className="size-3.5 shrink-0" aria-hidden="true" />
+                            <span className="text-[11px]">Drop audio or MIDI to start instantly</span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-center gap-2">
+                            <button
+                                type="button"
+                                id="launch-import-dawproject"
+                                onClick={handleImportDawProject}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] text-white/45 border border-white/[0.07] hover:border-white/[0.18] hover:text-white/80 transition-colors cursor-pointer"
+                            >
+                                <Upload className="size-3" aria-hidden="true" />
+                                Import .dawproject
+                                <span className="text-white/25">from Ableton, Bitwig, Studio One…</span>
+                            </button>
+                            <button
+                                type="button"
+                                id="launch-export-dawproject"
+                                onClick={handleExportDawProject}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] text-white/45 border border-white/[0.07] hover:border-white/[0.18] hover:text-white/80 transition-colors cursor-pointer"
+                            >
+                                <Download className="size-3" aria-hidden="true" />
+                                Export .dawproject
+                            </button>
+                        </div>
+
+                        <p className="text-[9px] text-white/12 tracking-wider">Sourdaw Studio · Time to cook</p>
+                    </div>
+                ) : null}
 
                 {/* ── GRID (Templates / Demos) ── */}
-                {renderIife_3()}
+                {view === 'grid' ? (
+                    <div
+                        key="grid"
+                        className="animate-in fade-in slide-in-from-bottom-3 duration-400 flex flex-col gap-4 max-w-[620px] w-full"
+                    >
+                        {/* Header */}
+                        <div className="flex items-center gap-3">
+                            <button
+                                type="button"
+                                aria-label="Back to home"
+                                className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-colors cursor-pointer"
+                                onClick={() => setView('home')}
+                            >
+                                <ArrowLeft className="size-3.5" aria-hidden="true" />
+                                Back
+                            </button>
+                            <div className="h-3 w-px bg-white/10" />
+                            <p className="text-xs text-white/50 font-medium">Start a new project</p>
+                        </div>
+
+                        {/* Category pills */}
+                        <div className="flex gap-1.5 flex-wrap">
+                            {CATEGORY_ORDER.map((cat) => {
+                                const colors = CATEGORY_COLORS[cat] ?? CATEGORY_COLORS.all!;
+                                const isActive = activeCategory === cat;
+                                return (
+                                    <button
+                                        key={cat}
+                                        type="button"
+                                        onClick={() => setActiveCategory(cat)}
+                                        className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all cursor-pointer ${
+                                            isActive
+                                                ? `${colors.activeBg} ${colors.text} ${colors.border}`
+                                                : 'bg-white/[0.03] text-white/35 border-white/[0.06] hover:bg-white/[0.06] hover:text-white/60'
+                                        }`}
+                                    >
+                                        {cat === 'all' ? (
+                                            <Layers className="size-3" aria-hidden="true" />
+                                        ) : cat === 'demo' ? (
+                                            <Sparkles className="size-3" aria-hidden="true" />
+                                        ) : cat === 'music' ? (
+                                            <Music className="size-3" aria-hidden="true" />
+                                        ) : cat === 'podcast' ? (
+                                            <Mic className="size-3" aria-hidden="true" />
+                                        ) : (
+                                            <Film className="size-3" aria-hidden="true" />
+                                        )}
+                                        {CATEGORY_LABELS[cat]}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Template grid */}
+                        <div className="grid grid-cols-2 gap-2.5 max-h-[400px] overflow-y-auto pr-1 scrollbar-thin">
+                            {filteredTemplates.map((template) => {
+                                const colors = CATEGORY_COLORS[template.category] ?? CATEGORY_COLORS.empty!;
+                                const icon = TEMPLATE_ICONS[template.id] ?? (
+                                    <FileText className="size-4" aria-hidden="true" />
+                                );
+                                return (
+                                    <button
+                                        key={template.id}
+                                        type="button"
+                                        onClick={() => handleTemplateSelect(template)}
+                                        onMouseEnter={() => handleTemplateHoverEnter(template.id)}
+                                        onMouseLeave={handleTemplateHoverLeave}
+                                        onFocus={() => handleTemplateHoverEnter(template.id)}
+                                        onBlur={handleTemplateHoverLeave}
+                                        className={`group flex items-start gap-3 p-4 rounded-xl border transition-all duration-150 cursor-pointer text-left hover:shadow-[0_4px_16px_rgba(0,0,0,0.4)] hover:brightness-110 ${colors.border} bg-white/[0.03] hover:bg-white/[0.06] backdrop-blur-sm`}
+                                    >
+                                        <div
+                                            className={`mt-0.5 shrink-0 size-8 rounded-lg ${colors.bg} flex items-center justify-center ${colors.text} transition-colors group-hover:${colors.activeBg}`}
+                                        >
+                                            {icon}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <p className={`text-xs font-semibold text-white/80 truncate`}>
+                                                {template.name}
+                                            </p>
+                                            <p className={`text-[10px] mt-0.5 ${colors.text}/70 capitalize`}>
+                                                {template.category === 'empty' ? 'Blank' : template.category}
+                                            </p>
+                                            <p className="text-[10px] text-white/30 mt-1 leading-relaxed line-clamp-2">
+                                                {template.description}
+                                            </p>
+                                            <div className="mt-2 overflow-hidden rounded-md border border-white/[0.06]">
+                                                <TemplatePreviewThumb templateId={template.id} />
+                                            </div>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <p className="text-[9px] text-white/15 text-center">
+                            Or drop audio / MIDI files on the home screen to import instantly
+                        </p>
+                    </div>
+                ) : null}
 
                 {/* ── LOADING ── */}
                 {view === 'loading' ? (
@@ -530,15 +662,14 @@ const ActionCard = ({ id, label, sub, icon, colorVar, onClick }: ActionCardProps
         className="group flex flex-col items-center gap-2.5 p-4 rounded-xl border border-white/[0.07] bg-white/[0.03] transition-all duration-200 cursor-pointer text-center"
         style={{ ['--card-color' as string]: `var(${colorVar})` }}
         onClick={onClick}
-        onMouseEnter={(event) => {
-            (event.currentTarget as HTMLElement).style.background =
-                `color-mix(in srgb, var(${colorVar}) 10%, transparent)`;
-            (event.currentTarget as HTMLElement).style.borderColor =
+        onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.background = `color-mix(in srgb, var(${colorVar}) 10%, transparent)`;
+            (e.currentTarget as HTMLElement).style.borderColor =
                 `color-mix(in srgb, var(${colorVar}) 35%, transparent)`;
         }}
-        onMouseLeave={(event) => {
-            (event.currentTarget as HTMLElement).style.background = '';
-            (event.currentTarget as HTMLElement).style.borderColor = '';
+        onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.background = '';
+            (e.currentTarget as HTMLElement).style.borderColor = '';
         }}
     >
         <div
@@ -551,5 +682,30 @@ const ActionCard = ({ id, label, sub, icon, colorVar, onClick }: ActionCardProps
             <span className="text-xs font-semibold text-white/75 block leading-tight">{label}</span>
             <span className="text-[9px] text-white/28 mt-0.5 block">{sub}</span>
         </div>
+    </button>
+);
+
+// ─── Recent project card ─────────────────────────────────────────────────
+
+type RecentProjectCardProps = {
+    entry: RecentProject;
+    onOpen: (entry: RecentProject) => void;
+};
+
+const RecentProjectCard = ({ entry, onOpen }: RecentProjectCardProps): ReactElement => (
+    <button
+        type="button"
+        aria-label={`Open recent project ${entry.name}`}
+        className="shrink-0 flex flex-col items-start gap-1 min-w-[120px] max-w-[160px] p-2.5 rounded-lg border border-white/[0.07] bg-white/[0.03] text-left transition-all duration-200 cursor-pointer hover:bg-white/[0.06] hover:border-white/[0.15]"
+        onClick={() => onOpen(entry)}
+    >
+        <div className="flex items-center gap-1.5 w-full min-w-0">
+            <FolderOpen
+                className="size-3 shrink-0 text-[var(--color-accent-orange)]/70"
+                aria-hidden="true"
+            />
+            <span className="text-[11px] font-semibold text-white/80 truncate">{entry.name}</span>
+        </div>
+        <span className="text-[9px] text-white/35">{formatRelativeTime(entry.updatedAt)}</span>
     </button>
 );

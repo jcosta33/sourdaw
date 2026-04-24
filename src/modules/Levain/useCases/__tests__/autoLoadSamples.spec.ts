@@ -30,9 +30,9 @@ describe('autoLoadLevainSamples', () => {
     it('reports progress and calls the loader with the manifest URL', async () => {
         const port = {} as MessagePort;
 
-        await autoLoadLevainSamples(port, 'violin-1');
+        await autoLoadLevainSamples('d1', port, 'violin-1');
 
-        expect(setSampleLoadProgress).toHaveBeenCalledWith(0.01);
+        expect(setSampleLoadProgress).toHaveBeenCalledWith('d1', 0.01);
         expect(loadInstrumentFromManifest).toHaveBeenCalledWith(
             expect.stringContaining('/samples/levain/violin-1/manifest.json'),
             expect.stringContaining('/samples/levain/violin-1'),
@@ -40,14 +40,14 @@ describe('autoLoadLevainSamples', () => {
             0,
             expect.any(Function)
         );
-        expect(setSampleLoadProgress).toHaveBeenCalledWith(1.0);
+        expect(setSampleLoadProgress).toHaveBeenCalledWith('d1', 1.0);
     });
 
     it('still completes when the loader rejects', async () => {
         vi.mocked(loadInstrumentFromManifest).mockRejectedValueOnce(new Error('boom'));
 
-        await autoLoadLevainSamples({} as MessagePort, 'cello-1');
+        await autoLoadLevainSamples('d1', {} as MessagePort, 'cello-1');
 
-        expect(setSampleLoadProgress).toHaveBeenCalledWith(1.0);
+        expect(setSampleLoadProgress).toHaveBeenCalledWith('d1', 1.0);
     });
 });

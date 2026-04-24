@@ -1144,9 +1144,3 @@ export function parsePhonemesTxt(content: string): Record<string, number> {
     return map;
 }
 
-/**
- * Parse a DiffSinger phonemes.json file (key: phoneme string, value: token ID).
- */
-export function parsePhonemesJson(content: string): Record<string, number> {
-    return JSON.parse(content) as Record<string, number>;
-}

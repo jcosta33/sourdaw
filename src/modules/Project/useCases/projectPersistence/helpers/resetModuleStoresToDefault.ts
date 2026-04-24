@@ -7,12 +7,12 @@ import { glutenStore } from '#/modules/Gluten/stores';
 import { grandBouleStore, createDefaultGrandBouleState } from '#/modules/GrandBoule/stores';
 import { grinderStore } from '#/modules/Grinder/stores';
 import { kneadStore, defaultKneadState } from '#/modules/Knead/stores';
-import { levainStore, defaultLevainState } from '#/modules/Levain/stores';
+import { levainStore } from '#/modules/Levain/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { proofStore } from '#/modules/Proof/stores';
 import { setSidechainRoutes } from '#/modules/Routing/useCases';
 import { scoringStore } from '#/modules/Scoring/stores';
-import { toasterStore, defaultToasterState } from '#/modules/Toaster/stores';
+import { toasterStore } from '#/modules/Toaster/stores';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 
@@ -35,8 +35,8 @@ export function resetModuleStoresToDefault(): void {
     bacteriaStore.set({});
     proofStore.set({});
     scoringStore.set({});
-    toasterStore.set(defaultToasterState);
-    levainStore.set(defaultLevainState);
+    toasterStore.set({});
+    levainStore.set({});
     grandBouleStore.set(createDefaultGrandBouleState());
     crustStore.set(defaultCrustState);
     kneadStore.set(defaultKneadState);

@@ -33,19 +33,31 @@ What this session must accomplish. One paragraph maximum. Be specific.
 
 ## Bug description
 
+<bug_description>
+
 What is wrong. Observable symptoms.
+
+</bug_description>
 
 ---
 
 ## Reproduction steps
 
+<reproduction_steps>
+
 1.
+
+</reproduction_steps>
 
 ---
 
 ## Root cause
 
+<root_cause>
+
 [pending — fill in once found]
+
+</root_cause>
 
 ---
 
@@ -60,8 +72,8 @@ List the files you expect to change. If investigation requires more, extend the 
 - Work only inside this worktree
 - Do not switch branches unless explicitly instructed
 - Do not merge, rebase, or push unless explicitly instructed
-- Run `pnpm i` to install dependencies
-- Run `pnpm deps:validate` and `pnpm typecheck` after fixing
+- Run `{{cmdInstall}}` to install dependencies
+- Run `pnpm agents:validate` after fixing
 - Prefer **minimal** fixes for the reported bug; opportunistic fixes elsewhere should be small, clearly correct, and documented
 - **Proactively research and read related docs.** If context from another spec, research, or bug file is needed, you are empowered to browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own to confirm your hypotheses and make informed decisions. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are also fair game.
 
@@ -74,8 +86,7 @@ List the files you expect to change. If investigation requires more, extend the 
 - [ ] Fill in root cause above
 - [ ] Implement fix
 - [ ] Verify fix resolves the issue
-- [ ] `pnpm deps:validate` passes with zero violations
-- [ ] `pnpm typecheck` passes
+- [ ] `pnpm agents:validate` passes
 - [ ] Self-review: Verification outputs pasted
 - [ ] Self-review: Root cause answered
 - [ ] Self-review: Minimality answered
@@ -112,6 +123,8 @@ Concrete starting points for the next session if this one ends incomplete.
 
 ## Self-review
 
+<self_review>
+
 Stop. The standard for a fix is brutal simplicity: the minimum change that addresses the root cause, nothing more. Act as a senior engineer reviewing this diff with maximum skepticism. You are looking for anything that shouldn't be there.
 
 > **Hard gate.** The task is not complete until every question below has a written answer directly beneath it. An unanswered question is a skipped check. Incomplete Self-review is an invalid session output. If you cannot point to a specific file/line/requirement for a finding, do not pad the list.
@@ -120,8 +133,7 @@ Stop. The standard for a fix is brutal simplicity: the minimum change that addre
 
 - `git status` →
 - `git diff --stat` →
-- `pnpm deps:validate` (last line):
-- `pnpm typecheck` (last line):
+- `pnpm agents:validate` (last 2 lines):
 
 ### Root cause
 
@@ -135,7 +147,7 @@ Stop. The standard for a fix is brutal simplicity: the minimum change that addre
 
 ### Correctness
 
-- Zero `pnpm deps:validate` violations? `pnpm typecheck` clean? Could this fix introduce a regression in any code path that depends on what you changed? Did you grep for callers?
+- Zero validation errors? `{{cmdTypecheck}}` clean? Could this fix introduce a regression in any code path that depends on what you changed? Did you grep for callers?
   Answer:
 
 ### Conventions
@@ -149,3 +161,5 @@ Stop. The standard for a fix is brutal simplicity: the minimum change that addre
   Answer:
 
 Only when every answer above is written is this task complete.
+
+</self_review>

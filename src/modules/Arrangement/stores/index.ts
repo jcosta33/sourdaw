@@ -24,10 +24,20 @@ export type { TimelineViewState } from './timelineViewStore';
 export { trackStore, defaultTrackState } from './trackStore';
 export type { TrackStoreState, Track, Device, Clip } from './trackStore';
 
-export type { AdjustmentEffectType } from './adjustmentLayer';
+export { adjustmentLayerStore, EFFECT_PRESETS, LAYER_COLORS } from './adjustmentLayer';
+export type {
+    AdjustmentEffectType,
+    AdjustmentLayer,
+    AdjustmentLayerState,
+    AdjustmentParameter,
+    AdjustmentRegion,
+} from './adjustmentLayer';
 
 export { vcaGroupStore, defaultVcaGroupState } from './vcaGroupStore';
 export type { VcaGroupState } from './vcaGroupStore';
+
+export { grooveStore } from './grooveStore';
+export type { GrooveState, GrooveTemplate } from './grooveStore';
 
 export { gainEnvelopeStore, defaultGainEnvelopeStoreState } from './gainEnvelopeStore';
 export type { GainEnvelopeStoreState, ClipGainEnvelope, GainEnvelopePoint } from './gainEnvelopeStore';

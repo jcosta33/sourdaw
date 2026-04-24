@@ -1,4 +1,4 @@
-import { scheduleDeviceParam } from '#/modules/AudioEngine/useCases';
+import { scheduleDeviceKeyOn, scheduleDeviceKeyOff } from '#/modules/AudioEngine/useCases';
 
 export function scheduleFaustNote(
     trackId: string,
@@ -9,11 +9,8 @@ export function scheduleFaustNote(
     velocity: number,
     clipGain: number = 1.0
 ): void {
-    const frequency = 440 * 2 ** ((pitch - 69) / 12);
-    const gain = (velocity / 127) * clipGain;
+    const scaledVelocity = Math.max(0, Math.min(127, Math.floor(velocity * clipGain)));
 
-    scheduleDeviceParam(trackId, deviceId, 'freq', frequency, startTime);
-    scheduleDeviceParam(trackId, deviceId, 'gain', gain, startTime);
-    scheduleDeviceParam(trackId, deviceId, 'gate', 1, startTime);
-    scheduleDeviceParam(trackId, deviceId, 'gate', 0, startTime + duration);
+    scheduleDeviceKeyOn(trackId, deviceId, pitch, scaledVelocity, startTime);
+    scheduleDeviceKeyOff(trackId, deviceId, pitch, 0, startTime + duration);
 }

@@ -30,7 +30,7 @@ function flushPadParam(cacheKey: string, trackId: string): void {
 
 export function setToasterPadParam(deviceId: string, padIndex: number, key: keyof PadState, value: number): void {
     if (!STRING_FIELDS.has(key)) {
-        updatePad(padIndex, { [key]: value } as Partial<PadState>);
+        updatePad(deviceId, padIndex, { [key]: value } as Partial<PadState>);
     }
 
     const ref = findDeviceRef(deviceId);

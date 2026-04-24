@@ -19,57 +19,6 @@ export const SCALE_NAMES = Object.keys(SCALE_PATTERNS);
 
 export const KEY_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
-export function foldMidiNote(
-    note: number,
-    srcRoot: number,
-    srcScale: string,
-    dstRoot: number,
-    dstScale: string
-): number {
-    const srcPattern = SCALE_PATTERNS[srcScale] ?? SCALE_PATTERNS.chromatic!;
-    const dstPattern = SCALE_PATTERNS[dstScale] ?? SCALE_PATTERNS.chromatic!;
-
-    const srcPc = (((note - srcRoot) % 12) + 12) % 12;
-    const srcOctave = Math.floor((note - srcRoot) / 12);
-
-    // Find closest degree in source pattern
-    let srcDegree = 0;
-    let minDiff = 12;
-    for (let i = 0; i < srcPattern.length; i++) {
-        const patternNote = srcPattern[i];
-        if (patternNote === undefined) {
-            continue;
-        }
-        const diff = Math.abs(srcPc - patternNote);
-        if (diff < minDiff) {
-            minDiff = diff;
-            srcDegree = i;
-        }
-    }
-
-    const patternNoteAtDegree = srcPattern[srcDegree];
-    if (patternNoteAtDegree === undefined) {
-        return note;
-    }
-    const chromaticOffset = srcPc - patternNoteAtDegree;
-
-    // Map degree to destination pattern
-    // If destination pattern has fewer degrees, we wrap/modulo
-    const dstDegree = srcDegree % dstPattern.length;
-    const dstPc = dstPattern[dstDegree];
-
-    if (dstPc === undefined) {
-        return note;
-    }
-
-    // Proportional remapping for chromatic offset if gaps differ
-    // (Simplification: just preserve the offset for now, but in microtuning we'd scale it)
-    const resultNote = dstRoot + srcOctave * 12 + dstPc + chromaticOffset;
-
-    // Safety clamp for MIDI range
-    return Math.max(0, Math.min(127, Math.round(resultNote)));
-}
-
 export function quantizeCentsToScale(cents: number, root: number, scaleName: string): number {
     const pattern = SCALE_PATTERNS[scaleName] ?? SCALE_PATTERNS.chromatic!;
     const pc = (((Math.round(cents / 100) - root) % 12) + 12) % 12;

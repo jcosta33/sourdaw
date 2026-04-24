@@ -29,8 +29,8 @@ describe('startNoteRepeat', () => {
     it('fires triggerToasterPad immediately with pad and velocity', () => {
         vi.mocked(getAudioTime).mockReturnValue(0);
 
-        startNoteRepeat(3, 90, 120, '1/4');
+        startNoteRepeat('d1', 3, 90, 120, '1/4');
 
-        expect(triggerToasterPad).toHaveBeenCalledWith(3, 90);
+        expect(triggerToasterPad).toHaveBeenCalledWith('d1', 3, 90);
     });
 });

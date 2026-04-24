@@ -5,6 +5,7 @@ import { aiCommands } from './commands/aiCommands';
 import { automationCommands } from './commands/automationCommands';
 import { clipCommands } from './commands/clipCommands';
 import { editCommands } from './commands/editCommands';
+import { elasticCommands } from './commands/elasticCommands';
 import { midiCommands } from './commands/midiCommands';
 import { miscCommands } from './commands/miscCommands';
 import { projectCommands } from './commands/projectCommands';
@@ -24,8 +25,6 @@ import { viewCommands } from './commands/viewCommands';
  * consumers (e.g. CommandPalette.tsx) keep working.
  */
 
-// ── Category sub-modules ───────────────────────────────────────────────────
-
 // ── Re-exports for in-module consumers ────────────────────────────────────
 
 export type { CommandEntry } from './CommandEntry';
@@ -44,6 +43,7 @@ export const commandRegistry: CommandEntry[] = [
     ...projectCommands,
     ...viewCommands,
     ...miscCommands,
+    ...elasticCommands,
 ];
 
 /** Search the aggregated catalog. */

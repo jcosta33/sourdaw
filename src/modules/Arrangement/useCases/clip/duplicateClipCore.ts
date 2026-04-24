@@ -29,19 +29,17 @@ export function duplicateClipCore(clipId: string, computeStartBeat: (clip: Clip)
             if (newClip) {
                 duplicateClipAutomation(clipId, newClip.id);
 
-                // MIDI notes are stored with absolute `startBeat` keyed by clip id.
+                // MIDI notes are stored with clip-relative `startBeat` keyed by clip id.
                 // Duplicating the clip without cloning its notes silently drops
-                // all MIDI content — shift each note by the clip delta and
-                // re-insert under the new clip id.
+                // all MIDI content. Re-insert under the new clip id.
                 if (clip.type === 'midi') {
                     const sourceNotes = getNotesForClip(clipId);
                     if (sourceNotes.length > 0) {
-                        const beatDelta = startBeat - clip.startBeat;
                         batchAddMidiNotes(
                             newClip.id,
                             sourceNotes.map((note) => ({
                                 pitch: note.pitch,
-                                startBeat: note.startBeat + beatDelta,
+                                startBeat: note.startBeat,
                                 duration: note.duration,
                                 velocity: note.velocity,
                             }))

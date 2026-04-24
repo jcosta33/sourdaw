@@ -140,6 +140,7 @@ export const PanelToggles = ({
                         aria-label="Toggle bottom dock"
                         aria-pressed={mixerOpen}
                         onClick={toggleMixer}
+                        data-onboarding="mixer-button"
                     >
                         <PanelBottom className="size-3.5" aria-hidden="true" />
                     </Button>

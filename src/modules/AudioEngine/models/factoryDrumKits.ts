@@ -549,10 +549,6 @@ export const FACTORY_KITS: readonly DrumKit[] = [KIT_808, KIT_ANALOG, KIT_ELECTR
 
 const kitIndex = new Map<string, DrumKit>(FACTORY_KITS.map((kIndex) => [kIndex.id, kIndex]));
 
-export function getFactoryDrumKits(): readonly DrumKit[] {
-    return FACTORY_KITS;
-}
-
 export function getDrumKitById(id: string): DrumKit | null {
     return kitIndex.get(id) ?? null;
 }

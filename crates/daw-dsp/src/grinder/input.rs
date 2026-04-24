@@ -29,7 +29,7 @@ impl NoiseGate {
             gain_attack_coeff: Self::time_to_coeff(0.5, sample_rate),
             gain_release_coeff: Self::time_to_coeff(90.0, sample_rate),
             hysteresis_linear: db_to_linear(2.0) - 1.0,
-            floor_gain: db_to_linear(-48.0),
+            floor_gain: db_to_linear(-72.0),
             envelope: 0.0,
             gate_gain: 1.0,
             is_open: true,
@@ -101,7 +101,9 @@ impl NoiseGate {
             let transition = ((self.envelope - close_threshold) / denom).clamp(0.0, 1.0);
             self.floor_gain + transition * (1.0 - self.floor_gain)
         };
-        let coeff = if target_gain > self.gate_gain {
+        let coeff = if !self.is_open {
+            self.gain_attack_coeff
+        } else if target_gain > self.gate_gain {
             self.gain_attack_coeff
         } else {
             self.gain_release_coeff
@@ -201,6 +203,29 @@ mod tests {
         assert!(
             output > 0.15,
             "gate should fully open on a healthy sustained note, got {output}"
+        );
+    }
+
+    #[test]
+    fn enabled_gate_can_close_to_a_real_noise_floor() {
+        let mut gate = NoiseGate::new(48_000.0);
+        gate.set_param("gateEnabled", 1.0);
+        gate.set_param("gateThreshold", -45.0);
+        gate.set_param("gateAttack", 1.0);
+        gate.set_param("gateRelease", 40.0);
+
+        for _ in 0..1024 {
+            gate.process_sample(0.18);
+        }
+
+        for _ in 0..12_288 {
+            gate.process_sample(0.0);
+        }
+
+        assert!(
+            gate.gain() < 1.0e-3,
+            "enabled gate should clamp to a deep closed gain, got {}",
+            gate.gain()
         );
     }
 }

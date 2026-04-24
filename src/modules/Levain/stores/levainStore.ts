@@ -2,6 +2,7 @@
  * Levain instrument state store.
  * Holds the current patch, selected instrument, articulation state, and UI level.
  * Reactive — UI subscribes via useStore from #/infra/store/useStore.
+ * Keyed by deviceId.
  *
  * This store is a pure reactive state container. Engine calls belong in
  * useCases/levainParamBridge.ts. Previously this store had a circular
@@ -41,52 +42,65 @@ export const defaultLevainState: LevainState = {
     currentArticulationDisplay: 'Long',
 };
 
-export const levainStore = createStore<LevainState>({
-    initialData: defaultLevainState,
+type LevainInstances = Record<string, LevainState>;
+
+export const levainStore = createStore<LevainInstances>({
+    initialData: {},
 });
+
+export function getLevainState(deviceId: string): LevainState {
+    return (levainStore.value ?? {})[deviceId] ?? defaultLevainState;
+}
 
 // ---------------------------------------------------------------------------
 // State update functions — pure store mutations, no engine calls.
 // Engine sync is handled exclusively in useCases/levainParamBridge.ts.
 // ---------------------------------------------------------------------------
 
-export function setLevainParam<Key extends keyof LevainPatch>(key: Key, value: LevainPatch[Key]): void {
-    const state = levainStore.value;
-    if (state) {
-        levainStore.set({
+export function setLevainParam<K extends keyof LevainPatch>(deviceId: string, key: K, value: LevainPatch[K]): void {
+    const instances = levainStore.value ?? {};
+    const state = instances[deviceId] ?? defaultLevainState;
+    levainStore.set({
+        ...instances,
+        [deviceId]: {
             ...state,
             patch: { ...state.patch, [key]: value },
-        });
-    }
+        }
+    });
 }
 
-export function setSampleLoadProgress(progress: number | null): void {
-    const state = levainStore.value;
-    if (state) {
-        levainStore.set({ ...state, sampleLoadProgress: progress });
-    }
+export function setSampleLoadProgress(deviceId: string, progress: number | null): void {
+    const instances = levainStore.value ?? {};
+    const state = instances[deviceId] ?? defaultLevainState;
+    levainStore.set({ ...instances, [deviceId]: { ...state, sampleLoadProgress: progress } });
 }
 
-export function setCurrentArticulation(articulation: ArticulationType): void {
-    const state = levainStore.value;
-    if (state) {
-        const entry = state.patch.articulations.find((a) => a.type === articulation);
-        levainStore.set({
+export function setCurrentArticulation(deviceId: string, articulation: ArticulationType): void {
+    const instances = levainStore.value ?? {};
+    const state = instances[deviceId] ?? defaultLevainState;
+    const entry = state.patch.articulations.find((a) => a.type === articulation);
+    levainStore.set({
+        ...instances,
+        [deviceId]: {
             ...state,
             patch: { ...state.patch, currentArticulation: articulation },
             currentArticulationDisplay: entry ? entry.name : articulation,
-        });
-    }
+        }
+    });
 }
 
-export function setMacro(index: number, value: number): void {
-    const state = levainStore.value;
-    if (state && index >= 0 && index < 8) {
+export function setMacro(deviceId: string, index: number, value: number): void {
+    const instances = levainStore.value ?? {};
+    const state = instances[deviceId] ?? defaultLevainState;
+    if (index >= 0 && index < 8) {
         const macros = [...state.patch.macros] as LevainPatch['macros'];
         macros[index] = value;
         levainStore.set({
-            ...state,
-            patch: { ...state.patch, macros },
+            ...instances,
+            [deviceId]: {
+                ...state,
+                patch: { ...state.patch, macros },
+            }
         });
     }
 }
@@ -95,9 +109,10 @@ export function setMacro(index: number, value: number): void {
  * Update a mic position in the store.
  * Engine sync is the caller's responsibility — use levainParamBridge for that.
  */
-export function updateMicPosition(index: number, updates: Partial<MicPositionState>): void {
-    const state = levainStore.value;
-    if (state && index >= 0 && index < state.patch.micPositions.length) {
+export function updateMicPosition(deviceId: string, index: number, updates: Partial<MicPositionState>): void {
+    const instances = levainStore.value ?? {};
+    const state = instances[deviceId] ?? defaultLevainState;
+    if (index >= 0 && index < state.patch.micPositions.length) {
         const micPositions = state.patch.micPositions.map((mic, i) => {
             if (i === index) {
                 return { ...mic, ...updates };
@@ -105,15 +120,17 @@ export function updateMicPosition(index: number, updates: Partial<MicPositionSta
             return mic;
         });
         levainStore.set({
-            ...state,
-            patch: { ...state.patch, micPositions },
+            ...instances,
+            [deviceId]: {
+                ...state,
+                patch: { ...state.patch, micPositions },
+            }
         });
     }
 }
 
-export function setEngineReady(ready: boolean): void {
-    const state = levainStore.value;
-    if (state) {
-        levainStore.set({ ...state, engineReady: ready });
-    }
+export function setEngineReady(deviceId: string, ready: boolean): void {
+    const instances = levainStore.value ?? {};
+    const state = instances[deviceId] ?? defaultLevainState;
+    levainStore.set({ ...instances, [deviceId]: { ...state, engineReady: ready } });
 }

@@ -9,6 +9,7 @@ import { getAudioTime } from '#/modules/AudioEngine/useCases';
 import { triggerToasterPad } from './triggerPad';
 
 type NoteRepeatSession = {
+    deviceId: string;
     padIndex: number;
     velocity: number;
     timeoutId: ReturnType<typeof setTimeout>;
@@ -52,7 +53,7 @@ function scheduleNextTrigger(): void {
         return;
     }
 
-    triggerToasterPad(activeSession.padIndex, activeSession.velocity);
+    triggerToasterPad(activeSession.deviceId, activeSession.padIndex, activeSession.velocity);
 
     activeSession.nextTriggerTime += activeSession.intervalSec;
     const now = getAudioTime();
@@ -61,18 +62,18 @@ function scheduleNextTrigger(): void {
     activeSession.timeoutId = setTimeout(scheduleNextTrigger, delayMs);
 }
 
-export function startNoteRepeat(padIndex: number, velocity: number, bpm: number, rate: NoteRepeatRate): void {
+export function startNoteRepeat(deviceId: string, padIndex: number, velocity: number, bpm: number, rate: NoteRepeatRate): void {
     stopNoteRepeat();
     const durationMs = rateToDurationMs(rate, bpm);
     const intervalSec = durationMs / 1000;
 
-    triggerToasterPad(padIndex, velocity);
+    triggerToasterPad(deviceId, padIndex, velocity);
 
     const nextTriggerTime = getAudioTime() + intervalSec;
     const delayMs = Math.max(1, intervalSec * 1000);
     const timeoutId = setTimeout(scheduleNextTrigger, delayMs);
 
-    activeSession = { padIndex, velocity, timeoutId, nextTriggerTime, intervalSec };
+    activeSession = { deviceId, padIndex, velocity, timeoutId, nextTriggerTime, intervalSec };
 }
 
 export function isNoteRepeating(): boolean {

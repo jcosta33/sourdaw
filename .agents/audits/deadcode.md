@@ -146,20 +146,20 @@ Files like `src/modules/AiGeneration/events/index.ts`, `src/modules/CrdtDocument
 
 Several substantial features have fully implemented stores and use-case directories, but the useCases are not imported by any handler or view:
 
-| Feature                   | Store exists                                          | UseCases exist                                   | Wired?  | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ------------------------- | ----------------------------------------------------- | ------------------------------------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Control Room              | `src/modules/AudioEngine/stores/controlRoom.ts`       | `src/modules/AudioEngine/useCases/controlRoom/`  | Partial | **CORRECTION (2026-04-20):** `toggleMono` and `toggleDim` are wired via `handleToggleControlRoomMono`/`handleToggleControlRoomDim` in `src/modules/Arrangement/handlers/newFeature/`. The remaining useCases (`toggleTalkback`, `setTalkbackLevel`, `createCueMix`, `deleteCueMix`, `addMonitor`, `switchMonitor`, `setCueTrackLevel`, `calibrateMonitor`, `setMonitorVolume`, `setDimLevel`, `getEffectiveVolume`, `toggleMute`, `toggleReference`) are not called outside their own tests. |
-| RAVE (AI timbre transfer) | `src/modules/AudioEngine/stores/rave.ts`              | `src/modules/AudioEngine/useCases/rave/`         | ❌      | Store tested. UseCases for encode/decode/interpolate are complete.                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Elastic Audio             | —                                                     | `src/modules/AudioEngine/useCases/elasticAudio/` | ❌      | No store. UseCases for transient detection/quantization exist.                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| Sample Player             | —                                                     | `src/modules/AudioEngine/useCases/samplePlayer/` | ❌      | No store. UseCases for SFZ playback exist.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Loop Station              | `src/modules/Transport/stores/loopStationStore.ts`    | `src/modules/Transport/useCases/loopStation/`    | ❌      | Store tested. UseCases for slot CRUD exist.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Punch Recording           | `src/modules/Transport/stores/punchRecordingStore.ts` | `src/modules/Transport/useCases/punchRecording/` | ❌      | Store tested. UseCases for pre/post roll, background capture exist.                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Setlist                   | `src/modules/Transport/stores/setlistStore.ts`        | `src/modules/Transport/useCases/setlist/`        | ❌      | Store tested. UseCases for item CRUD/reordering exist.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| DAWproject import/export  | —                                                     | `src/modules/Project/useCases/dawProject/`       | Partial | `exportDawProject` action and handler exist, but the underlying `parseDawProject.ts` / `exportDawProject.ts` useCases are not called by the handler.                                                                                                                                                                                                                                                                                                                                         |
-| Music Mentor              | —                                                     | `src/modules/AiRuntime/useCases/musicMentor/`    | Partial | **CORRECTION (2026-04-20):** `handleGetMentorTips` does call `generateMentorLessons()` from the module's useCases index. What is actually unwired is `queries.ts` in the `musicMentor/` directory — verify whether those query helpers have any consumer outside the `__tests__/queries.spec.ts` file.                                                                                                                                                                                       |
-| Modulation System         | —                                                     | `src/modules/Plugin/useCases/modulationSystem/`  | ❌      | Complete CRUD for modulation routes. No UI wired.                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| Node View                 | `src/modules/Plugin/stores/nodeView.ts`               | `src/modules/Plugin/useCases/nodeView/`          | ❌      | Store and useCases for graph editor exist.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Push Integration          | `src/modules/Plugin/stores/push.ts`                   | `src/modules/Plugin/useCases/pushIntegration/`   | ❌      | Ableton Push 2 support. Store and useCases present.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Feature | Store exists | UseCases exist | Wired? | Notes |
+|---------|-------------|----------------|--------|-------|
+| Control Room | `src/modules/AudioEngine/stores/controlRoom.ts` | `src/modules/AudioEngine/useCases/controlRoom/` | Partial | **CORRECTION (2026-04-20):** `toggleMono` and `toggleDim` are wired via `handleToggleControlRoomMono`/`handleToggleControlRoomDim` in `src/modules/Arrangement/handlers/newFeature/`. The remaining useCases (`toggleTalkback`, `setTalkbackLevel`, `createCueMix`, `deleteCueMix`, `addMonitor`, `switchMonitor`, `setCueTrackLevel`, `calibrateMonitor`, `setMonitorVolume`, `setDimLevel`, `getEffectiveVolume`, `toggleMute`, `toggleReference`) are not called outside their own tests. |
+| RAVE (AI timbre transfer) | `src/modules/AudioEngine/stores/rave.ts` | `src/modules/AudioEngine/useCases/rave/` | ❌ | Store tested. UseCases for encode/decode/interpolate are complete. |
+| Elastic Audio | — | `src/modules/AudioEngine/useCases/elasticAudio/` | ❌ | No store. UseCases for transient detection/quantization exist. |
+| Sample Player | — | `src/modules/AudioEngine/useCases/samplePlayer/` | ❌ | No store. UseCases for SFZ playback exist. |
+| Loop Station | `src/modules/Transport/stores/loopStationStore.ts` | `src/modules/Transport/useCases/loopStation/` | ❌ | Store tested. UseCases for slot CRUD exist. |
+| Punch Recording | `src/modules/Transport/stores/punchRecordingStore.ts` | `src/modules/Transport/useCases/punchRecording/` | ❌ | Store tested. UseCases for pre/post roll, background capture exist. |
+| Setlist | `src/modules/Transport/stores/setlistStore.ts` | `src/modules/Transport/useCases/setlist/` | ❌ | Store tested. UseCases for item CRUD/reordering exist. |
+| DAWproject import/export | — | `src/modules/Project/useCases/dawProject/` | Partial | `exportDawProject` action and handler exist, but the underlying `parseDawProject.ts` / `exportDawProject.ts` useCases are not called by the handler. |
+| Music Mentor | — | `src/modules/AiRuntime/useCases/musicMentor/` | Partial | **CORRECTION (2026-04-20):** `handleGetMentorTips` does call `generateMentorLessons()` from the module's useCases index. What is actually unwired is `queries.ts` in the `musicMentor/` directory — verify whether those query helpers have any consumer outside the `__tests__/queries.spec.ts` file. |
+| Modulation System | `src/modules/Automation/stores/modulationStore.ts` | `src/modules/Automation/useCases/modulation/` | Partial | **CORRECTION (2026-04-20):** Lives under `src/modules/Automation/`, not `Plugin/`; store + model + `applyModulation` tick-hook exist, but CRUD use-cases for modulators/mappings and audio-path dispatch (engine write-through) were missing and have since been added in this session. |
+| Node View | `src/modules/Plugin/stores/nodeView.ts` | `src/modules/Plugin/useCases/nodeView/` | ❌ | Store and useCases for graph editor exist. |
+| Push Integration | `src/modules/Plugin/stores/push.ts` | `src/modules/Plugin/useCases/pushIntegration/` | ❌ | Ableton Push 2 support. Store and useCases present. |
 
 These are **intentionally built but not yet shipped features**. Deleting them would destroy legitimate product work.
 
@@ -299,19 +299,43 @@ The remaining work is to fix the 10 broken test imports, add `glob` to `package.
 
 ### Counts after this session
 
-- Unused files: 92 → 92 (unchanged — whole-file deletions out of scope per repo safety rule)
-- Unused exports: 92 → 67
-- Unused exported types: 22 → 22 (deferred — see Next steps)
-- Unused dependencies: 1 → 0
-- Unused devDependencies: 2 → 0
-- Unlisted dependencies: 2 → 0
-- Unresolved imports: 10 → 0
-- Configuration hints: 1 (generic "92 unused files" note; knip's companion-test-file heuristic — see below)
+- Unused files: 70
+- Unused exports: 62
+- Unused exported types: 22
+- Unused dependencies: 0
+- Unused devDependencies: 0
+- Unlisted dependencies: 0
+- Unresolved imports: 0
+- Configuration hints: 1 (generic "70 unused files" note; knip's companion-test-file heuristic — see below)
+
+## Remaining Unused Files (70)
+
+The remaining 70 files identified by Knip fall into the following categories. **These represent intentional stubs, frozen features, or legitimate product work that is not yet fully wired. They should not be deleted.**
+
+### 1. Module Event Barrels (22 files)
+These are intentional architectural placeholders. Every module exposes an `events/index.ts` per convention.
+- `src/modules/*/events/index.ts` for: AiGeneration, Automation, Bacteria, BrowserAi, Collaboration, CrdtDocument, Fermenter, Gluten, GrandBoule, Grinder, Levain, MIDI, Project, Proof, Routing, SampleLibrary, Scoring, SoundLibrary, Synth, Toaster, VirtualKeyboard, Yeast.
+
+### 2. Feature Stubs / Unwired Directories
+Substantial features that are built but not completely wired to the UI or handlers.
+- **AiGeneration / AiRuntime:** `AiGeneratedMidiNote.ts`, `LlmOrchestrationTypes.ts`
+- **Arrangement:** `audioAnalysis/index.ts`, `clipEditing/bakeScaleFolding.ts`, `handlers/types.ts`
+- **AudioEngine:** `AudioGraph.ts`, `SidechainRoute.ts`, and legacy/WebMidi implementations (`repositories/webMidi/*`)
+- **Automation:** `presentations/views/index.ts`
+- **Bacteria / Gluten / Grinder / Knead / Scoring / VirtualKeyboard:** Unwired `useCases/index.ts` or root `index.ts`. `KneadBlob.ts`.
+- **BrowserAi:** Root `index.ts`
+- **Command:** `models/ActionHandler.ts`, `presentations/hooks/useGlobalKeyboardShortcuts.ts` (Valid hook, currently unwired to the main app tree)
+- **CrdtDocument:** IDB persistence implementations (`repositories/crdtPersistence/*`), `BranchTypes.ts`
+- **Levain / SoundLibrary:** `repositories/levainPresets.ts`, `repositories/sampleLoader/loadSingleSample.ts`, `stores/index.ts`
+- **MIDI:** `presentations/views/index.ts`, `workers/controller-scripting.worker.ts`
+- **Plugin:** `presentations/views/SpectrogramView.tsx`, plugin bridge files (`repositories/pluginBridge/*`), proof chamber presets, `useCases/proofChamber/index.ts`
+- **Project:** `repositories/nativeProjectFiles/listProjectFiles.ts`
+- **SampleLibrary:** `presentations/hooks/useSampleDrag.ts`
+- **Transport:** Models/helpers (`models/index.ts`, `loopStationHelpers.ts`, `punchRecordingHelpers.ts`, `setlistItemHelpers.ts`)
+- **Workspace:** WebGPU spectrum metering (`presentations/renderers/createWebGpuSpectrumRenderer.ts`, `presentations/views/Metering/WebGpuSpectrumAnalyzer.tsx`)
 
 ## Next steps (deferred, require explicit approval)
 
-1. **Standalone `…Dependencies.ts` files** — 16 files are whole-file Dependencies exports with no other content (e.g., `src/modules/AudioEngine/useCases/latencyCompensation/compensation/trackLatencyDependencies.ts`, `src/modules/Arrangement/useCases/audioAnalysis/audioToMidiDependencies.ts`). Deleting files requires explicit user approval per the repo safety rule.
-2. **Unused exported types (22)** — e.g., `MixAnalysis`, `AppActionType`, `FileEntry`. Types are zero-runtime-cost so pruning is lower priority; needs per-type verification.
-3. **Other in-file unused exports (~67 remaining)** — a mix of store setters for unfinished features (e.g., `enter16Levels`/`exit16Levels`/`is16LevelsActive`/`get16LevelsTarget` in Toaster — removing them would reveal the 16-levels feature is stubbed), and some genuine orphans (`RenderProgressIndicator`, `parsePhonemesTxt`, `parsePhonemesJson`). Needs per-symbol judgement call.
-4. **Unused files (92)** — many are the `events/index.ts` stubs (intentional architectural placeholders), frozen features, or unfinished feature roots. §3 above enumerates which are intentional.
-5. **knip v6.3.1 companion-test-file heuristic** — worth a one-paragraph note in `docs/agents/04-standards.md` so future sessions know some dead code is hidden when `.spec.ts` tests sit next to an unused source file. Upstream limitation; no config fix.
+1. **Unused exported types (22)** — e.g., `MixAnalysis`, `AppActionType`, `FileEntry`. Types are zero-runtime-cost so pruning is lower priority; needs per-type verification.
+2. **Other in-file unused exports (62 remaining)** — a mix of store setters for unfinished features and legitimate orphans. Needs per-symbol judgement call.
+3. **knip v6.3.1 companion-test-file heuristic** — worth a one-paragraph note in `docs/agents/04-standards.md` so future sessions know some dead code is hidden when `.spec.ts` tests sit next to an unused source file. Upstream limitation; no config fix.

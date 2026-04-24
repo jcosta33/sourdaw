@@ -100,6 +100,17 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
             { keys: '⌘ ,', description: 'Preferences' },
         ],
     },
+    {
+        title: 'Loop Station (arm first)',
+        shortcuts: [
+            { keys: '1 … 8', description: 'Play row 1, tracks 1–8' },
+            { keys: 'Q … I', description: 'Play row 2, tracks 1–8' },
+            { keys: 'A … K', description: 'Play row 3, tracks 1–8' },
+            { keys: 'Z … ,', description: 'Play row 4, tracks 1–8' },
+            { keys: '⇧ pad', description: 'Record / re-record slot' },
+            { keys: 'Esc', description: 'Stop all loop slots' },
+        ],
+    },
 ];
 
 export const ShortcutCheatSheet = (): ReactElement | null => {

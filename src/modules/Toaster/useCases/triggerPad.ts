@@ -1,14 +1,14 @@
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { ensureTrackStrip } from '#/modules/AudioEngine/useCases';
 
-export function triggerToasterPad(padIndex: number, velocity: number = 100): void {
-    const toasterTrack = getAllTracks().find((time) => time.devices.some((data) => data.type === 'toaster'));
+export function triggerToasterPad(deviceId: string, padIndex: number, velocity: number = 100): void {
+    const toasterTrack = getAllTracks().find((t) => t.devices.some((d) => d.id === deviceId));
     if (!toasterTrack) {
         return;
     }
 
-    const strip = ensureTrackStrip(toasterTrack.id);
-    const dn = strip.deviceNodes.find((data) => data.toasterControls?.ready);
+    const stripRef = ensureTrackStrip(toasterTrack.id);
+    const dn = stripRef.deviceNodes.find((d) => d.deviceId === deviceId);
     if (dn?.toasterControls) {
         dn.toasterControls.noteOn(padIndex, velocity);
     }

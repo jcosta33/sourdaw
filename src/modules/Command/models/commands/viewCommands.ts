@@ -8,6 +8,7 @@ import {
     toggleInspector,
     toggleMixer,
     toggleAutomationPanel,
+    startOnboardingTour,
 } from '#/modules/Workspace/useCases';
 
 import { executeAppAction } from '../../useCases/executeAppAction';
@@ -239,5 +240,16 @@ export const viewCommands: CommandEntry[] = [
         description: 'Switch between linear inserts and a Fusion-style node graph view',
         category: 'View',
         action: { type: 'toggleNodeView' },
+    },
+
+    // ── Onboarding ─────────────────────────────────────────────
+    {
+        id: 'show-onboarding-tour',
+        label: 'Show Tour Again',
+        description: 'Re-run the guided onboarding tour for transport, tracks, inspector, mixer, and command palette',
+        category: 'Help',
+        action: () => {
+            startOnboardingTour();
+        },
     },
 ];

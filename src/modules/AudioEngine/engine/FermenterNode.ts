@@ -75,7 +75,7 @@ export async function createFermenterNode(ctx: BaseAudioContext, wasmUrl?: strin
 
     return {
         workletNode: node,
-        noteOn(note: number, velocity: number, _midiNote?: number, sampleFrame?: number) {
+        noteOn(note: number, velocity: number, sampleFrame?: number) {
             if (!bypassed && note >= 0 && note < 128) {
                 node.port.postMessage({
                     type: 'noteOn',

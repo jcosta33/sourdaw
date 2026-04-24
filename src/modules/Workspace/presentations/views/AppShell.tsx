@@ -6,6 +6,7 @@ import { Button } from '#/components/ui/button';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 import { useStore } from '#/infra/store/useStore';
 import { aiStore } from '#/modules/AiGeneration/stores';
+import { ElasticEditorPanel } from '#/modules/AudioEngine/presentations/views';
 import {
     GenerativeAiPanel,
     ChatPanel,
@@ -14,6 +15,7 @@ import {
     AiActionHistoryPanel,
     MixAnalysisPanel,
 } from '#/modules/AiRuntime/presentations/views';
+import { ModulationMatrix } from '#/modules/Automation/presentations/views';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
 import { CommandPalette, useGlobalKeyboardShortcuts, UndoHistoryPanel } from '#/modules/Command/presentations/views';
 import { CrumbsPanel } from '#/modules/Crumbs/presentations/views';
@@ -24,57 +26,76 @@ import { GrandBoulePanel } from '#/modules/GrandBoule/presentations/views';
 import { GrinderPanel } from '#/modules/Grinder/presentations/views';
 import { LevainPanel } from '#/modules/Levain/presentations/views';
 import { ProofChamberPanel } from '#/modules/Plugin/presentations/views';
-import { ExportDialog } from '#/modules/Project/presentations/views';
-import { ProofPanel } from '#/modules/Proof/presentations/views';
-import { ScoringPanel } from '#/modules/Scoring/presentations/views';
 import { ToasterPanel } from '#/modules/Toaster/presentations/views';
-import { VirtualKeyboard } from '#/modules/VirtualKeyboard/presentations/views';
-import { YeastPanel } from '#/modules/Yeast/presentations/views';
+import { LoopStationPanel, SetlistPanel } from '#/modules/Transport/presentations/views';
 import { clamp } from '#/utils/Math/clamp';
-
-import { defaultPreferences } from '../../models/Preferences';
-import { preferencesStore } from '../../stores/preferencesStore';
 import { onPanelShowAutomation } from '../../useCases/panels/devicePanels/onPanelShowAutomation';
-import { closeBranchManager } from '../../useCases/togglePanel/panelToggles/closeBranchManager';
-import { openMixer } from '../../useCases/togglePanel/panelToggles/openMixer';
-import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
-import { toggleVirtualKeyboard } from '../../useCases/togglePanel/panelToggles/toggleVirtualKeyboard';
 import { updateWorkspaceState } from '../../useCases/workspaceState';
-import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
-import { ConfirmDialog } from '../components/ConfirmDialog';
-import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 import { LaunchScreen } from '../components/LaunchScreen';
-import { MobileGate } from '../components/MobileGate';
-import { NotificationToast } from '../components/NotificationToast';
 import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
-import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
-import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
-import { useAppInitialization } from '../hooks/useAppInitialization';
-import { useProjectState } from '../hooks/useProjectState';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
+import { useProjectState } from '../hooks/useProjectState';
+import { useAppInitialization } from '../hooks/useAppInitialization';
+import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 
-import { AnalysisPanel } from './AnalysisPanel';
+
+import { trackStore } from '#/modules/Arrangement/stores';
+
+import { isOnboardingCompleted } from '../../useCases/onboarding/isOnboardingCompleted';
+import { startOnboardingTour } from '../../useCases/onboarding/startOnboardingTour';
+
+import { AudioResumeOverlay } from './AudioResumeOverlay';
 import { AutomationBottomPanel } from './AutomationBottomPanel';
-import { ClipView } from './ClipView';
 import { InspectorPanel } from './InspectorPanel';
-import { MixerPanel } from './MixerPanel';
-import { PreferencesDialog } from './PreferencesDialog';
-import { RoutingMatrix } from './RoutingMatrix';
-import { SessionView } from './SessionView';
+import { OnboardingTour } from './OnboardingTour';
 import { Sidebar } from './Sidebar';
-import { StatusBar } from './StatusBar';
 import { TransportBar } from './TransportBar';
 
+
+import { MixerPanel } from './MixerPanel';
+import { SessionView } from './SessionView';
+import { RoutingMatrix } from './RoutingMatrix';
+import { ClipView } from './ClipView';
+import { AnalysisPanel } from './AnalysisPanel';
+
+
+import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
+
+import { ProofPanel } from '#/modules/Proof/presentations/views';
+import { ScoringPanel } from '#/modules/Scoring/presentations/views';
+import { YeastPanel } from '#/modules/Yeast/presentations/views';
+import { VirtualKeyboard } from '#/modules/VirtualKeyboard/presentations/views';
+
+import { toggleVirtualKeyboard } from '../../useCases/togglePanel/panelToggles/toggleVirtualKeyboard';
+import { closeBranchManager } from '../../useCases/togglePanel/panelToggles/closeBranchManager';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { NotificationToast } from '../components/NotificationToast';
+
+import { ExportDialog } from '#/modules/Project/presentations/views';
+
+import { PreferencesDialog } from './PreferencesDialog';
+
+import { openMixer } from '../../useCases/togglePanel/panelToggles/openMixer';
+
+import { StatusBar } from './StatusBar';
+
+import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
+import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
+import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
+import { preferencesStore } from '../../stores/preferencesStore';
+import { defaultPreferences } from '../../models/Preferences';
+import { MobileGate } from '../components/MobileGate';
+
 const CollaborationPanelLazy = lazy(() =>
-    import('#/modules/Collaboration/presentations/views').then((message) => ({
-        default: message.CollaborationPanel,
+    import('#/modules/Collaboration/presentations/views').then((m) => ({
+        default: m.CollaborationPanel,
     }))
 );
 
 const BranchManagerDialogLazy = lazy(() =>
-    import('#/modules/CrdtDocument/presentations/views').then((message) => ({
-        default: message.BranchManagerDialog,
+    import('#/modules/CrdtDocument/presentations/views').then((m) => ({
+        default: m.BranchManagerDialog,
     }))
 );
 
@@ -118,14 +139,28 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     const project = useProjectState();
     const prefs = useStore(preferencesStore, defaultPreferences);
+    const tracksSnapshot = useStore(trackStore, { tracks: [], selectedTrackId: null });
+    const isAudioClipSelected = selectedClipId !== null
+        && tracksSnapshot.tracks.some((track) =>
+            track.clips.some((clip) => clip.id === selectedClipId && clip.type === 'audio')
+        );
     const aiState = useStore(aiStore, { tasks: [], isPanelOpen: false });
     const aiPanelOpen = aiState.isPanelOpen;
     const [exportOpen, setExportOpen] = useState(false);
     const [prefsOpen, setPrefsOpen] = useState(false);
     const [showAlphaNotice, setShowAlphaNotice] = useState(false);
-    const [bottomTab, setBottomTab] = useState<'editor' | 'mixer' | 'session' | 'routing' | 'analysis' | 'automation'>(
-        'mixer'
-    );
+    const [bottomTab, setBottomTab] = useState<
+        | 'editor'
+        | 'mixer'
+        | 'session'
+        | 'routing'
+        | 'analysis'
+        | 'automation'
+        | 'setlist'
+        | 'loopStation'
+        | 'modulation'
+        | 'elastic'
+    >('mixer');
     // One unified "active device panel" slot. The "only one panel open at a
     // time" invariant is enforced by the discriminated union in
     // useActiveDevicePanel; adding a new plugin is one line there instead of
@@ -133,7 +168,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const { activePanel, closeActivePanel } = useActiveDevicePanel();
     const fermenterDeviceId = activePanel?.kind === 'fermenter' ? activePanel.deviceId : null;
     const toasterDeviceId = activePanel?.kind === 'toaster' ? activePanel.deviceId : null;
-    const levainOpen = activePanel?.kind === 'levain';
+    const levainDeviceId = activePanel?.kind === 'levain' ? activePanel.deviceId : null;
     const proofChamberDeviceId = activePanel?.kind === 'proofChamber' ? activePanel.deviceId : null;
     const glutenDeviceId = activePanel?.kind === 'gluten' ? activePanel.deviceId : null;
     const bacteriaDeviceId = activePanel?.kind === 'bacteria' ? activePanel.deviceId : null;
@@ -163,10 +198,45 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // Show alpha notice when project initializes — localStorage is the
     // source of truth, so HMR can't cause the notice to re-appear.
     useEffect(() => {
-        if (project.initialized && window.localStorage.getItem(ALPHA_NOTICE_KEY) !== 'true') {
+        if (project.initialized && localStorage.getItem(ALPHA_NOTICE_KEY) !== 'true') {
             setShowAlphaNotice(true);
         }
     }, [project.initialized]);
+
+    useEffect(() => {
+        if (!project.initialized) {
+            return;
+        }
+        if (showAlphaNotice) {
+            return;
+        }
+        if (isOnboardingCompleted()) {
+            return;
+        }
+        const triggerIfReady = (): boolean => {
+            const trackCount = trackStore.value?.tracks.length ?? 0;
+            if (trackCount === 0) {
+                return false;
+            }
+            startOnboardingTour();
+            return true;
+        };
+        if (triggerIfReady()) {
+            return;
+        }
+        const unsubscribe = trackStore.subscribe(() => {
+            if (isOnboardingCompleted()) {
+                unsubscribe();
+                return;
+            }
+            if (triggerIfReady()) {
+                unsubscribe();
+            }
+        });
+        return () => {
+            unsubscribe();
+        };
+    }, [project.initialized, showAlphaNotice]);
 
     // Auto-switch bottom tab when clip selected
     useEffect(() => {
@@ -185,6 +255,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             }
         });
     }, [mixerOpen]);
+
+    // Fall back to editor when the Elastic tab's audio-clip precondition disappears.
+    useEffect(() => {
+        if (bottomTab === 'elastic' && !isAudioClipSelected) {
+            setBottomTab('editor');
+        }
+    }, [bottomTab, isAudioClipSelected]);
 
     // ─── Panel dimension setters (persisted via workspace store) ───
     // All 14 setters share the pattern `fn => updateWorkspaceState({ [key]: fn(current) })`
@@ -271,10 +348,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             <GenerativeAiPanel />
         </div>
     );
-    const onSidebarResize = (data: number): void => setSidebarWidth((w) => clamp(w + data, 180, 500));
-    const onInspectorResize = (data: number): void => setInspectorWidth((w) => clamp(w + data, 200, 500));
-    const onChatResize = (data: number): void => setChatWidth((w) => clamp(w + data, 200, 600));
-    const onAiResize = (data: number): void => setAiWidth((w) => clamp(w + data, 200, 500));
+    const onSidebarResize = (d: number): void => setSidebarWidth((w) => clamp(w + d, 180, 500));
+    const onInspectorResize = (d: number): void => setInspectorWidth((w) => clamp(w + d, 200, 500));
+    const onChatResize = (d: number): void => setChatWidth((w) => clamp(w + d, 200, 600));
+    const onAiResize = (d: number): void => setAiWidth((w) => clamp(w + d, 200, 500));
 
     // ─── Launch screen overlay state ───────────────────────────────────────
     // We start hidden (loading:true is the default). Two effects manage transitions:
@@ -290,121 +367,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     useEffect(() => {
         if (project.initialized && !project.loading && showLaunch && !launchExiting) {
             setLaunchExiting(true);
-            const time = setTimeout(() => {
+            const t = setTimeout(() => {
                 setShowLaunch(false);
                 setLaunchExiting(false);
             }, 700);
-            return () => clearTimeout(time);
+            return () => clearTimeout(t);
         }
-        return undefined;
     }, [project.initialized, project.loading, showLaunch, launchExiting]);
-
-    const renderIife_5 = () => {
-        if (mixerOpen) {
-            const renderIife_6 = () => {
-                if (bottomTab === 'editor') {
-                    return <ClipView />;
-                } else {
-                    if (bottomTab === 'mixer') {
-                        return <MixerPanel style={{ height: '100%' }} />;
-                    } else {
-                        if (bottomTab === 'automation') {
-                            return <AutomationBottomPanel />;
-                        } else {
-                            if (bottomTab === 'session') {
-                                return <SessionView />;
-                            } else {
-                                if (bottomTab === 'analysis') {
-                                    return <AnalysisPanel />;
-                                } else {
-                                    return <RoutingMatrix />;
-                                }
-                            }
-                        }
-                    }
-                }
-            };
-
-            return (
-                <>
-                    <DragResizeHandle side="top" onResize={(data) => setMixerHeight((h) => Math.max(120, h + data))} />
-                    <div
-                        className="contain-strict flex flex-col bg-surface-base overflow-hidden shrink-0"
-                        style={{ height: mixerHeight }}
-                    >
-                        {/* Bottom panel tab bar */}
-                        <div
-                            className="flex items-center gap-0.5 px-2 py-0.5 shrink-0"
-                            style={{
-                                background: 'linear-gradient(180deg, #0c0c0c 0%, #0a0a0a 100%)',
-                                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.4)',
-                                borderBottom: '1px solid rgba(0,0,0,0.4)',
-                            }}
-                        >
-                            <Button
-                                variant={bottomTab === 'mixer' ? 'secondary' : 'ghost'}
-                                size="xs"
-                                className={bottomTab === 'mixer' ? 'text-primary' : ''}
-                                onClick={() => setBottomTab('mixer')}
-                            >
-                                Mixer
-                            </Button>
-                            <Button
-                                variant={bottomTab === 'editor' ? 'secondary' : 'ghost'}
-                                size="xs"
-                                className={bottomTab === 'editor' ? 'text-[var(--color-accent-cyan)]' : ''}
-                                onClick={() => setBottomTab('editor')}
-                            >
-                                Editor
-                            </Button>
-                            <Button
-                                variant={bottomTab === 'automation' ? 'secondary' : 'ghost'}
-                                size="xs"
-                                className={bottomTab === 'automation' ? 'text-[var(--color-accent-lavender)]' : ''}
-                                onClick={() => setBottomTab('automation')}
-                            >
-                                Automation
-                            </Button>
-                            <Button
-                                variant={bottomTab === 'session' ? 'secondary' : 'ghost'}
-                                size="xs"
-                                className={bottomTab === 'session' ? 'text-[var(--color-accent-mint)]' : ''}
-                                onClick={() => setBottomTab('session')}
-                            >
-                                Session
-                            </Button>
-                            <Button
-                                variant={bottomTab === 'routing' ? 'secondary' : 'ghost'}
-                                size="xs"
-                                className={bottomTab === 'routing' ? 'text-[var(--color-accent-peach)]' : ''}
-                                onClick={() => setBottomTab('routing')}
-                            >
-                                Routing
-                            </Button>
-                            <Button
-                                variant={bottomTab === 'analysis' ? 'secondary' : 'ghost'}
-                                size="xs"
-                                className={bottomTab === 'analysis' ? 'text-[var(--color-accent-lavender)]' : ''}
-                                onClick={() => setBottomTab('analysis')}
-                            >
-                                Analysis
-                            </Button>
-
-                            <div className="flex-1" />
-
-                            <Button variant="ghost" size="icon-xs" onClick={toggleMixer} aria-label="Close bottom dock">
-                                <X className="size-3.5" />
-                            </Button>
-                        </div>
-                        {/* Panel content */}
-                        <div className="flex-1 overflow-hidden">{renderIife_6()}</div>
-                    </div>
-                </>
-            );
-        } else {
-            return null;
-        }
-    };
 
     return (
         <MobileGate>
@@ -464,7 +433,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             </InstrumentBottomPanel>
                         ) : null}
 
-                        {levainOpen ? (
+                        {levainDeviceId !== null ? (
                             <InstrumentBottomPanel
                                 label="Levain"
                                 labelColor="text-amber-400"
@@ -473,7 +442,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setLevainHeight}
                                 onClose={closeActivePanel}
                             >
-                                <LevainPanel />
+                                <LevainPanel deviceId={levainDeviceId} />
                             </InstrumentBottomPanel>
                         ) : null}
 
@@ -608,15 +577,171 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         ) : null}
 
                         {/* Mixer bottom panel */}
-                        {renderIife_5()}
+                        {mixerOpen ? (
+                            <>
+                                <DragResizeHandle
+                                    side="top"
+                                    onResize={(d) => setMixerHeight((h) => Math.max(120, h + d))}
+                                />
+                                <div
+                                    className="contain-strict flex flex-col bg-surface-base overflow-hidden shrink-0"
+                                    style={{ height: mixerHeight }}
+                                >
+                                    {/* Bottom panel tab bar */}
+                                    <div
+                                        className="flex items-center gap-0.5 px-2 py-0.5 shrink-0"
+                                        style={{
+                                            background: 'linear-gradient(180deg, #0c0c0c 0%, #0a0a0a 100%)',
+                                            boxShadow:
+                                                'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.4)',
+                                            borderBottom: '1px solid rgba(0,0,0,0.4)',
+                                        }}
+                                    >
+                                        <Button
+                                            variant={bottomTab === 'mixer' ? 'secondary' : 'ghost'}
+                                            size="xs"
+                                            className={bottomTab === 'mixer' ? 'text-primary' : ''}
+                                            onClick={() => setBottomTab('mixer')}
+                                        >
+                                            Mixer
+                                        </Button>
+                                        <Button
+                                            variant={bottomTab === 'editor' ? 'secondary' : 'ghost'}
+                                            size="xs"
+                                            className={bottomTab === 'editor' ? 'text-[var(--color-accent-cyan)]' : ''}
+                                            onClick={() => setBottomTab('editor')}
+                                        >
+                                            Editor
+                                        </Button>
+                                        <Button
+                                            variant={bottomTab === 'automation' ? 'secondary' : 'ghost'}
+                                            size="xs"
+                                            className={
+                                                bottomTab === 'automation' ? 'text-[var(--color-accent-lavender)]' : ''
+                                            }
+                                            onClick={() => setBottomTab('automation')}
+                                        >
+                                            Automation
+                                        </Button>
+                                        <Button
+                                            variant={bottomTab === 'session' ? 'secondary' : 'ghost'}
+                                            size="xs"
+                                            className={bottomTab === 'session' ? 'text-[var(--color-accent-mint)]' : ''}
+                                            onClick={() => setBottomTab('session')}
+                                        >
+                                            Session
+                                        </Button>
+                                        <Button
+                                            variant={bottomTab === 'routing' ? 'secondary' : 'ghost'}
+                                            size="xs"
+                                            className={
+                                                bottomTab === 'routing' ? 'text-[var(--color-accent-peach)]' : ''
+                                            }
+                                            onClick={() => setBottomTab('routing')}
+                                        >
+                                            Routing
+                                        </Button>
+                                        <Button
+                                            variant={bottomTab === 'analysis' ? 'secondary' : 'ghost'}
+                                            size="xs"
+                                            className={
+                                                bottomTab === 'analysis' ? 'text-[var(--color-accent-lavender)]' : ''
+                                            }
+                                            onClick={() => setBottomTab('analysis')}
+                                        >
+                                            Analysis
+                                        </Button>
+                                        <Button
+                                            variant={bottomTab === 'setlist' ? 'secondary' : 'ghost'}
+                                            size="xs"
+                                            className={bottomTab === 'setlist' ? 'text-[var(--color-accent-amber)]' : ''}
+                                            onClick={() => setBottomTab('setlist')}
+                                            data-onboarding="setlist-tab"
+                                        >
+                                            Setlist
+                                        </Button>
+                                        <Button
+                                            variant={bottomTab === 'loopStation' ? 'secondary' : 'ghost'}
+                                            size="xs"
+                                            className={
+                                                bottomTab === 'loopStation' ? 'text-[var(--color-accent-mint)]' : ''
+                                            }
+                                            onClick={() => setBottomTab('loopStation')}
+                                            data-onboarding="loop-station-tab"
+                                        >
+                                            Loop Station
+                                        </Button>
+                                        <Button
+                                            variant={bottomTab === 'modulation' ? 'secondary' : 'ghost'}
+                                            size="xs"
+                                            className={
+                                                bottomTab === 'modulation' ? 'text-[var(--color-accent-cyan)]' : ''
+                                            }
+                                            onClick={() => setBottomTab('modulation')}
+                                            data-onboarding="modulation-tab"
+                                        >
+                                            Modulation
+                                        </Button>
+                                        {isAudioClipSelected ? (
+                                            <Button
+                                                variant={bottomTab === 'elastic' ? 'secondary' : 'ghost'}
+                                                size="xs"
+                                                className={
+                                                    bottomTab === 'elastic' ? 'text-[var(--color-accent-peach)]' : ''
+                                                }
+                                                data-testid="elastic-tab-button"
+                                                onClick={() => setBottomTab('elastic')}
+                                            >
+                                                Elastic
+                                            </Button>
+                                        ) : null}
+
+                                        <div className="flex-1" />
+
+                                        <Button
+                                            variant="ghost"
+                                            size="icon-xs"
+                                            onClick={toggleMixer}
+                                            aria-label="Close bottom dock"
+                                        >
+                                            <X className="size-3.5" />
+                                        </Button>
+                                    </div>
+                                    {/* Panel content */}
+                                    <div className="flex-1 overflow-hidden">
+                                        {bottomTab === 'editor' ? (
+                                            <ClipView />
+                                        ) : bottomTab === 'mixer' ? (
+                                            <MixerPanel style={{ height: '100%' }} />
+                                        ) : bottomTab === 'automation' ? (
+                                            <AutomationBottomPanel />
+                                        ) : bottomTab === 'session' ? (
+                                            <SessionView />
+                                        ) : bottomTab === 'analysis' ? (
+                                            <AnalysisPanel />
+                                        ) : bottomTab === 'setlist' ? (
+                                            <SetlistPanel />
+                                        ) : bottomTab === 'loopStation' ? (
+                                            <LoopStationPanel />
+                                        ) : bottomTab === 'modulation' ? (
+                                            <ModulationMatrix />
+                                        ) : bottomTab === 'elastic' ? (
+                                            <ElasticEditorPanel />
+                                        ) : (
+                                            <RoutingMatrix />
+                                        )}
+                                    </div>
+                                </div>
+                            </>
+                        ) : null}
 
                         {/* Virtual Keyboard panel */}
                         {virtualKeyboardOpen ? (
                             <>
                                 <DragResizeHandle
                                     side="top"
-                                    onResize={(data) => {
-                                        const next = Math.max(80, Math.min(400, (virtualKeyboardHeight ?? 160) + data));
+                                    onResize={(d) => {
+                                        const next = Math.max(80, Math.min(400, (virtualKeyboardHeight ?? 160) + d));
                                         updateWorkspaceState({ virtualKeyboardHeight: next });
                                     }}
                                 />
@@ -671,7 +796,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     open={showAlphaNotice}
                     onOpenChange={(open) => {
                         if (!open) {
-                            window.localStorage.setItem(ALPHA_NOTICE_KEY, 'true');
+                            localStorage.setItem(ALPHA_NOTICE_KEY, 'true');
                         }
                         setShowAlphaNotice(open);
                     }}
@@ -682,6 +807,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
                 {/* Launch screen overlay — shown for new users, fades out when project initializes */}
                 {showLaunch ? <LaunchScreen exiting={launchExiting} /> : null}
+
+                <AudioResumeOverlay />
+
+                <OnboardingTour />
             </div>
         </MobileGate>
     );

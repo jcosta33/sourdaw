@@ -1,8 +1,8 @@
 import { type DrumEngineType } from '../../models/ToasterKit';
 import { toasterStore } from '../../stores/toasterStore';
 
-export function getSoundLock(padIndex: number, stepIndex: number): DrumEngineType | null {
-    const state = toasterStore.value;
+export function getSoundLock(deviceId: string, padIndex: number, stepIndex: number): DrumEngineType | null {
+    const state = toasterStore.value?.[deviceId];
     if (!state) {
         return null;
     }

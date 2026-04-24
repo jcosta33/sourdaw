@@ -32,6 +32,9 @@ pub struct CabinetConvolver {
     // Filter states for mic positions
     mic_1_lp: f32,
     mic_2_lp: f32,
+    room_lp: f32,
+    room_buffer: Vec<f32>,
+    room_write_pos: usize,
 
     // IR loaded flag
     ir_loaded: bool,
@@ -41,6 +44,7 @@ pub struct CabinetConvolver {
 
 impl CabinetConvolver {
     pub fn new(sample_rate: f32) -> Self {
+        let room_buffer_length = ((sample_rate * 0.080) as usize).max(512);
         Self {
             head_ir_1: Vec::new(),
             head_ir_2: Vec::new(),
@@ -61,6 +65,9 @@ impl CabinetConvolver {
             room_amount: 0.1,
             mic_1_lp: 0.0,
             mic_2_lp: 0.0,
+            room_lp: 0.0,
+            room_buffer: vec![0.0; room_buffer_length],
+            room_write_pos: 0,
             ir_loaded: false,
             enabled: true,
             sample_rate,
@@ -168,24 +175,46 @@ impl CabinetConvolver {
             }
         }
 
-        // Apply position-based filters
-        // mic1: more off-axis (Y) or edge (X) means more low-pass
-        let cut1 = 1.0 - (self.mic_1_pos_x * 0.3 + self.mic_1_pos_y * 0.5).min(0.8);
+        // Apply position-based filters.
+        // More off-axis/edge or farther distance means less direct high end.
+        let cut1 = ((1.0 - (self.mic_1_pos_x * 0.3 + self.mic_1_pos_y * 0.5).min(0.8))
+            * (1.0 - self.mic_1_distance * 0.55))
+            .clamp(0.08, 1.0);
         self.mic_1_lp += (out1 - self.mic_1_lp) * cut1;
-        out1 = self.mic_1_lp * self.mic_1_gain;
+        let distance_gain_1 = 1.0 - self.mic_1_distance * 0.45;
+        out1 = self.mic_1_lp * self.mic_1_gain * distance_gain_1;
 
-        // mic2:
-        let cut2 = 1.0 - (self.mic_2_pos_x * 0.3 + self.mic_2_pos_y * 0.5).min(0.8);
+        let cut2 = ((1.0 - (self.mic_2_pos_x * 0.3 + self.mic_2_pos_y * 0.5).min(0.8))
+            * (1.0 - self.mic_2_distance * 0.55))
+            .clamp(0.08, 1.0);
         self.mic_2_lp += (out2 - self.mic_2_lp) * cut2;
-        out2 = self.mic_2_lp * self.mic_2_gain;
+        let distance_gain_2 = 1.0 - self.mic_2_distance * 0.45;
+        out2 = self.mic_2_lp * self.mic_2_gain * distance_gain_2;
 
         self.head_write_pos = (self.head_write_pos + 1) % self.head_length;
 
         // Blend
         let w2 = self.mic_blend;
         let w1 = 1.0 - w2;
-        
-        out1 * w1 + out2 * w2
+        let direct = out1 * w1 + out2 * w2;
+
+        self.room_buffer[self.room_write_pos] = direct;
+        let blended_distance = (self.mic_1_distance * w1 + self.mic_2_distance * w2).clamp(0.0, 1.0);
+        let room = if self.room_amount > 0.001 {
+            let tap_1 = self.read_room_tap((self.sample_rate * (0.012 + blended_distance * 0.006)) as usize);
+            let tap_2 = self.read_room_tap((self.sample_rate * (0.021 + blended_distance * 0.010)) as usize);
+            let tap_3 = self.read_room_tap((self.sample_rate * (0.034 + blended_distance * 0.016)) as usize);
+            let reflections = tap_1 * 0.52 + tap_2 * 0.31 + tap_3 * 0.17;
+            let room_cut_hz = 2_400.0 - blended_distance * 1_100.0;
+            let room_coeff = (2.0 * PI * room_cut_hz.max(400.0) / self.sample_rate).min(0.65);
+            self.room_lp += (reflections - self.room_lp) * room_coeff;
+            self.room_lp * self.room_amount * (0.18 + blended_distance * 0.22)
+        } else {
+            0.0
+        };
+        self.room_write_pos = (self.room_write_pos + 1) % self.room_buffer.len();
+
+        direct * (1.0 - self.room_amount * 0.16) + room
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
@@ -213,6 +242,25 @@ impl CabinetConvolver {
     pub fn reset(&mut self) {
         self.head_buffer.fill(0.0);
         self.head_write_pos = 0;
+        self.mic_1_lp = 0.0;
+        self.mic_2_lp = 0.0;
+        self.room_lp = 0.0;
+        self.room_buffer.fill(0.0);
+        self.room_write_pos = 0;
+    }
+
+    fn read_room_tap(&self, delay_samples: usize) -> f32 {
+        if self.room_buffer.is_empty() {
+            return 0.0;
+        }
+
+        let delay = delay_samples.min(self.room_buffer.len().saturating_sub(1));
+        let read_pos = if self.room_write_pos >= delay {
+            self.room_write_pos - delay
+        } else {
+            self.room_buffer.len() - (delay - self.room_write_pos)
+        };
+        self.room_buffer[read_pos]
     }
 }
 
@@ -314,5 +362,58 @@ impl SpeakerModel {
         self.res_lp_state = 0.0;
         self.res_bp_state = 0.0;
         self.back_emf_state = 0.0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CabinetConvolver;
+
+    fn render_average_output(configure: impl FnOnce(&mut CabinetConvolver)) -> f32 {
+        let mut cabinet = CabinetConvolver::new(48_000.0);
+        cabinet.load_builtin(0);
+        configure(&mut cabinet);
+
+        let total = 4096;
+        let mut sum = 0.0_f32;
+
+        for index in 0..total {
+            let low = ((index as f32 * 2.0 * std::f32::consts::PI * 180.0) / 48_000.0).sin() * 0.12;
+            let high = ((index as f32 * 2.0 * std::f32::consts::PI * 3200.0) / 48_000.0).sin() * 0.05;
+            let output = cabinet.process_sample(low + high);
+            sum += output.abs();
+        }
+
+        sum / total as f32
+    }
+
+    #[test]
+    fn mic_distance_changes_the_rendered_cabinet_output() {
+        let close = render_average_output(|cabinet| {
+            cabinet.set_param("mic1Distance", 0.0);
+        });
+        let far = render_average_output(|cabinet| {
+            cabinet.set_param("mic1Distance", 1.0);
+        });
+
+        assert!(
+            (close - far).abs() > 1.0e-3,
+            "mic distance should audibly change cabinet output (close={close}, far={far})"
+        );
+    }
+
+    #[test]
+    fn room_amount_changes_the_rendered_cabinet_output() {
+        let dry = render_average_output(|cabinet| {
+            cabinet.set_param("roomAmount", 0.0);
+        });
+        let roomy = render_average_output(|cabinet| {
+            cabinet.set_param("roomAmount", 1.0);
+        });
+
+        assert!(
+            (dry - roomy).abs() > 1.0e-3,
+            "room amount should audibly change cabinet output (dry={dry}, roomy={roomy})"
+        );
     }
 }

@@ -60,6 +60,7 @@ export { findMappingForTarget } from './midiLearn/findMappingForTarget';
 export { addMidiNote } from './midiNoteCrud/addMidiNote';
 export { batchAddMidiNotes } from './midiNoteCrud/batchAddMidiNotes';
 export { getNotesForClip } from './midiNoteCrud/getNotesForClip';
+export { migrateAbsoluteMidiNotes } from './midiNoteCrud/migrateAbsoluteMidiNotes';
 export { moveMidiNote } from './midiNoteCrud/moveMidiNote';
 export { removeMidiNote } from './midiNoteCrud/removeMidiNote';
 export { resizeMidiNote } from './midiNoteCrud/resizeMidiNote';

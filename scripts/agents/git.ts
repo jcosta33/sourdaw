@@ -233,3 +233,18 @@ export function gitAvailable() {
     const r = spawnSync('git', ['--version'], { encoding: 'utf8' });
     return r.status === 0;
 }
+
+/**
+ * Synchronize (rebase) a worktree's branch onto its base branch.
+ * @param {string} worktreePath
+ * @param {string} baseBranch
+ * @returns {boolean} true if successful, false if conflicts occurred
+ */
+export function worktreeSync(worktreePath, baseBranch) {
+    const result = spawnSync('git', ['rebase', baseBranch], {
+        cwd: worktreePath,
+        stdio: 'inherit',
+        encoding: 'utf8'
+    });
+    return result.status === 0;
+}

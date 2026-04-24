@@ -21,4 +21,18 @@ describe('GRINDER_PRESETS', () => {
         const ids = GRINDER_PRESETS.map((param) => param.id);
         expect(new Set(ids).size).toBe(ids.length);
     });
+
+    it('includes a dedicated metal preset with gate and front-end drive support', () => {
+        const metal_presets = GRINDER_PRESETS.filter((preset) => preset.category === 'Metal');
+
+        expect(metal_presets.length).toBeGreaterThan(0);
+
+        for (const preset of metal_presets) {
+            expect(preset.patch.gateEnabled).toBe(true);
+            expect(preset.patch.channel).toBe(2);
+            expect(
+                preset.patch.prePedals.some((pedal) => pedal.type === 'overdrive' && pedal.enabled)
+            ).toBe(true);
+        }
+    });
 });

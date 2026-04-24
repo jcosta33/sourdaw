@@ -148,11 +148,9 @@ export async function generateWebLlmCompletion(
         seed: 0,
     };
 
-    // Log model id + payload keys (never payload contents) so any stray
-    // `tools:` attachment on a WebLLM call surfaces as a single structured
-    // line instead of an `UnsupportedModelIdError` stack trace. MLC models do
-    // not support the native `tools` API; see `supportsToolsApi()` in
-    // `#/utils/capabilities`.
+    // WebLLM's native `tools` API only works on Hermes builds — not the Qwen3
+    // model we ship. Log payload keys (never contents) so a stray `tools:`
+    // attachment surfaces cleanly instead of as an `UnsupportedModelIdError`.
     logger.info(`[WebLLM] completion model=${engineState.activeModelId} keys=${Object.keys(payload).sort().join(',')}`);
 
     const response = (await eng.chat.completions.create(payload)) as {

@@ -83,8 +83,12 @@ type TransportInfo = {
 // Transport-local shape (AGENTS.md §95 — derive from Synth's returned shape).
 type DrumKitDef = NonNullable<ReturnType<typeof getDrumKitDefByIndex>>;
 
+function isDrumDevice(deviceType: string): boolean {
+    return deviceType === 'builtin-drum-kit' || deviceType === 'drum-kit' || deviceType.startsWith('builtin-drum-machine');
+}
+
 export function resolveDrumKit(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null {
-    const kitDevice = devices.find((data) => data.type === 'builtin-drum-kit' || data.type === 'drum-kit');
+    const kitDevice = devices.find((d) => isDrumDevice(d.type));
     if (!kitDevice) {
         return null;
     }
@@ -95,7 +99,7 @@ export function resolveDrumKit(devices: { type: string; parameterValues: Record<
 export function resolveDrumKitDef(
     devices: { type: string; parameterValues: Record<string, number> }[]
 ): DrumKitDef | null {
-    const kitDevice = devices.find((data) => data.type === 'builtin-drum-kit' || data.type === 'drum-kit');
+    const kitDevice = devices.find((d) => isDrumDevice(d.type));
     if (!kitDevice) {
         return null;
     }

@@ -90,7 +90,8 @@ const Knob = ({
 
 export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     // §209.1 — Typed defaults instead of non-null assertion on live values.
-    const state = useStore(toasterStore, defaultToasterState);
+    const instances = useStore(toasterStore, {});
+    const state = instances[deviceId] ?? defaultToasterState;
     const trackState = useStore(trackStore, defaultTrackState);
     const selectedTrackId = trackState?.selectedTrackId ?? null;
     const [presetQuery, setPresetQuery] = useState('');
@@ -116,11 +117,11 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
         const childTracks = tracks.filter((track) => track.parentId === parentTrack.id);
         const padIndex = childTracks.findIndex((track) => track.id === selectedTrackId);
         if (padIndex >= 0 && padIndex !== state.selectedPadIndex) {
-            selectPad(padIndex);
+            selectPad(deviceId, padIndex);
         }
-    }, [selectedTrackId, state]);
+    }, [selectedTrackId, state, deviceId]);
 
-    const liveState = state ?? toasterStore.value;
+    const liveState = state;
     if (!liveState) {
         return <div className="h-full" />;
     }
@@ -138,16 +139,16 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     });
 
     function triggerPad(index: number): void {
-        triggerToasterPad(index, 100);
+        triggerToasterPad(deviceId, index, 100);
     }
 
     function handlePadParam(padIndex: number, key: string, value: number): void {
         if (key === 'muted') {
-            updatePad(padIndex, { muted: value > 0 });
+            updatePad(deviceId, padIndex, { muted: value > 0 });
             return;
         }
         if (key === 'soloed') {
-            updatePad(padIndex, { soloed: value > 0 });
+            updatePad(deviceId, padIndex, { soloed: value > 0 });
             return;
         }
         setToasterPadParam(deviceId, padIndex, key as keyof PadState, value);
@@ -179,7 +180,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                                 ? 'border-white/18 bg-white/[0.03]'
                                                 : 'hover:border-white/12 hover:bg-white/[0.02]'
                                         }`}
-                                        onClick={() => loadToasterKitPreset(preset.kit)}
+                                        onClick={() => loadToasterKitPreset(deviceId, preset.kit)}
                                     >
                                         <div className="flex w-full items-center justify-between gap-2">
                                             <span className="text-[11px] font-medium text-foreground">
@@ -205,7 +206,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                         <PadGrid
                             pads={kit.pads}
                             selectedIndex={selectedPadIndex}
-                            onSelectPad={selectPad}
+                            onSelectPad={(index) => selectPad(deviceId, index)}
                             onTriggerPad={triggerPad}
                         />
 
@@ -345,8 +346,8 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 pads={kit.pads}
                                 currentStep={currentStep}
                                 isPlaying={isPlaying}
-                                onToggleStep={toggleStep}
-                                onSetVelocity={setStepVelocity}
+                                onToggleStep={(trackId, stepIndex) => toggleStep(deviceId, trackId, stepIndex)}
+                                onSetVelocity={(trackId, stepIndex, vel) => setStepVelocity(deviceId, trackId, stepIndex, vel)}
                             />
                         ) : null}
                     </div>
@@ -361,11 +362,11 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 size="sm"
                                 onClick={() => {
                                     if (isPlaying) {
-                                        stopSequencer();
+                                        stopSequencer(deviceId);
                                         return;
                                     }
 
-                                    startSequencer(transportStore.value?.tempo ?? 120);
+                                    startSequencer(deviceId, transportStore.value?.tempo ?? 120);
                                 }}
                             >
                                 {isPlaying ? <Square className="size-3.5" /> : <Play className="size-3.5" />}
@@ -375,7 +376,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 type="button"
                                 tone="peach"
                                 size="sm"
-                                onClick={() => exportPatternToTimeline()}
+                                onClick={() => exportPatternToTimeline(deviceId)}
                             >
                                 <Send className="size-3.5" />
                                 To timeline
@@ -413,7 +414,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 active
                                 tone="peach"
                                 size="sm"
-                                onClick={() => applyEuclideanToTrack(selectedPadIndex, eucHits, eucSteps, 0)}
+                                onClick={() => applyEuclideanToTrack(deviceId, selectedPadIndex, eucHits, eucSteps, 0)}
                             >
                                 Toast
                             </DawPluginChip>

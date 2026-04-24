@@ -8,12 +8,16 @@
  * the wrapper simply uses the same node for inputNode and outputNode.
  */
 
+import { type IFaustMonoWebAudioNode, type IFaustPolyWebAudioNode } from '@grame/faustwasm';
+
 import { logger } from '#/infra/logger/appLogger';
 import { compileFaustDSP, createFaustNode, isFaustModule } from '#/modules/Plugin/useCases';
 
 import { type OfflineDeviceNode } from './deviceNodeFactory';
 
 export { isFaustModule };
+
+type FaustNode = IFaustMonoWebAudioNode | IFaustPolyWebAudioNode;
 
 /**
  * Create a Faust device node for the device chain.
@@ -38,54 +42,52 @@ export async function createFaustDevice(
         return null;
     }
 
+    const paramAddressCache = buildParamAddressCache(node);
+
+    // keyOn/keyOff in @grame/faustwasm are port.postMessage calls; they are NOT
+    // sample-accurate. We schedule them via setTimeout relative to ctx.currentTime
+    // so timeline-scheduled notes still fire near their target time. Jitter is
+    // bounded by timer resolution + postMessage latency (~1–15 ms). For tighter
+    // scheduling a processor-side look-ahead scheduler would be required.
+    const scheduleCall = (time: number | undefined, call: () => void): void => {
+        if (time !== undefined && time > ctx.currentTime) {
+            setTimeout(call, (time - ctx.currentTime) * 1000);
+            return;
+        }
+        call();
+    };
+
     return {
         inputNode: node,
         outputNode: node,
         nodes: [node],
         wamControls: {
             setParam: (name: string, value: number) => {
-                // Resolve bare param names to full Faust addresses via suffix fallback.
-                // Faust expects addresses like '/FM_Synth/algorithm'; UI passes 'algorithm'.
-                if (node instanceof AudioWorkletNode) {
-                    let resolvedName = name;
-                    if (!node.parameters.get(name)) {
-                        for (const [key] of node.parameters) {
-                            if (key.endsWith(`/${name}`)) {
-                                resolvedName = key;
-                                break;
-                            }
-                        }
-                    }
-                    try {
-                        node.setParamValue(resolvedName, value);
-                    } catch (error) {
-                        logger.warn(`[FaustDevice] Failed to set param ${resolvedName} to ${value}:`, error);
-                    }
-                } else {
-                    try {
-                        node.setParamValue(name, value);
-                    } catch (error) {
-                        logger.warn(`[FaustDevice] Failed to set param ${name} to ${value}:`, error);
-                    }
+                const resolved = paramAddressCache.get(name) ?? name;
+                try {
+                    node.setParamValue(resolved, value);
+                } catch (error) {
+                    logger.warn(`[FaustDevice] Failed to set param ${resolved} to ${value}:`, error);
                 }
             },
             scheduleParam: (name: string, value: number, time: number) => {
-                if (node instanceof AudioWorkletNode) {
-                    let targetParam: AudioParam | null = null;
-                    const exact = node.parameters.get(name);
-                    if (exact) {
-                        targetParam = exact;
-                    } else {
-                        for (const [key, param] of node.parameters) {
-                            if (key.endsWith(`/${name}`)) {
-                                targetParam = param;
-                                break;
-                            }
-                        }
-                    }
-                    if (targetParam) {
-                        targetParam.setValueAtTime(value, time);
-                    }
+                if (!(node instanceof AudioWorkletNode)) {
+                    return;
+                }
+                const resolved = paramAddressCache.get(name) ?? name;
+                const targetParam = node.parameters.get(resolved);
+                if (targetParam) {
+                    targetParam.setValueAtTime(value, time);
+                }
+            },
+            keyOn: (channel: number, pitch: number, velocity: number, time?: number) => {
+                if ('keyOn' in node) {
+                    scheduleCall(time, () => node.keyOn(channel, pitch, velocity));
+                }
+            },
+            keyOff: (channel: number, pitch: number, velocity: number, time?: number) => {
+                if ('keyOff' in node) {
+                    scheduleCall(time, () => node.keyOff(channel, pitch, velocity));
                 }
             },
             destroy: () => {
@@ -97,4 +99,26 @@ export async function createFaustDevice(
             },
         },
     };
+}
+
+function buildParamAddressCache(node: FaustNode): Map<string, string> {
+    const cache = new Map<string, string>();
+    if (!(node instanceof AudioWorkletNode)) {
+        return cache;
+    }
+    for (const [key] of node.parameters) {
+        const bareName = key.split('/').pop();
+        if (!bareName) {
+            continue;
+        }
+        const existing = cache.get(bareName);
+        if (existing !== undefined) {
+            logger.warn(
+                `[FaustDevice] Duplicate bare param "${bareName}" — keeping "${existing}", ignoring "${key}"`
+            );
+            continue;
+        }
+        cache.set(bareName, key);
+    }
+    return cache;
 }

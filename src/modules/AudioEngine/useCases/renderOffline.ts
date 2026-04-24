@@ -43,6 +43,8 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             typeof optsOrBeats === 'number' ? (maybeSampleRate ?? 44100) : (optsOrBeats.sampleRate ?? 44100);
         const onProgress = typeof optsOrBeats === 'object' ? optsOrBeats.onProgress : undefined;
         const onWarning = typeof optsOrBeats === 'object' ? optsOrBeats.onWarning : undefined;
+        const startBeat = typeof optsOrBeats === 'object' ? (optsOrBeats.startBeat ?? 0) : 0;
+        const tailSeconds = typeof optsOrBeats === 'object' ? (optsOrBeats.tailSeconds ?? 0) : 0;
 
         if (!Number.isFinite(durationBeats) || durationBeats <= 0) {
             throw createExportError(
@@ -50,7 +52,11 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             );
         }
 
-        const { tracks, midi, transport, defaultTempo, changes, durationSeconds } = resolveRenderContext(durationBeats);
+        const { tracks, midi, transport, defaultTempo, changes, durationSeconds } = resolveRenderContext({
+            durationBeats,
+            startBeat,
+            tailSeconds,
+        });
 
         // Clamp frame count to browser-safe maximum to avoid context creation error.
         const frameCount = Math.min(Math.ceil(durationSeconds * sampleRate), MAX_OFFLINE_FRAMES);
@@ -147,7 +153,8 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 onWarning,
                 pendingWorkletEvents,
                 sourceTracks,
-                deviceEntriesByTrack
+                deviceEntriesByTrack,
+                startBeat
             );
 
             scheduled++;

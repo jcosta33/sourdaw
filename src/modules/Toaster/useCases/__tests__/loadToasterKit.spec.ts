@@ -152,9 +152,9 @@ describe('loadToasterKitPreset', () => {
         wireToasterMocks(setParam, setPadParam);
 
         const kit = minimalKit();
-        loadToasterKitPreset(kit);
+        loadToasterKitPreset('d1', kit);
 
-        expect(loadKit).toHaveBeenCalledWith(kit);
+        expect(loadKit).toHaveBeenCalledWith('d1', kit);
         expect(setParam).toHaveBeenCalledWith('master_gain', kit.masterGain);
         expect(setParam).toHaveBeenCalledWith('reverb_mix', kit.reverbMix);
         expect(setPadParam).toHaveBeenCalledWith(0, 'engine_type', TOASTER_ENGINE_MAP['kick-808']);
@@ -168,7 +168,7 @@ describe('loadToasterKitPreset', () => {
         const kit = minimalKit({
             pads: [minimalPad({ engineType: 'hihat-open' }), minimalPad({ id: 1, engineType: 'hihat-closed' })],
         });
-        loadToasterKitPreset(kit);
+        loadToasterKitPreset('d1', kit);
 
         expect(setPadParam).toHaveBeenCalledWith(0, 'open', 1);
         expect(setPadParam).toHaveBeenCalledWith(1, 'open', 0);
@@ -178,7 +178,7 @@ describe('loadToasterKitPreset', () => {
         vi.mocked(getAllTracks).mockReturnValue([]);
 
         const kit = minimalKit();
-        expect(() => loadToasterKitPreset(kit)).not.toThrow();
-        expect(loadKit).toHaveBeenCalledWith(kit);
+        expect(() => loadToasterKitPreset('d1', kit)).not.toThrow();
+        expect(loadKit).toHaveBeenCalledWith('d1', kit);
     });
 });

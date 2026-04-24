@@ -3,6 +3,7 @@ import { type ReactElement } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { RecentProjectsMenu, ArrangementSelector } from '#/modules/Project/presentations/views';
+import { PunchRecordingControls } from '#/modules/Transport/presentations/views';
 
 import { type Track } from '../../models/TrackViewTypes';
 import { toggleRippleEditing } from '../../useCases/rippleEditing';
@@ -119,6 +120,8 @@ export const TransportBar = (): ReactElement => {
                     />
                     <Sep />
                     <TempoEditor />
+                    <Sep />
+                    <PunchRecordingControls />
                 </div>
 
                 {/* Center stage: Core Transport */}

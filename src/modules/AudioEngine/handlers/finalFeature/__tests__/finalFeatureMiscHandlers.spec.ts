@@ -18,6 +18,9 @@ import { handleSetRaveBlend } from '../handleSetRaveBlend';
 vi.mock('#/modules/Synth/useCases', () => ({ addCvOutput: vi.fn() }));
 vi.mock('#/modules/Plugin/useCases', () => ({ connectPush: vi.fn(), disconnectPush: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
+vi.mock('#/modules/Project/useCases', () => ({
+    exportDawProject: vi.fn(async () => ({ bytes: new Uint8Array([0]), fileName: 'demo.dawproject' })),
+}));
 vi.mock('../../../useCases/rave/loadModel', () => ({ loadModel: vi.fn() }));
 vi.mock('../../../useCases/controlSurface/setProtocol', () => ({ setProtocol: vi.fn() }));
 vi.mock('../../../useCases/rave/setTransferBlend', () => ({ setTransferBlend: vi.fn() }));
@@ -43,8 +46,8 @@ describe('finalFeatureMiscHandlers', () => {
         expect(disconnectPush).toHaveBeenCalled();
     });
 
-    it('handleExportDawProject should notify user', () => {
-        void handleExportDawProject.execute({ type: 'exportDawProject', payload: {} });
+    it('handleExportDawProject should notify user', async () => {
+        await handleExportDawProject.execute({ type: 'exportDawProject', payload: {} });
         expect(notifyUser).toHaveBeenCalled();
     });
 

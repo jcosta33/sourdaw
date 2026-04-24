@@ -18,6 +18,60 @@ export type ShortcutStoreState = {
     customMappings: Record<string, string[]>;
 };
 
+export const LOOP_STATION_PAD_ROWS: string[][] = [
+    ['1', '2', '3', '4', '5', '6', '7', '8'],
+    ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i'],
+    ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k'],
+    ['z', 'x', 'c', 'v', 'b', 'n', 'm', ','],
+];
+
+export function getLoopStationPadCallbackId(rowIndex: number, columnIndex: number, record: boolean): string {
+    return `loopStationPad.${record ? 'record' : 'play'}.r${rowIndex}c${columnIndex}`;
+}
+
+export type LoopStationPadKey = {
+    rowIndex: number;
+    columnIndex: number;
+    record: boolean;
+};
+
+export function parseLoopStationPadCallbackId(callbackId: string): LoopStationPadKey | null {
+    const match = /^loopStationPad\.(play|record)\.r(\d+)c(\d+)$/.exec(callbackId);
+    if (!match) {
+        return null;
+    }
+    const [, mode, rowStr, colStr] = match;
+    const rowIndex = Number.parseInt(rowStr ?? '', 10);
+    const columnIndex = Number.parseInt(colStr ?? '', 10);
+    if (!Number.isFinite(rowIndex) || !Number.isFinite(columnIndex)) {
+        return null;
+    }
+    return { rowIndex, columnIndex, record: mode === 'record' };
+}
+
+function buildLoopStationPadDefinitions(): ShortcutDefinition[] {
+    const defs: ShortcutDefinition[] = [];
+    LOOP_STATION_PAD_ROWS.forEach((row, rowIndex) => {
+        row.forEach((key, columnIndex) => {
+            defs.push({
+                id: `loopStation.pad.r${rowIndex}c${columnIndex}.play`,
+                label: `Loop Station: Play row ${rowIndex + 1} col ${columnIndex + 1}`,
+                category: 'transport',
+                defaultKeys: [key],
+                action: { type: 'callback', id: getLoopStationPadCallbackId(rowIndex, columnIndex, false) },
+            });
+            defs.push({
+                id: `loopStation.pad.r${rowIndex}c${columnIndex}.record`,
+                label: `Loop Station: Record row ${rowIndex + 1} col ${columnIndex + 1}`,
+                category: 'transport',
+                defaultKeys: [`shift+${key}`],
+                action: { type: 'callback', id: getLoopStationPadCallbackId(rowIndex, columnIndex, true) },
+            });
+        });
+    });
+    return defs;
+}
+
 const INITIAL_DEFINITIONS: ShortcutDefinition[] = [
     {
         id: 'transport.togglePlayback',
@@ -347,6 +401,25 @@ const INITIAL_DEFINITIONS: ShortcutDefinition[] = [
         defaultKeys: ['alt+['],
         action: { type: 'callback', id: 'cycleGhostClipPrev' },
     },
+    // ── AI Generation chords ─────────────────────────────────────────────
+    // `g` is a leader key — press `g` then a second key within ~1.5 s to
+    // dispatch. Implemented via callback so the chord state machine in
+    // handleKeydown can intercept the leader press without dispatching an
+    // AppAction until the second key resolves.
+    {
+        id: 'ai.leaderKey',
+        label: 'AI Generate… (leader key, then D/M/C/B)',
+        category: 'workflow',
+        defaultKeys: ['g'],
+        action: { type: 'callback', id: 'aiLeaderKey' },
+    },
+    // ── Loop Station pads ────────────────────────────────────────────────
+    // Ableton-style 4x8 pad grid. Plain press triggers the matching slot;
+    // shift-press starts / re-records it. Rows 1–4 map to QWERTY rows
+    // `1..8`, `q..i`, `a..k`, `z..,`. Esc routes through the transport
+    // stopPlayback callback (see handleKeydown) which also stops all
+    // loop station slots when any are active.
+    ...buildLoopStationPadDefinitions(),
 ];
 
 const storage = createLocalStorage<ShortcutStoreState>('sourdaw-shortcuts');

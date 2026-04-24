@@ -410,7 +410,7 @@ const drawMidiNotePreview = (
 
     while (loopOffset < clipDuration && iterations < 100) {
         for (const note of notes) {
-            const relStart = note.startBeat - midiOffset - clip.startBeat + loopOffset;
+            const relStart = note.startBeat - midiOffset + loopOffset;
             if (relStart >= clipDuration) {
                 continue;
             }

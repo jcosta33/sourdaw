@@ -16,10 +16,12 @@ import { trackStore, markerStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane } from '#/modules/Automation/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import { chordTrackStore, midiStore } from '#/modules/MIDI/stores';
+import { addChordEvent } from '#/modules/MIDI/useCases';
+import { addSidechainRoute } from '#/modules/Routing/useCases';
 import { DEFAULT_PAD_NAMES } from '#/modules/Toaster/useCases';
-import { transportStore } from '#/modules/Transport/stores';
-import { defaultTransportState } from '#/modules/Transport/useCases';
+import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
+import { addTempoChange, addTimeSignatureChange, defaultTransportState } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
 import { applyPreset } from '../demoUtils/applyPreset';
@@ -37,6 +39,7 @@ const A2 = 45;
 const D3 = 50;
 const E3 = 52;
 const F3 = 53;
+const G3 = 55;
 const A3 = 57;
 const Bb3 = 58;
 const B3 = 59;
@@ -152,6 +155,15 @@ export async function demo5_NebulaDrift(): Promise<void> {
     const tLevCall = createTrack({ name: 'Levain Call', kind: 'midi', parentId: levainFolder.id });
     const tLevAnswer = createTrack({ name: 'Levain Answer', kind: 'midi', parentId: levainFolder.id });
 
+    // ── Piano + granular texture layer ────────────────────────────────────
+    const pianoFolder = createTrack({ name: '🎼 Piano & Haze', kind: 'folder' });
+    const tGrandCrystal = createTrack({ name: 'Grand Crystal', kind: 'midi', parentId: pianoFolder.id });
+    const tCrumbsHaze = createTrack({ name: 'Crumbs Haze', kind: 'midi', parentId: pianoFolder.id });
+
+    // ── Send/return buses ─────────────────────────────────────────────────
+    const tSpaceBus = createTrack({ name: 'Space Bus', kind: 'bus' });
+    const tDelayBus = createTrack({ name: 'Delay Bus', kind: 'bus' });
+
     // ── Toaster: folder instrument + 16 pad children (same contract as createDrumTrackStack) ──
     const toasterFolder = createTrack({ name: '⚡ Toaster Kit', kind: 'folder' });
     toasterFolder.color = 'oklch(0.39 0.024 255)';
@@ -188,6 +200,11 @@ export async function demo5_NebulaDrift(): Promise<void> {
     applyPreset(tSubDrone, 'fermenter-dark-drone');
     applyPreset(tDarkMist, 'fermenter-ambient-texture');
     applyPreset(tGrainHaze, 'fermenter-grain-cloud');
+    // Freeze demonstration — Grain Haze has 9 automation lanes (CPU-heavy),
+    // so it's a natural candidate. No baked buffer exists so playback may be
+    // silent; the UI state is what's being demonstrated.
+    tGrainHaze.frozen = true;
+    tGrainHaze.freezeState = { status: 'frozen', frozenBufferId: 'demo-grain-haze-frozen' };
     applyPreset(tEtherealVeil, 'fermenter-ethereal-pad');
     applyPreset(tSweepHorizon, 'fermenter-sem-sweep');
     applyPreset(tWarmHalo, 'fermenter-warm-pad');
@@ -209,6 +226,73 @@ export async function demo5_NebulaDrift(): Promise<void> {
     tLevLow.devices = [levainDevice({ vibratoDepth: 0.07, humanize: 0.58 })];
     tLevCall.devices = [levainDevice({ vibratoDepth: 0.2, humanize: 0.72 })];
     tLevAnswer.devices = [levainDevice({ vibratoDepth: 0.26, humanize: 0.64 })];
+
+    // Harmony auto-transpose on Levain High — follows the chord track
+    tLevHigh.followChordTrack = true;
+
+    // Grand Boule — physical-modeling piano for sparse dreamy chord roots
+    tGrandCrystal.devices = [
+        {
+            id: `grand-boule-${crypto.randomUUID().slice(0, 8)}`,
+            name: 'Grand Boule',
+            type: 'grand-boule',
+            bypassed: false,
+            parameterValues: {},
+        },
+    ];
+
+    // Crumbs — granular micro-stabs
+    tCrumbsHaze.devices = [
+        {
+            id: `dev-${crypto.randomUUID()}`,
+            name: 'Crumbs',
+            type: 'builtin-crumbs',
+            bypassed: false,
+            parameterValues: { masterGain: 0.62, attack: 0.004, decay: 0.22, sustain: 0.3, release: 0.35 },
+        },
+    ];
+
+    // Space Bus — dutch-oven (Proof Chamber) algorithmic reverb
+    tSpaceBus.devices = [
+        {
+            id: `dev-${crypto.randomUUID()}`,
+            name: 'Proof Chamber',
+            type: 'dutch-oven',
+            bypassed: false,
+            parameterValues: {
+                mix: 1, // fully wet — the bus IS the reverb return
+                decay: 0.78,
+                damping: 0.32,
+                predelay: 28,
+                size: 0.88,
+                mod_rate: 0.35,
+                mod_depth: 0.45,
+                diffusion: 0.82,
+                high_cut: 9500,
+                low_cut: 120,
+                width: 1.6,
+                shimmer: 1,
+                shimmer_amount: 0.18,
+            },
+        },
+    ];
+
+    // Delay Bus — faust tape delay at 3/4 of a beat (76 BPM → 0.789 s/beat × 0.75)
+    const delayBeats = 0.75;
+    const beatSeconds = 60 / bpm;
+    tDelayBus.devices = [
+        {
+            id: `dev-${crypto.randomUUID()}`,
+            name: 'Tape Delay',
+            type: 'faust-tape-delay',
+            bypassed: false,
+            parameterValues: {
+                delay: delayBeats * beatSeconds,
+                feedback: 0.5,
+                dry_wet: 1,
+            },
+        },
+    ];
 
     // Master chain
     addDev(masterTrack, 'builtin-eq', 'Master Tilt', {
@@ -380,6 +464,14 @@ export async function demo5_NebulaDrift(): Promise<void> {
         'eq-high-freq': 3500,
         'eq-high-q': 0.8,
     });
+    // Sidechain compressor on the bass — pumped from Toaster Pad 0 (kick) for an organic peak pulse
+    addDev(tBassGroove, 'builtin-sidechain-compressor', 'Kick Duck', {
+        'sc-comp-threshold': -22,
+        'sc-comp-ratio': 2,
+        'sc-comp-attack': 6,
+        'sc-comp-release': 180,
+        'sc-comp-makeup': 1.5,
+    });
 
     addDev(tLevHigh, 'builtin-reverb', 'High Plate', {
         'rev-size': 0.72,
@@ -455,9 +547,31 @@ export async function demo5_NebulaDrift(): Promise<void> {
         pad.gain = 1;
     }
 
-    function clip(trackId: string, name: string) {
-        return createMidiClip(trackId, name, 0, TB);
-    }
+    // New track levels + pans
+    tGrandCrystal.gain = 0.78;
+    tGrandCrystal.pan = 4;
+    tCrumbsHaze.gain = 0.55;
+    tCrumbsHaze.pan = -8;
+    tSpaceBus.gain = 0.9;
+    tSpaceBus.pan = 0;
+    tDelayBus.gain = 0.7;
+    tDelayBus.pan = 0;
+
+    // Send/return routing ─ reverb on pads + leads, tape delay on leads + pluck
+    const send = (busId: string, level: number, preFader = false) => ({ busId, level, preFader });
+    tWarmHalo.sends = [send(tSpaceBus.id, 0.32)];
+    tEtherealVeil.sends = [send(tSpaceBus.id, 0.38)];
+    tRisingMist.sends = [send(tSpaceBus.id, 0.3)];
+    tDarkMist.sends = [send(tSpaceBus.id, 0.22)];
+    tLeadMoog.sends = [send(tSpaceBus.id, 0.24), send(tDelayBus.id, 0.28)];
+    tLeadSync.sends = [send(tSpaceBus.id, 0.2), send(tDelayBus.id, 0.22)];
+    tLevCall.sends = [send(tSpaceBus.id, 0.26)];
+    tLevAnswer.sends = [send(tSpaceBus.id, 0.24)];
+    tPluckA.sends = [send(tDelayBus.id, 0.3)];
+    tGrandCrystal.sends = [send(tSpaceBus.id, 0.42)];
+    tCrumbsHaze.sends = [send(tSpaceBus.id, 0.36)];
+
+    const clip = (trackId: string, name: string) => createMidiClip(trackId, name, 0, TB);
 
     const cSub = clip(tSubDrone.id, 'Sub');
     const cDark = clip(tDarkMist.id, 'Mist');
@@ -474,6 +588,8 @@ export async function demo5_NebulaDrift(): Promise<void> {
     const cSeq = clip(tSeqRipple.id, 'Growl');
     const cLMo = clip(tLeadMoog.id, 'Sitar');
     const cLSy = clip(tLeadSync.id, 'Sync');
+    const cGrand = clip(tGrandCrystal.id, 'Crystal');
+    const cCrumb = createMidiClip(tCrumbsHaze.id, 'Crumbs', S.peak, S.breakdown);
     const cBss = clip(tBassGroove.id, 'Reese');
     const cLH = clip(tLevHigh.id, 'High');
     const cLM = clip(tLevMid.id, 'Mid');
@@ -965,6 +1081,30 @@ export async function demo5_NebulaDrift(): Promise<void> {
         }
     }
 
+    // Grand Crystal — sparse chord-root notes aligned with Warm Halo harmony.
+    // 16 notes across 380 beats, dreamy barely-there velocity.
+    // Warm Halo chord roots (cycle of 8, 38-beat spacing starting at beat 14):
+    //   Am A3 | Cmaj C4 | Em E3 | Dm D3 | Fmaj F3 | G7 G2 | Am9 A3 | Bbmaj7 Bb3
+    const crystalRoots = [A3, C4, E3, D3, F3, G2, A3, Bb3];
+    const grandN: MidiNote[] = [];
+    for (let k = 0, b = 18; k < 16 && b < TB - 8; k++, b += 24) {
+        const rootIdx = k % crystalRoots.length;
+        const root = crystalRoots[rootIdx]!;
+        // Pair root + 5th above for a simple dyad — gentle piano voicing
+        grandN.push(hum(root, b, 10, 40 + (k % 5) * 3, k + 900));
+        grandN.push(hum(root + 7, b + 1.8, 8, 34 + (k % 4) * 3, k + 920));
+    }
+
+    // Crumbs Haze — short granular stabs in the Peak / Ridge section (148–232).
+    const crumbN: MidiNote[] = [];
+    const crumbPitches = [G3, C4, E4, G4, B3, D4, F4, A3, E4, C4, G4, D4];
+    for (let k = 0; k < 12; k++) {
+        const p = crumbPitches[k % crumbPitches.length]!;
+        // Spread across 84-beat Peak span, clip-relative (clip starts at S.peak)
+        const rel = (k + 0.5) * (84 / 12) + ((k * 7) % 3) * 0.4;
+        crumbN.push(note(p, rel, 0.125, 48 + ((k * 11) % 9)));
+    }
+
     // Toaster: one clip per arr.section per pad (skip empty) — notes are beat-relative to clip start
     const toasterSegLabels = ['Intro', 'Build', 'Peak', 'Break', 'Outro'] as const;
     const toasterSegRanges: readonly [number, number][] = [
@@ -1067,6 +1207,19 @@ export async function demo5_NebulaDrift(): Promise<void> {
         }
     }
 
+    // Peak drum groove — transform Toaster from texture to rhythm (beats 148–232).
+    // Kick 4-on-floor, snare backbeat (2, 4), hat eighth shimmer.
+    for (let b = S.peak; b < S.breakdown; b++) {
+        pushToast(0, b, 92 + ((b & 3) === 0 ? 8 : 0), 0.18); // kick every beat, accent on downbeat
+    }
+    for (let b = S.peak + 1; b < S.breakdown; b += 2) {
+        pushToast(1, b, 82 + ((b & 3) === 3 ? 6 : 0), 0.12); // snare on 2 and 4 (odd beats)
+    }
+    for (let b = S.peak; b < S.breakdown; b += 0.5) {
+        const isOffbeat = (b * 2) % 2 === 1;
+        pushToast(2, b, isOffbeat ? 46 : 58, 0.06); // eighth-note hat; offbeats quieter
+    }
+
     for (let pi = 0; pi < 16; pi++) {
         for (let state = 0; state < toasterSegRanges.length; state++) {
             padSegNotes[pi]![state]!.sort((alpha, b) => alpha.startBeat - b.startBeat);
@@ -1114,6 +1267,8 @@ export async function demo5_NebulaDrift(): Promise<void> {
         tLevLow,
         tLevCall,
         tLevAnswer,
+        tGrandCrystal,
+        tCrumbsHaze,
         ...toasterPadTracks,
     ];
     for (const time of allMidiTracks) {
@@ -1141,8 +1296,10 @@ export async function demo5_NebulaDrift(): Promise<void> {
     tLevLow.clips = [cLL];
     tLevCall.clips = [cLC];
     tLevAnswer.clips = [cLA];
-    for (const [index, time] of toasterPadTracks.entries()) {
-        time.clips = toasterTrackClips[index] ?? [];
+    tGrandCrystal.clips = [cGrand];
+    tCrumbsHaze.clips = [cCrumb];
+    for (const [i, t] of toasterPadTracks.entries()) {
+        t.clips = toasterTrackClips[i] ?? [];
     }
 
     const tracks = [
@@ -1174,8 +1331,13 @@ export async function demo5_NebulaDrift(): Promise<void> {
         tLevLow,
         tLevCall,
         tLevAnswer,
+        pianoFolder,
+        tGrandCrystal,
+        tCrumbsHaze,
         toasterFolder,
         ...toasterPadTracks,
+        tSpaceBus,
+        tDelayBus,
     ];
 
     trackStore.set({ tracks, selectedTrackId: tLeadMoog.id });
@@ -1202,6 +1364,8 @@ export async function demo5_NebulaDrift(): Promise<void> {
         [cLL.id]: lowN,
         [cLC.id]: callN,
         [cLA.id]: answerN,
+        [cGrand.id]: grandN,
+        [cCrumb.id]: crumbN,
     };
     Object.assign(notesByClipId, toasterNotesByClipId);
 
@@ -2085,6 +2249,46 @@ export async function demo5_NebulaDrift(): Promise<void> {
             },
         ],
     });
+
+    // ── Tempo drift (76 → 78 at Peak → back to 76 at Fog) ─────────────────
+    tempoMapStore.set({ changes: [] });
+    addTempoChange(0, bpm, 'instant');
+    addTempoChange(S.peak, 78, 'linear');
+    addTempoChange(S.breakdown, bpm, 'linear');
+
+    // ── Time signature: brief 6/8 excursion at Peak, back to 4/4 ──────────
+    timeSignatureMapStore.set({ changes: [] });
+    addTimeSignatureChange(0, 4, 4);
+    addTimeSignatureChange(S.peak, 6, 8);
+    addTimeSignatureChange(S.peak + 12, 4, 4);
+
+    // ── Chord track — 8-chord progression matching Warm Halo voicings ────
+    //   Am9 | Cmaj9 | Em7 | Dm9 | Fmaj7 | G7 | Am9 | Bbmaj7
+    //   (Cmaj9 and Am9 use available CHORD_TYPES keys; 'maj7' + 'min9' are the
+    //   closest approximations in the type set.)
+    chordTrackStore.set({ enabled: true, events: [] });
+    type ChordQual = 'min9' | 'maj7' | 'min7' | '7';
+    const chordProgression: Array<[number, ChordQual]> = [
+        [9, 'min9'], // Am9
+        [0, 'maj7'], // Cmaj9 approx (maj9 not in CHORD_TYPES)
+        [4, 'min7'], // Em7
+        [2, 'min9'], // Dm9
+        [5, 'maj7'], // Fmaj7
+        [7, '7'], // G7
+        [9, 'min9'], // Am9
+        [10, 'maj7'], // Bbmaj7
+    ];
+    const chordDur = 32;
+    for (let i = 0; i * chordDur < TB; i++) {
+        const [root, quality] = chordProgression[i % chordProgression.length]!;
+        addChordEvent(i * chordDur, root, quality, chordDur);
+    }
+
+    // ── Sidechain route: Toaster Pad 0 (kick) → Rye Reese's sidechain comp ─
+    const reeseSidechainDev = tBassGroove.devices.find((d) => d.type === 'builtin-sidechain-compressor');
+    if (reeseSidechainDev) {
+        addSidechainRoute(toasterPadTracks[0]!.id, tBassGroove.id, reeseSidechainDev.id, 'sc-comp-threshold');
+    }
 
     syncArrangement(tracks);
 

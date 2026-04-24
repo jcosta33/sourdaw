@@ -13,6 +13,32 @@ use super::tone_stack::ToneStack;
 use super::transformer::Transformer;
 use super::triode::Preamp;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SupportedPedalSlot {
+    Compressor,
+    Overdrive,
+    Distortion,
+    Fuzz,
+}
+
+impl SupportedPedalSlot {
+    fn index(self) -> usize {
+        match self {
+            Self::Compressor => 0,
+            Self::Overdrive => 1,
+            Self::Distortion => 2,
+            Self::Fuzz => 3,
+        }
+    }
+}
+
+const DEFAULT_SUPPORTED_PEDAL_ORDER: [SupportedPedalSlot; 4] = [
+    SupportedPedalSlot::Compressor,
+    SupportedPedalSlot::Overdrive,
+    SupportedPedalSlot::Distortion,
+    SupportedPedalSlot::Fuzz,
+];
+
 #[allow(dead_code)]
 pub struct GrinderEngine {
     // Signal chain
@@ -36,6 +62,10 @@ pub struct GrinderEngine {
     post_dist: DistortionPedal,
     post_fuzz: FuzzPedal,
     post_comp: CompressorPedal,
+    pre_pedal_order: [SupportedPedalSlot; 4],
+    pre_pedal_order_values: [f32; 4],
+    post_pedal_order: [SupportedPedalSlot; 4],
+    post_pedal_order_values: [f32; 4],
 
     // Output
     output_gain: SmoothedParam,
@@ -78,6 +108,10 @@ impl GrinderEngine {
             post_dist: DistortionPedal::new(sample_rate),
             post_fuzz: FuzzPedal::new(sample_rate),
             post_comp: CompressorPedal::new(sample_rate),
+            pre_pedal_order: DEFAULT_SUPPORTED_PEDAL_ORDER,
+            pre_pedal_order_values: [0.0, 1.0, 2.0, 3.0],
+            post_pedal_order: DEFAULT_SUPPORTED_PEDAL_ORDER,
+            post_pedal_order_values: [0.0, 1.0, 2.0, 3.0],
             output_gain: SmoothedParam::new(1.0, 5.0, sample_rate),
             output_mix: SmoothedParam::new(1.0, 5.0, sample_rate),
             clean_blend: SmoothedParam::new(0.0, 5.0, sample_rate),
@@ -139,6 +173,11 @@ impl GrinderEngine {
             // Neural
             "engineMode" | "neuralEnabled" | "neuralPlacement" | "neuralMix" | "neuralTier"
             | "neuralCpuBudget" => self.neural.set_param(name, value),
+
+            // Supported pedal ordering
+            "preCompressorOrder" | "preOverdriveOrder" | "preDistortionOrder" | "preFuzzOrder"
+            | "postCompressorOrder" | "postOverdriveOrder" | "postDistortionOrder"
+            | "postFuzzOrder" => self.set_supported_pedal_order(name, value),
 
             // Output
             "outputGain" => self.output_gain.set_target(db_to_linear(value)),
@@ -214,10 +253,7 @@ impl GrinderEngine {
             signal = self.gate.process_sample(signal);
 
             // Pre-amp pedals
-            signal = self.pre_comp.process_sample(signal);
-            signal = self.pre_od.process_sample(signal);
-            signal = self.pre_dist.process_sample(signal);
-            signal = self.pre_fuzz.process_sample(signal);
+            signal = self.process_supported_pedal_chain(signal, false);
 
             let amp_input = signal;
             let circuit_preamp = self.preamp.process_sample(amp_input);
@@ -271,10 +307,7 @@ impl GrinderEngine {
                 signal = self.speaker.process_sample(signal);
 
                 // Post-amp pedals
-                signal = self.post_comp.process_sample(signal);
-                signal = self.post_od.process_sample(signal);
-                signal = self.post_dist.process_sample(signal);
-                signal = self.post_fuzz.process_sample(signal);
+                signal = self.process_supported_pedal_chain(signal, true);
             } else {
                 self.power_amp_peak *= self.meter_decay_coeff;
             }
@@ -347,6 +380,49 @@ impl GrinderEngine {
     pub fn neural_warmup_progress(&self) -> f32 {
         self.neural.warmup_progress()
     }
+
+    fn set_supported_pedal_order(&mut self, name: &str, value: f32) {
+        let Some((is_post, pedal_slot)) = map_supported_pedal_order_param(name) else {
+            return;
+        };
+
+        let order_values = if is_post {
+            &mut self.post_pedal_order_values
+        } else {
+            &mut self.pre_pedal_order_values
+        };
+        order_values[pedal_slot.index()] = value.clamp(0.0, 3.0);
+
+        let rebuilt_order = rebuild_supported_pedal_order(*order_values);
+        if is_post {
+            self.post_pedal_order = rebuilt_order;
+        } else {
+            self.pre_pedal_order = rebuilt_order;
+        }
+    }
+
+    fn process_supported_pedal_chain(&mut self, mut signal: f32, is_post: bool) -> f32 {
+        let pedal_order = if is_post {
+            self.post_pedal_order
+        } else {
+            self.pre_pedal_order
+        };
+
+        for pedal_slot in pedal_order {
+            signal = match (is_post, pedal_slot) {
+                (false, SupportedPedalSlot::Compressor) => self.pre_comp.process_sample(signal),
+                (false, SupportedPedalSlot::Overdrive) => self.pre_od.process_sample(signal),
+                (false, SupportedPedalSlot::Distortion) => self.pre_dist.process_sample(signal),
+                (false, SupportedPedalSlot::Fuzz) => self.pre_fuzz.process_sample(signal),
+                (true, SupportedPedalSlot::Compressor) => self.post_comp.process_sample(signal),
+                (true, SupportedPedalSlot::Overdrive) => self.post_od.process_sample(signal),
+                (true, SupportedPedalSlot::Distortion) => self.post_dist.process_sample(signal),
+                (true, SupportedPedalSlot::Fuzz) => self.post_fuzz.process_sample(signal),
+            };
+        }
+
+        signal
+    }
 }
 
 fn soft_limit_sample(input: f32, threshold: f32) -> f32 {
@@ -377,9 +453,34 @@ fn map_prefixed_pedal_param(name: &str) -> Option<&'static str> {
     }
 }
 
+fn map_supported_pedal_order_param(name: &str) -> Option<(bool, SupportedPedalSlot)> {
+    match name {
+        "preCompressorOrder" => Some((false, SupportedPedalSlot::Compressor)),
+        "preOverdriveOrder" => Some((false, SupportedPedalSlot::Overdrive)),
+        "preDistortionOrder" => Some((false, SupportedPedalSlot::Distortion)),
+        "preFuzzOrder" => Some((false, SupportedPedalSlot::Fuzz)),
+        "postCompressorOrder" => Some((true, SupportedPedalSlot::Compressor)),
+        "postOverdriveOrder" => Some((true, SupportedPedalSlot::Overdrive)),
+        "postDistortionOrder" => Some((true, SupportedPedalSlot::Distortion)),
+        "postFuzzOrder" => Some((true, SupportedPedalSlot::Fuzz)),
+        _ => None,
+    }
+}
+
+fn rebuild_supported_pedal_order(order_values: [f32; 4]) -> [SupportedPedalSlot; 4] {
+    let mut ordered = [
+        (SupportedPedalSlot::Compressor, order_values[SupportedPedalSlot::Compressor.index()], 0_usize),
+        (SupportedPedalSlot::Overdrive, order_values[SupportedPedalSlot::Overdrive.index()], 1_usize),
+        (SupportedPedalSlot::Distortion, order_values[SupportedPedalSlot::Distortion.index()], 2_usize),
+        (SupportedPedalSlot::Fuzz, order_values[SupportedPedalSlot::Fuzz.index()], 3_usize),
+    ];
+    ordered.sort_by(|left, right| left.1.total_cmp(&right.1).then(left.2.cmp(&right.2)));
+    ordered.map(|(slot, _, _)| slot)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::GrinderEngine;
+    use super::{rebuild_supported_pedal_order, GrinderEngine, SupportedPedalSlot};
 
     fn average_abs_output_for_channel(channel: u32, gain: f32) -> f32 {
         let mut engine = GrinderEngine::new(48_000.0);
@@ -502,6 +603,85 @@ mod tests {
         assert!(
             (driven_avg - dry_avg).abs() > 1.0e-3,
             "prefixed pedal params should audibly change output (dry={dry_avg}, driven={driven_avg})"
+        );
+    }
+
+    #[test]
+    fn supported_pre_pedal_order_changes_the_live_signal_path() {
+        let mut default_order_engine = GrinderEngine::new(48_000.0);
+        default_order_engine.set_param("channel", 1.0);
+        default_order_engine.set_param("gain", 6.0);
+        default_order_engine.set_param("master", 5.0);
+        default_order_engine.set_param("preCompressorEnabled", 1.0);
+        default_order_engine.set_param("preCompressorThreshold", -24.0);
+        default_order_engine.set_param("preCompressorRatio", 4.0);
+        default_order_engine.set_param("preCompressorAttack", 10.0);
+        default_order_engine.set_param("preCompressorRelease", 180.0);
+        default_order_engine.set_param("preOverdriveEnabled", 1.0);
+        default_order_engine.set_param("preOverdriveDrive", 3.0);
+        default_order_engine.set_param("preOverdriveTone", 5.0);
+        default_order_engine.set_param("preOverdriveLevel", 5.5);
+
+        let mut swapped_order_engine = GrinderEngine::new(48_000.0);
+        swapped_order_engine.set_param("channel", 1.0);
+        swapped_order_engine.set_param("gain", 6.0);
+        swapped_order_engine.set_param("master", 5.0);
+        swapped_order_engine.set_param("preCompressorEnabled", 1.0);
+        swapped_order_engine.set_param("preCompressorThreshold", -24.0);
+        swapped_order_engine.set_param("preCompressorRatio", 4.0);
+        swapped_order_engine.set_param("preCompressorAttack", 10.0);
+        swapped_order_engine.set_param("preCompressorRelease", 180.0);
+        swapped_order_engine.set_param("preOverdriveEnabled", 1.0);
+        swapped_order_engine.set_param("preOverdriveDrive", 3.0);
+        swapped_order_engine.set_param("preOverdriveTone", 5.0);
+        swapped_order_engine.set_param("preOverdriveLevel", 5.5);
+        swapped_order_engine.set_param("preCompressorOrder", 1.0);
+        swapped_order_engine.set_param("preOverdriveOrder", 0.0);
+
+        let total = 4096;
+        let mut default_left = vec![0.0_f32; total];
+        let mut default_right = vec![0.0_f32; total];
+        let mut swapped_left = vec![0.0_f32; total];
+        let mut swapped_right = vec![0.0_f32; total];
+
+        for n in 0..total {
+            let low = ((n as f32 * 2.0 * std::f32::consts::PI * 110.0) / 48_000.0).sin() * 0.08;
+            let high = ((n as f32 * 2.0 * std::f32::consts::PI * 1760.0) / 48_000.0).sin() * 0.03;
+            let sample = low + high;
+            default_left[n] = sample;
+            default_right[n] = sample;
+            swapped_left[n] = sample;
+            swapped_right[n] = sample;
+        }
+
+        default_order_engine.process_block(&mut default_left, &mut default_right);
+        swapped_order_engine.process_block(&mut swapped_left, &mut swapped_right);
+
+        let diff = default_left
+            .iter()
+            .zip(swapped_left.iter())
+            .map(|(a, b)| (a - b).abs())
+            .sum::<f32>()
+            / total as f32;
+
+        assert!(
+            diff > 1.0e-3,
+            "changing supported pre pedal order should change the live path, got diff {diff}"
+        );
+    }
+
+    #[test]
+    fn supported_pedal_order_rebuild_is_stable_for_equal_values() {
+        let order = rebuild_supported_pedal_order([0.0, 0.0, 2.0, 3.0]);
+
+        assert_eq!(
+            order,
+            [
+                SupportedPedalSlot::Compressor,
+                SupportedPedalSlot::Overdrive,
+                SupportedPedalSlot::Distortion,
+                SupportedPedalSlot::Fuzz,
+            ]
         );
     }
 }

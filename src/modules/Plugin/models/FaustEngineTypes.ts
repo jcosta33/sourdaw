@@ -4,7 +4,8 @@ export type FaustModule = {
     dspCode: string;
     paramDescriptors: FaustParamDescriptor[];
     compiled: boolean;
-    generator: import('@grame/faustwasm').FaustMonoDspGenerator | null;
+    isInstrument: boolean;
+    generator: import('@grame/faustwasm').FaustMonoDspGenerator | import('@grame/faustwasm').FaustPolyDspGenerator | null;
 };
 
 export type FaustParamDescriptor = {

@@ -19,6 +19,7 @@ import {
     type GrinderPowerTubeType,
     type GrinderRectifierType,
     type GrinderUiSection,
+    getGrinderSupportedChainOrder,
 } from '../../models/GrinderPatch';
 import {
     grinderStore,
@@ -28,6 +29,8 @@ import {
 } from '../../stores/grinderStore';
 import { grinderTelemetryStore, getGrinderTelemetry, type GrinderTelemetry } from '../../stores/grinderTelemetryStore';
 import { loadGrinderPatchWithAudio } from '../../useCases/grinderParamBridge/loadGrinderPatchWithAudio';
+import { moveGrinderPedalInChainWithAudio } from '../../useCases/grinderParamBridge/moveGrinderPedalInChainWithAudio';
+import { recallGrinderSnapshotWithAudio } from '../../useCases/grinderParamBridge/recallGrinderSnapshotWithAudio';
 import { setGrinderMicParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderMicParamWithAudio';
 import { setGrinderParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderParamWithAudio';
 import { setGrinderPedalParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderPedalParamWithAudio';
@@ -132,6 +135,29 @@ const NEURAL_LIBRARY = [
     },
 ] as const;
 
+function get_engine_mode_label(engine_mode: GrinderEngineMode): string {
+    return ENGINE_MODES.find((mode) => mode.id === engine_mode)?.label ?? 'Circuit';
+}
+
+function get_neural_placement_label(placement: GrinderPatch['neuralPlacement']): string {
+    return placement === 'amp-capture' ? 'Amp capture' : 'Rig capture';
+}
+
+function get_neural_path_status(patch: GrinderPatch): string {
+    if (patch.engineMode === 'circuit') {
+        return 'Circuit amp only. Neural capture is bypassed.';
+    }
+    if (patch.engineMode === 'capture') {
+        return patch.neuralPlacement === 'amp-capture'
+            ? 'Capture replaces the amp stage while the rest of the rig stays in line.'
+            : 'Capture stands in for the full rig path.';
+    }
+
+    return patch.neuralPlacement === 'amp-capture'
+        ? `Circuit amp and capture are blended at ${Math.round(patch.neuralMix * 100)}%.`
+        : 'Circuit amp feeds the rig chain while the capture provides the full rig voice.';
+}
+
 type SupportedPedalControl = {
     label: string;
     type: GrinderPedalType;
@@ -167,11 +193,11 @@ const DRIVE_CONTROLS: readonly SupportedPedalControl[] = [
     {
         label: 'Overdrive',
         type: 'overdrive',
-        defaults: { id: 'od1', type: 'overdrive', enabled: false, params: { drive: 4.5, tone: 5.5, level: 6.8 } },
+        defaults: { id: 'od1', type: 'overdrive', enabled: false, params: { drive: 2.8, tone: 5.2, level: 5.4 } },
         params: [
-            { key: 'drive', label: 'Drive', min: 0, max: 10, step: 0.1, defaultValue: 4.5 },
-            { key: 'tone', label: 'Tone', min: 0, max: 10, step: 0.1, defaultValue: 5.5 },
-            { key: 'level', label: 'Level', min: 0, max: 10, step: 0.1, defaultValue: 6.8 },
+            { key: 'drive', label: 'Drive', min: 0, max: 10, step: 0.1, defaultValue: 2.8 },
+            { key: 'tone', label: 'Tone', min: 0, max: 10, step: 0.1, defaultValue: 5.2 },
+            { key: 'level', label: 'Level', min: 0, max: 10, step: 0.1, defaultValue: 5.4 },
         ],
     },
     {
@@ -213,6 +239,10 @@ function formatValue(value: number, unit = ''): string {
         return `${value.toFixed(0)}%`;
     }
     return value.toFixed(1);
+}
+
+function get_drive_control_for_pedal_type(pedal_type: GrinderPedalType): SupportedPedalControl | undefined {
+    return DRIVE_CONTROLS.find((control) => control.type === pedal_type);
 }
 
 function toDbPercent(db: number): number {
@@ -647,18 +677,29 @@ function NeuralStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
             </div>
             <div className="grinder-window flex flex-col gap-3 p-3">
                 <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">
-                    Mode guide
+                    Signal path
                 </div>
                 <div className="grid gap-2">
-                    {ENGINE_MODES.map((mode) => (
-                        <div
-                            key={mode.id}
-                            className={`rounded-[16px] border px-3 py-2.5 ${patch.engineMode === mode.id ? 'border-[var(--color-accent-lavender)]/60 bg-[var(--color-accent-lavender)]/10' : 'border-white/8 bg-black/20'}`}
-                        >
-                            <div className="text-sm font-medium text-white/88">{mode.label}</div>
-                            <div className="text-xs text-white/45">{mode.description}</div>
+                    <div className="rounded-[16px] border border-white/8 bg-black/20 px-3 py-2.5">
+                        <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">Mode</div>
+                        <div className="mt-1 text-sm font-medium text-white/88">
+                            {get_engine_mode_label(patch.engineMode)}
                         </div>
-                    ))}
+                    </div>
+                    <div className="rounded-[16px] border border-white/8 bg-black/20 px-3 py-2.5">
+                        <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">Placement</div>
+                        <div className="mt-1 text-sm font-medium text-white/88">
+                            {get_neural_placement_label(patch.neuralPlacement)}
+                        </div>
+                    </div>
+                    <div className="rounded-[16px] border border-white/8 bg-black/20 px-3 py-2.5">
+                        <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">Status</div>
+                        <div className="mt-1 text-xs leading-5 text-white/60">{get_neural_path_status(patch)}</div>
+                    </div>
+                    <div className="rounded-[16px] border border-dashed border-[var(--color-accent-cyan)]/25 bg-[var(--color-accent-cyan)]/6 px-3 py-2.5 text-xs leading-5 text-white/62">
+                        Library entries label the active capture voice in this build. They do not swap a separate DSP
+                        asset yet.
+                    </div>
                 </div>
             </div>
         </div>
@@ -756,9 +797,11 @@ function LabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
 }
 
 function BrowserRail({
+    deviceId,
     patch,
     replacePatch,
 }: {
+    deviceId: string;
     patch: GrinderPatch;
     replacePatch: (next: GrinderPatch) => void;
 }): ReactElement {
@@ -805,6 +848,27 @@ function BrowserRail({
                         </DawPluginChip>
                     ))}
                 </div>
+                {patch.snapshots.length > 0 ? (
+                    <div className="rounded-[18px] border border-white/8 bg-black/20 p-3">
+                        <div className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-accent-cyan)]">
+                            Snapshots
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                            {patch.snapshots.map((snapshot, index) => (
+                                <DawPluginToggle
+                                    key={snapshot.id}
+                                    pressed={patch.activeSnapshot === index}
+                                    tone="cyan"
+                                    size="sm"
+                                    caps={false}
+                                    onClick={() => recallGrinderSnapshotWithAudio(deviceId, index)}
+                                >
+                                    {snapshot.name}
+                                </DawPluginToggle>
+                            ))}
+                        </div>
+                    </div>
+                ) : null}
                 <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
                     {filteredPresets.length > 0 ? (
                         filteredPresets.map((preset) => (
@@ -892,8 +956,89 @@ function SectionTabs({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
 }
 
 function DriveDeck({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }): ReactElement {
+    const chain_order = getGrinderSupportedChainOrder(patch.prePedals, { include_missing: false });
+
     return (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grinder-window flex flex-col gap-3 p-3 md:col-span-2 xl:col-span-4">
+                <div className="flex items-center justify-between gap-3">
+                    <div>
+                        <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--color-accent-cyan)]">
+                            Chain order
+                        </div>
+                        <div className="mt-1 text-sm text-white/56">
+                            Supported front-end pedals move in the live signal path.
+                        </div>
+                    </div>
+                    <DawPluginLed tone="amber">{chain_order.length > 0 ? 'Live' : 'Empty'}</DawPluginLed>
+                </div>
+                {chain_order.length > 0 ? (
+                    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                        {chain_order.map((pedal_type, index) => {
+                            const control = get_drive_control_for_pedal_type(pedal_type);
+                            if (!control) {
+                                return null;
+                            }
+
+                            const pedal = patch.prePedals.find((item) => item.type === pedal_type) ?? control.defaults;
+                            return (
+                                <div
+                                    key={`chain-${pedal_type}`}
+                                    className="rounded-[18px] border border-white/8 bg-black/20 p-3"
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <DawPluginToggle
+                                            pressed={pedal.enabled}
+                                            tone="amber"
+                                            size="sm"
+                                            caps={false}
+                                            className="min-w-0 flex-1 justify-start"
+                                            onClick={() =>
+                                                setGrinderPedalParamWithAudio(
+                                                    deviceId,
+                                                    false,
+                                                    pedal_type,
+                                                    'enabled',
+                                                    pedal.enabled ? 0 : 1,
+                                                    control.defaults
+                                                )
+                                            }
+                                        >
+                                            {`${index + 1} ${control.label}`}
+                                        </DawPluginToggle>
+                                        <DawPluginChip
+                                            tone="steel"
+                                            size="sm"
+                                            caps={false}
+                                            disabled={index === 0}
+                                            aria-label={`Move ${control.label} left`}
+                                            onClick={() => moveGrinderPedalInChainWithAudio(deviceId, false, pedal_type, 'left')}
+                                        >
+                                            Left
+                                        </DawPluginChip>
+                                        <DawPluginChip
+                                            tone="steel"
+                                            size="sm"
+                                            caps={false}
+                                            disabled={index === chain_order.length - 1}
+                                            aria-label={`Move ${control.label} right`}
+                                            onClick={() =>
+                                                moveGrinderPedalInChainWithAudio(deviceId, false, pedal_type, 'right')
+                                            }
+                                        >
+                                            Right
+                                        </DawPluginChip>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <div className="rounded-[18px] border border-dashed border-white/10 bg-black/18 px-4 py-4 text-[13px] text-white/46">
+                        Front-end chain order appears here once a supported pedal exists in the pre-amp lane.
+                    </div>
+                )}
+            </div>
             {DRIVE_CONTROLS.map((control) => {
                 const pedal = patch.prePedals.find((item) => item.type === control.type) ?? control.defaults;
                 return (
@@ -1170,6 +1315,16 @@ function ControlDeck({
                     step={0.01}
                     defaultValue={0.2}
                 />
+                <GrinderKnob
+                    deviceId={deviceId}
+                    value={patch.roomAmount}
+                    param="roomAmount"
+                    label="Room"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    defaultValue={0.1}
+                />
                 <div className="grinder-window flex min-w-[210px] flex-col gap-3 px-3 py-3">
                     <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
                         Cab toggles
@@ -1325,6 +1480,22 @@ function ControlDeck({
     if (patch.uiSection === 'lab') {
         return (
             <div className="flex flex-wrap gap-3">
+                <div className="grinder-window flex min-w-[220px] flex-col gap-3 px-3 py-3">
+                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
+                        Gate
+                    </div>
+                    <DawPluginToggle
+                        pressed={patch.gateEnabled}
+                        tone="cyan"
+                        size="sm"
+                        onClick={() => setGrinderParamWithAudio(deviceId, 'gateEnabled', patch.gateEnabled ? 0 : 1)}
+                    >
+                        {patch.gateEnabled ? 'Gate On' : 'Gate Off'}
+                    </DawPluginToggle>
+                    <div className="text-xs text-white/44">
+                        Enable the gate before dialing threshold, attack, or release.
+                    </div>
+                </div>
                 <GrinderKnob
                     deviceId={deviceId}
                     value={patch.gateThreshold}
@@ -1603,7 +1774,7 @@ export const GrinderPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     return (
         <div className="grinder-faceplate flex h-full min-h-0 flex-col overflow-hidden p-3">
             <div className="flex min-h-0 flex-1 gap-3 overflow-hidden">
-                <BrowserRail patch={patch} replacePatch={replacePatch} />
+                <BrowserRail deviceId={deviceId} patch={patch} replacePatch={replacePatch} />
                 <section className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
                     <SectionTabs deviceId={deviceId} patch={patch} />
                     <div className="min-h-[280px] shrink-0 overflow-hidden">

@@ -88,4 +88,11 @@ export const projectCommands: CommandEntry[] = [
         category: 'Project',
         action: { type: 'exportDawProject' },
     },
+    {
+        id: 'import-dawproject',
+        label: 'Import DAWproject',
+        description: 'Import a .dawproject file exported from Bitwig/Ableton/Studio One/Reaper/PreSonus',
+        category: 'Project',
+        action: { type: 'importDawProject' },
+    },
 ];

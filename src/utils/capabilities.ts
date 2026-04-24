@@ -35,29 +35,6 @@ export function isCrossOriginIsolated(): boolean {
 }
 
 /**
- * Allowlist of LLM model IDs that are known to support the
- * `ChatCompletionRequest.tools` API.
- *
- * Empty for WebLLM (MLC) models: Qwen3 variants do not expose a tool-call API
- * and route via the XML/JSON prompt shim in `generateWebLlmToolCalls`.
- * Cloud models (Anthropic/OpenAI) handle tools via their own SDKs and never
- * consult this flag.
- *
- * Add a model ID here only after verifying end-to-end that the native
- * `tools` payload produces usable completions — do NOT guess.
- */
-const MODELS_WITH_TOOLS_API: readonly string[] = [];
-
-/**
- * Whether the given model ID supports the native `tools` array on
- * `ChatCompletionRequest`. Used to gate any WebLLM call site that might
- * otherwise attach `tools:` and hit `UnsupportedModelIdError`.
- */
-export function supportsToolsApi(modelId: string): boolean {
-    return MODELS_WITH_TOOLS_API.includes(modelId);
-}
-
-/**
  * Bundle of runtime capabilities. Kept as a plain value so tests can diff it
  * and the boot banner can render it without calling the probes individually.
  */

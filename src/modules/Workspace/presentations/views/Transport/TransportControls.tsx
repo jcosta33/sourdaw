@@ -98,6 +98,7 @@ export const TransportControls = ({
                         size="icon"
                         aria-label={isPlaying ? 'Pause' : 'Play'}
                         onClick={togglePlayback}
+                        data-onboarding="transport-play"
                     >
                         {isPlaying ? (
                             <Pause className="size-4" aria-hidden="true" />

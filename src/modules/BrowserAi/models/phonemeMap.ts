@@ -1,12 +1,8 @@
 /**
- * Default English phoneme → token ID map for standard DiffSinger English voicebanks.
+ * English phoneme → token ID map for standard DiffSinger English voicebanks.
  *
  * Follows the CMU ARPAbet subset used by Opencpop-style English voicebanks:
  * SP (silence) = 0, AP (breath) = 1, then CMU ARPAbet phonemes.
- *
- * Prefer loading the voicebank's own phonemes.txt via parsePhonemesTxt() when
- * available — use this map as a fallback before voicebank metadata loading is
- * fully implemented.
  */
 export const DEFAULT_EN_PHONEME_MAP: Record<string, number> = {
     SP: 0,

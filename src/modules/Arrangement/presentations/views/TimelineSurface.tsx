@@ -1,7 +1,6 @@
 import { type ReactElement, useRef, useEffect } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
-import { automationStore } from '#/modules/Automation/stores';
 import { PresenceOverlay } from '#/modules/Collaboration/presentations/views';
 import { transportStore, playheadPositionRef, tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
 import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
@@ -18,17 +17,14 @@ import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { initTimelineRenderer } from '../../useCases/initTimelineRenderer';
 import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
-import { createWebGpuAutomationRenderer, type AutomationRenderer } from '../renderers/createWebGpuAutomationRenderer';
 
 import { ClipContextMenu } from './ClipContextMenu';
 import { TimelineEmptyMenu } from './TimelineEmptyMenu';
 
 export const TimelineSurface = (): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const autoCanvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const rendererRef = useRef<TimelineRenderer | null>(null);
-    const autoRendererRef = useRef<AutomationRenderer | null>(null);
 
     const workspaceState = useStore(workspaceStore, defaultWorkspaceState);
     const marqueeSelection = workspaceState.marqueeSelection;
@@ -96,22 +92,19 @@ export const TimelineSurface = (): ReactElement => {
         let top = 0;
         let bottom = 0;
 
-        for (let index = 0; index <= bottomTrackIdx; index++) {
-            const track = currentTrackStore.tracks[index];
+        for (let i = 0; i <= bottomTrackIdx; i++) {
+            const track = currentTrackStore.tracks[i];
             if (!track) {
                 continue;
             }
 
-            if (index === topTrackIdx) {
+            if (i === topTrackIdx) {
                 top = trackYOffset;
             }
-            if (index === bottomTrackIdx) {
-                bottom = trackYOffset + TRACK_HEIGHT_VALUES.normal; // Note: Assumes normal height for now, but model.tracks has actual height
+            if (i === bottomTrackIdx) {
+                bottom = trackYOffset + TRACK_HEIGHT_VALUES.normal;
             }
 
-            // To get accurate track heights, we ideally use the render model, but since we're in React land,
-            // assuming normal height is a fallback. A better way is using TRACK_HEIGHT_VALUES[workspaceState.channelStripWidth or similar]
-            // But for now let's just use the default height as a simple approximation if we can't get it.
             trackYOffset += TRACK_HEIGHT_VALUES.normal;
         }
 
@@ -230,26 +223,26 @@ export const TimelineSurface = (): ReactElement => {
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return undefined;
+            return;
         }
 
         let lastScale = 1;
 
-        const onGestureStart = (event: Event) => {
-            event.preventDefault();
+        const onGestureStart = (e: Event) => {
+            e.preventDefault();
             lastScale = 1;
         };
 
-        const onGestureChange = (event: Event) => {
-            event.preventDefault();
-            const ge = event as GestureEvent;
+        const onGestureChange = (e: Event) => {
+            e.preventDefault();
+            const ge = e as GestureEvent;
             const delta = ge.scale - lastScale;
             lastScale = ge.scale;
             zoomTimeline(delta * 2);
         };
 
-        const onGestureEnd = (event: Event) => {
-            event.preventDefault();
+        const onGestureEnd = (e: Event) => {
+            e.preventDefault();
         };
 
         canvas.addEventListener('gesturestart', onGestureStart, { passive: false });
@@ -267,7 +260,7 @@ export const TimelineSurface = (): ReactElement => {
         const canvas = canvasRef.current;
         const container = containerRef.current;
         if (!canvas || !container) {
-            return undefined;
+            return;
         }
 
         let disposed = false;
@@ -281,7 +274,6 @@ export const TimelineSurface = (): ReactElement => {
         const unsubTransport = transportStore.subscribe(markDirty);
         const unsubView = timelineViewStore.subscribe(markDirty);
         const unsubTracks = trackStore.subscribe(markDirty);
-        const unsubAutomation = automationStore.subscribe(markDirty);
         const unsubWorkspace = workspaceStore.subscribe(markDirty);
         const unsubMarkers = markerStore.subscribe(markDirty);
         const unsubTempoMap = tempoMapStore.subscribe(markDirty);
@@ -290,25 +282,16 @@ export const TimelineSurface = (): ReactElement => {
 
         const initRenderer = async () => {
             const renderer = await initTimelineRenderer(canvas);
-            const autoRenderer = autoCanvasRef.current
-                ? await createWebGpuAutomationRenderer(autoCanvasRef.current)
-                : null;
 
             if (disposed) {
                 renderer.dispose();
-                autoRenderer?.dispose();
                 return;
             }
 
             rendererRef.current = renderer;
-            autoRendererRef.current = autoRenderer;
 
             const rect = container.getBoundingClientRect();
             renderer.resize(rect.width, rect.height);
-            if (autoCanvasRef.current) {
-                autoCanvasRef.current.width = rect.width;
-                autoCanvasRef.current.height = rect.height;
-            }
 
             const renderLoop = () => {
                 if (disposed) {
@@ -345,47 +328,13 @@ export const TimelineSurface = (): ReactElement => {
 
                     const model = buildTimelineRenderModel();
                     renderer.render(model);
-
-                    if (autoRendererRef.current) {
-                        const view = timelineViewStore.value;
-                        const autoState = automationStore.value;
-                        if (view && autoState) {
-                            const lanes = autoState.lanes
-                                .filter((length) => length.visible && !length.collapsed)
-                                .map((length) => {
-                                    let y = -view.scrollY;
-                                    for (const time of model.tracks) {
-                                        if (time.id === length.trackId) {
-                                            break;
-                                        }
-                                        y += time.height;
-                                    }
-                                    return {
-                                        points: length.points,
-                                        ghostPoints: length.ghostPoints,
-                                        y,
-                                        height: 64, // Default height approximation
-                                        color: length.color || '#a78bfa',
-                                        minValue: length.minValue,
-                                        maxValue: length.maxValue,
-                                    };
-                                });
-                            autoRendererRef.current.render({
-                                lanes,
-                                viewportStartBeat: view.scrollX / view.pixelsPerBeat,
-                                pixelsPerBeat: view.pixelsPerBeat,
-                                width: canvas.width,
-                                height: canvas.height,
-                            });
-                        }
-                    }
                 }
             };
 
             animationScheduler.register(`timeline-${renderId}`, renderLoop);
         };
 
-        void initRenderer();
+        initRenderer();
 
         const resizeObserver = new ResizeObserver((entries) => {
             for (const entry of entries) {
@@ -413,7 +362,6 @@ export const TimelineSurface = (): ReactElement => {
             unsubTransport();
             unsubView();
             unsubTracks();
-            unsubAutomation();
             unsubWorkspace();
             unsubMarkers();
             unsubTempoMap();
@@ -426,16 +374,13 @@ export const TimelineSurface = (): ReactElement => {
         <div
             ref={containerRef}
             className="relative flex-1 overflow-hidden"
-            onDragOver={(event) => {
-                event.preventDefault();
-                event.dataTransfer.dropEffect = 'copy';
+            onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'copy';
                 setIsDragOver(true);
             }}
-            onDragLeave={(event) => {
-                if (
-                    event.currentTarget === event.target ||
-                    !event.currentTarget.contains(event.relatedTarget as Node)
-                ) {
+            onDragLeave={(e) => {
+                if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget as Node)) {
                     setIsDragOver(false);
                 }
             }}
@@ -462,9 +407,9 @@ export const TimelineSurface = (): ReactElement => {
                 aria-label="Timeline editor surface"
                 aria-description="Arrangement timeline showing tracks, clips, and playhead position. Scroll to pan, Ctrl+scroll to zoom. Click to set playhead. Click clips to select. Double-click clip to edit."
                 tabIndex={0}
-                onMouseDown={(event) => {
+                onMouseDown={(e) => {
                     closeContextMenu();
-                    handleMouseDown(event);
+                    handleMouseDown(e);
                 }}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
@@ -476,7 +421,7 @@ export const TimelineSurface = (): ReactElement => {
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerCancel}
             />
-            <canvas ref={autoCanvasRef} className="absolute inset-0 pointer-events-none" aria-hidden="true" />
+
             <PresenceOverlay
                 beatToX={(beat) => {
                     const view = timelineViewStore.value;
@@ -503,6 +448,7 @@ export const TimelineSurface = (): ReactElement => {
                 }}
                 trackHeight={TRACK_HEIGHT_VALUES.normal}
             />
+
             {rubberBand ? (
                 <div
                     className="absolute border border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/10 pointer-events-none z-10"
@@ -514,12 +460,14 @@ export const TimelineSurface = (): ReactElement => {
                     }}
                 />
             ) : null}
+
             {marqueeStyle ? (
                 <div
                     className="absolute border border-primary/60 bg-primary/10 pointer-events-none z-10"
                     style={marqueeStyle}
                 />
             ) : null}
+
             {contextMenu?.kind === 'clip' ? (
                 <ClipContextMenu
                     x={contextMenu.x}

@@ -28,73 +28,14 @@ import {
     isBranchMergedInto,
     deleteBranch,
     listBranchesByPrefix,
+    worktreeSync,
 } from './agents/git.ts';
 import { createOrUpdateTaskFile } from './agents/template.ts';
 import { resolveBackend, launch, checkBackend } from './agents/terminal.ts';
-import {
-    colors,
-    c,
-    red,
-    green,
-    yellow,
-    blue,
-    cyan,
-    dim,
-    bold,
-    success,
-    info,
-    warn as printWarn,
-    error as printError,
-    box,
-} from './agents/colors.ts';
+import { colors, c, red, green, yellow, blue, cyan, dim, bold, success, info, warn as printWarn, error as printError, box } from './agents/colors.ts';
+import { parseArgs, findMarkdownFiles, fzfSelect, promptInput } from './agents/cli.ts';
 
 // ─── Argument parser ─────────────────────────────────────────────────────────
-
-// Flags that never consume the next argument
-const BOOLEAN_FLAGS = new Set(['no-launch', 'json', 'duplicate', 'force', 'dirty-only', 'sparse']);
-
-/**
- * Minimal arg parser — no external deps.
- * Handles --flag, --flag value, and --flag=value forms.
- * Returns { flags: Map<string, string|true>, positional: string[] }
- */
-function parseArgs(argv) {
-    const flags = new Map();
-    const positional = [];
-    let i = 0;
-    while (i < argv.length) {
-        const arg = argv[i];
-        if (arg === '--') {
-            // POSIX end-of-flags sentinel — everything after is positional
-            for (let j = i + 1; j < argv.length; j++) positional.push(argv[j]);
-            break;
-        }
-        if (arg.startsWith('--')) {
-            // Handle --key=value
-            const eqIdx = arg.indexOf('=');
-            if (eqIdx !== -1) {
-                const key = arg.slice(2, eqIdx);
-                const val = arg.slice(eqIdx + 1);
-                flags.set(key, val);
-                i++;
-                continue;
-            }
-            const key = arg.slice(2);
-            const isBoolean = BOOLEAN_FLAGS.has(key);
-            const next = argv[i + 1];
-            if (isBoolean || !next || next.startsWith('--')) {
-                flags.set(key, true);
-            } else {
-                flags.set(key, next);
-                i++;
-            }
-        } else {
-            positional.push(arg);
-        }
-        i++;
-    }
-    return { flags, positional };
-}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -170,67 +111,6 @@ function loadTaskTypes(repoRoot) {
         console.warn(`Warning: could not load task-types.json: ${e.message}`);
         return [];
     }
-}
-
-// ─── Interactive helpers ──────────────────────────────────────────────────────
-
-/**
- * Recursively find all .md files under a directory.
- * Returns paths relative to the given root.
- */
-function findMarkdownFiles(dir) {
-    const results = [];
-    function walk(absDir, relDir) {
-        let entries;
-        try {
-            entries = readdirSync(absDir, { withFileTypes: true });
-        } catch (e) {
-            console.warn(`Warning: could not read directory ${absDir}: ${e.message}`);
-            return;
-        }
-        for (const entry of entries) {
-            const relPath = relDir ? `${relDir}/${entry.name}` : entry.name;
-            if (entry.isDirectory()) {
-                walk(join(absDir, entry.name), relPath);
-            } else if (entry.isFile() && entry.name.endsWith('.md')) {
-                results.push(relPath);
-            }
-        }
-    }
-    walk(dir, '');
-    return results;
-}
-
-/**
- * Run fzf over a list of items. Returns the selected item or null if cancelled.
- */
-function fzfSelect(items, { prompt = '> ', preview = '' } = {}) {
-    if (!items.length) return null;
-    const args = ['--prompt', prompt, '--height', '60%', '--border', '--ansi'];
-    if (preview) args.push('--preview', preview, '--preview-window', 'right:55%:wrap');
-    const result = spawnSync('fzf', args, {
-        input: items.join('\n'),
-        encoding: 'utf8',
-        stdio: ['pipe', 'pipe', 'inherit'],
-    });
-    if (result.status !== 0 || !result.stdout.trim()) return null;
-    return result.stdout.trim();
-}
-
-/**
- * Prompt for text input via bash read. Returns the entered value, or
- * defaultValue if the user just pressed enter. Callers should include the
- * default in the prompt text (e.g. "Title [my-default]: ") since macOS bash
- * 3.2 does not support `read -i` for pre-fill.
- */
-function promptInput(question, defaultValue = '') {
-    const result = spawnSync('bash', ['-c', `read -rp $'${question}' val && printf '%s' "$val"`], {
-        stdio: ['inherit', 'pipe', 'inherit'],
-        encoding: 'utf8',
-    });
-    if (result.status !== 0) return defaultValue;
-    const val = result.stdout.trim();
-    return val !== '' ? val : defaultValue;
 }
 
 // ─── Subcommand: new ─────────────────────────────────────────────────────────
@@ -411,6 +291,7 @@ async function cmdNew(argv) {
         createOrUpdateTaskFile(taskFileAbs, templateDir, {
             title,
             slug,
+            parent: flags.get('parent') || '',
             agent: agentName,
             branch: names.branch,
             baseBranch,
@@ -419,6 +300,7 @@ async function cmdNew(argv) {
             specFile,
             createdAt: new Date().toISOString(),
             type: taskType,
+            commands: config.commands,
         });
     }
 
@@ -503,6 +385,7 @@ async function cmdOpen(argv) {
             taskFile: names.taskFile,
             specFile: '',
             createdAt: new Date().toISOString(),
+            commands: config.commands,
         });
         if (!jsonOutput) console.log(`Created missing task file: ${names.taskFile}`);
     }
@@ -581,16 +464,46 @@ async function cmdList(argv) {
 
     const repoRoot = getRepoRoot();
     const sandboxes = listAgentWorktrees(repoRoot);
+    const globalState = readState(repoRoot);
 
-    const enriched = sandboxes.map((s) => ({
-        ...s,
-        gitStatus: getStatusSummary(s.path),
-    }));
+    const enriched = sandboxes.map((s) => {
+        const state = globalState[s.slug] || {};
+        let processStatus = dim('-');
+        let rawStatus = 'unknown';
+        
+        if (state.status === 'running') {
+            if (state.pid) {
+                const alive = isProcessRunning(state.pid);
+                if (alive) {
+                    processStatus = green('[RUNNING]');
+                    rawStatus = 'running';
+                } else {
+                    processStatus = red('[CRASHED]');
+                    rawStatus = 'crashed';
+                }
+            } else {
+                processStatus = green('[LAUNCHED]');
+                rawStatus = 'launched';
+            }
+        } else if (state.status) {
+            processStatus = dim(`[${state.status.toUpperCase()}]`);
+            rawStatus = state.status;
+        }
+
+        return {
+            ...s,
+            gitStatus: getStatusSummary(s.path),
+            processStatus,
+            rawStatus,
+            pid: state.pid || null,
+            agent: state.agent || 'unknown',
+        };
+    });
 
     const finalRows = dirtyOnly ? enriched.filter((s) => s.gitStatus.startsWith('dirty')) : enriched;
 
     if (jsonOutput) {
-        printJson(finalRows);
+        printJson(finalRows.map(r => ({ slug: r.slug, branch: r.branch, worktree: r.path, gitStatus: r.gitStatus, status: r.rawStatus, pid: r.pid, agent: r.agent })));
         return;
     }
 
@@ -599,8 +512,8 @@ async function cmdList(argv) {
         return;
     }
 
-    const rows = finalRows.map((s) => [s.slug, s.branch, s.path, s.gitStatus]);
-    console.log(formatTable(rows, ['SLUG', 'BRANCH', 'WORKTREE', 'STATUS']));
+    const rows = finalRows.map((s) => [s.slug, s.branch, s.processStatus, s.gitStatus]);
+    console.log(formatTable(rows, ['SLUG', 'BRANCH', 'STATUS', 'GIT STATUS']));
 }
 
 // ─── Subcommand: show ────────────────────────────────────────────────────────
@@ -652,19 +565,86 @@ async function cmdTask(argv) {
     const worktreeAbs = findWorktreePath(slug, repoRoot);
     if (!worktreeAbs) die(`No active worktree for "${slug}". Is it checked out?`);
 
-    if (flags.has('append')) {
-        const note = flags.get('append');
-        const taskFileAbs = join(worktreeAbs, names.taskFile);
-        if (existsSync(taskFileAbs)) {
-            const content = readFileSync(taskFileAbs, 'utf8');
-            const appended = content.trimEnd() + `\n\n<!-- note: ${new Date().toISOString()} -->\n${note}\n`;
-            writeFileSync(taskFileAbs, appended, 'utf8');
-            console.log(`Appended note to: ${names.taskFile}`);
-        } else {
-            warn(`Task file not found at: ${taskFileAbs}`);
-        }
+    const taskFileAbs = join(worktreeAbs, names.taskFile);
+    if (!existsSync(taskFileAbs)) {
+        die(`Task file not found at: ${taskFileAbs}`);
+    }
+
+    let note = flags.get('append');
+    
+    // Interactive prompt if no append flag provided
+    if (!note) {
+        console.log(`\n${cyan('Interactive Steering')}: Append a note or instructions for ${bold(slug)}`);
+        console.log(dim('(Leave empty and press Enter to cancel)\n'));
+        note = await promptInput('feedback> ', '');
+    }
+
+    if (note && note.trim() !== '') {
+        const content = readFileSync(taskFileAbs, 'utf8');
+        const appended = content.trimEnd() + `\n\n## Human Feedback (${new Date().toISOString()})\n${note}\n`;
+        writeFileSync(taskFileAbs, appended, 'utf8');
+        success(`Appended feedback to: ${names.taskFile}`);
     } else {
-        console.log('No changes made. Use --append.');
+        console.log('No feedback provided. Cancelled.');
+    }
+}
+
+import { writeMemory, readMemory } from './agents/memory.ts';
+import { generateContextMap } from './agents/context.ts';
+import { renameSymbol } from './agents/ast.ts';
+
+// ─── Phase 1: Context & Memory Commands ──────────────────────────────────────
+
+async function cmdContext(argv) {
+    const { positional } = parseArgs(argv);
+    const dir = positional[0] || '';
+    const repoRoot = getRepoRoot();
+    const map = generateContextMap(repoRoot, dir);
+    console.log(JSON.stringify(map, null, 2));
+}
+
+async function cmdMemory(argv) {
+    const { flags, positional } = parseArgs(argv);
+    const action = positional[0];
+    const repoRoot = getRepoRoot();
+
+    if (action === 'get') {
+        const topic = positional[1];
+        if (!topic) die('Usage: agents memory get <topic>');
+        const val = readMemory(repoRoot, topic);
+        if (val) console.log(val);
+        else console.log(`No memory found for topic: ${topic}`);
+    } else if (action === 'set') {
+        const topic = positional[1];
+        const val = flags.get('val');
+        if (!topic || !val) die('Usage: agents memory set <topic> --val "content"');
+        const file = writeMemory(repoRoot, topic, val);
+        success(`Saved memory to ${file}`);
+    } else if (action === 'list') {
+        const topics = readMemory(repoRoot);
+        if (topics.length) topics.forEach(t => console.log(`- ${t}`));
+        else console.log('No memories saved.');
+    } else {
+        die('Usage: agents memory <get|set|list>');
+    }
+}
+
+async function cmdAst(argv) {
+    const { flags, positional } = parseArgs(argv);
+    const action = positional[0];
+    const repoRoot = getRepoRoot();
+
+    if (action === 'rename') {
+        const file = flags.get('file');
+        const oldName = flags.get('old');
+        const newName = flags.get('new');
+        if (!file || !oldName || !newName) die('Usage: agents ast rename --file path/to/file.ts --old name --new newName');
+        
+        const res = renameSymbol(repoRoot, file, oldName, newName);
+        if (res.success) success(`Renamed ${oldName} -> ${newName} in ${file}`);
+        else die(`Rename failed: ${res.error}`);
+    } else {
+        die('Usage: agents ast <rename>');
     }
 }
 
@@ -689,6 +669,7 @@ async function cmdRemove(argv) {
         }
         try {
             worktreeRemove(worktreeAbs, force, repoRoot);
+            removeState(repoRoot, slug);
             console.log(`Removed worktree: ${worktreeAbs}`);
         } catch (e) {
             if (force) {
@@ -759,6 +740,7 @@ async function cmdPrune(argv) {
             }
             try {
                 worktreeRemove(active.path, force, repoRoot);
+                removeState(repoRoot, slug);
                 console.log(`    Removed worktree: ${active.path}`);
             } catch (e) {
                 warn(`Could not remove worktree for "${slug}": ${e.message}`);
@@ -1019,7 +1001,62 @@ Core subcommands:
   open    <slug>            Reopen an existing sandbox
   list                      List all active sandboxes
   show    <slug>            Show detailed info for a sandbox
-  task    <slug>            Append a note to the task file
+  task    <slug>            Interactive prompt to append human feedback to the task file
+  validate                  Run configured linters/typechecks and truncate output for LLMs
+  test                      Run vitest wrapper with smart log truncation
+  test-radius <file>        Calculate blast radius of a file and test impacted specs
+  pr      <slug>            Auto-commit changes and generate PR based on task file
+  epic    <file>            Decompose a markdown list into child tasks
+  triage  <file>            Convert unstructured bug report into a strict spec
+  arch                      Lint and enforce cross-module boundary invariants
+  review  <slug>            Spawn an adversarial peer-review agent session
+  chat    <slug> [msg]      Send or read an IPC message with another agent
+  repro                     Verify that tests were modified before source code
+  screenshot [url]          Use Playwright to capture a screenshot for LLM visual validation
+  compress <file>           Strip function bodies from a TS file to save context tokens
+  graph    <file>           Extract and map the import dependencies of a module
+  references <symbol>       Fast codebase scan to find usages of a symbol or class
+  docs     <file>           Extract and format JSDoc blocks from a module
+  complexity <file>         Calculate cyclomatic heuristic to enforce maintainability
+  audit-sec  <file>         Scan for common dangerous patterns and secrets
+  dead-code  <file>         Find exported symbols that are never imported
+  format     <file>         Wrapper for Prettier/ESLint fixes with truncated output
+  logs       <slug>         View the execution output logs of a running agent
+  health                    Run pre-flight environment checks for the Swarm
+  epic    <file>            Decompose a markdown list into child tasks
+  triage  <file>            Convert unstructured bug report into a strict spec
+  arch                      Lint and enforce cross-module boundary invariants
+  review  <slug>            Spawn an adversarial peer-review agent session
+  chat    <slug> [msg]      Send or read an IPC message with another agent
+  repro                     Verify that tests were modified before source code
+  refactor <dir> <goal>     Break a massive refactor into 5-file tasks
+  deps                      Find outdated packages and generate upgrade tasks
+  migrate <file> <lang>     Spawn a translator and verifier agent pair
+  fuzz    <file> <func>     Generate unexpected test permutations for a function
+  chaos   <start|stop>      Inject latency and mock network failures locally
+  visual  <baseline|compare> Screenshot-based visual regression comparison
+  knowledge <query>         Semantic search across past tasks, PRs, and specs
+  telemetry                 Dashboard for tracking Swarm resource/token usage
+  profile <cmd>             Analyze Node process and assign perf agent
+  daemon                    Background watcher that runs test-radius on human saves
+  heal                      Self-healing CI hotfix generator for broken branches
+  find    <type> <target>   Semantic search (class, interface, extends, implements)
+  mock    <file> <Name>     Instantly generate TS mock factory for an interface
+  ui                        Launch real-time persistent Swarm Terminal UI
+  compress <file>           Strip function bodies from a TS file to save context tokens
+  graph    <file>           Extract and map the import dependencies of a module
+  references <symbol>       Fast codebase scan to find usages of a symbol or class
+  docs     <file>           Extract and format JSDoc blocks from a module
+  complexity <file>         Calculate cyclomatic heuristic to enforce maintainability
+  audit-sec  <file>         Scan for common dangerous patterns and secrets
+  dead-code  <file>         Find exported symbols that are never imported
+  format     <file>         Wrapper for Prettier/ESLint fixes with truncated output
+  logs       <slug>         View the execution output logs of a running agent
+  health                    Run pre-flight environment checks for the Swarm
+  context [dir]             Generate semantic map of exported symbols for RAG
+  memory  <get|set|list>    Global memory bank for agent-to-agent invariant tracking
+  ast     rename            Structural rename utility for safely modifying symbols
+  sync    <slug>            Rebase a sandbox onto its base branch
   remove  <slug>            Remove a sandbox and its worktree
   prune                     Remove merged/orphaned sandboxes
   doctor                    Run preflight checks
@@ -1079,6 +1116,225 @@ const commands = {
     list: cmdList,
     show: cmdShow,
     task: cmdTask,
+    validate: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/validate.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    test: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/test.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    'test-radius': async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/test-radius.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    pr: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/pr.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    screenshot: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/screenshot.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    ui: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/ui.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    compress: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/compress.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    graph: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/graph.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    references: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/references.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    docs: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/docs.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    complexity: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/complexity.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    'audit-sec': async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/audit-sec.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    'dead-code': async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/dead-code.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    format: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/format.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    logs: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/logs.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    health: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/health.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    epic: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/epic.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    triage: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/triage.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    arch: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/arch.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    review: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/review.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    chat: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/chat.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    repro: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/repro.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    find: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/find.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    mock: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/mock.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    daemon: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/daemon.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    heal: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/heal.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    refactor: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/refactor.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    deps: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/deps.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    migrate: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/migrate.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    fuzz: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/fuzz.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    chaos: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/chaos.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    visual: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/visual.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    knowledge: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/knowledge.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    telemetry: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/telemetry.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    profile: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/profile.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    release: async () => {
+        const { spawnSync } = await import('child_process');
+        const scriptPath = new URL('./agents/release.ts', import.meta.url).pathname;
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        process.exit(res.status || 0);
+    },
+    context: cmdContext,
+    memory: cmdMemory,
+    ast: cmdAst,
     remove: cmdRemove,
     prune: cmdPrune,
     doctor: cmdDoctor,

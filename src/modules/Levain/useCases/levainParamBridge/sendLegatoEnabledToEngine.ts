@@ -1,5 +1,5 @@
 import { levainBridge } from './levainBridge';
 
-export function sendLegatoEnabledToEngine(enabled: boolean): void {
-    levainBridge().sendLegatoEnabledToEngine(enabled);
-}
+export const sendLegatoEnabledToEngine = (deviceId: string, enabled: boolean): void => {
+    levainBridge().sendLegatoEnabledToEngine(deviceId, enabled);
+};

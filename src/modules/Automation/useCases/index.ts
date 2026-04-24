@@ -21,7 +21,14 @@ export { beginDrawSession, paintDrawPoint, endDrawSession } from './automationDr
 export { selectPointsInRange } from './automationSelection/selectPointsInRange';
 
 export { applyModulation } from './modulation/applyModulation';
+export { applyModulationToEngine } from './modulation/applyModulationToEngine';
 export { getModulationForParam } from './modulation/getModulationForParam';
+export { addModulator } from './modulation/addModulator';
+export { removeModulator } from './modulation/removeModulator';
+export { updateModulator } from './modulation/updateModulator';
+export { addMapping } from './modulation/addMapping';
+export { removeMapping } from './modulation/removeMapping';
+export { updateMapping } from './modulation/updateMapping';
 
 export { getAutomationLanes } from './getAutomationLanes';
 export { getAutomationStoreState } from './getAutomationStoreState';

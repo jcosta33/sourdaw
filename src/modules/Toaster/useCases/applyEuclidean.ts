@@ -6,8 +6,8 @@ import { toasterStore } from '../stores/toasterStore';
 
 import { euclidean } from './euclidean';
 
-export function applyEuclideanToTrack(padIndex: number, hits: number, steps: number, rotation: number = 0): void {
-    const state = toasterStore.value;
+export function applyEuclideanToTrack(deviceId: string, padIndex: number, hits: number, steps: number, rotation: number = 0): void {
+    const state = toasterStore.value?.[deviceId];
     if (!state) {
         return;
     }
@@ -28,9 +28,7 @@ export function applyEuclideanToTrack(padIndex: number, hits: number, steps: num
         active: index < rhythm.length ? rhythm[index]! : false,
     }));
 
-    const newTracks = pattern.tracks.map((time) => (time.padIndex === padIndex ? { ...time, steps: newSteps } : time));
-    const newPatterns = state.kit.patterns.map((param) =>
-        param.id === pattern.id ? { ...param, tracks: newTracks } : param
-    );
-    toasterStore.set({ ...state, kit: { ...state.kit, patterns: newPatterns } });
+    const newTracks = pattern.tracks.map((t) => (t.padIndex === padIndex ? { ...t, steps: newSteps } : t));
+    const newPatterns = state.kit.patterns.map((p) => (p.id === pattern.id ? { ...p, tracks: newTracks } : p));
+    toasterStore.set({ ...toasterStore.value, [deviceId]: { ...state, kit: { ...state.kit, patterns: newPatterns } } });
 }

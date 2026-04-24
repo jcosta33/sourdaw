@@ -1,8 +1,8 @@
 import { type DrumEngineType } from '../../models/ToasterKit';
 import { toasterStore } from '../../stores/toasterStore';
 
-export function setSoundLock(padIndex: number, stepIndex: number, engineType: DrumEngineType | null): void {
-    const state = toasterStore.value;
+export function setSoundLock(deviceId: string, padIndex: number, stepIndex: number, engineType: DrumEngineType | null): void {
+    const state = toasterStore.value?.[deviceId];
     if (!state) {
         return;
     }
@@ -28,9 +28,7 @@ export function setSoundLock(padIndex: number, stepIndex: number, engineType: Dr
 
     newSteps[stepIndex] = step;
 
-    const newTracks = pattern.tracks.map((time) => (time.padIndex === padIndex ? { ...time, steps: newSteps } : time));
-    const newPatterns = state.kit.patterns.map((param) =>
-        param.id === pattern.id ? { ...param, tracks: newTracks } : param
-    );
-    toasterStore.set({ ...state, kit: { ...state.kit, patterns: newPatterns } });
+    const newTracks = pattern.tracks.map((t) => (t.padIndex === padIndex ? { ...t, steps: newSteps } : t));
+    const newPatterns = state.kit.patterns.map((p) => (p.id === pattern.id ? { ...p, tracks: newTracks } : p));
+    toasterStore.set({ ...toasterStore.value, [deviceId]: { ...state, kit: { ...state.kit, patterns: newPatterns } } });
 }

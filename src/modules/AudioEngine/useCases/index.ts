@@ -1,3 +1,14 @@
+export { detectTransients, type TransientHit } from './elasticAudio/detectTransients';
+export { detectTransientsForClip, type DetectTransientsResult } from './elasticAudio/detectTransientsForClip';
+export { quantizeTransients, type QuantizeTransientsResult } from './elasticAudio/quantizeTransients';
+export { openElasticEditor } from './elasticAudio/openElasticEditor';
+export { closeElasticEditor } from './elasticAudio/closeElasticEditor';
+export { setElasticTool } from './elasticAudio/setElasticTool';
+export { setElasticSensitivity } from './elasticAudio/setElasticSensitivity';
+export { addManualMarker } from './elasticAudio/addManualMarker';
+export { toggleMarkerLock } from './elasticAudio/toggleMarkerLock';
+export { removeMarker as removeElasticMarker } from './elasticAudio/removeMarker';
+
 export { computeMomentaryLUFS } from './advancedMetering/lufs/computeMomentaryLUFS';
 export { ShortTermLUFS } from './advancedMetering/lufs/ShortTermLUFS';
 export { IntegratedLUFS } from './advancedMetering/lufs/IntegratedLUFS';
@@ -38,6 +49,8 @@ export { removeDeviceFromStrip } from './deviceControls/removeDeviceFromStrip';
 export { updateDeviceParam } from './deviceControls/updateDeviceParam';
 export { updateDevicePatch } from './deviceControls/updateDevicePatch';
 export { scheduleDeviceParam } from './deviceControls/scheduleDeviceParam';
+export { scheduleDeviceKeyOn } from './deviceControls/scheduleDeviceKeyOn';
+export { scheduleDeviceKeyOff } from './deviceControls/scheduleDeviceKeyOff';
 export { updateDeviceBypass } from './deviceControls/updateDeviceBypass';
 export { registerTuningTable } from './deviceControls/tuningControls';
 export {
@@ -85,11 +98,15 @@ export { denoiseAudio } from './nativeAiBridge/denoiseAudio';
 
 export type { OfflineRenderOptions } from './offlineRender/types';
 export { cancelExport, isExportActive } from './offlineRender/exportCancellation';
+export { getAutoDetectedTailSeconds } from './offlineRender/getAutoDetectedTailSeconds';
 export { renderOffline } from './renderOffline';
 export { exportStems } from './exportStems';
 export { audioBufferToWav } from './audioBufferToWav';
 export { audioBufferToMp3 } from './audioBufferToMp3';
 export { audioBufferToFlac } from './audioBufferToFlac';
+
+export { scheduleAdjustmentLayers } from './adjustmentLayer/scheduleAdjustmentLayers';
+export { getSharedAdjustmentLayerApplier } from './adjustmentLayer/sharedAdjustmentLayerApplier';
 
 export { scheduleClick } from './scheduling/scheduleClick';
 export { stopAllScheduled } from './scheduling/stopAllScheduled';

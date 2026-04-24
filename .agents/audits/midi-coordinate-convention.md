@@ -2,7 +2,7 @@
 name: midi-coordinate-convention
 description: MidiNote.startBeat uses clip-relative in some paths and timeline-absolute in others — causes empty clips when startBeat > 0.
 type: audit
-status: open
+status: closed
 last_verified: '2026-04-20'
 ---
 
