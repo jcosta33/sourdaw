@@ -2,6 +2,7 @@ import { type GrinderPatch, type GrinderPedal, migrateGrinderPatch } from '../..
 
 import {
     AMP_MODELS,
+    CAB_TYPES,
     ENGINE_MODES,
     type GrinderNeuralAudioPatch,
     INPUT_MODES,
@@ -12,6 +13,7 @@ import {
     ROUTING_MODES,
     TONE_STACK_TYPES,
     type DeviceRef,
+    getCabIrSlot,
     getPedalOrderAudioEntries,
     getNeuralModelSlot,
 } from './helpers';
@@ -59,6 +61,7 @@ const AUDIO_SYNC_KEYS: readonly (keyof GrinderPatch)[] = [
     'transformerDrive',
     'transformerHysteresis',
     'transformerLfSaturation',
+    'cabType',
     'cabEnabled',
     'cabResonanceFreq',
     'cabResonanceQ',
@@ -108,6 +111,8 @@ function toAudioValue<K extends keyof GrinderPatch>(key: K, value: GrinderPatch[
             return getOptionIndex(POWER_TUBE_TYPES, value as string);
         case 'rectifierType':
             return getOptionIndex(RECTIFIER_TYPES, value as string);
+        case 'cabType':
+            return getOptionIndex(CAB_TYPES, value as string);
         case 'neuralPlacement':
             return getOptionIndex(NEURAL_PLACEMENTS, value as string);
         case 'neuralTier':
@@ -145,6 +150,11 @@ function sendPatchToDevice(
 
 export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): void {
     const patch = migrateGrinderPatch(input.patch);
+    const cab_ir_slot = getCabIrSlot(patch.cabIrId);
+
+    if (cab_ir_slot !== null) {
+        sendNumericParamToDevice(input, 'cabIrSlot', cab_ir_slot);
+    }
 
     for (const key of AUDIO_SYNC_KEYS) {
         const value = toAudioValue(key, patch[key]);

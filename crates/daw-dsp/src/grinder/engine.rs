@@ -21,6 +21,42 @@ enum SupportedPedalSlot {
     Fuzz,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CabinetMode {
+    Ir,
+    Parametric,
+    Both,
+}
+
+impl CabinetMode {
+    fn from_index(index: u32) -> Self {
+        match index {
+            0 => Self::Ir,
+            1 => Self::Parametric,
+            _ => Self::Both,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RoutingMode {
+    Serial,
+    Parallel,
+    WetDryWet,
+    DualAmp,
+}
+
+impl RoutingMode {
+    fn from_index(index: u32) -> Self {
+        match index {
+            1 => Self::Parallel,
+            2 => Self::WetDryWet,
+            3 => Self::DualAmp,
+            _ => Self::Serial,
+        }
+    }
+}
+
 impl SupportedPedalSlot {
     fn index(self) -> usize {
         match self {
@@ -47,9 +83,13 @@ pub struct GrinderEngine {
     preamp: Preamp,
     tone_stack: ToneStack,
     power_amp: PowerAmp,
+    dual_power_amp: PowerAmp,
     transformer: Transformer,
+    dual_transformer: Transformer,
     cabinet: CabinetConvolver,
+    dual_cabinet: CabinetConvolver,
     speaker: SpeakerModel,
+    dual_speaker: SpeakerModel,
     neural: NeuralCapture,
 
     // Pedals
@@ -74,6 +114,9 @@ pub struct GrinderEngine {
     limiter_threshold: f32,
     limiter_enabled: bool,
     bypassed: bool,
+    cabinet_mode: CabinetMode,
+    routing_mode: RoutingMode,
+    cab_ir_slot: u32,
 
     // Metering
     meter_decay_coeff: f32,
@@ -87,18 +130,24 @@ impl GrinderEngine {
     pub fn new(sample_rate: f32) -> Self {
         let mut cab = CabinetConvolver::new(sample_rate);
         cab.load_builtin(0); // Default 4x12 cabinet
+        let mut dual_cab = CabinetConvolver::new(sample_rate);
+        dual_cab.load_builtin(1);
 
         let meter_decay_coeff = (-1.0 / (sample_rate * 0.150)).exp();
 
-        Self {
+        let mut engine = Self {
             input_cond: InputConditioner::new(sample_rate),
             gate: NoiseGate::new(sample_rate),
             preamp: Preamp::new(sample_rate),
             tone_stack: ToneStack::new(sample_rate),
             power_amp: PowerAmp::new(sample_rate),
+            dual_power_amp: PowerAmp::new(sample_rate),
             transformer: Transformer::new(sample_rate),
+            dual_transformer: Transformer::new(sample_rate),
             cabinet: cab,
+            dual_cabinet: dual_cab,
             speaker: SpeakerModel::new(sample_rate),
+            dual_speaker: SpeakerModel::new(sample_rate),
             neural: NeuralCapture::new(sample_rate),
             pre_od: OverdrivePedal::new(sample_rate),
             pre_dist: DistortionPedal::new(sample_rate),
@@ -118,12 +167,17 @@ impl GrinderEngine {
             limiter_threshold: db_to_linear(-0.3),
             limiter_enabled: true,
             bypassed: false,
+            cabinet_mode: CabinetMode::Both,
+            routing_mode: RoutingMode::Serial,
+            cab_ir_slot: 0,
             meter_decay_coeff,
             input_peak: 0.0,
             preamp_peak: 0.0,
             power_amp_peak: 0.0,
             output_peak: 0.0,
-        }
+        };
+        engine.refresh_dual_branch_variation();
+        engine
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
@@ -149,26 +203,49 @@ impl GrinderEngine {
 
             // Power amp
             "master" | "powerTubeType" | "rectifierType" | "sagAmount" | "sagRecovery"
-            | "negFeedback" | "powerAmpBias" => self.power_amp.set_param(name, value),
+            | "negFeedback" | "powerAmpBias" => {
+                self.power_amp.set_param(name, value);
+                self.dual_power_amp.set_param(name, value);
+                self.refresh_dual_branch_variation();
+            }
 
             // Presence/Resonance (power amp negative feedback EQ)
             "presence" | "resonance" => {
                 // These map to power amp NFB characteristics
                 self.power_amp.set_param(name, value);
+                self.dual_power_amp.set_param(name, value);
             }
 
             // Transformer
             "transformerDrive" | "transformerHysteresis" | "transformerLfSaturation" => {
-                self.transformer.set_param(name, value)
+                self.transformer.set_param(name, value);
+                self.dual_transformer.set_param(name, value);
             }
 
             // Cabinet
-            "cabEnabled" => self.cabinet.set_enabled(value > 0.5),
+            "cabType" => self.cabinet_mode = CabinetMode::from_index(value.round().max(0.0) as u32),
+            "routingMode" => self.routing_mode = RoutingMode::from_index(value.round().max(0.0) as u32),
+            "cabIrSlot" => {
+                self.cab_ir_slot = value.round().max(0.0) as u32;
+                self.cabinet.load_builtin(self.cab_ir_slot);
+                self.refresh_dual_branch_variation();
+            }
+            "cabEnabled" => {
+                let enabled = value > 0.5;
+                self.cabinet.set_enabled(enabled);
+                self.dual_cabinet.set_enabled(enabled);
+            }
             "mic1Enabled" | "mic1Gain" | "mic1PositionX" | "mic1PositionY" | "mic1Distance"
             | "mic2Enabled" | "mic2Gain" | "mic2PositionX" | "mic2PositionY" | "mic2Distance"
-            | "micBlend" | "roomAmount" => self.cabinet.set_param(name, value),
+            | "micBlend" | "roomAmount" => {
+                self.cabinet.set_param(name, value);
+                self.dual_cabinet.set_param(name, value);
+            }
             "cabResonanceFreq" | "cabResonanceQ" | "cabDamping" | "cabOpenBack" | "coneBreakup"
-            | "backEmf" => self.speaker.set_param(name, value),
+            | "backEmf" => {
+                self.speaker.set_param(name, value);
+                self.dual_speaker.set_param(name, value);
+            }
 
             // Neural
             "engineMode" | "neuralEnabled" | "neuralPlacement" | "neuralMix" | "neuralTier"
@@ -292,19 +369,21 @@ impl GrinderEngine {
                 (EngineMode::Capture, CapturePlacement::Rig)
             );
             if should_run_circuit_rig {
-                let back_emf = self.speaker.back_emf();
-                signal = self.power_amp.process_sample(signal + back_emf * 0.1);
-                signal = self.transformer.process_sample(signal);
+                let primary_back_emf = self.speaker.back_emf();
+                let dual_back_emf = self.dual_speaker.back_emf();
+                let primary_power = self.power_amp.process_sample(signal + primary_back_emf * 0.1);
+                let dual_power = self.dual_power_amp.process_sample(signal * 0.94 + dual_back_emf * 0.08);
+                let primary_transformer = self.transformer.process_sample(primary_power);
+                let dual_transformer = self.dual_transformer.process_sample(dual_power);
 
-                let pa_peak = signal.abs();
+                let pa_peak = primary_transformer.abs().max(dual_transformer.abs());
                 if pa_peak > self.power_amp_peak {
                     self.power_amp_peak = pa_peak;
                 } else {
                     self.power_amp_peak *= self.meter_decay_coeff;
                 }
 
-                signal = self.cabinet.process_sample(signal);
-                signal = self.speaker.process_sample(signal);
+                signal = self.process_routed_cab_path(primary_transformer, dual_transformer);
 
                 // Post-amp pedals
                 signal = self.process_supported_pedal_chain(signal, true);
@@ -422,6 +501,85 @@ impl GrinderEngine {
         }
 
         signal
+    }
+
+    fn refresh_dual_branch_variation(&mut self) {
+        let alternate_power_tube = match self.cab_ir_slot % 3 {
+            0 => 1.0,
+            1 => 2.0,
+            _ => 0.0,
+        };
+        self.dual_power_amp
+            .set_param("powerTubeType", alternate_power_tube);
+        self.dual_cabinet.load_builtin((self.cab_ir_slot + 1) % 3);
+    }
+
+    fn process_routed_cab_path(&mut self, primary_transformer: f32, dual_transformer: f32) -> f32 {
+        match self.routing_mode {
+            RoutingMode::Serial => self.process_selected_cab_path(primary_transformer, false),
+            RoutingMode::Parallel => match self.cabinet_mode {
+                CabinetMode::Ir => {
+                    let ir = self.process_ir_branch(primary_transformer, false);
+                    ir * 0.72 + primary_transformer * 0.28
+                }
+                CabinetMode::Parametric => {
+                    let parametric = self.process_parametric_branch(primary_transformer, false);
+                    parametric * 0.72 + primary_transformer * 0.28
+                }
+                CabinetMode::Both => {
+                    let ir = self.process_ir_branch(primary_transformer, false);
+                    let parametric = self.process_parametric_branch(primary_transformer, false);
+                    ir * 0.52 + parametric * 0.48
+                }
+            },
+            RoutingMode::WetDryWet => match self.cabinet_mode {
+                CabinetMode::Ir => {
+                    let ir = self.process_ir_branch(primary_transformer, false);
+                    primary_transformer * 0.22 + ir * 0.78
+                }
+                CabinetMode::Parametric => {
+                    let parametric = self.process_parametric_branch(primary_transformer, false);
+                    primary_transformer * 0.22 + parametric * 0.78
+                }
+                CabinetMode::Both => {
+                    let ir = self.process_ir_branch(primary_transformer, false);
+                    let parametric = self.process_parametric_branch(primary_transformer, false);
+                    primary_transformer * 0.18 + ir * 0.41 + parametric * 0.41
+                }
+            },
+            RoutingMode::DualAmp => {
+                let primary = self.process_selected_cab_path(primary_transformer, false);
+                let secondary = self.process_selected_cab_path(dual_transformer, true);
+                primary * 0.58 + secondary * 0.42
+            }
+        }
+    }
+
+    fn process_selected_cab_path(&mut self, input: f32, use_dual: bool) -> f32 {
+        match self.cabinet_mode {
+            CabinetMode::Ir => self.process_ir_branch(input, use_dual),
+            CabinetMode::Parametric => self.process_parametric_branch(input, use_dual),
+            CabinetMode::Both => {
+                let ir = self.process_ir_branch(input, use_dual);
+                self.process_parametric_branch(ir, use_dual)
+            }
+        }
+    }
+
+    fn process_ir_branch(&mut self, input: f32, use_dual: bool) -> f32 {
+        if use_dual {
+            self.dual_cabinet.process_sample(input)
+        } else {
+            self.cabinet.process_sample(input)
+        }
+    }
+
+    fn process_parametric_branch(&mut self, input: f32, use_dual: bool) -> f32 {
+        if use_dual {
+            self.dual_speaker.process_sample(input)
+        } else {
+            self.speaker.process_sample(input)
+        }
     }
 }
 
@@ -682,6 +840,94 @@ mod tests {
                 SupportedPedalSlot::Distortion,
                 SupportedPedalSlot::Fuzz,
             ]
+        );
+    }
+
+    fn average_abs_output_for_cab_config(configure: impl FnOnce(&mut GrinderEngine)) -> f32 {
+        let mut engine = GrinderEngine::new(48_000.0);
+        engine.set_param("channel", 1.0);
+        engine.set_param("gain", 6.0);
+        engine.set_param("master", 5.0);
+        configure(&mut engine);
+
+        let total = 4096;
+        let mut left = vec![0.0_f32; total];
+        let mut right = vec![0.0_f32; total];
+
+        for n in 0..total {
+            let low = ((n as f32 * 2.0 * std::f32::consts::PI * 140.0) / 48_000.0).sin() * 0.09;
+            let high = ((n as f32 * 2.0 * std::f32::consts::PI * 2600.0) / 48_000.0).sin() * 0.04;
+            let sample = low + high;
+            left[n] = sample;
+            right[n] = sample;
+        }
+
+        engine.process_block(&mut left, &mut right);
+
+        left.iter().map(|sample| sample.abs()).sum::<f32>() / total as f32
+    }
+
+    #[test]
+    fn cab_ir_slot_changes_the_live_signal_path() {
+        let four_by_twelve = average_abs_output_for_cab_config(|engine| {
+            engine.set_param("cabType", 2.0);
+            engine.set_param("cabIrSlot", 0.0);
+        });
+        let two_by_twelve = average_abs_output_for_cab_config(|engine| {
+            engine.set_param("cabType", 2.0);
+            engine.set_param("cabIrSlot", 1.0);
+        });
+
+        assert!(
+            (four_by_twelve - two_by_twelve).abs() > 1.0e-3,
+            "cab IR slot should audibly change output (4x12={four_by_twelve}, 2x12={two_by_twelve})"
+        );
+    }
+
+    #[test]
+    fn cab_type_changes_the_live_signal_path() {
+        let ir_only = average_abs_output_for_cab_config(|engine| {
+            engine.set_param("cabType", 0.0);
+        });
+        let parametric_only = average_abs_output_for_cab_config(|engine| {
+            engine.set_param("cabType", 1.0);
+        });
+        let both = average_abs_output_for_cab_config(|engine| {
+            engine.set_param("cabType", 2.0);
+        });
+
+        assert!(
+            (ir_only - parametric_only).abs() > 1.0e-3,
+            "IR-only and parametric-only cab modes should differ (ir={ir_only}, parametric={parametric_only})"
+        );
+        assert!(
+            (both - parametric_only).abs() > 1.0e-3,
+            "combined cab mode should differ from parametric-only (both={both}, parametric={parametric_only})"
+        );
+    }
+
+    #[test]
+    fn routing_mode_changes_the_live_signal_path() {
+        let serial = average_abs_output_for_cab_config(|engine| {
+            engine.set_param("routingMode", 0.0);
+            engine.set_param("cabType", 2.0);
+        });
+        let parallel = average_abs_output_for_cab_config(|engine| {
+            engine.set_param("routingMode", 1.0);
+            engine.set_param("cabType", 2.0);
+        });
+        let wet_dry_wet = average_abs_output_for_cab_config(|engine| {
+            engine.set_param("routingMode", 2.0);
+            engine.set_param("cabType", 2.0);
+        });
+
+        assert!(
+            (serial - parallel).abs() > 1.0e-3,
+            "parallel routing should audibly differ from serial (serial={serial}, parallel={parallel})"
+        );
+        assert!(
+            (serial - wet_dry_wet).abs() > 1.0e-3,
+            "wet-dry-wet routing should audibly differ from serial (serial={serial}, wet_dry_wet={wet_dry_wet})"
         );
     }
 }

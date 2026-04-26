@@ -3,6 +3,7 @@ import { type updateDeviceParam, type updateDevicePatch } from '#/modules/AudioE
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
 import {
+    GRINDER_CAB_LIBRARY,
     GRINDER_NEURAL_LIBRARY,
     type GrinderNeuralProfile,
     SUPPORTED_GRINDER_CHAIN_PEDAL_TYPES,
@@ -91,12 +92,18 @@ export const INPUT_MODES = ['instrument', 'line', 'reamp'] as const;
 export const TONE_STACK_TYPES = ['fender', 'marshall', 'vox'] as const;
 export const POWER_TUBE_TYPES = ['6l6', 'el34', 'el84'] as const;
 export const RECTIFIER_TYPES = ['tube', 'solid-state', 'variac'] as const;
+export const CAB_TYPES = ['ir', 'parametric', 'both'] as const;
 export const NEURAL_PLACEMENTS = ['amp-capture', 'rig-capture'] as const;
 export const NEURAL_TIERS = ['standard', 'lite', 'nano', 'recurrent'] as const;
 export const ROUTING_MODES = ['serial', 'parallel', 'wet-dry-wet', 'dual-amp'] as const;
 
 export function getNeuralModelSlot(neural_model_id: string): number | null {
     const slot = GRINDER_NEURAL_LIBRARY.findIndex((model) => model.id === neural_model_id);
+    return slot >= 0 ? slot : null;
+}
+
+export function getCabIrSlot(cab_ir_id: string): number | null {
+    const slot = GRINDER_CAB_LIBRARY.findIndex((cabinet) => cabinet.id === cab_ir_id);
     return slot >= 0 ? slot : null;
 }
 

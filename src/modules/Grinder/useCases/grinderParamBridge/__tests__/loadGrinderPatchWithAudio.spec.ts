@@ -163,4 +163,32 @@ describe('loadGrinderPatchWithAudio', () => {
             })
         );
     });
+
+    it('should sync cabinet mode, cabinet voice, and routing preset selections', () => {
+        const deviceId = 'device-1';
+        deps.getAllTracks.mockReturnValue([
+            {
+                id: 'track-1',
+                devices: [{ id: deviceId, type: 'grinder' }],
+            },
+        ]);
+
+        const patch = {
+            ...DEFAULT_PATCH,
+            uiSection: 'cab' as const,
+            cabType: 'parametric' as const,
+            cabIrId: '2x12-open',
+            routingMode: 'parallel' as const,
+        };
+        const action = loadGrinderPatchWithAudio(deps as never);
+
+        action(deviceId, patch);
+
+        expect(deps.updateDeviceParam).toHaveBeenCalledWith('track-1', deviceId, 'cabType', 1);
+        expect(deps.persistDeviceParam).toHaveBeenCalledWith(deviceId, 'cabType', 1);
+        expect(deps.updateDeviceParam).toHaveBeenCalledWith('track-1', deviceId, 'routingMode', 1);
+        expect(deps.persistDeviceParam).toHaveBeenCalledWith(deviceId, 'routingMode', 1);
+        expect(deps.updateDeviceParam).toHaveBeenCalledWith('track-1', deviceId, 'cabIrSlot', 1);
+        expect(deps.persistDeviceParam).toHaveBeenCalledWith(deviceId, 'cabIrSlot', 1);
+    });
 });

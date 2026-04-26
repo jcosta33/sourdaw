@@ -11,8 +11,10 @@ import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
 import { useStore } from '#/infra/store/useStore';
 
 import {
+    GRINDER_CAB_LIBRARY,
     GRINDER_NEURAL_LIBRARY,
     type GrinderAmpModel,
+    type GrinderCabType,
     type GrinderEngineMode,
     type GrinderImportedNeuralModel,
     type GrinderPatch,
@@ -119,6 +121,22 @@ const AMP_MODELS: ReadonlyArray<{
 
 const POWER_TUBES: readonly GrinderPowerTubeType[] = ['6l6', 'el34', 'el84'];
 const RECTIFIERS: readonly GrinderRectifierType[] = ['tube', 'solid-state', 'variac'];
+const CAB_MODES: ReadonlyArray<{ id: GrinderCabType; label: string; description: string }> = [
+    { id: 'ir', label: 'IR', description: 'Cabinet IR only' },
+    { id: 'parametric', label: 'Parametric', description: 'Speaker model only' },
+    { id: 'both', label: 'Both', description: 'IR and speaker shaping' },
+];
+const ROUTING_PRESETS: ReadonlyArray<{
+    id: GrinderPatch['routingMode'];
+    label: string;
+    description: string;
+}> = [
+    { id: 'serial', label: 'Serial', description: 'Single straight cab lane.' },
+    { id: 'parallel', label: 'Parallel', description: 'Blend the selected cab lane with a parallel contrast lane.' },
+    { id: 'wet-dry-wet', label: 'Wet/Dry/Wet', description: 'Keep a dry core under the cabinet lanes.' },
+    { id: 'dual-amp', label: 'Dual Amp', description: 'Run a contrasting second derived amp lane.' },
+];
+
 function get_engine_mode_label(engine_mode: GrinderEngineMode): string {
     return ENGINE_MODES.find((mode) => mode.id === engine_mode)?.label ?? 'Circuit';
 }
@@ -140,6 +158,18 @@ function get_neural_path_status(patch: GrinderPatch): string {
     return patch.neuralPlacement === 'amp-capture'
         ? `Circuit amp and capture are blended at ${Math.round(patch.neuralMix * 100)}%.`
         : 'Circuit amp feeds the rig chain while the capture provides the full rig voice.';
+}
+
+function get_cab_voice_label(cab_ir_id: string): string {
+    return GRINDER_CAB_LIBRARY.find((cabinet) => cabinet.id === cab_ir_id)?.label ?? '4x12 Tight';
+}
+
+function get_cab_mode_label(cab_type: GrinderCabType): string {
+    return CAB_MODES.find((mode) => mode.id === cab_type)?.label ?? 'Both';
+}
+
+function get_routing_preset_label(routing_mode: GrinderPatch['routingMode']): string {
+    return ROUTING_PRESETS.find((mode) => mode.id === routing_mode)?.label ?? 'Serial';
 }
 
 type SupportedPedalControl = {
@@ -600,6 +630,9 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                 <div className="rounded-[20px] border border-white/8 bg-black/30 p-3">
                     <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">Readout</div>
                     <div className="mt-2 space-y-1.5 font-mono text-[12px] text-white/70">
+                        <div>voice {get_cab_voice_label(patch.cabIrId)}</div>
+                        <div>mode {get_cab_mode_label(patch.cabType)}</div>
+                        <div>route {get_routing_preset_label(patch.routingMode)}</div>
                         <div>mic-x {patch.mic1.positionX.toFixed(2)}</div>
                         <div>mic-y {patch.mic1.positionY.toFixed(2)}</div>
                         <div>damp {patch.cabDamping.toFixed(2)}</div>
@@ -1386,6 +1419,66 @@ function ControlDeck({
                         >
                             {patch.cabOpenBack ? 'Open Back' : 'Closed Back'}
                         </DawPluginToggle>
+                    </div>
+                </div>
+                <div className="grinder-window flex min-w-[280px] flex-col gap-3 px-3 py-3">
+                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
+                        Cab voice
+                    </div>
+                    <div className="grid gap-2">
+                        {GRINDER_CAB_LIBRARY.map((cabinet) => (
+                            <DawPluginChip
+                                key={cabinet.id}
+                                active={patch.cabIrId === cabinet.id}
+                                tone="cyan"
+                                size="sm"
+                                shape="soft"
+                                className="justify-start py-2 text-left text-[11px]"
+                                onClick={() => replacePatch({ ...patch, cabIrId: cabinet.id })}
+                            >
+                                {cabinet.label}
+                            </DawPluginChip>
+                        ))}
+                    </div>
+                </div>
+                <div className="grinder-window flex min-w-[260px] flex-col gap-3 px-3 py-3">
+                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
+                        Cab mode
+                    </div>
+                    <div className="grid gap-2">
+                        {CAB_MODES.map((mode) => (
+                            <DawPluginChip
+                                key={mode.id}
+                                active={patch.cabType === mode.id}
+                                tone="amber"
+                                size="sm"
+                                shape="soft"
+                                className="justify-start py-2 text-left text-[11px]"
+                                onClick={() => replacePatch({ ...patch, cabType: mode.id })}
+                            >
+                                {mode.label}
+                            </DawPluginChip>
+                        ))}
+                    </div>
+                </div>
+                <div className="grinder-window flex min-w-[280px] flex-col gap-3 px-3 py-3">
+                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-peach)]">
+                        Routing preset
+                    </div>
+                    <div className="grid gap-2">
+                        {ROUTING_PRESETS.map((preset) => (
+                            <DawPluginChip
+                                key={preset.id}
+                                active={patch.routingMode === preset.id}
+                                tone="peach"
+                                size="sm"
+                                shape="soft"
+                                className="justify-start py-2 text-left text-[11px]"
+                                onClick={() => replacePatch({ ...patch, routingMode: preset.id })}
+                            >
+                                {preset.label}
+                            </DawPluginChip>
+                        ))}
                     </div>
                 </div>
             </div>

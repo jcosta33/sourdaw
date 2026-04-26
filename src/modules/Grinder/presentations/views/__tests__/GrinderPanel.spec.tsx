@@ -217,6 +217,29 @@ describe('GrinderPanel', () => {
         expect(screen.getByText('Room')).toBeInTheDocument();
     });
 
+    it('should expose cabinet voice, cabinet mode, and routing preset controls in the cab section', () => {
+        grinderStore.set({
+            [device_id]: {
+                patch: {
+                    ...DEFAULT_PATCH,
+                    uiSection: 'cab',
+                    cabType: 'parametric',
+                    cabIrId: '2x12-open',
+                    routingMode: 'parallel',
+                },
+            },
+        });
+
+        render(<GrinderPanel deviceId={device_id} />);
+
+        expect(screen.getByText('Cab voice')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '2x12 Open' })).toBeInTheDocument();
+        expect(screen.getByText('Cab mode')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Parametric' })).toBeInTheDocument();
+        expect(screen.getByText('Routing preset')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Parallel' })).toBeInTheDocument();
+    });
+
     it('should show snapshot recall controls when the patch contains stored snapshots', () => {
         grinderStore.set({
             [device_id]: {

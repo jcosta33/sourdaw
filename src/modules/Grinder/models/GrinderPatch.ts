@@ -58,6 +58,30 @@ export type GrinderImportedNeuralModel = GrinderNeuralLibraryEntry & {
     profile: GrinderNeuralProfile;
 };
 
+export type GrinderCabLibraryEntry = {
+    id: string;
+    label: string;
+    description: string;
+};
+
+export const GRINDER_CAB_LIBRARY: readonly GrinderCabLibraryEntry[] = [
+    {
+        id: '4x12-tight',
+        label: '4x12 Tight',
+        description: 'Closed-back stack with a tight low end and a focused upper mid push.',
+    },
+    {
+        id: '2x12-open',
+        label: '2x12 Open',
+        description: 'Open-back cabinet with a wider midrange bloom and more air around the note.',
+    },
+    {
+        id: '1x12-combo',
+        label: '1x12 Combo',
+        description: 'Compact combo voice with a balanced center and softer edge detail.',
+    },
+] as const;
+
 export const GRINDER_NEURAL_LIBRARY: readonly GrinderNeuralLibraryEntry[] = [
     {
         id: 'factory-amp-a',
@@ -303,7 +327,7 @@ export const DEFAULT_PATCH: GrinderPatch = {
     transformerLfSaturation: 0.3,
 
     cabType: 'both',
-    cabIrId: '',
+    cabIrId: '4x12-tight',
     cabEnabled: true,
 
     cabResonanceFreq: 80,
@@ -416,6 +440,8 @@ export function migrateGrinderPatch(patch: Partial<GrinderPatch> | GrinderPatch)
     const neuralModelSource =
         patch.neuralModelSource ??
         (neuralModelProfile ? 'imported' : DEFAULT_PATCH.neuralModelSource);
+    const cabIrId =
+        patch.cabIrId && patch.cabIrId.length > 0 ? patch.cabIrId : DEFAULT_PATCH.cabIrId;
 
     return {
         ...DEFAULT_PATCH,
@@ -430,6 +456,7 @@ export function migrateGrinderPatch(patch: Partial<GrinderPatch> | GrinderPatch)
             cloneSnapshot(snapshot, index)
         ),
         neuralEnabled,
+        cabIrId,
         neuralModelName: patch.neuralModelName ?? patch.neuralModelId ?? DEFAULT_PATCH.neuralModelName,
         neuralModelFamily: patch.neuralModelFamily ?? DEFAULT_PATCH.neuralModelFamily,
         neuralModelSource,
