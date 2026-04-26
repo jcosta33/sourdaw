@@ -1,3 +1,4 @@
+import { type Track } from '#/modules/Arrangement/models/Track';
 import { trackStore } from '#/modules/Arrangement/stores';
 import {
     scheduleNote,
@@ -15,7 +16,8 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
 
     const track = trackStore.value?.tracks.find((t) => t.id === trackId);
     const drumDevice = track?.devices.find(
-        (d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit' || d.type.startsWith('builtin-drum-machine')
+        (data) =>
+            data.type === 'builtin-drum-kit' || data.type === 'drum-kit' || data.type.startsWith('builtin-drum-machine')
     );
 
     if (drumDevice) {
@@ -27,9 +29,9 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         return () => {};
     }
 
-    const fermenterDevice = track?.devices.find((d) => d.type === 'fermenter');
+    const fermenterDevice = track?.devices.find((data) => data.type === 'fermenter');
     if (fermenterDevice) {
-        const dn = strip.deviceNodes.find((d) => d.deviceId === fermenterDevice.id || d.type === 'fermenter');
+        const dn = strip.deviceNodes.find((data) => data.deviceId === fermenterDevice.id || data.type === 'fermenter');
         if (dn?.fermenterControls?.ready) {
             dn.fermenterControls.noteOn(pitch, velocity);
             return () => {
@@ -40,31 +42,33 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
     }
 
     let isToasterChild = false;
-    let toasterParentTrack;
+    let toasterParentTrack: Track | undefined;
     if (track?.parentId) {
-        toasterParentTrack = trackStore.value?.tracks.find((t) => t.id === track.parentId);
-        if (toasterParentTrack?.devices.some((d) => d.type === 'toaster')) {
+        toasterParentTrack = trackStore.value?.tracks.find((candidate) => candidate.id === track.parentId);
+        if (toasterParentTrack?.devices.some((data) => data.type === 'toaster')) {
             isToasterChild = true;
         }
     }
 
     const toasterDevice =
-        track?.devices.find((d) => d.type === 'toaster') ||
-        toasterParentTrack?.devices.find((d) => d.type === 'toaster');
+        track?.devices.find((data) => data.type === 'toaster') ||
+        toasterParentTrack?.devices.find((data) => data.type === 'toaster');
 
     if (toasterDevice) {
         const effectiveTrackId = toasterParentTrack ? toasterParentTrack.id : trackId;
         const parentStrip = audioEngine.ensureTrackStrip(effectiveTrackId);
 
-        const dn = parentStrip.deviceNodes.find((d) => d.deviceId === toasterDevice.id || d.type === 'toaster');
+        const dn = parentStrip.deviceNodes.find(
+            (data) => data.deviceId === toasterDevice.id || data.type === 'toaster'
+        );
 
         if (dn?.toasterControls?.ready) {
             let pad = pitch - 36;
 
             if (isToasterChild && toasterParentTrack) {
                 const children =
-                    trackStore.value?.tracks.filter((t: any) => t.parentId === toasterParentTrack.id) || [];
-                const childPad = children.findIndex((t: any) => t.id === trackId);
+                    trackStore.value?.tracks.filter((time) => time.parentId === toasterParentTrack.id) || [];
+                const childPad = children.findIndex((time) => time.id === trackId);
                 if (childPad !== -1) {
                     pad = childPad;
                 }
@@ -78,9 +82,11 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         return () => {};
     }
 
-    const grandBouleDevice = track?.devices.find((d) => d.type === 'grand-boule');
+    const grandBouleDevice = track?.devices.find((data) => data.type === 'grand-boule');
     if (grandBouleDevice) {
-        const dn = strip.deviceNodes.find((d) => d.deviceId === grandBouleDevice.id || d.type === 'grand-boule');
+        const dn = strip.deviceNodes.find(
+            (data) => data.deviceId === grandBouleDevice.id || data.type === 'grand-boule'
+        );
         if (dn?.grandBouleControls?.ready) {
             dn.grandBouleControls.noteOn(pitch, velocity / 127);
             return () => {
@@ -90,9 +96,9 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         return () => {};
     }
 
-    const levainDevice = track?.devices.find((d) => d.type === 'levain');
+    const levainDevice = track?.devices.find((data) => data.type === 'levain');
     if (levainDevice) {
-        const dn = strip.deviceNodes.find((d) => d.deviceId === levainDevice.id || d.type === 'levain');
+        const dn = strip.deviceNodes.find((data) => data.deviceId === levainDevice.id || data.type === 'levain');
         if (dn?.levainControls?.ready) {
             dn.levainControls.noteOn(pitch, velocity);
             return () => {
@@ -101,7 +107,7 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         }
     }
 
-    const faustDevice = track?.devices.find((d) => d.type.startsWith('faust-'));
+    const faustDevice = track?.devices.find((data) => data.type.startsWith('faust-'));
     if (faustDevice) {
         return startFaustNote(trackId, faustDevice.id, pitch, velocity, now);
     }

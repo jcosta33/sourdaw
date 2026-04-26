@@ -52,7 +52,7 @@ export const AutomationContextMenu = ({
                                 key={opt.value}
                                 className={cn(
                                     'justify-start px-3 text-foreground hover:bg-accent/50 hover:text-foreground',
-                                    points.find((p) => Math.abs(p.beat - beat) < 0.05)?.curve === opt.value &&
+                                    points.find((param) => Math.abs(param.beat - beat) < 0.05)?.curve === opt.value &&
                                         'text-primary font-medium'
                                 )}
                                 onClick={() => onCurveSelect(opt.value)}

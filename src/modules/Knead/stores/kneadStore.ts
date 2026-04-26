@@ -37,6 +37,7 @@ export type PitchContour = {
     points: PitchPoint[];
     sample_rate: number;
     hop_size: number;
+    algorithm?: string;
 };
 
 export type KneadStoreState = {

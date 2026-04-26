@@ -20,7 +20,6 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
         <DawChannelStripShell className={cn('ml-2', widthClass)} aria-label="Master channel">
             <div className="h-1 w-full rounded-full bg-border-active" />
             <span className="text-[10px] font-bold text-text-primary uppercase tracking-wider">Master</span>
-
             <MixerLevelReadout
                 trackId={null}
                 clusterClassName="mt-1"
@@ -28,8 +27,8 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
                     <div className="shrink-0">
                         <Fader
                             value={masterGain / 100}
-                            onChange={(v) => {
-                                setMasterGain(v * 100);
+                            onChange={(value) => {
+                                setMasterGain(value * 100);
                             }}
                             height={100}
                             aria-label="Master gain"

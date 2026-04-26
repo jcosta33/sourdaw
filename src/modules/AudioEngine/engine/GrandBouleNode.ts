@@ -98,8 +98,8 @@ export async function createGrandBouleNode(ctx: BaseAudioContext, wasmUrl?: stri
     let bypassed = false;
 
     const handshake = createReadyHandshake({ pluginName: 'GrandBouleNode' });
-    engineWorker.onmessage = (e: MessageEvent) => {
-        const outcome = handshake.onMessage(e);
+    engineWorker.onmessage = (event: MessageEvent) => {
+        const outcome = handshake.onMessage(event);
         if (outcome === 'ready') {
             // Now init the worklet side with the same SAB.
             node.port.postMessage({ type: 'init', sab });

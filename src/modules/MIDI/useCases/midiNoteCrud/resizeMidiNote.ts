@@ -2,14 +2,14 @@ import { updateNotesForClip } from './updateNotesForClip';
 
 export function resizeMidiNote(clipId: string, noteId: string, newStartBeat?: number, newDuration?: number): void {
     updateNotesForClip(clipId, (notes) =>
-        notes.map((n) => {
-            if (n.id !== noteId) {
-                return n;
+        notes.map((node) => {
+            if (node.id !== noteId) {
+                return node;
             }
             return {
-                ...n,
-                startBeat: newStartBeat !== undefined ? newStartBeat : n.startBeat,
-                duration: newDuration !== undefined ? Math.max(0.0625, newDuration) : n.duration,
+                ...node,
+                startBeat: newStartBeat !== undefined ? newStartBeat : node.startBeat,
+                duration: newDuration !== undefined ? Math.max(0.0625, newDuration) : node.duration,
             };
         })
     );

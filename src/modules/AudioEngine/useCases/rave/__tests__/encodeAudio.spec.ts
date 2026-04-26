@@ -25,6 +25,6 @@ describe('encodeAudio', () => {
         expect(vectors[0]!.values).toHaveLength(latentDim);
         expect(vectors[0]!.timeSec).toBe(0);
         expect(vectors[1]!.timeSec).toBeCloseTo(frameSize / sampleRate);
-        expect(vectors.every((v) => v.values.every((x) => Number.isFinite(x)))).toBe(true);
+        expect(vectors.every((value) => value.values.every((x) => Number.isFinite(x)))).toBe(true);
     });
 });

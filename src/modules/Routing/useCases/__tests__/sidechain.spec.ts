@@ -9,16 +9,18 @@ import { removeSidechainRoute } from '../sidechain/removeSidechainRoute';
 import { setSidechainRoutes } from '../sidechain/setSidechainRoutes';
 
 const mocks = vi.hoisted(() => ({
-    wireSidechainRoute: vi.fn(),
-    unwireSidechainRoute: vi.fn(),
-    createSidechainRoute: vi.fn((sourceTrackId, targetTrackId, targetDeviceId, targetParameterId) => ({
-        id: 'r1',
-        sourceTrackId,
-        targetTrackId,
-        targetDeviceId,
-        targetParameterId,
-    })),
-    storeSet: vi.fn((next: any) => {
+    wireSidechainRoute: vi.fn<(...args: unknown[]) => unknown>(),
+    unwireSidechainRoute: vi.fn<(...args: unknown[]) => unknown>(),
+    createSidechainRoute: vi.fn(
+        (sourceTrackId: string, targetTrackId: string, targetDeviceId: string, targetParameterId: string) => ({
+            id: 'r1',
+            sourceTrackId,
+            targetTrackId,
+            targetDeviceId,
+            targetParameterId,
+        })
+    ),
+    storeSet: vi.fn((next: unknown) => {
         mockStoreValue.value = next;
     }),
 }));
@@ -34,7 +36,7 @@ vi.mock('../../models/SidechainRoute', () => ({
     createSidechainRoute: mocks.createSidechainRoute,
 }));
 
-let mockStoreValue: { value: any } = { value: null };
+let mockStoreValue: { value: unknown } = { value: null };
 
 vi.mock('../../stores/sidechainStore', () => ({
     sidechainStore: {
@@ -112,7 +114,7 @@ describe('sidechain use cases', () => {
         };
         mockStoreValue.value = { routes: [oldRoute] };
 
-        setSidechainRoutes([newRoute] as any);
+        setSidechainRoutes([newRoute] as unknown as Parameters<typeof setSidechainRoutes>[0]);
 
         expect(mocks.unwireSidechainRoute).toHaveBeenCalledWith('a', 'devA');
         expect(mocks.storeSet).toHaveBeenCalledWith({ routes: [newRoute] });

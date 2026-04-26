@@ -14,6 +14,6 @@ export async function initializeAudioEngine(): Promise<void> {
     registerBuiltinFaustDSP();
     const ctx = audioEngine.context;
     if (ctx) {
-        initWAMEnvironment(ctx);
+        void initWAMEnvironment(ctx);
     }
 }

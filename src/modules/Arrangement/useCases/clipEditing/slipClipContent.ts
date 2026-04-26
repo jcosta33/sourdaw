@@ -6,10 +6,10 @@ import { updateClip } from '../updateClip';
  * Note data and clip boundaries are untouched.
  */
 export function slipClipContent(clipId: string, type: 'audio' | 'midi', newOffset: number): void {
-    updateClip(clipId, (c) => {
+    updateClip(clipId, (context) => {
         if (type === 'audio') {
-            return { ...c, audioOffsetBeats: newOffset };
+            return { ...context, audioOffsetBeats: newOffset };
         }
-        return { ...c, midiOffsetBeats: newOffset };
+        return { ...context, midiOffsetBeats: newOffset };
     });
 }

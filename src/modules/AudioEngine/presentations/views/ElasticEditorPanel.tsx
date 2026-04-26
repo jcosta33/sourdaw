@@ -1,0 +1,623 @@
+import {
+    type ReactElement,
+    type PointerEvent,
+    type MouseEvent,
+    useEffect,
+    useRef,
+    useState,
+} from 'react';
+
+import { DawControlStrip } from '#/components/daw/DawControlStrip';
+import { Button } from '#/components/ui/button';
+import { Slider } from '#/components/ui/slider';
+import { useStore } from '#/infra/store/useStore';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { setStretchMode } from '#/modules/Arrangement/useCases';
+import { defaultWorkspaceState, workspaceStore } from '#/modules/Workspace/stores';
+import { resolveToken } from '#/utils/UI/resolveToken';
+
+import { defaultElasticAudioState, elasticAudioStore, type ElasticEditorTool } from '../../stores/elasticAudio';
+import { audioBufferCache } from '../../stores/audioBufferCache';
+import { getAlgorithmInfo } from '../../useCases/audioWarping/getAlgorithmInfo';
+import { setDefaultAlgorithm } from '../../useCases/audioWarping/setDefaultAlgorithm';
+import { addManualMarker } from '../../useCases/elasticAudio/addManualMarker';
+import { detectTransientsForClip } from '../../useCases/elasticAudio/detectTransientsForClip';
+import { quantizeTransients } from '../../useCases/elasticAudio/quantizeTransients';
+import { removeMarker } from '../../useCases/elasticAudio/removeMarker';
+import { setElasticSensitivity } from '../../useCases/elasticAudio/setElasticSensitivity';
+import { setElasticTool } from '../../useCases/elasticAudio/setElasticTool';
+import { toggleMarkerLock } from '../../useCases/elasticAudio/toggleMarkerLock';
+
+import { getWarpState, warpStates } from '#/modules/Arrangement/useCases';
+import { audioWarpStore, type WarpAlgorithm } from '../../stores/audioWarp';
+
+type StretchMode = 'repitch' | 'complex' | 'texture' | 'beats';
+
+const STRETCH_MODES: StretchMode[] = ['repitch', 'complex', 'texture', 'beats'];
+
+const ALGORITHMS: WarpAlgorithm[] = [
+    'elastique-pro',
+    'elastique-efficient',
+    'elastique-soloist',
+    'rubber-band-r3',
+    'rubber-band-rt',
+    'complex',
+    'complex-pro',
+    'repitch',
+    'slice',
+];
+
+type WarpMarkerView = {
+    id: string;
+    originalBeat: number;
+    warpedBeat: number;
+    origin?: 'user' | 'transient-auto' | 'grid-snap';
+    confidence?: number;
+    locked?: boolean;
+};
+
+type WarpStateView = {
+    enabled: boolean;
+    markers: WarpMarkerView[];
+    stretchMode: StretchMode;
+    originalTempo: number | null;
+};
+
+type DragState = {
+    markerId: string;
+    pointerId: number;
+    altKey: boolean;
+    ctrlKey: boolean;
+};
+
+const TOOL_BUTTONS: Array<{ id: ElasticEditorTool; label: string }> = [
+    { id: 'select', label: 'Select' },
+    { id: 'add-marker', label: 'Add' },
+    { id: 'remove-marker', label: 'Remove' },
+    { id: 'lock-marker', label: 'Lock' },
+];
+
+const VIRTUALIZE_THRESHOLD = 200;
+
+export const ElasticEditorPanel = (): ReactElement => {
+    const elasticState = useStore(elasticAudioStore, defaultElasticAudioState);
+    const workspaceState = useStore(workspaceStore, defaultWorkspaceState);
+    const trackState = useStore(trackStore, defaultTrackState);
+    const warpSnapshot = useStore(audioWarpStore, {
+        clipSettings: new Map(),
+        defaultAlgorithm: 'complex-pro' as WarpAlgorithm,
+        globalPitchShift: 0,
+    });
+
+    const clipId = elasticState.openClipId ?? workspaceState.selectedClipId;
+    const clip = clipId === null ? null : findClip(trackState.tracks, clipId);
+    const isAudioClip = clip !== null && clip.type === 'audio';
+
+    const [warpState, setWarpState] = useState<WarpStateView>(() =>
+        clipId === null ? emptyWarpState() : (getWarpState(clipId) as WarpStateView)
+    );
+    const [zoom, setZoom] = useState(1);
+    const [viewScrollLeft, setViewScrollLeft] = useState(0);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const dragRef = useRef<DragState | null>(null);
+    const didDragRef = useRef(false);
+
+    const refreshWarp = (): void => {
+        if (clipId !== null) {
+            setWarpState(getWarpState(clipId) as WarpStateView);
+        }
+    };
+
+    useEffect(() => {
+        if (clipId !== null) {
+            setWarpState(getWarpState(clipId) as WarpStateView);
+        }
+    }, [clipId]);
+
+    useEffect(() => {
+        if (clipId === null) {
+            return;
+        }
+        const onKeyDown = (event: KeyboardEvent): void => {
+            const target = event.target as HTMLElement | null;
+            if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) {
+                return;
+            }
+            if (!elasticState.openClipId) {
+                return;
+            }
+            if (event.key === 't' || event.key === 'T') {
+                setElasticTool('add-marker');
+                event.preventDefault();
+            } else if (event.key === 'g' || event.key === 'G') {
+                quantizeTransients(clipId);
+                refreshWarp();
+                event.preventDefault();
+            } else if (event.key === 'Delete' || event.key === 'Backspace') {
+                const selected = elasticAudioStore.value?.selectedMarkerIds ?? [];
+                for (const markerId of selected) {
+                    removeMarker(markerId);
+                }
+                refreshWarp();
+                event.preventDefault();
+            }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [clipId, elasticState.openClipId]);
+
+    const beatWidth = Math.max(1, 40 * zoom);
+
+    useEffect(() => {
+        drawWaveform({
+            canvasRef,
+            containerRef,
+            beatWidth,
+            warpState,
+            clipAudioBufferId: clip?.audioBufferId ?? null,
+            viewScrollLeft,
+        });
+    }, [clipId, zoom, warpState, beatWidth, viewScrollLeft, clip?.audioBufferId]);
+
+    if (clipId === null || !isAudioClip) {
+        return (
+            <div className="flex h-full items-center justify-center p-6 text-center">
+                <div>
+                    <div className="text-sm text-muted-foreground">
+                        Select an audio clip to open the Elastic editor
+                    </div>
+                    <div className="mt-2 text-[11px] text-muted-foreground/70">
+                        Detect transients, correct them manually, then quantize to the grid.
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    const handleDetect = (): void => {
+        detectTransientsForClip(clipId, elasticState.sensitivity);
+        elasticAudioStore.set({ ...elasticState, detected: true });
+        refreshWarp();
+    };
+
+    const handleQuantize = (): void => {
+        quantizeTransients(clipId);
+        refreshWarp();
+    };
+
+    const handleToolClick = (tool: ElasticEditorTool): void => {
+        setElasticTool(tool);
+    };
+
+    const handleSensitivity = (value: number): void => {
+        setElasticSensitivity(value);
+    };
+
+    const handleStretchMode = (mode: StretchMode): void => {
+        setStretchMode(clipId, mode);
+        refreshWarp();
+    };
+
+    const handleAlgorithm = (algorithm: WarpAlgorithm): void => {
+        setDefaultAlgorithm(algorithm);
+    };
+
+    const hitTestMarker = (x: number): WarpMarkerView | null => {
+        const markers = visibleMarkers(warpState.markers, beatWidth, viewScrollLeft, containerRef.current?.clientWidth ?? 0);
+        return markers.find((m) => Math.abs((m.warpedBeat * beatWidth) - x) < 8) ?? null;
+    };
+
+    const getCanvasX = (e: { clientX: number }): number => {
+        const canvas = canvasRef.current;
+        if (!canvas) {
+            return 0;
+        }
+        const rect = canvas.getBoundingClientRect();
+        return e.clientX - rect.left + (containerRef.current?.scrollLeft ?? 0);
+    };
+
+    const onPointerDown = (event: PointerEvent<HTMLCanvasElement>): void => {
+        const x = getCanvasX(event);
+        const hit = hitTestMarker(x);
+        const tool = elasticState.tool;
+
+        if (tool === 'add-marker') {
+            if (!hit) {
+                addManualMarker(clipId, x / beatWidth);
+                refreshWarp();
+            }
+            return;
+        }
+        if (tool === 'remove-marker') {
+            if (hit) {
+                removeMarker(hit.id);
+                refreshWarp();
+            }
+            return;
+        }
+        if (tool === 'lock-marker') {
+            if (hit) {
+                toggleMarkerLock(hit.id);
+                refreshWarp();
+            }
+            return;
+        }
+
+        if (hit) {
+            dragRef.current = {
+                markerId: hit.id,
+                pointerId: event.pointerId,
+                altKey: event.altKey,
+                ctrlKey: event.ctrlKey,
+            };
+            didDragRef.current = false;
+            (event.target as HTMLCanvasElement).setPointerCapture(event.pointerId);
+            elasticAudioStore.set({
+                ...(elasticAudioStore.value ?? defaultElasticAudioState),
+                selectedMarkerIds: [hit.id],
+            });
+        }
+    };
+
+    const onPointerMove = (event: PointerEvent<HTMLCanvasElement>): void => {
+        const drag = dragRef.current;
+        if (!drag) {
+            return;
+        }
+        didDragRef.current = true;
+        const x = getCanvasX(event);
+        const beatRaw = Math.max(0, x / beatWidth);
+        const beat = drag.ctrlKey || event.ctrlKey
+            ? snapToGrid(beatRaw, workspaceState.snapValue ?? 1)
+            : beatRaw;
+        mutateMarker(clipId, drag.markerId, (m) => {
+            if (drag.altKey || event.altKey) {
+                return { ...m, originalBeat: beat };
+            }
+            return { ...m, warpedBeat: beat };
+        });
+        refreshWarp();
+    };
+
+    const onPointerUp = (event: PointerEvent<HTMLCanvasElement>): void => {
+        if (dragRef.current) {
+            (event.target as HTMLCanvasElement).releasePointerCapture(dragRef.current.pointerId);
+        }
+        dragRef.current = null;
+    };
+
+    const onContextMenu = (event: MouseEvent<HTMLCanvasElement>): void => {
+        event.preventDefault();
+    };
+
+    const counts = countMarkers(warpState.markers);
+    const quantizeDisabled = !elasticState.detected || warpState.markers.length === 0;
+
+    return (
+        <div className="flex h-full flex-col overflow-hidden" data-testid="elastic-editor-panel">
+            <DawControlStrip className="px-3 py-1.5 gap-2">
+                <div className="flex items-center gap-0.5 rounded-md border border-border/40 p-0.5" role="radiogroup" aria-label="Elastic tool">
+                    {TOOL_BUTTONS.map((tool) => (
+                        <Button
+                            key={tool.id}
+                            variant={elasticState.tool === tool.id ? 'secondary' : 'ghost'}
+                            size="xs"
+                            className="h-6 px-2 text-[10px]"
+                            aria-pressed={elasticState.tool === tool.id}
+                            data-testid={`elastic-tool-${tool.id}`}
+                            onClick={() => handleToolClick(tool.id)}
+                        >
+                            {tool.label}
+                        </Button>
+                    ))}
+                </div>
+
+                <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground">Sensitivity</span>
+                    <Slider
+                        value={[elasticState.sensitivity * 100]}
+                        onValueChange={([v]) => {
+                            if (v !== undefined) {
+                                handleSensitivity(v / 100);
+                            }
+                        }}
+                        min={0}
+                        max={100}
+                        step={1}
+                        className="w-24"
+                        aria-label="Transient detection sensitivity"
+                    />
+                    <span className="w-8 text-right text-[10px] tabular-nums text-muted-foreground">
+                        {(elasticState.sensitivity * 100).toFixed(0)}
+                    </span>
+                </div>
+
+                <Button
+                    variant="secondary"
+                    size="xs"
+                    className="h-6 px-2 text-[10px]"
+                    data-testid="elastic-detect-button"
+                    onClick={handleDetect}
+                >
+                    Detect
+                </Button>
+                <Button
+                    variant="secondary"
+                    size="xs"
+                    className="h-6 px-2 text-[10px]"
+                    data-testid="elastic-quantize-button"
+                    onClick={handleQuantize}
+                    disabled={quantizeDisabled}
+                >
+                    Quantize
+                </Button>
+
+                <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    Stretch
+                    <select
+                        className="daw-inset-surface rounded px-1 py-0.5 text-[10px] text-foreground"
+                        value={warpState.stretchMode}
+                        onChange={(e) => handleStretchMode(e.target.value as StretchMode)}
+                        aria-label="Stretch mode"
+                    >
+                        {STRETCH_MODES.map((mode) => (
+                            <option key={mode} value={mode}>
+                                {mode}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+
+                <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    Algorithm
+                    <select
+                        className="daw-inset-surface rounded px-1 py-0.5 text-[10px] text-foreground"
+                        value={warpSnapshot.defaultAlgorithm}
+                        onChange={(e) => handleAlgorithm(e.target.value as WarpAlgorithm)}
+                        aria-label="Warp algorithm"
+                    >
+                        {ALGORITHMS.map((algo) => (
+                            <option key={algo} value={algo}>
+                                {getAlgorithmInfo(algo).name}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+
+                <div className="ml-auto flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <span>Zoom</span>
+                    <Slider
+                        value={[zoom * 100]}
+                        onValueChange={([v]) => {
+                            if (v !== undefined) {
+                                setZoom(v / 100);
+                            }
+                        }}
+                        min={25}
+                        max={400}
+                        step={25}
+                        className="w-20"
+                        aria-label="Waveform zoom"
+                    />
+                </div>
+            </DawControlStrip>
+
+            <div
+                ref={containerRef}
+                className="relative flex-1 overflow-auto"
+                onScroll={(e) => setViewScrollLeft((e.target as HTMLDivElement).scrollLeft)}
+            >
+                <canvas
+                    ref={canvasRef}
+                    className="cursor-crosshair"
+                    aria-label="Elastic waveform canvas"
+                    data-testid="elastic-waveform-canvas"
+                    onPointerDown={onPointerDown}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={onPointerUp}
+                    onContextMenu={onContextMenu}
+                />
+            </div>
+
+            <div
+                className="flex items-center justify-between gap-3 border-t border-border/40 px-3 py-1 text-[10px] text-muted-foreground"
+                data-testid="elastic-detail-strip"
+            >
+                <span>
+                    {counts.transient} transient{plural(counts.transient)}, {counts.user} user, {counts.locked} locked
+                </span>
+                <span className="text-[9px] opacity-70">T: transient tool · G: quantize · Delete: remove selected</span>
+            </div>
+        </div>
+    );
+};
+
+function findClip(
+    tracks: ReadonlyArray<{ clips: ReadonlyArray<{ id: string; type: string; audioBufferId?: string }> }>,
+    clipId: string
+): { id: string; type: string; audioBufferId?: string } | null {
+    for (const track of tracks) {
+        const clip = track.clips.find((c) => c.id === clipId);
+        if (clip) {
+            return clip;
+        }
+    }
+    return null;
+}
+
+function emptyWarpState(): WarpStateView {
+    return { enabled: false, markers: [], stretchMode: 'complex', originalTempo: null };
+}
+
+function countMarkers(markers: ReadonlyArray<WarpMarkerView>): {
+    transient: number;
+    user: number;
+    locked: number;
+} {
+    let transient = 0;
+    let user = 0;
+    let locked = 0;
+    for (const marker of markers) {
+        const origin = marker.origin ?? 'user';
+        if (origin === 'transient-auto') {
+            transient++;
+        } else if (origin === 'user') {
+            user++;
+        }
+        if (marker.locked) {
+            locked++;
+        }
+    }
+    return { transient, user, locked };
+}
+
+function plural(count: number): string {
+    return count === 1 ? '' : 's';
+}
+
+function snapToGrid(beat: number, snap: number): number {
+    if (snap <= 0) {
+        return beat;
+    }
+    return Math.round(beat / snap) * snap;
+}
+
+function visibleMarkers(
+    markers: ReadonlyArray<WarpMarkerView>,
+    beatWidth: number,
+    scrollLeft: number,
+    containerWidth: number
+): WarpMarkerView[] {
+    if (markers.length <= VIRTUALIZE_THRESHOLD || containerWidth <= 0) {
+        return [...markers];
+    }
+    const minX = scrollLeft - 16;
+    const maxX = scrollLeft + containerWidth + 16;
+    return markers.filter((m) => {
+        const x = m.warpedBeat * beatWidth;
+        return x >= minX && x <= maxX;
+    });
+}
+
+function mutateMarker(clipId: string, markerId: string, updater: (m: WarpMarkerView) => WarpMarkerView): void {
+    const current = warpStates.get(clipId);
+    if (!current) {
+        return;
+    }
+    const nextMarkers = current.markers.map((m) => (m.id === markerId ? updater(m as WarpMarkerView) : m));
+    warpStates.set(clipId, { ...current, markers: nextMarkers });
+}
+
+type DrawArgs = {
+    canvasRef: { current: HTMLCanvasElement | null };
+    containerRef: { current: HTMLDivElement | null };
+    beatWidth: number;
+    warpState: WarpStateView;
+    clipAudioBufferId: string | null;
+    viewScrollLeft: number;
+};
+
+function drawWaveform(args: DrawArgs): void {
+    const { canvasRef, containerRef, beatWidth, warpState, clipAudioBufferId, viewScrollLeft } = args;
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) {
+        return;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+        return;
+    }
+    const dpr = window.devicePixelRatio || 1;
+    const contentBeats = Math.max(
+        64,
+        warpState.markers.reduce((max, m) => Math.max(max, m.warpedBeat, m.originalBeat), 0) + 8
+    );
+    const width = Math.max(container.clientWidth, contentBeats * beatWidth);
+    const height = Math.max(120, container.clientHeight);
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    ctx.fillStyle = resolveToken('--color-bg-overlay', '#151515');
+    ctx.fillRect(0, 0, width, height);
+
+    const midY = height / 2;
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.beginPath();
+    ctx.moveTo(0, midY);
+    ctx.lineTo(width, midY);
+    ctx.stroke();
+
+    if (clipAudioBufferId) {
+        const peaks = audioBufferCache.getWaveformPeaks(clipAudioBufferId, Math.floor(width));
+        if (peaks.some((v) => v > 0)) {
+            ctx.fillStyle = 'rgba(90,150,115,0.5)';
+            ctx.beginPath();
+            ctx.moveTo(0, midY);
+            for (let i = 0; i < peaks.length; i++) {
+                ctx.lineTo(i, midY - peaks[i]! * midY * 0.9);
+            }
+            ctx.lineTo(peaks.length - 1, midY);
+            for (let i = peaks.length - 1; i >= 0; i--) {
+                ctx.lineTo(i, midY + peaks[i]! * midY * 0.9);
+            }
+            ctx.closePath();
+            ctx.fill();
+        }
+    }
+
+    for (let beat = 0; beat < width / beatWidth; beat++) {
+        const x = beat * beatWidth;
+        ctx.strokeStyle = beat % 4 === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.03)';
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+    }
+
+    const markers = visibleMarkers(warpState.markers, beatWidth, viewScrollLeft, container.clientWidth);
+    for (const marker of markers) {
+        const x = marker.warpedBeat * beatWidth;
+        if (x < -16 || x > width + 16) {
+            continue;
+        }
+        const color = markerColor(marker);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(x - 5, 0);
+        ctx.lineTo(x + 5, 0);
+        ctx.lineTo(x, 8);
+        ctx.closePath();
+        ctx.fill();
+
+        if (marker.locked) {
+            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+            ctx.fillRect(x - 2, 10, 4, 4);
+        }
+    }
+}
+
+function markerColor(marker: WarpMarkerView): string {
+    const origin = marker.origin ?? 'user';
+    if (origin === 'transient-auto') {
+        const confidence = marker.confidence ?? 1;
+        const alpha = 0.35 + 0.55 * Math.max(0, Math.min(1, confidence));
+        return `rgba(99, 160, 214, ${alpha.toFixed(2)})`;
+    }
+    if (origin === 'grid-snap') {
+        return 'rgba(120, 190, 130, 0.85)';
+    }
+    return 'rgba(220, 150, 60, 0.9)';
+}

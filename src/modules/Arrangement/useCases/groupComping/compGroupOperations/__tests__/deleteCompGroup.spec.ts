@@ -2,9 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { deleteCompGroup } from '../deleteCompGroup';
 
+import type { GroupCompingState } from '../../../../stores/groupComping';
+
 const mocks = vi.hoisted(() => ({
-    groupCompingStoreValue: { value: { groups: [], activeGroupId: null } },
-    groupCompingStoreSet: vi.fn(),
+    groupCompingStoreValue: { value: { groups: [], activeGroupId: null } as GroupCompingState },
+    groupCompingStoreSet: vi.fn<(state: GroupCompingState) => void>(),
 }));
 
 vi.mock('#/modules/Arrangement/stores/groupComping', () => ({
@@ -23,27 +25,27 @@ describe('deleteCompGroup', () => {
         mocks.groupCompingStoreValue.value = {
             groups: [{ id: 'g1' }, { id: 'g2' }],
             activeGroupId: 'g1',
-        } as any;
+        } as unknown as GroupCompingState;
 
         deleteCompGroup('g1');
 
         expect(mocks.groupCompingStoreSet).toHaveBeenCalledWith({
             groups: [{ id: 'g2' }],
             activeGroupId: null,
-        });
+        } as unknown as GroupCompingState);
     });
 
     it('removes group and keeps activeGroupId if it was NOT the deleted group', () => {
         mocks.groupCompingStoreValue.value = {
             groups: [{ id: 'g1' }, { id: 'g2' }],
             activeGroupId: 'g2',
-        } as any;
+        } as unknown as GroupCompingState;
 
         deleteCompGroup('g1');
 
         expect(mocks.groupCompingStoreSet).toHaveBeenCalledWith({
             groups: [{ id: 'g2' }],
             activeGroupId: 'g2',
-        });
+        } as unknown as GroupCompingState);
     });
 });

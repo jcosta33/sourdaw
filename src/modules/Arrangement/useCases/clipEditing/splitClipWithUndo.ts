@@ -8,8 +8,8 @@ import { splitClip } from './splitClip';
 
 export function splitClipWithUndo(clipId: string, splitBeat: number): void {
     const origClip = getTrackState()
-        ?.tracks.flatMap((t) => t.clips)
-        .find((c) => c.id === clipId);
+        ?.tracks.flatMap((time) => time.clips)
+        .find((context) => context.id === clipId);
     if (!origClip) {
         return;
     }
@@ -30,8 +30,8 @@ export function splitClipWithUndo(clipId: string, splitBeat: number): void {
         'Split clip',
         () => {
             removeClip(rightClipId);
-            updateClip(clipId, (c) => ({
-                ...c,
+            updateClip(clipId, (context) => ({
+                ...context,
                 endBeat: savedEndBeat,
                 name: savedName,
                 fadeOutBeats: savedFadeOut,

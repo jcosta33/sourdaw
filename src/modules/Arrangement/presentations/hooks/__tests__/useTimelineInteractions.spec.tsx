@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
     hitTestClip: vi.fn(),
     hitTestTrack: vi.fn(),
     hitTestClipEdge: vi.fn(),
-    snapToGrid: vi.fn((b) => b),
+    snapToGrid: vi.fn((buffer) => buffer),
     workspaceStoreValue: { value: { activeTool: 'select', selectedClipIds: [], automationVisibility: 'hidden' } },
     toggleClipInSelection: vi.fn(),
     selectClipWithFocus: vi.fn(),
@@ -38,7 +38,7 @@ const mocks = vi.hoisted(() => ({
     buildTimelineRenderModel: vi.fn(),
     getTrackAtY: vi.fn(),
     canvasXToBeat: vi.fn((x) => x / 100),
-    getContentY: vi.fn((y, s) => y + s),
+    getContentY: vi.fn((y, state) => y + state),
     tryPaintSubLane: vi.fn(),
     paintAutoDragPoint: vi.fn(),
 }));

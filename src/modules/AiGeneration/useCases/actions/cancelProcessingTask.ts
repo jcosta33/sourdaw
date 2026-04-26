@@ -12,10 +12,10 @@ export function cancelProcessingTask(type: AiTaskType): void {
     const snapshot = getAiSnapshot();
     aiStore.set({
         ...snapshot,
-        tasks: snapshot.tasks.map((t) =>
-            t.type === type && t.status === 'processing'
-                ? { ...t, status: 'error' as const, error: 'Stopped by user' }
-                : t
+        tasks: snapshot.tasks.map((time) =>
+            time.type === type && time.status === 'processing'
+                ? { ...time, status: 'error' as const, error: 'Stopped by user' }
+                : time
         ),
     });
 }

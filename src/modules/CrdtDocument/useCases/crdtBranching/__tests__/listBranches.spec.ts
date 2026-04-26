@@ -5,7 +5,7 @@ import * as subject from '../listBranches';
 describe('listBranches', () => {
     it('should export listBranches', () => {
         expect(subject.listBranches).toBeDefined();
-        const t = typeof subject.listBranches;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.listBranches;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

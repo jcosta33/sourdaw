@@ -1,10 +1,10 @@
 import { vi, type Mock } from 'vitest';
 
 export type MockObject<TShape> = {
-    [TKey in keyof TShape]: TShape[TKey] extends (...args: any[]) => any ? Mock<TShape[TKey]> : TShape[TKey];
+    [TKey in keyof TShape]: TShape[TKey] extends (...args: never[]) => unknown ? Mock<TShape[TKey]> : TShape[TKey];
 };
 
-export const createMock = <TShape extends Record<string, any>>(overrides?: Partial<TShape>): MockObject<TShape> => {
+export const createMock = <TShape extends Record<string, unknown>>(overrides?: Partial<TShape>): MockObject<TShape> => {
     const base = overrides ? { ...overrides } : {};
     return new Proxy(base as MockObject<TShape>, {
         get(target, prop) {
@@ -16,7 +16,7 @@ export const createMock = <TShape extends Record<string, any>>(overrides?: Parti
             }
 
             const mockFn = vi.fn();
-            (target as any)[prop] = mockFn;
+            (target as Record<string | symbol, unknown>)[prop] = mockFn;
             return mockFn;
         },
     });

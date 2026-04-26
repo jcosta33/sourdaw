@@ -19,7 +19,7 @@ export function setDeviceParameter(deviceId: string, paramId: string, value: num
         return;
     }
 
-    const track = state.tracks.find((t) => t.devices.some((d) => d.id === deviceId));
+    const track = state.tracks.find((time) => time.devices.some((data) => data.id === deviceId));
     if (!track) {
         return;
     }
@@ -28,10 +28,10 @@ export function setDeviceParameter(deviceId: string, paramId: string, value: num
     updateDeviceParam(track.id, deviceId, paramId, value);
 
     // Update only the affected track's store state (not all tracks)
-    updateTrack(track.id, (t) => ({
-        ...t,
-        devices: t.devices.map((d) =>
-            d.id === deviceId ? { ...d, parameterValues: { ...d.parameterValues, [paramId]: value } } : d
+    updateTrack(track.id, (time) => ({
+        ...time,
+        devices: time.devices.map((data) =>
+            data.id === deviceId ? { ...data, parameterValues: { ...data.parameterValues, [paramId]: value } } : data
         ),
     }));
 

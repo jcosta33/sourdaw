@@ -54,30 +54,36 @@ export const PER_NOTE_PARAM_DESCRIPTORS: readonly PerNoteParamDescriptor[] = [
     { key: 'toneBrightness', label: 'Bright', min: 0.5, max: 2.0, defaultValue: 1.0, step: 0.01, unit: '×' },
 ] as const;
 
-export const createDefaultPerNoteValues = (): GrandBoulePerNoteValues => ({
-    hammerHardness: 1.0,
-    hammerMass: 1.0,
-    stringStiffness: 1.0,
-    bridgeCoupling: 1.0,
-    damperFirmness: 1.0,
-    sympatheticGain: 1.0,
-    strikePosition: 1.0,
-    toneBrightness: 1.0,
-});
+export function createDefaultPerNoteValues(): GrandBoulePerNoteValues {
+    return {
+        hammerHardness: 1.0,
+        hammerMass: 1.0,
+        stringStiffness: 1.0,
+        bridgeCoupling: 1.0,
+        damperFirmness: 1.0,
+        sympatheticGain: 1.0,
+        strikePosition: 1.0,
+        toneBrightness: 1.0,
+    };
+}
 
 /** Convert a MIDI note (21–108) to a piano key number (1–88). */
-export const midiNoteToKey = (midiNote: number): number => midiNote - 20;
+export function midiNoteToKey(midiNote: number): number {
+    return midiNote - 20;
+}
 
 /** Convert a piano key number (1–88) to a MIDI note (21–108). */
-export const keyToMidiNote = (key: number): number => key + 20;
+export function keyToMidiNote(key: number): number {
+    return key + 20;
+}
 
 /**
  * Build the note name for display (e.g. "A0", "C4", "C8").
  * Key 1 = A0 (MIDI 21), Key 88 = C8 (MIDI 108).
  */
-export const keyToNoteName = (key: number): string => {
+export function keyToNoteName(key: number): string {
     const midiNote = keyToMidiNote(key);
     const name = NOTE_NAMES[midiNote % 12];
     const octave = Math.floor(midiNote / 12) - 1;
     return `${name}${octave}`;
-};
+}

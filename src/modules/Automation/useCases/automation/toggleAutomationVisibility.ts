@@ -6,6 +6,6 @@ export function toggleAutomationVisibility(laneId: string): void {
         return;
     }
     automationStore.set({
-        lanes: state.lanes.map((l) => (l.id === laneId ? { ...l, visible: !l.visible } : l)),
+        lanes: state.lanes.map((length) => (length.id === laneId ? { ...length, visible: !length.visible } : length)),
     });
 }

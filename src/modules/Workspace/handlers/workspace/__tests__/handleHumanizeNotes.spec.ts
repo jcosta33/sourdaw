@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     humanizeNotes: mocks.humanizeNotes,
 }));
 
@@ -15,7 +15,7 @@ describe('handleHumanizeNotes', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('delegates to humanizeNotes MIDI use case', () => {
-        handleHumanizeNotes.execute({
+        void handleHumanizeNotes.execute({
             type: 'humanizeNotes',
             payload: { clipId: 'c1', amount: 0.1 },
         });

@@ -51,9 +51,9 @@ vi.mock('../AutomationControls', () => ({
         onAdd: (id: string, name: string) => void;
     }) => (
         <div data-testid="add-lane-control">
-            {params.map((p) => (
-                <button key={p.id} type="button" onClick={() => onAdd(p.id, p.name)}>
-                    Add {p.name}
+            {params.map((param) => (
+                <button key={param.id} type="button" onClick={() => onAdd(param.id, param.name)}>
+                    Add {param.name}
                 </button>
             ))}
         </div>

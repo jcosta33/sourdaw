@@ -5,7 +5,7 @@ import * as subject from '../setTemperature';
 describe('setTemperature', () => {
     it('should export setTemperature', () => {
         expect(subject.setTemperature).toBeDefined();
-        const t = typeof subject.setTemperature;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setTemperature;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

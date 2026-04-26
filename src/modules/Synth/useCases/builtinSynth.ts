@@ -91,17 +91,17 @@ const FILTER_TYPE_INDEX: Record<number, SynthParams['filterType']> = {
     2: 'bandpass',
 };
 
-function resolveEnumParam<T extends string>(
+function resolveEnumParam<TValue extends string>(
     raw: number | string | undefined,
     allowed: Set<string>,
-    indexMap: Record<number, T>,
-    fallback: T
-): T {
+    indexMap: Record<number, TValue>,
+    fallback: TValue
+): TValue {
     if (raw === undefined) {
         return fallback;
     }
     if (typeof raw === 'string' && allowed.has(raw)) {
-        return raw as T;
+        return raw as TValue;
     }
     if (typeof raw === 'number' && indexMap[raw] !== undefined) {
         return indexMap[raw];
@@ -359,7 +359,8 @@ export function getSynthParamsFromDevices(devices: Device[]): SynthParams {
         } else if (key === 'filterType') {
             result.filterType = resolveEnumParam(raw, FILTER_TYPES, FILTER_TYPE_INDEX, defaultSynthParams.filterType);
         } else {
-            (result as unknown as Record<string, number>)[key] = raw;
+            // key is a numeric param at this point (waveform/osc2Waveform/filterType handled above)
+            result[key] = raw;
         }
     }
 

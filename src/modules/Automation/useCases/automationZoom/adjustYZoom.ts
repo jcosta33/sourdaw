@@ -9,7 +9,7 @@ export function adjustYZoom(laneId: string, delta: number): void {
         return;
     }
 
-    const lane = state.lanes.find((l) => l.id === laneId);
+    const lane = state.lanes.find((length) => length.id === laneId);
     if (!lane) {
         return;
     }
@@ -23,14 +23,14 @@ export function adjustYZoom(laneId: string, delta: number): void {
     const halfRange = newRange / 2;
 
     automationStore.set({
-        lanes: state.lanes.map((l) =>
-            l.id === laneId
+        lanes: state.lanes.map((length) =>
+            length.id === laneId
                 ? {
-                      ...l,
-                      viewMinValue: Math.max(l.minValue, center - halfRange),
-                      viewMaxValue: Math.min(l.maxValue, center + halfRange),
+                      ...length,
+                      viewMinValue: Math.max(length.minValue, center - halfRange),
+                      viewMaxValue: Math.min(length.maxValue, center + halfRange),
                   }
-                : l
+                : length
         ),
     });
 }

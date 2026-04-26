@@ -16,7 +16,7 @@ describe('handleUngroupTracks', () => {
     });
 
     it('executes ungroupTracks with the provided payload', () => {
-        handleUngroupTracks.execute({
+        void handleUngroupTracks.execute({
             type: 'ungroupTracks',
             payload: { groupId: 'g1' },
         });

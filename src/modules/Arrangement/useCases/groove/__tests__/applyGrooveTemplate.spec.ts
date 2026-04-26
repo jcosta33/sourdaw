@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 import { grooveStore } from '#/modules/Arrangement/stores/grooveStore';
 import { getGrooveOffsetAtBeat } from '#/modules/Arrangement/useCases/groove/applyGrooveTemplate';

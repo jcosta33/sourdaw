@@ -5,7 +5,7 @@ import * as subject from '../createFolder';
 describe('createFolder', () => {
     it('should export createFolder', () => {
         expect(subject.createFolder).toBeDefined();
-        const t = typeof subject.createFolder;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.createFolder;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

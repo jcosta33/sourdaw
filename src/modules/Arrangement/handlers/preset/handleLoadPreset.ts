@@ -4,25 +4,25 @@ import { loadPresetToTrack, createTrackFromPreset } from '../../useCases/preset/
 import { getUserPresets } from '../../useCases/preset/presetStorage/getUserPresets';
 
 function findPresetById(presetId: string) {
-    return getUserPresets().find((p) => p.id === presetId) ?? null;
+    return getUserPresets().find((param) => param.id === presetId) ?? null;
 }
 
 export const handleLoadPreset = createHandler<'loadPreset'>({
-    execute: (a) => {
-        const preset = findPresetById(a.payload.presetId);
+    execute: (alpha) => {
+        const preset = findPresetById(alpha.payload.presetId);
         if (!preset) {
             return;
         }
 
-        if (a.payload.trackId) {
-            loadPresetToTrack(a.payload.trackId, preset);
+        if (alpha.payload.trackId) {
+            loadPresetToTrack(alpha.payload.trackId, preset);
         } else {
             createTrackFromPreset(preset);
         }
     },
-    describe: (a) => {
-        const preset = findPresetById(a.payload.presetId);
-        const label = preset ? `Load preset "${preset.name}"` : `Load preset ${a.payload.presetId}`;
+    describe: (alpha) => {
+        const preset = findPresetById(alpha.payload.presetId);
+        const label = preset ? `Load preset "${preset.name}"` : `Load preset ${alpha.payload.presetId}`;
         return { label };
     },
     undoable: true,

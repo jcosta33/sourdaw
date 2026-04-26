@@ -6,7 +6,7 @@ import { mixerSnapshotStore } from './helpers';
 
 export function recallMixerSnapshot(snapshotId: string): MixerChannelSnapshot[] | null {
     const snaps = mixerSnapshotStore.value?.snapshots ?? [];
-    const snapshot = snaps.find((s) => s.id === snapshotId);
+    const snapshot = snaps.find((state1) => state1.id === snapshotId);
     if (!snapshot) {
         return null;
     }
@@ -16,25 +16,25 @@ export function recallMixerSnapshot(snapshotId: string): MixerChannelSnapshot[] 
         return null;
     }
 
-    const previousState: MixerChannelSnapshot[] = state.tracks.map((t) => ({
-        trackId: t.id,
-        gain: t.gain,
-        pan: t.pan,
-        muted: t.muted,
-        soloed: t.soloed,
+    const previousState: MixerChannelSnapshot[] = state.tracks.map((time) => ({
+        trackId: time.id,
+        gain: time.gain,
+        pan: time.pan,
+        muted: time.muted,
+        soloed: time.soloed,
     }));
 
-    const channelMap = new Map(snapshot.channels.map((c) => [c.trackId, c]));
+    const channelMap = new Map(snapshot.channels.map((context) => [context.trackId, context]));
 
     setTrackState({
         ...state,
-        tracks: state.tracks.map((t) => {
-            const saved = channelMap.get(t.id);
+        tracks: state.tracks.map((time) => {
+            const saved = channelMap.get(time.id);
             if (!saved) {
-                return t;
+                return time;
             }
             return {
-                ...t,
+                ...time,
                 gain: saved.gain,
                 pan: saved.pan,
                 muted: saved.muted,

@@ -2,12 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { stopRecording } from '../stopRecording';
 
+import type { TakeLaneStoreState } from '#/modules/Arrangement/stores/takeLaneStore';
+import type { TransportState } from '#/modules/Transport/stores/transportStore';
+import type { TrackState } from '../../../repositories/track/getTrackState';
+
 const mocks = vi.hoisted(() => ({
-    getTrackState: vi.fn(),
-    setTrackState: vi.fn(),
-    transportStoreValue: null as unknown,
-    takeLaneStoreValue: { value: { lanes: [] } },
-    takeLaneStoreSet: vi.fn(),
+    getTrackState: vi.fn<typeof import('../../../repositories/track/getTrackState').getTrackState>(),
+    setTrackState: vi.fn<typeof import('../../../repositories/track/setTrackState').setTrackState>(),
+    transportStoreValue: null as TransportState | null,
+    takeLaneStoreValue: { value: { lanes: [] } as TakeLaneStoreState | null },
+    takeLaneStoreSet: vi.fn<typeof import('#/modules/Arrangement/stores/takeLaneStore').takeLaneStore.set>(),
     activeRecordingRef: { current: ['c1'] },
 }));
 
@@ -55,41 +59,41 @@ describe('stopRecording', () => {
                     clips: [{ id: 'c1', type: 'audio', startBeat: 4, endBeat: 4 }],
                 },
             ],
-        });
-        mocks.transportStoreValue = { playheadPosition: 8 };
+        } as unknown as TrackState);
+        mocks.transportStoreValue = { playheadPosition: 8 } as unknown as TransportState;
         mocks.takeLaneStoreValue.value = null;
 
         stopRecording();
 
         expect(mocks.activeRecordingRef.current).toHaveLength(0);
         expect(mocks.setTrackState).toHaveBeenCalledTimes(1);
-        const newState = mocks.setTrackState.mock.calls[0][0];
-        expect(newState.tracks[0].clips[0].endBeat).toBe(8);
+        const newState = mocks.setTrackState.mock.calls[0]![0];
+        expect(newState.tracks[0]!.clips[0]!.endBeat).toBe(8);
     });
 
     it('enforces minimum 1 beat for MIDI clips', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ clips: [{ id: 'c1', type: 'midi', startBeat: 4, endBeat: 4 }] }],
-        });
-        mocks.transportStoreValue = { playheadPosition: 4.1 };
+        } as unknown as TrackState);
+        mocks.transportStoreValue = { playheadPosition: 4.1 } as unknown as TransportState;
 
         stopRecording();
 
-        const newState = mocks.setTrackState.mock.calls[0][0];
-        expect(newState.tracks[0].clips[0].endBeat).toBe(5); // 4 + 1
+        const newState = mocks.setTrackState.mock.calls[0]![0];
+        expect(newState.tracks[0]!.clips[0]!.endBeat).toBe(5); // 4 + 1
     });
 
     it('updates take lanes', () => {
-        mocks.getTrackState.mockReturnValue({ tracks: [{ clips: [] }] });
-        mocks.transportStoreValue = { playheadPosition: 10 };
+        mocks.getTrackState.mockReturnValue({ tracks: [{ clips: [] }] } as unknown as TrackState);
+        mocks.transportStoreValue = { playheadPosition: 10 } as unknown as TransportState;
         mocks.takeLaneStoreValue.value = {
             lanes: [{ id: 'l1', takes: [{ clipId: 'c1', startBeat: 0, endBeat: 0 }] }],
-        };
+        } as unknown as TakeLaneStoreState;
 
         stopRecording();
 
         expect(mocks.takeLaneStoreSet).toHaveBeenCalled();
-        const newState = mocks.takeLaneStoreSet.mock.calls[0][0];
-        expect(newState.lanes[0].takes[0].endBeat).toBe(10);
+        const newState = mocks.takeLaneStoreSet.mock.calls[0]![0];
+        expect(newState.lanes[0]!.takes[0]!.endBeat).toBe(10);
     });
 });

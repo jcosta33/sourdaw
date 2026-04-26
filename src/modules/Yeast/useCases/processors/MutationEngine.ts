@@ -105,6 +105,6 @@ export class MutationEngine extends BaseMidiProcessor {
 
     /** Get current mutation values for UI display. */
     getTargetValues(): Array<{ name: string; value: number }> {
-        return this.targets.map((t) => ({ name: t.name, value: t.value * this.depth }));
+        return this.targets.map((time) => ({ name: time.name, value: time.value * this.depth }));
     }
 }

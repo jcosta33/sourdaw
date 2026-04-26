@@ -347,14 +347,35 @@ export type AppAction =
     | { type: 'nextSetlistItem'; payload?: undefined }
     | { type: 'previousSetlistItem'; payload?: undefined }
     | { type: 'createAdjustmentLayer'; payload: { name: string; effectType: string } }
+    | { type: 'removeAdjustmentLayer'; payload: { layerId: string } }
+    | { type: 'toggleAdjustmentLayer'; payload: { layerId: string } }
+    | { type: 'setLayerParameter'; payload: { layerId: string; paramName: string; value: number } }
+    | { type: 'setLayerMix'; payload: { layerId: string; mix: number } }
+    | { type: 'addAdjustmentRegion'; payload: { layerId: string; startBeat: number; endBeat: number; blend?: number } }
+    | { type: 'removeAdjustmentRegion'; payload: { layerId: string; regionId: string } }
+    | { type: 'moveAdjustmentRegion'; payload: { regionId: string; startBeat: number; endBeat: number } }
+    | { type: 'setLayerFades'; payload: { regionId: string; fadeInBeats: number; fadeOutBeats: number } }
+    | { type: 'setLayerAffectedTracks'; payload: { layerId: string; trackIds: string[] } }
+    | { type: 'setLayerInsertionIndex'; payload: { layerId: string; insertionIndex: number } }
     | { type: 'detectTransients'; payload: { clipId: string; sensitivity?: number } }
     | { type: 'quantizeTransients'; payload: { clipId: string } }
+    | { type: 'openElasticEditor'; payload: { clipId: string } }
+    | { type: 'closeElasticEditor'; payload?: undefined }
+    | { type: 'elasticSetSensitivity'; payload: { sensitivity: number } }
+    | { type: 'elasticAddMarker'; payload: { clipId: string; localBeat: number } }
+    | { type: 'elasticRemoveMarker'; payload: { markerId: string } }
+    | { type: 'elasticToggleMarkerLock'; payload: { markerId: string } }
+    | {
+          type: 'elasticSetTool';
+          payload: { tool: 'select' | 'add-marker' | 'remove-marker' | 'lock-marker' };
+      }
     | { type: 'toggleNodeView'; payload?: undefined }
     | { type: 'setControlSurface'; payload: { protocol: 'mcu' | 'osc' | 'hui' | null } }
     | { type: 'addCvOutput'; payload: { name: string; channel: number; type: string } }
     | { type: 'connectPush'; payload: { model: 'push2' | 'push3' } }
     | { type: 'disconnectPush'; payload?: undefined }
     | { type: 'exportDawProject'; payload?: undefined }
+    | { type: 'importDawProject'; payload?: undefined }
     | { type: 'loadRaveModel'; payload: { modelId: string } }
     | { type: 'setRaveBlend'; payload: { blend: number } }
     | { type: 'enableWarping'; payload: { clipId: string } }
@@ -372,9 +393,9 @@ export type HandlerDescribeResult = {
     inverseAction?: AppAction | null;
 };
 
-export type ActionHandler<T extends AppAction = AppAction> = {
-    execute: (action: T) => void | Promise<void>;
-    describe: (action: T) => HandlerDescribeResult;
+export type ActionHandler<Action extends AppAction = AppAction> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => HandlerDescribeResult;
     undoable: boolean;
 };
 

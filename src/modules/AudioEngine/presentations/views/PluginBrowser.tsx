@@ -65,20 +65,20 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
 
     const query = (searchQuery || localSearch).toLowerCase().trim();
 
-    const filtered = state.scannedPlugins.filter((p) => {
+    const filtered = state.scannedPlugins.filter((param) => {
         if (!query) {
             return true;
         }
         return (
-            p.name.toLowerCase().includes(query) ||
-            p.vendor.toLowerCase().includes(query) ||
-            p.category.toLowerCase().includes(query)
+            param.name.toLowerCase().includes(query) ||
+            param.vendor.toLowerCase().includes(query) ||
+            param.category.toLowerCase().includes(query)
         );
     });
 
     const pluginsByFormat = FORMAT_ORDER.map((format) => ({
         format,
-        plugins: filtered.filter((p) => p.format.toLowerCase() === format),
+        plugins: filtered.filter((param) => param.format.toLowerCase() === format),
     })).filter((group) => group.plugins.length > 0);
 
     const toggleFormat = (format: string) => {
@@ -107,7 +107,7 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
     };
 
     const handleScan = () => {
-        startPluginScan();
+        void startPluginScan();
     };
 
     return (
@@ -117,7 +117,6 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                 <DawEyebrowLabel size="sm">External Plugins</DawEyebrowLabel>
                 <span className="ml-auto text-[9px] text-muted-foreground">{state.scannedPlugins.length}</span>
             </div>
-
             {state.scannedPlugins.length === 0 && !state.isScanning ? (
                 <div className="px-2 py-3">
                     <DawEmptyState
@@ -133,7 +132,6 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                     />
                 </div>
             ) : null}
-
             {state.isScanning ? (
                 <div className="flex items-center gap-2 px-2 py-2">
                     <Loader2 className="size-3 animate-spin text-primary" aria-hidden="true" />
@@ -142,7 +140,6 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                     </DawInlineHint>
                 </div>
             ) : null}
-
             {state.scannedPlugins.length > 0 ? (
                 <>
                     <div className="flex items-center gap-1 px-1">
@@ -152,8 +149,8 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                                 type="search"
                                 placeholder="Filter plugins..."
                                 value={localSearch}
-                                onChange={(e) => {
-                                    setLocalSearch(e.target.value);
+                                onChange={(event) => {
+                                    setLocalSearch(event.target.value);
                                 }}
                                 size="micro"
                                 className="h-5 border-0 bg-transparent p-0 text-[10px] shadow-none focus-visible:ring-0"
@@ -218,11 +215,10 @@ export const PluginBrowser = ({ selectedTrackId, searchQuery }: PluginBrowserPro
                     ) : null}
                 </>
             ) : null}
-
             {state.errors.length > 0 && !state.isScanning ? (
                 <div className="px-2 py-1">
-                    {state.errors.map((err, i) => (
-                        <div key={i} className="flex items-start gap-1 text-[9px] text-destructive">
+                    {state.errors.map((err, index) => (
+                        <div key={index} className="flex items-start gap-1 text-[9px] text-destructive">
                             <AlertCircle className="size-3 shrink-0 mt-px" aria-hidden="true" />
                             <span>{err}</span>
                         </div>

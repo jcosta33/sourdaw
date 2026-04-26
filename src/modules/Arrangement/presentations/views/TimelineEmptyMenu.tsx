@@ -33,7 +33,7 @@ const NearbyMarkerColorMenu = ({ beat, onClose }: NearbyMarkerColorMenuProps): R
     // §211.1 — useStore subscription so the menu re-renders when markers
     // change (rename, add, remove) while the menu is open.
     const markerState = useStore(markerStore, defaultMarkerStoreState);
-    const nearby = markerState.markers.filter((m) => Math.abs(m.beat - beat) <= 2);
+    const nearby = markerState.markers.filter((message) => Math.abs(message.beat - beat) <= 2);
     if (nearby.length === 0) {
         return null;
     }
@@ -50,13 +50,13 @@ const NearbyMarkerColorMenu = ({ beat, onClose }: NearbyMarkerColorMenuProps): R
                     <DawMenuSeparator className="border-border/50" />
                     <DawMenuMutedRow>Marker: {marker.name}</DawMenuMutedRow>
                     <div className="flex gap-1 px-3 py-1">
-                        {MARKER_COLOR_PRESETS.map((c) => (
+                        {MARKER_COLOR_PRESETS.map((context) => (
                             <DawSwatchButton
-                                key={c}
-                                color={c}
-                                active={c === marker.color}
+                                key={context}
+                                color={context}
+                                active={context === marker.color}
                                 className="size-4"
-                                onClick={act(() => setMarkerColor(marker.id, c))}
+                                onClick={act(() => setMarkerColor(marker.id, context))}
                                 aria-label="Set marker color"
                             />
                         ))}
@@ -160,7 +160,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                 <DawMenuButton
                     role="menuitem"
                     onClick={act(() => {
-                        const track = trackStore.value?.tracks.find((t) => t.id === trackId);
+                        const track = trackStore.value?.tracks.find((time) => time.id === trackId);
                         const clipType = track?.kind === 'midi' ? 'midi' : 'audio';
                         addClip({
                             trackId,
@@ -193,7 +193,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
                     onClick={act(() => {
                         const prompt = window.prompt('Describe the audio to generate:');
                         if (prompt?.trim()) {
-                            executeAppAction({
+                            void executeAppAction({
                                 type: 'generateAudio',
                                 payload: { prompt: prompt.trim(), durationSeconds: 8, trackId: trackId ?? undefined },
                             });
@@ -212,7 +212,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    executeAppAction({
+                    void executeAppAction({
                         type: 'generateDrumPattern',
                         payload: { style: 'rock', bars: 4, trackId: trackId ?? undefined, startBeat: beat },
                     });
@@ -224,7 +224,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    executeAppAction({
+                    void executeAppAction({
                         type: 'generateChordProgression',
                         payload: {
                             style: 'pop',
@@ -243,7 +243,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    executeAppAction({
+                    void executeAppAction({
                         type: 'generateMelody',
                         payload: {
                             style: 'simple',

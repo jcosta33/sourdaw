@@ -17,7 +17,7 @@ Existing infrastructure this spec builds on:
 - **Python sidecar** — `src-tauri/sidecar/` exists for models that do not export cleanly to ONNX. This spec does **not** use the sidecar; all MIDI models ship as ONNX.
 - **Model download** — `src-tauri/src/commands/model_download.rs` handles HuggingFace downloads with SHA256 verification, chunked streaming, and `~/.local/share/com.sourdaw.app/models/` storage. This spec reuses that path for AMT and GrooVAE weights.
 - **Tauri Channels** — `tauri-specta` typed channel contract is already established by the audio-generation pipeline (see `audio-generation.md` §19 and the Tauri v2 Channel API notes in `audio-generation-browser.md`). This spec reuses that pattern for streaming generated MIDI tokens.
-- **Ghost-preview surface** — `../features/workflow-ui.md` §E1 (ghost MIDI clips) and §R-E1.* define the UI-layer preview pipeline that AI MIDI output flows into. This spec is the **producer** for that ghost-clip surface; it does not define the UI.
+- **Ghost-preview surface** — `../features/workflow-ui.md` §E1 (ghost MIDI clips) and §R-E1.\* define the UI-layer preview pipeline that AI MIDI output flows into. This spec is the **producer** for that ghost-clip surface; it does not define the UI.
 - **`../global/full-spec.md` Chapter 14** — defines the product features (Session Players, Chord Track, Melodize) and their user-visible parameters. This spec defines the inference plumbing that satisfies those features.
 
 The research file establishes three architectural tiers — a zero-latency **rule-based core** (walking bass, probability grids, Euclidean rhythms), a **small-model enhancement** layer (GrooVAE humanization), and a **transformer accompaniment** layer (AMT 128M / 360M for chord-conditioned generation). This spec scopes all three tiers as they relate to the **inference pipeline**. It does **not** scope rule-engine pattern content (genre templates, specific grooves) — those are product content, not pipeline architecture.
@@ -150,10 +150,10 @@ All symbolic-MIDI models load and run through `ort` (already a dependency). Pyth
 
 - **AC-R4.1** — AMT-small loads in **< 3 s on cold start** on Apple M1 / Intel i5; AMT-medium loads in **< 8 s**. GrooVAE-small loads in **< 500 ms**.
 - **AC-R4.2** — Per-feature inference latency bounds (P50, measured):
-  - Session Player continuation (AMT-small, 4-bar context): **< 500 ms on GPU, < 4 s on CPU**
-  - Chord Track progression (AMT-small, 8-bar gen): **< 1 s on GPU, < 8 s on CPU**
-  - Melodize (AMT-small, 4-bar gen): **< 500 ms on GPU, < 4 s on CPU**
-  - Humanize (GrooVAE-small, 2-bar): **< 100 ms on CPU**
+    - Session Player continuation (AMT-small, 4-bar context): **< 500 ms on GPU, < 4 s on CPU**
+    - Chord Track progression (AMT-small, 8-bar gen): **< 1 s on GPU, < 8 s on CPU**
+    - Melodize (AMT-small, 4-bar gen): **< 500 ms on GPU, < 4 s on CPU**
+    - Humanize (GrooVAE-small, 2-bar): **< 100 ms on CPU**
 - **AC-R4.3** — Only one heavy neural model (AMT) is resident at a time; small models (GrooVAE) can remain resident. Verified by a runtime-memory check that reports total ONNX-session bytes.
 - **AC-R4.4** — No model weights with licenses incompatible with commercial shipping (GPL, CC-BY-NC-SA, CC-BY-NC) are loaded, and the model registry explicitly tags license strings that the registry loader whitelists.
 
@@ -192,7 +192,7 @@ Results stream back to the frontend via Tauri v2 Channels, typed end-to-end via 
 
 ### R7 — Preview-then-commit integration with ghost MIDI clips
 
-Inference output flows into the ghost-preview surface defined by `../features/workflow-ui.md` §E1 and §R-E1.* (AI ghost MIDI clips). This pipeline is the **producer**; the ghost-clip surface is the **consumer**.
+Inference output flows into the ghost-preview surface defined by `../features/workflow-ui.md` §E1 and §R-E1.\* (AI ghost MIDI clips). This pipeline is the **producer**; the ghost-clip surface is the **consumer**.
 
 - On `Completed`, the `MidiGeneration` frontend module constructs a `GhostMidiClip` UI object from the payload (notes, provenance metadata, request ID as the ghost ID) and hands it to the ghost-clip layer. The pipeline does not directly mutate the project model.
 - Provenance metadata required on every ghost clip: `modelId`, `modelVersion`, `inputHash` (SHA256 of the serialized structured input), `seed`, `tokenizer` (`"remi+"` / `"arrival-time"`), `feature` (one of the R9 sub-contracts), `createdAt`.
@@ -229,28 +229,28 @@ AMT-medium (360M) is **optional** and gated behind a user-visible "Install highe
 Every product feature maps to exactly one numbered inference contract. Each contract has a typed request, a typed response, and a latency budget. All contracts share the same channel (R6), differentiated by the `feature` field.
 
 - **R9.1 — Session Player continuation.**
-  - Input: `{ chordTrack: ChordSpan[], priorNotes: MidiNote[], instrument: "bass" | "keys" | "drums", bars: u8, parameters: SessionPlayerParams, seed: u64 }`
-  - Output: `MidiNote[]` for the generated bars, on a single track.
-  - Budget: per R4.2.
-  - Implementation: AMT-small with chord-track voicings as control events, anticipation δ = 5 s.
+    - Input: `{ chordTrack: ChordSpan[], priorNotes: MidiNote[], instrument: "bass" | "keys" | "drums", bars: u8, parameters: SessionPlayerParams, seed: u64 }`
+    - Output: `MidiNote[]` for the generated bars, on a single track.
+    - Budget: per R4.2.
+    - Implementation: AMT-small with chord-track voicings as control events, anticipation δ = 5 s.
 
 - **R9.2 — Chord Track progression generation.**
-  - Input: `{ key: Key, style: StyleTag, bars: u8, seedChord?: ChordSymbol, parameters: ChordTrackParams, seed: u64 }`
-  - Output: `ChordSpan[]` (symbolic chord symbols + bar positions). **Not** raw MIDI notes — this contract emits chord-track entries, not a MIDI clip.
-  - Budget: per R4.2.
-  - Implementation: AMT-small with symbolic chord symbols expanded to voicings internally, plus a post-pass that converts the generated voicings back to chord symbols.
+    - Input: `{ key: Key, style: StyleTag, bars: u8, seedChord?: ChordSymbol, parameters: ChordTrackParams, seed: u64 }`
+    - Output: `ChordSpan[]` (symbolic chord symbols + bar positions). **Not** raw MIDI notes — this contract emits chord-track entries, not a MIDI clip.
+    - Budget: per R4.2.
+    - Implementation: AMT-small with symbolic chord symbols expanded to voicings internally, plus a post-pass that converts the generated voicings back to chord symbols.
 
 - **R9.3 — Melodize (melody from chord).**
-  - Input: `{ chordTrack: ChordSpan[], bars: u8, parameters: MelodizeParams, seed: u64 }`
-  - Output: `MidiNote[]` for a single monophonic melody track aligned to the chord track.
-  - Budget: per R4.2.
-  - Implementation: AMT-small with chord-track voicings as control events, conditioned for high chord-tone percentage.
+    - Input: `{ chordTrack: ChordSpan[], bars: u8, parameters: MelodizeParams, seed: u64 }`
+    - Output: `MidiNote[]` for a single monophonic melody track aligned to the chord track.
+    - Budget: per R4.2.
+    - Implementation: AMT-small with chord-track voicings as control events, conditioned for high chord-tone percentage.
 
 - **R9.4 — Humanize.**
-  - Input: `{ notes: MidiNote[], swing: f32, intensity: f32, seed: u64 }`
-  - Output: `MidiNote[]` with per-note velocity and onset offsets applied.
-  - Budget: per R4.2.
-  - Implementation: GrooVAE-small (drums) or a deterministic rule-based humanizer (non-drum) — routing by instrument type; the per-instrument routing is tracked as part of O3 if hardware-accelerated execution is needed.
+    - Input: `{ notes: MidiNote[], swing: f32, intensity: f32, seed: u64 }`
+    - Output: `MidiNote[]` with per-note velocity and onset offsets applied.
+    - Budget: per R4.2.
+    - Implementation: GrooVAE-small (drums) or a deterministic rule-based humanizer (non-drum) — routing by instrument type; the per-instrument routing is tracked as part of O3 if hardware-accelerated execution is needed.
 
 Every contract is exposed as a single Tauri command, generated with `#[tauri::command]` and declared via `tauri-specta` so the TS frontend sees the exact typed request shape.
 
@@ -379,8 +379,8 @@ All stochastic operations (sampling, GrooVAE latent draw, humanization jitter) g
 - [ ] No MIDI inference runs on the CPAL audio thread (R5.4 audio-thread assertion).
 - [ ] `pnpm deps:validate` passes with zero architectural violations.
 - [ ] `pnpm typecheck` passes with zero errors.
-- [ ] The ghost-clip integration produces a valid ghost MIDI clip for every R9.* contract, with provenance correctly copied onto a committed clip on accept (R7).
-- [ ] No model with an incompatible license (GPL, CC-BY-NC*, unclear) is reachable via the registry.
+- [ ] The ghost-clip integration produces a valid ghost MIDI clip for every R9.\* contract, with provenance correctly copied onto a committed clip on accept (R7).
+- [ ] No model with an incompatible license (GPL, CC-BY-NC\*, unclear) is reachable via the registry.
 - [ ] Deterministic mode (R10) passes identical-seed-identical-output for every contract.
 
 ---
@@ -402,14 +402,14 @@ All stochastic operations (sampling, GrooVAE latent draw, humanization jitter) g
 
 Every Session Player / Melodize / Chord Track UI parameter maps to an inference conditioning strategy. The pipeline does not own the UI-layer parameter labels (those live in `workflow-ui.md`), but it must accept and correctly apply the following mappings:
 
-| UI parameter | Conditioning strategy                                                                                       | Applied at                                    |
-| ------------ | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| Complexity   | Maps to note-density target bin (0.0 → sparse, 1.0 → dense). Also activates chord-tone post-filter at > 0.7 | Sampling-time bias + post-filter              |
-| Intensity    | Maps to velocity-range bias (lower bins for low intensity) and density multiplier                           | Sampling-time bias                            |
-| Swing        | Post-processing only: `upbeat_shift = swing × triplet_offset`. Not fed into the model                       | Post-decode pass                              |
-| Genre/Style  | Model / checkpoint selection (when genre-specific fine-tunes are registered) or prefix attribute tokens     | Registry lookup + prompt prefix               |
-| Temperature  | Pure sampling-time parameter. 0.7 = conservative, 1.2 = creative variation                                  | Sampling                                      |
-| Seed         | ChaCha20Rng seed per request (R10)                                                                          | RNG initialisation                            |
+| UI parameter | Conditioning strategy                                                                                       | Applied at                       |
+| ------------ | ----------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| Complexity   | Maps to note-density target bin (0.0 → sparse, 1.0 → dense). Also activates chord-tone post-filter at > 0.7 | Sampling-time bias + post-filter |
+| Intensity    | Maps to velocity-range bias (lower bins for low intensity) and density multiplier                           | Sampling-time bias               |
+| Swing        | Post-processing only: `upbeat_shift = swing × triplet_offset`. Not fed into the model                       | Post-decode pass                 |
+| Genre/Style  | Model / checkpoint selection (when genre-specific fine-tunes are registered) or prefix attribute tokens     | Registry lookup + prompt prefix  |
+| Temperature  | Pure sampling-time parameter. 0.7 = conservative, 1.2 = creative variation                                  | Sampling                         |
+| Seed         | ChaCha20Rng seed per request (R10)                                                                          | RNG initialisation               |
 
 The FIGARO model's bar-level conditioning vocabulary (per-bar instrument set, chord, density, mean pitch, mean velocity, mean duration) is the upper-bound reference for this surface. R9 contracts currently use a simpler per-request parameter bag; widening to bar-level conditioning is an explicit future direction (see O9).
 
@@ -489,9 +489,11 @@ Two emergency / future paths exist if the AMT export or licensing hits a wall:
 ## Implementation Status
 
 **What is implemented:**
+
 - Underlying infrastructure: The ONNX Runtime (`ort`) dependency, model downloading (`model_download::ensure_model`), and `tokio::spawn_blocking` patterns are established and validated in the codebase via the audio pipeline (`Demucs` in `ai_audio.rs`).
 
 **What is not implemented:**
+
 - The entire `src/modules/MidiGeneration` frontend module and UI plumbing.
 - The `REMI` / `arrival-time` tokenizers.
 - The `Anticipatory Music Transformer` (AMT) and `GrooVAE` model integrations in Rust.
@@ -499,7 +501,9 @@ Two emergency / future paths exist if the AMT export or licensing hits a wall:
 - The execution harnesses for the specific R9 inference contracts (Session Player continuation, Chord Track progression, Melodize, Humanize).
 
 **What is done well:**
+
 - N/A (The symbolic-MIDI inference pipeline defined by this spec is currently completely absent).
 
 **What needs refactoring:**
+
 - N/A

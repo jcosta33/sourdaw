@@ -16,18 +16,18 @@ describe('undoStore / pushUndo', () => {
     });
 
     it('should append an entry to past and clear future', () => {
-        const a = createUndoEntry(
+        const alpha = createUndoEntry(
             'one',
             { type: 'setTempo', payload: { bpm: 120 } },
             { type: 'setTempo', payload: { bpm: 100 } }
         );
         const b = createUndoEntry('two', { type: 'stopPlayback' }, { type: 'togglePlayback' });
-        undoStore.set({ past: [a], future: [b] });
+        undoStore.set({ past: [alpha], future: [b] });
 
         const next = createUndoEntry('three', { type: 'toggleMetronome' }, { type: 'toggleMetronome' });
         pushUndo(next);
 
-        expect(undoStore.value?.past).toEqual([a, next]);
+        expect(undoStore.value?.past).toEqual([alpha, next]);
         expect(undoStore.value?.future).toEqual([]);
     });
 

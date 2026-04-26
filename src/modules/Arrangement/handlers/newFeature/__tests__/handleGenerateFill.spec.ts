@@ -23,7 +23,7 @@ describe('handleGenerateFill', () => {
     it('executes generateDrumFill with provided parameters and notifies success', () => {
         mocks.generateDrumFill.mockReturnValue({ notes: [1, 2, 3] });
 
-        handleGenerateFill.execute({
+        void handleGenerateFill.execute({
             type: 'generateFill',
             payload: { atBeat: 16, durationBeats: 4, style: 'syncopated' },
         });
@@ -35,7 +35,7 @@ describe('handleGenerateFill', () => {
     it('uses defaults for duration and style', () => {
         mocks.generateDrumFill.mockReturnValue({ notes: [] });
 
-        handleGenerateFill.execute({
+        void handleGenerateFill.execute({
             type: 'generateFill',
             payload: { atBeat: 32 },
         });

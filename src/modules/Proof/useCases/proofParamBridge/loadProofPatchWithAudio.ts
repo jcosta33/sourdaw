@@ -92,7 +92,18 @@ export function syncFullPatch(deviceId: string): void {
     bridge.setParam('lim_ceiling', patch.limCeiling);
     bridge.setParam('lim_release', patch.limRelease);
     bridge.setParam('lim_lookahead', patch.limLookahead);
-    bridge.setParam('dither_mode', patch.ditherMode === 'off' ? 0 : patch.ditherMode === 'tpdf' ? 1 : 2);
+    bridge.setParam(
+        'dither_mode',
+        (() => {
+            if (patch.ditherMode === 'off') {
+                return 0;
+            }
+            if (patch.ditherMode === 'tpdf') {
+                return 1;
+            }
+            return 2;
+        })()
+    );
     bridge.setParam('dither_bits', patch.ditherBits);
 
     syncEqBands(deviceId);

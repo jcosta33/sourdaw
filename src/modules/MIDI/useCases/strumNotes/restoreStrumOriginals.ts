@@ -18,12 +18,12 @@ export function restoreStrumOriginals(clipId: string, originals: Map<string, num
         ...state,
         notesByClipId: {
             ...state.notesByClipId,
-            [clipId]: existing.map((n) => {
-                const orig = originals.get(n.id);
+            [clipId]: existing.map((node) => {
+                const orig = originals.get(node.id);
                 if (orig === undefined) {
-                    return n;
+                    return node;
                 }
-                return { ...n, startBeat: orig };
+                return { ...node, startBeat: orig };
             }),
         },
     });

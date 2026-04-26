@@ -5,7 +5,7 @@ import * as subject from '../initWebMidi';
 describe('initWebMidi', () => {
     it('should export initWebMidi', () => {
         expect(subject.initWebMidi).toBeDefined();
-        const t = typeof subject.initWebMidi;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.initWebMidi;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

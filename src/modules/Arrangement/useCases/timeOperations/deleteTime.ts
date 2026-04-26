@@ -45,8 +45,8 @@ export function deleteTime(startBeat: number, endBeat: number): void {
         markerStore.set({
             ...markerState,
             markers: markerState.markers
-                .filter((m) => m.beat < startBeat || m.beat >= endBeat)
-                .map((m) => (m.beat >= endBeat ? { ...m, beat: m.beat - duration } : m)),
+                .filter((message) => message.beat < startBeat || message.beat >= endBeat)
+                .map((message) => (message.beat >= endBeat ? { ...message, beat: message.beat - duration } : message)),
         });
     }
 
@@ -57,8 +57,8 @@ export function deleteTime(startBeat: number, endBeat: number): void {
             lanes: autoState.lanes.map((lane) => ({
                 ...lane,
                 points: lane.points
-                    .filter((p) => p.beat < startBeat || p.beat >= endBeat)
-                    .map((p) => (p.beat >= endBeat ? { ...p, beat: p.beat - duration } : p)),
+                    .filter((param) => param.beat < startBeat || param.beat >= endBeat)
+                    .map((param) => (param.beat >= endBeat ? { ...param, beat: param.beat - duration } : param)),
             })),
         });
     }
@@ -69,8 +69,8 @@ export function deleteTime(startBeat: number, endBeat: number): void {
         tempoMapStore.set({
             ...tempoState,
             changes: tempoState.changes
-                .filter((c) => c.beat < startBeat || c.beat >= endBeat)
-                .map((c) => (c.beat >= endBeat ? { ...c, beat: c.beat - duration } : c)),
+                .filter((context) => context.beat < startBeat || context.beat >= endBeat)
+                .map((context) => (context.beat >= endBeat ? { ...context, beat: context.beat - duration } : context)),
         });
     }
 
@@ -80,8 +80,8 @@ export function deleteTime(startBeat: number, endBeat: number): void {
         timeSignatureMapStore.set({
             ...timeSigState,
             changes: timeSigState.changes
-                .filter((c) => c.beat < startBeat || c.beat >= endBeat)
-                .map((c) => (c.beat >= endBeat ? { ...c, beat: c.beat - duration } : c)),
+                .filter((context) => context.beat < startBeat || context.beat >= endBeat)
+                .map((context) => (context.beat >= endBeat ? { ...context, beat: context.beat - duration } : context)),
         });
     }
 }

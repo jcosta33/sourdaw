@@ -8,5 +8,5 @@ export function deleteMixerSnapshot(snapshotId: string): void {
     if (!current) {
         return;
     }
-    mixerSnapshotStore.set({ snapshots: current.snapshots.filter((s) => s.id !== snapshotId) });
+    mixerSnapshotStore.set({ snapshots: current.snapshots.filter((state) => state.id !== snapshotId) });
 }

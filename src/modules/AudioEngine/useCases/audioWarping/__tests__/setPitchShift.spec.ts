@@ -5,7 +5,7 @@ import * as subject from '../setPitchShift';
 describe('setPitchShift', () => {
     it('should export setPitchShift', () => {
         expect(subject.setPitchShift).toBeDefined();
-        const t = typeof subject.setPitchShift;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setPitchShift;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

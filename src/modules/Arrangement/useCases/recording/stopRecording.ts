@@ -37,14 +37,14 @@ export function stopRecording(): void {
 
     setTrackState({
         ...trackState,
-        tracks: trackState.tracks.map((t) => ({
-            ...t,
-            clips: t.clips.map((c) => {
-                if (!clipIdSet.has(c.id)) {
-                    return c;
+        tracks: trackState.tracks.map((time) => ({
+            ...time,
+            clips: time.clips.map((context) => {
+                if (!clipIdSet.has(context.id)) {
+                    return context;
                 }
-                const minEnd = c.type === 'midi' ? c.startBeat + 1 : c.startBeat;
-                return { ...c, endBeat: Math.max(minEnd, endBeat) };
+                const minEnd = context.type === 'midi' ? context.startBeat + 1 : context.startBeat;
+                return { ...context, endBeat: Math.max(minEnd, endBeat) };
             }),
         })),
     });

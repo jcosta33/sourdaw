@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { DISABLED_REASONS, getPlatformCapabilities } from '../platformCapabilities';
+import { DISABLED_REASONS } from '../platformCapabilities';
 
 describe('getPlatformCapabilities', () => {
     beforeEach(() => {

@@ -69,7 +69,7 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
     const isStale = track.freezeState.status === 'stale';
 
     if (track.kind === 'folder') {
-        const isDrumMachine = track.devices.some((d) => d.type === 'toaster');
+        const isDrumMachine = track.devices.some((data) => data.type === 'toaster');
         const FolderIcon = isDrumMachine ? Drum : Folder;
 
         return (
@@ -92,8 +92,8 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                 variant="ghost"
                                 size="icon-xs"
                                 aria-label={track.collapsed ? 'Expand folder' : 'Collapse folder'}
-                                onClick={(e) => {
-                                    e.stopPropagation();
+                                onClick={(event) => {
+                                    event.stopPropagation();
                                     toggleFolderCollapse(track.id);
                                 }}
                                 className="size-5 shrink-0"
@@ -131,6 +131,43 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
         );
     }
 
+    const KindIcon = TRACK_KIND_ICON[track.kind];
+    const kindIconContent = KindIcon ? (
+        <KindIcon className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+    ) : null;
+
+    let freezeStateContent = null;
+    if (isFreezing) {
+        freezeStateContent = (
+            <div className="flex flex-col gap-1 w-16 ml-2">
+                <span className="text-[8px] font-bold text-primary animate-pulse">FREEZING</span>
+                <DawMeterBar
+                    value={(track.freezeState.renderProgress ?? 0) * 100}
+                    size="sm"
+                    fillClassName="bg-primary"
+                />
+            </div>
+        );
+    } else if (track.frozen) {
+        freezeStateContent = (
+            <div className="flex items-center gap-1 ml-2">
+                <Snowflake className="size-2.5 text-[var(--color-accent-cyan)]" />
+                <span className="text-[9px] text-[var(--color-accent-cyan)] font-bold tracking-tight">FROZEN</span>
+                {isStale && (
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <div className="flex items-center gap-0.5 ml-1 px-1 rounded bg-state-warning/30 border border-state-warning/40">
+                                <AlertCircle className="size-2.5 text-state-warning" />
+                                <span className="text-[8px] text-state-warning font-bold">STALE</span>
+                            </div>
+                        </TooltipTrigger>
+                        <TooltipContent>Track content has changed since freezing. Update required.</TooltipContent>
+                    </Tooltip>
+                )}
+            </div>
+        );
+    }
+
     return (
         <TrackContextMenu track={track}>
             <div
@@ -163,47 +200,13 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
 
                     <TrackLevelIndicator trackId={track.id} height={Math.min(trackHeight - 8, 24)} />
 
-                    {(() => {
-                        const KindIcon = TRACK_KIND_ICON[track.kind];
-                        return KindIcon ? (
-                            <KindIcon className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
-                        ) : null;
-                    })()}
+                    {kindIconContent}
 
                     <LevainLoadingSpinner track={track} />
 
                     <InlineTrackName track={track} />
 
-                    {isFreezing ? (
-                        <div className="flex flex-col gap-1 w-16 ml-2">
-                            <span className="text-[8px] font-bold text-primary animate-pulse">FREEZING</span>
-                            <DawMeterBar
-                                value={(track.freezeState.renderProgress ?? 0) * 100}
-                                size="sm"
-                                fillClassName="bg-primary"
-                            />
-                        </div>
-                    ) : track.frozen ? (
-                        <div className="flex items-center gap-1 ml-2">
-                            <Snowflake className="size-2.5 text-[var(--color-accent-cyan)]" />
-                            <span className="text-[9px] text-[var(--color-accent-cyan)] font-bold tracking-tight">
-                                FROZEN
-                            </span>
-                            {isStale && (
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <div className="flex items-center gap-0.5 ml-1 px-1 rounded bg-state-warning/30 border border-state-warning/40">
-                                            <AlertCircle className="size-2.5 text-state-warning" />
-                                            <span className="text-[8px] text-state-warning font-bold">STALE</span>
-                                        </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                        Track content has changed since freezing. Update required.
-                                    </TooltipContent>
-                                </Tooltip>
-                            )}
-                        </div>
-                    ) : null}
+                    {freezeStateContent}
 
                     {track.kind === 'audio' && isSelected ? (
                         <InputSelector trackId={track.id} inputId={track.inputId} />
@@ -220,8 +223,8 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                             ? 'bg-accent-gold/20 text-accent-gold'
                                             : 'text-muted-foreground hover:text-foreground'
                                     )}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
+                                    onClick={(event) => {
+                                        event.stopPropagation();
                                         toggleVariationLanes(track.id);
                                     }}
                                 >
@@ -240,8 +243,8 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                         size="icon-sm"
                                         aria-label={`Input monitoring: ${INPUT_MONITORING_LABEL[track.inputMonitoring]}`}
                                         className="font-bold text-[10px]"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
+                                        onClick={(event) => {
+                                            event.stopPropagation();
                                             setInputMonitoring(track.id, INPUT_MONITORING_CYCLE[track.inputMonitoring]);
                                         }}
                                     >
@@ -261,8 +264,8 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     variant="red"
                                     size="icon-sm"
                                     aria-label={track.armed ? `Disarm ${track.name}` : `Arm ${track.name}`}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
+                                    onClick={(event) => {
+                                        event.stopPropagation();
                                         armTrack(track.id, !track.armed);
                                     }}
                                 >
@@ -285,8 +288,8 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     size="icon-sm"
                                     aria-label={track.muted ? `Unmute ${track.name}` : `Mute ${track.name}`}
                                     className="font-bold text-[9px]"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
+                                    onClick={(event) => {
+                                        event.stopPropagation();
                                         muteTrack(track.id, !track.muted);
                                     }}
                                 >
@@ -304,9 +307,9 @@ export const TrackHeader = ({ track, isSelected }: TrackHeaderProps): ReactEleme
                                     size="icon-sm"
                                     aria-label={track.soloed ? `Unsolo ${track.name}` : `Solo ${track.name}`}
                                     className="font-bold text-[9px]"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (e.metaKey || e.ctrlKey) {
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        if (event.metaKey || event.ctrlKey) {
                                             soloTrack(track.id, !track.soloed);
                                         } else {
                                             soloTrackExclusive(track.id);

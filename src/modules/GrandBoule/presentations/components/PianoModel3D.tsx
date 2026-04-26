@@ -262,17 +262,17 @@ export const PianoModel3D = ({
     useEffect(() => {
         const canvas = canvasRef.current;
         if (canvas === null) {
-            return;
+            return undefined;
         }
 
         const gl = canvas.getContext('webgl2', { alpha: false, antialias: true });
         if (gl === null) {
-            return;
+            return undefined;
         }
 
         const prog = buildProgram(gl);
         if (prog === null) {
-            return;
+            return undefined;
         }
 
         gl.useProgram(prog);

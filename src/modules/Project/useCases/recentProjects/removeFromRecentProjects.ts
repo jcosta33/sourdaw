@@ -7,7 +7,7 @@ export const removeFromRecentProjects = inject({ logger })(
     ({ logger }) =>
         function removeFromRecentProjects(key: string): void {
             try {
-                recentProjectsStorage.set(getRecentProjects().filter((e) => e.key !== key));
+                recentProjectsStorage.set(getRecentProjects().filter((event) => event.key !== key));
             } catch (error) {
                 logger.warn(`Failed to remove from recent projects: ${error}`);
             }

@@ -5,7 +5,7 @@ import * as subject from '../resetAudioGraph';
 describe('resetAudioGraph', () => {
     it('should export resetAudioGraph', () => {
         expect(subject.resetAudioGraph).toBeDefined();
-        const t = typeof subject.resetAudioGraph;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.resetAudioGraph;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

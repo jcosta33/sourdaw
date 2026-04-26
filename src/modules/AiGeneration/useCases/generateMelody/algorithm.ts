@@ -80,7 +80,14 @@ function buildRhythm(style: MelodyStyle, totalBeats: number, density: number, rn
         case 'simple': {
             while (position < totalBeats) {
                 const r = rng();
-                const duration = r < 0.4 ? 1 : r < 0.7 ? 2 : 0.5;
+                let duration: number;
+                if (r < 0.4) {
+                    duration = 1;
+                } else if (r < 0.7) {
+                    duration = 2;
+                } else {
+                    duration = 0.5;
+                }
                 const isRest = rng() > density * 1.2;
                 const clamped = Math.min(duration, totalBeats - position);
                 if (clamped <= 0) {
@@ -140,7 +147,14 @@ function buildRhythm(style: MelodyStyle, totalBeats: number, density: number, rn
         case 'ambient': {
             while (position < totalBeats) {
                 const r = rng();
-                const duration = r < 0.3 ? 4 : r < 0.6 ? 2 : 3;
+                let duration: number;
+                if (r < 0.3) {
+                    duration = 4;
+                } else if (r < 0.6) {
+                    duration = 2;
+                } else {
+                    duration = 3;
+                }
                 const isRest = rng() > density * 0.8;
                 const clamped = Math.min(duration, totalBeats - position);
                 if (clamped <= 0) {
@@ -200,10 +214,14 @@ function pickNextNote(scaleNotes: number[], currentIndex: number, style: MelodyS
             const step = Math.floor(rng() * 7) - 3;
             return Math.max(0, Math.min(len - 1, currentIndex + step));
         }
+        default:
+            return currentIndex;
     }
 }
 
-const clampVelocity = (v: number): number => Math.max(1, Math.min(127, Math.round(v)));
+function clampVelocity(value: number): number {
+    return Math.max(1, Math.min(127, Math.round(value)));
+}
 
 function velocityForStyle(style: MelodyStyle, beatPosition: number, rng: () => number): number {
     const isDownbeat = beatPosition % 1 === 0;
@@ -219,6 +237,8 @@ function velocityForStyle(style: MelodyStyle, beatPosition: number, rng: () => n
             return clampVelocity(isDownbeat ? 100 + rng() * 10 : 80 + rng() * 15);
         case 'ambient':
             return clampVelocity(55 + rng() * 25);
+        default:
+            return clampVelocity(80 + rng() * 15);
     }
 }
 

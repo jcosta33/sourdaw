@@ -16,7 +16,7 @@ describe('handleFitClipToBeats', () => {
     });
 
     it('executes fitClipToBeats with the provided payload', () => {
-        handleFitClipToBeats.execute({
+        void handleFitClipToBeats.execute({
             type: 'fitClipToBeats',
             payload: { clipId: 'c1', targetBeats: 8 },
         });

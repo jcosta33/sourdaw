@@ -540,6 +540,7 @@ For each fixture: export to MusicXML → assert schema validity → (manual) ope
 - Verify no `forwardRef`, `useMemo`, `useCallback`, or `React.memo` usages in the notation module (ESLint rule).
 
 ---
+
 ## Implementation notes
 
 - **Phasing:** Build order follows the research's phased roadmap — renderer + grid quantization first (R1, R2, R3 baseline, R6), then MusicXML export (R4), then DP/HMM quantization refinement (R3 phase 2), then import (R5) and engraved elements (R11), then chord symbols and print (R14, R16). R17 (tab) is phase-2 candidate, not phase-1 blocker.

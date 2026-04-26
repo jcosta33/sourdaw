@@ -19,14 +19,14 @@ export const sessionState: { currentContext: SemanticContext | null } = {
     currentContext: null,
 };
 
-export const setSemanticContext = (ctx: SemanticContext): void => {
+export function setSemanticContext(ctx: SemanticContext): void {
     sessionState.currentContext = ctx;
-};
+}
 
-export const getSemanticContext = (): SemanticContext | null => {
+export function getSemanticContext(): SemanticContext | null {
     return sessionState.currentContext;
-};
+}
 
-export const clearSemanticContext = (): void => {
+export function clearSemanticContext(): void {
     sessionState.currentContext = null;
-};
+}

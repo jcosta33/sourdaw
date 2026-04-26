@@ -57,7 +57,7 @@ function useContainerWidth(ref: RefObject<HTMLDivElement | null>): number {
     useLayoutEffect(() => {
         const el = ref.current;
         if (!el) {
-            return;
+            return undefined;
         }
         const ro = new ResizeObserver(([entry]) => {
             if (entry) {
@@ -88,10 +88,10 @@ const LaneSparkline = ({
 
     const range = maxValue - minValue;
     const pathData = points
-        .map((p, i) => {
-            const x = (p.beat / (points[points.length - 1]!.beat || 1)) * width;
-            const y = SPARKLINE_HEIGHT - ((p.value - minValue) / (range || 1)) * (SPARKLINE_HEIGHT - 4) - 2;
-            return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+        .map((param, index) => {
+            const x = (param.beat / (points[points.length - 1]!.beat || 1)) * width;
+            const y = SPARKLINE_HEIGHT - ((param.value - minValue) / (range || 1)) * (SPARKLINE_HEIGHT - 4) - 2;
+            return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
         })
         .join(' ');
 
@@ -128,23 +128,27 @@ export const AutomationBottomPanel = (): ReactElement => {
     const ws = useStore<AutomationPanelWorkspaceState>(workspaceStore, defaultWorkspaceState);
 
     const selectedTrackId = trackState.selectedTrackId;
-    const selectedTrack = trackState.tracks.find((t) => t.id === selectedTrackId) ?? null;
+    const selectedTrack = trackState.tracks.find((time) => time.id === selectedTrackId) ?? null;
     const pixelsPerBeat = viewState.pixelsPerBeat;
     const scrollX = viewState.scrollX;
     const trackListWidth = ws.trackListWidth;
     const trackListOpen = ws.trackListOpen;
 
-    const trackLanes = selectedTrackId ? autoState.lanes.filter((l) => l.trackId === selectedTrackId && !l.clipId) : [];
+    const trackLanes = selectedTrackId
+        ? autoState.lanes.filter((length) => length.trackId === selectedTrackId && !length.clipId)
+        : [];
 
     const availableParams = selectedTrack
         ? getAutomatableParams(
               selectedTrack.id,
-              selectedTrack.devices.map((d) => ({ type: d.type, name: d.name }))
+              selectedTrack.devices.map((data) => ({ type: data.type, name: data.name }))
           )
         : [];
 
     // Filter out params that already have lanes
-    const unusedParams = availableParams.filter((p) => !trackLanes.some((l) => l.parameterId === p.id));
+    const unusedParams = availableParams.filter(
+        (param) => !trackLanes.some((length) => length.parameterId === param.id)
+    );
 
     const automationMode = selectedTrack?.automationMode ?? 'read';
     const trackColor = selectedTrack?.color ?? 'var(--color-palette-steel)';
@@ -181,36 +185,42 @@ export const AutomationBottomPanel = (): ReactElement => {
         );
     }
 
-    const laneRows =
-        containerWidth > 0 && trackLanes.length === 0 ? (
-            <div className="flex h-full items-center justify-center p-4">
-                <DawEmptyState
-                    compact
-                    className="w-full max-w-sm"
-                    title="No automation lanes yet"
-                    description='Click "Add Lane" to shape volume, pan, or device parameters over time.'
-                />
-            </div>
-        ) : containerWidth > 0 ? (
-            trackLanes.map((lane) =>
-                lane.collapsed ? (
-                    <LaneSparkline key={lane.id} lane={lane} trackColor={trackColor} width={containerWidth} />
-                ) : (
-                    <AutomationLaneRow
-                        key={lane.id}
-                        lane={lane}
-                        trackColor={trackColor}
-                        pixelsPerBeat={pixelsPerBeat}
-                        scrollX={scrollX}
-                        containerWidth={containerWidth}
+    const laneRows = (() => {
+        if (containerWidth > 0 && trackLanes.length === 0) {
+            return (
+                <div className="flex h-full items-center justify-center p-4">
+                    <DawEmptyState
+                        compact
+                        className="w-full max-w-sm"
+                        title="No automation lanes yet"
+                        description='Click "Add Lane" to shape volume, pan, or device parameters over time.'
                     />
-                )
-            )
-        ) : null;
-
-    return (
-        <DawPanelSurface className="flex flex-row min-h-0 overflow-hidden bg-surface-base/50">
-            {trackListOpen ? (
+                </div>
+            );
+        } else {
+            if (containerWidth > 0) {
+                return trackLanes.map((lane) =>
+                    lane.collapsed ? (
+                        <LaneSparkline key={lane.id} lane={lane} trackColor={trackColor} width={containerWidth} />
+                    ) : (
+                        <AutomationLaneRow
+                            key={lane.id}
+                            lane={lane}
+                            trackColor={trackColor}
+                            pixelsPerBeat={pixelsPerBeat}
+                            scrollX={scrollX}
+                            containerWidth={containerWidth}
+                        />
+                    )
+                );
+            } else {
+                return null;
+            }
+        }
+    })();
+    const renderIife_7 = () => {
+        if (trackListOpen) {
+            return (
                 <div
                     className="grid min-h-0 min-w-0 flex-1 overflow-hidden"
                     style={{
@@ -230,7 +240,6 @@ export const AutomationBottomPanel = (): ReactElement => {
                     </AutomationSidebarCell>
                     {/* Spacer: same height as track header so row 2 lines up across columns */}
                     <TimelineChromeSurface tone="subtle" className="h-7" aria-hidden />
-
                     {/* Automation mode selector */}
                     <AutomationSidebarCell className="shrink-0 border-b border-border/20 px-2 py-1.5">
                         <AutomationModeControl
@@ -244,7 +253,6 @@ export const AutomationBottomPanel = (): ReactElement => {
                         <BeatRulerBar />
                         <div className="min-h-0 flex-1" aria-hidden />
                     </div>
-
                     {/* Lane labels with collapse toggle and delete */}
                     <AutomationSidebarCell className="min-h-0 overflow-y-auto">
                         {trackLanes.map((lane) => (
@@ -290,7 +298,6 @@ export const AutomationBottomPanel = (): ReactElement => {
                             <AutomationAddLaneControl params={unusedParams} onAdd={handleAddLane} showAvailableCount />
                         </div>
                     </AutomationSidebarCell>
-
                     {/* Right panel — automation lanes aligned with timeline */}
                     <div className="flex min-h-0 min-w-0 flex-col overflow-hidden" ref={containerRef}>
                         {/* Lanes area */}
@@ -299,7 +306,9 @@ export const AutomationBottomPanel = (): ReactElement => {
                         </div>
                     </div>
                 </div>
-            ) : (
+            );
+        } else {
+            return (
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" ref={containerRef}>
                     {/* Right panel — automation lanes aligned with timeline */}
                     {/* Beat ruler for alignment */}
@@ -309,7 +318,13 @@ export const AutomationBottomPanel = (): ReactElement => {
                         {laneRows}
                     </div>
                 </div>
-            )}
+            );
+        }
+    };
+
+    return (
+        <DawPanelSurface className="flex flex-row min-h-0 overflow-hidden bg-surface-base/50">
+            {renderIife_7()}
         </DawPanelSurface>
     );
 };

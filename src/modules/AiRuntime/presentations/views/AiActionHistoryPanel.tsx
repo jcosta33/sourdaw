@@ -67,8 +67,8 @@ export const AiActionHistoryPanel = (): ReactElement | null => {
         }
     }
 
-    items.sort((a, b) => {
-        const ta = a.kind === 'ai' ? a.group.timestamp : a.entry.timestamp;
+    items.sort((alpha, b) => {
+        const ta = alpha.kind === 'ai' ? alpha.group.timestamp : alpha.entry.timestamp;
         const tb = b.kind === 'ai' ? b.group.timestamp : b.entry.timestamp;
         return tb - ta;
     });
@@ -173,10 +173,10 @@ const AiGroupItem = ({ group }: { group: AiActionGroupView }): ReactElement => {
             />
             {expanded ? (
                 <div className="px-3 pb-1.5 pl-8 space-y-0.5">
-                    {group.actions.map((a, i) => (
-                        <div key={i} className="flex items-center gap-1.5">
+                    {group.actions.map((alpha, index) => (
+                        <div key={index} className="flex items-center gap-1.5">
                             <span className="size-1 rounded-full bg-[var(--color-accent-lavender)]/40 shrink-0" />
-                            <span className="text-[9px] text-muted-foreground truncate">{a.label}</span>
+                            <span className="text-[9px] text-muted-foreground truncate">{alpha.label}</span>
                         </div>
                     ))}
                 </div>
@@ -188,6 +188,22 @@ const AiGroupItem = ({ group }: { group: AiActionGroupView }): ReactElement => {
 const ActionItem = ({ entry }: { entry: ActionHistoryEntryView }): ReactElement => {
     const revertable = canRevertAction(entry);
 
+    let endSlotContent: ReactElement | null = null;
+    if (entry.reverted) {
+        endSlotContent = <span className="text-[8px] italic text-muted-foreground">undone</span>;
+    } else if (revertable) {
+        endSlotContent = (
+            <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => void revertAction(entry.id)}
+                title="Revert this change"
+            >
+                <Undo2 className="size-3 text-muted-foreground/50" />
+            </Button>
+        );
+    }
+
     return (
         <DawUtilityListRow
             className="border-b border-border/30 last:border-0"
@@ -195,20 +211,7 @@ const ActionItem = ({ entry }: { entry: ActionHistoryEntryView }): ReactElement 
             startSlot={<User className="size-3 text-muted-foreground/50" />}
             title={entry.label}
             subtitle={formatTimeAgo(entry.timestamp)}
-            endSlot={
-                entry.reverted ? (
-                    <span className="text-[8px] italic text-muted-foreground">undone</span>
-                ) : revertable ? (
-                    <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => void revertAction(entry.id)}
-                        title="Revert this change"
-                    >
-                        <Undo2 className="size-3 text-muted-foreground/50" />
-                    </Button>
-                ) : null
-            }
+            endSlot={endSlotContent}
         />
     );
 };

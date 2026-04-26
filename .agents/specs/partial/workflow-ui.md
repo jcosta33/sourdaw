@@ -4,13 +4,14 @@
 
 Sourdaw has a mature foundation: arrangement timeline with clip editing (split, glue, trim, crossfade, fade, warp, loop), a 6-tool editing system (select/cut/draw/automation/stretch/marquee), a comping/take-lane system with group comping, VCA group assignments (each `Track` can reference a `VcaGroup` via `vcaGroupId`; group gain is folded into each assigned track's effective engine gain via `applyVcaGains`), freeze/bounce, a macro recorder, mixer snapshots, tempo maps with interpolation, markers/sections, a punch/loop recording system, follow actions, track alternatives, a scratch pad, and a comprehensive snap grid (16 options including triplets and dotted values).
 
-**Note on VCA:** What currently exists is a VCA *group* assignment mechanism applied to regular tracks. A distinct **VCA fader track** type (a channel strip that controls the gain of assigned tracks *without audio passing through it*, with explicit post-fader send scaling) does not exist in the codebase — `TrackKind` is limited to `'audio' | 'midi' | 'bus' | 'master' | 'folder'`. Section K below specifies this missing capability.
+**Note on VCA:** What currently exists is a VCA _group_ assignment mechanism applied to regular tracks. A distinct **VCA fader track** type (a channel strip that controls the gain of assigned tracks _without audio passing through it_, with explicit post-fader send scaling) does not exist in the codebase — `TrackKind` is limited to `'audio' | 'midi' | 'bus' | 'master' | 'folder'`. Section K below specifies this missing capability.
 
 The MIDI editor supports: note CRUD, move/resize/draw/paint/lasso/rubber-band, step input, chord stamping, strum, ghost notes, arpeggiator, groove extraction/application, and transforms (quantize, transpose, humanize, scale velocities, invert, retrograde). Velocity, pressure, pitch bend, slide, and probability lanes exist. Pattern instances provide linked/pooled clips.
 
 Despite this depth, the following capability gaps remain. This spec translates the consolidated workflow & UI research (`.agents/research/features/workflow-ui.md`) into verifiable requirements for the missing layers, plus essential MIDI editor workflow interactions and DAW power-user patterns that every professional DAW ships.
 
 **Related specs (do not duplicate):**
+
 - `../consolidated/implementation-gaps.md` — DSP internals, Factory Suite instruments, collaboration, plugin hosting, composition standards, immersive audio
 - `../ui/design-system.md` — visual design system, component specs, CSS techniques
 
@@ -29,78 +30,101 @@ After implementation, Sourdaw adds: professional MIDI editor interactions (Alt+d
 The piano roll currently supports basic note operations but lacks the muscle-memory interactions that define a professional MIDI editing workflow.
 
 #### A1. Alt+Drag to Duplicate Notes
+
 Hold Alt (Option on macOS), then drag selected notes. Instead of moving, the original notes remain in place and a copy is created at the drop position. The copies become the new selection. Snaps to grid. Undo creates a single entry ("Duplicate N notes"). If Alt+drag starts on an unselected note, that note is first selected (same as current move behavior), then the selection is duplicated. Alt+drag on empty space remains rubber-band selection (existing behavior preserved). This is the single most expected MIDI editing shortcut in any DAW.
 
 #### A2. Ctrl/Cmd+D — Duplicate Selection Forward
+
 Duplicates the current note selection, placing copies immediately after the last note in the selection (offset by the selection's total time span). Repeated presses stack duplicates sequentially. If no notes are selected, duplicates the entire clip content.
 
 #### A3. Quick-Swap Tool (Hold to Temporarily Switch)
+
 **Note: this is a workspace-level feature affecting both arrangement and piano roll contexts, listed here because it most impacts MIDI editing flow.**
 
 Holding a tool shortcut key (S, C, D, T, E) temporarily activates that tool; releasing returns to the previous tool. Example: while in Select mode, hold D to draw a note, release to return to Select. This eliminates constant tool switching. The existing tool shortcuts (S/C/D/T/E) currently require a press-to-toggle; this adds a hold-to-temporary-swap behavior (press-and-release within 300ms = permanent switch; hold beyond 300ms = temporary swap).
 
 #### A4. Legato — Extend Notes to Next
+
 Select notes, press L (or context menu "Legato"). Each selected note's duration extends (or contracts) so its end meets the start of the next note on the same pitch. If no subsequent note exists on that pitch, the note extends to the next note on any pitch in the selection. Eliminates gaps between notes without overlap.
 
 #### A5. Note Split at Cursor
+
 With notes selected, press Shift+S (or context menu "Split at Cursor"). Each selected note that spans the playhead position is split into two notes at that beat. Both halves retain the original velocity and expression data. If no selected note spans the cursor, no action. (Shift+S chosen over Alt+S to avoid conflict with the global 'S' tool shortcut; Shift+key is free in the piano roll's keyDown handler for alphabetic keys.)
 
 #### A6. Join / Glue Selected Notes
+
 Select two or more adjacent notes on the same pitch, press J (or context menu "Join"). Merges them into a single note spanning the first note's start to the last note's end. Velocity takes the first note's value. If selected notes are non-adjacent or on different pitches, only pitch-matched adjacent groups are joined.
 
 #### A7. Velocity Ramp Across Selection
+
 Select multiple notes. In the velocity lane, hold Shift and drag to draw a linear ramp from the first selected note's velocity to the target velocity at the drag endpoint. All notes in between are interpolated linearly. Allows quick crescendo/decrescendo shaping without the context menu.
 
 #### A8. Velocity Drawing with Pencil (Continuous)
+
 When the velocity lane is visible, clicking and dragging in a continuous motion paints velocity values onto all notes under the cursor's path. The existing `NotePropertyLane` supports clicking individual velocity bars to set discrete values; this adds continuous drag-through painting where the cursor trajectory defines the velocity curve across multiple notes in a single gesture — essential for drawing crescendo/decrescendo shapes freehand.
 
 #### A9. Multi-Clip Editing
+
 Open multiple MIDI clips simultaneously in a single piano roll view. Notes from each clip are color-coded by their source clip. Edits apply to whichever clip owns the note being manipulated. A clip selector in the toolbar controls which clip receives newly drawn notes. Notes from non-focused clips render semi-transparently and are directly editable (click to select, drag to move, etc.) — distinct from the existing "Ghost Notes" toggle which shows read-only preview notes from adjacent clips. Both systems can be active simultaneously: ghost notes remain read-only references; multi-clip notes are fully interactive.
 
 #### A10. Slip Editing (Move Content Within Clip Boundaries)
+
 Hold Ctrl/Cmd+Shift and drag inside a clip in the arrangement to slide the clip's internal content (MIDI notes or audio waveform) earlier or later without moving the clip boundaries. The clip start/end stays fixed; the content inside shifts. For audio clips, this adjusts the existing `audioOffsetBeats` field (non-destructive). For MIDI clips, a new `midiOffsetBeats` field on the clip model stores the offset (non-destructive — note `startBeat` values are not mutated; the offset is applied at render and playback time). Undo label: "Slip clip content".
 
 #### A11. In-Place MIDI Editing
+
 Toggle an inline piano roll directly in the arrangement timeline (no separate editor window needed). Notes render inside the clip region on the arrangement, scaled to the track's height. Basic editing (select, move, draw, delete) works directly. Double-click to expand into the full piano roll editor. This is the Ableton/Bitwig pattern of seeing notes directly on the arrangement.
 
 #### A12. Constrain to Scale
+
 When a scale is selected in the piano roll toolbar (scale selector already exists), a "Constrain" toggle locks all note input and movement to scale degrees only. Moving a note up/down skips non-scale pitches. Drawing notes only places on scale degrees. This differs from the existing "Fold to Scale" which hides non-scale rows — Constrain works with the full keyboard visible but snaps pitches.
 
 #### A13. Note Preview on Hover
+
 When hovering over a note in the piano roll (without clicking), after a 200ms delay, play a short audition of that note's pitch at its velocity through the track's instrument. The existing `playAuditionNote` on mouse-down is the mechanism — extend it to hover with a debounce. Configurable in preferences (on/off).
 
 ### B. Arrangement — Professional Clip Interactions
 
 #### B1. Alt+Drag to Duplicate Clips
+
 Hold Alt and drag a selected clip (or clip selection) to duplicate instead of move — identical to Alt+drag for notes (A1). The original clip stays; copies land at the drop position. Single undo entry. If Alt+drag starts on an unselected clip, that clip is first selected (same as current move behavior), then duplicated. Alt+drag on empty space remains rubber-band selection (existing behavior preserved).
 
 #### B2. Ctrl/Cmd+D — Duplicate Clips Forward
+
 Duplicates selected clips, placing copies immediately after the selection (offset by the selection's time span). Repeated presses stack. If no clips are selected, the command is a no-op (unlike A2 which duplicates entire clip content — at the arrangement level, duplicating "everything" is too destructive to be a default).
 
 #### B3. Ripple Insert and Ripple Move
+
 Ripple delete already exists (`rippleDelete/`). Add:
+
 - **Ripple insert**: pasting or drawing a clip in ripple mode pushes subsequent clips forward by the inserted clip's duration.
 - **Ripple move**: moving a clip in ripple mode adjusts subsequent clips to fill the gap at the source and make room at the destination.
 - Both respect the existing per-track vs all-tracks ripple toggle.
 
 #### B4. Time Selection (Range Selection)
+
 A time range selection tool (or Shift+click on the beat ruler) that selects a time span across all or specific tracks — independent of clip boundaries. Operations on the time selection: delete (with ripple), insert silence, duplicate range, bounce range to new clip, set loop from selection, export range.
 
 #### B5. Loop Selection — Set Loop from Selection
+
 Select clips or a time range, press Ctrl/Cmd+L. The transport loop region snaps to the selection's start/end beats. If a time range (B4) is active, use that range. If clips are selected, use the earliest start to the latest end.
 
 #### B6. Scrub Playback
+
 Click-and-hold then drag on the beat ruler to scrub the playhead position with audio preview. This extends the existing click-to-seek behavior (single click still seeks without scrub). Dragging speed controls playback speed (1:1 ratio). Release stops scrub. The transport does not enter play mode — this is a preview-only interaction. Differentiation: click-and-release = seek (existing); click-and-drag = scrub (new).
 
 ### C. Visualization
 
 #### C1. Modulation Halos (Bitwig-style)
+
 Colored arcs around knobs showing modulation range. Real-time animation showing current value at 30fps. Color-coded by modulation source using oklch color system (`colorPresets.ts`). Implementation: CSS `conic-gradient` with `--mod-amount` CSS custom property updated from JS. GPU-composited by browser — no Canvas or WebGPU needed for these scattered DOM elements.
 
 **Live preview**: hovering a modulation source over an unconnected target auditions the modulation range before the connection is committed. Vital synth's hover-to-audition pattern.
 
 #### C2. Spectrum Analyzer (FabFilter Pro-Q style)
+
 Real-time FFT display with:
+
 - Configurable resolution (FFT window size)
 - Perceptual tilt (frequency weighting curve)
 - Adjustable release speed (hold/decay of peaks)
@@ -111,19 +135,23 @@ Real-time FFT display with:
 - Consolidates the three existing `SpectrumAnalyzer.tsx` implementations (Fermenter, Workspace, Bacteria) into a single shared WebGPU-backed component
 
 #### C3. Spectrogram (Waterfall / iZotope RX style)
+
 Frequency on Y-axis, time on X-axis, amplitude as heatmap color. WebGPU-rendered, sharing the same GPU pipeline as the spectrum analyzer (C2). Supports waveform + spectrogram composite overlay mode.
 
 ### D. Layout
 
 #### D1. Session + Arrangement Side-by-Side
+
 Both session view clip launcher and arrangement timeline are simultaneously visible (no tab-switching — unlike Ableton). The existing `SessionView.tsx` (SCENE_COUNT=8, per-track clip slots) appears as a vertical panel alongside the arrangement timeline. Resizable split. Both share the same transport and track model.
 
 ### E. AI Integration
 
 #### E1. Ghost MIDI Clips
+
 AI-generated MIDI clips appear as semi-transparent, dashed-border elements with a blue/purple tint — visually distinct from committed clips. Follows the GitHub Copilot ghost-text pattern applied to the timeline.
 
 **Controls:**
+
 - Accept: Tab or click on the ghost clip
 - Dismiss: Escape
 - Cycle alternatives: Alt+] (next) / Alt+[ (previous)
@@ -132,9 +160,11 @@ AI-generated MIDI clips appear as semi-transparent, dashed-border elements with 
 Ghost MIDI clips are ephemeral — they exist only in the UI layer, never in the project model, until explicitly accepted. Acceptance converts them into a normal committed clip.
 
 #### E2. Ghost Audio Clips
+
 AI-generated audio suggestions (e.g., a generated drum loop, a rendered sung vocal, a re-voiced source) appear on audio tracks as semi-transparent, dashed-border regions with the waveform drawn in reduced contrast (desaturated or lower-alpha stroke). They follow E1's visual language and control grammar, extended for audio.
 
 **Controls:**
+
 - Audition: pressing Space (or clicking a dedicated "preview" affordance on the ghost) plays the ghost buffer in-place through the track's full processing chain (inserts, sends, bus) so the user hears the suggestion as it would sound committed. Stopping transport stops the audition. Auditioning does not mutate the project model.
 - Accept: Tab or click on the ghost clip — materializes into a committed audio clip. The underlying rendered buffer is written to project sample storage (same path as bounce/freeze output), and the clip receives a normal `sampleId` / `audioOffsetBeats` reference.
 - Dismiss: Escape — discards the ghost buffer and releases the decoded memory.
@@ -145,9 +175,11 @@ AI-generated audio suggestions (e.g., a generated drum loop, a rendered sung voc
 Ghost audio clips are UI-layer only until accepted (same invariant as E1) — they never appear in project-model serialization, render output, or undo history until acceptance.
 
 #### E3. Ghost Automation Overlays
+
 AI-suggested automation curves (e.g., the volume riding suggestion produced by R-F3.2, dynamics smoothing, side-chain response, loudness correction) render translucent on the target automation lane, distinct from committed automation in both opacity and stroke weight. The existing committed curve remains drawn at full opacity underneath; the ghost curve is drawn at reduced opacity (≈40%) above it. The same blue/purple ghost tint used in E1 is applied to distinguish the suggestion from a user-drawn curve.
 
 **Controls:**
+
 - Diff view toggle: a per-lane toggle reveals a color-coded delta between the committed and suggested curves (e.g., green fill where the ghost is above the committed value, red fill where below). The delta layer is additive — it does not replace either curve's rendering.
 - Accept (whole): Tab or click the ghost overlay — replaces the committed segment in the ghost's time range with the suggested curve in a single undoable operation labelled "Accept automation suggestion".
 - Partial accept: when a time range is active (R-B4), Tab accepts only the intersection of the ghost and the time range; the remainder of the ghost is discarded.
@@ -156,9 +188,11 @@ AI-suggested automation curves (e.g., the volume riding suggestion produced by R
 Ghost automation overlays are UI-layer only until accepted (same invariant as E1) — they do not appear in render output or in automation lane serialization. This section makes the ghost-automation surface a first-class capability; R-F3.2 is the producer that emits suggestions into this surface.
 
 #### E4. Ghost Routing / Send Suggestions — Deferred
+
 AI-suggested routing changes (send destinations, send levels, bus assignments) are **out of scope for v1**. A non-destructive preview of routing requires a shadow routing graph at the engine level — the audio must actually be routed through the suggested topology for the preview to be meaningful. This is a substantially larger engine change than ghost clips or ghost automation (both of which are purely data overlays), and the workflow payoff at this stage is unclear. Revisit once E1–E3 ship and user demand surfaces.
 
 #### E5. Hybrid Deployment — Web tier vs Rust tier
+
 Every AI feature in this spec targets a specific execution tier. The tier is a design-time property of the feature, not a runtime toggle, and is chosen per the following rule: interactive / real-time feedback runs in the browser Web tier; offline / heavy / quality-focused processing runs in the Rust tier via Tauri commands. Mixed features (e.g., quick preview in the Web tier, final render in the Rust tier) explicitly name both paths.
 
 Tier assignments for features referenced in this spec:
@@ -172,9 +206,11 @@ Features not listed above default to the Web tier. Any feature added later that 
 ### F. Automation
 
 #### F1. WebGPU Unified Timeline Rendering
+
 A single WebGPU canvas overlays the entire timeline area, rendering all automation curves, waveforms, fills, and nodes. This replaces the current per-lane Canvas 2D / `GlutenCurve` rendering for performance at scale.
 
 **Architecture:**
+
 - React manages DOM elements (lane headers, controls, labels, menus) via virtualized scrolling
 - The WebGPU renderer is fully decoupled from React's rendering cycle — reads from a vanilla store
 - Extends the existing `createWebGpuRenderer.ts` pattern (WGSL shaders, vertex attributes, batch rendering, `MAX_RECTS = 32768` budget)
@@ -184,11 +220,13 @@ A single WebGPU canvas overlays the entire timeline area, rendering all automati
 **Fallback:** `GlutenCurve` / Canvas 2D path remains functional when WebGPU is unavailable. The existing renderer is the fallback, not a removed path.
 
 #### F2. Procedural Modulation System (Bitwig-style)
+
 LFO, envelope, and step sequencer modulator types, each connectable to any automatable parameter. Modulators are first-class objects in the project model (persisted, undoable). Follows the existing `ModulationLFO.tsx` and `CCGenerator.ts` patterns.
 
 Modulator output feeds into modulation halos (C1) for visual feedback. Connected to the existing automation 3-layer architecture (track absolute, clip relative, automation objects).
 
 #### F3. Automation Power Features
+
 - **Automation comping**: Record multiple automation passes (extends the existing take-lane/comping infrastructure — `TakeLane`, `CompRegion` — to automation lanes, not just audio/MIDI clips), then comp the best sections.
 - **AI-assisted volume riding**: Analyze audio dynamics (via `AudioAnalysis` module) and suggest automation curves to maintain a target perceived loudness. Suggestions appear as ghost automation (similar to ghost clips, E1).
 - **Cross-track automation linking**: Define mathematical relationships (offset, scale, invert, custom expression) between parameters on different tracks. When the source parameter changes, linked targets update according to the relationship.
@@ -198,6 +236,7 @@ Modulator output feeds into modulation halos (C1) for visual feedback. Connected
 The existing `SampleLibrary/` module provides local-first file scanning, IndexedDB persistence, `FileProvider` abstraction (browser/Tauri), `SampleRecord` metadata (format, tags, favorites), and folder tree UI. The following intelligence layers are missing.
 
 #### G1. Musical Analysis (Stage 3)
+
 All analysis runs asynchronously in Web Workers — never blocks the UI thread. Results stored as optional fields on `SampleRecord`.
 
 - **BPM detection**: Onset-envelope and autocorrelation or tempogram-style analysis.
@@ -205,15 +244,18 @@ All analysis runs asynchronously in Web Workers — never blocks the UI thread. 
 - **Descriptor extraction**: Spectral centroid, spectral flatness, spectral crest, RMS/loudness proxy, transient density, inharmonicity estimate.
 
 #### G2. Embedding & Semantic Search
+
 - Pluggable embedding model via `interface EmbeddingModel`. Recommended families: CLAP-style multimodal, OpenL3-style perceptual. Treat as hot-swappable — the search/map infrastructure is model-agnostic.
 - Each sample maps to a vector representation. Full-precision vectors stored in OPFS (browser) or desktop cache (Tauri).
 - ANN search via HNSW index stored separately from vectors. Sub-100ms query latency for libraries up to 100k samples.
 - **"Find similar sound"** action on any sample or preset — returns ranked results by embedding distance.
 
 #### G3. 2D Spatial Map
+
 UMAP dimensionality reduction from embedding vectors to 2D coordinates. GPU-backed rendering (WebGPU if available) for point clouds up to 100k samples. Pre-computed map coordinates stored in sample metadata for instant rendering (no recomputation on open). Interactive: pan, zoom, select, audition samples directly from the map. Users browse by **timbral proximity** — nearby points sound similar.
 
 #### G4. DAW Drag-Out & Auditioning
+
 - Drag samples from library browser into timeline or sampler via HTML5 drag (browser) or native file promise (desktop: Windows virtual file transfer, macOS file promise providers).
 - Adapter layer via `interface DragOutProvider` supporting rendered variants: tempo-cropped, pitch-shifted, or normalized.
 - **Contextual auditioning**: drag-anything-anywhere with perfect tempo/key sync preview before dropping. The audition engine time-stretches and pitch-shifts the sample in real time to match the project tempo/key.
@@ -225,15 +267,19 @@ UMAP dimensionality reduction from embedding vectors to 2D coordinates. GPU-back
 The existing `patternInstance/` system (linked/pooled MIDI clips with `propagateParentChanges`) and `AutomationObject.poolId` provide the foundation. Missing:
 
 #### H1. Automation Clips as Reusable Objects
+
 Automation clips become first-class reusable objects — drag an automation shape onto any lane, link instances via the existing `poolId` pattern. Edits to the source propagate to all instances.
 
 #### H2. Per-Instance Overrides
+
 Instances of a shared clip (MIDI or automation) can override specific properties (individual note velocities, specific automation points, transposition) while remaining linked to the source for all other changes. Override tracking extends the existing `patternInstance` propagation — overridden fields skip propagation; non-overridden fields continue to sync. "Reset override" reverts a field to the parent value.
 
 #### H3. Variation Lanes
+
 Dedicated lanes within a track for choruses, fills, alt endings, and other variations. Selectable per playback pass or scene. Extends the existing `TrackAlternative` system (which already stores alternatives per track with `activeAlternativeId`) — variation lanes make alternatives visible and switchable in the timeline UI, not just the track header.
 
 #### H4. Groove Templates
+
 Apply quantization/swing groove templates at project-wide or clip-local scope. The existing `grooveExtraction/` system extracts grooves; this adds: a groove template library (built-in presets + user-saved), a groove intensity slider (0–100%), and groove application as a non-destructive overlay (removable, not baked into note positions).
 
 ### I. MPE Expression Editing
@@ -241,15 +287,19 @@ Apply quantization/swing groove templates at project-wide or clip-local scope. T
 The existing `Levain/ExpressionPanel.tsx` provides per-clip CC1/CC11 expression editing with dynamics curves. `MidiNote` already carries `pressure`, `slide`, and `pitchBend` fields. The following per-note expression depth is missing.
 
 #### I1. Note Expression Lanes
+
 Dedicated lanes attached to individual note objects (not per-clip) for: pitch bend, timbre (CC74), pressure (aftertouch), and release velocity. Each lane shows only the expression data for the selected note(s). When multiple notes are selected, lanes show overlaid curves.
 
 #### I2. Per-Note Transforms
+
 Random, spread, and humanize operations applied at the note-expression level (not just note timing/velocity). Example: humanize pressure curves across selected notes to add natural variation.
 
 #### I3. Modulation Recording
+
 Record physical controller movements (mod wheel, expression pedal, breath controller) directly into note-bound expression data — not just clip-level CC lanes. The recording maps controller input to the currently focused expression dimension of selected notes.
 
 #### I4. MPE Density Management
+
 Visualization strategy for dense MPE data: collapse or dim expression overlays in the main piano roll to prevent clutter. Expand-on-hover reveals expression detail for individual notes. A dedicated "Expression View" mode shows full per-note lanes below the piano roll (similar to the existing VelocityLane/PressureLane/SlideLane/PitchBendLane pattern, but per-note instead of per-clip).
 
 ### J. Hardware Controller Ecosystem
@@ -257,12 +307,15 @@ Visualization strategy for dense MPE data: collapse or dim expression overlays i
 The existing `MidiDevicePicker.tsx` (Web MIDI device selection), `midiLearnStore` (MIDI Learn), and `MidiSection.tsx` (MIDI preferences) provide the base layer. Missing:
 
 #### J1. Controller Profiles
+
 Auto-detection of connected MIDI controllers with visual mapping overlays for popular hardware (Ableton Push, Novation Launchpad, Arturia KeyStep, etc.). When a known controller connects, its profile loads automatically, mapping pads/knobs/faders to DAW functions without manual MIDI Learn.
 
 #### J2. Open Scripting Layer
+
 JavaScript/TypeScript API allowing third-party controller scripts to: register parameter mappings, respond to MIDI/OSC input, control DAW parameters, update LED/display feedback, and define custom modes. Scripts execute in a sandboxed Web Worker with a restricted API surface (no filesystem, no network — only DAW parameter read/write and MIDI I/O).
 
 #### J3. Shared Mappings
+
 Import/export system for custom device/macro mappings as a portable JSON format. Users can share controller configurations. Client-side only — distribution infrastructure (marketplace, server) is out of scope.
 
 ### K. VCA Fader Tracks
@@ -272,21 +325,27 @@ The codebase exposes VCA as a group-assignment mechanism: tracks carry `vcaGroup
 This section adds VCA fader tracks as a first-class track type — the professional mixer convention where a single fader remote-controls the level of many channels without audio flowing through the VCA strip itself.
 
 #### K1. VCA Fader Track as Distinct Track Type
+
 Add `'vca'` to `TrackKind`. A VCA track renders its own mixer channel strip with a fader, name, color, and solo/mute controls, but has no clip lane, no devices, no inputs, no audio meters, and no outputs in the audio graph. Creating a VCA track is a first-class action (project model, undo, persistence) — not a side effect of grouping. A VCA track replaces the current `VcaGroup` entity's role as the "owner" of a group (existing projects migrate: each `VcaGroup` becomes a `Track` of kind `'vca'` named after the group; `vcaGroupId` on assigned tracks continues to reference it by id).
 
 #### K2. Audio Does Not Pass Through the VCA Strip
+
 The VCA fader's value is a **gain multiplier** applied to each assigned track's post-fader summing point. Audio from assigned tracks routes directly to each track's configured output (bus/master) — it never enters the VCA track's signal path. The VCA track has no input node in `AudioEngine` and no meter feed. This is the structural difference from a bus/group: a bus sums audio; a VCA scales gain on other channels in-place.
 
 #### K3. Post-Fader Send Scaling
+
 When a track assigned to a VCA has a post-fader send, the send level must be scaled by the VCA's gain multiplier (because a physical VCA sits between the track fader and the post-fader tap). Pre-fader sends are **not** affected by VCA gain. The current `applyVcaGains` path pre-multiplies the track's engine gain, which happens to scale post-fader sends as a side effect on a single track, but it does not model pre-fader sends correctly and cannot be inspected/overridden independently. The new implementation must compute the VCA multiplier explicitly at the send-level routing stage, not by mutating the track's base gain.
 
 #### K4. Mute / Solo Semantics
+
 Muting a VCA track mutes all assigned tracks (audibly silent, but assigned tracks remain individually un-muted in the model). Soloing a VCA track solos all assigned tracks. Un-assigning a track from a muted VCA restores the track's audible state without toggling its own mute flag.
 
 #### K5. Assignment UI
+
 Regular tracks expose a "VCA" selector (already present in `TrackVcaSection.tsx`) that lists available VCA tracks by name. Selecting a VCA track sets `vcaGroupId` to that track's id. A VCA track's inspector shows the list of tracks currently assigned to it (read-only; assignment is initiated from the assigned track's side for consistency with existing UI patterns).
 
 #### K6. No Meters, No Clip Lane, No Devices
+
 The VCA channel strip explicitly hides: peak/RMS meters, clip lane in the arrangement timeline, device slots, input/output selectors, and send list. It shows: name, color, level fader with dB readout, mute, solo, and the list of assigned tracks.
 
 ---
@@ -589,6 +648,7 @@ This decision is grounded in `.agents/research/features/ai.md` § 1 (Rust-tier a
 ## Acceptance criteria
 
 ### MIDI Editor
+
 - [ ] **AC-A1** — Alt+drag on selected notes creates duplicates at drop position; originals remain; single undo entry
 - [ ] **AC-A2** — Ctrl/Cmd+D duplicates selection forward by selection timespan; repeated presses stack
 - [ ] **AC-A3** — Holding tool key >300ms temporarily swaps; releasing returns to previous tool
@@ -604,6 +664,7 @@ This decision is grounded in `.agents/research/features/ai.md` § 1 (Rust-tier a
 - [ ] **AC-A13** — Hovering over a note for 200ms plays audition; preference toggle available
 
 ### Arrangement
+
 - [ ] **AC-B1** — Alt+drag on clips duplicates instead of moving
 - [ ] **AC-B2** — Ctrl/Cmd+D duplicates selected clips forward
 - [ ] **AC-B3** — Ripple insert pushes subsequent clips; ripple move fills source gap and opens destination space
@@ -612,15 +673,18 @@ This decision is grounded in `.agents/research/features/ai.md` § 1 (Rust-tier a
 - [ ] **AC-B6** — Click-and-drag on beat ruler scrubs playhead with audio preview; single click still seeks
 
 ### Visualization
+
 - [ ] **AC-C1** — On a knob with an active modulation source, the halo arc is rendered (CSS `conic-gradient` with `--mod-amount`); a DevTools performance trace while the modulator sweeps shows the halo updating at a sustained ≥30 frames per second (dropped frames <10% over a 5 s window) on a reference machine (M1 MacBook Air, Chrome stable). Arc color is derived from the modulation source's identity; live preview arc appears on hover over an unconnected target.
 - [ ] **AC-C2** — Spectrum analyzer sustains ≥58 fps over a 10 s window while 4 tracks are playing audio, measured via `requestAnimationFrame` timestamps on the reference machine. FFT data is uploaded as a `Float32Array` to a GPU storage buffer each frame (verified by shader reflection / buffer inspection). Spectrum Grab freezes the displayed curve within 16 ms of hover enter. Collision detection visually highlights overlapping frequency ranges across ≥2 concurrently playing tracks.
 - [ ] **AC-C3** — Spectrogram renders frequency/time heatmap with waveform overlay mode; waterfall scroll is continuous (no dropped columns) at 60 fps for the same 4-track reference workload.
 - [ ] **AC-C2b** — Three existing SpectrumAnalyzer implementations (Fermenter, Workspace, Bacteria) are deleted and replaced by a single shared WebGPU-backed component; `rg "class SpectrumAnalyzer"` and file search show exactly one implementation file remaining.
 
 ### Layout
+
 - [ ] **AC-D1** — Session view and arrangement visible simultaneously; resizable split
 
 ### AI Integration
+
 - [ ] **AC-E1** — Ghost MIDI clips render with correct visual treatment; accept/dismiss/cycle all functional; not in project model until accepted
 - [ ] **AC-E2** — A ghost audio clip renders on an audio track with the visual treatment defined in R-E2.1 (dashed border, semi-transparent fill, desaturated waveform stroke), distinguishable in a DOM/visual audit from a committed audio clip. Pressing Space while the ghost is focused plays the buffer through the track's full insert/send/bus chain (verified by metering a downstream insert receive signal); transport stop halts audition within one buffer period. Pressing Tab writes the rendered buffer to project sample storage and replaces the ghost with a committed clip whose `sampleId` resolves in the sample repository, in one undoable operation. Pressing Escape removes the ghost and releases its decoded buffer (verified by dropping the entry from the ghost-buffer cache). Alt+] and Alt+[ cycle between at least two pre-decoded alternatives. A search for ghost-audio state in project serializers returns no hits — ghost audio never persists before accept. Committed clips carry a non-empty `aiProvenance` field populated with the generating model id + version, prompt, timestamp, and seed used at generation time.
 - [ ] **AC-E3** — A ghost automation overlay renders on the target lane at reduced opacity (verified via computed style: overlay alpha ≤ 0.5 while the committed curve alpha = 1). The diff toggle draws a color-coded delta layer between the two curves (green where ghost > committed, red where ghost < committed) without replacing either curve. Pressing Tab with no active time range replaces the committed curve in the ghost's time range with the suggested curve in exactly one undoable entry labelled "Accept automation suggestion" (verified by reading the undo stack). With a time range (R-B4) active, Tab replaces only the intersection; the non-intersecting portion of the ghost is discarded and is not committed. Pressing Escape removes the overlay without touching the committed curve. A search for ghost-automation state in automation lane serializers returns no hits — ghost overlays never persist before accept.
@@ -628,6 +692,7 @@ This decision is grounded in `.agents/research/features/ai.md` § 1 (Rust-tier a
 - [ ] **AC-E5** — Every AI feature implemented in v1 has a documented execution tier (Web, Rust, or Mixed) either in this spec, in the feature's own spec, or in a `README` adjacent to its module. A grep for features tagged `@aiTier` across AI-related modules returns one tag per feature. A runtime check of the E2 generation path running DiffSinger or ACE-Step executes in the Rust tier (verified by the presence of a Tauri command / sidecar invocation in the call stack, not a browser-side model load).
 
 ### Automation
+
 - [ ] **AC-F1** — WebGPU automation canvas renders curves, fills, and nodes at ≥58 fps sustained over a 10 s window with a stress-test project of 50 automation lanes × 500 breakpoints each, measured on the reference machine. DOM lane headers and controls remain interactive (click latency under 50 ms) during playback. Renderer reads from the vanilla store with zero React re-renders during a sustained playhead sweep (verified via React DevTools profiler showing zero commits in the automation subtree). Disabling WebGPU via feature flag falls back to `GlutenCurve`/Canvas 2D and still renders all lanes (fps target does not apply to the fallback path).
 - [ ] **AC-F2** — LFO/envelope/step-sequencer modulators connect to parameters; output visible in modulation halos
 - [ ] **AC-F3a** — Automation comping uses take-lane infrastructure on automation lanes
@@ -635,29 +700,34 @@ This decision is grounded in `.agents/research/features/ai.md` § 1 (Rust-tier a
 - [ ] **AC-F3c** — Cross-track linking updates targets when source changes
 
 ### Sample Library
+
 - [ ] **AC-G1** — Importing a 1 000-sample test folder populates BPM, key, and descriptor fields in `SampleRecord` for every sample on completion. During the analysis run, the main-thread long-task count (>50 ms) is 0 measured over the full analysis window via the Performance Observer API — analysis occurs entirely in a Web Worker.
 - [ ] **AC-G2** — "Find similar sound" returns ranked results in <100 ms (p95, measured over 100 queries) on a 100 000-sample library on the reference machine. Ranking is defined as ascending distance in the embedding model's native metric (cosine for CLAP, L2 for OpenL3). For a labelled evaluation set of 200 queries drawn from a tagged sample bank (e.g. `{kick, snare, hat, pad, lead, bass}`), top-10 precision (fraction of the top-10 results sharing at least one tag with the query's primary tag) ≥ 0.8. The HNSW index file is stored separately from the vector file on disk/OPFS (verified by listing storage).
 - [ ] **AC-G3** — 2D map renders a 100 000-point cloud at ≥30 fps during pan/zoom on the reference machine, via WebGPU where available (Canvas 2D fallback does not need to meet the fps target but must remain interactive). Pre-computed UMAP coordinates are read from `SampleRecord` metadata — no UMAP recomputation occurs on open (verified by absence of the UMAP worker message during open).
 - [ ] **AC-G4** — Drag-out works in both environments: in the browser, dragging a sample onto an OS window outside the app produces a file on drop (HTML5 `DataTransfer` with `application/octet-stream`); on desktop (Tauri), the same gesture produces a native OS file via file-promise APIs. Contextual auditioning plays the sample time-stretched to the project tempo and pitch-shifted to the project key before drop, with audible preview starting within 100 ms of hover enter. Auto-tagging populates `SampleRecord.tags` on import for each sample in the test set.
 
 ### Clip Aliases
+
 - [ ] **AC-H1** — Automation clips link via poolId; edits propagate
 - [ ] **AC-H2** — Per-instance overrides persist; non-overridden fields sync; "Reset override" works
 - [ ] **AC-H3** — Variation lanes visible/switchable in timeline (extends TrackAlternative)
 - [ ] **AC-H4** — Groove templates: library, intensity slider, non-destructive application
 
 ### MPE Expression
+
 - [ ] **AC-I1** — Per-note expression lanes for pitch/CC74/pressure/release velocity; overlay for multi-selection
 - [ ] **AC-I2** — Per-note humanize/random/spread on expression data
 - [ ] **AC-I3** — Controller recording maps to note-bound expression for selected notes
 - [ ] **AC-I4** — Dense MPE data collapses; expand-on-hover; dedicated Expression View mode
 
 ### Hardware Controllers
+
 - [ ] **AC-J1** — Known controller auto-detected; mapping profile loads automatically
 - [ ] **AC-J2** — Scripting API: JS/TS in Worker sandbox; can register mappings and control parameters
 - [ ] **AC-J3** — Mappings import/export as JSON
 
 ### VCA Fader Tracks
+
 - [ ] **AC-K1** — `TrackKind` includes `'vca'`; creating a VCA track produces a persisted `Track` with `kind === 'vca'`, undoable via the existing undo system. Loading a project that predates this change and contained `VcaGroup` entries produces one VCA track per former group, with `vcaGroupId` on assigned tracks resolving to the migrated track. Running migration twice yields the same project tree (idempotent).
 - [ ] **AC-K2** — Inspection of the `AudioEngine` graph after creating a VCA track and routing 4 audio tracks to it shows: no audio input node, no output node, and no meter feed for the VCA track. Bypassing the VCA (setting its gain to unity) leaves the rendered audio bit-identical to removing the VCA track entirely from the graph.
 - [ ] **AC-K3** — For an assigned track with a post-fader send to a reverb bus, reducing the VCA gain by 6 dB reduces the reverb bus input contribution from that track by 6 dB (verified via bus-level metering or offline render). Pre-fader sends from the same track show no change when the VCA gain moves. `applyVcaGains` no longer calls `engineSetTrackGain` with a pre-multiplied value (verified by reading the updated source).
@@ -666,6 +736,7 @@ This decision is grounded in `.agents/research/features/ai.md` § 1 (Rust-tier a
 - [ ] **AC-K6** — Visual audit of a VCA channel strip confirms the strip renders only: name, color, fader, dB readout, mute, solo, and assigned-track list. Meters, clip lane, device slots, input/output selectors, and send list are absent from the DOM (verified by React test querying for those roles/elements).
 
 ### Global
+
 - [ ] **AC-Z1** — `pnpm deps:validate` passes with zero violations
 - [ ] **AC-Z2** — `pnpm typecheck` passes with no errors
 - [ ] **AC-Z3** — All new interactions have undo/redo entries with descriptive labels
@@ -722,6 +793,7 @@ The primary file for piano roll interactions is `src/modules/Workspace/presentat
 ## Test plan
 
 ### MIDI Editor
+
 - [ ] **Manual** — Select notes, Alt+drag: verify originals stay and copies land at drop; verify undo removes copies
 - [ ] **Manual** — Press Ctrl/Cmd+D three times: verify three sequential duplications stacked forward
 - [ ] **Manual** — Hold D key for >500ms then release: verify draw tool activates and deactivates; verify quick tap <200ms permanently switches
@@ -737,6 +809,7 @@ The primary file for piano roll interactions is `src/modules/Workspace/presentat
 - [ ] **Manual** — Hover over a note for 300ms: verify audition plays; toggle off in preferences: verify no audition
 
 ### Arrangement
+
 - [ ] **Manual** — Alt+drag clip: verify original stays, copy at destination; single undo; verify Alt+drag on empty = rubber band unchanged
 - [ ] **Manual** — Select clips, press Ctrl/Cmd+D: verify copies placed after selection; press again: verify stacking; verify no-op with no selection
 - [ ] **Manual** — Enable ripple, paste clip: verify subsequent clips push forward
@@ -746,10 +819,12 @@ The primary file for piano roll interactions is `src/modules/Workspace/presentat
 - [ ] **Manual** — Click-drag on beat ruler: verify audio scrub at drag speed
 
 ### Layout & AI
+
 - [ ] **Manual** — Open session view alongside arrangement: verify both visible simultaneously; resize split; verify shared transport
 - [ ] **Manual** — Trigger AI clip generation: verify ghost clip appears with semi-transparent dashed visual; press Tab to accept: verify clip commits to project model; press Escape on next ghost: verify dismissal; press Alt+]: verify alternative cycles
 
 ### Visualization & Automation
+
 - [ ] **Manual** — Connect modulation source to knob: verify colored arc, 30fps animation, color by source
 - [ ] **Manual** — Hover modulation source over unconnected target: verify preview arc appears
 - [ ] **Manual** — Play audio, open spectrum analyzer: verify 60fps FFT. Hover to freeze. Enable collision view.
@@ -761,22 +836,26 @@ The primary file for piano roll interactions is `src/modules/Workspace/presentat
 - [ ] **Manual** — Cross-track linking: define scale relationship between two parameters; change source: verify target follows
 
 ### Sample Library
+
 - [ ] **Manual** — Import samples: verify BPM/key/descriptors appear in metadata; verify UI stays responsive
 - [ ] **Manual** — "Find similar sound" on a sample: verify ranked results return; verify <100ms on 100k library
 - [ ] **Manual** — Open 2D map: verify point cloud; pan/zoom/select/audition
 - [ ] **Manual** — Drag sample to timeline: verify drop; test tempo-cropped variant
 
 ### Clip Aliases & Groove
+
 - [ ] **Manual** — Create automation clip, link instance: verify edits propagate; apply override; verify override sticks; Reset override: verify reverts
 - [ ] **Manual** — Open variation lanes in timeline: verify TrackAlternative content visible; switch active variation: verify playback follows
 - [ ] **Manual** — Apply groove template to clip: verify quantization/swing applied; adjust intensity slider: verify gradual change; remove: verify notes return to original positions
 
 ### MPE Expression
+
 - [ ] **Manual** — Select notes, open per-note lanes: verify expression data per note; humanize expression
 - [ ] **Manual** — Record mod wheel while notes selected: verify expression data written to note-bound lanes (not clip CC)
 - [ ] **Manual** — Dense MPE data: verify piano roll collapses/dims overlays; hover over note: verify expression detail expands
 
 ### Hardware Controllers
+
 - [ ] **Manual** — Connect Push/Launchpad: verify auto-detect, profile loads, mappings work
 - [ ] **Manual** — Write controller script that maps a knob to track volume: verify parameter control and feedback
 - [ ] **Manual** — Export mapping as JSON; reimport on clean install: verify mappings restored
@@ -813,14 +892,18 @@ The primary file for piano roll interactions is `src/modules/Workspace/presentat
 ## Implementation Status
 
 **What is implemented:**
+
 - R-B3.2 (Ripple Delete move) and R-B3.3 (Ripple toggle) are implemented via the `ripple-delete-ownership.md` refactor.
 - Basic note CRUD (R-A1-A2 partially) and tool switching (R-A3) exist but the advanced modifiers (Alt+drag) and timing-based switching are not fully verified against this spec's strict ACs.
 
 **What is not implemented:**
+
 - The vast majority of the 11 feature areas, including WebGPU visualizations (halos, spectrogram), Sample intelligence (UMAP, HNSW), and VCA fader tracks.
 
 **What is done well:**
+
 - Clear phasing and release gates defined for a massive UX overhaul.
 
 **What needs refactoring:**
+
 - N/A

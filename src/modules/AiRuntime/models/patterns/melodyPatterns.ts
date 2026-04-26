@@ -11,13 +11,13 @@ export const melodyPatterns: PatternTemplate[] = [
         tags: ['arpeggio', 'bright'],
         description: 'Ascending/descending arpeggio',
         lengthBeats: 4,
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 60, 84);
-            const pattern = p.complexity > 5 ? [0, 2, 4, 7, 4, 2, 0, 2] : [0, 2, 4, 7, 4, 2, 0, 2];
-            return pattern.map((deg, i) => ({
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 60, 84);
+            const pattern = param.complexity > 5 ? [0, 2, 4, 7, 4, 2, 0, 2] : [0, 2, 4, 7, 4, 2, 0, 2];
+            return pattern.map((deg, index) => ({
                 pitch: sp[Math.min(deg, sp.length - 1)]!,
-                velocity: 75 + p.density,
-                startBeat: i * 0.5,
+                velocity: 75 + param.density,
+                startBeat: index * 0.5,
                 durationBeats: 0.5,
             }));
         },
@@ -31,12 +31,12 @@ export const melodyPatterns: PatternTemplate[] = [
         description: 'Minor arpeggio pattern',
         lengthBeats: 4,
         scaleOverride: 'minor',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 57, 84);
-            return [0, 2, 4, 7, 4, 2, 0, 2].map((deg, i) => ({
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 57, 84);
+            return [0, 2, 4, 7, 4, 2, 0, 2].map((deg, index) => ({
                 pitch: sp[Math.min(deg, sp.length - 1)]!,
-                velocity: 75 + p.density,
-                startBeat: i * 0.5,
+                velocity: 75 + param.density,
+                startBeat: index * 0.5,
                 durationBeats: 0.5,
             }));
         },
@@ -49,9 +49,9 @@ export const melodyPatterns: PatternTemplate[] = [
         tags: ['scale', 'educational'],
         description: 'Ascending scale run',
         lengthBeats: 8,
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 60, 84);
-            return sp.slice(0, 8).map((pitch, i) => ({ pitch, velocity: 80, startBeat: i, durationBeats: 1 }));
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 60, 84);
+            return sp.slice(0, 8).map((pitch, index) => ({ pitch, velocity: 80, startBeat: index, durationBeats: 1 }));
         },
     },
     {
@@ -63,8 +63,8 @@ export const melodyPatterns: PatternTemplate[] = [
         description: 'Pentatonic rock riff',
         lengthBeats: 4,
         scaleOverride: 'pentatonic-minor',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 57, 79);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 57, 79);
             return [
                 { pitch: sp[0]!, velocity: 85, startBeat: 0, durationBeats: 0.5 },
                 { pitch: sp[2]!, velocity: 80, startBeat: 0.5, durationBeats: 0.5 },
@@ -85,8 +85,8 @@ export const melodyPatterns: PatternTemplate[] = [
         description: 'Classic blues guitar lick',
         lengthBeats: 4,
         scaleOverride: 'blues',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 57, 79);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 57, 79);
             return [
                 { pitch: sp[2]!, velocity: 85, startBeat: 0, durationBeats: 0.25 },
                 { pitch: sp[3]!, velocity: 80, startBeat: 0.25, durationBeats: 0.25 },
@@ -107,15 +107,15 @@ export const melodyPatterns: PatternTemplate[] = [
         description: 'Fast electronic arpeggio',
         lengthBeats: 4,
         scaleOverride: 'minor',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 57, 84);
-            const step = p.density > 7 ? 0.125 : 0.25;
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 57, 84);
+            const step = param.density > 7 ? 0.125 : 0.25;
             const notes: PatternNote[] = [];
             const degs = [0, 2, 4, 7];
             for (let b = 0; b < 4; b += step) {
                 notes.push({
                     pitch: sp[Math.min(degs[Math.floor(b / step) % 4]!, sp.length - 1)]!,
-                    velocity: 75 + p.density * 2,
+                    velocity: 75 + param.density * 2,
                     startBeat: b,
                     durationBeats: step,
                 });
@@ -132,8 +132,8 @@ export const melodyPatterns: PatternTemplate[] = [
         description: 'Relaxed lo-fi jazz melody',
         lengthBeats: 4,
         scaleOverride: 'dorian',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 60, 84);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 60, 84);
             return [
                 { pitch: sp[4]!, velocity: 70, startBeat: 0, durationBeats: 1 },
                 { pitch: sp[6]!, velocity: 65, startBeat: 1, durationBeats: 0.5 },
@@ -152,8 +152,8 @@ export const melodyPatterns: PatternTemplate[] = [
         description: '80s-style synth lead',
         lengthBeats: 8,
         scaleOverride: 'minor',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 60, 84);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 60, 84);
             return [
                 { pitch: sp[7] || sp[6]!, velocity: 85, startBeat: 0, durationBeats: 1.5 },
                 { pitch: sp[8] || sp[7]!, velocity: 80, startBeat: 1.5, durationBeats: 0.5 },
@@ -174,8 +174,8 @@ export const melodyPatterns: PatternTemplate[] = [
         description: 'Dark trap bell melody',
         lengthBeats: 4,
         scaleOverride: 'minor',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 60, 84);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 60, 84);
             return [
                 { pitch: sp[8] || sp[7]!, velocity: 90, startBeat: 0, durationBeats: 0.25 },
                 { pitch: sp[9] || sp[8]!, velocity: 85, startBeat: 0.25, durationBeats: 0.25 },
@@ -195,8 +195,8 @@ export const melodyPatterns: PatternTemplate[] = [
         tags: ['elegant', 'period'],
         description: 'Classical melodic phrase',
         lengthBeats: 8,
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 60, 84);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 60, 84);
             return [
                 { pitch: sp[7] || sp[6]!, velocity: 75, startBeat: 0, durationBeats: 0.5 },
                 { pitch: sp[6]!, velocity: 70, startBeat: 0.5, durationBeats: 0.5 },
@@ -221,17 +221,22 @@ export const melodyPatterns: PatternTemplate[] = [
         tags: ['run', 'flashy'],
         description: 'Fast gospel piano run',
         lengthBeats: 4,
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 60, 84);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 60, 84);
             const notes: PatternNote[] = [];
-            for (let i = 0; i < 8 && i < sp.length; i++) {
-                notes.push({ pitch: sp[i]!, velocity: 80 + i, startBeat: i * 0.25, durationBeats: 0.25 });
+            for (let index = 0; index < 8 && index < sp.length; index++) {
+                notes.push({ pitch: sp[index]!, velocity: 80 + index, startBeat: index * 0.25, durationBeats: 0.25 });
             }
             if (sp[8]) {
                 notes.push({ pitch: sp[8], velocity: 90, startBeat: 2, durationBeats: 0.5 });
             }
-            for (let i = 7; i >= 5 && i < sp.length; i--) {
-                notes.push({ pitch: sp[i]!, velocity: 75, startBeat: 2.75 + (7 - i) * 0.25, durationBeats: 0.25 });
+            for (let index = 7; index >= 5 && index < sp.length; index--) {
+                notes.push({
+                    pitch: sp[index]!,
+                    velocity: 75,
+                    startBeat: 2.75 + (7 - index) * 0.25,
+                    durationBeats: 0.25,
+                });
             }
             return notes;
         },
@@ -244,8 +249,8 @@ export const melodyPatterns: PatternTemplate[] = [
         tags: ['fingerpick', 'acoustic'],
         description: 'Fingerpicking pattern',
         lengthBeats: 4,
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 48, 72);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 48, 72);
             return [
                 { pitch: sp[0]!, velocity: 85, startBeat: 0, durationBeats: 0.5 },
                 { pitch: sp[4]!, velocity: 75, startBeat: 0.5, durationBeats: 0.5 },
@@ -267,8 +272,8 @@ export const melodyPatterns: PatternTemplate[] = [
         description: 'Afrobeat melodic lick',
         lengthBeats: 4,
         scaleOverride: 'pentatonic-major',
-        generate: (p) => {
-            const sp = getScalePitches(p.key, p.scale, 60, 84);
+        generate: (param) => {
+            const sp = getScalePitches(param.key, param.scale, 60, 84);
             return [
                 { pitch: sp[7] || sp[6]!, velocity: 85, startBeat: 0, durationBeats: 0.5 },
                 { pitch: sp[5]!, velocity: 80, startBeat: 0.5, durationBeats: 0.5 },

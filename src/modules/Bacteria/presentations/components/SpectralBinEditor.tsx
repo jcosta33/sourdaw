@@ -29,12 +29,6 @@ export const SpectralBinEditor = ({
     );
     const drawingRef = useRef(false);
 
-    // §150.2 — only redraw when bin content / layout / mode changes.
-    useEffect(() => {
-        draw();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [values, numBins, width, height, mode]);
-
     const draw = (): void => {
         const canvas = canvasRef.current;
         if (!canvas) {
@@ -100,6 +94,12 @@ export const SpectralBinEditor = ({
         }
         ctx.stroke();
     };
+
+    // §150.2 — only redraw when bin content / layout / mode changes.
+    useEffect(() => {
+        draw();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [values, numBins, width, height, mode]);
 
     const updateBinsFromPointer = (e: React.PointerEvent): void => {
         const rect = canvasRef.current?.getBoundingClientRect();

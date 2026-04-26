@@ -95,8 +95,8 @@ vi.mock('../AutomationView/AutomationSidebarCell', () => ({
 vi.mock('../AutomationView/AutomationControls', () => ({
     AutomationAddLaneControl: ({ params }: { params: { id: string; name: string }[] }) => (
         <div data-testid="add-lane-control">
-            {params.map((p) => (
-                <span key={p.id}>{p.name}</span>
+            {params.map((param) => (
+                <span key={param.id}>{param.name}</span>
             ))}
         </div>
     ),
@@ -134,7 +134,7 @@ vi.mock('#/modules/Arrangement/useCases/toggleTrackState/setAutomationMode', () 
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, fallback) => fallback || store.value),
+    useStore: vi.fn((store: { value: unknown }, fallback?: unknown) => fallback ?? store.value),
 }));
 
 describe('AutomationBottomPanel', () => {

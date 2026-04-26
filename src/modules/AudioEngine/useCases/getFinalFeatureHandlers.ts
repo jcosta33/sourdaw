@@ -1,13 +1,20 @@
 import { handleAddCvOutput } from '../handlers/finalFeature/handleAddCvOutput';
+import { handleCloseElasticEditor } from '../handlers/finalFeature/handleCloseElasticEditor';
 import { handleConnectPush } from '../handlers/finalFeature/handleConnectPush';
 import { handleDetectTransients } from '../handlers/finalFeature/handleDetectTransients';
 import { handleDisableMpe } from '../handlers/finalFeature/handleDisableMpe';
 import { handleDisconnectPush } from '../handlers/finalFeature/handleDisconnectPush';
+import { handleElasticAddMarker } from '../handlers/finalFeature/handleElasticAddMarker';
+import { handleElasticRemoveMarker } from '../handlers/finalFeature/handleElasticRemoveMarker';
+import { handleElasticSetSensitivity } from '../handlers/finalFeature/handleElasticSetSensitivity';
+import { handleElasticSetTool } from '../handlers/finalFeature/handleElasticSetTool';
+import { handleElasticToggleMarkerLock } from '../handlers/finalFeature/handleElasticToggleMarkerLock';
 import { handleEnableMpe } from '../handlers/finalFeature/handleEnableMpe';
 import { handleEnableWarping } from '../handlers/finalFeature/handleEnableWarping';
 import { handleExportDawProject } from '../handlers/finalFeature/handleExportDawProject';
 import { handleGetLatencyReport } from '../handlers/finalFeature/handleGetLatencyReport';
 import { handleLoadRaveModel } from '../handlers/finalFeature/handleLoadRaveModel';
+import { handleOpenElasticEditor } from '../handlers/finalFeature/handleOpenElasticEditor';
 import { handleQuantizeTransients } from '../handlers/finalFeature/handleQuantizeTransients';
 import { handleSetControlSurface } from '../handlers/finalFeature/handleSetControlSurface';
 import { handleSetMasterGain } from '../handlers/finalFeature/handleSetMasterGain';
@@ -21,15 +28,22 @@ import { handleToggleNodeView } from '../handlers/finalFeature/handleToggleNodeV
 
 export type FinalFeatureHandlersMap = {
     addCvOutput: typeof handleAddCvOutput;
+    closeElasticEditor: typeof handleCloseElasticEditor;
     connectPush: typeof handleConnectPush;
     detectTransients: typeof handleDetectTransients;
     disableMpe: typeof handleDisableMpe;
     disconnectPush: typeof handleDisconnectPush;
+    elasticAddMarker: typeof handleElasticAddMarker;
+    elasticRemoveMarker: typeof handleElasticRemoveMarker;
+    elasticSetSensitivity: typeof handleElasticSetSensitivity;
+    elasticSetTool: typeof handleElasticSetTool;
+    elasticToggleMarkerLock: typeof handleElasticToggleMarkerLock;
     enableMpe: typeof handleEnableMpe;
     enableWarping: typeof handleEnableWarping;
     exportDawProject: typeof handleExportDawProject;
     getLatencyReport: typeof handleGetLatencyReport;
     loadRaveModel: typeof handleLoadRaveModel;
+    openElasticEditor: typeof handleOpenElasticEditor;
     quantizeTransients: typeof handleQuantizeTransients;
     setControlSurface: typeof handleSetControlSurface;
     setMasterGain: typeof handleSetMasterGain;
@@ -49,6 +63,13 @@ export function getFinalFeatureHandlers(): FinalFeatureHandlersMap {
     return {
         detectTransients: handleDetectTransients,
         quantizeTransients: handleQuantizeTransients,
+        openElasticEditor: handleOpenElasticEditor,
+        closeElasticEditor: handleCloseElasticEditor,
+        elasticSetSensitivity: handleElasticSetSensitivity,
+        elasticAddMarker: handleElasticAddMarker,
+        elasticRemoveMarker: handleElasticRemoveMarker,
+        elasticToggleMarkerLock: handleElasticToggleMarkerLock,
+        elasticSetTool: handleElasticSetTool,
         toggleNodeView: handleToggleNodeView,
         setControlSurface: handleSetControlSurface,
         addCvOutput: handleAddCvOutput,

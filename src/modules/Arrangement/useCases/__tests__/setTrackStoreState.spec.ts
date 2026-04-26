@@ -12,7 +12,7 @@ vi.mock('../../stores/trackStore', () => ({
 
 describe('setTrackStoreState', () => {
     it('delegates to the injected track store set', () => {
-        const nextState = { tracks: [], selectedTrackId: null as string | null } as any;
+        const nextState: TrackStoreState = { tracks: [], selectedTrackId: null };
 
         setTrackStoreState(nextState);
 

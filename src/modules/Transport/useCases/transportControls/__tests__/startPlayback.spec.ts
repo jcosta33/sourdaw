@@ -37,7 +37,7 @@ describe('startPlayback', () => {
     });
 
     it('should resume engine and mark playing when state exists', () => {
-        const update = vi.fn();
+        const update = vi.fn<typeof updateTransportState>();
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: false,
@@ -56,8 +56,8 @@ describe('startPlayback', () => {
     });
 
     it('should not start when transport state is missing', () => {
-        const update = vi.fn();
-        vi.mocked(getTransportState).mockReturnValue(null as any);
+        const update = vi.fn<typeof updateTransportState>();
+        vi.mocked(getTransportState).mockReturnValue(null);
         vi.mocked(updateTransportState).mockImplementation(update);
 
         startPlayback();

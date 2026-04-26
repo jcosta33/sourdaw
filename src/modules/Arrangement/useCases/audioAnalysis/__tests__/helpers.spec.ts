@@ -5,7 +5,7 @@ import * as subject from '../helpers';
 describe('helpers', () => {
     it('should export getBufferForClip', () => {
         expect(subject.getBufferForClip).toBeDefined();
-        const t = typeof subject.getBufferForClip;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getBufferForClip;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

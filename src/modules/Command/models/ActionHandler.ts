@@ -5,8 +5,8 @@ export type ActionResult = {
     inverseAction?: AppAction | null;
 };
 
-export type ActionHandler<T extends AppAction = AppAction> = {
-    execute: (action: T) => void | Promise<void>;
-    describe: (action: T) => ActionResult;
+export type ActionHandler<Action extends AppAction = AppAction> = {
+    execute: (action: Action) => void | Promise<void>;
+    describe: (action: Action) => ActionResult;
     undoable: boolean;
 };

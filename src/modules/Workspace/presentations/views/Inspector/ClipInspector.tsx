@@ -17,7 +17,7 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { CLIP_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 
-import { type Clip } from '../../../models/TrackViewTypes';
+import { type Clip, type FollowAction } from '../../../models/TrackViewTypes';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';
 import { InsetPanel } from '../../components/Inspector/InsetPanel';
 import { InspectorDetailHeader } from '../../components/Inspector/InspectorDetailHeader';
@@ -54,13 +54,13 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                     editingName ? (
                         <DawCompactInput
                             value={nameValue}
-                            onChange={(e) => setNameValue(e.target.value)}
+                            onChange={(event) => setNameValue(event.target.value)}
                             onBlur={commitClipName}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
                                     commitClipName();
                                 }
-                                if (e.key === 'Escape') {
+                                if (event.key === 'Escape') {
                                     setNameValue(clip.name);
                                     setEditingName(false);
                                 }
@@ -86,7 +86,6 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                 onBack={onBack}
                 backLabel="Back to track"
             />
-
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Position" />
                 <InsetPanel className="space-y-1.5">
@@ -107,9 +106,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                     />
                 </InsetPanel>
             </section>
-
             <Separator />
-
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Trim" />
                 <div className="space-y-2">
@@ -117,9 +114,9 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                         <ControlHeader className="mb-1" label="Trim Start" />
                         <Slider
                             value={[clip.startBeat]}
-                            onValueChange={([v]) => {
-                                if (v !== undefined) {
-                                    trimClipStart(clip.id, v);
+                            onValueChange={([value]) => {
+                                if (value !== undefined) {
+                                    trimClipStart(clip.id, value);
                                 }
                             }}
                             max={clip.endBeat - 1}
@@ -131,9 +128,9 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                         <ControlHeader className="mb-1" label="Trim End" />
                         <Slider
                             value={[clip.endBeat]}
-                            onValueChange={([v]) => {
-                                if (v !== undefined) {
-                                    trimClipEnd(clip.id, v);
+                            onValueChange={([value]) => {
+                                if (value !== undefined) {
+                                    trimClipEnd(clip.id, value);
                                 }
                             }}
                             min={clip.startBeat + 1}
@@ -144,9 +141,7 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                     </div>
                 </div>
             </section>
-
             <Separator />
-
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Fades" />
                 <div className="space-y-2">
@@ -159,9 +154,9 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                         />
                         <Slider
                             value={[clip.fadeInBeats]}
-                            onValueChange={([v]) => {
-                                if (v !== undefined) {
-                                    setClipFade(clip.id, v, clip.fadeOutBeats);
+                            onValueChange={([value]) => {
+                                if (value !== undefined) {
+                                    setClipFade(clip.id, value, clip.fadeOutBeats);
                                 }
                             }}
                             max={duration / 2}
@@ -178,9 +173,9 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                         />
                         <Slider
                             value={[clip.fadeOutBeats]}
-                            onValueChange={([v]) => {
-                                if (v !== undefined) {
-                                    setClipFade(clip.id, clip.fadeInBeats, v);
+                            onValueChange={([value]) => {
+                                if (value !== undefined) {
+                                    setClipFade(clip.id, clip.fadeInBeats, value);
                                 }
                             }}
                             max={duration / 2}
@@ -190,18 +185,16 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                     </div>
                 </div>
             </section>
-
             <Separator />
-
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Gain" />
                 <div>
                     <ControlHeader className="mb-1" label="Clip Gain" value={`${(clip.gain * 100).toFixed(0)}%`} />
                     <Slider
                         value={[clip.gain * 100]}
-                        onValueChange={([v]) => {
-                            if (v !== undefined) {
-                                setClipGain(clip.id, v / 100);
+                        onValueChange={([value]) => {
+                            if (value !== undefined) {
+                                setClipGain(clip.id, value / 100);
                             }
                         }}
                         max={200}
@@ -210,35 +203,29 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                     />
                 </div>
             </section>
-
             <Separator />
-
             <ClipGainEnvelopeSection clipId={clip.id} duration={duration} />
-
             <Separator />
-
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Color" />
                 <div className="flex gap-1">
-                    {CLIP_COLOR_PRESETS.map((c) => (
+                    {CLIP_COLOR_PRESETS.map((context) => (
                         <button
                             type="button"
-                            key={c || 'default'}
+                            key={context || 'default'}
                             className="size-4 rounded-full border border-border/50 hover:ring-1 hover:ring-foreground/30"
                             style={{
-                                backgroundColor: c || 'var(--color-muted)',
-                                outline: c === clip.color ? '2px solid white' : 'none',
+                                backgroundColor: context || 'var(--color-muted)',
+                                outline: context === clip.color ? '2px solid white' : 'none',
                                 outlineOffset: '1px',
                             }}
-                            onClick={() => setClipColor(clip.id, c)}
-                            aria-label={c || 'Default color'}
+                            onClick={() => setClipColor(clip.id, context)}
+                            aria-label={context || 'Default color'}
                         />
                     ))}
                 </div>
             </section>
-
             <Separator />
-
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Properties" />
                 <InsetPanel className="space-y-1.5">
@@ -254,8 +241,9 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                             align="right"
                             className="border-border-hairline py-0.5 text-[10px]"
                             value={clip.followAction ?? 'none'}
-                            onChange={(e) => {
-                                const val = e.target.value === 'none' ? undefined : (e.target.value as any);
+                            onChange={(event) => {
+                                const val =
+                                    event.target.value === 'none' ? undefined : (event.target.value as FollowAction);
                                 setClipFollowAction(clip.id, val);
                             }}
                         >
@@ -291,14 +279,12 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                     ) : null}
                 </InsetPanel>
             </section>
-
             {clip.type === 'audio' ? (
                 <>
                     <Separator />
                     <ClipAudioAiSection clip={clip} trackId={trackId} />
                 </>
             ) : null}
-
             {clip.type === 'midi' ? (
                 <>
                     <Separator />

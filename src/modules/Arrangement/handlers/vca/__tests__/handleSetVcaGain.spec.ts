@@ -16,7 +16,7 @@ describe('handleSetVcaGain', () => {
     });
 
     it('executes setVcaGain with payload', () => {
-        handleSetVcaGain.execute({
+        void handleSetVcaGain.execute({
             type: 'setVcaGain',
             payload: { vcaGroupId: 'vca1', gain: 0.8 },
         });

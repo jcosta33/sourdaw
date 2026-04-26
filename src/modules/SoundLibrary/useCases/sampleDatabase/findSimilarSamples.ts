@@ -58,7 +58,7 @@ export function findSimilarSamples(sampleId: string, limit: number = 10): Sample
     permutation.sort((a, b) => scores[b]! - scores[a]!);
 
     const take = Math.min(limit, count);
-    const out: SampleEntry[] = new Array(take);
+    const out: SampleEntry[] = Array.from({ length: take });
     for (let i = 0; i < take; i++) {
         out[i] = samples[indexes[permutation[i]!]!]!;
     }

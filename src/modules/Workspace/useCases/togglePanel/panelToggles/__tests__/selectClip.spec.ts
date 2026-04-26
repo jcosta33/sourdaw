@@ -5,7 +5,7 @@ import * as subject from '../selectClip';
 describe('selectClip', () => {
     it('should export selectClip', () => {
         expect(subject.selectClip).toBeDefined();
-        const t = typeof subject.selectClip;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.selectClip;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

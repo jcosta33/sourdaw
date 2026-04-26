@@ -7,6 +7,6 @@ export function setActiveGroupTakeSet(grpId: string, tsId: string): void {
     }
     groupCompingStore.set({
         ...state,
-        groups: state.groups.map((g) => (g.id === grpId ? { ...g, activeTakeSetId: tsId } : g)),
+        groups: state.groups.map((gain) => (gain.id === grpId ? { ...gain, activeTakeSetId: tsId } : gain)),
     });
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports -- test file: must mock Tauri APIs at their source
 import { invoke } from '@tauri-apps/api/core';
 
 import { trackStore } from '#/modules/Arrangement/stores';
@@ -29,7 +30,8 @@ vi.mock('../../commandQueries', () => ({
     })),
 }));
 
-vi.mock('#/utils/tauriBridge', () => ({
+vi.mock('#/utils/tauriBridge', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/utils/tauriBridge')>()),
     isTauri: vi.fn(() => true),
 }));
 
@@ -104,7 +106,7 @@ describe('commitPitchEditCommand', () => {
         expect(newTracks[0].clips[0].fileId).toBe('test_pitch.wav');
 
         // Verify undo changes it back
-        const undoFn = vi.mocked(createCallbackUndoEntry).mock.calls[0][1] as Function;
+        const undoFn = vi.mocked(createCallbackUndoEntry).mock.calls[0][1] as () => void;
         undoFn();
 
         const restoredTracks = trackStore.value.tracks;

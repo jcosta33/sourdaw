@@ -26,27 +26,27 @@ const DB_RANGE = 30;
 type FilterTypeLabel = 'LP' | 'HP' | 'BP' | 'Notch';
 const FILTER_LABELS: FilterTypeLabel[] = ['LP', 'HP', 'BP', 'Notch'];
 
-const filterMag = (f: number, fc: number, Q: number, type: number): number => {
-    const w = f / fc;
-    const w2 = w * w;
+const filterMag = (freq: number, fc: number, Q: number, type: number): number => {
+    const width = freq / fc;
+    const w2 = width * width;
     const inv = 1 / Q;
 
     switch (type) {
         case 0: {
-            const den = Math.sqrt((1 - w2) ** 2 + (w * inv) ** 2);
+            const den = Math.sqrt((1 - w2) ** 2 + (width * inv) ** 2);
             return -20 * Math.log10(Math.max(den, 0.0001));
         }
         case 1: {
-            const den = Math.sqrt((1 - w2) ** 2 + (w * inv) ** 2);
+            const den = Math.sqrt((1 - w2) ** 2 + (width * inv) ** 2);
             return -20 * Math.log10(Math.max(den, 0.0001)) + 20 * Math.log10(Math.max(w2, 0.0001));
         }
         case 2: {
-            const den = Math.sqrt((1 - w2) ** 2 + (w * inv) ** 2);
-            return -20 * Math.log10(Math.max(den, 0.0001)) + 20 * Math.log10(Math.max(w * inv, 0.0001));
+            const den = Math.sqrt((1 - w2) ** 2 + (width * inv) ** 2);
+            return -20 * Math.log10(Math.max(den, 0.0001)) + 20 * Math.log10(Math.max(width * inv, 0.0001));
         }
         case 3: {
             const num = Math.sqrt((1 - w2) ** 2);
-            const den = Math.sqrt((1 - w2) ** 2 + (w * inv) ** 2);
+            const den = Math.sqrt((1 - w2) ** 2 + (width * inv) ** 2);
             return 20 * Math.log10(Math.max(num / den, 0.0001));
         }
         default:
@@ -54,10 +54,10 @@ const filterMag = (f: number, fc: number, Q: number, type: number): number => {
     }
 };
 
-const freqToX = (freq: number, w: number): number =>
-    (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * w;
+const freqToX = (freq: number, width: number): number =>
+    (Math.log10(freq / MIN_FREQ) / Math.log10(MAX_FREQ / MIN_FREQ)) * width;
 
-const xToFreq = (x: number, w: number): number => MIN_FREQ * (MAX_FREQ / MIN_FREQ) ** (x / w);
+const xToFreq = (xPos: number, width: number): number => MIN_FREQ * (MAX_FREQ / MIN_FREQ) ** (xPos / width);
 
 export const FilterResponse = ({
     cutoff,
@@ -108,10 +108,10 @@ export const FilterResponse = ({
         ctx.stroke();
 
         for (const freq of [100, 1000, 10000]) {
-            const x = freqToX(freq, width);
+            const xPos = freqToX(freq, width);
             ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, height);
+            ctx.moveTo(xPos, 0);
+            ctx.lineTo(xPos, height);
             ctx.stroke();
         }
         ctx.setLineDash([]);
@@ -131,19 +131,19 @@ export const FilterResponse = ({
         const type = Math.round(filterType);
         const points: [number, number][] = [];
 
-        for (let i = 0; i <= width; i++) {
-            const freq = MIN_FREQ * (MAX_FREQ / MIN_FREQ) ** (i / width);
+        for (let index = 0; index <= width; index++) {
+            const freq = MIN_FREQ * (MAX_FREQ / MIN_FREQ) ** (index / width);
             const db = filterMag(freq, cutoff, resonance, type);
             const clamped = Math.max(-DB_RANGE, Math.min(DB_RANGE, db));
-            const y = zeroY - (clamped / DB_RANGE) * zeroY;
-            points.push([i, y]);
+            const yPos = zeroY - (clamped / DB_RANGE) * zeroY;
+            points.push([index, yPos]);
         }
 
         // Fill gradient
         ctx.beginPath();
         ctx.moveTo(0, zeroY);
-        for (const [x, y] of points) {
-            ctx.lineTo(x, y);
+        for (const [xPos, yPos] of points) {
+            ctx.lineTo(xPos, yPos);
         }
         ctx.lineTo(width, zeroY);
         ctx.closePath();
@@ -155,12 +155,12 @@ export const FilterResponse = ({
 
         // Glow pass
         ctx.beginPath();
-        for (let i = 0; i < points.length; i++) {
-            const [x, y] = points[i]!;
-            if (i === 0) {
-                ctx.moveTo(x, y);
+        for (let index = 0; index < points.length; index++) {
+            const [xPos, yPos] = points[index]!;
+            if (index === 0) {
+                ctx.moveTo(xPos, yPos);
             } else {
-                ctx.lineTo(x, y);
+                ctx.lineTo(xPos, yPos);
             }
         }
         ctx.strokeStyle = `${accentCyan}30`;
@@ -169,12 +169,12 @@ export const FilterResponse = ({
 
         // Sharp stroke
         ctx.beginPath();
-        for (let i = 0; i < points.length; i++) {
-            const [x, y] = points[i]!;
-            if (i === 0) {
-                ctx.moveTo(x, y);
+        for (let index = 0; index < points.length; index++) {
+            const [xPos, yPos] = points[index]!;
+            if (index === 0) {
+                ctx.moveTo(xPos, yPos);
             } else {
-                ctx.lineTo(x, y);
+                ctx.lineTo(xPos, yPos);
             }
         }
         ctx.strokeStyle = accentCyan;
@@ -223,7 +223,7 @@ export const FilterResponse = ({
         }
     }, [cutoff, resonance, filterType, width, height, isInteractive]);
 
-    const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
         if (!onParamChange) {
             return;
         }
@@ -232,11 +232,11 @@ export const FilterResponse = ({
             return;
         }
         isDragging.current = true;
-        canvas.setPointerCapture(e.pointerId);
+        canvas.setPointerCapture(event.pointerId);
         canvas.style.cursor = 'grabbing';
     };
 
-    const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
         if (!isDragging.current || !onParamChange) {
             return;
         }
@@ -245,24 +245,24 @@ export const FilterResponse = ({
             return;
         }
         const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        const xPos = event.clientX - rect.left;
+        const yPos = event.clientY - rect.top;
 
         // Horizontal → frequency (log scale)
-        const freq = Math.max(MIN_FREQ, Math.min(MAX_FREQ, xToFreq(x, width)));
+        const freq = Math.max(MIN_FREQ, Math.min(MAX_FREQ, xToFreq(xPos, width)));
         onParamChange('filterCutoff', Math.round(freq));
 
         // Vertical → resonance (inverted: top = high Q)
-        const normalizedY = 1 - Math.max(0, Math.min(1, y / height));
-        const q = 0.1 + normalizedY * 19.9; // 0.1 to 20
-        onParamChange('filterResonance', Math.round(q * 10) / 10);
+        const normalizedY = 1 - Math.max(0, Math.min(1, yPos / height));
+        const query = 0.1 + normalizedY * 19.9; // 0.1 to 20
+        onParamChange('filterResonance', Math.round(query * 10) / 10);
     };
 
-    const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
         isDragging.current = false;
         const canvas = canvasRef.current;
         if (canvas) {
-            canvas.releasePointerCapture(e.pointerId);
+            canvas.releasePointerCapture(event.pointerId);
             canvas.style.cursor = isInteractive ? 'grab' : 'default';
         }
     };

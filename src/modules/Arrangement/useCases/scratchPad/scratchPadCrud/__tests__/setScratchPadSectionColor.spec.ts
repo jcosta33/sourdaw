@@ -5,7 +5,7 @@ import * as subject from '../setScratchPadSectionColor';
 describe('setScratchPadSectionColor', () => {
     it('should export setScratchPadSectionColor', () => {
         expect(subject.setScratchPadSectionColor).toBeDefined();
-        const t = typeof subject.setScratchPadSectionColor;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setScratchPadSectionColor;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

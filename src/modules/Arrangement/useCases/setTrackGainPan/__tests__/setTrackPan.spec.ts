@@ -21,7 +21,7 @@ vi.mock('../../../repositories/track/getTrackById', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     setTrackPan: mocks.engineSetTrackPan,
     updateDeviceParam: mocks.updateDeviceParam,
 }));
@@ -40,7 +40,7 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+    ...(await importOriginal<typeof import('#/modules/Automation/useCases')>()),
     recordAutomationValue: mocks.recordAutomationValue,
 }));
 
@@ -55,7 +55,7 @@ describe('setTrackPan', () => {
         setTrackPan('t1', 25);
 
         expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
-        const updater = mocks.updateTrack.mock.calls[0][1];
+        const updater = mocks.updateTrack.mock.calls[0]![1] as (t: { pan: number }) => { pan: number };
         expect(updater({ pan: 0 })).toEqual({ pan: 25 });
 
         expect(mocks.engineSetTrackPan).toHaveBeenCalledWith('t1', 25);

@@ -40,8 +40,8 @@ const PREFIX_LAYOUTS: PrefixMatcher[] = [];
 /** Register a layout for one or more exact device type IDs. */
 export function registerDeviceLayout(deviceTypes: string | string[], component: DeviceLayoutComponent): void {
     const types = Array.isArray(deviceTypes) ? deviceTypes : [deviceTypes];
-    for (const t of types) {
-        EXACT_LAYOUTS.set(t, component);
+    for (const time of types) {
+        EXACT_LAYOUTS.set(time, component);
     }
 }
 
@@ -68,4 +68,4 @@ export type { DeviceParameter, Device };
 
 /** Shared filter helper used by layout components. */
 export const filterParams = (params: DeviceParameter[], ids: string[]): DeviceParameter[] =>
-    params.filter((p) => ids.includes(p.id));
+    params.filter((param) => ids.includes(param.id));

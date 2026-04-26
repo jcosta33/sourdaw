@@ -40,10 +40,10 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
     const ctxRef = useRef<HTMLDivElement>(null);
     const renameRef = useRef<HTMLInputElement>(null);
 
-    const handleContextMenu = (e: MouseEvent<HTMLDivElement>) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setCtxMenu({ x: e.clientX, y: e.clientY });
+    const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setCtxMenu({ x: event.clientX, y: event.clientY });
     };
 
     useContextMenuDismiss(ctxRef, () => setCtxMenu(null));
@@ -59,199 +59,18 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
         fn();
         setCtxMenu(null);
     };
-
-    return (
-        <div
-            className={cn(
-                'flex shrink-0 flex-col items-center gap-1.5 rounded-lg p-2',
-                widthClass,
-                'border border-border-soft border-t-[var(--color-light-edge)] shadow-[0_1px_2px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.03)]',
-                isSelected && 'ring-1 ring-ring border-transparent'
-            )}
-            style={{ background: 'linear-gradient(180deg, #0c0c0c 0%, #0a0a0a 100%)' }}
-            onClick={actions.select}
-            onContextMenu={handleContextMenu}
-            role="group"
-            aria-label={`${track.name} channel`}
-        >
-            {/* Color bar */}
-            <div className="h-1.5 w-full rounded-t-sm -mt-2 mb-1" style={{ backgroundColor: track.color }} />
-
-            {/* Track name */}
-            {isRenaming ? (
-                <DawCompactInput
-                    ref={renameRef}
-                    defaultValue={track.name}
-                    size="micro"
-                    align="center"
-                    monospace
-                    className="w-full px-1 text-[9px]"
-                    onBlur={(e) => {
-                        actions.rename(e.currentTarget.value);
-                        setIsRenaming(false);
-                    }}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                            actions.rename(e.currentTarget.value);
-                            setIsRenaming(false);
-                        }
-                        if (e.key === 'Escape') {
-                            setIsRenaming(false);
-                        }
-                    }}
-                />
-            ) : (
-                <span
-                    className="w-full truncate text-center text-[10px] font-medium text-foreground cursor-text"
-                    onDoubleClick={() => setIsRenaming(true)}
-                    title={track.name}
-                >
-                    {track.name}
-                </span>
-            )}
-
-            <span className="text-[10px] text-muted-foreground capitalize">{track.kind}</span>
-            {track.vcaGroupId ? (
-                <DawMicroBadge tone="cyan" rounded="full" className="font-mono">
-                    VCA
-                </DawMicroBadge>
-            ) : null}
-
-            {/* Mute / Solo / Arm / Monitor */}
-            <div className="flex flex-wrap justify-center gap-1">
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <LatchButton
-                            active={track.muted}
-                            variant="amber"
-                            size="icon-sm"
-                            aria-label={track.muted ? 'Unmute' : 'Mute'}
-                            className="font-bold text-[10px]"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                actions.toggleMute();
-                            }}
-                        >
-                            M
-                        </LatchButton>
-                    </TooltipTrigger>
-                    <TooltipContent>{track.muted ? 'Unmute' : 'Mute'}</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <LatchButton
-                            active={track.soloed}
-                            variant="cyan"
-                            size="icon-sm"
-                            aria-label={track.soloed ? 'Unsolo' : 'Solo'}
-                            className="font-bold text-[10px]"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                actions.toggleSolo(e.metaKey || e.ctrlKey);
-                            }}
-                        >
-                            S
-                        </LatchButton>
-                    </TooltipTrigger>
-                    <TooltipContent>{track.soloed ? 'Unsolo' : 'Solo (⌘ click for additive)'}</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <LatchButton
-                            active={track.armed}
-                            variant="red"
-                            size="icon-sm"
-                            aria-label={track.armed ? 'Disarm' : 'Arm'}
-                            className=""
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                actions.toggleArm();
-                            }}
-                        >
-                            <Circle className={cn('size-3', track.armed && 'fill-state-record')} />
-                        </LatchButton>
-                    </TooltipTrigger>
-                    <TooltipContent>{track.armed ? 'Disarm' : 'Arm for recording'}</TooltipContent>
-                </Tooltip>
-                {track.kind === 'audio' ? (
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <LatchButton
-                                active={track.inputMonitoring === 'on'}
-                                variant="mint"
-                                size="icon-sm"
-                                aria-label={track.inputMonitoring === 'on' ? 'Disable monitoring' : 'Enable monitoring'}
-                                className=""
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    actions.toggleMonitoring();
-                                }}
-                            >
-                                <Ear className={cn('size-3', track.inputMonitoring === 'on' && 'fill-state-play/30')} />
-                            </LatchButton>
-                        </TooltipTrigger>
-                        <TooltipContent>Input monitoring</TooltipContent>
-                    </Tooltip>
-                ) : null}
-                {track.soloSafe ? <ShieldCheck className="size-3 text-state-active" aria-label="Solo safe" /> : null}
-            </div>
-
-            <MixerLevelReadout
-                trackId={track.id}
-                control={
-                    <div className="shrink-0" onPointerUp={actions.releaseGainAutomation}>
-                        <Fader
-                            value={track.gain}
-                            onChange={actions.setGain}
-                            min={0}
-                            max={1.5}
-                            step={0.01}
-                            fineStep={0.001}
-                            defaultValue={0.8}
-                            height={100}
-                            aria-label={`${track.name} gain`}
-                        />
-                    </div>
-                }
-                value={<>{track.gain === 0 ? '-∞' : `${((track.gain - 0.8) * 40).toFixed(1)}`} dB</>}
-            />
-
-            {/* Pan */}
-            <div className="w-full px-1 flex flex-col items-center mt-2 mb-2">
-                <div onPointerUp={actions.releasePanAutomation}>
-                    <RotaryKnob
-                        value={track.pan}
-                        onChange={actions.setPan}
-                        min={-50}
-                        max={50}
-                        size="sm"
-                        aria-label={`${track.name} pan`}
-                        bipolar
-                    />
-                </div>
-                <MixerStripValue size="sm">
-                    {track.pan === 0
-                        ? 'C'
-                        : track.pan > 0
-                          ? `R${Math.round(track.pan)}`
-                          : `L${Math.abs(Math.round(track.pan))}`}
-                </MixerStripValue>
-            </div>
-
-            {/* MIDI FX */}
-            <MidiFxSection track={track} />
-
-            {/* Devices — contained with scroll */}
-            <DeviceChainSection track={track} />
-
-            {/* Sends */}
-            <SendsSection track={track} />
-
-            {/* I/O */}
-            <IOSection track={track} />
-
-            {/* Context menu */}
-            {ctxMenu ? (
+    const renderIife_1 = () => {
+        if (track.pan === 0) {
+            return 'C';
+        }
+        if (track.pan > 0) {
+            return `R${Math.round(track.pan)}`;
+        }
+        return `L${Math.abs(Math.round(track.pan))}`;
+    };
+    const renderIife_2 = () => {
+        if (ctxMenu) {
+            return (
                 <MixerPopupMenu
                     ref={ctxRef}
                     position="fixed"
@@ -278,12 +97,12 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                     <MixerPopupSeparator />
                     <MixerPopupLabel>Color</MixerPopupLabel>
                     <div className="flex gap-1 px-3 py-1">
-                        {TRACK_COLOR_PRESETS.map((c) => (
+                        {TRACK_COLOR_PRESETS.map((context) => (
                             <DawSwatchButton
-                                key={c}
-                                color={c}
-                                active={c === track.color}
-                                onClick={act(() => actions.setColor(c))}
+                                key={context}
+                                color={context}
+                                active={context === track.color}
+                                onClick={act(() => actions.setColor(context))}
                                 aria-label={`Set color`}
                             />
                         ))}
@@ -317,7 +136,188 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                         Remove Channel
                     </MixerPopupOption>
                 </MixerPopupMenu>
+            );
+        } else {
+            return null;
+        }
+    };
+
+    return (
+        <div
+            className={cn(
+                'flex shrink-0 flex-col items-center gap-1.5 rounded-lg p-2',
+                widthClass,
+                'border border-border-soft border-t-[var(--color-light-edge)] shadow-[0_1px_2px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.03)]',
+                isSelected && 'ring-1 ring-ring border-transparent'
+            )}
+            style={{ background: 'linear-gradient(180deg, #0c0c0c 0%, #0a0a0a 100%)' }}
+            onClick={actions.select}
+            onContextMenu={handleContextMenu}
+            role="group"
+            aria-label={`${track.name} channel`}
+        >
+            {/* Color bar */}
+            <div className="h-1.5 w-full rounded-t-sm -mt-2 mb-1" style={{ backgroundColor: track.color }} />
+            {/* Track name */}
+            {isRenaming ? (
+                <DawCompactInput
+                    ref={renameRef}
+                    defaultValue={track.name}
+                    size="micro"
+                    align="center"
+                    monospace
+                    className="w-full px-1 text-[9px]"
+                    onBlur={(event) => {
+                        actions.rename(event.currentTarget.value);
+                        setIsRenaming(false);
+                    }}
+                    onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                            actions.rename(event.currentTarget.value);
+                            setIsRenaming(false);
+                        }
+                        if (event.key === 'Escape') {
+                            setIsRenaming(false);
+                        }
+                    }}
+                />
+            ) : (
+                <span
+                    className="w-full truncate text-center text-[10px] font-medium text-foreground cursor-text"
+                    onDoubleClick={() => setIsRenaming(true)}
+                    title={track.name}
+                >
+                    {track.name}
+                </span>
+            )}
+            <span className="text-[10px] text-muted-foreground capitalize">{track.kind}</span>
+            {track.vcaGroupId ? (
+                <DawMicroBadge tone="cyan" rounded="full" className="font-mono">
+                    VCA
+                </DawMicroBadge>
             ) : null}
+            {/* Mute / Solo / Arm / Monitor */}
+            <div className="flex flex-wrap justify-center gap-1">
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <LatchButton
+                            active={track.muted}
+                            variant="amber"
+                            size="icon-sm"
+                            aria-label={track.muted ? 'Unmute' : 'Mute'}
+                            className="font-bold text-[10px]"
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                actions.toggleMute();
+                            }}
+                        >
+                            M
+                        </LatchButton>
+                    </TooltipTrigger>
+                    <TooltipContent>{track.muted ? 'Unmute' : 'Mute'}</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <LatchButton
+                            active={track.soloed}
+                            variant="cyan"
+                            size="icon-sm"
+                            aria-label={track.soloed ? 'Unsolo' : 'Solo'}
+                            className="font-bold text-[10px]"
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                actions.toggleSolo(event.metaKey || event.ctrlKey);
+                            }}
+                        >
+                            S
+                        </LatchButton>
+                    </TooltipTrigger>
+                    <TooltipContent>{track.soloed ? 'Unsolo' : 'Solo (⌘ click for additive)'}</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <LatchButton
+                            active={track.armed}
+                            variant="red"
+                            size="icon-sm"
+                            aria-label={track.armed ? 'Disarm' : 'Arm'}
+                            className=""
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                actions.toggleArm();
+                            }}
+                        >
+                            <Circle className={cn('size-3', track.armed && 'fill-state-record')} />
+                        </LatchButton>
+                    </TooltipTrigger>
+                    <TooltipContent>{track.armed ? 'Disarm' : 'Arm for recording'}</TooltipContent>
+                </Tooltip>
+                {track.kind === 'audio' ? (
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <LatchButton
+                                active={track.inputMonitoring === 'on'}
+                                variant="mint"
+                                size="icon-sm"
+                                aria-label={track.inputMonitoring === 'on' ? 'Disable monitoring' : 'Enable monitoring'}
+                                className=""
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    actions.toggleMonitoring();
+                                }}
+                            >
+                                <Ear className={cn('size-3', track.inputMonitoring === 'on' && 'fill-state-play/30')} />
+                            </LatchButton>
+                        </TooltipTrigger>
+                        <TooltipContent>Input monitoring</TooltipContent>
+                    </Tooltip>
+                ) : null}
+                {track.soloSafe ? <ShieldCheck className="size-3 text-state-active" aria-label="Solo safe" /> : null}
+            </div>
+            <MixerLevelReadout
+                trackId={track.id}
+                control={
+                    <div className="shrink-0" onPointerUp={actions.releaseGainAutomation}>
+                        <Fader
+                            value={track.gain}
+                            onChange={actions.setGain}
+                            min={0}
+                            max={1.5}
+                            step={0.01}
+                            fineStep={0.001}
+                            defaultValue={0.8}
+                            height={100}
+                            aria-label={`${track.name} gain`}
+                        />
+                    </div>
+                }
+                value={<>{track.gain === 0 ? '-∞' : `${((track.gain - 0.8) * 40).toFixed(1)}`} dB</>}
+            />
+            {/* Pan */}
+            <div className="w-full px-1 flex flex-col items-center mt-2 mb-2">
+                <div onPointerUp={actions.releasePanAutomation}>
+                    <RotaryKnob
+                        value={track.pan}
+                        onChange={actions.setPan}
+                        min={-50}
+                        max={50}
+                        size="sm"
+                        aria-label={`${track.name} pan`}
+                        bipolar
+                    />
+                </div>
+                <MixerStripValue size="sm">{renderIife_1()}</MixerStripValue>
+            </div>
+            {/* MIDI FX */}
+            <MidiFxSection track={track} />
+            {/* Devices — contained with scroll */}
+            <DeviceChainSection track={track} />
+            {/* Sends */}
+            <SendsSection track={track} />
+            {/* I/O */}
+            <IOSection track={track} />
+            {/* Context menu */}
+            {renderIife_2()}
         </div>
     );
 };

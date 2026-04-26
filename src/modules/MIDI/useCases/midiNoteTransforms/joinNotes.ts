@@ -15,7 +15,7 @@ export function joinNotes(clipId: string, selectedIds: string[]): void {
     const idSet = new Set(selectedIds);
 
     updateNotesForClip(clipId, (notes) => {
-        const selected = notes.filter((n) => idSet.has(n.id));
+        const selected = notes.filter((node) => idSet.has(node.id));
 
         // Group by pitch
         const byPitch = new Map<number, MidiNote[]>();
@@ -29,32 +29,33 @@ export function joinNotes(clipId: string, selectedIds: string[]): void {
         const toAdd: MidiNote[] = [];
 
         for (const [, group] of byPitch) {
-            const sorted = [...group].sort((a, b) => a.startBeat - b.startBeat);
+            const sorted = [...group].sort((alpha, b) => alpha.startBeat - b.startBeat);
 
-            let i = 0;
-            while (i < sorted.length) {
-                let j = i;
+            let index = 0;
+            while (index < sorted.length) {
+                let jIndex = index;
                 // Extend the run while notes are adjacent (end of j meets start of j+1)
                 while (
-                    j + 1 < sorted.length &&
-                    Math.abs(sorted[j]!.startBeat + sorted[j]!.duration - sorted[j + 1]!.startBeat) < 0.001
+                    jIndex + 1 < sorted.length &&
+                    Math.abs(sorted[jIndex]!.startBeat + sorted[jIndex]!.duration - sorted[jIndex + 1]!.startBeat) <
+                        0.001
                 ) {
-                    j++;
+                    jIndex++;
                 }
 
-                if (j > i) {
+                if (jIndex > index) {
                     // Merge notes i..j into one
-                    const first = sorted[i]!;
-                    const last = sorted[j]!;
+                    const first = sorted[index]!;
+                    const last = sorted[jIndex]!;
                     toAdd.push({
                         ...first,
                         duration: last.startBeat + last.duration - first.startBeat,
                     });
-                    for (let k = i; k <= j; k++) {
-                        toRemove.add(sorted[k]!.id);
+                    for (let kIndex = index; kIndex <= jIndex; kIndex++) {
+                        toRemove.add(sorted[kIndex]!.id);
                     }
                 }
-                i = j + 1;
+                index = jIndex + 1;
             }
         }
 
@@ -62,6 +63,6 @@ export function joinNotes(clipId: string, selectedIds: string[]): void {
             return notes;
         }
 
-        return [...notes.filter((n) => !toRemove.has(n.id)), ...toAdd];
+        return [...notes.filter((node) => !toRemove.has(node.id)), ...toAdd];
     });
 }

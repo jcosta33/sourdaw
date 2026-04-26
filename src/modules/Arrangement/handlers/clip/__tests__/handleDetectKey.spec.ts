@@ -28,7 +28,7 @@ describe('handleDetectKey', () => {
     it('bails out if the clip cannot be found', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
 
-        handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
+        void handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
 
         expect(mocks.detectKey).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
@@ -39,7 +39,7 @@ describe('handleDetectKey', () => {
             tracks: [{ clips: [{ id: 'c1' }] }],
         });
 
-        handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
+        void handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
 
         expect(mocks.detectKey).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
@@ -51,7 +51,7 @@ describe('handleDetectKey', () => {
         });
         mocks.detectKey.mockReturnValue({ key: 'C', mode: 'Major', confidence: 0.856 });
 
-        handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
+        void handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
 
         expect(mocks.detectKey).toHaveBeenCalledWith('buf1');
         expect(mocks.notifyUser).toHaveBeenCalledWith('Detected key: C Major (86% confidence)');
@@ -63,7 +63,7 @@ describe('handleDetectKey', () => {
         });
         mocks.detectKey.mockReturnValue(null);
 
-        handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
+        void handleDetectKey.execute({ type: 'detectKey', payload: { clipId: 'c1' } });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith('Could not detect key');
     });

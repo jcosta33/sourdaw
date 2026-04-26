@@ -5,7 +5,7 @@ import * as subject from '../deleteBranch';
 describe('deleteBranch', () => {
     it('should export deleteBranch', () => {
         expect(subject.deleteBranch).toBeDefined();
-        const t = typeof subject.deleteBranch;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.deleteBranch;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

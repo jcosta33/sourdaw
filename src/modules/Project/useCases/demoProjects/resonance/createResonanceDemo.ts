@@ -1,9 +1,10 @@
-import { trackStore, markerStore } from '#/modules/Arrangement/stores';
+import { trackStore, markerStore, vcaGroupStore, grooveStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { waitForDevices } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane } from '#/modules/Automation/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import { chordTrackStore, midiStore } from '#/modules/MIDI/stores';
+import { addSidechainRoute } from '#/modules/Routing/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState, ensureTrackStrips } from '#/modules/Transport/useCases';
 
@@ -29,8 +30,48 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         { sub: 33, root: 45, third: 48, fifth: 52, seventh: 55, ninth: 57 }, // Am7(9)
         { sub: 34, root: 46, third: 50, fifth: 53, seventh: 57, ninth: 60 }, // Bbmaj7(9)
     ];
-    const ch = (beat: number) => CHORDS[Math.floor(beat / 16) % 4]!;
-    const hv = (base: number, r = 8) => Math.max(10, Math.min(127, Math.round(base + (Math.random() - 0.5) * r * 2)));
+    function ch(beat: number) {
+        return CHORDS[Math.floor(beat / 16) % 4]!;
+    }
+    function hv(base: number, r = 8) {
+        return Math.max(10, Math.min(127, Math.round(base + (Math.random() - 0.5) * r * 2)));
+    }
+
+    // ── GROOVE TEMPLATE (MPC-60 swing ~57%, subtle) ──────────────────────────
+    // Registers a project-wide swing groove so drum timing has a natural human feel.
+    // 16th-note resolution; odd 16ths push back ~0.07 beat (≈ 57% swing).
+    const mpc60Groove = {
+        id: 'mpc60-57',
+        name: 'MPC-60 Swing 57%',
+        offsets: [0, 0.07, 0, 0.07],
+        resolution: 0.25,
+    };
+    grooveStore.set({
+        templates: [
+            ...((grooveStore.value?.templates ?? []).filter((t) => t.id !== mpc60Groove.id)),
+            mpc60Groove,
+        ],
+        projectGrooveId: mpc60Groove.id,
+        projectGrooveIntensity: 0.4,
+    });
+
+    // ── CHORD TRACK — populate with the 4-chord progression ─────────────────
+    // Dm7 → Gm7 → Am7 → Bbmaj7, 16 beats each, repeating every 64 beats.
+    // Root values are 0–11 (C=0 … B=11): D=2, G=7, A=9, Bb=10.
+    const chordRoots = [2, 7, 9, 10] as const;
+    const chordQualities = ['min7', 'min7', 'min7', 'maj7'] as const;
+    const chordEvents = [];
+    for (let bar16 = 0; bar16 < TB; bar16 += 16) {
+        const idx = Math.floor(bar16 / 16) % 4;
+        chordEvents.push({
+            id: `chord-${crypto.randomUUID().slice(0, 8)}`,
+            beat: bar16,
+            root: chordRoots[idx]!,
+            quality: chordQualities[idx]!,
+            duration: 16,
+        });
+    }
+    chordTrackStore.set({ enabled: true, events: chordEvents });
 
     // ── TRACKS: 36 tracks in 7 folders ────────────────────────────────────
     const masterTrack = createTrack({ name: 'Master', kind: 'master' });
@@ -97,6 +138,13 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const riserTrack = createTrack({ name: 'Riser', kind: 'midi', parentId: fxFolder.id });
     const noiseSweepTrack = createTrack({ name: 'Noise Sweep', kind: 'midi', parentId: fxFolder.id });
     const reverbBusTrack = createTrack({ name: 'Reverb Bus', kind: 'bus' });
+    const delaySendBusTrack = createTrack({ name: 'Delay Send', kind: 'bus' });
+    const scKickBusTrack = createTrack({ name: 'SC Kick', kind: 'bus' });
+
+    // 🎹 Additional instrument showcases (physical-model piano, granular pad, Knead demo)
+    const grandPianoTrack = createTrack({ name: 'Grand Piano', kind: 'midi', parentId: keysFolder.id });
+    const crumbsPadTrack = createTrack({ name: 'Crumbs Pad', kind: 'midi', parentId: strPadFolder.id });
+    const vocalPadTrack = createTrack({ name: 'Vocal Pad', kind: 'midi', parentId: strPadFolder.id });
 
     // 🌊 Deep Layers folder — 10 subliminal texture/depth tracks
     const deepFolder = createTrack({ name: '🌊 Deep Layers', kind: 'folder' });
@@ -193,10 +241,49 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         },
     ];
     applyPreset(harmWashTrack, 'factory-faust-additive-glass');
+
+    // ── NEW INSTRUMENT SHOWCASES ──────────────────────────────────────────
+    // Grand Boule — physical-modeling piano for sparse chord-root notes
+    grandPianoTrack.devices = [
+        {
+            id: `dev-${crypto.randomUUID()}`,
+            name: 'Grand Boule',
+            type: 'grand-boule',
+            bypassed: false,
+            parameterValues: { masterGain: 0.7, soundboardSend: 0.6, sympatheticSend: 0.25 },
+        },
+    ];
+    // Crumbs — granular pad-layer for texture
+    crumbsPadTrack.devices = [
+        {
+            id: `dev-${crypto.randomUUID()}`,
+            name: 'Crumbs',
+            type: 'builtin-crumbs',
+            bypassed: false,
+            parameterValues: {},
+        },
+    ];
+    // Vocal Pad — builtin synth + Knead pitch correction (demonstrates kneadState on clips)
+    vocalPadTrack.devices = [
+        {
+            id: `dev-${crypto.randomUUID()}`,
+            name: 'Vocal Synth',
+            type: 'builtin-synth',
+            bypassed: false,
+            parameterValues: {},
+        },
+        {
+            id: `dev-${crypto.randomUUID()}`,
+            name: 'Knead',
+            type: 'knead',
+            bypassed: false,
+            parameterValues: {},
+        },
+    ];
     // ── EFFECTS on tracks (web-compatible only) ──────────────────────────
-    const addDev = (t: any, type: string, name: string, params: Record<string, number>) => {
-        t.devices = [
-            ...(t.devices || []),
+    function addDev(time: ReturnType<typeof createTrack>, type: string, name: string, params: Record<string, number>) {
+        time.devices = [
+            ...time.devices,
             {
                 id: `dev-${crypto.randomUUID()}`,
                 name,
@@ -205,7 +292,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
                 parameterValues: params,
             },
         ];
-    };
+    }
 
     // ╔═══════════════════════════════════════════════════════════════╗
     // ║  MASTER CHAIN — Kiasmos/Jon Hopkins style mastering        ║
@@ -221,13 +308,19 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         'eq-high-freq': 10000,
         'eq-high-q': 0.7,
     });
-    addDev(masterTrack, 'builtin-compressor', 'Glue Comp', {
-        'comp-threshold': -12,
-        'comp-ratio': 2.5,
-        'comp-attack': 30,
-        'comp-release': 200,
-        'comp-knee': 10,
-        'comp-makeup': 2,
+    // Gluten — multi-topology glue compressor (replaces builtin-compressor)
+    addDev(masterTrack, 'gluten', 'Glue Bus Comp', {
+        topology: 3, // VCA
+        amount: 55,
+        threshold: -14,
+        ratio: 2.5,
+        attack: 30,
+        release: 200,
+        knee: 8,
+        makeup: 0,
+        mix: 1,
+        autoMakeup: 1,
+        autoRelease: 1,
     });
     addDev(masterTrack, 'builtin-stereo-widener', 'Width', {
         'width-amount': 1.15,
@@ -235,7 +328,12 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         'width-side': 1.5,
         'width-mono-bass': 180,
     });
-    addDev(masterTrack, 'builtin-limiter', 'Brickwall', { 'lim-threshold': -1 });
+    // Proof — mastering suite (replaces builtin-limiter)
+    addDev(masterTrack, 'proof', 'Proof Mastering', {
+        input_gain: 0,
+        output_gain: 0,
+        lim_ceiling: -1,
+    });
     addDev(masterTrack, 'builtin-lufs-meter', 'LUFS', { 'lufs-target': -14 });
 
     // ╔═══════════════════════════════════════════════════════════════╗
@@ -261,6 +359,15 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         'conv-lowcut': 80,
         'conv-highcut': 10000,
     });
+    // Delay Send bus: faust tape-delay for dub-style sends (fallback to builtin-delay below)
+    addDev(delaySendBusTrack, 'faust-tape-delay', 'Tape Delay', {
+        delay: 0.375,
+        feedback: 0.5,
+        dry_wet: 1,
+    });
+    // SC Kick bus: receives pre-fader sends from the 808 Kit for sidechain triggering.
+    // No devices — acts as a pure routing hub whose output feeds the sidechain inputs of
+    // compressors on Sub Bass and Warm Pad via sidechainStore routes (wired later).
     // Warm Pad: EQ for warmth and air (boost low-mids + gentle high shelf)
     addDev(warmPadTrack, 'builtin-eq', 'Pad Warmth', {
         'eq-low-gain': 2,
@@ -273,6 +380,44 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         'eq-high-freq': 8000,
         'eq-high-q': 0.6,
     });
+    // Warm Pad: sidechain compressor driven by kick for pumping feel (device id captured for routing)
+    const warmPadScId = `dev-${crypto.randomUUID()}`;
+    warmPadTrack.devices = [
+        ...(warmPadTrack.devices || []),
+        {
+            id: warmPadScId,
+            name: 'SC Pump',
+            type: 'builtin-sidechain-compressor',
+            bypassed: false,
+            parameterValues: {
+                'sc-comp-threshold': -24,
+                'sc-comp-ratio': 4,
+                'sc-comp-attack': 5,
+                'sc-comp-release': 180,
+                'sc-comp-knee': 6,
+                'sc-comp-makeup': 2,
+            },
+        },
+    ];
+    // Sub Bass: sidechain compressor driven by kick for tight low-end carving
+    const subBassScId = `dev-${crypto.randomUUID()}`;
+    subBassTrack.devices = [
+        ...(subBassTrack.devices || []),
+        {
+            id: subBassScId,
+            name: 'SC Duck',
+            type: 'builtin-sidechain-compressor',
+            bypassed: false,
+            parameterValues: {
+                'sc-comp-threshold': -22,
+                'sc-comp-ratio': 6,
+                'sc-comp-attack': 2,
+                'sc-comp-release': 140,
+                'sc-comp-knee': 4,
+                'sc-comp-makeup': 1,
+            },
+        },
+    ];
 
     // ╔═══════════════════════════════════════════════════════════════╗
     // ║  PER-TRACK EFFECTS — character, space, movement            ║
@@ -335,7 +480,15 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         'conv-lowcut': 100,
         'conv-highcut': 12000,
     });
-    // Arp: phaser + ping-pong delay for spatial movement
+    // Arp: Yeast MIDI FX (arpeggiator: up-down 1/16, 75% gate, 15% swing) + spatial effects
+    // Yeast lives in the track.devices array; scheduleMidiNotes detects `type: 'yeast'` and
+    // routes notes through the Yeast rack at runtime.
+    addDev(arpTrack, 'yeast', 'Arp Yeast', {
+        arp_mode: 2, // upDown
+        arp_rate: 16, // 1/16
+        arp_gate: 0.75,
+        arp_swing: 0.15,
+    });
     addDev(arpTrack, 'builtin-phaser', 'Arp Phase', {
         'phaser-rate': 0.3,
         'phaser-depth': 0.5,
@@ -691,6 +844,40 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         'rev-mix': 0.7,
     });
 
+    // ── SEND/RETURN ARCHITECTURE ────────────────────────────────────────
+    // A mix of tracks now use post-fader sends to the shared Reverb Bus (convolution room)
+    // instead of per-instance reverbs. This demonstrates proper bus/return routing and
+    // shared space — tracks sit in the same room rather than each having their own.
+    rhodesTrack.sends = [{ busId: reverbBusTrack.id, level: 0.35, preFader: false }];
+    pianoTrack.sends = [{ busId: reverbBusTrack.id, level: 0.28, preFader: false }];
+    warmPadTrack.sends = [{ busId: reverbBusTrack.id, level: 0.4, preFader: false }];
+    shimmerPadTrack.sends = [{ busId: reverbBusTrack.id, level: 0.45, preFader: false }];
+    stringsSoftTrack.sends = [{ busId: reverbBusTrack.id, level: 0.4, preFader: false }];
+    stringsBrightTrack.sends = [{ busId: reverbBusTrack.id, level: 0.3, preFader: false }];
+    leadClassicTrack.sends = [
+        { busId: reverbBusTrack.id, level: 0.3, preFader: false },
+        { busId: delaySendBusTrack.id, level: 0.25, preFader: false },
+    ];
+    leadSoftTrack.sends = [
+        { busId: reverbBusTrack.id, level: 0.35, preFader: false },
+        { busId: delaySendBusTrack.id, level: 0.2, preFader: false },
+    ];
+    grandPianoTrack.sends = [{ busId: reverbBusTrack.id, level: 0.45, preFader: false }];
+    vocalPadTrack.sends = [{ busId: reverbBusTrack.id, level: 0.5, preFader: false }];
+    // Delay Send bus — ~4 tracks sending to it (dub-style)
+    arpTrack.sends = [{ busId: delaySendBusTrack.id, level: 0.3, preFader: false }];
+    bellAccentTrack.sends = [{ busId: delaySendBusTrack.id, level: 0.25, preFader: false }];
+    percHitsTrack.sends = [{ busId: delaySendBusTrack.id, level: 0.2, preFader: false }];
+    // 808 Kit sends pre-fader to SC Kick bus so sidechain follows kick regardless of fader automation.
+    drumKitTrack.sends = [{ busId: scKickBusTrack.id, level: 1, preFader: true }];
+
+    // ── CHORD-TRACK FOLLOW ───────────────────────────────────────────────
+    // Enables automatic transposition on these tracks when the chord-track chord changes.
+    // Notes already follow the progression — this flag demonstrates the feature is wired.
+    rhodesTrack.followChordTrack = true;
+    warmPadTrack.followChordTrack = true;
+    stringsSoftTrack.followChordTrack = true;
+
     // ── GAIN / PAN — stereo field (rebalanced for ambient clarity) ─────
     drumKitTrack.gain = 0.55;
     drumKitTrack.pan = 0;
@@ -744,6 +931,17 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     impactFxTrack.pan = 0;
     texChirpTrack.gain = 0.15;
     texChirpTrack.pan = -48;
+    // New tracks — grand piano (sparse), crumbs granular pad, vocal pad + knead demo, bus sends
+    grandPianoTrack.gain = 0.45;
+    grandPianoTrack.pan = -15;
+    crumbsPadTrack.gain = 0.18;
+    crumbsPadTrack.pan = 20;
+    vocalPadTrack.gain = 0.32;
+    vocalPadTrack.pan = 0;
+    delaySendBusTrack.gain = 0.7;
+    delaySendBusTrack.pan = 0;
+    scKickBusTrack.gain = 0;
+    scKickBusTrack.pan = 0;
     // Texture tracks — very low gain, wide stereo field
     pluckArpATrack.gain = 0.06;
     pluckArpATrack.pan = -40;
@@ -866,8 +1064,56 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const brassClip = createMidiClip(brassTrack.id, 'Brass Fanfare', 224, 320, brassTrack.color);
     brassTrack.clips = [brassClip];
 
-    const arpClip = createMidiClip(arpTrack.id, 'Arp 16th', 64, TB, arpTrack.color);
-    arpTrack.clips = [arpClip];
+    // Arp: parent clip 64–512 + a linked-instance clip 512–TB (demonstrates non-destructive
+    // linked copies — shared notes, localized overrides allowed)
+    const arpClip = createMidiClip(arpTrack.id, 'Arp 16th', 64, 512, arpTrack.color);
+    const arpClipLinked = createMidiClip(arpTrack.id, 'Arp 16th (linked)', 512, TB, arpTrack.color);
+    arpClipLinked.parentClipId = arpClip.id;
+    arpClipLinked.isLinkedInstance = true;
+    arpTrack.clips = [arpClip, arpClipLinked];
+
+    // Grand Piano: sparse chord-root hits (one clip spanning the groove/catharsis sections)
+    const grandPianoClip = createMidiClip(grandPianoTrack.id, 'Grand Piano Chords', 64, 512, grandPianoTrack.color);
+    grandPianoTrack.clips = [grandPianoClip];
+
+    // Crumbs Pad: granular texture layer across the groove arc
+    const crumbsPadClip = createMidiClip(crumbsPadTrack.id, 'Crumbs Texture', 128, 512, crumbsPadTrack.color);
+    crumbsPadTrack.clips = [crumbsPadClip];
+
+    // Vocal Pad: single clip with example Knead correction blobs demonstrating pitch regions
+    const vocalPadClip = createMidiClip(vocalPadTrack.id, 'Vocal Pad', 128, 384, vocalPadTrack.color);
+    vocalPadClip.kneadState = {
+        blobs: [
+            {
+                id: `knead-${crypto.randomUUID().slice(0, 8)}`,
+                startTime: 0,
+                endTime: 16,
+                pitchCenterCents: 0,
+                pitchCurveCents: [0, 5, -3, 0],
+                voicedConfidence: 0.85,
+            },
+            {
+                id: `knead-${crypto.randomUUID().slice(0, 8)}`,
+                startTime: 16,
+                endTime: 48,
+                pitchCenterCents: 700,
+                pitchCurveCents: [0, 12, 6, -2, 0],
+                voicedConfidence: 0.92,
+            },
+            {
+                id: `knead-${crypto.randomUUID().slice(0, 8)}`,
+                startTime: 48,
+                endTime: 128,
+                pitchCenterCents: 200,
+                pitchCurveCents: [0, -6, 3, 8, 0],
+                voicedConfidence: 0.78,
+            },
+        ],
+        retuneSpeedMs: 25,
+        humanizePercent: 12,
+        formantPreserve: true,
+    };
+    vocalPadTrack.clips = [vocalPadClip];
 
     // FX clips
     const riserClip1 = createMidiClip(riserTrack.id, 'Pre-Catharsis Rise', 192, 224, riserTrack.color);
@@ -926,7 +1172,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
 
     // 2. Granular Stutter — transition clips only
     const granClips: ReturnType<typeof createMidiClip>[] = [];
-    for (const [s, e] of [
+    for (const [state, event] of [
         [60, 68],
         [124, 132],
         [220, 228],
@@ -934,7 +1180,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         [380, 388],
         [508, 516],
     ] as const) {
-        const gc = createMidiClip(granStutterTrack.id, `Stutter ${s}`, s, e, granStutterTrack.color);
+        const gc = createMidiClip(granStutterTrack.id, `Stutter ${state}`, state, event, granStutterTrack.color);
         granClips.push(gc);
     }
     granStutterTrack.clips = granClips;
@@ -945,14 +1191,14 @@ export async function demo1_TheCompleteMix(): Promise<void> {
 
     // 4. Reversed Swell — clips leading into section boundaries
     const revSwellClips: ReturnType<typeof createMidiClip>[] = [];
-    for (const [s, e] of [
+    for (const [state, event] of [
         [16, 32],
         [48, 64],
         [96, 128],
         [192, 224],
         [352, 384],
     ] as const) {
-        const rc = createMidiClip(revSwellTrack.id, `Swell ${s}`, s, e, revSwellTrack.color);
+        const rc = createMidiClip(revSwellTrack.id, `Swell ${state}`, state, event, revSwellTrack.color);
         revSwellClips.push(rc);
     }
     revSwellTrack.clips = revSwellClips;
@@ -1074,16 +1320,38 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // SUB BASS — deep root drone every 4 beats (long droning notes)
     const subN: MidiNote[] = [];
     for (let b = 0; b < TB; b += 4) {
-        const c = ch(b);
+        const context = ch(b);
         const inBD = b >= 320 && b < 384;
-        const baseVel = b < 16 ? 35 : b < 32 ? 45 : b < 64 ? 58 : inBD ? 38 : b >= 512 ? 48 : 72;
+        const baseVel = (() => {
+            if (b < 16) {
+                return 35;
+            } else {
+                if (b < 32) {
+                    return 45;
+                } else {
+                    if (b < 64) {
+                        return 58;
+                    } else {
+                        if (inBD) {
+                            return 38;
+                        } else {
+                            if (b >= 512) {
+                                return 48;
+                            } else {
+                                return 72;
+                            }
+                        }
+                    }
+                }
+            }
+        })();
         // Velocity swell: crescendo +5 per note within each 16-beat chord section
         const posInChord = Math.floor((b % 16) / 4); // 0-3 within chord section
         const vel = Math.min(127, baseVel + posInChord * 5);
         // Syncopation: every 4th repetition (every 16 beats), shift start by +0.5
         const repIndex = Math.floor(b / 4);
         const startShift = repIndex % 4 === 3 ? 0.5 : 0;
-        subN.push(note(c.sub, b + startShift, 3.8 - startShift, hv(vel, 5)));
+        subN.push(note(context.sub, b + startShift, 3.8 - startShift, hv(vel, 5)));
     }
 
     // PULSE BASS — syncopated 8th-note pattern (+12 octave to separate from sub)
@@ -1095,22 +1363,30 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         if (b >= 320 && b < 384) {
             continue;
         }
-        const c = ch(b);
-        const vel = b < 64 ? 0.7 : b >= 512 ? 0.75 : 1.0;
+        const context = ch(b);
+        const vel = (() => {
+            if (b < 64) {
+                return 0.7;
+            }
+            if (b >= 512) {
+                return 0.75;
+            }
+            return 1.0;
+        })();
 
         // Dense 16th-note pattern in dance section
         if (b >= 384 && b < 512) {
             for (const off of pulseDenseOffsets) {
                 const bt = b + off;
                 const isDown = off % 1 === 0;
-                const pitch = (off % 2 < 1 ? c.root : c.fifth) + 12;
+                const pitch = (off % 2 < 1 ? context.root : context.fifth) + 12;
                 pulseN.push(note(pitch, bt, 0.2, hv(Math.round((isDown ? 78 : 55) * vel), 10)));
             }
         } else {
             for (const off of pulseOffsets) {
                 const bt = b + off;
                 const isAcc = off === 0 || off === 2;
-                const pitch = (off === 0.5 || off === 1.5 ? c.fifth : c.root) + 12; // +12 octave up
+                const pitch = (off === 0.5 || off === 1.5 ? context.fifth : context.root) + 12; // +12 octave up
                 pulseN.push(note(pitch, bt, 0.4, hv(Math.round((isAcc ? 88 : 65) * vel), 10)));
             }
         }
@@ -1120,28 +1396,28 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const pianoN: MidiNote[] = [];
     // Intro: arpeggiated chord tones every 4 beats (root, third, fifth staggered by 0.1)
     for (let b = 2; b < 64; b += 4) {
-        const c = ch(b);
+        const context = ch(b);
         const vel = b < 16 ? 40 : 50;
-        pianoN.push(note(c.root + 24, b, 1.5, hv(vel, 8)));
-        pianoN.push(note(c.third + 24, b + 0.1, 1.5, hv(vel - 4, 8)));
-        pianoN.push(note(c.fifth + 24, b + 0.2, 1.5, hv(vel - 8, 10)));
+        pianoN.push(note(context.root + 24, b, 1.5, hv(vel, 8)));
+        pianoN.push(note(context.third + 24, b + 0.1, 1.5, hv(vel - 4, 8)));
+        pianoN.push(note(context.fifth + 24, b + 0.2, 1.5, hv(vel - 8, 10)));
     }
     // Breakdown: soft chords with gentle velocity crescendo
     for (let b = 320; b < 384; b += 8) {
-        const c = ch(b);
+        const context = ch(b);
         const vel = 55 + Math.floor((b - 320) * 0.15);
-        pianoN.push(note(c.root + 24, b, 2.0, hv(vel, 8)));
-        pianoN.push(note(c.fifth + 24, b + 2, 1.5, hv(vel - 6, 8)));
-        pianoN.push(note(c.third + 24, b + 4, 2.0, hv(vel - 4, 10)));
-        pianoN.push(note(c.seventh + 24, b + 6, 1.5, hv(vel - 10, 10)));
+        pianoN.push(note(context.root + 24, b, 2.0, hv(vel, 8)));
+        pianoN.push(note(context.fifth + 24, b + 2, 1.5, hv(vel - 6, 8)));
+        pianoN.push(note(context.third + 24, b + 4, 2.0, hv(vel - 4, 10)));
+        pianoN.push(note(context.seventh + 24, b + 6, 1.5, hv(vel - 10, 10)));
     }
     // Outro: sustained bell tones dissolving
     for (let b = 512; b < TB; b += 16) {
-        const c = ch(b);
+        const context = ch(b);
         const fadeVel = Math.max(25, 50 - Math.floor((b - 512) * 0.3));
-        pianoN.push(note(c.root + 24, b, 4, hv(fadeVel, 6)));
-        pianoN.push(note(c.fifth + 24, b + 4, 4, hv(fadeVel - 6, 8)));
-        pianoN.push(note(c.third + 24, b + 8, 4, hv(fadeVel - 10, 8)));
+        pianoN.push(note(context.root + 24, b, 4, hv(fadeVel, 6)));
+        pianoN.push(note(context.fifth + 24, b + 4, 4, hv(fadeVel - 6, 8)));
+        pianoN.push(note(context.third + 24, b + 8, 4, hv(fadeVel - 10, 8)));
     }
 
     // RHODES — warm chords in groove sections (8-beat intervals with ninth)
@@ -1150,37 +1426,63 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         if (b >= 320 && b < 384) {
             continue;
         }
-        const c = ch(b);
-        const vel = b < 128 ? 52 : b >= 224 ? 65 : 58;
-        rhodesN.push(note(c.root + 12, b + 0.05, 7.5, hv(vel, 6)));
-        rhodesN.push(note(c.third + 12, b + 0.08, 7.5, hv(vel - 4, 6)));
-        rhodesN.push(note(c.fifth + 12, b + 0.12, 7.5, hv(vel - 8, 8)));
-        rhodesN.push(note(c.seventh + 12, b + 0.15, 7.5, hv(vel - 12, 8)));
-        rhodesN.push(note(c.ninth + 12, b + 0.18, 7.5, hv(vel - 16, 8)));
+        const context = ch(b);
+        const vel = (() => {
+            if (b < 128) {
+                return 52;
+            }
+            if (b >= 224) {
+                return 65;
+            }
+            return 58;
+        })();
+        rhodesN.push(note(context.root + 12, b + 0.05, 7.5, hv(vel, 6)));
+        rhodesN.push(note(context.third + 12, b + 0.08, 7.5, hv(vel - 4, 6)));
+        rhodesN.push(note(context.fifth + 12, b + 0.12, 7.5, hv(vel - 8, 8)));
+        rhodesN.push(note(context.seventh + 12, b + 0.15, 7.5, hv(vel - 12, 8)));
+        rhodesN.push(note(context.ninth + 12, b + 0.18, 7.5, hv(vel - 16, 8)));
     }
 
     // ORGAN — sustained texture in mid-sections (staggered starts for natural feel)
     const organN: MidiNote[] = [];
     for (let b = 128; b < 320; b += 32) {
-        const c = ch(b);
-        organN.push(note(c.root + 12, b, 31, hv(42, 6)));
-        organN.push(note(c.third + 12, b + 0.05, 31, hv(40, 6)));
-        organN.push(note(c.fifth + 12, b + 0.1, 31, hv(38, 6)));
+        const context = ch(b);
+        organN.push(note(context.root + 12, b, 31, hv(42, 6)));
+        organN.push(note(context.third + 12, b + 0.05, 31, hv(40, 6)));
+        organN.push(note(context.fifth + 12, b + 0.1, 31, hv(38, 6)));
     }
 
     // WARM PAD — evolving from intro to outro
     const warmPadN: MidiNote[] = [];
     for (let b = 0; b < TB; b += 16) {
-        const c = ch(b);
+        const context = ch(b);
         const inBD = b >= 320 && b < 384;
-        const vel = b < 16 ? 32 : b < 64 ? 48 : inBD ? 38 : b >= 512 ? 50 : 68;
+        const vel = (() => {
+            if (b < 16) {
+                return 32;
+            } else {
+                if (b < 64) {
+                    return 48;
+                } else {
+                    if (inBD) {
+                        return 38;
+                    } else {
+                        if (b >= 512) {
+                            return 50;
+                        } else {
+                            return 68;
+                        }
+                    }
+                }
+            }
+        })();
         const dur = inBD ? 14 : 15.8;
-        warmPadN.push(note(c.root + 12, b, dur, hv(vel, 6)));
-        warmPadN.push(note(c.third + 12, b, dur, hv(vel - 4, 6)));
-        warmPadN.push(note(c.fifth + 12, b, dur, hv(vel - 8, 8)));
-        warmPadN.push(note(c.seventh + 12, b, dur, hv(vel - 12, 8)));
+        warmPadN.push(note(context.root + 12, b, dur, hv(vel, 6)));
+        warmPadN.push(note(context.third + 12, b, dur, hv(vel - 4, 6)));
+        warmPadN.push(note(context.fifth + 12, b, dur, hv(vel - 8, 8)));
+        warmPadN.push(note(context.seventh + 12, b, dur, hv(vel - 12, 8)));
         if (b >= 128 && !inBD) {
-            warmPadN.push(note(c.root + 24, b, dur, hv(vel - 20, 10)));
+            warmPadN.push(note(context.root + 24, b, dur, hv(vel - 20, 10)));
         }
     }
 
@@ -1190,28 +1492,36 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         if (b >= 320 && b < 384) {
             continue;
         }
-        const c = ch(b);
+        const context = ch(b);
         const vel = b >= 224 && b < 320 ? 65 : 50;
-        shimmerN.push(note(c.root + 12, b, 15.8, hv(vel - 10, 10)));
-        shimmerN.push(note(c.third + 12, b, 15.8, hv(vel - 12, 10)));
-        shimmerN.push(note(c.ninth + 12, b, 15.8, hv(vel, 10)));
-        shimmerN.push(note(c.root + 24, b, 15.8, hv(vel - 15, 10)));
+        shimmerN.push(note(context.root + 12, b, 15.8, hv(vel - 10, 10)));
+        shimmerN.push(note(context.third + 12, b, 15.8, hv(vel - 12, 10)));
+        shimmerN.push(note(context.ninth + 12, b, 15.8, hv(vel, 10)));
+        shimmerN.push(note(context.root + 24, b, 15.8, hv(vel - 15, 10)));
     }
 
     // DARK PAD — tension builder before catharsis & final rise
     const darkN: MidiNote[] = [];
     for (let b = 192; b < 384; b += 8) {
-        const c = ch(b);
-        const vel = b < 224 ? 35 + Math.floor((b - 192) * 1.5) : b >= 320 ? 45 : 55;
-        darkN.push(note(c.root, b, 7.5, hv(vel, 8)));
-        darkN.push(note(c.fifth, b, 7.5, hv(vel - 10, 8)));
+        const context = ch(b);
+        const vel = (() => {
+            if (b < 224) {
+                return 35 + Math.floor((b - 192) * 1.5);
+            }
+            if (b >= 320) {
+                return 45;
+            }
+            return 55;
+        })();
+        darkN.push(note(context.root, b, 7.5, hv(vel, 8)));
+        darkN.push(note(context.fifth, b, 7.5, hv(vel - 10, 8)));
     }
     // Dark pad in final rise (384-512) with escalating velocity
     for (let b = 384; b < 512; b += 8) {
-        const c = ch(b);
+        const context = ch(b);
         const vel = 40 + Math.floor((b - 384) * 0.2);
-        darkN.push(note(c.root, b, 7.5, hv(vel, 8)));
-        darkN.push(note(c.fifth, b, 7.5, hv(vel - 10, 8)));
+        darkN.push(note(context.root, b, 7.5, hv(vel, 8)));
+        darkN.push(note(context.fifth, b, 7.5, hv(vel - 10, 8)));
     }
 
     // STRINGS SOFT — counter-voice, enters at build
@@ -1223,21 +1533,29 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         if (b >= 576) {
             continue;
         }
-        const c = ch(b);
-        const vel = b < 128 ? 48 : b >= 384 ? 58 : 62;
-        strSoftN.push(note(c.fifth + 12, b + 0.5, 15, hv(vel, 8)));
-        strSoftN.push(note(c.ninth + 12, b + 0.5, 15, hv(vel - 6, 8)));
-        strSoftN.push(note(c.root + 24, b + 8, 7, hv(vel - 10, 10)));
+        const context = ch(b);
+        const vel = (() => {
+            if (b < 128) {
+                return 48;
+            }
+            if (b >= 384) {
+                return 58;
+            }
+            return 62;
+        })();
+        strSoftN.push(note(context.fifth + 12, b + 0.5, 15, hv(vel, 8)));
+        strSoftN.push(note(context.ninth + 12, b + 0.5, 15, hv(vel - 6, 8)));
+        strSoftN.push(note(context.root + 24, b + 8, 7, hv(vel - 10, 10)));
     }
 
     // STRINGS BRIGHT — catharsis power
     const strBrightN: MidiNote[] = [];
     for (let b = 224; b < 320; b += 8) {
-        const c = ch(b);
-        strBrightN.push(note(c.root + 24, b, 7.5, hv(72, 8)));
-        strBrightN.push(note(c.third + 24, b, 7.5, hv(68, 8)));
-        strBrightN.push(note(c.fifth + 24, b, 7.5, hv(64, 8)));
-        strBrightN.push(note(c.seventh + 24, b, 7.5, hv(60, 8)));
+        const context = ch(b);
+        strBrightN.push(note(context.root + 24, b, 7.5, hv(72, 8)));
+        strBrightN.push(note(context.third + 24, b, 7.5, hv(68, 8)));
+        strBrightN.push(note(context.fifth + 24, b, 7.5, hv(64, 8)));
+        strBrightN.push(note(context.seventh + 24, b, 7.5, hv(60, 8)));
     }
 
     // LEAD CLASSIC — main melody in catharsis and finale
@@ -1314,11 +1632,11 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // BRASS — catharsis fanfare only
     const brassN: MidiNote[] = [];
     for (let b = 224; b < 320; b += 16) {
-        const c = ch(b);
-        brassN.push(note(c.root + 24, b + 4, 3.5, hv(80, 8)));
-        brassN.push(note(c.fifth + 24, b + 4, 3.5, hv(75, 8)));
-        brassN.push(note(c.root + 24, b + 8, 7.5, hv(90, 10)));
-        brassN.push(note(c.third + 24, b + 8, 7.5, hv(85, 10)));
+        const context = ch(b);
+        brassN.push(note(context.root + 24, b + 4, 3.5, hv(80, 8)));
+        brassN.push(note(context.fifth + 24, b + 4, 3.5, hv(75, 8)));
+        brassN.push(note(context.root + 24, b + 8, 7.5, hv(90, 10)));
+        brassN.push(note(context.third + 24, b + 8, 7.5, hv(85, 10)));
     }
 
     // ARP — chord-tone 8th-note sequence (not 16ths — ambient not DnB)
@@ -1342,7 +1660,15 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         const chordIdx = Math.floor(b / 16) % 4;
         const pool = ARP_POOLS[chordIdx]!;
         const pitch = pool[ARP_STEPS[arpStep % ARP_STEPS.length]! % pool.length]!;
-        const vel = b < 128 ? 42 : b >= 224 && b < 320 ? 55 : 48;
+        const vel = (() => {
+            if (b < 128) {
+                return 42;
+            }
+            if (b >= 224 && b < 320) {
+                return 55;
+            }
+            return 48;
+        })();
         const acc = b % 2 === 0; // accent on beats
         arpN.push(note(pitch, b, 0.4, hv(acc ? vel : vel - 12, 8)));
         arpStep++;
@@ -1394,7 +1720,15 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         if (start >= 320 && start < 384) {
             continue;
         }
-        const mel = ph % 3 === 0 ? fluteA : ph % 3 === 1 ? fluteB : fluteC;
+        const mel = (() => {
+            if (ph % 3 === 0) {
+                return fluteA;
+            }
+            if (ph % 3 === 1) {
+                return fluteB;
+            }
+            return fluteC;
+        })();
         for (const [off, pitch, dur, vel] of mel) {
             fluteN.push(note(pitch, start + off, dur, hv(vel)));
         }
@@ -1406,11 +1740,11 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         if (b >= 320 && b < 384) {
             continue;
         }
-        const c = ch(b);
+        const context = ch(b);
         const inOutro = b >= 512;
-        bellAccN.push(note(c.ninth + 24, b + 2, 3, hv(inOutro ? 30 : 42)));
+        bellAccN.push(note(context.ninth + 24, b + 2, 3, hv(inOutro ? 30 : 42)));
         if (b % 32 === 0 && b >= 128) {
-            bellAccN.push(note(c.root + 36, b + 4, 4, hv(35)));
+            bellAccN.push(note(context.root + 36, b + 4, 4, hv(35)));
         }
     }
 
@@ -1430,7 +1764,15 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         const ci = Math.floor(b / 16) % 4;
         const pool = crystalPool[ci]!;
         const pitch = pool[cStep % pool.length]! + 12;
-        const baseVel = b >= 224 && b < 320 ? 48 : b >= 384 ? 42 : 35;
+        const baseVel = (() => {
+            if (b >= 224 && b < 320) {
+                return 48;
+            }
+            if (b >= 384) {
+                return 42;
+            }
+            return 35;
+        })();
         const vel = cStep % 4 === 0 ? baseVel + 15 : baseVel;
         crystalN.push(note(pitch, b, 0.4, hv(vel)));
         cStep++;
@@ -1442,23 +1784,31 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         if (b >= 320 && b < 384) {
             continue;
         }
-        const c = ch(b);
+        const context = ch(b);
         const vel = b >= 224 ? 60 : 48;
-        tremN.push(note(c.fifth + 24, b, 0.3, hv(vel)));
-        tremN.push(note(c.fifth + 24, b + 1.5, 0.3, hv(vel - 8)));
-        tremN.push(note(c.root + 24, b + 2.5, 0.3, hv(vel - 5)));
+        tremN.push(note(context.fifth + 24, b, 0.3, hv(vel)));
+        tremN.push(note(context.fifth + 24, b + 1.5, 0.3, hv(vel - 8)));
+        tremN.push(note(context.root + 24, b + 2.5, 0.3, hv(vel - 5)));
     }
 
     // WIDE CHORUS PAD — slow evolving 5ths with deep chorus
     const wideN: MidiNote[] = [];
     for (let b = 64; b < TB; b += 32) {
-        const c = ch(b);
+        const context = ch(b);
         const inBD = b >= 320 && b < 384;
-        const vel = inBD ? 28 : b >= 512 ? 35 : 48;
-        wideN.push(note(c.root + 12, b, 31, hv(vel)));
-        wideN.push(note(c.fifth + 12, b, 31, hv(vel - 5)));
+        const vel = (() => {
+            if (inBD) {
+                return 28;
+            }
+            if (b >= 512) {
+                return 35;
+            }
+            return 48;
+        })();
+        wideN.push(note(context.root + 12, b, 31, hv(vel)));
+        wideN.push(note(context.fifth + 12, b, 31, hv(vel - 5)));
         if (!inBD) {
-            wideN.push(note(c.ninth + 12, b, 31, hv(vel - 10)));
+            wideN.push(note(context.ninth + 12, b, 31, hv(vel - 10)));
         }
     }
 
@@ -1483,9 +1833,9 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const impactN: MidiNote[] = [];
     const impactBeats = [64, 128, 224, 384, 512];
     for (const ib of impactBeats) {
-        const c = ch(ib);
-        impactN.push(note(c.sub, ib, 4, 100)); // deep sub hit
-        impactN.push(note(c.sub + 12, ib + 0.05, 2, 70)); // harmonic layer
+        const context = ch(ib);
+        impactN.push(note(context.sub, ib, 4, 100)); // deep sub hit
+        impactN.push(note(context.sub + 12, ib + 0.05, 2, 70)); // harmonic layer
     }
 
     // TEXTURE CHIRPS — random high-pitched pluck sounds
@@ -1501,11 +1851,41 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         }
     }
 
+    // GRAND PIANO — sparse chord-root + fifth hits at each chord change (~16 notes)
+    const grandPianoN: MidiNote[] = [];
+    for (let b = 64; b < 512; b += 32) {
+        if (b >= 320 && b < 384) {
+            continue;
+        }
+        const c = ch(b);
+        grandPianoN.push(note(c.root, b, 3.5, hv(70, 6)));
+        grandPianoN.push(note(c.fifth + 12, b + 1, 2.5, hv(56, 8)));
+    }
+
+    // CRUMBS PAD — granular texture, sustained root + ninth every 32 beats
+    const crumbsN: MidiNote[] = [];
+    for (let b = 128; b < 512; b += 32) {
+        if (b >= 320 && b < 384) {
+            continue;
+        }
+        const c = ch(b);
+        crumbsN.push(note(c.root + 24, b, 30, hv(52, 6)));
+        crumbsN.push(note(c.ninth + 24, b + 4, 26, hv(45, 6)));
+    }
+
+    // VOCAL PAD — sustained tones that demonstrate Knead pitch-correction regions
+    const vocalPadN: MidiNote[] = [];
+    for (let b = 128; b < 320; b += 32) {
+        const c = ch(b);
+        vocalPadN.push(note(c.root + 12, b, 30, hv(60, 5)));
+        vocalPadN.push(note(c.fifth + 12, b + 2, 28, hv(50, 5)));
+    }
+
     // ── DEEP LAYERS MIDI NOTES ─────────────────────────────────────────
 
     // 2. GRANULAR STUTTER — rapid 32nd-note repeated root tones at transitions
     const granNoteArrays: MidiNote[][] = [];
-    for (const [s, e] of [
+    for (const [state, event] of [
         [60, 68],
         [124, 132],
         [220, 228],
@@ -1514,9 +1894,9 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         [508, 516],
     ] as const) {
         const notes: MidiNote[] = [];
-        for (let b = s; b < e; b += 0.125) {
-            const c = ch(b);
-            notes.push(note(c.root, b - s, 0.1, hv(50, 10)));
+        for (let b = state; b < event; b += 0.125) {
+            const context = ch(b);
+            notes.push(note(context.root, b - state, 0.1, hv(50, 10)));
         }
         granNoteArrays.push(notes);
     }
@@ -1527,13 +1907,13 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         if (b >= 320 && b < 384) {
             continue;
         }
-        const c = ch(b);
-        polyClickN.push(note(c.ninth, b - 128, 0.15, hv(42, 8)));
+        const context = ch(b);
+        polyClickN.push(note(context.ninth, b - 128, 0.15, hv(42, 8)));
     }
 
     // 4. REVERSED SWELL — ascending chord tones with crescendo into section boundaries
     const revSwellNoteArrays: MidiNote[][] = [];
-    for (const [s, e] of [
+    for (const [state, event] of [
         [16, 32],
         [48, 64],
         [96, 128],
@@ -1541,13 +1921,13 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         [352, 384],
     ] as const) {
         const notes: MidiNote[] = [];
-        const dur = e - s;
-        const c = ch(s);
-        const tones = [c.root + 12, c.third + 12, c.fifth + 12, c.seventh + 12];
-        for (let i = 0; i < tones.length; i++) {
-            const startBeat = i * (dur / tones.length);
-            const velBase = 20 + Math.round((70 / tones.length) * i);
-            notes.push(note(tones[i]!, startBeat, dur >= 32 ? 15 : 12, hv(velBase, 6)));
+        const dur = event - state;
+        const context = ch(state);
+        const tones = [context.root + 12, context.third + 12, context.fifth + 12, context.seventh + 12];
+        for (let index = 0; index < tones.length; index++) {
+            const startBeat = index * (dur / tones.length);
+            const velBase = 20 + Math.round((70 / tones.length) * index);
+            notes.push(note(tones[index]!, startBeat, dur >= 32 ? 15 : 12, hv(velBase, 6)));
         }
         revSwellNoteArrays.push(notes);
     }
@@ -1556,15 +1936,15 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     const modSeqN: MidiNote[] = [];
     let modAccent = 0;
     for (let b = 224; b < 320; b += 0.25) {
-        const c = ch(b);
-        const pitch = modAccent % 2 === 0 ? c.root : c.fifth;
+        const context = ch(b);
+        const pitch = modAccent % 2 === 0 ? context.root : context.fifth;
         const vel = modAccent % 3 === 0 ? 72 : 45;
         modSeqN.push(note(pitch, b, 0.2, hv(vel, 6)));
         modAccent++;
     }
     for (let b = 384; b < 512; b += 0.25) {
-        const c = ch(b);
-        const pitch = modAccent % 2 === 0 ? c.root : c.fifth;
+        const context = ch(b);
+        const pitch = modAccent % 2 === 0 ? context.root : context.fifth;
         const vel = modAccent % 3 === 0 ? 72 : 45;
         modSeqN.push(note(pitch, b, 0.2, hv(vel, 6)));
         modAccent++;
@@ -1573,11 +1953,11 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // 6. BREATH PAD — sustained root + third + fifth + seventh, new chord every 32 beats
     const breathPadN: MidiNote[] = [];
     for (let b = 64; b < TB; b += 32) {
-        const c = ch(b);
-        breathPadN.push(note(c.root + 12, b - 64, 31, hv(52, 8)));
-        breathPadN.push(note(c.third + 12, b - 64, 31, hv(50, 8)));
-        breathPadN.push(note(c.fifth + 12, b - 64, 31, hv(48, 8)));
-        breathPadN.push(note(c.seventh + 12, b - 64, 31, hv(46, 8)));
+        const context = ch(b);
+        breathPadN.push(note(context.root + 12, b - 64, 31, hv(52, 8)));
+        breathPadN.push(note(context.third + 12, b - 64, 31, hv(50, 8)));
+        breathPadN.push(note(context.fifth + 12, b - 64, 31, hv(48, 8)));
+        breathPadN.push(note(context.seventh + 12, b - 64, 31, hv(46, 8)));
     }
 
     // 7. SUB RUMBLE — D1 (pitch 26), one per 8 beats, 7.5 beat duration
@@ -1595,8 +1975,8 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         if (b >= 320 && b < 384) {
             continue;
         }
-        const c = ch(b);
-        metalRingN.push(note(c.ninth + 24, b - 128, 0.1, hv(38, 8)));
+        const context = ch(b);
+        metalRingN.push(note(context.ninth + 24, b - 128, 0.1, hv(38, 8)));
     }
 
     // 9. GHOST SNARE — offbeat 16th ghost snare hits (pitch 38)
@@ -1614,11 +1994,11 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // 10. HARMONIC WASH — every 16 beats, chord root + fifth + seventh + ninth + 12
     const harmWashN: MidiNote[] = [];
     for (let b = 32; b < TB; b += 16) {
-        const c = ch(b);
-        harmWashN.push(note(c.root + 12, b - 32, 15, hv(30, 8)));
-        harmWashN.push(note(c.fifth + 12, b - 32, 15, hv(28, 8)));
-        harmWashN.push(note(c.seventh + 12, b - 32, 15, hv(32, 8)));
-        harmWashN.push(note(c.ninth + 12, b - 32, 15, hv(28, 8)));
+        const context = ch(b);
+        harmWashN.push(note(context.root + 12, b - 32, 15, hv(30, 8)));
+        harmWashN.push(note(context.fifth + 12, b - 32, 15, hv(28, 8)));
+        harmWashN.push(note(context.seventh + 12, b - 32, 15, hv(32, 8)));
+        harmWashN.push(note(context.ninth + 12, b - 32, 15, hv(28, 8)));
     }
 
     // ── TRACK ASSEMBLY ────────────────────────────────────────────────────
@@ -1669,36 +2049,94 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         metalRingTrack,
         ghostSnareTrack,
         harmWashTrack,
+        // New instruments in the keys / strings & pads folders
+        grandPianoTrack,
+        crumbsPadTrack,
+        vocalPadTrack,
+        // New buses
+        delaySendBusTrack,
+        scKickBusTrack,
     ];
     trackStore.set({ tracks, selectedTrackId: warmPadTrack.id });
+
+    // ── VCA GROUPS (Drums / Leads / Pads) ─────────────────────────────────
+    // Three VCA groups demonstrate grouped gain control without breaking routing.
+    const drumsVca = {
+        id: `vca-${crypto.randomUUID().slice(0, 8)}`,
+        name: 'Drums VCA',
+        gain: 1,
+        muted: false,
+        trackIds: [drumKitTrack.id, drumFillTrack.id, ghostSnareTrack.id, percShakerTrack.id, percHitsTrack.id],
+    };
+    const leadsVca = {
+        id: `vca-${crypto.randomUUID().slice(0, 8)}`,
+        name: 'Leads VCA',
+        gain: 1,
+        muted: false,
+        trackIds: [leadClassicTrack.id, leadSoftTrack.id, brassTrack.id, arpTrack.id],
+    };
+    const padsVca = {
+        id: `vca-${crypto.randomUUID().slice(0, 8)}`,
+        name: 'Pads VCA',
+        gain: 1,
+        muted: false,
+        trackIds: [
+            warmPadTrack.id,
+            shimmerPadTrack.id,
+            darkPadTrack.id,
+            widePadTrack.id,
+            breathPadTrack.id,
+            crumbsPadTrack.id,
+            vocalPadTrack.id,
+        ],
+    };
+    vcaGroupStore.set({ groups: [drumsVca, leadsVca, padsVca] });
+    for (const t of drumsVca.trackIds) {
+        const tr = tracks.find((x) => x.id === t);
+        if (tr) {
+            tr.vcaGroupId = drumsVca.id;
+        }
+    }
+    for (const t of leadsVca.trackIds) {
+        const tr = tracks.find((x) => x.id === t);
+        if (tr) {
+            tr.vcaGroupId = leadsVca.id;
+        }
+    }
+    for (const t of padsVca.trackIds) {
+        const tr = tracks.find((x) => x.id === t);
+        if (tr) {
+            tr.vcaGroupId = padsVca.id;
+        }
+    }
 
     midiStore.set({
         notesByClipId: {
             [dk1.id]: drumN
-                .filter((n) => n.startBeat >= 64 && n.startBeat < 128)
-                .map((n) => ({ ...n, startBeat: n.startBeat - 64 })),
+                .filter((node) => node.startBeat >= 64 && node.startBeat < 128)
+                .map((node) => ({ ...node, startBeat: node.startBeat - 64 })),
             [dk2.id]: drumN
-                .filter((n) => n.startBeat >= 128 && n.startBeat < 224)
-                .map((n) => ({ ...n, startBeat: n.startBeat - 128 })),
+                .filter((node) => node.startBeat >= 128 && node.startBeat < 224)
+                .map((node) => ({ ...node, startBeat: node.startBeat - 128 })),
             [dk3.id]: drumN
-                .filter((n) => n.startBeat >= 224 && n.startBeat < 320)
-                .map((n) => ({ ...n, startBeat: n.startBeat - 224 })),
+                .filter((node) => node.startBeat >= 224 && node.startBeat < 320)
+                .map((node) => ({ ...node, startBeat: node.startBeat - 224 })),
             [dk4.id]: drumN
-                .filter((n) => n.startBeat >= 384 && n.startBeat < 512)
-                .map((n) => ({ ...n, startBeat: n.startBeat - 384 })),
+                .filter((node) => node.startBeat >= 384 && node.startBeat < 512)
+                .map((node) => ({ ...node, startBeat: node.startBeat - 384 })),
             [dk5.id]: drumN
-                .filter((n) => n.startBeat >= 512 && n.startBeat < 576)
-                .map((n) => ({ ...n, startBeat: n.startBeat - 512 })),
+                .filter((node) => node.startBeat >= 512 && node.startBeat < 576)
+                .map((node) => ({ ...node, startBeat: node.startBeat - 512 })),
             [subClip.id]: subN,
-            [pianoIntro.id]: pianoN.filter((n) => n.startBeat < 64),
+            [pianoIntro.id]: pianoN.filter((node) => node.startBeat < 64),
             [pianoBD.id]: pianoN
-                .filter((n) => n.startBeat >= 320 && n.startBeat < 384)
-                .map((n) => ({ ...n, startBeat: n.startBeat - 320 })),
+                .filter((node) => node.startBeat >= 320 && node.startBeat < 384)
+                .map((node) => ({ ...node, startBeat: node.startBeat - 320 })),
             [pianoOutro.id]: pianoN
-                .filter((n) => n.startBeat >= 512)
-                .map((n) => ({ ...n, startBeat: n.startBeat - 512 })),
-            [rhodesClip.id]: rhodesN.map((n) => ({ ...n, startBeat: n.startBeat - 64 })),
-            [organClip.id]: organN.map((n) => ({ ...n, startBeat: n.startBeat - 128 })),
+                .filter((node) => node.startBeat >= 512)
+                .map((node) => ({ ...node, startBeat: node.startBeat - 512 })),
+            [rhodesClip.id]: rhodesN.map((node) => ({ ...node, startBeat: node.startBeat - 64 })),
+            [organClip.id]: organN.map((node) => ({ ...node, startBeat: node.startBeat - 128 })),
             [warmPadClip.id]: warmPadN,
             [shimmerClip.id]: shimmerN.map((n) => ({ ...n, startBeat: n.startBeat - 128 })),
             [darkClip.id]: darkN.map((n) => ({ ...n, startBeat: n.startBeat - 192 })),
@@ -1707,47 +2145,58 @@ export async function demo1_TheCompleteMix(): Promise<void> {
             [leadClip.id]: leadN.map((n) => ({ ...n, startBeat: n.startBeat - 160 })),
             [leadSoftClip.id]: leadSoftN.map((n) => ({ ...n, startBeat: n.startBeat - 224 })),
             [brassClip.id]: brassN.map((n) => ({ ...n, startBeat: n.startBeat - 224 })),
-            [arpClip.id]: arpN.map((n) => ({ ...n, startBeat: n.startBeat - 64 })),
+            // arpClip is the parent; arpClipLinked is a linked instance (same underlying notes).
+            // Notes < 512 land in the parent; notes ≥ 512 land in the linked instance offset to 0.
+            [arpClip.id]: arpN
+                .filter((n) => n.startBeat < 512)
+                .map((n) => ({ ...n, startBeat: n.startBeat - 64 })),
+            [arpClipLinked.id]: arpN
+                .filter((n) => n.startBeat >= 512)
+                .map((n) => ({ ...n, startBeat: n.startBeat - 512 })),
             [riserClip1.id]: riserN
-                .filter((n) => n.startBeat < 224)
-                .map((n) => ({ ...n, startBeat: n.startBeat - 192 })),
+                .filter((node) => node.startBeat < 224)
+                .map((node) => ({ ...node, startBeat: node.startBeat - 192 })),
             [riserClip2.id]: riserN
-                .filter((n) => n.startBeat >= 352)
-                .map((n) => ({ ...n, startBeat: n.startBeat - 352 })),
+                .filter((node) => node.startBeat >= 352)
+                .map((node) => ({ ...node, startBeat: node.startBeat - 352 })),
             [noiseClip1.id]: noiseN
-                .filter((n) => n.startBeat < 224)
-                .map((n) => ({ ...n, startBeat: n.startBeat - 192 })),
+                .filter((node) => node.startBeat < 224)
+                .map((node) => ({ ...node, startBeat: node.startBeat - 192 })),
             [noiseClip2.id]: noiseN
-                .filter((n) => n.startBeat >= 352)
-                .map((n) => ({ ...n, startBeat: n.startBeat - 352 })),
-            [fluteClip.id]: fluteN.map((n) => ({ ...n, startBeat: n.startBeat - 128 })),
-            [bellAccClip.id]: bellAccN.map((n) => ({ ...n, startBeat: n.startBeat - 64 })),
-            [crystalClip.id]: crystalN.map((n) => ({ ...n, startBeat: n.startBeat - 192 })),
-            [tremPulseClip.id]: tremN.map((n) => ({ ...n, startBeat: n.startBeat - 128 })),
-            [widePadClip.id]: wideN.map((n) => ({ ...n, startBeat: n.startBeat - 64 })),
-            [drumFillClip.id]: drumFillN.map((n) => ({ ...n, startBeat: n.startBeat - 64 })),
-            [impactClip.id]: impactN.map((n) => ({ ...n, startBeat: n.startBeat - 64 })),
-            [chirpClip.id]: chirpN.map((n) => ({ ...n, startBeat: n.startBeat - 128 })),
+                .filter((node) => node.startBeat >= 352)
+                .map((node) => ({ ...node, startBeat: node.startBeat - 352 })),
+            [fluteClip.id]: fluteN.map((node) => ({ ...node, startBeat: node.startBeat - 128 })),
+            [bellAccClip.id]: bellAccN.map((node) => ({ ...node, startBeat: node.startBeat - 64 })),
+            [crystalClip.id]: crystalN.map((node) => ({ ...node, startBeat: node.startBeat - 192 })),
+            [tremPulseClip.id]: tremN.map((node) => ({ ...node, startBeat: node.startBeat - 128 })),
+            [widePadClip.id]: wideN.map((node) => ({ ...node, startBeat: node.startBeat - 64 })),
+            [drumFillClip.id]: drumFillN.map((node) => ({ ...node, startBeat: node.startBeat - 64 })),
+            [impactClip.id]: impactN.map((node) => ({ ...node, startBeat: node.startBeat - 64 })),
+            [chirpClip.id]: chirpN.map((node) => ({ ...node, startBeat: node.startBeat - 128 })),
             // Deep Layers MIDI notes
-            ...Object.fromEntries(granClips.map((gc, i) => [gc.id, granNoteArrays[i]!])),
+            ...Object.fromEntries(granClips.map((gc, index) => [gc.id, granNoteArrays[index]!])),
             [polyClickClip.id]: polyClickN,
-            ...Object.fromEntries(revSwellClips.map((rc, i) => [rc.id, revSwellNoteArrays[i]!])),
+            ...Object.fromEntries(revSwellClips.map((rc, index) => [rc.id, revSwellNoteArrays[index]!])),
             [modSeqClip1.id]: modSeqN
-                .filter((n) => n.startBeat >= 224 && n.startBeat < 320)
-                .map((n) => ({ ...n, startBeat: n.startBeat - 224 })),
+                .filter((node) => node.startBeat >= 224 && node.startBeat < 320)
+                .map((node) => ({ ...node, startBeat: node.startBeat - 224 })),
             [modSeqClip2.id]: modSeqN
-                .filter((n) => n.startBeat >= 384)
-                .map((n) => ({ ...n, startBeat: n.startBeat - 384 })),
+                .filter((node) => node.startBeat >= 384)
+                .map((node) => ({ ...node, startBeat: node.startBeat - 384 })),
             [breathPadClip.id]: breathPadN,
             [subRumClip1.id]: subRumN
-                .filter((n) => n.startBeat >= 224 && n.startBeat < 320)
-                .map((n) => ({ ...n, startBeat: n.startBeat - 224 })),
+                .filter((node) => node.startBeat >= 224 && node.startBeat < 320)
+                .map((node) => ({ ...node, startBeat: node.startBeat - 224 })),
             [subRumClip2.id]: subRumN
-                .filter((n) => n.startBeat >= 384)
-                .map((n) => ({ ...n, startBeat: n.startBeat - 384 })),
+                .filter((node) => node.startBeat >= 384)
+                .map((node) => ({ ...node, startBeat: node.startBeat - 384 })),
             [metalRingClip.id]: metalRingN,
             [ghostSnareClip.id]: ghostSnareN,
             [harmWashClip.id]: harmWashN,
+            // New instrument showcase tracks (clip-relative offsets)
+            [grandPianoClip.id]: grandPianoN.map((n) => ({ ...n, startBeat: n.startBeat - 64 })),
+            [crumbsPadClip.id]: crumbsN.map((n) => ({ ...n, startBeat: n.startBeat - 128 })),
+            [vocalPadClip.id]: vocalPadN.map((n) => ({ ...n, startBeat: n.startBeat - 128 })),
         },
         ccByClipId: {},
         pitchBendByClipId: {},
@@ -1756,8 +2205,9 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     transportStore.set({ ...defaultTransportState, tempo: bpm, loopEnd: TB, isLooping: true });
 
     // ── AUTOMATION (15+ lanes) ────────────────────────────────────────────
-    const mkLane = (trackId: string, param: string, label: string, min: number, max: number) =>
-        createAutomationLane(trackId, param, label, min, max);
+    function mkLane(trackId: string, param: string, label: string, min: number, max: number) {
+        return createAutomationLane(trackId, param, label, min, max);
+    }
 
     const subVol = mkLane(subBassTrack.id, 'volume', 'Volume', 0, 1);
     subVol.points = [
@@ -1897,51 +2347,51 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         if (b >= 320 && b < 384) {
             continue;
         } // skip breakdown
-        const c = ch(b);
+        const context = ch(b);
         const isMajorChange = b % 64 === 0;
 
         // Pluck Arps (ascending A, descending B logic)
-        arpAN.push(note(c.root + 12, b - 1, 0.2, hv(70, 5)));
-        arpAN.push(note(c.fifth + 12, b - 0.5, 0.2, hv(65, 5)));
-        arpAN.push(note(c.ninth + 12, b, 0.5, hv(80, 5)));
+        arpAN.push(note(context.root + 12, b - 1, 0.2, hv(70, 5)));
+        arpAN.push(note(context.fifth + 12, b - 0.5, 0.2, hv(65, 5)));
+        arpAN.push(note(context.ninth + 12, b, 0.5, hv(80, 5)));
 
-        arpBN.push(note(c.ninth + 24, b + 15, 0.2, hv(65, 5)));
-        arpBN.push(note(c.fifth + 24, b + 15.5, 0.2, hv(60, 5)));
-        arpBN.push(note(c.third + 24, b + 16, 0.5, hv(75, 5)));
+        arpBN.push(note(context.ninth + 24, b + 15, 0.2, hv(65, 5)));
+        arpBN.push(note(context.fifth + 24, b + 15.5, 0.2, hv(60, 5)));
+        arpBN.push(note(context.third + 24, b + 16, 0.5, hv(75, 5)));
 
         // Rhodes Stabs (Call and response)
         if (isMajorChange) {
-            rStabAN.push(note(c.root + 12, b, 2, hv(85, 5)));
-            rStabAN.push(note(c.fifth + 12, b, 2, hv(80, 5)));
-            rStabBN.push(note(c.ninth + 12, b + 2, 2, hv(70, 5)));
+            rStabAN.push(note(context.root + 12, b, 2, hv(85, 5)));
+            rStabAN.push(note(context.fifth + 12, b, 2, hv(80, 5)));
+            rStabBN.push(note(context.ninth + 12, b + 2, 2, hv(70, 5)));
         }
 
         // Bell Scatter (randomized high sprinkles)
-        bScatN.push(note(c.fifth + 24, b - 0.25, 0.1, hv(60, 10)));
-        bScatN.push(note(c.ninth + 24, b, 0.1, hv(70, 10)));
-        bScatN.push(note(c.third + 36, b + 0.5, 0.1, hv(55, 10)));
+        bScatN.push(note(context.fifth + 24, b - 0.25, 0.1, hv(60, 10)));
+        bScatN.push(note(context.ninth + 24, b, 0.1, hv(70, 10)));
+        bScatN.push(note(context.third + 36, b + 0.5, 0.1, hv(55, 10)));
 
         // Glass Swells (leading into sections)
-        gSwellN.push(note(c.root + 24, b - 2, 4, hv(60, 5)));
+        gSwellN.push(note(context.root + 24, b - 2, 4, hv(60, 5)));
 
         // Mallet Taps (rhythmic syncopation)
-        malTapN.push(note(c.root + 12, b + 7.5, 0.1, hv(75, 5)));
-        malTapN.push(note(c.fifth + 12, b + 8, 0.1, hv(85, 5)));
+        malTapN.push(note(context.root + 12, b + 7.5, 0.1, hv(75, 5)));
+        malTapN.push(note(context.fifth + 12, b + 8, 0.1, hv(85, 5)));
 
         // Pizz Layer (doubling string rhythms)
         if (b >= 128) {
-            pizzN.push(note(c.root + 12, b, 0.1, hv(70, 5)));
-            pizzN.push(note(c.fifth + 12, b + 1.5, 0.1, hv(65, 5)));
+            pizzN.push(note(context.root + 12, b, 0.1, hv(70, 5)));
+            pizzN.push(note(context.fifth + 12, b + 1.5, 0.1, hv(65, 5)));
         }
 
         // Chime Drops (single high marker)
         if (isMajorChange) {
-            chimeN.push(note(c.root + 36, b, 4, hv(90, 5)));
+            chimeN.push(note(context.root + 36, b, 4, hv(90, 5)));
         }
 
         // Micro Perc (electronic glitches)
-        microN.push(note(c.root + 24, b + 3.75, 0.05, hv(60, 5)));
-        microN.push(note(c.fifth + 24, b + 3.875, 0.05, hv(50, 5)));
+        microN.push(note(context.root + 24, b + 3.75, 0.05, hv(60, 5)));
+        microN.push(note(context.fifth + 24, b + 3.875, 0.05, hv(50, 5)));
     }
     pluckArpAClip.notes = arpAN;
     pluckArpBClip.notes = arpBN;
@@ -2270,6 +2720,13 @@ export async function demo1_TheCompleteMix(): Promise<void> {
     // Await all internal async device creations (e.g. Faust WASM compilation)
     await waitForDevices();
 
+    // ── SIDECHAIN ROUTING ──────────────────────────────────────────────────
+    // Wire the 808 Kit as the trigger source for the sidechain compressors on Sub Bass and
+    // Warm Pad. addSidechainRoute updates the sidechainStore AND wires the engine node graph,
+    // so it must run after ensureTrackStrips + waitForDevices so the target device nodes exist.
+    addSidechainRoute(drumKitTrack.id, subBassTrack.id, subBassScId, 'sc-comp-threshold');
+    addSidechainRoute(drumKitTrack.id, warmPadTrack.id, warmPadScId, 'sc-comp-threshold');
+
     projectStore.set({
         name: 'Resonance (Demo)',
         createdAt: Date.now(),
@@ -2281,7 +2738,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         scaleName: 'chromatic',
         tuning: {
             name: 'Equal Temperament',
-            frequencies: Array.from({ length: 128 }, (_, i) => 440 * 2 ** ((i - 69) / 12)),
+            frequencies: Array.from({ length: 128 }, (_, index) => 440 * 2 ** ((index - 69) / 12)),
         },
     });
 }

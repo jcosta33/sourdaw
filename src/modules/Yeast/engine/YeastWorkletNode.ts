@@ -17,12 +17,12 @@ import type { ProcessorType } from '../useCases/processorFactory';
 const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();
 
 async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
-    let p = workletRegistrations.get(ctx);
-    if (!p) {
-        p = ctx.audioWorklet.addModule(yeastWorkletProcessorUrl);
-        workletRegistrations.set(ctx, p);
+    let param = workletRegistrations.get(ctx);
+    if (!param) {
+        param = ctx.audioWorklet.addModule(yeastWorkletProcessorUrl);
+        workletRegistrations.set(ctx, param);
     }
-    return p;
+    return param;
 }
 
 export type YeastWorkletNodeResult = {
@@ -52,13 +52,13 @@ export async function createYeastWorkletNode(ctx: BaseAudioContext): Promise<Yea
     let nextRequestId = 0;
     const pending = new Map<number, { resolve: (events: MidiEvent[]) => void; reject: (err: Error) => void }>();
 
-    node.port.onmessage = (e: MessageEvent): void => {
-        const msg = e.data as { type: string; requestId?: number; events?: MidiEvent[] };
+    node.port.onmessage = (event: MessageEvent): void => {
+        const msg = event.data as { type: string; requestId?: number; events?: MidiEvent[] };
         if (msg.type === 'processed' && msg.requestId !== undefined) {
-            const p = pending.get(msg.requestId);
-            if (p) {
+            const param = pending.get(msg.requestId);
+            if (param) {
                 pending.delete(msg.requestId);
-                p.resolve(msg.events ?? []);
+                param.resolve(msg.events ?? []);
             }
         }
     };

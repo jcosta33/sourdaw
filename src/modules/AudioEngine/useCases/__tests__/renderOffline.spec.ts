@@ -9,7 +9,7 @@ const offlineRenderMocks = vi.hoisted(() => ({
     getTempoMapState: vi.fn(() => null),
     getAutomationLanes: vi.fn(() => []),
     audioBufferCache: { get: vi.fn(() => undefined) },
-    buildDeviceChain: vi.fn(async () => []),
+    buildDeviceChain: vi.fn(() => Promise.resolve([])),
     resolveClipsWithComping: vi.fn(() => []),
     beatToSeconds: vi.fn(() => 0),
     resolveDrumKit: vi.fn(() => null),

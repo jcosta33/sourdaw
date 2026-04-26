@@ -4,13 +4,15 @@ import { type MidiNote } from '#/modules/Plugin/models/MidiEffectTypes';
 
 import { createVelocityCurve } from '../createVelocityCurve';
 
-const n = (velocity: number): MidiNote => ({
-    pitch: 60,
-    velocity,
-    startBeat: 0,
-    durationBeats: 0.25,
-    channel: 0,
-});
+function n(velocity: number): MidiNote {
+    return {
+        pitch: 60,
+        velocity,
+        startBeat: 0,
+        durationBeats: 0.25,
+        channel: 0,
+    };
+}
 
 describe('createVelocityCurve', () => {
     it('should leave velocity unchanged for linear curve', () => {

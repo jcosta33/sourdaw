@@ -7,7 +7,9 @@ import { playMacro } from '../playback';
 const STORAGE_KEY = 'sourdaw:macros';
 
 const { executeAppActionMock } = vi.hoisted(() => ({
-    executeAppActionMock: vi.fn().mockResolvedValue(undefined),
+    executeAppActionMock: vi
+        .fn<typeof import('../../executeAppAction').executeAppAction>()
+        .mockResolvedValue(undefined),
 }));
 
 vi.mock('../../executeAppAction', () => ({
@@ -36,12 +38,18 @@ describe('playMacro', () => {
         await playMacro('play-1');
 
         expect(executeAppActionMock).toHaveBeenCalledTimes(2);
-        const first = executeAppActionMock.mock.calls[0];
-        const second = executeAppActionMock.mock.calls[1];
-        expect(first?.[0]).toEqual({ type: 'togglePlayback' });
-        expect(second?.[0]).toEqual({ type: 'toggleLoop' });
-        expect(first?.[1]?.groupId).toBe(second?.[1]?.groupId);
-        expect(first?.[1]?.groupLabel).toBe('Macro: Two steps');
+        const [firstAction, firstOptions] = executeAppActionMock.mock.calls[0] as [
+            import('../../commandQueries').AppAction,
+            import('../../executeAppAction').ExecuteOptions | undefined,
+        ];
+        const [secondAction, secondOptions] = executeAppActionMock.mock.calls[1] as [
+            import('../../commandQueries').AppAction,
+            import('../../executeAppAction').ExecuteOptions | undefined,
+        ];
+        expect(firstAction).toEqual({ type: 'togglePlayback' });
+        expect(secondAction).toEqual({ type: 'toggleLoop' });
+        expect(firstOptions?.groupId).toBe(secondOptions?.groupId);
+        expect(firstOptions?.groupLabel).toBe('Macro: Two steps');
     });
 
     it('should no-op when macro id is missing', async () => {

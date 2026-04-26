@@ -80,10 +80,10 @@ export const colorWithAlpha = (color: string, alpha: number): string => {
 export const brightenColor = (color: string, amount: number = 0.18): string => {
     const match = color.match(/oklch\(([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
     if (match) {
-        const l = Math.min(1, parseFloat(match[1]!) + amount);
-        const c = parseFloat(match[2]!);
+        const length = Math.min(1, parseFloat(match[1]!) + amount);
+        const context = parseFloat(match[2]!);
         const h = parseFloat(match[3]!);
-        return `oklch(${l.toFixed(3)} ${c} ${h})`;
+        return `oklch(${length.toFixed(3)} ${context} ${h})`;
     }
     return color;
 };

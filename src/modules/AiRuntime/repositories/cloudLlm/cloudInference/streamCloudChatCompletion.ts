@@ -12,12 +12,12 @@ export async function streamCloudChatCompletion(
         throw new Error('Cloud AI not configured. Set API key first.');
     }
 
-    const systemMessage = messages.find((m) => m.role === 'system');
+    const systemMessage = messages.find((message) => message.role === 'system');
     const chatMessages = messages
-        .filter((m) => m.role === 'user' || m.role === 'assistant')
-        .map((m) => ({
-            role: m.role as 'user' | 'assistant',
-            content: m.content,
+        .filter((message) => message.role === 'user' || message.role === 'assistant')
+        .map((message) => ({
+            role: message.role as 'user' | 'assistant',
+            content: message.content,
         }));
 
     const stream = client.messages.stream({

@@ -20,7 +20,7 @@ type SetGrandBouleStretchAmountInput = {
     store: Store<GrandBouleState>;
 };
 
-export const setGrandBouleStretchAmount = (input: SetGrandBouleStretchAmountInput): void => {
+export function setGrandBouleStretchAmount(input: SetGrandBouleStretchAmountInput): void {
     const state = input.store.value;
     if (state === null) {
         return;
@@ -31,4 +31,4 @@ export const setGrandBouleStretchAmount = (input: SetGrandBouleStretchAmountInpu
         config: { ...state.config, stretchAmount: clamped },
     });
     input.engine.setParam({ name: 'stretch_amount', value: clamped });
-};
+}

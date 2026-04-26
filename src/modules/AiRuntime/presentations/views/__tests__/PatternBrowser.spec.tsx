@@ -41,11 +41,11 @@ vi.mock('../../../models/midiPatternLibrary', () => ({
                 generate: vi.fn(() => [{ pitch: 60, startBeat: 0, durationBeats: 1, velocity: 100 }]),
             },
         ];
-        return templates.filter((t) => {
-            if (category && t.category !== category) {
+        return templates.filter((time) => {
+            if (category && time.category !== category) {
                 return false;
             }
-            if (query && !t.name.toLowerCase().includes(query.toLowerCase())) {
+            if (query && !time.name.toLowerCase().includes(query.toLowerCase())) {
                 return false;
             }
             return true;

@@ -16,6 +16,7 @@ describe('yieldToMain', () => {
         let settled = false;
         void promise.then(() => {
             settled = true;
+            return null;
         });
         expect(settled).toBe(false);
         await vi.runAllTimersAsync();

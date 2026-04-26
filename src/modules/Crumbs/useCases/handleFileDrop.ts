@@ -4,8 +4,6 @@
  * Auto-detects sample category and suggests appropriate mode.
  */
 
-import type { DragEvent } from 'react';
-
 import { logger } from '#/infra/logger/appLogger';
 import { isTauri } from '#/utils/tauriBridge';
 
@@ -31,6 +29,7 @@ function categoryToMode(category: SampleCategory): CrumbsMode {
             return 'slice';
         case 'tonal':
             return 'quick';
+        case 'unknown':
         default:
             return 'quick';
     }
@@ -40,8 +39,8 @@ export async function handleCrumbsFileDrop(instanceId: string, event: DragEvent)
     event.preventDefault();
     event.stopPropagation();
 
-    const files = event.dataTransfer.files;
-    if (files.length === 0) {
+    const files = event.dataTransfer?.files;
+    if (!files || files.length === 0) {
         return;
     }
 

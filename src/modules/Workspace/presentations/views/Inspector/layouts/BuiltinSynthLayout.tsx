@@ -24,16 +24,16 @@ const WAVE_NAMES = ['sine', 'triangle', 'sawtooth', 'square'] as const;
 type P = DeviceLayoutProps['parameters'][number];
 
 const Param = ({
-    p,
+    param,
     device,
     trackId,
 }: {
-    p: P;
+    param: P;
     device: DeviceLayoutProps['device'];
     trackId: string;
 }): ReactElement => (
     <SurfaceCard className="rounded-md bg-surface-base p-2 w-full">
-        <DeviceParameterControl param={p} device={device} trackId={trackId} />
+        <DeviceParameterControl param={param} device={device} trackId={trackId} />
     </SurfaceCard>
 );
 
@@ -49,8 +49,8 @@ const Row2 = ({
     trackId: string;
 }): ReactElement => (
     <div className="grid grid-cols-2 gap-2">
-        {filterParams(params, ids).map((p) => (
-            <Param key={p.id} p={p} device={device} trackId={trackId} />
+        {filterParams(params, ids).map((param) => (
+            <Param key={param.id} param={param} device={device} trackId={trackId} />
         ))}
     </div>
 );
@@ -94,14 +94,13 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
     const waveform = WAVE_NAMES[wf1Idx] ?? 'sawtooth';
     const osc2Waveform = WAVE_NAMES[wf2Idx] ?? 'sawtooth';
 
-    const change = (id: string, v: number): void => {
-        setDeviceParameter(device.id, id, v);
+    const change = (id: string, value: number): void => {
+        setDeviceParameter(device.id, id, value);
     };
 
     return (
         <div className="space-y-4">
             {/* ═══ PRIMARY: Always visible ═══ */}
-
             {/* Oscillator */}
             <div>
                 <SectionHeader title="Oscillator" />
@@ -117,7 +116,6 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
                 </div>
                 <Row2 ids={['waveform', 'detune']} params={parameters} device={device} trackId={trackId} />
             </div>
-
             {/* Filter — interactive */}
             <div>
                 <SectionHeader title="Filter" />
@@ -133,7 +131,6 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
                 </div>
                 <Row2 ids={['filterCutoff', 'filterResonance']} params={parameters} device={device} trackId={trackId} />
             </div>
-
             {/* Envelope — interactive */}
             <div>
                 <SectionHeader title="Envelope" />
@@ -153,29 +150,24 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
                     <Row2 ids={['sustain', 'release']} params={parameters} device={device} trackId={trackId} />
                 </div>
             </div>
-
             {/* Gain — always visible */}
-            {filterParams(parameters, ['gain']).map((p) => (
-                <Param key={p.id} p={p} device={device} trackId={trackId} />
+            {filterParams(parameters, ['gain']).map((param) => (
+                <Param key={param.id} param={param} device={device} trackId={trackId} />
             ))}
-
             {/* ═══ ADVANCED: Collapsible ═══ */}
-
             <Collapsible title="Oscillator 2" defaultOpen={false}>
                 <div className="space-y-2">
                     <Row2 ids={['osc2Waveform', 'osc2Detune']} params={parameters} device={device} trackId={trackId} />
                     <Row2 ids={['osc2Mix', 'stereoSpread']} params={parameters} device={device} trackId={trackId} />
                 </div>
             </Collapsible>
-
             <Collapsible title="Sub & Noise" defaultOpen={false}>
                 <Row2 ids={['subOscLevel', 'noiseLevel']} params={parameters} device={device} trackId={trackId} />
             </Collapsible>
-
             <Collapsible title="Filter Advanced" defaultOpen={false}>
                 <div className="space-y-2">
-                    {filterParams(parameters, ['filterType']).map((p) => (
-                        <Param key={p.id} p={p} device={device} trackId={trackId} />
+                    {filterParams(parameters, ['filterType']).map((param) => (
+                        <Param key={param.id} param={param} device={device} trackId={trackId} />
                     ))}
                     <Row2
                         ids={['filterEnvAmount', 'filterVelocitySensitivity']}
@@ -185,12 +177,11 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
                     />
                 </div>
             </Collapsible>
-
             <Collapsible title="Modulation" defaultOpen={false}>
                 <div className="space-y-2">
                     <Row2 ids={['vibratoRate', 'vibratoDepth']} params={parameters} device={device} trackId={trackId} />
-                    {filterParams(parameters, ['vibratoDelay']).map((p) => (
-                        <Param key={p.id} p={p} device={device} trackId={trackId} />
+                    {filterParams(parameters, ['vibratoDelay']).map((param) => (
+                        <Param key={param.id} param={param} device={device} trackId={trackId} />
                     ))}
                 </div>
             </Collapsible>

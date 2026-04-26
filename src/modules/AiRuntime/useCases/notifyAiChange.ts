@@ -14,14 +14,14 @@ export type AiChangeNotification = {
 
 let changeListeners: ((change: AiChangeNotification) => void)[] = [];
 
-export const subscribeAiChangeNotification = (cb: (change: AiChangeNotification) => void): (() => void) => {
+export function subscribeAiChangeNotification(cb: (change: AiChangeNotification) => void): () => void {
     changeListeners.push(cb);
     return () => {
-        changeListeners = changeListeners.filter((l) => l !== cb);
+        changeListeners = changeListeners.filter((length) => length !== cb);
     };
-};
+}
 
-export const notifyAiChange = (summary: string, details: string[]): void => {
+export function notifyAiChange(summary: string, details: string[]): void {
     const notification: AiChangeNotification = {
         id: `ai-change-${Date.now()}`,
         summary,
@@ -31,4 +31,4 @@ export const notifyAiChange = (summary: string, details: string[]): void => {
     for (const listener of changeListeners) {
         listener(notification);
     }
-};
+}

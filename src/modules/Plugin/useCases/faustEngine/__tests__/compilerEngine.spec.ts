@@ -5,47 +5,47 @@ import * as subject from '../compilerEngine';
 describe('compilerEngine', () => {
     it('should export compileAllFaustModules', () => {
         expect(subject.compileAllFaustModules).toBeDefined();
-        const t = typeof subject.compileAllFaustModules;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.compileAllFaustModules;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export compileFaustDSP', () => {
         expect(subject.compileFaustDSP).toBeDefined();
-        const t = typeof subject.compileFaustDSP;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.compileFaustDSP;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export createFaustNode', () => {
         expect(subject.createFaustNode).toBeDefined();
-        const t = typeof subject.createFaustNode;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.createFaustNode;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export getFaustCompilerError', () => {
         expect(subject.getFaustCompilerError).toBeDefined();
-        const t = typeof subject.getFaustCompilerError;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getFaustCompilerError;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export getFaustModule', () => {
         expect(subject.getFaustModule).toBeDefined();
-        const t = typeof subject.getFaustModule;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getFaustModule;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export getFaustModules', () => {
         expect(subject.getFaustModules).toBeDefined();
-        const t = typeof subject.getFaustModules;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getFaustModules;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export isFaustCompilerReady', () => {
         expect(subject.isFaustCompilerReady).toBeDefined();
-        const t = typeof subject.isFaustCompilerReady;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.isFaustCompilerReady;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export isFaustModule', () => {
         expect(subject.isFaustModule).toBeDefined();
-        const t = typeof subject.isFaustModule;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.isFaustModule;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
     it('should export registerFaustDSP', () => {
         expect(subject.registerFaustDSP).toBeDefined();
-        const t = typeof subject.registerFaustDSP;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.registerFaustDSP;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

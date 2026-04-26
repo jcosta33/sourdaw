@@ -30,17 +30,17 @@ describe('Workspace Misc Handlers', () => {
     });
 
     it('handleSetSnapValue should delegate to setSnapValue', () => {
-        handleSetSnapValue.execute({ type: 'setSnapValue', payload: { value: 0.5 } });
+        void handleSetSnapValue.execute({ type: 'setSnapValue', payload: { value: 0.5 } });
         expect(setSnapValue).toHaveBeenCalledWith(0.5);
     });
 
     it('handleSetMarkerColor should delegate to setMarkerColor', () => {
-        handleSetMarkerColor.execute({ type: 'setMarkerColor', payload: { markerId: 'm1', color: '#fff' } });
+        void handleSetMarkerColor.execute({ type: 'setMarkerColor', payload: { markerId: 'm1', color: '#fff' } });
         expect(setMarkerColor).toHaveBeenCalledWith('m1', '#fff');
     });
 
     it('handleAddAutomationLane should delegate to addAutomationLane', () => {
-        handleAddAutomationLane.execute({
+        void handleAddAutomationLane.execute({
             type: 'addAutomationLane',
             payload: { trackId: 't1', parameterId: 'gain', parameterName: 'Gain' },
         });
@@ -48,7 +48,7 @@ describe('Workspace Misc Handlers', () => {
     });
 
     it('handleAddAutomationPoint should delegate to addAutomationPoint', () => {
-        handleAddAutomationPoint.execute({
+        void handleAddAutomationPoint.execute({
             type: 'addAutomationPoint',
             payload: { laneId: 'l1', beat: 4, value: 0.5 },
         });
@@ -60,7 +60,7 @@ describe('Workspace Misc Handlers', () => {
             lanes: [{ id: 'l1', points: [{ beat: 4, value: 0.5, curve: 'linear', tension: 0 }] }],
         } as any);
 
-        handleRemoveAutomationPoint.execute({
+        void handleRemoveAutomationPoint.execute({
             type: 'removeAutomationPoint',
             payload: { laneId: 'l1', pointIndex: 0 },
         });
@@ -72,7 +72,7 @@ describe('Workspace Misc Handlers', () => {
             lanes: [{ id: 'l1', points: [] }],
         } as any);
 
-        handleRemoveAutomationPoint.execute({
+        void handleRemoveAutomationPoint.execute({
             type: 'removeAutomationPoint',
             payload: { laneId: 'l1', pointIndex: 0 },
         });

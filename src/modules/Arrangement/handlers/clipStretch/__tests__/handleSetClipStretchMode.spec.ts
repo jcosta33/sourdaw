@@ -16,7 +16,7 @@ describe('handleSetClipStretchMode', () => {
     });
 
     it('executes setClipStretchMode with the provided payload', () => {
-        handleSetClipStretchMode.execute({
+        void handleSetClipStretchMode.execute({
             type: 'setClipStretchMode',
             payload: { clipId: 'c1', mode: 'paulstretch' },
         });

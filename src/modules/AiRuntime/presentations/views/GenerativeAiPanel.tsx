@@ -105,8 +105,12 @@ export const GenerativeAiPanel = (): ReactElement | null => {
 
     // In-flight detection — disable the Generate button while a task of the matching
     // type is already processing. This prevents double-submits and gives clear feedback.
-    const midiIsProcessing = state.tasks.some((t) => t.type === 'midi-generation' && t.status === 'processing');
-    const audioIsProcessing = state.tasks.some((t) => t.type === 'audio-generation' && t.status === 'processing');
+    const midiIsProcessing = state.tasks.some(
+        (time) => time.type === 'midi-generation' && time.status === 'processing'
+    );
+    const audioIsProcessing = state.tasks.some(
+        (time) => time.type === 'audio-generation' && time.status === 'processing'
+    );
 
     const handleCancelAudio = (): void => {
         cancelProcessingTask('audio-generation');
@@ -153,11 +157,13 @@ export const GenerativeAiPanel = (): ReactElement | null => {
     const selectedClipId = workspaceState?.selectedClipId ?? null;
     const tracks = trackState?.tracks ?? [];
     const selectedClip =
-        tracks.flatMap((t) => t.clips).find((c) => c.id === selectedClipId && c.type === 'audio') ?? null;
+        tracks
+            .flatMap((time) => time.clips)
+            .find((context) => context.id === selectedClipId && context.type === 'audio') ?? null;
 
     const handleStemSep = () => {
         if (selectedClip) {
-            handleStemSeparationPreview(selectedClip.id);
+            void handleStemSeparationPreview(selectedClip.id);
         }
     };
 
@@ -175,7 +181,6 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                     </Button>
                 }
             />
-
             {/* Tabs */}
             <div className="daw-analysis-card-header flex shrink-0 gap-1 p-2">
                 <Button
@@ -203,7 +208,6 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                     <RefreshCw className="size-3" /> Stems
                 </Button>
             </div>
-
             {/* MIDI Sub-tabs */}
             {activeTab === 'midi' ? (
                 <div className="flex px-3 pt-2 pb-1 gap-2 shrink-0">
@@ -233,7 +237,6 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                     </Button>
                 </div>
             ) : null}
-
             {/* Content */}
             <div className="flex-1 overflow-y-auto">
                 {activeTab === 'midi' && midiSubTab === 'patterns' ? (
@@ -298,7 +301,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                     </DawEyebrowLabel>
                                     <DawCompactTextarea
                                         value={prompt}
-                                        onChange={(e) => setPrompt(e.target.value)}
+                                        onChange={(event) => setPrompt(event.target.value)}
                                         placeholder="e.g. warm vinyl crackle loop, 85 BPM"
                                         className="h-12 border-border/60 bg-surface-base p-2 resize-none"
                                     />
@@ -329,7 +332,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                     </div>
                                     <Slider
                                         value={[audioDuration]}
-                                        onValueChange={([v]) => setAudioDuration(v!)}
+                                        onValueChange={([value]) => setAudioDuration(value!)}
                                         min={1}
                                         max={11}
                                         step={1}
@@ -385,7 +388,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 </DawEyebrowLabel>
                                 <DawCompactTextarea
                                     value={prompt}
-                                    onChange={(e) => setPrompt(e.target.value)}
+                                    onChange={(event) => setPrompt(event.target.value)}
                                     placeholder="e.g. jazzy chord progression in D minor"
                                     className="h-12 border-border/60 bg-surface-base p-2 resize-none"
                                 />
@@ -416,7 +419,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 </div>
                                 <Slider
                                     value={[midiNotes]}
-                                    onValueChange={([v]) => setMidiNotes(v!)}
+                                    onValueChange={([value]) => setMidiNotes(value!)}
                                     min={4}
                                     max={128}
                                     step={4}
@@ -432,7 +435,7 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                                 </div>
                                 <Slider
                                     value={[creativity]}
-                                    onValueChange={([v]) => setCreativity(v!)}
+                                    onValueChange={([value]) => setCreativity(value!)}
                                     min={10}
                                     max={100}
                                     step={5}

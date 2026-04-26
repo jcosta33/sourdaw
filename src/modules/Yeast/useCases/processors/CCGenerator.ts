@@ -15,25 +15,27 @@ import {
 type LfoShape = 'sine' | 'triangle' | 'square' | 'sawUp' | 'sawDown' | 'sampleHold';
 
 function evalShape(shape: LfoShape, phase: number, rngState: { v: number }): number {
-    const p = phase % 1.0;
+    const param = phase % 1.0;
     switch (shape) {
         case 'sine':
-            return 0.5 + 0.5 * Math.sin(p * 2 * Math.PI);
+            return 0.5 + 0.5 * Math.sin(param * 2 * Math.PI);
         case 'triangle':
-            return p < 0.5 ? p * 2 : 2 - p * 2;
+            return param < 0.5 ? param * 2 : 2 - param * 2;
         case 'square':
-            return p < 0.5 ? 1 : 0;
+            return param < 0.5 ? 1 : 0;
         case 'sawUp':
-            return p;
+            return param;
         case 'sawDown':
-            return 1 - p;
+            return 1 - param;
         case 'sampleHold': {
             // Only change on phase wrap
-            if (p < 0.01) {
+            if (param < 0.01) {
                 rngState.v = ((rngState.v * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
             }
             return rngState.v;
         }
+        default:
+            throw new Error(`Unknown LFO shape: ${shape}`);
     }
 }
 
@@ -134,6 +136,8 @@ export class CCGenerator extends BaseMidiProcessor {
             case 'retrigger':
                 this.retriggerOnNote = value > 0.5;
                 break;
+            default:
+                throw new Error(`Unknown parameter: ${name}`);
         }
     }
 }

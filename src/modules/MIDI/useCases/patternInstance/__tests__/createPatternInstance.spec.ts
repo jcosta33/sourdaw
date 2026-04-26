@@ -4,9 +4,9 @@ import { createPatternInstance } from '../createPatternInstance';
 
 const mocks = vi.hoisted(() => ({
     trackStoreValue: null as unknown,
-    appendClipToTrack: vi.fn(),
-    getNotesForClip: vi.fn(() => []),
-    setNotesForClip: vi.fn(),
+    appendClipToTrack: vi.fn<(...args: unknown[]) => void>(),
+    getNotesForClip: vi.fn<() => unknown[]>(() => []),
+    setNotesForClip: vi.fn<(...args: unknown[]) => void>(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -52,7 +52,10 @@ describe('createPatternInstance', () => {
 
         // Verify track state update
         expect(mocks.appendClipToTrack).toHaveBeenCalledTimes(1);
-        const [appendedTrackId, appendedInstance] = mocks.appendClipToTrack.mock.calls[0] as [string, any];
+        const [appendedTrackId, appendedInstance] = mocks.appendClipToTrack.mock.calls[0] as [
+            string,
+            { id: string; parentClipId?: string; startBeat: number; endBeat: number; name: string },
+        ];
         expect(appendedTrackId).toBe('t1');
 
         expect(appendedInstance).toMatchObject({

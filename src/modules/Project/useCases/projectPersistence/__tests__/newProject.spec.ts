@@ -50,8 +50,8 @@ describe('newProject injectable', () => {
         vi.clearAllMocks();
     });
 
-    it('forwards to injected collaborators (smoke)', async () => {
-        await newProject('Test');
+    it('forwards to injected collaborators (smoke)', () => {
+        newProject('Test');
 
         expect(stopPlayback).toHaveBeenCalledTimes(1);
         expect(resetAudioGraph).toHaveBeenCalledTimes(1);

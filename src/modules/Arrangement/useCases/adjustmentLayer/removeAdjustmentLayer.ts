@@ -5,5 +5,5 @@ export function removeAdjustmentLayer(id: string): void {
     if (!state) {
         return;
     }
-    adjustmentLayerStore.set({ layers: state.layers.filter((l) => l.id !== id) });
+    adjustmentLayerStore.set({ layers: state.layers.filter((length) => length.id !== id) });
 }

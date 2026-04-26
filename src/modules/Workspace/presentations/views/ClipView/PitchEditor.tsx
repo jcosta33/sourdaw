@@ -23,9 +23,7 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
 
     const dragRef = useRef<{ startY: number; initialShift: number; segmentIndex: number } | null>(null);
 
-    // Any contour data available for this clip?
-    // We cast to any because the store type hasn't been strictly updated yet.
-    const contour = (kneadState as any).pitchContour;
+    const contour = kneadState.contours[clipId];
 
     // Generate segments from contour if none exist yet.
     useEffect(() => {
@@ -33,8 +31,8 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
             // Simplistic segmentation: one segment per 100ms
             const newShifts = [];
             const duration = contour.points[contour.points.length - 1]?.time_ms || 0;
-            for (let i = 0; i < duration; i += 100) {
-                newShifts.push({ start_time_ms: i, end_time_ms: i + 100, shift_semitones: 0 });
+            for (let index = 0; index < duration; index += 100) {
+                newShifts.push({ start_time_ms: index, end_time_ms: index + 100, shift_semitones: 0 });
             }
             setShifts(newShifts);
         }
@@ -95,7 +93,11 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
             return height - norm * height;
         };
 
-        const totalTimeMs = contour.points[contour.points.length - 1].time_ms;
+        const lastPoint = contour.points[contour.points.length - 1];
+        if (!lastPoint) {
+            return;
+        }
+        const totalTimeMs = lastPoint.time_ms;
         const msToX = (ms: number) => (ms / totalTimeMs) * width;
 
         // Draw the pitch contour as connected segments
@@ -107,12 +109,15 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
         let isDrawing = false;
 
         const getShiftAtTime = (ms: number) => {
-            const seg = shifts.find((s) => ms >= s.start_time_ms && ms < s.end_time_ms);
+            const seg = shifts.find((state) => ms >= state.start_time_ms && ms < state.end_time_ms);
             return seg ? seg.shift_semitones : 0;
         };
 
-        for (let i = 0; i < contour.points.length; i++) {
-            const pt = contour.points[i];
+        for (let index = 0; index < contour.points.length; index++) {
+            const pt = contour.points[index];
+            if (!pt) {
+                continue;
+            }
 
             if (pt.voiced && pt.confidence > 0.3) {
                 const shift = getShiftAtTime(pt.time_ms);
@@ -159,35 +164,37 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
         analyzePitchForClip(clipId).catch(console.error);
     };
 
-    const handlePointerDown = (e: PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
         if (!contour) {
             return;
         }
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
+        const rect = event.currentTarget.getBoundingClientRect();
+        const x = event.clientX - rect.left;
 
         const totalTimeMs = contour.points[contour.points.length - 1]?.time_ms || 0;
         const clickedTimeMs = (x / rect.width) * totalTimeMs;
 
-        const segIdx = shifts.findIndex((s) => clickedTimeMs >= s.start_time_ms && clickedTimeMs < s.end_time_ms);
+        const segIdx = shifts.findIndex(
+            (state) => clickedTimeMs >= state.start_time_ms && clickedTimeMs < state.end_time_ms
+        );
         if (segIdx !== -1) {
             const shiftVal = shifts[segIdx]?.shift_semitones ?? 0;
             dragRef.current = {
-                startY: e.clientY,
+                startY: event.clientY,
                 initialShift: shiftVal,
                 segmentIndex: segIdx,
             };
-            e.currentTarget.setPointerCapture(e.pointerId);
+            event.currentTarget.setPointerCapture(event.pointerId);
         }
     };
 
-    const handlePointerMove = (e: PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerMove = (event: PointerEvent<HTMLCanvasElement>) => {
         if (!dragRef.current) {
             return;
         }
 
         // 10 pixels roughly equals 1 semitone
-        const dy = dragRef.current.startY - e.clientY;
+        const dy = dragRef.current.startY - event.clientY;
         const dSemitones = Math.round(dy / 10);
 
         setShifts((prev) => {
@@ -200,10 +207,10 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
         });
     };
 
-    const handlePointerUp = (e: PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerUp = (event: PointerEvent<HTMLCanvasElement>) => {
         if (dragRef.current) {
             dragRef.current = null;
-            e.currentTarget.releasePointerCapture(e.pointerId);
+            event.currentTarget.releasePointerCapture(event.pointerId);
         }
     };
 
@@ -211,7 +218,7 @@ export const PitchEditor = ({ clipId }: PitchEditorProps): ReactElement => {
         if (!contour || shifts.length === 0) {
             return;
         }
-        commitPitchEditCommand(clipId, shifts, contour);
+        void commitPitchEditCommand(clipId, shifts, contour);
     };
 
     return (

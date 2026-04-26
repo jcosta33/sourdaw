@@ -13,6 +13,7 @@ It explicitly excludes the Rust/Tauri backend (`src-tauri/`, `crates/`) and buil
 ## Goal
 
 Knip produces a clean, trustworthy report where:
+
 - Every "unused" finding is either removable dead code or explicitly documented as an intentional stub/frozen feature.
 - No false positives arise from missing entry points, excluded test files, or ignored source directories.
 - All unresolved imports represent real broken imports, not configuration artifacts.
@@ -35,33 +36,26 @@ Knip produces a clean, trustworthy report where:
 ## Current behavior
 
 ### Knip version & invocation
+
 - **Version:** 6.3.1
 - **Command:** `npx knip --no-exit-code`
 - **Output summary (post-fix run, 2026-04-20):**
-  - Unused files: **92**
-  - Unused dependencies: **1**
-  - Unused devDependencies: **2**
-  - Unlisted dependencies: **2**
-  - Unresolved imports: **10**
-  - Unused exports: **92**
-  - Unused exported types: **22**
-  - Configuration hints: **1**
+    - Unused files: **92**
+    - Unused dependencies: **1**
+    - Unused devDependencies: **2**
+    - Unlisted dependencies: **2**
+    - Unresolved imports: **10**
+    - Unused exports: **92**
+    - Unused exported types: **22**
+    - Configuration hints: **1**
 
 ### Configuration (`knip.json`)
+
 ```json
 {
     "$schema": "https://unpkg.com/knip@latest/schema.json",
-    "entry": [
-        "src/routes/**/*.tsx",
-        "scripts/*.ts",
-        "codemods/*.ts"
-    ],
-    "project": [
-        "src/**/*.{ts,tsx}",
-        "!src/**/*.spec.{ts,tsx}",
-        "!src/**/*.test.{ts,tsx}",
-        "!src/routeTree.gen.ts"
-    ],
+    "entry": ["src/routes/**/*.tsx", "scripts/*.ts", "codemods/*.ts"],
+    "project": ["src/**/*.{ts,tsx}", "!src/**/*.spec.{ts,tsx}", "!src/**/*.test.{ts,tsx}", "!src/routeTree.gen.ts"],
     "ignore": [],
     "ignoreExportsUsedInFile": true,
     "ignoreDependencies": ["tailwindcss"],
@@ -78,46 +72,55 @@ Knip produces a clean, trustworthy report where:
 The following issues were identified and resolved:
 
 #### Entry points — FIXED
+
 Knip auto-detects `src/app/main.tsx` via `index.html` (Vite), so it does not need to be declared. Workers loaded via `new Worker(new URL(...))` and `?worker` imports are automatically traced by knip v6. `scripts/*.ts` and `codemods/*.ts` were added to `entry`.
 
 #### Tests excluded from the project — INTENTIONAL
+
 The `project` glob excludes `**/*.spec.{ts,tsx}` and `**/*.test.{ts,tsx}`. **This is deliberate** — test usages are not counted as real usages per project policy. Consequently, exports consumed only by tests are correctly reported as unused. This surfaces dead code such as:
+
 - `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter` from `src/components/ui/card.tsx`
 - `DialogTrigger`, `DialogClose`, `DropdownMenuGroup`, etc. from other `src/components/ui/` files
 - `createUndoEntry`, `generateGroupId`, `isActionEntry` from `src/modules/Command/models/UndoEntry.ts`
 - Most `…Dependencies` helper objects (DI dependency maps)
 
 #### Overbroad `ignore` of components — FIXED
+
 The blanket `"ignore": ["src/components/**/*.tsx"]` was removed. Knip now fully analyzes `src/components/`, which increased the unused-export count from 86 to 92. These additional findings are legitimate dead code.
 
 #### Dynamic imports — FIXED
+
 `@tauri-apps/plugin-fs` is correctly traced by knip (both static and dynamic `import()`). Removed from `ignoreDependencies`.
 
 #### Stale ignore entries — FIXED
+
 All 8 stale paths were removed from `ignore`. The array is now empty.
 
 #### ESLint plugin dependency — FIXED
+
 `@typescript-eslint/eslint-plugin` is detected via `eslint.config.mjs`. Removed from `ignoreDependencies`.
 
 ### 2. Legitimate dead code (safe to remove)
 
 #### Broken imports in tests (19 unresolved imports)
+
 These are **real compilation errors** in test files, not knip artifacts:
 
-| Import | File | Issue |
-|--------|------|-------|
-| `#/utils/Logger/Logger` | `src/modules/AudioAnalysis/repositories/__tests__/audioAiEngine.spec.ts` | Path does not exist. Actual logger is at `#/infra/logger`. |
-| `../wasm/workletPolyfill.js` | 9 files under `src/modules/AudioEngine/services/` | File does not exist in source tree. Likely a build artifact from wasm generation. |
-| `../../../models/SamplerTypes` | `src/modules/Crumbs/presentations/components/__tests__/PadGrid.spec.tsx` | Should be `../../../models/CrumbsTypes`. |
-| `../../stores/grandBouleStore` | `src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/__tests__/helpers.spec.ts` | Wrong relative depth. Should be `../../../stores/grandBouleStore`. |
-| `#/modules/DeviceBrowser/useCases` | `src/modules/Plugin/useCases/__tests__/pluginBrowserActions.spec.ts` | Module `DeviceBrowser` has no `useCases` directory. Mock target does not exist. |
-| `#/utils/Logger/Logger` | `src/modules/MIDI/useCases/__tests__/midiLearn.spec.ts` | Same stale logger path. |
-| `#/utils/Logger/Logger` | `src/modules/Toaster/useCases/__tests__/toasterSubscriber.spec.ts` | Same stale logger path. |
-| `../../models/MidiEvent` | 4 Yeast test files (`Arpeggiator`, `ChordGenerator`, `Humanizer`, `Transposer`) | Wrong relative depth. Should be `../../../models/MidiEvent`. |
+| Import                             | File                                                                                | Issue                                                                             |
+| ---------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `#/utils/Logger/Logger`            | `src/modules/AudioAnalysis/repositories/__tests__/audioAiEngine.spec.ts`            | Path does not exist. Actual logger is at `#/infra/logger`.                        |
+| `../wasm/workletPolyfill.js`       | 9 files under `src/modules/AudioEngine/services/`                                   | File does not exist in source tree. Likely a build artifact from wasm generation. |
+| `../../../models/SamplerTypes`     | `src/modules/Crumbs/presentations/components/__tests__/PadGrid.spec.tsx`            | Should be `../../../models/CrumbsTypes`.                                          |
+| `../../stores/grandBouleStore`     | `src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/__tests__/helpers.spec.ts` | Wrong relative depth. Should be `../../../stores/grandBouleStore`.                |
+| `#/modules/DeviceBrowser/useCases` | `src/modules/Plugin/useCases/__tests__/pluginBrowserActions.spec.ts`                | Module `DeviceBrowser` has no `useCases` directory. Mock target does not exist.   |
+| `#/utils/Logger/Logger`            | `src/modules/MIDI/useCases/__tests__/midiLearn.spec.ts`                             | Same stale logger path.                                                           |
+| `#/utils/Logger/Logger`            | `src/modules/Toaster/useCases/__tests__/toasterSubscriber.spec.ts`                  | Same stale logger path.                                                           |
+| `../../models/MidiEvent`           | 4 Yeast test files (`Arpeggiator`, `ChordGenerator`, `Humanizer`, `Transposer`)     | Wrong relative depth. Should be `../../../models/MidiEvent`.                      |
 
 **Impact:** These tests are either failing in CI or not being executed. The `../wasm/workletPolyfill.js` imports in AudioEngine services are also suspicious — if the file is generated at build time, the import is valid at runtime but fails static analysis. If it is not generated, these processors are broken.
 
 #### Truly unused exports (sampled)
+
 - `STANDARD_FREQ_MARKS`, `STANDARD_DB_MARKS` (`src/components/daw/spectrumMath.ts`) — defined, exported, never imported.
 - `classifyDso` (`src/modules/AiRuntime/models/DsoTypes.ts`) — never imported outside its file.
 - `deleteEnvelope` (`src/modules/Arrangement/stores/gainEnvelopeStore.ts`) — never imported.
@@ -126,6 +129,7 @@ These are **real compilation errors** in test files, not knip artifacts:
 - `WEBLLM_MODEL_INFO`, `getWebLlmModelById` (`src/modules/AiRuntime/models/ModelInfo.ts`) — re-exported from `useCases/index.ts` but never consumed by the app.
 
 #### Unused dependencies
+
 - `@huggingface/transformers` — listed in `package.json` dependencies but **only mentioned in a code comment** (`src/modules/BrowserAi/workers/tfjsInferenceWorker.ts`). No actual import.
 - `sinon` — not imported anywhere.
 - `@types/sinon` — types for unused `sinon`.
@@ -135,9 +139,11 @@ These are **real compilation errors** in test files, not knip artifacts:
 ### 3. Unfinished / unwired legitimate features (do not delete)
 
 #### Empty module event barrels (~15 modules)
+
 Files like `src/modules/AiGeneration/events/index.ts`, `src/modules/CrdtDocument/events/index.ts`, `src/modules/Bacteria/events/index.ts` contain only a comment (`// no public events`). These are **architectural placeholders** following the repo's DDD module convention. Every module is expected to expose an `events/index.ts` public contract; when a module has no domain events, the file is intentionally left as a stub. **Do not remove** without changing the architectural convention.
 
 #### Feature directories with stores but unwired useCases
+
 Several substantial features have fully implemented stores and use-case directories, but the useCases are not imported by any handler or view:
 
 | Feature | Store exists | UseCases exist | Wired? | Notes |
@@ -151,30 +157,36 @@ Several substantial features have fully implemented stores and use-case director
 | Setlist | `src/modules/Transport/stores/setlistStore.ts` | `src/modules/Transport/useCases/setlist/` | ❌ | Store tested. UseCases for item CRUD/reordering exist. |
 | DAWproject import/export | — | `src/modules/Project/useCases/dawProject/` | Partial | `exportDawProject` action and handler exist, but the underlying `parseDawProject.ts` / `exportDawProject.ts` useCases are not called by the handler. |
 | Music Mentor | — | `src/modules/AiRuntime/useCases/musicMentor/` | Partial | **CORRECTION (2026-04-20):** `handleGetMentorTips` does call `generateMentorLessons()` from the module's useCases index. What is actually unwired is `queries.ts` in the `musicMentor/` directory — verify whether those query helpers have any consumer outside the `__tests__/queries.spec.ts` file. |
-| Modulation System | — | `src/modules/Plugin/useCases/modulationSystem/` | ❌ | Complete CRUD for modulation routes. No UI wired. |
+| Modulation System | `src/modules/Automation/stores/modulationStore.ts` | `src/modules/Automation/useCases/modulation/` | Partial | **CORRECTION (2026-04-20):** Lives under `src/modules/Automation/`, not `Plugin/`; store + model + `applyModulation` tick-hook exist, but CRUD use-cases for modulators/mappings and audio-path dispatch (engine write-through) were missing and have since been added in this session. |
 | Node View | `src/modules/Plugin/stores/nodeView.ts` | `src/modules/Plugin/useCases/nodeView/` | ❌ | Store and useCases for graph editor exist. |
 | Push Integration | `src/modules/Plugin/stores/push.ts` | `src/modules/Plugin/useCases/pushIntegration/` | ❌ | Ableton Push 2 support. Store and useCases present. |
 
 These are **intentionally built but not yet shipped features**. Deleting them would destroy legitimate product work.
 
 #### Extension system (frozen)
+
 `src/modules/Extension/stores/extension.ts` contains an explicit comment:
+
 > TODO: FROZEN — Extension system is architecturally sound (types, manifest, store) but execution runtime is unsafe (new Function).
 
 All extension useCases (`installExtension`, `toggleExtension`, `executeCommand`, etc.) are flagged as unused. This is correct — the feature is deliberately disabled — but the code should be preserved until the sandboxing issue is resolved.
 
 #### Adjustment Layer system
+
 `src/modules/Arrangement/useCases/adjustmentLayer/` contains 9 use-case files. This appears to be an unfinished feature (adjustment regions for non-destructive editing).
 
 > **CORRECTION (2026-04-20):** A store exists at `src/modules/Arrangement/stores/adjustmentLayer.ts` (exported via `stores/index.ts`), and `handleCreateAdjustmentLayer` in `src/modules/Arrangement/handlers/batchFeature/` wires `createAdjustmentLayer`. The other 8 useCases (`addAdjustmentRegion`, `removeAdjustmentRegion`, `removeAdjustmentLayer`, `toggleAdjustmentLayer`, `setLayerParameter`, `setLayerMix`, `getLayerCount`, `getActiveLayersAtBeat`) are unwired. Classify this as **Partial**, not fully orphaned.
 
 #### Automation sub-lanes
+
 `src/modules/Workspace/useCases/automationSubLanes/` (directory with `addAutomationSubLane.ts`, `removeAutomationSubLane.ts`, etc.) has tests but no production consumers.
 
 #### Inspector effect layouts
+
 `src/modules/Workspace/presentations/views/Inspector/layouts/effects/` contains ~16 layout components (`BitcrusherLayout.tsx`, `CompressorLayout.tsx`, etc.). They are not imported anywhere. Likely they are meant to be wired into an effect inspector that is not yet built.
 
 #### Spectrogram view
+
 `src/modules/Plugin/presentations/views/SpectrogramView.tsx` — a visualization component with no consumers.
 
 ## Priorities
@@ -188,25 +200,25 @@ All extension useCases (`installExtension`, `toggleExtension`, `executeCommand`,
 ## Open issues
 
 1. **Broken test imports exist in 8+ test files.**
-   - `src/modules/Crumbs/presentations/components/__tests__/PadGrid.spec.tsx` — wrong model path.
-   - `src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/__tests__/helpers.spec.ts` — wrong relative depth.
-   - `src/modules/Plugin/useCases/__tests__/pluginBrowserActions.spec.ts` — mocks non-existent module.
-   - 4 Yeast processor tests — wrong relative depth for `MidiEvent`.
-   - 3 tests referencing `#/utils/Logger/Logger` — logger was moved to `infra/logger`.
-   - **Needed:** Fix import paths or delete obsolete tests.
+    - `src/modules/Crumbs/presentations/components/__tests__/PadGrid.spec.tsx` — wrong model path.
+    - `src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/__tests__/helpers.spec.ts` — wrong relative depth.
+    - `src/modules/Plugin/useCases/__tests__/pluginBrowserActions.spec.ts` — mocks non-existent module.
+    - 4 Yeast processor tests — wrong relative depth for `MidiEvent`.
+    - 3 tests referencing `#/utils/Logger/Logger` — logger was moved to `infra/logger`.
+    - **Needed:** Fix import paths or delete obsolete tests.
 
 2. **`../wasm/workletPolyfill.js` is imported but does not exist in source.**
-   - Imported from 9 AudioEngine processor files. Knip no longer reports these as unresolved, but the imports remain in source and may be stale.
-   - **Needed:** Determine if this file is generated by the wasm build or if the import is stale.
+    - Imported from 9 AudioEngine processor files. Knip no longer reports these as unresolved, but the imports remain in source and may be stale.
+    - **Needed:** Determine if this file is generated by the wasm build or if the import is stale.
 
 3. **`glob` is an unlisted dependency.**
-   - Used in `scripts/generate-view-tests.ts` and `codemods/fix-tests.ts` but not declared in `package.json`.
-   - **Needed:** Add `glob` to `devDependencies` (or `dependencies`).
+    - Used in `scripts/generate-view-tests.ts` and `codemods/fix-tests.ts` but not declared in `package.json`.
+    - **Needed:** Add `glob` to `devDependencies` (or `dependencies`).
 
 4. **Unused dependencies remain in `package.json`.**
-   - `@huggingface/transformers` — verified: only mentioned in a code comment, no actual import.
-   - `sinon`, `@types/sinon` — verified: not imported anywhere in the codebase.
-   - **Needed:** Remove them.
+    - `@huggingface/transformers` — verified: only mentioned in a code comment, no actual import.
+    - `sinon`, `@types/sinon` — verified: not imported anywhere in the codebase.
+    - **Needed:** Remove them.
 
 ## Open questions
 
@@ -226,24 +238,25 @@ All extension useCases (`installExtension`, `toggleExtension`, `executeCommand`,
 ## Suggested approaches
 
 1. **Fix broken test imports.**
-   - Run `pnpm test:run` to see which tests actually fail.
-   - Fix or delete tests with stale imports.
+    - Run `pnpm test:run` to see which tests actually fail.
+    - Fix or delete tests with stale imports.
 
 2. **Clean up `package.json` dependencies.**
-   - Add `glob` to `devDependencies`.
-   - Remove `@huggingface/transformers`, `sinon`, `@types/sinon`.
+    - Add `glob` to `devDependencies`.
+    - Remove `@huggingface/transformers`, `sinon`, `@types/sinon`.
 
 3. **Document frozen features.**
-   - Add a `knip.md` or inline comments in `knip.json` explaining why `src/modules/Extension/useCases/extension/` and other frozen directories are intentionally unwired.
+    - Add a `knip.md` or inline comments in `knip.json` explaining why `src/modules/Extension/useCases/extension/` and other frozen directories are intentionally unwired.
 
 4. **Remove confirmed dead code.**
-   - Delete orphaned exports like `STANDARD_FREQ_MARKS`, `classifyDso`, `deleteEnvelope` after confirming no dynamic/string-based imports exist.
+    - Delete orphaned exports like `STANDARD_FREQ_MARKS`, `classifyDso`, `deleteEnvelope` after confirming no dynamic/string-based imports exist.
 
 ## Knip config assessment (2026-04-20)
 
 Reviewed `knip.json` against the knip v6 feature set and this project's actual structure. **Verdict: tip-top, with two small optional tightenings.**
 
 What is correct:
+
 - `entry` covers `src/routes/**/*.tsx`, `scripts/*.ts`, `codemods/*.ts`. The Vite entry (`src/app/main.tsx`) is auto-detected via `index.html`. Workers loaded with `new Worker(new URL(...))` and `?worker` imports are traced by knip v6.
 - `project` excludes spec/test files and `routeTree.gen.ts` — matches the project policy that tests should not create export usages.
 - `ignoreExportsUsedInFile: true` suppresses intra-file false positives.
@@ -252,6 +265,7 @@ What is correct:
 - Vite, Vitest, TanStack Router, ESLint, and TypeScript plugins auto-activate via `vite.config.ts`, `eslint.config.mjs`, `tsconfig.json` — nothing to configure manually.
 
 Minor optional improvements (non-blocking):
+
 - **`entry` could also include `scripts/*.{mjs,cjs}`** (`fix-hoisted.mjs`, `finalize_task.mjs`, `scripts/generate-view-tests.cjs`, etc.) if you want knip to trace their imports. These are one-off maintenance scripts today, so skipping them is defensible — just document the choice.
 - **`ignore` is `[]`**, which is the correct baseline. If the frozen `Extension` system or other deliberately-unwired features grow noisy, consider adding them with comments rather than re-adding blanket `src/components/**` style suppressions.
 - **Companion-test-file heuristic (knip v6.3.1):** knip treats source files with a neighbouring `.spec.ts` as "used" even when tests are excluded from `project`. This is an upstream limitation, not fixable via config. It does hide some real dead code (e.g. `src/components/ui/card.tsx`). Worth pinning in a short `docs/agents/` note so future sessions don't re-discover it.
@@ -285,19 +299,43 @@ The remaining work is to fix the 10 broken test imports, add `glob` to `package.
 
 ### Counts after this session
 
-- Unused files: 92 → 92 (unchanged — whole-file deletions out of scope per repo safety rule)
-- Unused exports: 92 → 67
-- Unused exported types: 22 → 22 (deferred — see Next steps)
-- Unused dependencies: 1 → 0
-- Unused devDependencies: 2 → 0
-- Unlisted dependencies: 2 → 0
-- Unresolved imports: 10 → 0
-- Configuration hints: 1 (generic "92 unused files" note; knip's companion-test-file heuristic — see below)
+- Unused files: 70
+- Unused exports: 62
+- Unused exported types: 22
+- Unused dependencies: 0
+- Unused devDependencies: 0
+- Unlisted dependencies: 0
+- Unresolved imports: 0
+- Configuration hints: 1 (generic "70 unused files" note; knip's companion-test-file heuristic — see below)
+
+## Remaining Unused Files (70)
+
+The remaining 70 files identified by Knip fall into the following categories. **These represent intentional stubs, frozen features, or legitimate product work that is not yet fully wired. They should not be deleted.**
+
+### 1. Module Event Barrels (22 files)
+These are intentional architectural placeholders. Every module exposes an `events/index.ts` per convention.
+- `src/modules/*/events/index.ts` for: AiGeneration, Automation, Bacteria, BrowserAi, Collaboration, CrdtDocument, Fermenter, Gluten, GrandBoule, Grinder, Levain, MIDI, Project, Proof, Routing, SampleLibrary, Scoring, SoundLibrary, Synth, Toaster, VirtualKeyboard, Yeast.
+
+### 2. Feature Stubs / Unwired Directories
+Substantial features that are built but not completely wired to the UI or handlers.
+- **AiGeneration / AiRuntime:** `AiGeneratedMidiNote.ts`, `LlmOrchestrationTypes.ts`
+- **Arrangement:** `audioAnalysis/index.ts`, `clipEditing/bakeScaleFolding.ts`, `handlers/types.ts`
+- **AudioEngine:** `AudioGraph.ts`, `SidechainRoute.ts`, and legacy/WebMidi implementations (`repositories/webMidi/*`)
+- **Automation:** `presentations/views/index.ts`
+- **Bacteria / Gluten / Grinder / Knead / Scoring / VirtualKeyboard:** Unwired `useCases/index.ts` or root `index.ts`. `KneadBlob.ts`.
+- **BrowserAi:** Root `index.ts`
+- **Command:** `models/ActionHandler.ts`, `presentations/hooks/useGlobalKeyboardShortcuts.ts` (Valid hook, currently unwired to the main app tree)
+- **CrdtDocument:** IDB persistence implementations (`repositories/crdtPersistence/*`), `BranchTypes.ts`
+- **Levain / SoundLibrary:** `repositories/levainPresets.ts`, `repositories/sampleLoader/loadSingleSample.ts`, `stores/index.ts`
+- **MIDI:** `presentations/views/index.ts`, `workers/controller-scripting.worker.ts`
+- **Plugin:** `presentations/views/SpectrogramView.tsx`, plugin bridge files (`repositories/pluginBridge/*`), proof chamber presets, `useCases/proofChamber/index.ts`
+- **Project:** `repositories/nativeProjectFiles/listProjectFiles.ts`
+- **SampleLibrary:** `presentations/hooks/useSampleDrag.ts`
+- **Transport:** Models/helpers (`models/index.ts`, `loopStationHelpers.ts`, `punchRecordingHelpers.ts`, `setlistItemHelpers.ts`)
+- **Workspace:** WebGPU spectrum metering (`presentations/renderers/createWebGpuSpectrumRenderer.ts`, `presentations/views/Metering/WebGpuSpectrumAnalyzer.tsx`)
 
 ## Next steps (deferred, require explicit approval)
 
-1. **Standalone `…Dependencies.ts` files** — 16 files are whole-file Dependencies exports with no other content (e.g., `src/modules/AudioEngine/useCases/latencyCompensation/compensation/trackLatencyDependencies.ts`, `src/modules/Arrangement/useCases/audioAnalysis/audioToMidiDependencies.ts`). Deleting files requires explicit user approval per the repo safety rule.
-2. **Unused exported types (22)** — e.g., `MixAnalysis`, `AppActionType`, `FileEntry`. Types are zero-runtime-cost so pruning is lower priority; needs per-type verification.
-3. **Other in-file unused exports (~67 remaining)** — a mix of store setters for unfinished features (e.g., `enter16Levels`/`exit16Levels`/`is16LevelsActive`/`get16LevelsTarget` in Toaster — removing them would reveal the 16-levels feature is stubbed), and some genuine orphans (`RenderProgressIndicator`, `parsePhonemesTxt`, `parsePhonemesJson`). Needs per-symbol judgement call.
-4. **Unused files (92)** — many are the `events/index.ts` stubs (intentional architectural placeholders), frozen features, or unfinished feature roots. §3 above enumerates which are intentional.
-5. **knip v6.3.1 companion-test-file heuristic** — worth a one-paragraph note in `docs/agents/04-standards.md` so future sessions know some dead code is hidden when `.spec.ts` tests sit next to an unused source file. Upstream limitation; no config fix.
+1. **Unused exported types (22)** — e.g., `MixAnalysis`, `AppActionType`, `FileEntry`. Types are zero-runtime-cost so pruning is lower priority; needs per-type verification.
+2. **Other in-file unused exports (62 remaining)** — a mix of store setters for unfinished features and legitimate orphans. Needs per-symbol judgement call.
+3. **knip v6.3.1 companion-test-file heuristic** — worth a one-paragraph note in `docs/agents/04-standards.md` so future sessions know some dead code is hidden when `.spec.ts` tests sit next to an unused source file. Upstream limitation; no config fix.

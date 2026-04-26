@@ -45,11 +45,11 @@ describe('createGenerationHandler', () => {
         vi.mocked(helpers.getPlayheadBeat).mockReturnValue(4);
 
         // Valid style
-        handler.execute({ type: 'generateMelody', payload: { style: 'jazz' } } as any);
+        void handler.execute({ type: 'generateMelody', payload: { style: 'jazz' } } as any);
         expect(applySpy).toHaveBeenCalledWith('t1', expect.anything(), 'jazz', 4);
 
         // Invalid style -> fallback
-        handler.execute({ type: 'generateMelody', payload: { style: 'metal' } } as any);
+        void handler.execute({ type: 'generateMelody', payload: { style: 'metal' } } as any);
         expect(applySpy).toHaveBeenCalledWith('t1', expect.anything(), 'pop', 4);
     });
 
@@ -65,7 +65,7 @@ describe('createGenerationHandler', () => {
 
         vi.mocked(helpers.resolveOrCreateMidiTrack).mockReturnValue(null);
 
-        handler.execute({ type: 'generateMelody', payload: { style: 'pop' } } as any);
+        void handler.execute({ type: 'generateMelody', payload: { style: 'pop' } } as any);
         expect(applySpy).not.toHaveBeenCalled();
     });
 });

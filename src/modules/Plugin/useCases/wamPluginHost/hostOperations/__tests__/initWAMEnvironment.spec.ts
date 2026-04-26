@@ -5,7 +5,7 @@ import * as subject from '../initWAMEnvironment';
 describe('initWAMEnvironment', () => {
     it('should export initWAMEnvironment', () => {
         expect(subject.initWAMEnvironment).toBeDefined();
-        const t = typeof subject.initWAMEnvironment;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.initWAMEnvironment;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

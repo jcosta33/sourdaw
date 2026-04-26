@@ -63,7 +63,7 @@ Deliver a Logic Flex Pitch–quality inline pitch editing experience for monopho
     - `vibrato_depth` (0.0–1.0 scale factor)
     - `gain` (linear amplitude factor, range `0.0`–`4.0`, corresponding to roughly -∞…+12 dB)
     - `formant_shift_cents`
-    Every draggable hotspot in the UI (Requirement 7) MUST map 1:1 to one of the fields above. Adding a new hotspot without adding the corresponding field is a spec violation.
+      Every draggable hotspot in the UI (Requirement 7) MUST map 1:1 to one of the fields above. Adding a new hotspot without adding the corresponding field is a spec violation.
 3. **IPC Performance** — The React UI MUST debounce drag edits at ~60 Hz. The Rust command handler MUST compile segments into a `CompiledDeltaMap` (pre-interpolated per-hop pitch ratios) and publish it via a `triple_buffer` reader. End-to-end latency from drag to audible change MUST land at 7-13ms (1-2ms IPC + <1ms triple buffer + 5-10ms audio buffer).
 4. **Synthesis Engine** — The Rust audio thread MUST implement TD-PSOLA for pitch shifting. The implementation MUST:
     - Detect pitch marks aligned with waveform peaks.
@@ -80,7 +80,7 @@ Deliver a Logic Flex Pitch–quality inline pitch editing experience for monopho
     - Gain → `gain`
     - Fine pitch → `fine_pitch_cents`
     - Formant → `formant_shift_cents`
-    The body of the blob itself is draggable vertically to set `target_pitch_hz` (coarse pitch) and horizontally to set `start_ms`/`end_ms`.
+      The body of the blob itself is draggable vertically to set `target_pitch_hz` (coarse pitch) and horizontally to set `start_ms`/`end_ms`.
 8. **High-Accuracy Mode (Optional)** — The system MUST support a CREPE neural network fallback via the `ort` crate (ONNX Runtime bindings), loading pre-exported models to achieve ~97.8% Raw Pitch Accuracy.
 9. **PSOLA Quality Cap** — Because TD-PSOLA degrades audibly beyond roughly ±700 cents of shift (per research), the effective shift applied to any `NoteSegment` (sum of `target_pitch_hz` offset from `detected_pitch_hz` plus `fine_pitch_cents`) MUST be clamped to `[-700, +700]` cents in the delta-map compiler. When the user drags a blob past the cap, the UI MUST (a) visually indicate the cap (blob hotspot styling) and (b) refuse to send out-of-range values to Rust. The clamp MUST be applied in `CompiledDeltaMap` construction, not only in the UI, so any command path (undo/redo, AI-generated edit, serialized project file) cannot exceed it.
 10. **Real-Time Audio Safety (rtrb)** — Pre-buffered PCM flowing from the disk/decoder thread into the audio callback MUST use an `rtrb` lock-free SPSC ring buffer. The audio thread MUST NOT allocate, lock a mutex, call `std::sync::RwLock::{read,write}`, call `Mutex::lock`, or invoke any blocking syscall on the PSOLA/playback path. Parameter updates from the UI MUST flow exclusively through the `triple_buffer` reader created in Requirement 3. This is a hard RT-safety requirement, not a performance tip; violations are failures of this spec.
@@ -126,7 +126,7 @@ Deliver a Logic Flex Pitch–quality inline pitch editing experience for monopho
     - horizontal extents matching `start_ms`/`end_ms` within ±1 CSS pixel of the waveform time-axis mapping,
     - vertical center matching `detected_pitch_hz` under the editor's log-frequency mapping within ±1 CSS pixel,
     - exactly 6 hotspot elements attached, each bound to the field listed in Requirement 7.
-    Verified by a component test (`*.spec.tsx`) asserting on the rendered DOM/Canvas draw calls for a fixture `PitchContour`.
+      Verified by a component test (`*.spec.tsx`) asserting on the rendered DOM/Canvas draw calls for a fixture `PitchContour`.
 - [ ] Dragging a blob vertically emits a `PitchEditCommand` and produces an audibly updated audio output within **13 ms at the 95th percentile**, measured by an instrumented latency counter that records: `t0 = performance.now()` when the React drag handler enqueues the IPC call; `t1` in the Rust command handler when `triple_buffer::Input::write` returns; `t2` in the audio callback on the first callback that reads the new `CompiledDeltaMap` generation counter; `t3` when the enclosing output buffer is handed to CPAL. `t3 - t0` is the reported end-to-end latency. The test harness drives ≥ 1 000 drags at 60 Hz on the reference hardware (macOS, 128-frame audio buffer) and asserts p50 ≤ 8 ms, p95 ≤ 13 ms. Mic loopback verification is explicitly NOT required for this criterion.
 - [ ] A static analysis check (CI-enforced, e.g. `cargo clippy` lint / `rg` rule / custom test) confirms the PSOLA processing path in `daw-dsp` and the audio callback in `daw-engine` contain zero occurrences of `Mutex::lock`, `RwLock::read`, `RwLock::write`, `parking_lot::Mutex::lock`, heap allocation macros (`vec!`, `Box::new`, `String::from`), or `.await`. The `rtrb` ring buffer is the sole PCM transport into the callback.
 - [ ] A Rust unit test confirms `CompiledDeltaMap` construction clamps effective shift (coarse + fine) to `[-700, +700]` cents for every hop, regardless of input `NoteSegment` values.
@@ -172,6 +172,7 @@ Deliver a Logic Flex Pitch–quality inline pitch editing experience for monopho
 ## Implementation Status
 
 **What is implemented:**
+
 - The `Knead` module implements the "blob" data structures (`KneadBlob`) and state management (`kneadStore`) described in the spec.
 - `Track.ts` contains `ClipKneadState`.
 - `PitchEditor.tsx` component exists in the frontend.
@@ -179,11 +180,14 @@ Deliver a Logic Flex Pitch–quality inline pitch editing experience for monopho
 - Tauri commands for `analyze_pitch` and `commit_pitch_edit` exist.
 
 **What is not implemented:**
+
 - Moved to `.agents/specs/missing/spec-of-the-gaps.md`.
 
 **What is done well:**
+
 - Solid architectural foundation with `Knead` module and domain-driven state.
 - Use of robust pitch analysis (pYIN) and synthesis (PSOLA) primitives.
 
 **What needs refactoring:**
+
 - Moved to `.agents/specs/missing/spec-of-the-gaps.md`.

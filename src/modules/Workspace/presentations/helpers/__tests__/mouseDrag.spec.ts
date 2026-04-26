@@ -18,7 +18,7 @@ describe('startMouseDrag', () => {
         expect(addSpy).toHaveBeenCalledWith('mousemove', onMove);
         expect(addSpy).toHaveBeenCalledWith('mouseup', expect.any(Function));
 
-        const upHandler = addSpy.mock.calls.find((c) => c[0] === 'mouseup')?.[1] as (e: MouseEvent) => void;
+        const upHandler = addSpy.mock.calls.find((context) => context[0] === 'mouseup')?.[1] as (e: MouseEvent) => void;
         expect(upHandler).toBeDefined();
 
         window.dispatchEvent(new MouseEvent('mousemove'));

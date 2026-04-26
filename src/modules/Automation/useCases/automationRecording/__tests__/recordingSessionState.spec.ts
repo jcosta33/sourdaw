@@ -76,7 +76,7 @@ describe('recordingSessionState', () => {
             automationStore.set({ lanes: [lane] });
             clearPointsInRange(lane.id, 1, 4);
             const updated = automationStore.value?.lanes[0];
-            expect(updated?.points.map((p) => p.beat)).toEqual([0, 8]);
+            expect(updated?.points.map((param) => param.beat)).toEqual([0, 8]);
         });
     });
 

@@ -5,25 +5,23 @@ export type TempoChange = {
     curve: 'instant' | 'linear';
 };
 
-export const createTempoChange = (
-    beat: number,
-    tempo: number,
-    curve: TempoChange['curve'] = 'instant'
-): TempoChange => ({
-    id: `tempo-${crypto.randomUUID()}`,
-    beat,
-    tempo: Math.max(20, Math.min(999, tempo)),
-    curve,
-});
+export function createTempoChange(beat: number, tempo: number, curve: TempoChange['curve'] = 'instant'): TempoChange {
+    return {
+        id: `tempo-${crypto.randomUUID()}`,
+        beat,
+        tempo: Math.max(20, Math.min(999, tempo)),
+        curve,
+    };
+}
 
 export function getTempoAtBeat(changes: TempoChange[], beat: number, defaultTempo: number): number {
     if (changes.length === 0) {
         return defaultTempo;
     }
 
-    const sorted = [...changes].sort((a, b) => a.beat - b.beat);
-    const before = sorted.filter((c) => c.beat <= beat);
-    const after = sorted.filter((c) => c.beat > beat);
+    const sorted = [...changes].sort((alpha, b) => alpha.beat - b.beat);
+    const before = sorted.filter((context) => context.beat <= beat);
+    const after = sorted.filter((context) => context.beat > beat);
 
     if (before.length === 0) {
         return sorted[0]!.tempo;
@@ -39,6 +37,6 @@ export function getTempoAtBeat(changes: TempoChange[], beat: number, defaultTemp
         return prev.tempo;
     }
 
-    const t = (beat - prev.beat) / (next.beat - prev.beat);
-    return prev.tempo + (next.tempo - prev.tempo) * t;
+    const time = (beat - prev.beat) / (next.beat - prev.beat);
+    return prev.tempo + (next.tempo - prev.tempo) * time;
 }

@@ -33,7 +33,7 @@ describe('handleRestoreClip', () => {
     });
 
     it('restores clip using undoRippleDelete if ripplePlan is present', () => {
-        handleRestoreClip.execute({
+        void handleRestoreClip.execute({
             type: 'restoreClip',
             payload: {
                 clipId: 'c1',
@@ -59,7 +59,7 @@ describe('handleRestoreClip', () => {
             updater({ clips: [] });
         });
 
-        handleRestoreClip.execute({
+        void handleRestoreClip.execute({
             type: 'restoreClip',
             payload: {
                 clipId: 'c1',
@@ -83,7 +83,7 @@ describe('handleRestoreClip', () => {
             pitchBendByClipId: {},
         };
 
-        handleRestoreClip.execute({
+        void handleRestoreClip.execute({
             type: 'restoreClip',
             payload: {
                 clipId: 'c1',

@@ -76,7 +76,7 @@ vi.mock('../../../stores/collaborationStore', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     setupProjectionBridge: mocks.setupProjectionBridge,
     mutateCrdtDoc: mocks.mutateCrdtDoc,
     removeCrdtDoc: mocks.removeCrdtDoc,
@@ -117,7 +117,9 @@ describe('collaboration sessionManagement', () => {
     });
 
     it('leaveSession cleans up sub-systems and resets store', () => {
-        mocks.collaborationStoreValue.value = { localPeerId: 'p1' } as any;
+        mocks.collaborationStoreValue.value = {
+            localPeerId: 'p1',
+        } as unknown as typeof mocks.collaborationStoreValue.value;
 
         // Setup existing session state
         createSession('Alice');

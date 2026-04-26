@@ -43,4 +43,6 @@ const BUILTIN_PRESETS: readonly GrandBoulePreset[] = [
     },
 ];
 
-export const listBuiltinGrandBoulePresets = (): readonly GrandBoulePreset[] => BUILTIN_PRESETS;
+export function listBuiltinGrandBoulePresets(): readonly GrandBoulePreset[] {
+    return BUILTIN_PRESETS;
+}

@@ -6,13 +6,15 @@ import { addChordEvent } from '../../useCases/chordTrack/addChordEvent';
 const VALID_CHORD_QUALITIES = new Set(Object.keys(CHORD_TYPES));
 
 export const handleAddChordEvent = createHandler<'addChordEvent'>({
-    execute: (a) => {
-        const quality = VALID_CHORD_QUALITIES.has(a.payload.quality) ? (a.payload.quality as ChordType) : 'major';
-        const root = Math.max(0, Math.min(11, Math.round(a.payload.root)));
-        const beat = Math.max(0, a.payload.beat);
-        const duration = a.payload.duration ?? 4;
+    execute: (alpha) => {
+        const quality = VALID_CHORD_QUALITIES.has(alpha.payload.quality)
+            ? (alpha.payload.quality as ChordType)
+            : 'major';
+        const root = Math.max(0, Math.min(11, Math.round(alpha.payload.root)));
+        const beat = Math.max(0, alpha.payload.beat);
+        const duration = alpha.payload.duration ?? 4;
         addChordEvent(beat, root, quality, duration);
     },
-    describe: (a) => ({ label: `Add ${a.payload.quality} chord at beat ${a.payload.beat}` }),
+    describe: (alpha) => ({ label: `Add ${alpha.payload.quality} chord at beat ${alpha.payload.beat}` }),
     undoable: true,
 });

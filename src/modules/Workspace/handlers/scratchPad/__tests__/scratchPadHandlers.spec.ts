@@ -17,8 +17,8 @@ vi.mock('../../../stores/workspaceStore', () => {
             get value() {
                 return internal.value;
             },
-            set: vi.fn((v) => {
-                internal.value = v;
+            set: vi.fn((value) => {
+                internal.value = value;
             }),
         },
     };
@@ -33,7 +33,7 @@ describe('Workspace Scratch Pad Handlers', () => {
     describe('handleCaptureScratchPad', () => {
         it('should capture arrangement and open the pad', () => {
             workspaceStore.set({ scratchPadOpen: false } as any);
-            handleCaptureScratchPad.execute({ type: 'captureScratchPad', payload: {} });
+            void handleCaptureScratchPad.execute({ type: 'captureScratchPad', payload: {} });
 
             expect(captureArrangementToScratchPad).toHaveBeenCalled();
             expect(workspaceStore.set).toHaveBeenCalledWith(expect.objectContaining({ scratchPadOpen: true }));
@@ -43,7 +43,7 @@ describe('Workspace Scratch Pad Handlers', () => {
             workspaceStore.set({ scratchPadOpen: true } as any);
             vi.mocked(workspaceStore.set).mockClear();
 
-            handleCaptureScratchPad.execute({ type: 'captureScratchPad', payload: {} });
+            void handleCaptureScratchPad.execute({ type: 'captureScratchPad', payload: {} });
 
             expect(captureArrangementToScratchPad).toHaveBeenCalled();
             expect(workspaceStore.set).not.toHaveBeenCalled();
@@ -53,13 +53,13 @@ describe('Workspace Scratch Pad Handlers', () => {
     describe('handleToggleScratchPad', () => {
         it('should toggle from false to true', () => {
             workspaceStore.set({ scratchPadOpen: false } as any);
-            handleToggleScratchPad.execute({ type: 'toggleScratchPad', payload: {} });
+            void handleToggleScratchPad.execute({ type: 'toggleScratchPad', payload: {} });
             expect(workspaceStore.set).toHaveBeenCalledWith(expect.objectContaining({ scratchPadOpen: true }));
         });
 
         it('should toggle from true to false', () => {
             workspaceStore.set({ scratchPadOpen: true } as any);
-            handleToggleScratchPad.execute({ type: 'toggleScratchPad', payload: {} });
+            void handleToggleScratchPad.execute({ type: 'toggleScratchPad', payload: {} });
             expect(workspaceStore.set).toHaveBeenCalledWith(expect.objectContaining({ scratchPadOpen: false }));
         });
     });

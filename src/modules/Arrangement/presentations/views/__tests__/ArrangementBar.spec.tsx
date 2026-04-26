@@ -48,7 +48,9 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
 }));
 
 vi.mock('../TimelineChromeSurface', () => ({
-    TimelineChromeSurface: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+    TimelineChromeSurface: ({ children, ...props }: import('react').ComponentProps<'div'>) => (
+        <div {...props}>{children}</div>
+    ),
 }));
 
 describe('ArrangementBar', () => {

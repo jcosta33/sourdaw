@@ -27,11 +27,11 @@ export const Oscilloscope = ({
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return () => {};
         }
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return () => {};
         }
 
         let rafId = 0;
@@ -47,8 +47,8 @@ export const Oscilloscope = ({
             noiseCtx.globalAlpha = 0.025;
             for (let nx = 0; nx < width; nx += 3) {
                 for (let ny = 0; ny < height; ny += 3) {
-                    const v = Math.random() * 255;
-                    noiseCtx.fillStyle = `rgb(${v},${v},${v})`;
+                    const value = Math.random() * 255;
+                    noiseCtx.fillStyle = `rgb(${value},${value},${value})`;
                     noiseCtx.fillRect(nx, ny, 2, 2);
                 }
             }
@@ -105,10 +105,10 @@ export const Oscilloscope = ({
             let x = 0;
 
             ctx.beginPath();
-            for (let i = 0; i < bufferLength; i++) {
-                const sample = data[i]!;
+            for (let index = 0; index < bufferLength; index++) {
+                const sample = data[index]!;
                 const y = midY - sample * midY * 0.9;
-                if (i === 0) {
+                if (index === 0) {
                     ctx.moveTo(x, y);
                 } else {
                     ctx.lineTo(x, y);
@@ -128,11 +128,11 @@ export const Oscilloscope = ({
             ctx.beginPath();
             x = 0;
 
-            for (let i = 0; i < bufferLength; i++) {
-                const sample = data[i]!;
+            for (let index = 0; index < bufferLength; index++) {
+                const sample = data[index]!;
                 const y = midY - sample * midY * 0.9;
 
-                if (i === 0) {
+                if (index === 0) {
                     ctx.moveTo(x, y);
                 } else {
                     ctx.lineTo(x, y);

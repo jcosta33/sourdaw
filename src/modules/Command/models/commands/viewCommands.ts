@@ -8,6 +8,7 @@ import {
     toggleInspector,
     toggleMixer,
     toggleAutomationPanel,
+    startOnboardingTour,
 } from '#/modules/Workspace/useCases';
 
 import { executeAppAction } from '../../useCases/executeAppAction';
@@ -127,9 +128,12 @@ export const viewCommands: CommandEntry[] = [
         description: 'Delete time in the loop region, shifting everything left',
         category: 'Editing',
         action: () => {
-            const t = transportStore.value;
-            if (t) {
-                executeAppAction({ type: 'deleteTime', payload: { startBeat: t.loopStart, endBeat: t.loopEnd } });
+            const time = transportStore.value;
+            if (time) {
+                void executeAppAction({
+                    type: 'deleteTime',
+                    payload: { startBeat: time.loopStart, endBeat: time.loopEnd },
+                });
             }
         },
     },
@@ -139,9 +143,9 @@ export const viewCommands: CommandEntry[] = [
         description: 'Insert empty time at the playhead position (4 beats)',
         category: 'Editing',
         action: () => {
-            const t = transportStore.value;
-            if (t) {
-                executeAppAction({
+            const time = transportStore.value;
+            if (time) {
+                void executeAppAction({
                     type: 'insertTime',
                     payload: { atBeat: playheadPositionRef.current, durationBeats: 4 },
                 });
@@ -154,11 +158,11 @@ export const viewCommands: CommandEntry[] = [
         description: 'Duplicate the loop region and insert the copy after it',
         category: 'Editing',
         action: () => {
-            const t = transportStore.value;
-            if (t) {
-                executeAppAction({
+            const time = transportStore.value;
+            if (time) {
+                void executeAppAction({
                     type: 'duplicateTimeRange',
-                    payload: { startBeat: t.loopStart, endBeat: t.loopEnd },
+                    payload: { startBeat: time.loopStart, endBeat: time.loopEnd },
                 });
             }
         },
@@ -171,7 +175,7 @@ export const viewCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'stripSilence', payload: { clipId } });
+                void executeAppAction({ type: 'stripSilence', payload: { clipId } });
             }
         },
     },
@@ -236,5 +240,16 @@ export const viewCommands: CommandEntry[] = [
         description: 'Switch between linear inserts and a Fusion-style node graph view',
         category: 'View',
         action: { type: 'toggleNodeView' },
+    },
+
+    // ── Onboarding ─────────────────────────────────────────────
+    {
+        id: 'show-onboarding-tour',
+        label: 'Show Tour Again',
+        description: 'Re-run the guided onboarding tour for transport, tracks, inspector, mixer, and command palette',
+        category: 'Help',
+        action: () => {
+            startOnboardingTour();
+        },
     },
 ];

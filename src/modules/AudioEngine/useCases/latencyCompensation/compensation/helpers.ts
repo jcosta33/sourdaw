@@ -36,7 +36,7 @@ export function getTrackLatency(trackId: string, visited = new Set<string>()): T
         return { trackId, deviceLatencyMs: 0, totalLatencyMs: 0 };
     }
 
-    const track = state.tracks.find((t) => t.id === trackId);
+    const track = state.tracks.find((time) => time.id === trackId);
     if (!track || visited.has(trackId)) {
         return { trackId, deviceLatencyMs: 0, totalLatencyMs: 0 };
     }

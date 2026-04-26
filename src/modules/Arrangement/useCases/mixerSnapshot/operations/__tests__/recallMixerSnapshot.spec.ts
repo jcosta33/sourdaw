@@ -5,7 +5,7 @@ import * as subject from '../recallMixerSnapshot';
 describe('recallMixerSnapshot', () => {
     it('should export recallMixerSnapshot', () => {
         expect(subject.recallMixerSnapshot).toBeDefined();
-        const t = typeof subject.recallMixerSnapshot;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.recallMixerSnapshot;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

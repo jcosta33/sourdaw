@@ -7,21 +7,21 @@ describe('createVersion', () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2024-06-01T12:00:00.000Z'));
         const snapshot = { data: '{}', size: 2 };
-        const v = createVersion('Label', 'desc', snapshot, 'parent-1', ['t1']);
+        const value = createVersion('Label', 'desc', snapshot, 'parent-1', ['t1']);
 
-        expect(v.label).toBe('Label');
-        expect(v.description).toBe('desc');
-        expect(v.snapshot).toBe(snapshot);
-        expect(v.parentId).toBe('parent-1');
-        expect(v.tags).toEqual(['t1']);
-        expect(v.createdAt).toBe('2024-06-01T12:00:00.000Z');
-        expect(v.id).toMatch(/^ver-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+        expect(value.label).toBe('Label');
+        expect(value.description).toBe('desc');
+        expect(value.snapshot).toBe(snapshot);
+        expect(value.parentId).toBe('parent-1');
+        expect(value.tags).toEqual(['t1']);
+        expect(value.createdAt).toBe('2024-06-01T12:00:00.000Z');
+        expect(value.id).toMatch(/^ver-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
         vi.useRealTimers();
     });
 
     it('defaults tags to an empty array', () => {
-        const v = createVersion('L', 'd', { data: '', size: 0 }, null);
-        expect(v.tags).toEqual([]);
+        const value = createVersion('L', 'd', { data: '', size: 0 }, null);
+        expect(value.tags).toEqual([]);
     });
 });
 
@@ -37,12 +37,12 @@ describe('createBranch', () => {
 
 describe('createDefaultState', () => {
     it('starts with a main branch and no current version', () => {
-        const s = createDefaultState();
-        expect(s.versions).toEqual([]);
-        expect(s.currentVersionId).toBeNull();
-        expect(s.autoSaveInterval).toBe(5);
-        expect(s.branches).toHaveLength(1);
-        expect(s.branches[0]!.name).toBe('main');
-        expect(s.currentBranchId).toBe(s.branches[0]!.id);
+        const state = createDefaultState();
+        expect(state.versions).toEqual([]);
+        expect(state.currentVersionId).toBeNull();
+        expect(state.autoSaveInterval).toBe(5);
+        expect(state.branches).toHaveLength(1);
+        expect(state.branches[0]!.name).toBe('main');
+        expect(state.currentBranchId).toBe(state.branches[0]!.id);
     });
 });

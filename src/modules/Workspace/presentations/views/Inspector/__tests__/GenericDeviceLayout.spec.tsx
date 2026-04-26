@@ -53,10 +53,10 @@ describe('GenericDeviceLayout', () => {
     };
 
     const createMockProps = (paramCount: number): DeviceLayoutProps => {
-        const parameters = Array.from({ length: paramCount }, (_, i) => ({
-            id: `param-${i}`,
+        const parameters = Array.from({ length: paramCount }, (_, index) => ({
+            id: `param-${index}`,
             deviceId: 'device-1',
-            name: `Parameter ${i}`,
+            name: `Parameter ${index}`,
             type: 'float' as const,
             value: 0.5,
             defaultValue: 0.5,
@@ -123,10 +123,10 @@ describe('GenericDeviceLayout', () => {
                     automatable: true,
                     hasAutomation: false,
                 },
-                ...Array.from({ length: 9 }, (_, i) => ({
-                    id: `dummy-${i}`,
+                ...Array.from({ length: 9 }, (_, index) => ({
+                    id: `dummy-${index}`,
                     deviceId: 'device-1',
-                    name: `Dummy ${i}`,
+                    name: `Dummy ${index}`,
                     type: 'float' as const,
                     value: 0.5,
                     defaultValue: 0.5,
@@ -173,10 +173,10 @@ describe('GenericDeviceLayout', () => {
                     automatable: true,
                     hasAutomation: false,
                 },
-                ...Array.from({ length: 9 }, (_, i) => ({
-                    id: `dummy-${i}`,
+                ...Array.from({ length: 9 }, (_, index) => ({
+                    id: `dummy-${index}`,
                     deviceId: 'device-1',
-                    name: `Dummy ${i}`,
+                    name: `Dummy ${index}`,
                     type: 'float' as const,
                     value: 0.5,
                     defaultValue: 0.5,

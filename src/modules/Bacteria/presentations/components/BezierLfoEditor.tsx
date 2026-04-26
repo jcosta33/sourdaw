@@ -43,14 +43,6 @@ export const BezierLfoEditor = ({
     const [points, setPoints] = useState<LfoPoint[]>(initialPoints.length > 0 ? initialPoints : DEFAULT_POINTS);
     const dragRef = useRef<{ pointIdx: number; part: 'pos' | 'cp1' | 'cp2' } | null>(null);
 
-    // §150.2 — Only redraw when the inputs that influence the canvas change;
-    // previously this effect had no dependency array so it ran after every
-    // parent re-render even when nothing visible changed.
-    useEffect(() => {
-        draw();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [points, width, height, tempoSync]);
-
     const toCanvas = (p: Point): Point => ({
         x: p.x * width,
         y: (1 - p.y) * height,
@@ -160,6 +152,14 @@ export const BezierLfoEditor = ({
             ctx.fill();
         }
     };
+
+    // §150.2 — Only redraw when the inputs that influence the canvas change;
+    // previously this effect had no dependency array so it ran after every
+    // parent re-render even when nothing visible changed.
+    useEffect(() => {
+        draw();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [points, width, height, tempoSync]);
 
     const handlePointerDown = (e: React.PointerEvent): void => {
         const rect = canvasRef.current?.getBoundingClientRect();

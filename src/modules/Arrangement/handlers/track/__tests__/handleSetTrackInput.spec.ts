@@ -16,7 +16,7 @@ describe('handleSetTrackInput', () => {
     });
 
     it('executes setTrackInput with payload', () => {
-        handleSetTrackInput.execute({
+        void handleSetTrackInput.execute({
             type: 'setTrackInput',
             payload: { trackId: 't1', inputId: 'in1' },
         });

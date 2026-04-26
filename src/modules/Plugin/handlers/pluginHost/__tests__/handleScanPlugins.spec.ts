@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { startPluginScan } from '../../../useCases/pluginScan/scanning/startPluginScan';
 import { handleScanPlugins } from '../handleScanPlugins';
 
 vi.mock('../../../useCases/pluginScan/scanning/startPluginScan', () => ({
     startPluginScan: vi.fn().mockResolvedValue(undefined),
 }));
-
-import { startPluginScan } from '../../../useCases/pluginScan/scanning/startPluginScan';
 
 describe('handleScanPlugins', () => {
     beforeEach(() => {

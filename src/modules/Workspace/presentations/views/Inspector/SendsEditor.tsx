@@ -21,7 +21,7 @@ type SendsEditorProps = {
 
 export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
     const { tracks: allTracks } = useTracks();
-    const buses = allTracks.filter((t) => t.kind === 'bus');
+    const buses = allTracks.filter((time) => time.kind === 'bus');
 
     return (
         <div>
@@ -29,7 +29,7 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
             {buses.length > 0 ? (
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                     {buses.map((bus) => {
-                        const send = track.sends.find((s) => s.busId === bus.id);
+                        const send = track.sends.find((state) => state.busId === bus.id);
                         const level = send?.level ?? 0;
                         const isPreFader = send?.preFader ?? false;
                         return (
@@ -73,9 +73,9 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                                     <div className="w-full px-1 flex items-center justify-center">
                                         <Slider
                                             value={[level * 100]}
-                                            onValueChange={([v]) => {
-                                                if (v !== undefined) {
-                                                    setSend(track.id, bus.id, v / 100);
+                                            onValueChange={([value]) => {
+                                                if (value !== undefined) {
+                                                    setSend(track.id, bus.id, value / 100);
                                                 }
                                             }}
                                             max={100}

@@ -25,7 +25,7 @@ export type ConfirmUserOptions = {
 
 export const confirmUser = (options: ConfirmUserOptions): Promise<boolean> =>
     new Promise<boolean>((resolve) => {
-        eventBus.emit('ui.confirm', {
+        void eventBus.emit('ui.confirm', {
             id: crypto.randomUUID(),
             message: options.message,
             title: options.title,

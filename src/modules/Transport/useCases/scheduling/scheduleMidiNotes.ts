@@ -39,7 +39,7 @@ const WORKLET_SYNTH_DEVICES: Record<string, WorkletSynthEntry> = {
     fermenter: { controlsKey: 'fermenterControls' },
     'grand-boule': {
         controlsKey: 'grandBouleControls',
-        velocityTransform: (v: number) => v / 127,
+        velocityTransform: (value: number) => value / 127,
     },
     levain: { controlsKey: 'levainControls' },
 };
@@ -83,8 +83,12 @@ type TransportInfo = {
 // Transport-local shape (AGENTS.md §95 — derive from Synth's returned shape).
 type DrumKitDef = NonNullable<ReturnType<typeof getDrumKitDefByIndex>>;
 
+function isDrumDevice(deviceType: string): boolean {
+    return deviceType === 'builtin-drum-kit' || deviceType === 'drum-kit' || deviceType.startsWith('builtin-drum-machine');
+}
+
 export function resolveDrumKit(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null {
-    const kitDevice = devices.find((d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit');
+    const kitDevice = devices.find((d) => isDrumDevice(d.type));
     if (!kitDevice) {
         return null;
     }
@@ -95,7 +99,7 @@ export function resolveDrumKit(devices: { type: string; parameterValues: Record<
 export function resolveDrumKitDef(
     devices: { type: string; parameterValues: Record<string, number> }[]
 ): DrumKitDef | null {
-    const kitDevice = devices.find((d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit');
+    const kitDevice = devices.find((d) => isDrumDevice(d.type));
     if (!kitDevice) {
         return null;
     }
@@ -203,7 +207,7 @@ export async function scheduleMidiNotes(
                 continue;
             }
 
-            const hasYeast = track.devices.some((d) => d.type === 'yeast');
+            const hasYeast = track.devices.some((data) => data.type === 'yeast');
             if (hasYeast) {
                 const yeastRack = getYeastRack();
                 if (yeastRack.getProcessorIds().length > 0) {
@@ -224,20 +228,20 @@ export async function scheduleMidiNotes(
                     };
 
                     const midiEvents: MidiEvent[] = [];
-                    for (const n of notes) {
-                        const noteStartBeat = clip.startBeat + n.startBeat;
+                    for (const node of notes) {
+                        const noteStartBeat = clip.startBeat + node.startBeat;
                         if (noteStartBeat < fromBeat || noteStartBeat >= toBeat) {
                             continue;
                         }
                         const timeSamples = Math.round((noteStartBeat * yeastSr) / spb);
                         midiEvents.push({
                             timeSamples,
-                            kind: { type: 'noteOn', channel: 0, note: n.pitch, velocity: n.velocity ?? 100 },
+                            kind: { type: 'noteOn', channel: 0, note: node.pitch, velocity: node.velocity ?? 100 },
                         });
-                        const offTimeSamples = Math.round(((noteStartBeat + n.duration) * yeastSr) / spb);
+                        const offTimeSamples = Math.round(((noteStartBeat + node.duration) * yeastSr) / spb);
                         midiEvents.push({
                             timeSamples: offTimeSamples,
-                            kind: { type: 'noteOff', channel: 0, note: n.pitch },
+                            kind: { type: 'noteOff', channel: 0, note: node.pitch },
                         });
                     }
 
@@ -326,19 +330,19 @@ export async function scheduleMidiNotes(
                 pitchFallback: number;
             } | null = null;
             if (track.parentId) {
-                const toasterParentTrack = tracks.find((t) => t.id === track.parentId);
-                const toasterDevice = toasterParentTrack?.devices.find((d) => d.type === 'toaster');
+                const toasterParentTrack = tracks.find((time1) => time1.id === track.parentId);
+                const toasterDevice = toasterParentTrack?.devices.find((data) => data.type === 'toaster');
                 if (toasterParentTrack && toasterDevice) {
                     const parentStrip = ensureTrackStrip(toasterParentTrack.id);
                     const dn = parentStrip?.deviceNodes.find(
-                        (d) => d.deviceId === toasterDevice.id || d.type === 'toaster'
+                        (data) => data.deviceId === toasterDevice.id || data.type === 'toaster'
                     );
                     if (dn?.toasterControls) {
                         let pad = -1;
                         let childIdx = 0;
-                        for (const t of tracks) {
-                            if (t.parentId === toasterParentTrack.id) {
-                                if (t.id === track.id) {
+                        for (const time1 of tracks) {
+                            if (time1.parentId === toasterParentTrack.id) {
+                                if (time1.id === track.id) {
                                     pad = childIdx;
                                     break;
                                 }
@@ -350,12 +354,14 @@ export async function scheduleMidiNotes(
                 }
             }
 
-            const workletSynthDevice = toasterRoute ? null : track.devices.find((d) => d.type in WORKLET_SYNTH_DEVICES);
+            const workletSynthDevice = toasterRoute
+                ? null
+                : track.devices.find((data) => data.type in WORKLET_SYNTH_DEVICES);
             const workletSynthEntry = workletSynthDevice
                 ? (WORKLET_SYNTH_DEVICES[workletSynthDevice.type] ?? null)
                 : null;
             const workletSynthNode = workletSynthDevice
-                ? (strip.deviceNodes.find((d) => d.deviceId === workletSynthDevice.id) ?? null)
+                ? (strip.deviceNodes.find((data) => data.deviceId === workletSynthDevice.id) ?? null)
                 : null;
             const workletSynthControls =
                 workletSynthEntry && workletSynthNode
@@ -365,7 +371,7 @@ export async function scheduleMidiNotes(
             const faustDevice =
                 toasterRoute || drumKitDef || drumKit || workletSynthControls
                     ? null
-                    : track.devices.find((d) => d.type.startsWith('faust-'));
+                    : track.devices.find((data) => data.type.startsWith('faust-'));
 
             const midiOffset = clip.midiOffsetBeats ?? 0;
 

@@ -122,7 +122,7 @@ const PLAYHEAD_BROADCAST_HZ = 4;
  *
  * Only `branches` is synced; `activeBranchId` is per-peer and never shared.
  */
-const startBranchSync = (isHost: boolean): void => {
+function startBranchSync(isHost: boolean): void {
     // Snapshot current state so we can restore it on session end.
     sessionState.branchStoreSnapshot = branchStore.value
         ? { ...branchStore.value, branches: [...branchStore.value.branches] }
@@ -193,13 +193,13 @@ const startBranchSync = (isHost: boolean): void => {
             sessionState.isProjectingBranches = false;
         }
     });
-};
+}
 
 /**
  * Stop branch sync and restore the pre-session branchStore state.
  * Removes the `__branches__` Automerge doc so it isn't included in future saves.
  */
-const stopBranchSync = (): void => {
+function stopBranchSync(): void {
     if (sessionState.unsubscribeBranchStore) {
         sessionState.unsubscribeBranchStore();
         sessionState.unsubscribeBranchStore = null;
@@ -226,18 +226,22 @@ const stopBranchSync = (): void => {
     persistCrdtProject().catch((error) => {
         logger.warn('[Collaboration] Failed to persist after branch sync cleanup:', error);
     });
-};
+}
 
-const generatePeerId = (): PeerId => crypto.randomUUID();
-const generateSessionId = (): string => crypto.randomUUID().slice(0, 8);
+function generatePeerId(): PeerId {
+    return crypto.randomUUID();
+}
+function generateSessionId(): string {
+    return crypto.randomUUID().slice(0, 8);
+}
 
 /** Pick the first color from PEER_COLORS not already in use. */
-const pickPeerColor = (excludeColors: string[]): string => {
+function pickPeerColor(excludeColors: string[]): string {
     const used = new Set(excludeColors);
-    return PEER_COLORS.find((c) => !used.has(c)) ?? PEER_COLORS[0]!;
-};
+    return PEER_COLORS.find((context) => !used.has(context)) ?? PEER_COLORS[0]!;
+}
 
-const getLocalPeerInfo = (): CollaborationPeer => {
+function getLocalPeerInfo(): CollaborationPeer {
     const state = collaborationStore.value!;
     return {
         id: state.localPeerId!,
@@ -248,7 +252,7 @@ const getLocalPeerInfo = (): CollaborationPeer => {
         lastSeen: Date.now(),
         latencyMs: null,
     };
-};
+}
 
 /**
  * Create a new collaboration session as host.
@@ -304,7 +308,7 @@ export function createSession(name: string): string {
  * Generate an invite string containing the SDP offer for a new peer.
  * The host calls this, copies the result, and the joiner pastes it into `joinSession`.
  */
-export const generateInvite = async (): Promise<string> => {
+export async function generateInvite(): Promise<string> {
     if (!sessionState.peerManager) {
         throw createCollaborationError('No active session');
     }
@@ -331,7 +335,7 @@ export const generateInvite = async (): Promise<string> => {
     };
 
     return await compressInvite(JSON.stringify(invite));
-};
+}
 
 /**
  * Join a session by pasting an invite string.
@@ -371,7 +375,9 @@ export async function joinSession(inviteString: string, name: string): Promise<s
     sessionState.cleanupProjectionBridge = setupProjectionBridge();
 
     sessionState.assetTransfer = new AssetTransfer(sessionState.peerManager, {
-        onAssetAvailable: resolveAssetForClips,
+        onAssetAvailable: (hash) => {
+            void resolveAssetForClips(hash);
+        },
         onProgress: (_hash, _received, _total) => {},
     });
 
@@ -418,7 +424,7 @@ export async function joinSession(inviteString: string, name: string): Promise<s
 /**
  * Accept an answer from a joiner (host side, completes the connection).
  */
-export const acceptAnswer = async (answerString: string): Promise<void> => {
+export async function acceptAnswer(answerString: string): Promise<void> {
     const json = await decompressInvite(answerString);
     const answer = JSON.parse(json) as SignalingMessage;
     if (answer.type !== 'answer') {
@@ -443,7 +449,7 @@ export const acceptAnswer = async (answerString: string): Promise<void> => {
         const joinerInfo: CollaborationPeer = {
             id: answer.peerId,
             name: answer.name,
-            color: pickPeerColor([state.localColor, ...state.peers.map((p) => p.color)]),
+            color: pickPeerColor([state.localColor, ...state.peers.map((param) => param.color)]),
             isHost: false,
             isConnected: false,
             lastSeen: Date.now(),
@@ -454,10 +460,10 @@ export const acceptAnswer = async (answerString: string): Promise<void> => {
             peers: [...state.peers, joinerInfo],
         });
     }
-};
+}
 
 /** Tear down all subsystems without changing store state. */
-const cleanupSubsystems = (): void => {
+function cleanupSubsystems(): void {
     sessionState.pendingInviteId = null;
     stopPlayheadBroadcast();
     stopBranchSync();
@@ -483,7 +489,7 @@ const cleanupSubsystems = (): void => {
         sessionState.peerManager = null;
     }
     sessionState.presenceListeners.clear();
-};
+}
 
 // -- Asset resolution --
 
@@ -527,7 +533,7 @@ async function resolveAssetForClips(hash: string): Promise<void> {
 
 // -- Playhead broadcast --
 
-const startPlayheadBroadcast = (): void => {
+function startPlayheadBroadcast(): void {
     sessionState.playheadBroadcastInterval = setInterval(() => {
         if (!sessionState.peerManager || sessionState.peerManager.getConnectedPeerIds().length === 0) {
             return;
@@ -556,14 +562,14 @@ const startPlayheadBroadcast = (): void => {
             },
         });
     }, 1000 / PLAYHEAD_BROADCAST_HZ);
-};
+}
 
-const stopPlayheadBroadcast = (): void => {
+function stopPlayheadBroadcast(): void {
     if (sessionState.playheadBroadcastInterval !== null) {
         clearInterval(sessionState.playheadBroadcastInterval);
         sessionState.playheadBroadcastInterval = null;
     }
-};
+}
 
 /**
  * Leave the current session.
@@ -594,7 +600,7 @@ export function leaveSession(): void {
 /**
  * Broadcast local presence data to all peers.
  */
-export const broadcastPresence = (data: Omit<PresenceData, 'peerId' | 'name' | 'color'>): void => {
+export function broadcastPresence(data: Omit<PresenceData, 'peerId' | 'name' | 'color'>): void {
     if (!sessionState.peerManager) {
         return;
     }
@@ -613,32 +619,36 @@ export const broadcastPresence = (data: Omit<PresenceData, 'peerId' | 'name' | '
             color: state.localColor,
         },
     });
-};
+}
 
 /**
  * Subscribe to incoming presence data from peers.
  */
-export const onPresence = (listener: (data: PresenceData) => void): (() => void) => {
+export function onPresence(listener: (data: PresenceData) => void): () => void {
     sessionState.presenceListeners.add(listener);
     return () => {
         sessionState.presenceListeners.delete(listener);
     };
-};
+}
 
 /** Get the asset transfer instance (for requesting/providing assets). */
-export const getAssetTransfer = (): AssetTransfer | null => sessionState.assetTransfer;
+export function getAssetTransfer(): AssetTransfer | null {
+    return sessionState.assetTransfer;
+}
 
 /** Get the permission manager instance (for role checks). */
-export const getPermissionManager = (): PermissionManager | null => sessionState.permissionManager;
+export function getPermissionManager(): PermissionManager | null {
+    return sessionState.permissionManager;
+}
 
 // -- Internal handlers --
 
 type HandlePeerMessageInput = { peerId: PeerId; message: PeerMessage };
-const handlePeerMessage = ({ peerId, message }: HandlePeerMessageInput): void => {
+function handlePeerMessage({ peerId, message }: HandlePeerMessageInput): void {
     if (message.type === 'crdt-sync') {
         // Route by docId to the appropriate subsystem
         if (message.docId === DOC_ID_ASSET) {
-            sessionState.assetTransfer?.handleMessage(peerId, message);
+            void sessionState.assetTransfer?.handleMessage(peerId, message);
         } else if (message.docId === '__permissions__') {
             sessionState.permissionManager?.handleMessage(peerId, message);
         } else {
@@ -654,9 +664,9 @@ const handlePeerMessage = ({ peerId, message }: HandlePeerMessageInput): void =>
     } else if (message.type === 'peer-leave') {
         removePeer(message.peerId);
     }
-};
+}
 
-const handlePeerConnected = (peerId: PeerId): void => {
+function handlePeerConnected(peerId: PeerId): void {
     // Cancel any pending cleanup from a prior disconnect.
     const existing = peerCleanupTimers.get(peerId);
     if (existing !== undefined) {
@@ -680,9 +690,9 @@ const handlePeerConnected = (peerId: PeerId): void => {
     if (state) {
         collaborationStore.set({ ...state, connectionStatus: 'connected' });
     }
-};
+}
 
-const handlePeerDisconnected = (peerId: PeerId): void => {
+function handlePeerDisconnected(peerId: PeerId): void {
     sessionState.automergeSync?.removePeer(peerId);
     updatePeerConnectionState(peerId, false);
 
@@ -695,19 +705,19 @@ const handlePeerDisconnected = (peerId: PeerId): void => {
 
     const state = collaborationStore.value;
     if (state) {
-        const anyConnected = state.peers.some((p) => p.isConnected && p.id !== peerId);
+        const anyConnected = state.peers.some((param) => param.isConnected && param.id !== peerId);
         if (!anyConnected && state.peers.length > 0) {
             collaborationStore.set({ ...state, connectionStatus: 'disconnected' });
         }
     }
-};
+}
 
-const addOrUpdatePeer = (peer: CollaborationPeer): void => {
+function addOrUpdatePeer(peer: CollaborationPeer): void {
     const state = collaborationStore.value;
     if (!state) {
         return;
     }
-    const existing = state.peers.findIndex((p) => p.id === peer.id);
+    const existing = state.peers.findIndex((param) => param.id === peer.id);
     if (existing >= 0) {
         const peers = [...state.peers];
         peers[existing] = { ...peer, isConnected: true, lastSeen: Date.now() };
@@ -718,41 +728,43 @@ const addOrUpdatePeer = (peer: CollaborationPeer): void => {
             peers: [...state.peers, { ...peer, isConnected: true, lastSeen: Date.now() }],
         });
     }
-};
+}
 
-const removePeer = (peerId: PeerId): void => {
+function removePeer(peerId: PeerId): void {
     const state = collaborationStore.value;
     if (!state) {
         return;
     }
     collaborationStore.set({
         ...state,
-        peers: state.peers.filter((p) => p.id !== peerId),
+        peers: state.peers.filter((param) => param.id !== peerId),
     });
     sessionState.peerManager?.removePeer(peerId);
-};
+}
 
-const updatePeerLastSeen = (peerId: PeerId): void => {
+function updatePeerLastSeen(peerId: PeerId): void {
     const state = collaborationStore.value;
     if (!state) {
         return;
     }
     collaborationStore.set({
         ...state,
-        peers: state.peers.map((p) => (p.id === peerId ? { ...p, lastSeen: Date.now() } : p)),
+        peers: state.peers.map((param) => (param.id === peerId ? { ...param, lastSeen: Date.now() } : param)),
     });
-};
+}
 
-const updatePeerConnectionState = (peerId: PeerId, isConnected: boolean): void => {
+function updatePeerConnectionState(peerId: PeerId, isConnected: boolean): void {
     const state = collaborationStore.value;
     if (!state) {
         return;
     }
     collaborationStore.set({
         ...state,
-        peers: state.peers.map((p) => (p.id === peerId ? { ...p, isConnected, lastSeen: Date.now() } : p)),
+        peers: state.peers.map((param) =>
+            param.id === peerId ? { ...param, isConnected, lastSeen: Date.now() } : param
+        ),
     });
-};
+}
 
 // -- Invite compression --
 // Invites embed a full ICE-complete SDP, which can be several KB.
@@ -771,7 +783,7 @@ async function readAllChunks(stream: ReadableStream<Uint8Array>): Promise<Uint8A
         }
         chunks.push(value);
     }
-    const total = chunks.reduce((n, c) => n + c.length, 0);
+    const total = chunks.reduce((node, context) => node + context.length, 0);
     const result = new Uint8Array(total);
     let offset = 0;
     for (const chunk of chunks) {
@@ -785,8 +797,8 @@ async function compressInvite(json: string): Promise<string> {
     const bytes = new TextEncoder().encode(json);
     const stream = new CompressionStream('deflate-raw');
     const writer = stream.writable.getWriter();
-    writer.write(bytes);
-    writer.close();
+    void writer.write(bytes);
+    void writer.close();
     const result = await readAllChunks(stream.readable);
     const binary = Array.from(result, (b) => String.fromCharCode(b)).join('');
     return `z:${btoa(binary)}`;
@@ -798,11 +810,11 @@ async function decompressInvite(raw: string): Promise<string> {
         return atob(raw);
     }
     const binary = atob(raw.slice(2));
-    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    const bytes = Uint8Array.from(binary, (context) => context.charCodeAt(0));
     const stream = new DecompressionStream('deflate-raw');
     const writer = stream.writable.getWriter();
-    writer.write(bytes);
-    writer.close();
+    void writer.write(bytes);
+    void writer.close();
     const result = await readAllChunks(stream.readable);
     return new TextDecoder().decode(result);
 }

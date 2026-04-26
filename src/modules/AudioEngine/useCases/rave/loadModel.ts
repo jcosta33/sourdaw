@@ -7,7 +7,7 @@ export function loadModel(modelId: string): void {
     }
     raveStore.set({
         ...state,
-        models: state.models.map((m) => (m.id === modelId ? { ...m, loaded: true } : m)),
+        models: state.models.map((message) => (message.id === modelId ? { ...message, loaded: true } : message)),
         activeModelId: modelId,
     });
     raveLogger.info(`RAVE model loaded: ${modelId}`);

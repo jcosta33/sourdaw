@@ -3,8 +3,10 @@
  * Runs custom JavaScript scripts for hardware integration in a sandboxed environment.
  */
 
-self.onmessage = (e) => {
-    const { type, payload } = e.data;
+type ControllerScriptMessage = { type: 'runScript'; payload: { code: string } };
+
+self.onmessage = (event: MessageEvent<ControllerScriptMessage>) => {
+    const { type, payload } = event.data;
 
     if (type === 'runScript') {
         const { code } = payload;
@@ -25,8 +27,9 @@ self.onmessage = (e) => {
             };
 
             // Execute
+            // eslint-disable-next-line @typescript-eslint/no-implied-eval -- intentional: this worker's entire purpose is to execute user-supplied controller scripts; new Function() runs inside a Worker (already sandboxed) with a restricted DAW API
             const scriptFunc = new Function('DAW', code);
-            scriptFunc(DAW);
+            (scriptFunc as (daw: typeof DAW) => void)(DAW);
         } catch (error) {
             self.postMessage({ type: 'error', payload: { message: String(error) } });
         }

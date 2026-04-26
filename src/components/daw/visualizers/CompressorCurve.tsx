@@ -35,8 +35,8 @@ const computeOutput = (inputDb: number, threshold: number, ratio: number, kneeWi
         return threshold + (inputDb - threshold) / ratio;
     } else {
         // In the knee — quadratic interpolation
-        const x = inputDb - threshold + halfKnee;
-        return inputDb + ((1 / ratio - 1) * x * x) / (2 * kneeWidth);
+        const xPos = inputDb - threshold + halfKnee;
+        return inputDb + ((1 / ratio - 1) * xPos * xPos) / (2 * kneeWidth);
     }
 };
 
@@ -117,22 +117,22 @@ export const CompressorCurve = ({
         const accentPeach = resolveToken('--color-accent-peach', '#f0944c');
         const curvePoints: [number, number][] = [];
         const steps = plotW;
-        for (let i = 0; i <= steps; i++) {
-            const inputDb = DB_MIN + (i / steps) * (DB_MAX - DB_MIN);
+        for (let index = 0; index <= steps; index++) {
+            const inputDb = DB_MIN + (index / steps) * (DB_MAX - DB_MIN);
             const outputDb = Math.min(DB_MAX, computeOutput(inputDb, threshold, ratio, knee) + makeup);
-            const x = dbToX(inputDb);
-            const y = dbToY(Math.max(DB_MIN, outputDb));
-            curvePoints.push([x, y]);
+            const xPos = dbToX(inputDb);
+            const yPos = dbToY(Math.max(DB_MIN, outputDb));
+            curvePoints.push([xPos, yPos]);
         }
 
         // Fill below curve — gradient
         ctx.beginPath();
-        for (let i = 0; i < curvePoints.length; i++) {
-            const [x, y] = curvePoints[i]!;
-            if (i === 0) {
-                ctx.moveTo(x, y);
+        for (let index = 0; index < curvePoints.length; index++) {
+            const [xPos, yPos] = curvePoints[index]!;
+            if (index === 0) {
+                ctx.moveTo(xPos, yPos);
             } else {
-                ctx.lineTo(x, y);
+                ctx.lineTo(xPos, yPos);
             }
         }
         ctx.lineTo(dbToX(DB_MAX), dbToY(DB_MIN));
@@ -146,12 +146,12 @@ export const CompressorCurve = ({
 
         // Glow pass
         ctx.beginPath();
-        for (let i = 0; i < curvePoints.length; i++) {
-            const [x, y] = curvePoints[i]!;
-            if (i === 0) {
-                ctx.moveTo(x, y);
+        for (let index = 0; index < curvePoints.length; index++) {
+            const [xPos, yPos] = curvePoints[index]!;
+            if (index === 0) {
+                ctx.moveTo(xPos, yPos);
             } else {
-                ctx.lineTo(x, y);
+                ctx.lineTo(xPos, yPos);
             }
         }
         ctx.strokeStyle = `${accentPeach}28`;
@@ -160,12 +160,12 @@ export const CompressorCurve = ({
 
         // Sharp stroke
         ctx.beginPath();
-        for (let i = 0; i < curvePoints.length; i++) {
-            const [x, y] = curvePoints[i]!;
-            if (i === 0) {
-                ctx.moveTo(x, y);
+        for (let index = 0; index < curvePoints.length; index++) {
+            const [xPos, yPos] = curvePoints[index]!;
+            if (index === 0) {
+                ctx.moveTo(xPos, yPos);
             } else {
-                ctx.lineTo(x, y);
+                ctx.lineTo(xPos, yPos);
             }
         }
         ctx.strokeStyle = accentPeach;
@@ -222,7 +222,7 @@ export const CompressorCurve = ({
         }
     }, [threshold, ratio, knee, makeup, width, height, isInteractive]);
 
-    const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
         if (!onParamChange) {
             return;
         }
@@ -231,11 +231,11 @@ export const CompressorCurve = ({
             return;
         }
         isDragging.current = true;
-        canvas.setPointerCapture(e.pointerId);
+        canvas.setPointerCapture(event.pointerId);
         canvas.style.cursor = 'grabbing';
     };
 
-    const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
         if (!onParamChange || !isDragging.current) {
             return;
         }
@@ -247,13 +247,13 @@ export const CompressorCurve = ({
         const pad = 4;
         const plotH = height - pad * 2;
         // Y position to dB: top = 0 dB, bottom = -60 dB
-        const yRatio = (e.clientY - rect.top - pad) / plotH;
+        const yRatio = (event.clientY - rect.top - pad) / plotH;
         const db = DB_MAX - yRatio * (DB_MAX - DB_MIN);
         const clamped = Math.max(-60, Math.min(0, db));
         onParamChange('comp-threshold', clamped);
     };
 
-    const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
         if (!onParamChange) {
             return;
         }
@@ -262,7 +262,7 @@ export const CompressorCurve = ({
             return;
         }
         isDragging.current = false;
-        canvas.releasePointerCapture(e.pointerId);
+        canvas.releasePointerCapture(event.pointerId);
         canvas.style.cursor = 'grab';
     };
 

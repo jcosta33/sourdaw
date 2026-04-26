@@ -77,15 +77,23 @@ export function CapabilityReportPanel(): ReactElement {
         );
     }
 
-    const tierTone =
-        report.webGpuTier === 'webgpu-fast' ? 'success' : report.webGpuTier === 'webgpu-slow' ? 'peach' : 'danger';
+    let tierTone: 'success' | 'peach' | 'danger';
+    if (report.webGpuTier === 'webgpu-fast') {
+        tierTone = 'success';
+    } else if (report.webGpuTier === 'webgpu-slow') {
+        tierTone = 'peach';
+    } else {
+        tierTone = 'danger';
+    }
 
-    const tierLabel =
-        report.webGpuTier === 'webgpu-fast'
-            ? 'Fast (WebGPU)'
-            : report.webGpuTier === 'webgpu-slow'
-              ? 'Slow (WebGPU)'
-              : 'Unavailable';
+    let tierLabel: string;
+    if (report.webGpuTier === 'webgpu-fast') {
+        tierLabel = 'Fast (WebGPU)';
+    } else if (report.webGpuTier === 'webgpu-slow') {
+        tierLabel = 'Slow (WebGPU)';
+    } else {
+        tierLabel = 'Unavailable';
+    }
 
     return (
         <DawUtilitySection

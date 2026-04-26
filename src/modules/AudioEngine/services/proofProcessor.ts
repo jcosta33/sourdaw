@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * AudioWorkletProcessor for the Proof mastering suite.
  *
@@ -12,18 +11,25 @@
 
 import { initSync, ProofInstance } from '../wasm/daw_dsp.js';
 
+type ProofMsg =
+    | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
+    | { type: 'param'; name: string; value: number }
+    | { type: 'reorder'; order: [number, number, number, number, number] }
+    | { type: 'reset_integrated' };
+
 class ProofProcessor extends AudioWorkletProcessor {
-    _instance = null; // ProofInstance (generated wasm-bindgen class)
-    _memory = null; // WebAssembly.Memory
+    _instance: ProofInstance | null = null;
+    _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
     _meterCounter = 0;
-    _sabView = null; // Float32Array view into the telemetry SharedArrayBuffer slot
+    _sabView: Float32Array | null = null;
 
     constructor() {
         super();
-        this.port.onmessage = (e) => {
-            const msg = e.data;
+        this.port.onmessage = (event: MessageEvent<ProofMsg>) => {
+            const msg = event.data;
             try {
                 if (msg.type === 'init') {
                     if (this._ready) {
@@ -32,19 +38,22 @@ class ProofProcessor extends AudioWorkletProcessor {
                     this._initWasm(msg.wasmBytes);
                 } else if (msg.type === 'init-sab') {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
-                } else if (this._ready && !this._faulted) {
+                } else if (this._instance !== null && !this._faulted) {
                     this._handleMessage(msg);
                 }
             } catch (error) {
                 console.error('ProofProcessor error:', error);
                 if (!this._ready) {
-                    this.port.postMessage({ type: 'error', message: error?.message ?? String(error) });
+                    this.port.postMessage({
+                        type: 'error',
+                        message: error instanceof Error ? error.message : String(error),
+                    });
                 }
             }
         };
     }
 
-    _initWasm(wasmBytes) {
+    _initWasm(wasmBytes: BufferSource): void {
         const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
         this._memory = wasmExports.memory;
         this._instance = new ProofInstance(sampleRate);
@@ -52,33 +61,39 @@ class ProofProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'ready' });
     }
 
-    _handleMessage(msg) {
+    _handleMessage(msg: ProofMsg): void {
         const inst = this._instance;
+        if (!inst) {
+            return;
+        }
         switch (msg.type) {
+            case 'init-sab':
+            case 'init':
+                break;
             case 'param':
                 inst.set_param(msg.name, msg.value);
                 break;
-            case 'reorder': {
-                const o = msg.order;
-                inst.reorder(o[0], o[1], o[2], o[3], o[4]);
+            case 'reorder':
+                inst.reorder(msg.order[0], msg.order[1], msg.order[2], msg.order[3], msg.order[4]);
                 break;
-            }
             case 'reset_integrated':
                 inst.reset_integrated();
                 break;
         }
     }
 
-    _passthrough(input, output) {
-        if (output[0] && input[0]) {
-            output[0].set(input[0]);
+    _passthrough(input: Float32Array[], output: Float32Array[]): void {
+        const in0 = input[0];
+        const in1 = input[1] ?? in0;
+        if (output[0] && in0) {
+            output[0].set(in0);
         }
-        if (output[1] && (input[1] ?? input[0])) {
-            output[1].set(input[1] ?? input[0]);
+        if (output[1] && in1) {
+            output[1].set(in1);
         }
     }
 
-    process(inputs, outputs) {
+    process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
         if (!this._ready || this._faulted) {
             return true;
         }
@@ -89,23 +104,32 @@ class ProofProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        const frames = output[0].length;
+        const in0 = input[0];
+        const out0 = output[0];
+        if (!in0 || !out0) {
+            return true;
+        }
+        const frames = out0.length;
 
         try {
             const inst = this._instance;
-            const mem = this._memory.buffer;
+            const mem = this._memory?.buffer;
+            if (!inst || !mem) {
+                return true;
+            }
 
             const inLeftPtr = inst.get_input_left_ptr();
             const inRightPtr = inst.get_input_right_ptr();
-            new Float32Array(mem, inLeftPtr, frames).set(input[0]);
-            new Float32Array(mem, inRightPtr, frames).set(input[1] ?? input[0]);
+            new Float32Array(mem, inLeftPtr, frames).set(in0);
+            new Float32Array(mem, inRightPtr, frames).set(input[1] ?? in0);
 
             const outLeftPtr = inst.process(frames);
             const outRightPtr = inst.get_right_ptr();
 
-            output[0].set(new Float32Array(mem, outLeftPtr, frames));
-            if (output[1]) {
-                output[1].set(new Float32Array(mem, outRightPtr, frames));
+            out0.set(new Float32Array(mem, outLeftPtr, frames));
+            const out1 = output[1];
+            if (out1) {
+                out1.set(new Float32Array(mem, outRightPtr, frames));
             }
 
             this._meterCounter++;

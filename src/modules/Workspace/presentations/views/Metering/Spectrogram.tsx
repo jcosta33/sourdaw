@@ -22,48 +22,48 @@ export const Spectrogram = ({ trackId, width = 300, height = 100 }: SpectrogramP
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return () => {};
         }
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return () => {};
         }
 
         // Pre-build color LUT (256 entries) — rich blue→cyan→green→yellow→red
         const colorLUT: string[] = [];
-        for (let i = 0; i < 256; i++) {
-            const t = i / 255;
+        for (let index = 0; index < 256; index++) {
+            const time = index / 255;
             let r: number, g: number, b: number;
-            if (t < 0.15) {
+            if (time < 0.15) {
                 // Deep black → dark blue
-                const s = t / 0.15;
+                const state = time / 0.15;
                 r = 0;
                 g = 0;
-                b = Math.round(s * 100);
-            } else if (t < 0.35) {
+                b = Math.round(state * 100);
+            } else if (time < 0.35) {
                 // Dark blue → vivid cyan
-                const s = (t - 0.15) / 0.2;
+                const state = (time - 0.15) / 0.2;
                 r = 0;
-                g = Math.round(s * 220);
-                b = Math.round(100 + s * 155);
-            } else if (t < 0.55) {
+                g = Math.round(state * 220);
+                b = Math.round(100 + state * 155);
+            } else if (time < 0.55) {
                 // Cyan → green
-                const s = (t - 0.35) / 0.2;
+                const state = (time - 0.35) / 0.2;
                 r = 0;
-                g = Math.round(220 + s * 35);
-                b = Math.round(255 * (1 - s));
-            } else if (t < 0.75) {
+                g = Math.round(220 + state * 35);
+                b = Math.round(255 * (1 - state));
+            } else if (time < 0.75) {
                 // Green → yellow
-                const s = (t - 0.55) / 0.2;
-                r = Math.round(s * 255);
-                g = Math.round(255 - s * 30);
+                const state = (time - 0.55) / 0.2;
+                r = Math.round(state * 255);
+                g = Math.round(255 - state * 30);
                 b = 0;
             } else {
                 // Yellow → hot red/white
-                const s = (t - 0.75) / 0.25;
+                const state = (time - 0.75) / 0.25;
                 r = 255;
-                g = Math.round(225 * (1 - s * 0.7));
-                b = Math.round(s * 80);
+                g = Math.round(225 * (1 - state * 0.7));
+                b = Math.round(state * 80);
             }
             colorLUT.push(`rgb(${r},${g},${b})`);
         }

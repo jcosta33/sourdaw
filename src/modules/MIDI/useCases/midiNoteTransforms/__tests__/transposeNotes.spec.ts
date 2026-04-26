@@ -3,13 +3,15 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { midiStore } from '../../../stores/midiStore';
 import { transposeNotes } from '../transposeNotes';
 
-const note = (id: string, pitch: number) => ({
-    id,
-    pitch,
-    startBeat: 0,
-    duration: 0.25,
-    velocity: 100,
-});
+function note(id: string, pitch: number) {
+    return {
+        id,
+        pitch,
+        startBeat: 0,
+        duration: 0.25,
+        velocity: 100,
+    };
+}
 
 describe('transposeNotes', () => {
     beforeEach(() => {
@@ -24,9 +26,9 @@ describe('transposeNotes', () => {
 
     it('should shift every note by semitones and clamp to 0–127', () => {
         transposeNotes('clip1', 12);
-        expect(midiStore.value?.notesByClipId.clip1?.map((n) => n.pitch)).toEqual([72, 76]);
+        expect(midiStore.value?.notesByClipId.clip1?.map((node) => node.pitch)).toEqual([72, 76]);
         transposeNotes('clip1', 100);
-        expect(midiStore.value?.notesByClipId.clip1?.every((n) => n.pitch <= 127)).toBe(true);
+        expect(midiStore.value?.notesByClipId.clip1?.every((node) => node.pitch <= 127)).toBe(true);
     });
 
     it('should not mutate when the clip or store is missing', () => {

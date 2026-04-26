@@ -45,12 +45,12 @@ export class ChordGenerator extends BaseMidiProcessor {
                     // Drop the 2nd-from-top note down an octave
                     const dropIdx = intervals.length - 2;
                     intervals[dropIdx] = intervals[dropIdx]! - 12;
-                    intervals.sort((a, b) => a - b);
+                    intervals.sort((alpha, b) => alpha - b);
                 } else if (this.voicing === 'drop3' && intervals.length >= 4) {
                     // Drop the 3rd-from-top note down an octave
                     const dropIdx = intervals.length - 3;
                     intervals[dropIdx] = intervals[dropIdx]! - 12;
-                    intervals.sort((a, b) => a - b);
+                    intervals.sort((alpha, b) => alpha - b);
                 } else if (this.voicing === 'spread' && intervals.length >= 3) {
                     // Spread: alternate octave offsets for wider voicing
                     intervals = intervals.map((intv, idx) => intv + (idx % 2 === 1 ? 12 : 0));
@@ -59,15 +59,17 @@ export class ChordGenerator extends BaseMidiProcessor {
                 const strumSamples = this.strumMs * 0.001 * transport.sampleRate;
                 const notes: number[] = [];
 
-                for (let i = 0; i < intervals.length; i++) {
-                    const note = event.kind.note + intervals[i]!;
+                for (let index = 0; index < intervals.length; index++) {
+                    const note = event.kind.note + intervals[index]!;
                     if (note < 0 || note > 127) {
                         continue;
                     }
                     notes.push(note);
 
                     const offset =
-                        this.strumDirection === 'up' ? i * strumSamples : (intervals.length - 1 - i) * strumSamples;
+                        this.strumDirection === 'up'
+                            ? index * strumSamples
+                            : (intervals.length - 1 - index) * strumSamples;
                     output.push({
                         timeSamples: event.timeSamples + offset,
                         kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },

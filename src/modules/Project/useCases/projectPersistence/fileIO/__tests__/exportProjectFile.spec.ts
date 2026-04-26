@@ -5,7 +5,7 @@ import * as subject from '../exportProjectFile';
 describe('exportProjectFile', () => {
     it('should export exportProjectFile', () => {
         expect(subject.exportProjectFile).toBeDefined();
-        const t = typeof subject.exportProjectFile;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.exportProjectFile;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

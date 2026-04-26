@@ -33,7 +33,7 @@ describe('initStalenessDetection', () => {
         });
 
         // allow microtasks to flush
-        await new Promise((r) => setTimeout(r, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(updateTrack).not.toHaveBeenCalled();
         unsub();
@@ -70,7 +70,7 @@ describe('initStalenessDetection', () => {
             selectedTrackId: null,
         });
 
-        await new Promise((r) => setTimeout(r, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(computeTrackHash).toHaveBeenCalled();
         expect(updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
@@ -113,7 +113,7 @@ describe('initStalenessDetection', () => {
             selectedTrackId: null,
         });
 
-        await new Promise((r) => setTimeout(r, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(computeTrackHash).toHaveBeenCalled();
         expect(updateTrack).not.toHaveBeenCalled();

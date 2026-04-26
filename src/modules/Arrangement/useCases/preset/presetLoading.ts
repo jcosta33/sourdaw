@@ -51,7 +51,7 @@ export function createTrackFromPreset(preset: SoundPreset): string | null {
 }
 
 export const loadPresetToTrack = inject({ logger })(({ logger }) => {
-    const attachInstrumentDevice = (trackId: string, dp: DevicePreset): void => {
+    function attachInstrumentDevice(trackId: string, dp: DevicePreset): void {
         const device: Device = {
             id: `preset-dev-${crypto.randomUUID()}`,
             name: dp.name,
@@ -59,7 +59,7 @@ export const loadPresetToTrack = inject({ logger })(({ logger }) => {
             bypassed: false,
             parameterValues: { ...dp.parameterValues },
         };
-        updateTrack(trackId, (t) => ({ ...t, devices: [...t.devices, device] }));
+        updateTrack(trackId, (time) => ({ ...time, devices: [...time.devices, device] }));
 
         if (dp.type.startsWith('faust-')) {
             Promise.resolve()
@@ -74,16 +74,16 @@ export const loadPresetToTrack = inject({ logger })(({ logger }) => {
         for (const [paramId, value] of Object.entries(dp.parameterValues)) {
             updateDeviceParam(trackId, device.id, paramId, value);
         }
-    };
+    }
 
     return function loadPresetToTrack(trackId: string, preset: SoundPreset): void {
         const track = getTrackById(trackId);
         if (track) {
-            const deviceIds = track.devices.map((d) => d.id);
+            const deviceIds = track.devices.map((data) => data.id);
             for (const deviceId of deviceIds) {
                 removeDeviceFromStrip(trackId, deviceId);
             }
-            updateTrack(trackId, (t) => ({ ...t, devices: [] }));
+            updateTrack(trackId, (time) => ({ ...time, devices: [] }));
         }
 
         for (const dp of preset.devices) {

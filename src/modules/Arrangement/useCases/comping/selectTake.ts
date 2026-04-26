@@ -1,4 +1,6 @@
-import { takeLaneStore } from '../../stores/takeLaneStore';
+import { pushUndoEntry } from '#/modules/Command/stores';
+
+import { takeLaneStore, type TakeLaneStoreState } from '../../stores/takeLaneStore';
 
 export function selectTake(trackId: string, takeId: string): void {
     const state = takeLaneStore.value;
@@ -6,7 +8,17 @@ export function selectTake(trackId: string, takeId: string): void {
         return;
     }
 
-    takeLaneStore.set({
+    const lane = state.lanes.find((l) => l.trackId === trackId);
+    if (!lane) {
+        return;
+    }
+    const alreadySelected = lane.takes.find((t) => t.selected);
+    if (alreadySelected?.id === takeId) {
+        return;
+    }
+
+    const previous: TakeLaneStoreState = state;
+    const next: TakeLaneStoreState = {
         lanes: state.lanes.map((l) =>
             l.trackId === trackId
                 ? {
@@ -18,5 +30,12 @@ export function selectTake(trackId: string, takeId: string): void {
                   }
                 : l
         ),
-    });
+    };
+    takeLaneStore.set(next);
+
+    pushUndoEntry(
+        'Select take',
+        () => takeLaneStore.set(previous),
+        () => takeLaneStore.set(next)
+    );
 }

@@ -3,8 +3,8 @@ import { createHandler } from '#/utils/createHandler';
 import { duplicateClipToNextBar } from '../../useCases/clip/duplicateClipToNextBar';
 
 export const handleDuplicateClipToNextBar = createHandler<'duplicateClipToNextBar'>({
-    execute: (a) => {
-        duplicateClipToNextBar(a.payload.clipId);
+    execute: (alpha) => {
+        duplicateClipToNextBar(alpha.payload.clipId);
     },
     describe: () => ({ label: 'Duplicate clip to next bar' }),
     undoable: true,

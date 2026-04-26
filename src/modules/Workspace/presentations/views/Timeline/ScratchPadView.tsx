@@ -66,7 +66,7 @@ type ScratchPadViewProps = {
 export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): ReactElement => {
     const state = useStore<ScratchPadViewState>(scratchPadStore, defaultState);
 
-    const sections = [...state.sections].sort((a, b) => a.order - b.order);
+    const sections = [...state.sections].sort((alpha, b) => alpha.order - b.order);
 
     const [contextMenu, setContextMenu] = useState<ContextMenuState>({ kind: 'none' });
     const [editing, setEditing] = useState<EditingState>(null);
@@ -83,10 +83,10 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
 
     useEffect(() => {
         if (contextMenu.kind === 'none') {
-            return;
+            return () => {};
         }
-        const handleClick = (e: globalThis.MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        const handleClick = (event: globalThis.MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
                 setContextMenu({ kind: 'none' });
             }
         };
@@ -94,10 +94,10 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
         return () => window.removeEventListener('mousedown', handleClick);
     }, [contextMenu.kind]);
 
-    const handleContextMenu = (e: MouseEvent, section: ScratchPadSectionView): void => {
-        e.preventDefault();
-        e.stopPropagation();
-        setContextMenu({ kind: 'section', x: e.clientX, y: e.clientY, section });
+    const handleContextMenu = (event: MouseEvent, section: ScratchPadSectionView): void => {
+        event.preventDefault();
+        event.stopPropagation();
+        setContextMenu({ kind: 'section', x: event.clientX, y: event.clientY, section });
     };
 
     const commitRename = (): void => {
@@ -183,7 +183,6 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                     ✕
                 </button>
             </div>
-
             {/* ── Sections area ── */}
             {!collapsed ? (
                 <div className="flex-1 overflow-x-auto overflow-y-hidden px-2 py-1.5">
@@ -195,11 +194,11 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                         </div>
                     ) : (
                         <div className="flex gap-1 h-full items-stretch">
-                            {sections.map((section, i) => {
+                            {sections.map((section, index) => {
                                 const color =
                                     section.color && section.color !== 'oklch(0.5 0.1 260)'
                                         ? section.color
-                                        : SECTION_COLORS[i % SECTION_COLORS.length]!;
+                                        : SECTION_COLORS[index % SECTION_COLORS.length]!;
                                 const isEditing = editing?.sectionId === section.id;
                                 const duration = section.endBeat - section.startBeat;
 
@@ -216,7 +215,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                                             backgroundColor: color,
                                             flex: `${duration} 0 0`,
                                         }}
-                                        onContextMenu={(e) => handleContextMenu(e, section)}
+                                        onContextMenu={(event) => handleContextMenu(event, section)}
                                         onDoubleClick={() => setEditing({ sectionId: section.id, name: section.name })}
                                         title={`${section.name} — ${duration} beats`}
                                     >
@@ -226,13 +225,15 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                                                 size="micro"
                                                 className="w-full border-0 bg-transparent px-0 text-[10px] font-semibold text-white shadow-none focus-visible:ring-0"
                                                 value={editing.name}
-                                                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                                                onChange={(event) =>
+                                                    setEditing({ ...editing, name: event.target.value })
+                                                }
                                                 onBlur={commitRename}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') {
+                                                onKeyDown={(event) => {
+                                                    if (event.key === 'Enter') {
                                                         commitRename();
                                                     }
-                                                    if (e.key === 'Escape') {
+                                                    if (event.key === 'Escape') {
                                                         setEditing(null);
                                                     }
                                                 }}
@@ -250,7 +251,6 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                     )}
                 </div>
             ) : null}
-
             {/* ── Context menu ── */}
             {contextMenu.kind === 'section' ? (
                 <div
@@ -270,16 +270,16 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                     </button>
                     <DawMenuMutedRow className="px-2">Color</DawMenuMutedRow>
                     <div className="flex gap-1 px-2 pb-1">
-                        {SECTION_COLORS.map((c) => (
+                        {SECTION_COLORS.map((context) => (
                             <DawSwatchButton
-                                key={c}
-                                color={c}
-                                active={contextMenu.section.color === c}
+                                key={context}
+                                color={context}
+                                active={contextMenu.section.color === context}
                                 onClick={() => {
-                                    setScratchPadSectionColor(contextMenu.section.id, c);
+                                    setScratchPadSectionColor(contextMenu.section.id, context);
                                     setContextMenu({ kind: 'none' });
                                 }}
-                                aria-label={`Set color ${c}`}
+                                aria-label={`Set color ${context}`}
                             />
                         ))}
                     </div>

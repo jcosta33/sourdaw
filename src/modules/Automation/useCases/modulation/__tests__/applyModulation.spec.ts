@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 import { modulationStore, modulationRuntimeStore } from '../../../stores/modulationStore';
 import { applyModulation } from '../applyModulation';
@@ -80,7 +80,7 @@ describe('applyModulation', () => {
         const state = modulationStore.value!;
         modulationStore.set({
             ...state,
-            modulators: state.modulators.map((m) => ({ ...m, enabled: false })),
+            modulators: state.modulators.map((message) => ({ ...message, enabled: false })),
         });
 
         applyModulation(1);

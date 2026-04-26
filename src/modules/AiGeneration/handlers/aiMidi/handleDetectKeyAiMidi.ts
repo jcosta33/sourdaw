@@ -9,11 +9,11 @@ function getClipAudioBufferId(clipId: string): string | null {
 }
 
 export const handleDetectKeyAiMidi = createHandler<'detectKey'>({
-    execute: async (a) => {
-        const audioBufferId = getClipAudioBufferId(a.payload.clipId);
+    execute: async (alpha) => {
+        const audioBufferId = getClipAudioBufferId(alpha.payload.clipId);
         const result = audioBufferId ? detectBufferKey(audioBufferId) : null;
         const key = result ? `${result.key} ${result.mode === 'major' ? 'Major' : 'Minor'}` : null;
-        logger.info(`[Analysis] Key detected for clip ${a.payload.clipId}: ${String(key)}`);
+        logger.info(`[Analysis] Key detected for clip ${alpha.payload.clipId}: ${String(key)}`);
     },
     describe: () => ({ label: 'Detect key' }),
     undoable: false,

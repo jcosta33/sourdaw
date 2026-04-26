@@ -10,6 +10,6 @@ export function removeWarpMarker(clipId: string, markerId: string): void {
         return;
     }
     const newMap = new Map(state.clipSettings);
-    newMap.set(clipId, { ...settings, markers: settings.markers.filter((m) => m.id !== markerId) });
+    newMap.set(clipId, { ...settings, markers: settings.markers.filter((message) => message.id !== markerId) });
     audioWarpStore.set({ ...state, clipSettings: newMap });
 }

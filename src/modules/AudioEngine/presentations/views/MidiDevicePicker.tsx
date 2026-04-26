@@ -28,8 +28,9 @@ export const MidiDevicePicker = (): ReactElement => {
         if (!state.isSupported) {
             return;
         }
-        initWebMidi().then(() => {
+        void initWebMidi().then(() => {
             setInitialised(true);
+            return null;
         });
     }, [state.isSupported]);
 
@@ -44,7 +45,7 @@ export const MidiDevicePicker = (): ReactElement => {
     }
 
     const handleRefresh = () => {
-        initWebMidi();
+        void initWebMidi();
     };
 
     const handleChange = (deviceId: string) => {
@@ -62,7 +63,7 @@ export const MidiDevicePicker = (): ReactElement => {
                 <div className="flex items-center gap-2">
                     <DawCompactSelect
                         value={state.selectedInputId ?? ''}
-                        onChange={(e) => handleChange(e.target.value)}
+                        onChange={(event) => handleChange(event.target.value)}
                         tone="inset"
                         size="sm"
                         className="flex-1"
@@ -101,7 +102,7 @@ export const MidiDevicePicker = (): ReactElement => {
             ) : null}
             {state.selectedInputId && state.inputs.length > 0 ? (
                 <DawMicroBadge tone="success" className="w-fit">
-                    Connected: {state.inputs.find((i) => i.id === state.selectedInputId)?.name ?? 'Unknown'}
+                    Connected: {state.inputs.find((index) => index.id === state.selectedInputId)?.name ?? 'Unknown'}
                 </DawMicroBadge>
             ) : null}
         </div>

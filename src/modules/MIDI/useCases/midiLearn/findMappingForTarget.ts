@@ -7,10 +7,10 @@ export function findMappingForTarget(target: LearningTarget): MidiMapping | unde
     }
 
     return state.mappings.find(
-        (m) =>
-            m.targetType === target.targetType &&
-            m.trackId === target.trackId &&
-            m.deviceId === target.deviceId &&
-            m.paramId === target.paramId
+        (message) =>
+            message.targetType === target.targetType &&
+            message.trackId === target.trackId &&
+            message.deviceId === target.deviceId &&
+            message.paramId === target.paramId
     );
 }

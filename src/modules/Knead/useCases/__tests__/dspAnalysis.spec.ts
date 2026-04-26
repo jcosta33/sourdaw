@@ -26,8 +26,8 @@ describe('ingestDspAnalysis', () => {
 
     it('emits a blob with averaged pitch center for a voiced region', () => {
         // 6 frames at A4 (440Hz) — exceeds the 5-frame threshold
-        const frames = Array.from({ length: 6 }, (_, i) => ({
-            time: i * 0.01,
+        const frames = Array.from({ length: 6 }, (_, index) => ({
+            time: index * 0.01,
             f0: 440,
             periodicity: 0.9,
         }));

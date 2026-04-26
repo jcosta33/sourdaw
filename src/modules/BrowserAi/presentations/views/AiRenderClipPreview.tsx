@@ -78,13 +78,13 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
         setIsPlaying(true);
     };
 
-    const handleDragStart = (e: DragEvent<HTMLDivElement>): void => {
+    const handleDragStart = (event: DragEvent<HTMLDivElement>): void => {
         const bufferId = ensureBufferId();
-        e.dataTransfer.setData(
+        event.dataTransfer.setData(
             'application/x-sourdaw-ai-render',
             JSON.stringify({ name, bufferId, durationSeconds: durationSec })
         );
-        e.dataTransfer.effectAllowed = 'copy';
+        event.dataTransfer.effectAllowed = 'copy';
     };
 
     return (

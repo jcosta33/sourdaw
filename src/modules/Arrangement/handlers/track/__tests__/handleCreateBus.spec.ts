@@ -16,7 +16,7 @@ describe('handleCreateBus', () => {
     });
 
     it('executes addTrack with bus kind', () => {
-        handleCreateBus.execute({
+        void handleCreateBus.execute({
             type: 'createBus',
             payload: { name: 'Reverb Bus' },
         });

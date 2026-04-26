@@ -46,25 +46,27 @@ function fermenterDevice(name: string, overrides: Partial<FermenterPatch> = {}):
     return { type: 'fermenter', name, parameterValues };
 }
 
-const p = (
+function p(
     id: string,
     name: string,
     cat: SoundPresetCategory,
     desc: string,
     tags: string[],
     ov: Partial<FermenterPatch>
-): SoundPreset => ({
-    id: `fermenter-${id}`,
-    name,
-    category: cat,
-    subcategory: 'fermenter',
-    description: desc,
-    trackKind: 'midi',
-    devices: [fermenterDevice(name, ov)],
-    tags: ['fermenter', ...tags],
-    author: AUTHOR,
-    isFactory: true,
-});
+): SoundPreset {
+    return {
+        id: `fermenter-${id}`,
+        name,
+        category: cat,
+        subcategory: 'fermenter',
+        description: desc,
+        trackKind: 'midi',
+        devices: [fermenterDevice(name, ov)],
+        tags: ['fermenter', ...tags],
+        author: AUTHOR,
+        isFactory: true,
+    };
+}
 
 export const FERMENTER_PRESETS: SoundPreset[] = [
     // ═══════════════════════════════════════════════════════════════════

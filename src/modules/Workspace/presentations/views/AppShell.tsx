@@ -6,6 +6,7 @@ import { Button } from '#/components/ui/button';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 import { useStore } from '#/infra/store/useStore';
 import { aiStore } from '#/modules/AiGeneration/stores';
+import { ElasticEditorPanel } from '#/modules/AudioEngine/presentations/views';
 import {
     GenerativeAiPanel,
     ChatPanel,
@@ -14,6 +15,7 @@ import {
     AiActionHistoryPanel,
     MixAnalysisPanel,
 } from '#/modules/AiRuntime/presentations/views';
+import { ModulationMatrix } from '#/modules/Automation/presentations/views';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
 import { CommandPalette, useGlobalKeyboardShortcuts, UndoHistoryPanel } from '#/modules/Command/presentations/views';
 import { CrumbsPanel } from '#/modules/Crumbs/presentations/views';
@@ -25,6 +27,7 @@ import { GrinderPanel } from '#/modules/Grinder/presentations/views';
 import { LevainPanel } from '#/modules/Levain/presentations/views';
 import { ProofChamberPanel } from '#/modules/Plugin/presentations/views';
 import { ToasterPanel } from '#/modules/Toaster/presentations/views';
+import { LoopStationPanel, SetlistPanel } from '#/modules/Transport/presentations/views';
 import { clamp } from '#/utils/Math/clamp';
 import { onPanelShowAutomation } from '../../useCases/panels/devicePanels/onPanelShowAutomation';
 import { updateWorkspaceState } from '../../useCases/workspaceState';
@@ -37,8 +40,15 @@ import { useAppInitialization } from '../hooks/useAppInitialization';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 
 
+import { trackStore } from '#/modules/Arrangement/stores';
+
+import { isOnboardingCompleted } from '../../useCases/onboarding/isOnboardingCompleted';
+import { startOnboardingTour } from '../../useCases/onboarding/startOnboardingTour';
+
+import { AudioResumeOverlay } from './AudioResumeOverlay';
 import { AutomationBottomPanel } from './AutomationBottomPanel';
 import { InspectorPanel } from './InspectorPanel';
+import { OnboardingTour } from './OnboardingTour';
 import { Sidebar } from './Sidebar';
 import { TransportBar } from './TransportBar';
 
@@ -129,14 +139,28 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     const project = useProjectState();
     const prefs = useStore(preferencesStore, defaultPreferences);
+    const tracksSnapshot = useStore(trackStore, { tracks: [], selectedTrackId: null });
+    const isAudioClipSelected = selectedClipId !== null
+        && tracksSnapshot.tracks.some((track) =>
+            track.clips.some((clip) => clip.id === selectedClipId && clip.type === 'audio')
+        );
     const aiState = useStore(aiStore, { tasks: [], isPanelOpen: false });
     const aiPanelOpen = aiState.isPanelOpen;
     const [exportOpen, setExportOpen] = useState(false);
     const [prefsOpen, setPrefsOpen] = useState(false);
     const [showAlphaNotice, setShowAlphaNotice] = useState(false);
-    const [bottomTab, setBottomTab] = useState<'editor' | 'mixer' | 'session' | 'routing' | 'analysis' | 'automation'>(
-        'mixer'
-    );
+    const [bottomTab, setBottomTab] = useState<
+        | 'editor'
+        | 'mixer'
+        | 'session'
+        | 'routing'
+        | 'analysis'
+        | 'automation'
+        | 'setlist'
+        | 'loopStation'
+        | 'modulation'
+        | 'elastic'
+    >('mixer');
     // One unified "active device panel" slot. The "only one panel open at a
     // time" invariant is enforced by the discriminated union in
     // useActiveDevicePanel; adding a new plugin is one line there instead of
@@ -144,7 +168,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const { activePanel, closeActivePanel } = useActiveDevicePanel();
     const fermenterDeviceId = activePanel?.kind === 'fermenter' ? activePanel.deviceId : null;
     const toasterDeviceId = activePanel?.kind === 'toaster' ? activePanel.deviceId : null;
-    const levainOpen = activePanel?.kind === 'levain';
+    const levainDeviceId = activePanel?.kind === 'levain' ? activePanel.deviceId : null;
     const proofChamberDeviceId = activePanel?.kind === 'proofChamber' ? activePanel.deviceId : null;
     const glutenDeviceId = activePanel?.kind === 'gluten' ? activePanel.deviceId : null;
     const bacteriaDeviceId = activePanel?.kind === 'bacteria' ? activePanel.deviceId : null;
@@ -179,6 +203,41 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         }
     }, [project.initialized]);
 
+    useEffect(() => {
+        if (!project.initialized) {
+            return;
+        }
+        if (showAlphaNotice) {
+            return;
+        }
+        if (isOnboardingCompleted()) {
+            return;
+        }
+        const triggerIfReady = (): boolean => {
+            const trackCount = trackStore.value?.tracks.length ?? 0;
+            if (trackCount === 0) {
+                return false;
+            }
+            startOnboardingTour();
+            return true;
+        };
+        if (triggerIfReady()) {
+            return;
+        }
+        const unsubscribe = trackStore.subscribe(() => {
+            if (isOnboardingCompleted()) {
+                unsubscribe();
+                return;
+            }
+            if (triggerIfReady()) {
+                unsubscribe();
+            }
+        });
+        return () => {
+            unsubscribe();
+        };
+    }, [project.initialized, showAlphaNotice]);
+
     // Auto-switch bottom tab when clip selected
     useEffect(() => {
         if (selectedClipId) {
@@ -196,6 +255,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             }
         });
     }, [mixerOpen]);
+
+    // Fall back to editor when the Elastic tab's audio-clip precondition disappears.
+    useEffect(() => {
+        if (bottomTab === 'elastic' && !isAudioClipSelected) {
+            setBottomTab('editor');
+        }
+    }, [bottomTab, isAudioClipSelected]);
 
     // ─── Panel dimension setters (persisted via workspace store) ───
     // All 14 setters share the pattern `fn => updateWorkspaceState({ [key]: fn(current) })`
@@ -294,11 +360,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const [showLaunch, setShowLaunch] = useState(false);
     const [launchExiting, setLaunchExiting] = useState(false);
 
-    useEffect(() => {
-        if (!project.initialized && !project.loading && !showLaunch && !launchExiting) {
-            setShowLaunch(true);
-        }
-    }, [project.initialized, project.loading, showLaunch, launchExiting]);
+    if (!project.initialized && !project.loading && !showLaunch && !launchExiting) {
+        setShowLaunch(true);
+    }
 
     useEffect(() => {
         if (project.initialized && !project.loading && showLaunch && !launchExiting) {
@@ -369,7 +433,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             </InstrumentBottomPanel>
                         ) : null}
 
-                        {levainOpen ? (
+                        {levainDeviceId !== null ? (
                             <InstrumentBottomPanel
                                 label="Levain"
                                 labelColor="text-amber-400"
@@ -378,7 +442,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setLevainHeight}
                                 onClose={closeActivePanel}
                             >
-                                <LevainPanel />
+                                <LevainPanel deviceId={levainDeviceId} />
                             </InstrumentBottomPanel>
                         ) : null}
 
@@ -587,6 +651,50 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                         >
                                             Analysis
                                         </Button>
+                                        <Button
+                                            variant={bottomTab === 'setlist' ? 'secondary' : 'ghost'}
+                                            size="xs"
+                                            className={bottomTab === 'setlist' ? 'text-[var(--color-accent-amber)]' : ''}
+                                            onClick={() => setBottomTab('setlist')}
+                                            data-onboarding="setlist-tab"
+                                        >
+                                            Setlist
+                                        </Button>
+                                        <Button
+                                            variant={bottomTab === 'loopStation' ? 'secondary' : 'ghost'}
+                                            size="xs"
+                                            className={
+                                                bottomTab === 'loopStation' ? 'text-[var(--color-accent-mint)]' : ''
+                                            }
+                                            onClick={() => setBottomTab('loopStation')}
+                                            data-onboarding="loop-station-tab"
+                                        >
+                                            Loop Station
+                                        </Button>
+                                        <Button
+                                            variant={bottomTab === 'modulation' ? 'secondary' : 'ghost'}
+                                            size="xs"
+                                            className={
+                                                bottomTab === 'modulation' ? 'text-[var(--color-accent-cyan)]' : ''
+                                            }
+                                            onClick={() => setBottomTab('modulation')}
+                                            data-onboarding="modulation-tab"
+                                        >
+                                            Modulation
+                                        </Button>
+                                        {isAudioClipSelected ? (
+                                            <Button
+                                                variant={bottomTab === 'elastic' ? 'secondary' : 'ghost'}
+                                                size="xs"
+                                                className={
+                                                    bottomTab === 'elastic' ? 'text-[var(--color-accent-peach)]' : ''
+                                                }
+                                                data-testid="elastic-tab-button"
+                                                onClick={() => setBottomTab('elastic')}
+                                            >
+                                                Elastic
+                                            </Button>
+                                        ) : null}
 
                                         <div className="flex-1" />
 
@@ -611,6 +719,14 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                             <SessionView />
                                         ) : bottomTab === 'analysis' ? (
                                             <AnalysisPanel />
+                                        ) : bottomTab === 'setlist' ? (
+                                            <SetlistPanel />
+                                        ) : bottomTab === 'loopStation' ? (
+                                            <LoopStationPanel />
+                                        ) : bottomTab === 'modulation' ? (
+                                            <ModulationMatrix />
+                                        ) : bottomTab === 'elastic' ? (
+                                            <ElasticEditorPanel />
                                         ) : (
                                             <RoutingMatrix />
                                         )}
@@ -691,6 +807,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
                 {/* Launch screen overlay — shown for new users, fades out when project initializes */}
                 {showLaunch ? <LaunchScreen exiting={launchExiting} /> : null}
+
+                <AudioResumeOverlay />
+
+                <OnboardingTour />
             </div>
         </MobileGate>
     );

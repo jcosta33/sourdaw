@@ -9,7 +9,6 @@ import { commitUndoEntry } from './commitUndoEntry';
 import { recordAction } from './macro/recording/recordAction';
 import { traceAppAction } from './traceAppAction';
 
-
 export type ExecuteOptions = {
     groupId?: string;
     groupLabel?: string;

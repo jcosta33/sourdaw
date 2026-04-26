@@ -5,7 +5,7 @@ export function removeGainEnvelopePoint(clipId: string, pointId: string): void {
     if (!env) {
         return;
     }
-    const nextPoints = env.points.filter((p) => p.id !== pointId);
+    const nextPoints = env.points.filter((param) => param.id !== pointId);
     if (nextPoints.length === 0) {
         nextPoints.push({ id: `gep-${crypto.randomUUID().slice(0, 6)}`, beatOffset: 0, gainDb: 0 });
     }

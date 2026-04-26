@@ -5,7 +5,7 @@ import * as subject from '../mergeDocumentBundle';
 describe('mergeDocumentBundle', () => {
     it('should export mergeDocumentBundle', () => {
         expect(subject.mergeDocumentBundle).toBeDefined();
-        const t = typeof subject.mergeDocumentBundle;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.mergeDocumentBundle;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

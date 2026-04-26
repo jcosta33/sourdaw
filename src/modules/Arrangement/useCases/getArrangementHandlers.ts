@@ -1,49 +1,20 @@
+import { handleAddAdjustmentRegion } from '../handlers/batchFeature/handleAddAdjustmentRegion';
 import { handleCreateAdjustmentLayer } from '../handlers/batchFeature/handleCreateAdjustmentLayer';
 import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateCompGroup';
+import { handleMoveAdjustmentRegion } from '../handlers/batchFeature/handleMoveAdjustmentRegion';
+import { handleRemoveAdjustmentLayer } from '../handlers/batchFeature/handleRemoveAdjustmentLayer';
+import { handleRemoveAdjustmentRegion } from '../handlers/batchFeature/handleRemoveAdjustmentRegion';
+import { handleSetLayerAffectedTracks } from '../handlers/batchFeature/handleSetLayerAffectedTracks';
+import { handleSetLayerFades } from '../handlers/batchFeature/handleSetLayerFades';
+import { handleSetLayerInsertionIndex } from '../handlers/batchFeature/handleSetLayerInsertionIndex';
+import { handleSetLayerMix } from '../handlers/batchFeature/handleSetLayerMix';
+import { handleSetLayerParameter } from '../handlers/batchFeature/handleSetLayerParameter';
+import { handleToggleAdjustmentLayer } from '../handlers/batchFeature/handleToggleAdjustmentLayer';
 import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSamples';
 import { clipHandlers } from '../handlers/clip/clipHandlers';
-import { handleUnfreezeTrack } from '../handlers/track/unfreezeTrack';
-import { handleFlattenTrack } from '../handlers/track/flattenTrack';
-import { handleGroupTracks } from '../handlers/track/groupTracks';
-import { handleHideTrack } from '../handlers/track/hideTrack';
-import { handleMuteTrack } from '../handlers/track/muteTrack';
-import { handleRemoveAllTracks } from '../handlers/track/handleRemoveAllTracks';
-import { handleRemoveTrack } from '../handlers/track/handleRemoveTrack';
-import { handleRenameTrack } from '../handlers/track/renameTrack';
-import { handleReorderTrack } from '../handlers/track/reorderTrack';
-import { handleSelectTrack } from '../handlers/track/selectTrack';
-import { handleSetAutomationMode } from '../handlers/track/setAutomationMode';
-import { handleSetTrackColor } from '../handlers/track/handleSetTrackColor';
-import { handleSetTrackGain } from '../handlers/track/handleSetTrackGain';
-import { handleSetTrackHeight } from '../handlers/track/setTrackHeight';
-import { handleSetTrackInput } from '../handlers/track/handleSetTrackInput';
-import { handleSetTrackNotes } from '../handlers/track/setTrackNotes';
-import { handleSetTrackOutput } from '../handlers/track/setTrackOutput';
-import { handleSetMidiOutput } from '../handlers/track/handleSetMidiOutput';
-import { handleClearMidiOutput } from '../handlers/track/handleClearMidiOutput';
-import { handleSetTrackPan } from '../handlers/track/handleSetTrackPan';
-import { handleSoloTrack } from '../handlers/track/soloTrack';
-import { handleToggleSoloSafe } from '../handlers/track/toggleSoloSafe';
-import { handleUngroupTracks } from '../handlers/track/ungroupTracks';
-import { handleZoomTracksVertical } from '../handlers/track/zoomTracksVertical';
-import { handleCreateTrackAlternative } from '../handlers/trackAlternative/handleCreateTrackAlternative';
-import { handleDeleteTrackAlternative } from '../handlers/trackAlternative/handleDeleteTrackAlternative';
-import { handleRenameTrackAlternative } from '../handlers/trackAlternative/handleRenameTrackAlternative';
-import { handleSwitchTrackAlternative } from '../handlers/trackAlternative/handleSwitchTrackAlternative';
-import { handleDeleteTrackTemplate } from '../handlers/template/handleDeleteTrackTemplate';
-import { handleLoadTrackTemplate } from '../handlers/template/handleLoadTrackTemplate';
-import { handleSaveTrackTemplate } from '../handlers/template/handleSaveTrackTemplate';
-import { handleAssignToVca } from '../handlers/vca/handleAssignToVca';
-import { handleCreateVcaGroup } from '../handlers/vca/handleCreateVcaGroup';
-import { handleRemoveFromVca } from '../handlers/vca/handleRemoveFromVca';
-import { handleSetVcaGain } from '../handlers/vca/handleSetVcaGain';
 import { handleFitClipToBeats } from '../handlers/clipStretch/handleFitClipToBeats';
 import { handleSetClipStretchMode } from '../handlers/clipStretch/handleSetClipStretchMode';
 import { handleSetClipStretchRatio } from '../handlers/clipStretch/handleSetClipStretchRatio';
-import { handleLoadPreset } from '../handlers/preset/handleLoadPreset';
-import { handleSavePreset } from '../handlers/preset/handleSavePreset';
-import { handleRestoreClip } from '../handlers/restore/handleRestoreClip';
-import { handleRestoreTrack } from '../handlers/restore/handleRestoreTrack';
 import { handleAddDevice } from '../handlers/device/handleAddDevice';
 import { handleLoadExternalPlugin } from '../handlers/device/handleLoadExternalPlugin';
 import { handleAddSend } from '../handlers/device/handleAddSend';
@@ -62,8 +33,15 @@ import { handleRenameSection } from '../handlers/marker/handleRenameSection';
 import { handleSetMarkerColor } from '../handlers/marker/handleSetMarkerColor';
 import { handleGenerateAllTransitions } from '../handlers/newFeature/handleGenerateAllTransitions';
 import { handleGenerateFill } from '../handlers/newFeature/handleGenerateFill';
+import { handleLoadPreset } from '../handlers/preset/handleLoadPreset';
+import { handleSavePreset } from '../handlers/preset/handleSavePreset';
+import { handleRestoreClip } from '../handlers/restore/handleRestoreClip';
+import { handleRestoreTrack } from '../handlers/restore/handleRestoreTrack';
 import { handleClearScratchPad } from '../handlers/scratchPad/handleClearScratchPad';
 import { handleCommitScratchPad } from '../handlers/scratchPad/handleCommitScratchPad';
+import { handleDeleteTrackTemplate } from '../handlers/template/handleDeleteTrackTemplate';
+import { handleLoadTrackTemplate } from '../handlers/template/handleLoadTrackTemplate';
+import { handleSaveTrackTemplate } from '../handlers/template/handleSaveTrackTemplate';
 import { handleArmTrack } from '../handlers/track/armTrack';
 import { handleBounceInPlace } from '../handlers/track/bounceInPlace';
 import { handleBounceToNewTrack } from '../handlers/track/bounceToNewTrack';
@@ -71,11 +49,43 @@ import { handleClearSolos } from '../handlers/track/clearSolos';
 import { handleCreateFolder } from '../handlers/track/createFolder';
 import { handleDisableTrack } from '../handlers/track/disableTrack';
 import { handleDuplicateTrack } from '../handlers/track/duplicateTrack';
+import { handleFlattenTrack } from '../handlers/track/flattenTrack';
 import { handleFoldTrack } from '../handlers/track/foldTrack';
 import { handleFreezeTrack } from '../handlers/track/freezeTrack';
+import { handleGroupTracks } from '../handlers/track/groupTracks';
 import { handleAddTrack } from '../handlers/track/handleAddTrack';
+import { handleClearMidiOutput } from '../handlers/track/handleClearMidiOutput';
 import { handleConsolidateAllTracks } from '../handlers/track/handleConsolidateAllTracks';
 import { handleCreateBus } from '../handlers/track/handleCreateBus';
+import { handleRemoveAllTracks } from '../handlers/track/handleRemoveAllTracks';
+import { handleRemoveTrack } from '../handlers/track/handleRemoveTrack';
+import { handleSetMidiOutput } from '../handlers/track/handleSetMidiOutput';
+import { handleSetTrackColor } from '../handlers/track/handleSetTrackColor';
+import { handleSetTrackGain } from '../handlers/track/handleSetTrackGain';
+import { handleSetTrackInput } from '../handlers/track/handleSetTrackInput';
+import { handleSetTrackPan } from '../handlers/track/handleSetTrackPan';
+import { handleHideTrack } from '../handlers/track/hideTrack';
+import { handleMuteTrack } from '../handlers/track/muteTrack';
+import { handleRenameTrack } from '../handlers/track/renameTrack';
+import { handleReorderTrack } from '../handlers/track/reorderTrack';
+import { handleSelectTrack } from '../handlers/track/selectTrack';
+import { handleSetAutomationMode } from '../handlers/track/setAutomationMode';
+import { handleSetTrackHeight } from '../handlers/track/setTrackHeight';
+import { handleSetTrackNotes } from '../handlers/track/setTrackNotes';
+import { handleSetTrackOutput } from '../handlers/track/setTrackOutput';
+import { handleSoloTrack } from '../handlers/track/soloTrack';
+import { handleToggleSoloSafe } from '../handlers/track/toggleSoloSafe';
+import { handleUnfreezeTrack } from '../handlers/track/unfreezeTrack';
+import { handleUngroupTracks } from '../handlers/track/ungroupTracks';
+import { handleZoomTracksVertical } from '../handlers/track/zoomTracksVertical';
+import { handleCreateTrackAlternative } from '../handlers/trackAlternative/handleCreateTrackAlternative';
+import { handleDeleteTrackAlternative } from '../handlers/trackAlternative/handleDeleteTrackAlternative';
+import { handleRenameTrackAlternative } from '../handlers/trackAlternative/handleRenameTrackAlternative';
+import { handleSwitchTrackAlternative } from '../handlers/trackAlternative/handleSwitchTrackAlternative';
+import { handleAssignToVca } from '../handlers/vca/handleAssignToVca';
+import { handleCreateVcaGroup } from '../handlers/vca/handleCreateVcaGroup';
+import { handleRemoveFromVca } from '../handlers/vca/handleRemoveFromVca';
+import { handleSetVcaGain } from '../handlers/vca/handleSetVcaGain';
 
 /**
  * Merges Arrangement handler maps for Command. Does **not** call `createHandler` here.
@@ -162,6 +172,16 @@ export function getArrangementHandlers() {
         searchSamples: handleSearchSamples,
         createCompGroup: handleCreateCompGroup,
         createAdjustmentLayer: handleCreateAdjustmentLayer,
+        removeAdjustmentLayer: handleRemoveAdjustmentLayer,
+        toggleAdjustmentLayer: handleToggleAdjustmentLayer,
+        setLayerParameter: handleSetLayerParameter,
+        setLayerMix: handleSetLayerMix,
+        addAdjustmentRegion: handleAddAdjustmentRegion,
+        removeAdjustmentRegion: handleRemoveAdjustmentRegion,
+        moveAdjustmentRegion: handleMoveAdjustmentRegion,
+        setLayerFades: handleSetLayerFades,
+        setLayerAffectedTracks: handleSetLayerAffectedTracks,
+        setLayerInsertionIndex: handleSetLayerInsertionIndex,
         ...clipHandlers,
     };
 }

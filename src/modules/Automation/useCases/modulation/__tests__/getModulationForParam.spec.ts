@@ -55,7 +55,9 @@ describe('getModulationForParam', () => {
         const state = modulationStore.value!;
         modulationStore.set({
             ...state,
-            modulators: state.modulators.map((m) => (m.id === 'mod1' ? { ...m, enabled: false } : m)),
+            modulators: state.modulators.map((message) =>
+                message.id === 'mod1' ? { ...message, enabled: false } : message
+            ),
         });
         // only mod2: 0.5 * -0.2 = -0.1
         const result = getModulationForParam('t1', 'd1', 'p1');
@@ -67,8 +69,8 @@ describe('getModulationForParam', () => {
         modulationRuntimeStore.set({ runtimeValues: { mod1: 1.0, mod2: 1.0 } });
         modulationStore.set({
             ...state,
-            modulators: state.modulators.map((m) =>
-                m.id === 'mod1' ? { ...m, mappings: [{ ...m.mappings[0]!, amount: 1.0 }] } : m
+            modulators: state.modulators.map((message) =>
+                message.id === 'mod1' ? { ...message, mappings: [{ ...message.mappings[0]!, amount: 1.0 }] } : message
             ),
         });
         // mod1: 1.0 * 1.0 = 1.0
@@ -79,8 +81,8 @@ describe('getModulationForParam', () => {
         // Make it > 1
         modulationStore.set({
             ...modulationStore.value!,
-            modulators: state.modulators.map((m) =>
-                m.id === 'mod1' ? { ...m, mappings: [{ ...m.mappings[0]!, amount: 2.0 }] } : m
+            modulators: state.modulators.map((message) =>
+                message.id === 'mod1' ? { ...message, mappings: [{ ...message.mappings[0]!, amount: 2.0 }] } : message
             ),
         });
         expect(getModulationForParam('t1', 'd1', 'p1')).toBe(1);

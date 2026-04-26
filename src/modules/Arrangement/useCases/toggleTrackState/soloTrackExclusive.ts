@@ -8,13 +8,13 @@ export function soloTrackExclusive(trackId: string): void {
         return;
     }
 
-    const soloedTracks = state.tracks.filter((t) => t.soloed);
+    const soloedTracks = state.tracks.filter((time) => time.soloed);
     const isOnlySoloed = soloedTracks.length === 1 && soloedTracks[0]!.id === trackId;
 
     if (isOnlySoloed) {
-        mapAllTracks((t) => ({ ...t, soloed: false }));
+        mapAllTracks((time) => ({ ...time, soloed: false }));
     } else {
-        mapAllTracks((t) => ({ ...t, soloed: t.id === trackId }));
+        mapAllTracks((time) => ({ ...time, soloed: time.id === trackId }));
     }
 
     applySoloLogic();

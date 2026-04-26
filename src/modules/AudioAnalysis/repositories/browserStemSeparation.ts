@@ -62,7 +62,7 @@ export const separateStemsBrowser = inject({ logger })(({ logger }) => {
     /**
      * Get or download the model file, using Cache API for persistence.
      */
-    const getModelBuffer = async (): Promise<ArrayBuffer> => {
+    async function getModelBuffer(): Promise<ArrayBuffer> {
         // Try Cache API first
         if ('caches' in window) {
             try {
@@ -97,12 +97,12 @@ export const separateStemsBrowser = inject({ logger })(({ logger }) => {
         }
 
         return buffer;
-    };
+    }
 
     /**
      * Create or return a cached ONNX inference session.
      */
-    const getSession = async (): Promise<OrtSession> => {
+    async function getSession(): Promise<OrtSession> {
         if (ortSession.cached) {
             return ortSession.cached;
         }
@@ -129,10 +129,11 @@ export const separateStemsBrowser = inject({ logger })(({ logger }) => {
             graphOptimizationLevel: 'all',
         });
 
+        // eslint-disable-next-line sourdaw/no-type-assertion-escape -- OrtSession is a structural subset of onnxruntime InferenceSession; run() return type differs only in index signature variance
         ortSession.cached = session as unknown as OrtSession;
         logger.info('[Browser Stems] Session ready');
         return ortSession.cached;
-    };
+    }
 
     return async function separateStemsBrowser(
         audioData: ArrayBuffer,
@@ -157,7 +158,7 @@ export const separateStemsBrowser = inject({ logger })(({ logger }) => {
         // Determine which stems to return
         const wanted = requestedStems.includes('all')
             ? STEM_NAMES.slice(0, 4) // Default: drums, bass, other, vocals
-            : STEM_NAMES.filter((n) => requestedStems.includes(n));
+            : STEM_NAMES.filter((node) => requestedStems.includes(node));
 
         // Initialize accumulators for all 6 stems (stereo)
         const stemL: Float32Array[] = Array.from({ length: 6 }, () => new Float32Array(totalSamples));
@@ -203,12 +204,12 @@ export const separateStemsBrowser = inject({ logger })(({ logger }) => {
             const segOutLen = dims[3] ?? DEMUCS_SEGMENT_LEN;
             const copyLen = Math.min(segLen, segOutLen);
 
-            for (let s = 0; s < Math.min(nStems, 6); s++) {
-                for (let j = 0; j < copyLen; j++) {
-                    const lIdx = s * nCh * segOutLen + j;
-                    const rIdx = s * nCh * segOutLen + segOutLen + j;
-                    stemL[s]![offset + j] = outData[lIdx] ?? 0;
-                    stemR[s]![offset + j] = outData[rIdx] ?? 0;
+            for (let state = 0; state < Math.min(nStems, 6); state++) {
+                for (let jIndex = 0; jIndex < copyLen; jIndex++) {
+                    const lIdx = state * nCh * segOutLen + jIndex;
+                    const rIdx = state * nCh * segOutLen + segOutLen + jIndex;
+                    stemL[state]![offset + jIndex] = outData[lIdx] ?? 0;
+                    stemR[state]![offset + jIndex] = outData[rIdx] ?? 0;
                 }
             }
 

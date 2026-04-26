@@ -11,39 +11,39 @@ import { TrackHeader } from '../TrackHeader';
 
 // Mock external dependencies
 vi.mock('../../../useCases/toggleTrackState/muteTrack', () => ({
-    muteTrack: vi.fn(),
+    muteTrack: vi.fn<(...args: unknown[]) => void>(),
 }));
 
 vi.mock('../../../useCases/toggleTrackState/soloTrack', () => ({
-    soloTrack: vi.fn(),
+    soloTrack: vi.fn<(...args: unknown[]) => void>(),
 }));
 
 vi.mock('../../../useCases/toggleTrackState/soloTrackExclusive', () => ({
-    soloTrackExclusive: vi.fn(),
+    soloTrackExclusive: vi.fn<(...args: unknown[]) => void>(),
 }));
 
 vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({
-    selectTrack: vi.fn(),
+    selectTrack: vi.fn<(...args: unknown[]) => void>(),
 }));
 
 vi.mock('../../../useCases/recording/armTrack', () => ({
-    armTrack: vi.fn(),
+    armTrack: vi.fn<(...args: unknown[]) => void>(),
 }));
 
 vi.mock('../../../useCases/folder/toggleFolderCollapse', () => ({
-    toggleFolderCollapse: vi.fn(),
+    toggleFolderCollapse: vi.fn<(...args: unknown[]) => void>(),
 }));
 
 vi.mock('../../../useCases/setTrackGainPan/setInputMonitoring', () => ({
-    setInputMonitoring: vi.fn(),
+    setInputMonitoring: vi.fn<(...args: unknown[]) => void>(),
 }));
 
 vi.mock('../TrackContextMenu', () => ({
-    TrackContextMenu: ({ children }: any) => <div>{children}</div>,
+    TrackContextMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
 vi.mock('../TrackHeader/InlineTrackName', () => ({
-    InlineTrackName: ({ track }: any) => <span>{track.name}</span>,
+    InlineTrackName: ({ track }: { track: { name: string } }) => <span>{track.name}</span>,
 }));
 
 vi.mock('../TrackHeader/ResizeHandle', () => ({

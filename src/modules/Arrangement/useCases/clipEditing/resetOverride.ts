@@ -5,9 +5,9 @@ import { updateClip } from '../updateClip';
  * The property will revert to the value defined in the parent/pooled clip.
  */
 export function resetOverride(clipId: string, property: string): void {
-    updateClip(clipId, (c) => {
-        const nextOverrides = { ...c.overrides };
+    updateClip(clipId, (context) => {
+        const nextOverrides = { ...context.overrides };
         delete nextOverrides[property];
-        return { ...c, overrides: nextOverrides };
+        return { ...context, overrides: nextOverrides };
     });
 }

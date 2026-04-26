@@ -1,5 +1,5 @@
 import { updateClip } from '../../repositories/track/updateClip';
 
 export function lockClip(clipId: string, locked: boolean): void {
-    updateClip(clipId, (c) => ({ ...c, locked }));
+    updateClip(clipId, (context) => ({ ...context, locked }));
 }

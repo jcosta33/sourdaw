@@ -34,7 +34,7 @@ function enumerateInputs(): MidiInputInfo[] {
 function onStateChange(): void {
     const inputs = enumerateInputs();
     const state = getState();
-    const selectedStillExists = inputs.some((i) => i.id === state.selectedInputId);
+    const selectedStillExists = inputs.some((index) => index.id === state.selectedInputId);
 
     const currentInput = getActiveInput();
     if (!selectedStillExists && currentInput) {
@@ -67,8 +67,9 @@ export async function initWebMidi(): Promise<boolean> {
     // whenever selectedTrackId changes — app launch, project load, addTrack,
     // user click — we automatically route MIDI to the correct MIDI track
     // without having to patch every write-site.
-    if (!(initWebMidi as unknown as { _trackStoreSub?: boolean })._trackStoreSub) {
-        (initWebMidi as unknown as { _trackStoreSub?: boolean })._trackStoreSub = true;
+    type InitWebMidiWithSub = typeof initWebMidi & { _trackStoreSub?: boolean };
+    if (!(initWebMidi as InitWebMidiWithSub)._trackStoreSub) {
+        (initWebMidi as InitWebMidiWithSub)._trackStoreSub = true;
         let prevSelectedId: string | null = null;
         trackStore.subscribe((trackState) => {
             const id = trackState?.selectedTrackId ?? null;
@@ -80,7 +81,7 @@ export async function initWebMidi(): Promise<boolean> {
                 setTargetTrackId(null);
                 return;
             }
-            const track = trackState?.tracks.find((t) => t.id === id);
+            const track = trackState?.tracks.find((time) => time.id === id);
             if (track?.kind === 'midi') {
                 setTargetTrackId(id);
             }
@@ -123,9 +124,9 @@ export async function initWebMidi(): Promise<boolean> {
         try {
             setTauriMode(true);
             const devices = (await tauriInvoke('list_midi_inputs')) as TauriMidiDevice[];
-            const inputs: MidiInputInfo[] = devices.map((d) => ({
-                id: String(d.index),
-                name: d.name,
+            const inputs: MidiInputInfo[] = devices.map((data) => ({
+                id: String(data.index),
+                name: data.name,
                 manufacturer: 'System',
             }));
             setState({ inputs, isSupported: true });
@@ -135,7 +136,7 @@ export async function initWebMidi(): Promise<boolean> {
                 // restart where selectedInputId is persisted in localStorage but
                 // the Tauri IPC port has NOT been opened yet for this session.
                 const targetId = state.selectedInputId ?? inputs[0]!.id;
-                const targetInput = inputs.find((i) => i.id === targetId) ?? inputs[0]!;
+                const targetInput = inputs.find((index) => index.id === targetId) ?? inputs[0]!;
                 await selectMidiInputTauri(Number(targetInput.id));
                 setState({ selectedInputId: targetInput.id });
             }

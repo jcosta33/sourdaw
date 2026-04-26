@@ -31,11 +31,11 @@ Arming N audio tracks and pressing record should capture N independent audio str
 3. **`beginActualRecording()`** calls `startRecording()` which creates one clip per armed track (correct).
 4. **Loop over armed audio tracks** (`toggleRecording.ts:26`) — for each, calls `startAudioRecording(trackId, onComplete)`.
 5. **`startAudioRecording`** (`recording.ts:87-173`) **overwrites** the single global `recordingSession`:
-   - Line 105: `recordingSession.mediaStream = await navigator.mediaDevices.getUserMedia(...)`
-   - Line 108: `recordingSession.sourceNode = ctx.createMediaStreamSource(...)`
-   - Line 114: `recordingSession.onRecordingComplete = onComplete`
-   - Line 121: `recordingSession.recordingNode = new AudioWorkletNode(...)`
-   - Line 132: `recordingSession.recordingWorker = new Worker(...)`
+    - Line 105: `recordingSession.mediaStream = await navigator.mediaDevices.getUserMedia(...)`
+    - Line 108: `recordingSession.sourceNode = ctx.createMediaStreamSource(...)`
+    - Line 114: `recordingSession.onRecordingComplete = onComplete`
+    - Line 121: `recordingSession.recordingNode = new AudioWorkletNode(...)`
+    - Line 132: `recordingSession.recordingWorker = new Worker(...)`
 6. **Each subsequent call replaces the previous session.** Only the last armed track's callback survives (line 114 overwrites).
 7. **Stop** — worker posts WAV buffer → only one `onComplete` fires (line 192 clears it after first completion) → only one clip gets audio.
 
@@ -56,6 +56,7 @@ Arming N audio tracks and pressing record should capture N independent audio str
 **Problem:** `recording.ts` global session model. Each `startAudioRecording()` call overwrites the previous.
 
 **Needed:**
+
 1. Replace `recordingSession` with `recordingSessions: Map<string, RecordingSession>`.
 2. Each armed track gets its own `MediaStreamSource` → `AudioWorkletNode` → `Worker` → OPFS pipeline.
 3. `stopAudioRecording()` stops all sessions; `stopAudioRecording(trackId)` stops one.

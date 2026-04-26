@@ -3,7 +3,7 @@ import { type DocId } from '../../models/CrdtDocumentTypes';
 import { STORE_NAME, openDatabase } from './helpers';
 
 /** Load a single document from IndexedDB. */
-export const loadDocFromIdb = async (id: DocId): Promise<Uint8Array | null> => {
+export async function loadDocFromIdb(id: DocId): Promise<Uint8Array | null> {
     const database = await openDatabase();
     if (!database) {
         return null;
@@ -17,6 +17,6 @@ export const loadDocFromIdb = async (id: DocId): Promise<Uint8Array | null> => {
             const result = request.result as Uint8Array | undefined;
             resolve(result ?? null);
         };
-        request.onerror = () => reject(request.error);
+        request.onerror = () => reject(request.error ?? new Error('IDB request failed'));
     });
-};
+}

@@ -101,7 +101,7 @@ vi.mock('#/components/ui/slider', () => ({
             max={max}
             step={step}
             aria-label={ariaLabel}
-            onChange={(e) => onValueChange([Number(e.target.value)])}
+            onChange={(event) => onValueChange([Number(event.target.value)])}
         />
     ),
 }));

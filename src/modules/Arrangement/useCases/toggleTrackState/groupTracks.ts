@@ -7,5 +7,5 @@ export function groupTracks(trackIds: string[], _name: string): void {
         return;
     }
     const groupId = `group-${Date.now()}`;
-    mapAllTracks((t) => (trackIds.includes(t.id) ? { ...t, groupId } : t));
+    mapAllTracks((time) => (trackIds.includes(time.id) ? { ...time, groupId } : time));
 }

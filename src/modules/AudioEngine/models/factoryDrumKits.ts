@@ -547,17 +547,15 @@ const KIT_TRAP: DrumKit = {
 
 export const FACTORY_KITS: readonly DrumKit[] = [KIT_808, KIT_ANALOG, KIT_ELECTRONIC, KIT_ACOUSTIC, KIT_LOFI, KIT_TRAP];
 
-const kitIndex = new Map<string, DrumKit>(FACTORY_KITS.map((k) => [k.id, k]));
-
-export function getFactoryDrumKits(): readonly DrumKit[] {
-    return FACTORY_KITS;
-}
+const kitIndex = new Map<string, DrumKit>(FACTORY_KITS.map((kIndex) => [kIndex.id, kIndex]));
 
 export function getDrumKitById(id: string): DrumKit | null {
     return kitIndex.get(id) ?? null;
 }
 
-const KIT_ID_BY_INDEX: Record<number, string> = Object.fromEntries(FACTORY_KITS.map((k, i) => [i, k.id]));
+const KIT_ID_BY_INDEX: Record<number, string> = Object.fromEntries(
+    FACTORY_KITS.map((kIndex, index) => [index, kIndex.id])
+);
 
 export function getDrumKitByIndex(index: number): DrumKit | null {
     return getDrumKitById(KIT_ID_BY_INDEX[index] ?? '');

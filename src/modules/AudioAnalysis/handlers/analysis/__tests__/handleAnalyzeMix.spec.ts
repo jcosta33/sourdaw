@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { analyzeMix } from '../../../useCases/analyzeMix';
 import { handleAnalyzeMix } from '../handleAnalyzeMix';
 
 const mocks = vi.hoisted(() => ({
@@ -19,8 +20,6 @@ vi.mock('#/modules/AiRuntime/stores', () => ({
 vi.mock('../../../useCases/analyzeMix', () => ({
     analyzeMix: vi.fn(),
 }));
-
-import { analyzeMix } from '../../../useCases/analyzeMix';
 
 describe('handleAnalyzeMix', () => {
     beforeEach(() => {

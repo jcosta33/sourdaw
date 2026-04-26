@@ -40,23 +40,24 @@ export function trigger16Level(gridIndex: number): void {
     const normalized = (gridIndex + 1) / 16; // 0.0625 to 1.0
 
     const deviceId = getFirstToasterDeviceId();
+    if (!deviceId) return;
     const { padIndex: targetPad, target } = session;
 
     switch (target) {
         case 'velocity':
-            triggerToasterPad(targetPad, Math.round(normalized * 127));
+            triggerToasterPad(deviceId, targetPad, Math.round(normalized * 127));
             break;
         case 'tune':
             if (deviceId) {
                 setToasterPadParam(deviceId, targetPad, 'tune', -24 + normalized * 48);
             }
-            triggerToasterPad(targetPad, 127);
+            triggerToasterPad(deviceId, targetPad, 127);
             break;
         case 'decay':
             if (deviceId) {
                 setToasterPadParam(deviceId, targetPad, 'decay', normalized);
             }
-            triggerToasterPad(targetPad, 127);
+            triggerToasterPad(deviceId, targetPad, 127);
             break;
         case 'filter': {
             const minHz = 20;
@@ -65,7 +66,7 @@ export function trigger16Level(gridIndex: number): void {
             if (deviceId) {
                 setToasterPadParam(deviceId, targetPad, 'filterCutoff', freq);
             }
-            triggerToasterPad(targetPad, 127);
+            triggerToasterPad(deviceId, targetPad, 127);
             break;
         }
     }

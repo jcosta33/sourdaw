@@ -7,6 +7,6 @@ export function registerFactoryModels(): void {
     }
     raveStore.set({
         ...state,
-        models: FACTORY_MODELS.map((m) => ({ ...m, loaded: false })),
+        models: FACTORY_MODELS.map((message) => ({ ...message, loaded: false })),
     });
 }

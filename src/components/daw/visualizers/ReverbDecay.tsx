@@ -58,11 +58,11 @@ export const ReverbDecay = ({
         ctx.strokeStyle = 'rgba(255,255,255,0.04)';
         ctx.lineWidth = 0.5;
         ctx.setLineDash([1, 4]);
-        for (let i = 1; i < 4; i++) {
-            const y = (i / 4) * height;
+        for (let index = 1; index < 4; index++) {
+            const yPos = (index / 4) * height;
             ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(width, y);
+            ctx.moveTo(0, yPos);
+            ctx.lineTo(width, yPos);
             ctx.stroke();
         }
         ctx.setLineDash([]);
@@ -81,9 +81,9 @@ export const ReverbDecay = ({
         ctx.beginPath();
         ctx.moveTo(pad, pad + plotH); // bottom-left
 
-        for (let i = 0; i <= steps; i++) {
-            const tFrac = i / steps;
-            const x = pad + i;
+        for (let index = 0; index <= steps; index++) {
+            const tFrac = index / steps;
+            const xPos = pad + index;
             let amp: number;
 
             if (tFrac < predelayFrac) {
@@ -108,8 +108,8 @@ export const ReverbDecay = ({
                 amp = (0.6 + size * 0.4) * expDecay * dampFactor * ripple;
             }
 
-            const y = pad + plotH - amp * plotH;
-            ctx.lineTo(x, Math.max(pad, y));
+            const yPos = pad + plotH - amp * plotH;
+            ctx.lineTo(xPos, Math.max(pad, yPos));
         }
 
         // Close path for fill
@@ -125,9 +125,9 @@ export const ReverbDecay = ({
 
         // Stroke outline — glow pass
         ctx.beginPath();
-        for (let i = 0; i <= steps; i++) {
-            const tFrac = i / steps;
-            const x = pad + i;
+        for (let index = 0; index <= steps; index++) {
+            const tFrac = index / steps;
+            const xPos = pad + index;
             let amp: number;
 
             if (tFrac < predelayFrac) {
@@ -146,11 +146,11 @@ export const ReverbDecay = ({
                 amp = (0.6 + size * 0.4) * expDecay * dampFactor * ripple;
             }
 
-            const y = pad + plotH - amp * plotH;
-            if (i === 0) {
-                ctx.moveTo(x, Math.max(pad, y));
+            const yPos = pad + plotH - amp * plotH;
+            if (index === 0) {
+                ctx.moveTo(xPos, Math.max(pad, yPos));
             } else {
-                ctx.lineTo(x, Math.max(pad, y));
+                ctx.lineTo(xPos, Math.max(pad, yPos));
             }
         }
         ctx.strokeStyle = `${accentLavender}28`;
@@ -159,9 +159,9 @@ export const ReverbDecay = ({
 
         // Stroke outline — sharp pass
         ctx.beginPath();
-        for (let i = 0; i <= steps; i++) {
-            const tFrac = i / steps;
-            const x = pad + i;
+        for (let index = 0; index <= steps; index++) {
+            const tFrac = index / steps;
+            const xPos = pad + index;
             let amp: number;
 
             if (tFrac < predelayFrac) {
@@ -180,11 +180,11 @@ export const ReverbDecay = ({
                 amp = (0.6 + size * 0.4) * expDecay * dampFactor * ripple;
             }
 
-            const y = pad + plotH - amp * plotH;
-            if (i === 0) {
-                ctx.moveTo(x, Math.max(pad, y));
+            const yPos = pad + plotH - amp * plotH;
+            if (index === 0) {
+                ctx.moveTo(xPos, Math.max(pad, yPos));
             } else {
-                ctx.lineTo(x, Math.max(pad, y));
+                ctx.lineTo(xPos, Math.max(pad, yPos));
             }
         }
         ctx.strokeStyle = accentLavender;

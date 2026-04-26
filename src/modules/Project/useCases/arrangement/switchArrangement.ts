@@ -12,7 +12,7 @@ export function switchArrangement(id: string): void {
         return;
     }
 
-    const target = state.arrangements.find((a) => a.id === id);
+    const target = state.arrangements.find((alpha) => alpha.id === id);
     if (!target) {
         return;
     }

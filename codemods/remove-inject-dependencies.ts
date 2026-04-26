@@ -1,6 +1,6 @@
 import { Project, SyntaxKind, ObjectLiteralExpression, PropertyAssignment, CallExpression } from 'ts-morph';
 
-console.log("Starting script...");
+console.log('Starting script...');
 
 const project = new Project({
     tsConfigFilePath: 'tsconfig.json',
@@ -36,7 +36,11 @@ for (const sourceFile of sourceFiles) {
 
         for (const callExpr of callExpressions) {
             const expr = callExpr.getExpression();
-            if (expr.getKind() === SyntaxKind.Identifier && expr.getText() === 'injectDependencies' || (expr.getKind() === SyntaxKind.PropertyAccessExpression && expr.getText().includes('injectDependencies'))) {
+            if (
+                (expr.getKind() === SyntaxKind.Identifier && expr.getText() === 'injectDependencies') ||
+                (expr.getKind() === SyntaxKind.PropertyAccessExpression &&
+                    expr.getText().includes('injectDependencies'))
+            ) {
                 const args = callExpr.getArguments();
                 if (args.length >= 2) {
                     const depsObj = args[1];
@@ -59,10 +63,10 @@ for (const sourceFile of sourceFiles) {
                             }
 
                             if (name && initializerText) {
-                                const importDecl = sourceFile.getImportDeclaration(decl => {
-                                    return decl.getNamedImports().some(ni => ni.getName() === name);
+                                const importDecl = sourceFile.getImportDeclaration((decl) => {
+                                    return decl.getNamedImports().some((ni) => ni.getName() === name);
                                 });
-                                
+
                                 if (importDecl) {
                                     const importPath = importDecl.getModuleSpecifierValue();
                                     if (!mocksByPath.has(importPath)) {
@@ -70,7 +74,7 @@ for (const sourceFile of sourceFiles) {
                                     }
                                     mocksByPath.get(importPath)!.add(name);
                                 }
-                                
+
                                 replacements.push(`vi.mocked(${name}).mockImplementation(${initializerText} as any)`);
                             }
                         }
@@ -96,7 +100,7 @@ for (const sourceFile of sourceFiles) {
                 }
             }
         }
-        
+
         if (!found) {
             break;
         }
@@ -107,10 +111,10 @@ for (const sourceFile of sourceFiles) {
         if (!vitestImport) {
             vitestImport = sourceFile.addImportDeclaration({
                 moduleSpecifier: 'vitest',
-                namedImports: ['vi']
+                namedImports: ['vi'],
             });
         } else {
-            const hasVi = vitestImport.getNamedImports().some(ni => ni.getName() === 'vi');
+            const hasVi = vitestImport.getNamedImports().some((ni) => ni.getName() === 'vi');
             if (!hasVi) {
                 vitestImport.addNamedImport('vi');
             }
@@ -118,22 +122,23 @@ for (const sourceFile of sourceFiles) {
 
         const mockBlocks: string[] = [];
         for (const [importPath, mocks] of mocksByPath.entries()) {
-            const isBarrel = importPath.endsWith('useCases') || 
-                             importPath.endsWith('repositories') || 
-                             importPath.endsWith('index');
-            
-            const existingMock = sourceFile.getStatements().some(stmt => {
+            const isBarrel =
+                importPath.endsWith('useCases') || importPath.endsWith('repositories') || importPath.endsWith('index');
+
+            const existingMock = sourceFile.getStatements().some((stmt) => {
                 if (stmt.getKind() === SyntaxKind.ExpressionStatement) {
                     const text = stmt.getText();
                     return text.includes(`vi.mock('${importPath}'`) || text.includes(`vi.mock("${importPath}"`);
                 }
                 return false;
             });
-            
+
             if (existingMock) continue;
-            
+
             if (isBarrel) {
-                const mockExports = Array.from(mocks).map(name => `${name}: vi.fn()`).join(',\n    ');
+                const mockExports = Array.from(mocks)
+                    .map((name) => `${name}: vi.fn()`)
+                    .join(',\n    ');
                 mockBlocks.push(`vi.mock('${importPath}', async (importOriginal) => {
   const mod = await importOriginal<typeof import('${importPath}')>();
   return {

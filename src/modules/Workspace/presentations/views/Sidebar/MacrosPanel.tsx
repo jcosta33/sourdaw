@@ -102,7 +102,6 @@ export const MacrosPanel = (): ReactElement => {
                     </button>
                 }
             />
-
             {/* Recording name input (shown while recording) */}
             {state.recording ? (
                 <div className="px-3 py-1.5 border-b border-[var(--color-state-danger)]/20 bg-[var(--color-state-danger)]/5">
@@ -111,11 +110,10 @@ export const MacrosPanel = (): ReactElement => {
                         className="border-0 bg-transparent px-0 text-[10px] text-foreground/80 shadow-none placeholder:text-muted-foreground/30 focus-visible:ring-0"
                         placeholder="Macro name..."
                         value={newMacroName}
-                        onChange={(e) => setNewMacroName(e.target.value)}
+                        onChange={(event) => setNewMacroName(event.target.value)}
                     />
                 </div>
             ) : null}
-
             {/* Macro list */}
             <div className="flex-1 overflow-y-auto">
                 {state.macros.length === 0 && !state.recording ? (
@@ -140,13 +138,13 @@ export const MacrosPanel = (): ReactElement => {
                                         size="micro"
                                         className="flex-1 border-0 bg-transparent px-0 text-[10px] text-foreground shadow-none focus-visible:ring-0"
                                         value={editName}
-                                        onChange={(e) => setEditName(e.target.value)}
+                                        onChange={(event) => setEditName(event.target.value)}
                                         onBlur={commitRename}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
+                                        onKeyDown={(event) => {
+                                            if (event.key === 'Enter') {
                                                 commitRename();
                                             }
-                                            if (e.key === 'Escape') {
+                                            if (event.key === 'Escape') {
                                                 setEditingId(null);
                                             }
                                         }}

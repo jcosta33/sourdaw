@@ -48,8 +48,8 @@ export function detectSongStructure(trackId?: string): DetectedSection[] {
 
     // Gather all clips from target track or all tracks
     const targetTracks = trackId
-        ? state.tracks.filter((t) => t.id === trackId)
-        : state.tracks.filter((t) => t.kind === 'audio' || t.kind === 'midi');
+        ? state.tracks.filter((time) => time.id === trackId)
+        : state.tracks.filter((time) => time.kind === 'audio' || time.kind === 'midi');
 
     type ClipInfo = { startBeat: number; endBeat: number; trackId: string };
     const allClips: ClipInfo[] = [];
@@ -71,12 +71,12 @@ export function detectSongStructure(trackId?: string): DetectedSection[] {
     // Find the full range
     let minBeat = Infinity;
     let maxBeat = -Infinity;
-    for (const c of allClips) {
-        if (c.startBeat < minBeat) {
-            minBeat = c.startBeat;
+    for (const context of allClips) {
+        if (context.startBeat < minBeat) {
+            minBeat = context.startBeat;
         }
-        if (c.endBeat > maxBeat) {
-            maxBeat = c.endBeat;
+        if (context.endBeat > maxBeat) {
+            maxBeat = context.endBeat;
         }
     }
     const totalBeats = maxBeat - minBeat;
@@ -88,7 +88,7 @@ export function detectSongStructure(trackId?: string): DetectedSection[] {
     // Step 1: Compute energy profile (clip density per beat window)
     const windowSize = 4; // 1 bar in 4/4
     const numWindows = Math.ceil(totalBeats / windowSize);
-    const energy: number[] = new Array(numWindows).fill(0);
+    const energy: number[] = Array.from({ length: numWindows }, () => 0);
 
     for (const clip of allClips) {
         const startWindow = Math.floor((clip.startBeat - minBeat) / windowSize);
@@ -102,34 +102,34 @@ export function detectSongStructure(trackId?: string): DetectedSection[] {
     const boundaries: number[] = [0]; // always start at 0
     const threshold = 0.3;
 
-    for (let i = 1; i < numWindows; i++) {
-        const prev = energy[i - 1]!;
-        const curr = energy[i]!;
+    for (let index = 1; index < numWindows; index++) {
+        const prev = energy[index - 1]!;
+        const curr = energy[index]!;
         const maxE = Math.max(prev, curr, 1);
         const change = Math.abs(curr - prev) / maxE;
 
         if (change >= threshold) {
-            boundaries.push(i);
+            boundaries.push(index);
         }
     }
 
     // Ensure segments are at least 4 bars (16 beats) apart
     const mergedBoundaries: number[] = [boundaries[0]!];
-    for (let i = 1; i < boundaries.length; i++) {
+    for (let index = 1; index < boundaries.length; index++) {
         const last = mergedBoundaries[mergedBoundaries.length - 1]!;
-        if (boundaries[i]! - last >= 4) {
+        if (boundaries[index]! - last >= 4) {
             // 4 windows = 4 bars = 16 beats
-            mergedBoundaries.push(boundaries[i]!);
+            mergedBoundaries.push(boundaries[index]!);
         }
     }
 
     // Step 3: Classify each segment using energy profile
     const sections: DetectedSection[] = [];
-    const avgEnergy = energy.reduce((a, b) => a + b, 0) / energy.length;
+    const avgEnergy = energy.reduce((alpha, buffer) => alpha + buffer, 0) / energy.length;
 
-    for (let i = 0; i < mergedBoundaries.length; i++) {
-        const startWindow = mergedBoundaries[i]!;
-        const endWindow = i + 1 < mergedBoundaries.length ? mergedBoundaries[i + 1]! : numWindows;
+    for (let index = 0; index < mergedBoundaries.length; index++) {
+        const startWindow = mergedBoundaries[index]!;
+        const endWindow = index + 1 < mergedBoundaries.length ? mergedBoundaries[index + 1]! : numWindows;
         const startBeat = minBeat + startWindow * windowSize;
         const endBeat = minBeat + endWindow * windowSize;
 
@@ -148,10 +148,10 @@ export function detectSongStructure(trackId?: string): DetectedSection[] {
         let sectionInfo: { name: string; color: string } = SECTION_PALETTE[1]; // default: Verse
         let confidence = 0.6;
 
-        if (progress < 0.1 && i === 0) {
+        if (progress < 0.1 && index === 0) {
             sectionInfo = SECTION_PALETTE[0]!; // Intro
             confidence = 0.85;
-        } else if (progress > 0.85 && i === mergedBoundaries.length - 1) {
+        } else if (progress > 0.85 && index === mergedBoundaries.length - 1) {
             sectionInfo = SECTION_PALETTE[5]!; // Outro
             confidence = 0.8;
         } else if (isHigh && progress > 0.5) {
@@ -165,9 +165,9 @@ export function detectSongStructure(trackId?: string): DetectedSection[] {
             confidence = 0.65;
         } else if (!isHigh && !isLow) {
             // Check if this leads into a high energy section → Pre-Chorus
-            if (i + 1 < mergedBoundaries.length) {
-                const nextStart = mergedBoundaries[i + 1]!;
-                const nextEnd = i + 2 < mergedBoundaries.length ? mergedBoundaries[i + 2]! : numWindows;
+            if (index + 1 < mergedBoundaries.length) {
+                const nextStart = mergedBoundaries[index + 1]!;
+                const nextEnd = index + 2 < mergedBoundaries.length ? mergedBoundaries[index + 2]! : numWindows;
                 let nextEnergy = 0;
                 for (let w = nextStart; w < nextEnd; w++) {
                     nextEnergy += energy[w]!;
@@ -216,9 +216,9 @@ export function detectAndApplySongStructure(trackId?: string): DetectedSection[]
     }
 
     // Add detected sections to the marker store
-    const newSections: ArrangementSection[] = sections.map((s) => {
-        const section = createSection(s.startBeat, s.endBeat, s.name);
-        return { ...section, color: s.color };
+    const newSections: ArrangementSection[] = sections.map((state) => {
+        const section = createSection(state.startBeat, state.endBeat, state.name);
+        return { ...section, color: state.color };
     });
 
     markerStore.set({

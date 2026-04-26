@@ -7,7 +7,7 @@ describe('ShortTermLUFS', () => {
         const lufs = new ShortTermLUFS(48000);
 
         // Push 10 blocks of -10 LUFS
-        for (let i = 0; i < 10; i++) {
+        for (let index = 0; index < 10; index++) {
             lufs.push(-10);
         }
 
@@ -18,7 +18,7 @@ describe('ShortTermLUFS', () => {
         const lufs = new ShortTermLUFS(48000); // maxBlocks = 8
 
         lufs.push(-100); // Should be shifted out
-        for (let i = 0; i < 8; i++) {
+        for (let index = 0; index < 8; index++) {
             lufs.push(-10);
         }
 

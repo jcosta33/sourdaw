@@ -39,8 +39,8 @@ export async function createProofChamberNode(ctx: BaseAudioContext): Promise<Pro
     });
 
     const handshake = createReadyHandshake({ pluginName: 'ProofChamberNode' });
-    node.port.onmessage = (e: MessageEvent) => {
-        handshake.onMessage(e);
+    node.port.onmessage = (event: MessageEvent) => {
+        handshake.onMessage(event);
     };
     const readyPromise = handshake.promise;
 

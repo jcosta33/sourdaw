@@ -8,13 +8,13 @@ export function resizeSection(sectionId: string, newStartBeat: number, newEndBea
     const MIN_DURATION = 4;
     markerStore.set({
         ...state,
-        sections: state.sections.map((s) => {
-            if (s.id !== sectionId) {
-                return s;
+        sections: state.sections.map((state1) => {
+            if (state1.id !== sectionId) {
+                return state1;
             }
             const startBeat = Math.max(0, Math.round(newStartBeat));
             const endBeat = Math.max(startBeat + MIN_DURATION, Math.round(newEndBeat));
-            return { ...s, startBeat, endBeat };
+            return { ...state1, startBeat, endBeat };
         }),
     });
 }

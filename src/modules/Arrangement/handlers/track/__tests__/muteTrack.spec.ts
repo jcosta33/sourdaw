@@ -14,7 +14,7 @@ describe('handleMuteTrack', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('delegates to muteTrack use case', () => {
-        handleMuteTrack.execute({
+        void handleMuteTrack.execute({
             type: 'muteTrack',
             payload: { trackId: 't1', muted: true },
         });

@@ -5,7 +5,7 @@ import * as subject from '../addExternalDevice';
 describe('addExternalDevice', () => {
     it('should export addExternalDevice', () => {
         expect(subject.addExternalDevice).toBeDefined();
-        const t = typeof subject.addExternalDevice;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.addExternalDevice;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

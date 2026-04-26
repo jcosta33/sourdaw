@@ -508,17 +508,17 @@ Offline (export):
 
 ## Tradeoffs and risks
 
-| Risk                                            | Impact                               | Mitigation                                                    |
-| ----------------------------------------------- | ------------------------------------ | ------------------------------------------------------------- |
-| HRTF dataset size (50MB+) increases bundle size | Download/install friction            | Lazy-load dataset on first Atmos track creation               |
-| VBAP/HOA CPU usage on lower-end machines        | Dropouts during complex mixes        | Quality slider: reduce Ambisonics order or MDAP spread        |
-| ADM export complexity (manual RIFF)             | Potential format incompatibilities   | Extensive validation testing with Dolby tools                 |
-| Object budget confusion (128 vs 118 vs 10)      | User error, unexpected limits        | Clear UI explaining bed = shared (10 ch), object = individual |
-| Binaural vs speaker monitoring discrepancy      | Mix decisions don't translate        | A/B comparison feature, translation check utility             |
-| ITD handling in HRTF interpolation              | Comb-filtering artifacts if wrong    | Implement extract/remove/re-apply workflow per research       |
-| Bed limited to 7.1.2 not 7.1.4                  | User confusion about height channels | Document that 7.1.4 is monitoring target, 7.1.2 is bed format |
+| Risk                                                                  | Impact                                   | Mitigation                                                                         |
+| --------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------- |
+| HRTF dataset size (50MB+) increases bundle size                       | Download/install friction                | Lazy-load dataset on first Atmos track creation                                    |
+| VBAP/HOA CPU usage on lower-end machines                              | Dropouts during complex mixes            | Quality slider: reduce Ambisonics order or MDAP spread                             |
+| ADM export complexity (manual RIFF)                                   | Potential format incompatibilities       | Extensive validation testing with Dolby tools                                      |
+| Object budget confusion (128 vs 118 vs 10)                            | User error, unexpected limits            | Clear UI explaining bed = shared (10 ch), object = individual                      |
+| Binaural vs speaker monitoring discrepancy                            | Mix decisions don't translate            | A/B comparison feature, translation check utility                                  |
+| ITD handling in HRTF interpolation                                    | Comb-filtering artifacts if wrong        | Implement extract/remove/re-apply workflow per research                            |
+| Bed limited to 7.1.2 not 7.1.4                                        | User confusion about height channels     | Document that 7.1.4 is monitoring target, 7.1.2 is bed format                      |
 | `hrtf` crate (Fyrox) — known click artifacts with fast-moving sources | Audible transient glitches in prototypes | If evaluated, prefer `sofar`-based UPOLS path; `hrtf` crate is not a v1 dependency |
-| `sofar` emitter count ("a couple hundred" per upstream) | QA ceiling unclear on low-end hardware | Use as informal sanity bound in perf tests; adaptive degradation already specified |
+| `sofar` emitter count ("a couple hundred" per upstream)               | QA ceiling unclear on low-end hardware   | Use as informal sanity bound in perf tests; adaptive degradation already specified |
 
 **What was considered and rejected:**
 
@@ -527,13 +527,17 @@ Offline (export):
 ## Implementation Status
 
 **What is implemented:**
+
 - None. The 7.1.4 immersive mixing engine, `VbapPannerWorklet`, and ADM BWF export logic are not present in the codebase.
 
 **What is not implemented:**
+
 - All features described in the spec, including 3D panner UI, bed/object routing, and Dolby Atmos compatible metadata exports.
 
 **What is done well:**
+
 - N/A
 
 **What needs refactoring:**
+
 - N/A

@@ -7,6 +7,6 @@ export function toggleBypass(nodeIdVal: string): void {
     }
     nodeViewStore.set({
         ...state,
-        nodes: state.nodes.map((n) => (n.id === nodeIdVal ? { ...n, bypassed: !n.bypassed } : n)),
+        nodes: state.nodes.map((node) => (node.id === nodeIdVal ? { ...node, bypassed: !node.bypassed } : node)),
     });
 }

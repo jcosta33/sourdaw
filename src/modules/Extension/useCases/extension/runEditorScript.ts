@@ -23,8 +23,11 @@ export function runEditorScript(): void {
             error: (msg: string) => appendLog('error', String(msg)),
         };
 
-        const fn = new Function('console', 'daw', code);
-        fn(sandboxedConsole, createDawApi());
+        const fn = new Function('console', 'daw', code); // eslint-disable-line @typescript-eslint/no-implied-eval -- intentional: this use case executes user-authored editor scripts; see security note above
+        (fn as (console: typeof sandboxedConsole, daw: ReturnType<typeof createDawApi>) => void)(
+            sandboxedConsole,
+            createDawApi()
+        );
         appendLog('info', '✓ Script completed');
     } catch (error) {
         appendLog('error', `Script error: ${error}`);

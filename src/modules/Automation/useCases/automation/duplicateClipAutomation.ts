@@ -7,7 +7,7 @@ export function duplicateClipAutomation(sourceClipId: string, newClipId: string)
         return;
     }
 
-    const sourceLanes = state.lanes.filter((l) => l.clipId === sourceClipId);
+    const sourceLanes = state.lanes.filter((length) => length.clipId === sourceClipId);
     if (sourceLanes.length === 0) {
         return;
     }
@@ -23,10 +23,10 @@ export function duplicateClipAutomation(sourceClipId: string, newClipId: string)
                 newClipId
             )
         )
-        .map((newLane, i) => ({
+        .map((newLane, index) => ({
             ...newLane,
-            points: sourceLanes[i]!.points.map((p) => ({ ...p })),
-            visible: sourceLanes[i]!.visible,
+            points: sourceLanes[index]!.points.map((param) => ({ ...param })),
+            visible: sourceLanes[index]!.visible,
         }));
 
     automationStore.set({

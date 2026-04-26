@@ -5,8 +5,9 @@ import { addTrack } from '../../useCases/addTrack';
 import { addExternalDevice } from '../../useCases/device/addExternalDevice';
 
 export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
-    execute: async (a) => {
-        const { pluginId, trackId: providedTrackId } = a.payload;
+    // eslint-disable-next-line @typescript-eslint/require-await -- handler interface requires async execute; this handler has no asynchronous operations
+    execute: async (alpha) => {
+        const { pluginId, trackId: providedTrackId } = alpha.payload;
 
         let trackId = providedTrackId;
         if (!trackId) {
@@ -26,6 +27,6 @@ export const handleLoadExternalPlugin = createHandler<'loadExternalPlugin'>({
         const pluginName = scanned?.name ?? pluginId;
         addExternalDevice(trackId, pluginId, pluginName);
     },
-    describe: (a) => ({ label: `Load external plugin "${a.payload.pluginId}"` }),
+    describe: (alpha) => ({ label: `Load external plugin "${alpha.payload.pluginId}"` }),
     undoable: false,
 });

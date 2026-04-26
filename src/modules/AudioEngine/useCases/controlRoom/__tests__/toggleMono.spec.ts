@@ -5,7 +5,7 @@ import { toggleMono } from '../toggleMono';
 const mocks = vi.hoisted(() => ({
     state: {
         monoActive: false,
-    } as any,
+    } as { monoActive: boolean } | null,
     set: vi.fn(),
 }));
 

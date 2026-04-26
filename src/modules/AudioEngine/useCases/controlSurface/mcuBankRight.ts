@@ -11,9 +11,9 @@ export function mcuBankRight(totalTracks: number): void {
         mcu: {
             ...state.mcu,
             bankOffset: Math.min(maxOffset, state.mcu.bankOffset + 8),
-            faders: state.mcu.faders.map((f, i) => ({
-                ...f,
-                trackIndex: Math.min(maxOffset, state.mcu.bankOffset + 8) + i,
+            faders: state.mcu.faders.map((freq, index) => ({
+                ...freq,
+                trackIndex: Math.min(maxOffset, state.mcu.bankOffset + 8) + index,
             })),
         },
     });

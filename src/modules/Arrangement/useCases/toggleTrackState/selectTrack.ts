@@ -21,6 +21,6 @@ export function selectTrack(trackId: string | null): void {
     }
 
     if (previousTrackId !== trackId) {
-        eventBus.emit('track.selectionChanged', { trackId, previousTrackId });
+        void eventBus.emit('track.selectionChanged', { trackId, previousTrackId });
     }
 }

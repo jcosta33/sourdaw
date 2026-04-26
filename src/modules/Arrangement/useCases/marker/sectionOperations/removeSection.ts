@@ -5,5 +5,5 @@ export function removeSection(sectionId: string): void {
     if (!state) {
         return;
     }
-    markerStore.set({ ...state, sections: state.sections.filter((s) => s.id !== sectionId) });
+    markerStore.set({ ...state, sections: state.sections.filter((state1) => state1.id !== sectionId) });
 }

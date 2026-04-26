@@ -41,6 +41,7 @@ export type AnalyzeMixOutput = {
     suggestions: string[];
 };
 
+// eslint-disable-next-line @typescript-eslint/require-await -- async API contract; callers await this; will be async when real DSP analysis is added
 export async function analyzeMix(): Promise<AnalyzeMixOutput> {
     const masterAnalyser = getMasterAnalyser();
     const masterLevels = readLevels(masterAnalyser);

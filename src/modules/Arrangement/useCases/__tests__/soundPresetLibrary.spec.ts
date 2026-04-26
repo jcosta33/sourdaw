@@ -5,7 +5,7 @@ import * as subject from '../soundPresetLibrary';
 describe('soundPresetLibrary', () => {
     it('should export getFactoryPresets', () => {
         expect(subject.getFactoryPresets).toBeDefined();
-        const t = typeof subject.getFactoryPresets;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getFactoryPresets;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

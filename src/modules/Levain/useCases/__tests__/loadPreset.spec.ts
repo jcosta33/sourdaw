@@ -1,10 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../stores/levainStore', () => ({
-    levainStore: {
-        value: { patch: { articulations: [] }, currentArticulationDisplay: '' },
+const DEVICE_ID = 'd1';
+
+const { mockLevainStore } = vi.hoisted(() => ({
+    mockLevainStore: {
+        value: null as Record<string, { patch: { articulations: unknown[] }; currentArticulationDisplay: string }> | null,
         set: vi.fn(),
     },
+}));
+
+vi.mock('../../stores/levainStore', () => ({
+    levainStore: mockLevainStore,
 }));
 
 vi.mock('../levainParamBridge/loadSamplesForInstrument', () => ({
@@ -15,36 +21,37 @@ vi.mock('../levainParamBridge/setLevainParamWithAudio', () => ({
     setLevainParamWithAudio: vi.fn(),
 }));
 
-import { levainStore } from '../../stores/levainStore';
 import { loadSamplesForInstrument } from '../levainParamBridge/loadSamplesForInstrument';
 import { setLevainParamWithAudio } from '../levainParamBridge/setLevainParamWithAudio';
 import { loadInstrument } from '../loadPreset';
 
 describe('loadInstrument', () => {
     beforeEach(() => {
-        vi.mocked(levainStore.set).mockClear();
+        mockLevainStore.value = {
+            [DEVICE_ID]: { patch: { articulations: [] }, currentArticulationDisplay: '' },
+        };
+        mockLevainStore.set.mockClear();
         vi.mocked(setLevainParamWithAudio).mockClear();
         vi.mocked(loadSamplesForInstrument).mockClear();
     });
 
     it('updates the store with the default patch and triggers sample load', () => {
-        loadInstrument('violin-1');
+        loadInstrument(DEVICE_ID, 'violin-1');
 
-        expect(levainStore.set).toHaveBeenCalled();
-        expect(loadSamplesForInstrument).toHaveBeenCalledWith('violin-1');
+        expect(mockLevainStore.set).toHaveBeenCalled();
+        expect(loadSamplesForInstrument).toHaveBeenCalledWith(DEVICE_ID, 'violin-1');
         // Forwards each engine param at least once
-        expect(setLevainParamWithAudio).toHaveBeenCalledWith('masterGain', expect.any(Number));
-        expect(setLevainParamWithAudio).toHaveBeenCalledWith('legato', expect.anything());
+        expect(setLevainParamWithAudio).toHaveBeenCalledWith(DEVICE_ID, 'masterGain', expect.any(Number));
+        expect(setLevainParamWithAudio).toHaveBeenCalledWith(DEVICE_ID, 'legato', expect.anything());
     });
 
     it('skips patch updates when the store is empty', () => {
-        // @ts-expect-error — overriding mock value for null branch
-        levainStore.value = null;
+        mockLevainStore.value = null;
 
-        loadInstrument('violin-1');
+        loadInstrument(DEVICE_ID, 'violin-1');
 
-        expect(levainStore.set).not.toHaveBeenCalled();
+        expect(mockLevainStore.set).not.toHaveBeenCalled();
         // Sample load is still triggered
-        expect(loadSamplesForInstrument).toHaveBeenCalledWith('violin-1');
+        expect(loadSamplesForInstrument).toHaveBeenCalledWith(DEVICE_ID, 'violin-1');
     });
 });

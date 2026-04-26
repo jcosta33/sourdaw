@@ -44,7 +44,7 @@ describe('tempoMap', () => {
         mockStore.value = { changes: [{ id: 'c1', beat: 8, tempo: 100, curve: 'instant' }] };
         addTempoChange(4, 120);
         const result = setMock.mock.calls[0]![0]!;
-        expect(result.changes.map((c) => c.beat)).toEqual([4, 8]);
+        expect(result.changes.map((context) => context.beat)).toEqual([4, 8]);
     });
 
     it('addTempoChange replaces an existing entry at the same beat', () => {
@@ -64,7 +64,7 @@ describe('tempoMap', () => {
             ],
         };
         removeTempoChange('c1');
-        expect(setMock.mock.calls[0]![0]!.changes.map((c) => c.id)).toEqual(['c2']);
+        expect(setMock.mock.calls[0]![0]!.changes.map((context) => context.id)).toEqual(['c2']);
     });
 
     it('updateTempoChange clamps tempo to [20, 999]', () => {

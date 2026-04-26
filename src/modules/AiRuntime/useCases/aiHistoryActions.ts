@@ -9,9 +9,9 @@ export async function revertAiActionGroup(group: AiActionGroup): Promise<void> {
         return;
     }
 
-    const groupEntries = state.past.filter((e) => e.groupId === group.groupId);
-    for (let i = groupEntries.length - 1; i >= 0; i--) {
-        const entry = groupEntries[i]!;
+    const groupEntries = state.past.filter((event) => event.groupId === group.groupId);
+    for (let index = groupEntries.length - 1; index >= 0; index--) {
+        const entry = groupEntries[index]!;
         if (entry.kind === 'callback') {
             entry.undo();
         } else if (entry.inverseAction) {
@@ -20,7 +20,7 @@ export async function revertAiActionGroup(group: AiActionGroup): Promise<void> {
     }
 
     undoStore.set({
-        past: state.past.filter((e) => e.groupId !== group.groupId),
+        past: state.past.filter((event) => event.groupId !== group.groupId),
         future: [...groupEntries, ...state.future],
     });
 

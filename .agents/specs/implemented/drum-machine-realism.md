@@ -73,6 +73,7 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
     **Pitch sigh:** After the attack pulse, Q43 leakage current causes R_eff to drift gradually from 6.8 kΩ back toward 53.8 kΩ. Werner fits this as: `i_C = −ln(1 + e^(α × (V_comm − V₀)))^m / α` with fitted constants α=14.3150, V₀=−0.5560, m=1.4765×10⁻⁵. This creates a ~300 ms slow pitch descent from ~58 Hz to ~49 Hz.
 
     **Bridged-T transfer function** (continuous-time bandpass):
+
     ```
     H(s) = (β₂s² + β₁s + β₀) / (α₂s² + α₁s + α₀)
     β₂ = R_eff × R167 × C41 × C42
@@ -84,6 +85,7 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
     ```
 
     **Pulse shaper diode clip** (1N4148, Is≈10⁻¹² A, VT≈26 mV, n≈1): The memoryless nonlinearity after the linear shelf filter clips the negative swing at ~0.71 V:
+
     ```rust
     fn pulse_shape(v: f32) -> f32 {
         if v >= 0.0 { v } else { -0.71 * (v.exp() - 1.0) }
@@ -93,11 +95,13 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
     **Feedback buffer** (decay control): First-order high-shelf filter whose gain increases with the decay knob position k ∈ [0,1], sustaining oscillation longer. Decay range: 50–800 ms (300 ms at center).
 
     **Feedback path transfer function** (forward path, research-accurate form for reference or direct implementation):
+
     ```
     H_fb(s) = (Rk × R167 × C41 × s) /
               (Rk × R167 × C41 × C42 × s² + Rk × R170 × (C41 + C42) × s + Rk + R170)
     where Rk = R161 ∥ (R165 + R166)   (parallel combination)
     ```
+
     The first-order high-shelf above is an acceptable lumped substitute if tuned to match this H_fb's magnitude and decay envelope; otherwise implement the full rational form directly.
 
     **Feedback loop resolution:** Insert a single unit delay (z⁻¹) after the feedback buffer to break the delay-free loop. At 48 kHz this is ~21 µs — negligible relative to kick drum periods (~20 ms).
@@ -108,7 +112,7 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
     - Longer ring time (more energy in the resonator)
     - More pronounced pitch chirp (higher initial excitation of the frequency-shifted mode)
     - Greater harmonic content from the diode nonlinearity seeing larger signals
-    This is NOT just a volume multiplier on the output.
+      This is NOT just a volume multiplier on the output.
 
 3. **808 snare — dual bridged-T plus filtered noise.** Two bridged-T oscillators at frequencies derived from service manual components:
     - Lower oscillator: R196=680Ω, R197=820kΩ, C58=56nF, C59=27nF → fc ≈ 173 Hz
@@ -119,14 +123,14 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
 
 4. **808 hi-hat — six PolyBLEP square oscillators at measured frequencies.** The hi-hat uses a Hitachi HD14584 hex Schmitt trigger inverter IC generating six square waves via RC astable multivibrators. Werner (ICMC 2014) measured these from SPICE simulation:
 
-    | Oscillator | Frequency  | Tunable                   | Nominal pitch (reference)     |
-    | ---------- | ---------- | ------------------------- | ----------------------------- |
-    | 1          | 800 Hz     | Yes (TM1), 359–1150 Hz   | G5 +35¢                       |
-    | 2          | 540 Hz     | Yes (TM2), 254–627 Hz    | C♯5 −45¢                     |
-    | 3          | 522.7 Hz   | Fixed                     | C5 +7¢                        |
-    | 4          | 369.6 Hz   | Fixed                     | F♯4 +19¢                     |
-    | 5          | 304.4 Hz   | Fixed                     | D4 +42¢                       |
-    | 6          | 205.3 Hz   | Fixed                     | G♯3 +40¢                     |
+    | Oscillator | Frequency | Tunable                | Nominal pitch (reference) |
+    | ---------- | --------- | ---------------------- | ------------------------- |
+    | 1          | 800 Hz    | Yes (TM1), 359–1150 Hz | G5 +35¢                   |
+    | 2          | 540 Hz    | Yes (TM2), 254–627 Hz  | C♯5 −45¢                  |
+    | 3          | 522.7 Hz  | Fixed                  | C5 +7¢                    |
+    | 4          | 369.6 Hz  | Fixed                  | F♯4 +19¢                  |
+    | 5          | 304.4 Hz  | Fixed                  | D4 +42¢                   |
+    | 6          | 205.3 Hz  | Fixed                  | G♯3 +40¢                  |
 
     Schmitt trigger oscillator frequency: `f = 1 / (2 × R_osc × C_osc × ln((VDD − VT⁻)/(VDD − VT⁺)))`
 
@@ -159,6 +163,7 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
     **909 vs 808 critical difference:** The 808 kick is a self-decaying resonant circuit (bridged-T IS the oscillator, natural decay IS the envelope). The 909 separates oscillation from amplitude shaping: free-running VCO + explicit envelope generators for pitch and amplitude. This gives the 909 more punch and midrange presence; the 808 produces deeper, cleaner sub-bass.
 
 9. **909 noise — 31-bit LFSR.** Shared noise generator for snare, clap, and toms. Two CD4006 18-stage shift registers + one CD4070 quad-XOR gate form a 31-stage maximal-length LFSR with feedback taps at stages 31 and 13:
+
     ```rust
     fn lfsr_step(&mut self) -> f32 {
         let new_bit = ((self.state >> 30) ^ (self.state >> 12)) & 1;
@@ -167,6 +172,7 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
         if (self.state >> 30) & 1 == 1 { 1.0 } else { -1.0 }
     }
     ```
+
     Sequence length: 2³¹ − 1 = 2,147,483,647. Run at sample rate. The existing xorshift32 PRNG produces white noise but with different statistical properties — the LFSR must be used for 909-specific voices to match the hardware's noise character.
 
     **Hardware clock note (informative):** In the original 909 the LFSR is clocked at **~300 kHz**; in DSP we run it at the audio sample rate. The decimation factor does not materially alter the spectral character at typical audio rates.
@@ -202,6 +208,7 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
 ### LinnDrum
 
 14. **LinnDrum — µ-law companding DAC model.** The LinnDrum plays back 8-bit samples at 35 kHz through AM6070 µ-law companding DACs. Implement µ-255 law expansion:
+
     ```rust
     fn mu_law_expand(compressed: u8) -> f32 {
         let mu: f32 = 255.0;
@@ -210,6 +217,7 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
         sign * (1.0 / mu) * ((1.0 + mu).powf(magnitude) - 1.0)
     }
     ```
+
     Effective dynamic range: ~72–78 dB (equivalent to 12–13 linear bits). This non-linear quantization sounds dramatically warmer than linear 8-bit.
 
     **No anti-aliasing filter on playback** — Roger Linn deliberately chose to let high-frequency aliasing through because "the results sounded like the sizzle of drums."
@@ -229,6 +237,7 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
 ### DSP primitives
 
 16. **Bridged-T filter primitive.** Implement a reusable `BridgedTFilter` struct as a time-varying biquad using bilinear transform (`s → (2/T)(z−1)/(z+1)`) in Transposed Direct Form II. Interface:
+
     ```rust
     struct BridgedTFilter {
         s1: f32, s2: f32,          // TDF-II state
@@ -236,12 +245,14 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
         a1: f32, a2: f32,          // denominator coefficients (a0 normalized to 1)
     }
     ```
+
     - `update_coefficients(r_eff, r_shunt, c1, c2, sample_rate)` — computes biquad coefficients from continuous-time β/α values via bilinear transform.
     - `process(input) -> output` — single-sample processing.
     - Coefficients are derived from the transfer function in requirement 1.
     - Must be numerically stable under rapid coefficient changes (R_eff sweeps from 6.8k to 53.8k in ~240 samples at 48 kHz). TDF-II is chosen specifically for this stability property.
 
 17. **PolyBLEP square oscillator.** Implement `PolyBlepSquare` struct with second-order polynomial bandlimited step correction at each transition:
+
     ```rust
     fn poly_blep(t: f32, dt: f32) -> f32 {
         if t < dt {
@@ -255,9 +266,11 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
         }
     }
     ```
+
     Apply correction at both rising and falling edges of the square wave. The 808 hi-hat bank instantiates 6 of these at the frequencies in requirement 4.
 
 18. **ADAA for memoryless nonlinearities.** First-order antiderivative antialiasing for all nonlinear saturation stages:
+
     ```rust
     fn adaa_first_order(f1_xn: f32, f1_xprev: f32, xn: f32, xprev: f32, f_xn: f32) -> f32 {
         let dx = xn - xprev;
@@ -268,13 +281,15 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
         }
     }
     ```
+
     Antiderivatives for specific nonlinearities:
     - **tanh(x):** F₁(x) = ln(cosh(x))
     - **Hard clip at ±1:** F₁(x) = x²/2 if |x|<1, |x|−0.5 if |x|≥1
     - **Pulse shaper diode clip:** compute numerically from the piecewise function in requirement 1.
-    ADAA introduces 0.5 sample delay — acceptable for all drum voice applications. This provides sufficient antialiasing for the gentle saturation curves (tanh, diode) used in these circuits without the cost of oversampling.
+      ADAA introduces 0.5 sample delay — acceptable for all drum voice applications. This provides sufficient antialiasing for the gentle saturation curves (tanh, diode) used in these circuits without the cost of oversampling.
 
 19. **Exponential RC envelopes.** All envelopes use exponential RC decay:
+
     ```rust
     fn rc_decay(state: &mut f32, target: f32, coefficient: f32) -> f32 {
         // coefficient = exp(-1.0 / (decay_time_seconds * sample_rate))
@@ -282,6 +297,7 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
         *state
     }
     ```
+
     Multi-burst envelopes (808 clap, 909 clap) use state machines chaining RC stages. The existing exponential envelope pattern in the codebase (`env *= coeff`) is the correct approach — reuse it.
 
 20. **Component tolerance randomization.** Each circuit-faithful engine instance accepts an optional `tolerance_seed: u32` parameter. When non-zero, apply jitter to component values using a deterministic PRNG seeded from this value:
@@ -292,9 +308,11 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
     - The jitter is applied once at construction time, not per-sample. Component values are stored as fields on the engine struct.
 
 21. **DC blocking on all voice outputs.** Every voice output passes through a DC blocker (Julius O. Smith):
+
     ```
     y[n] = x[n] − x[n−1] + R × y[n−1],  R ≈ 0.995 at 44.1 kHz (~32 Hz cutoff)
     ```
+
     The existing engines do NOT have DC blockers — this is a new requirement for all circuit-faithful engines. The bridged-T feedback loop and nonlinearities can accumulate DC offset.
 
 22. **Denormal protection.** All IIR filter states (bridged-T, SVF, biquad cascades, one-pole filters) must flush denormals. On x86: set MXCSR FTZ+DAZ bits (`_mm_setcsr(csr | 0x8040)`). On ARM/Apple Silicon: flush by default. Portable WASM fallback: add ±1e-15 (alternating sign each buffer) to IIR filter inputs when state magnitude falls below 1e-20. Without protection, IIR states decaying toward zero cause 10–100× CPU spikes.
@@ -415,14 +433,17 @@ Replace the simplified drum synth engines in Toaster with circuit-informed model
 ### Bridged-T coefficient computation
 
 The continuous-time transfer function (requirement 1) maps to a digital biquad via bilinear transform with `c = 2 × sample_rate`:
+
 ```
 s → c × (z−1)/(z+1)
 ```
+
 Substituting into H(s) and collecting terms in z⁻¹ and z⁻² yields the biquad coefficients b0, b1, b2, a0, a1, a2. Normalize by a0. During the attack phase, R_eff changes rapidly — recompute per-sample during this phase (~240 samples), then switch to per-block updates once R_eff stabilizes (change < 0.1% per sample).
 
 ### File organization
 
 New engine files in `crates/daw-dsp/src/toaster/engines/`:
+
 - `kick_808.rs` — bridged-T kick
 - `kick_909.rs` — VCO + waveshaper kick
 - `snare_808.rs` — dual bridged-T + Sallen-Key noise
@@ -436,6 +457,7 @@ New engine files in `crates/daw-dsp/src/toaster/engines/`:
 - `lfsr.rs` — 31-bit LFSR noise generator (shared by 909 engines)
 
 New shared primitives in `crates/daw-dsp/src/toaster/`:
+
 - `bridged_t.rs` — `BridgedTFilter` struct
 - `poly_blep.rs` — `PolyBlepSquare` struct
 - `adaa.rs` — `adaa_first_order()` and antiderivative functions
@@ -443,12 +465,14 @@ New shared primitives in `crates/daw-dsp/src/toaster/`:
 - `tolerance.rs` — component jitter from seed
 
 New effect in `crates/daw-dsp/src/toaster/`:
+
 - `sp1200.rs` — `Sp1200Effect` struct (five-stage signal chain)
 - `mu_law.rs` — µ-law expand/compress for LinnDrum
 
 ### Enum extension pattern
 
 Add new variants to `DrumEngineType`:
+
 ```rust
 pub enum DrumEngineType {
     // Existing generic engines (unchanged)
@@ -460,6 +484,7 @@ pub enum DrumEngineType {
     Rimshot808, Maracas808, Cr78Drum, Cr78Metallic,
 }
 ```
+
 Each new variant gets a corresponding `DrumSynthEngine` enum variant and match arm in all five methods (`trigger`, `release`, `tick`, `is_active`, `set_param`).
 
 ### Existing `LofiProcessor` — do not modify
@@ -506,6 +531,7 @@ The existing engines import `std::f32::consts::TAU`. New engines should use `cor
 Any engine that adapts code, algorithms, or structural patterns from these sources **must** include the appropriate copyright notice in the source file header. Use the format below.
 
 **mi-plaits-dsp-rs** (MIT) — primary reference for 808 kick, snare, hi-hat behavioral models:
+
 ```
 // Adapted from mi-plaits-dsp-rs by Oliver Rockstedt (sourcebox)
 // Original: Mutable Instruments Plaits by Émilie Gillet
@@ -514,6 +540,7 @@ Any engine that adapts code, algorithms, or structural patterns from these sourc
 ```
 
 **Mutable Instruments Plaits** (MIT) — if referencing the original C++ rather than the Rust port:
+
 ```
 // Based on Mutable Instruments Plaits by Émilie Gillet
 // License: MIT — Copyright (c) 2016 Émilie Gillet
@@ -521,6 +548,7 @@ Any engine that adapts code, algorithms, or structural patterns from these sourc
 ```
 
 **DaisySP** (MIT) — if referencing the Electrosmith embedded port:
+
 ```
 // Adapted from DaisySP by Electrosmith
 // License: MIT — Copyright (c) 2020 Electrosmith
@@ -528,6 +556,7 @@ Any engine that adapts code, algorithms, or structural patterns from these sourc
 ```
 
 **ChowKick / chowdsp_wdf** (BSD 3-clause) — if adapting bridged-T or WDF coefficient computation:
+
 ```
 // Adapted from ChowKick by Jatin Chowdhury
 // License: BSD 3-Clause — Copyright (c) 2021 Jatin Chowdhury

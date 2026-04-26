@@ -38,19 +38,19 @@ export class NoteRepeater extends BaseMidiProcessor {
             if (event.kind.type === 'noteOn') {
                 // Generate repeats
                 for (let r = 1; r <= this.repeatCount; r++) {
-                    const t = event.timeSamples + r * intervalSamples;
+                    const time = event.timeSamples + r * intervalSamples;
                     const vel = Math.max(1, Math.round(event.kind.velocity * this.decay ** r));
                     const note = Math.max(0, Math.min(127, event.kind.note + r * this.pitchStep));
 
                     // Schedule Note On
                     this.scheduled.push({
-                        timeSamples: t,
+                        timeSamples: time,
                         kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: vel },
                     });
 
                     // Schedule Note Off
                     this.scheduled.push({
-                        timeSamples: t + noteLenSamples,
+                        timeSamples: time + noteLenSamples,
                         kind: { type: 'noteOff', channel: event.kind.channel, note },
                     });
                 }
@@ -62,8 +62,8 @@ export class NoteRepeater extends BaseMidiProcessor {
         const now = input.length > 0 ? input[0]!.timeSamples : 0;
         const blockEnd = now + 8192; // generous window
         const drained = this.scheduled.drainRange(0, blockEnd);
-        for (const e of drained) {
-            output.push(e);
+        for (const event1 of drained) {
+            output.push(event1);
         }
     }
 

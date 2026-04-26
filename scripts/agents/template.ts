@@ -10,6 +10,7 @@ const METADATA_START = '## Metadata';
  * @returns {string}
  */
 export function renderTemplate(templateContent, data) {
+    const cmds = data.commands || {};
     return templateContent
         .replace(/\{\{title\}\}/g, data.title || '')
         .replace(/\{\{slug\}\}/g, data.slug || '')
@@ -21,7 +22,11 @@ export function renderTemplate(templateContent, data) {
         .replace(/\{\{status\}\}/g, data.status || 'active')
         .replace(/\{\{taskFile\}\}/g, data.taskFile || '')
         .replace(/\{\{specFile\}\}/g, data.specFile || '')
-        .replace(/\{\{type\}\}/g, data.type || '');
+        .replace(/\{\{type\}\}/g, data.type || '')
+        .replace(/\{\{cmdInstall\}\}/g, cmds.install || 'npm i')
+        .replace(/\{\{cmdTypecheck\}\}/g, cmds.typecheck || 'npm run typecheck')
+        .replace(/\{\{cmdValidateDeps\}\}/g, cmds.validateDeps || 'npm run deps:validate')
+        .replace(/\{\{cmdTest\}\}/g, cmds.test || 'npm test');
 }
 
 /**
@@ -33,6 +38,7 @@ function buildMetadataBlock(data) {
     return [
         `## Metadata`,
         `- Slug: ${data.slug}`,
+        ...(data.parent ? [`- Parent: ${data.parent}`] : []),
         `- Agent: ${data.agent}`,
         `- Branch: ${data.branch}`,
         `- Base: ${data.baseBranch}`,

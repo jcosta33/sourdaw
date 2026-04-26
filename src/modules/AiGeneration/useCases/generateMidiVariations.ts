@@ -33,13 +33,13 @@ function isVariationNoteArray(arr: unknown): arr is VariationNote[] {
         return false;
     }
     return arr.every(
-        (n) =>
-            typeof n === 'object' &&
-            n !== null &&
-            typeof (n as Record<string, unknown>).pitch === 'number' &&
-            typeof (n as Record<string, unknown>).startBeat === 'number' &&
-            typeof (n as Record<string, unknown>).duration === 'number' &&
-            typeof (n as Record<string, unknown>).velocity === 'number'
+        (node) =>
+            typeof node === 'object' &&
+            node !== null &&
+            typeof (node as Record<string, unknown>).pitch === 'number' &&
+            typeof (node as Record<string, unknown>).startBeat === 'number' &&
+            typeof (node as Record<string, unknown>).duration === 'number' &&
+            typeof (node as Record<string, unknown>).velocity === 'number'
     );
 }
 
@@ -56,7 +56,7 @@ export async function generateMidiVariations(
 
     let targetClip: Clip | null = null;
     for (const track of state.tracks) {
-        const clip = track.clips.find((c) => c.id === clipId);
+        const clip = track.clips.find((context) => context.id === clipId);
         if (clip) {
             targetClip = clip;
             break;
@@ -82,8 +82,8 @@ export async function generateMidiVariations(
     // Build a compact note representation relative to clip start for the LLM prompt
     const noteStrings = notes
         .map(
-            (n) =>
-                `[pitch=${n.pitch}, start=${(n.startBeat - startBeat).toFixed(2)}, duration=${n.duration.toFixed(2)}, velocity=${n.velocity.toFixed(2)}]`
+            (node) =>
+                `[pitch=${node.pitch}, start=${(node.startBeat - startBeat).toFixed(2)}, duration=${node.duration.toFixed(2)}, velocity=${node.velocity.toFixed(2)}]`
         )
         .join(', ');
 

@@ -8,7 +8,7 @@ export function deleteCueMix(cueId: string): void {
 
     controlRoomStore.set({
         ...state,
-        cueMixes: state.cueMixes.filter((c) => c.id !== cueId),
+        cueMixes: state.cueMixes.filter((context) => context.id !== cueId),
         activeCueId: state.activeCueId === cueId ? null : state.activeCueId,
     });
 }

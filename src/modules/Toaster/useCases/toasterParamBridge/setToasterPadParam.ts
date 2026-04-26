@@ -22,7 +22,7 @@ function flushPadParam(cacheKey: string, trackId: string): void {
     if (!strip) {
         return;
     }
-    const dn = strip.deviceNodes.find((d) => d.toasterControls && d.toasterControls.ready !== undefined);
+    const dn = strip.deviceNodes.find((data) => data.toasterControls && data.toasterControls.ready !== undefined);
     if (dn?.toasterControls) {
         dn.toasterControls.setPadParam(entry.pad, entry.name, entry.value);
     }
@@ -30,7 +30,7 @@ function flushPadParam(cacheKey: string, trackId: string): void {
 
 export function setToasterPadParam(deviceId: string, padIndex: number, key: keyof PadState, value: number): void {
     if (!STRING_FIELDS.has(key)) {
-        updatePad(padIndex, { [key]: value } as Partial<PadState>);
+        updatePad(deviceId, padIndex, { [key]: value } as Partial<PadState>);
     }
 
     const ref = findDeviceRef(deviceId);

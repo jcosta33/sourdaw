@@ -3,13 +3,15 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { midiStore } from '../../../stores/midiStore';
 import { setAllVelocities } from '../setAllVelocities';
 
-const note = (id: string, velocity: number) => ({
-    id,
-    pitch: 60,
-    startBeat: 0,
-    duration: 0.25,
-    velocity,
-});
+function note(id: string, velocity: number) {
+    return {
+        id,
+        pitch: 60,
+        startBeat: 0,
+        duration: 0.25,
+        velocity,
+    };
+}
 
 describe('setAllVelocities', () => {
     beforeEach(() => {
@@ -24,9 +26,9 @@ describe('setAllVelocities', () => {
 
     it('should set every note velocity to the clamped value', () => {
         setAllVelocities('clip1', 200);
-        expect(midiStore.value?.notesByClipId.clip1?.every((n) => n.velocity === 127)).toBe(true);
+        expect(midiStore.value?.notesByClipId.clip1?.every((node) => node.velocity === 127)).toBe(true);
         setAllVelocities('clip1', 0);
-        expect(midiStore.value?.notesByClipId.clip1?.every((n) => n.velocity === 1)).toBe(true);
+        expect(midiStore.value?.notesByClipId.clip1?.every((node) => node.velocity === 1)).toBe(true);
     });
 
     it('should do nothing when the clip is empty or missing', () => {

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getPatternInstances } from '../getPatternInstances';
 
 const mocks = vi.hoisted(() => ({
-    trackStore: { value: null },
+    trackStore: { value: null as unknown },
 }));
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({

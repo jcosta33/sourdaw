@@ -20,7 +20,7 @@ type ResetGrandBoulePerNoteParamsInput = {
 };
 
 /** Reset all per-note parameters for a given key back to defaults. */
-export const resetGrandBoulePerNoteParams = (input: ResetGrandBoulePerNoteParamsInput): void => {
+export function resetGrandBoulePerNoteParams(input: ResetGrandBoulePerNoteParamsInput): void {
     const defaults = createDefaultPerNoteValues();
 
     const next = new Map(input.perNoteMap);
@@ -34,4 +34,4 @@ export const resetGrandBoulePerNoteParams = (input: ResetGrandBoulePerNoteParams
             value: defaults[descriptor.key],
         });
     }
-};
+}

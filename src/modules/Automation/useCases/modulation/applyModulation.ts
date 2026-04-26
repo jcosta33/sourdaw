@@ -1,5 +1,7 @@
 import { modulationStore, modulationRuntimeStore } from '../../stores/modulationStore';
 
+import { computeModulatorValue } from './computeModulatorValue';
+
 /**
  * Apply procedural modulation for the current playhead position.
  * Computes runtime values for all active modulators (LFO, Env, Step).
@@ -20,44 +22,7 @@ export function applyModulation(playheadBeat: number): void {
             continue;
         }
 
-        let value = 0;
-        const cfg = mod.config;
-
-        if (cfg.kind === 'lfo') {
-            const period = cfg.rate || 1;
-            const phase = cfg.phase || 0;
-            const x = (((playheadBeat / period + phase) % 1) + 1) % 1;
-
-            switch (cfg.waveform) {
-                case 'sine':
-                    value = (Math.sin(x * Math.PI * 2) + 1) / 2;
-                    break;
-                case 'saw':
-                    value = x;
-                    break;
-                case 'square':
-                    value = x < 0.5 ? 1 : 0;
-                    break;
-                case 'triangle':
-                    value = x < 0.5 ? x * 2 : 2 - x * 2;
-                    break;
-                case 'random':
-                    // Pseudo-random based on beat for consistency
-                    value = Math.abs((Math.sin(Math.floor(playheadBeat / period) * 12.9898) * 43758.5453123) % 1);
-                    break;
-            }
-            value *= cfg.depth;
-        } else if (cfg.kind === 'step') {
-            const period = cfg.rate || 1;
-            const len = cfg.steps.length;
-            if (len === 0) {
-                value = 0;
-            } else {
-                const stepIdx = ((Math.floor(playheadBeat / period) % len) + len) % len;
-                value = cfg.steps[stepIdx] ?? 0;
-            }
-        }
-
+        const value = computeModulatorValue(mod, playheadBeat);
         if (runtimeValues[mod.id] !== value) {
             runtimeValues[mod.id] = value;
             changed = true;

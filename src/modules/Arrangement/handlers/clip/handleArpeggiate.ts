@@ -2,15 +2,15 @@ import { arpeggiate, type ArpPattern, type ArpRate } from '#/modules/MIDI/useCas
 import { createHandler } from '#/utils/createHandler';
 
 export const handleArpeggiate = createHandler<'arpeggiate'>({
-    execute: (a) => {
+    execute: (alpha) => {
         arpeggiate(
-            a.payload.clipId,
-            (a.payload.pattern as ArpPattern) ?? 'up',
-            (a.payload.rate as ArpRate) ?? 16,
-            a.payload.octaves ?? 1,
-            a.payload.gate ?? 80
+            alpha.payload.clipId,
+            (alpha.payload.pattern as ArpPattern) ?? 'up',
+            (alpha.payload.rate as ArpRate) ?? 16,
+            alpha.payload.octaves ?? 1,
+            alpha.payload.gate ?? 80
         );
     },
-    describe: (a) => ({ label: `Arpeggiate (${a.payload.pattern ?? 'up'})` }),
+    describe: (alpha) => ({ label: `Arpeggiate (${alpha.payload.pattern ?? 'up'})` }),
     undoable: true,
 });

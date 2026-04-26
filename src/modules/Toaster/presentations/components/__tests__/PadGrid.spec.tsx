@@ -30,7 +30,7 @@ function makePad(index: number): PadState {
 
 describe('PadGrid (Toaster)', () => {
     it('should render', () => {
-        const pads = Array.from({ length: 8 }, (_, i) => makePad(i));
+        const pads = Array.from({ length: 8 }, (_, index) => makePad(index));
         render(<PadGrid pads={pads} selectedIndex={0} onSelectPad={vi.fn()} onTriggerPad={vi.fn()} />);
         expect(screen.getByText('P0')).toBeInTheDocument();
     });

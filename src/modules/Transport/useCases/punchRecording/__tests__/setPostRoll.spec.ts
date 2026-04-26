@@ -4,8 +4,8 @@ import { type PunchRecordingState } from '../../../stores/punchRecordingStore';
 import { setPostRoll } from '../setPostRoll';
 
 const mockPunchRecordingStore = vi.hoisted(() => ({
-    value: null as any,
-    set: vi.fn(),
+    value: null as PunchRecordingState | null,
+    set: vi.fn<(state: PunchRecordingState) => void>(),
 }));
 
 vi.mock('../../../stores/punchRecordingStore', () => ({

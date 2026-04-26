@@ -4,12 +4,12 @@ import { llmStatusStore } from '../../../../stores/llmStatusStore';
 import { initEngine } from '../initEngine';
 
 const mocks = vi.hoisted(() => ({
-    resolveBackend: vi.fn(),
-    initNativeEngine: vi.fn(),
-    initWebLlmEngine: vi.fn(),
-    isCloudAvailable: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
+    resolveBackend: vi.fn<() => string>(),
+    initNativeEngine: vi.fn<() => Promise<void>>(),
+    initWebLlmEngine: vi.fn<(modelId?: string) => Promise<void>>(),
+    isCloudAvailable: vi.fn<() => boolean>(),
+    info: vi.fn<(msg: string) => void>(),
+    warn: vi.fn<(msg: string) => void>(),
 }));
 
 vi.mock('../../backendResolution/helpers', () => ({
@@ -36,7 +36,7 @@ describe('initEngine', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         llmStatusStore.set({ state: 'idle' });
-        (globalThis as any).navigator = {};
+        Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true, writable: true });
     });
 
     it('throws if no backend is available', async () => {
@@ -59,7 +59,7 @@ describe('initEngine', () => {
     it('falls back to WebLLM if native fails and WebGPU is available', async () => {
         mocks.resolveBackend.mockReturnValue('native');
         mocks.initNativeEngine.mockRejectedValue(new Error('Native failed'));
-        (globalThis as any).navigator = { gpu: {} }; // simulate WebGPU
+        Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true }); // simulate WebGPU
         mocks.initWebLlmEngine.mockResolvedValue(undefined);
 
         await initEngine();

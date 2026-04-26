@@ -5,8 +5,8 @@ export function reorderScratchPadSection(sectionId: string, direction: 'left' | 
     if (!state) {
         return;
     }
-    const sections = [...state.sections].sort((a, b) => a.order - b.order);
-    const index = sections.findIndex((s) => s.id === sectionId);
+    const sections = [...state.sections].sort((alpha, buffer) => alpha.order - buffer.order);
+    const index = sections.findIndex((state1) => state1.id === sectionId);
     if (index < 0) {
         return;
     }
@@ -20,9 +20,9 @@ export function reorderScratchPadSection(sectionId: string, direction: 'left' | 
     sections[targetIndex] = temp;
 
     let beat = 0;
-    const reordered = sections.map((s, i) => {
-        const duration = s.endBeat - s.startBeat;
-        const updated = { ...s, order: i, startBeat: beat, endBeat: beat + duration };
+    const reordered = sections.map((state1, index1) => {
+        const duration = state1.endBeat - state1.startBeat;
+        const updated = { ...state1, order: index1, startBeat: beat, endBeat: beat + duration };
         beat += duration;
         return updated;
     });

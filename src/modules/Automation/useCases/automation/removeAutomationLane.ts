@@ -6,6 +6,6 @@ export function removeAutomationLane(laneId: string): void {
         return;
     }
     automationStore.set({
-        lanes: state.lanes.filter((l) => l.id !== laneId),
+        lanes: state.lanes.filter((length) => length.id !== laneId),
     });
 }

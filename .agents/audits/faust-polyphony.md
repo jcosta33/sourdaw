@@ -49,6 +49,7 @@ Faust instruments should support polyphonic playback (chords) and all knob chang
 **Problem:** `compilerEngine.ts:143` — `new FaustMonoDspGenerator()`. One DSP instance, one voice.
 
 **Needed:**
+
 1. Switch to `FaustPolyDspGenerator` for instrument-type modules (effects stay mono).
 2. Pass `voices: 8` (or configurable) and the mixer module to `createNode()`.
 3. Replace `scheduleDeviceParam('freq'/'gain'/'gate')` with `keyOn(channel, pitch, velocity)` / `keyOff()` calls on the poly node.

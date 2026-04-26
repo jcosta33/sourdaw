@@ -16,7 +16,7 @@ describe('handleSetClipStretchRatio', () => {
     });
 
     it('executes setClipStretchRatio with the provided payload', () => {
-        handleSetClipStretchRatio.execute({
+        void handleSetClipStretchRatio.execute({
             type: 'setClipStretchRatio',
             payload: { clipId: 'c1', ratio: 1.5 },
         });

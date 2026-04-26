@@ -5,16 +5,16 @@ import { updateTrack } from '../../../repositories/track/updateTrack';
 
 export function toggleSendPreFader(trackId: string, busId: string): void {
     const track = getTrackById(trackId);
-    const send = track?.sends.find((s) => s.busId === busId);
+    const send = track?.sends.find((state) => state.busId === busId);
     if (!send) {
         return;
     }
 
     const newPreFader = !send.preFader;
 
-    updateTrack(trackId, (t) => ({
-        ...t,
-        sends: t.sends.map((s) => (s.busId === busId ? { ...s, preFader: newPreFader } : s)),
+    updateTrack(trackId, (time) => ({
+        ...time,
+        sends: time.sends.map((state) => (state.busId === busId ? { ...state, preFader: newPreFader } : state)),
     }));
 
     engineSetSend(trackId, busId, send.level, newPreFader);

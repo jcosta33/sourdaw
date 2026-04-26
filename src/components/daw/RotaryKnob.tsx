@@ -111,7 +111,7 @@ export const RotaryKnob = ({
         midiLearnState.learningTarget.paramId === paramId &&
         paramId !== undefined
     );
-    const isMapped = Boolean(midiLearnState.mappings.some((m) => m.paramId === paramId));
+    const isMapped = Boolean(midiLearnState.mappings.some((message) => message.paramId === paramId));
     // Derive sensible defaults from range when not explicitly provided
     const step = stepProp ?? Math.max(0.001, (max - min) / 200);
     const fineStep = fineStepProp ?? step / 10;
@@ -121,8 +121,8 @@ export const RotaryKnob = ({
     const rootRef = useRef<HTMLDivElement>(null);
     const px = SIZES[size];
 
-    const clamp = (v: number): number => {
-        let clamped = Math.max(min, Math.min(max, v));
+    const clamp = (value1: number): number => {
+        let clamped = Math.max(min, Math.min(max, value1));
         if (bipolar && Math.abs(clamped - defaultValue) < (max - min) * 0.01) {
             clamped = defaultValue;
         }
@@ -158,7 +158,7 @@ export const RotaryKnob = ({
         const deltaY = startY.current - event.clientY;
         const sweepPx = 150;
 
-        let raw = 0;
+        let raw: number;
         if (scale === 'log' && min > 0) {
             const startNorm = (Math.log(startValue.current) - Math.log(min)) / (Math.log(max) - Math.log(min));
             let sensitivityNorm = 1 / sweepPx;
@@ -192,9 +192,9 @@ export const RotaryKnob = ({
         onChange(defaultValue);
     };
 
-    const handleContextMenu = (e: MouseEvent<HTMLDivElement>) => {
+    const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
         if (paramId && targetType) {
-            e.preventDefault();
+            event.preventDefault();
             startMidiLearn({
                 targetType,
                 paramId,

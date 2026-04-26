@@ -36,7 +36,7 @@ describe('handleDetectTempo', () => {
         });
         mocks.detectTempoFromBuffer.mockReturnValue(125);
 
-        handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
+        void handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
 
         expect(mocks.detectTempoFromBuffer).toHaveBeenCalledWith('buf1');
         expect(mocks.notifyUser).toHaveBeenCalledWith('Detected tempo: 125 BPM');
@@ -48,7 +48,7 @@ describe('handleDetectTempo', () => {
         });
         mocks.detectTempoFromBuffer.mockReturnValue(null);
 
-        handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
+        void handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith('Could not detect tempo');
     });
@@ -57,7 +57,7 @@ describe('handleDetectTempo', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ clips: [{ id: 'c1' }] }] });
         mocks.detectProjectTempo.mockReturnValue({ averageBpm: 120, minBpm: 110, maxBpm: 130, confidence: 0.8 });
 
-        handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
+        void handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
 
         expect(mocks.detectProjectTempo).toHaveBeenCalledTimes(1);
         expect(mocks.notifyUser).toHaveBeenCalledWith('Detected tempo: 120 BPM (110–130 range)', 'success');
@@ -67,7 +67,7 @@ describe('handleDetectTempo', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [{ clips: [{ id: 'c1' }] }] });
         mocks.detectProjectTempo.mockReturnValue({ averageBpm: 120, minBpm: 110, maxBpm: 130, confidence: 0.3 });
 
-        handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
+        void handleDetectTempo.execute({ type: 'detectTempo', payload: { clipId: 'c1' } });
 
         expect(mocks.notifyUser).toHaveBeenCalledWith(
             'Could not confidently detect tempo — add more content first',

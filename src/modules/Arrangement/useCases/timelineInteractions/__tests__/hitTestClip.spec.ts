@@ -4,7 +4,9 @@ import { type TimelineRenderModel } from '../../../models/TimelineRenderModel';
 import { hitTestClip } from '../hitTestClip/hitTestClip';
 import { hitTestTrack } from '../hitTestClip/hitTestTrack';
 
-let mockTimelineViewValue: any = null;
+import type { TimelineViewState } from '../../../stores/timelineViewStore';
+
+let mockTimelineViewValue: TimelineViewState | null = null;
 vi.mock('../../../stores/timelineViewStore', () => ({
     timelineViewStore: {
         get value() {
@@ -13,14 +15,14 @@ vi.mock('../../../stores/timelineViewStore', () => ({
     },
 }));
 
-const mockBuildTimelineRenderModel = vi.fn();
+const mockBuildTimelineRenderModel = vi.fn<(...args: unknown[]) => TimelineRenderModel | null>();
 vi.mock('../../buildTimelineRenderModel', () => ({
     buildTimelineRenderModel: () => mockBuildTimelineRenderModel(),
 }));
 
-const mockGetTrackAtY = vi.fn();
+const mockGetTrackAtY = vi.fn<(...args: unknown[]) => { index: number; id: string } | null>();
 vi.mock('../getTrackAtY', () => ({
-    getTrackAtY: (...args: any[]) => mockGetTrackAtY(...args),
+    getTrackAtY: (...args: unknown[]) => mockGetTrackAtY(...args),
 }));
 
 describe('hitTestClip', () => {
@@ -75,7 +77,7 @@ describe('hitTestClip', () => {
     });
 
     it('returns clip and track when beat falls inside a clip', () => {
-        mockTimelineViewValue = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
+        mockTimelineViewValue = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 } as unknown as TimelineViewState;
         mockBuildTimelineRenderModel.mockReturnValue(mockModel);
         mockGetTrackAtY.mockReturnValue({ index: 0, id: 't1' });
 
@@ -131,7 +133,7 @@ describe('hitTestTrack', () => {
             timeSignatureDenominator: 4,
         };
 
-        mockTimelineViewValue = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
+        mockTimelineViewValue = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 } as unknown as TimelineViewState;
         mockBuildTimelineRenderModel.mockReturnValue(mockModel);
         mockGetTrackAtY.mockReturnValue({ index: 0, id: 't1' });
 

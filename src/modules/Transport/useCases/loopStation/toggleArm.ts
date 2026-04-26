@@ -1,3 +1,5 @@
+import { pushUndoEntry } from '#/modules/Command/stores';
+
 import { loopStationStore } from '../../stores/loopStationStore';
 
 export function toggleArm(): void {
@@ -5,5 +7,25 @@ export function toggleArm(): void {
     if (!state) {
         return;
     }
-    loopStationStore.set({ ...state, armed: !state.armed });
+    const previous = state.armed;
+    const next = !previous;
+    loopStationStore.set({ ...state, armed: next });
+
+    pushUndoEntry(
+        next ? 'Arm loop station' : 'Disarm loop station',
+        () => {
+            const current = loopStationStore.value;
+            if (!current) {
+                return;
+            }
+            loopStationStore.set({ ...current, armed: previous });
+        },
+        () => {
+            const current = loopStationStore.value;
+            if (!current) {
+                return;
+            }
+            loopStationStore.set({ ...current, armed: next });
+        }
+    );
 }

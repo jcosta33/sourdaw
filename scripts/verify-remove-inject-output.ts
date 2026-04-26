@@ -16,9 +16,7 @@ const codemod = join(root, '..', 'codemods', 'remove-inject-non-container.ts');
 
 function extractPrintedSource(jscodeshiftStdout) {
     const lines = jscodeshiftStdout.split('\n');
-    const start = lines.findIndex((l) =>
-        /^(import |export |\/\*|const [a-zA-Z_]|type |interface |function )/.test(l),
-    );
+    const start = lines.findIndex((l) => /^(import |export |\/\*|const [a-zA-Z_]|type |interface |function )/.test(l));
     if (start < 0) {
         throw new Error('Could not find start of transformed source in jscodeshift output');
     }
@@ -35,10 +33,10 @@ if (files.length === 0) {
 
 let failed = false;
 for (const file of files) {
-    const out = execSync(
-        `pnpm exec jscodeshift -t "${codemod}" "${file}" -d -p --parser=tsx --extensions=ts 2>&1`,
-        { encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 },
-    );
+    const out = execSync(`pnpm exec jscodeshift -t "${codemod}" "${file}" -d -p --parser=tsx --extensions=ts 2>&1`, {
+        encoding: 'utf8',
+        maxBuffer: 20 * 1024 * 1024,
+    });
     const okMatch = out.match(/(\d+) ok/);
     const okCount = okMatch ? parseInt(okMatch[1], 10) : 0;
     if (okCount === 0) {
@@ -52,11 +50,13 @@ for (const file of files) {
         const errs = diags.filter((d) => d.category === ts.DiagnosticCategory.Error);
         if (errs.length > 0) {
             console.error(`${file}: ${errs.length} parse error(s)`);
-            console.error(ts.formatDiagnostic(errs[0], {
-                getCanonicalFileName: (f) => f,
-                getCurrentDirectory: () => '',
-                getNewLine: () => '\n',
-            }));
+            console.error(
+                ts.formatDiagnostic(errs[0], {
+                    getCanonicalFileName: (f) => f,
+                    getCurrentDirectory: () => '',
+                    getNewLine: () => '\n',
+                })
+            );
             failed = true;
         } else {
             console.log(`${file}: parse ok (${sf.statements.length} top-level statements)`);

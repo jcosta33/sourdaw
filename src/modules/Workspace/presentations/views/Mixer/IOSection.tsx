@@ -21,7 +21,7 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
     const [outputOpen, setOutputOpen] = useState(false);
     const outputRef = useRef<HTMLDivElement>(null);
     const { tracks } = useTracks();
-    const buses = tracks.filter((t) => t.kind === 'bus');
+    const buses = tracks.filter((time) => time.kind === 'bus');
     useContextMenuDismiss(outputRef, () => setOutputOpen(false));
 
     const inputLabel = track.kind === 'midi' ? 'MIDI In' : 'Default';
@@ -36,7 +36,6 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
     return (
         <MixerSection label="I/O">
             <MixerMicroReadout label="In" value={inputLabel} />
-
             <div className="relative">
                 <MixerMicroReadout
                     label="Out"
@@ -45,8 +44,8 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
                             variant="ghost"
                             size="xs"
                             className="flex h-5 max-w-16 items-center gap-0.5 truncate px-1 text-[10px]"
-                            onClick={(e) => {
-                                e.stopPropagation();
+                            onClick={(event) => {
+                                event.stopPropagation();
                                 setOutputOpen(!outputOpen);
                             }}
                             aria-haspopup="listbox"
@@ -71,8 +70,8 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
                                 role="option"
                                 active={track.outputId === target.id}
                                 aria-selected={track.outputId === target.id}
-                                onClick={(e) => {
-                                    e.stopPropagation();
+                                onClick={(event) => {
+                                    event.stopPropagation();
                                     setTrackOutput(track.id, target.id);
                                     setOutputOpen(false);
                                 }}

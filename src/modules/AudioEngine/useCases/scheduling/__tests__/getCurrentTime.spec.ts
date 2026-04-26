@@ -11,7 +11,7 @@ vi.mock('../../../repositories/createWebAudioEngine', () => ({
 
 describe('getCurrentTime', () => {
     beforeEach(() => {
-        (audioEngine as any).context = { currentTime: 12.5 };
+        Object.assign(audioEngine, { context: { currentTime: 12.5 } });
     });
 
     it('should return the audio context currentTime', () => {

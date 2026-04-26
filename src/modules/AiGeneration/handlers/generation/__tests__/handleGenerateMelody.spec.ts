@@ -3,9 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleGenerateMelody } from '../handleGenerateMelody';
 
 const mocks = vi.hoisted(() => ({
-    applyMelodyToTrack: vi.fn(),
-    resolveOrCreateMidiTrack: vi.fn(() => 't1'),
-    getPlayheadBeat: vi.fn(() => 0),
+    applyMelodyToTrack: vi.fn<typeof import('../../../useCases/generateMelody/applyToTrack').applyMelodyToTrack>(),
+    resolveOrCreateMidiTrack: vi.fn<typeof import('../generationHandlerHelpers').resolveOrCreateMidiTrack>(() => 't1'),
+    getPlayheadBeat: vi.fn<typeof import('../generationHandlerHelpers').getPlayheadBeat>(() => 0),
 }));
 
 vi.mock('../../../useCases/generateMelody/applyToTrack', () => ({
@@ -42,7 +42,7 @@ describe('handleGenerateMelody', () => {
     });
 
     it('executes generation with validated payload and defaults', () => {
-        handleGenerateMelody.execute({
+        void handleGenerateMelody.execute({
             type: 'generateMelody',
             payload: {
                 style: 'arpeggiated',
@@ -60,11 +60,11 @@ describe('handleGenerateMelody', () => {
     });
 
     it('falls back to default style, scale, and key for invalid inputs', () => {
-        handleGenerateMelody.execute({
+        void handleGenerateMelody.execute({
             type: 'generateMelody',
             payload: {
-                style: 'invalid-style' as any,
-                scale: 'invalid-scale' as any,
+                style: 'invalid-style' as unknown as 'simple',
+                scale: 'invalid-scale' as unknown as 'major',
                 key: -5,
                 bars: 2,
             },
@@ -80,7 +80,7 @@ describe('handleGenerateMelody', () => {
     it('bails if track cannot be resolved or created', () => {
         mocks.resolveOrCreateMidiTrack.mockReturnValue(null);
 
-        handleGenerateMelody.execute({
+        void handleGenerateMelody.execute({
             type: 'generateMelody',
             payload: { style: 'simple', scale: 'major', key: 0, bars: 1 },
         });

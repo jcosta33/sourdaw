@@ -29,34 +29,54 @@
  */
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
 
-type Extract2<U, T> = U extends { type: T } ? U : never;
-type PayloadOf<T extends RuntimeActionType> = Extract2<RuntimeAction, T> extends { payload: infer P } ? P : undefined;
+type Extract2<ActionUnion, TypeString> = ActionUnion extends { type: TypeString } ? ActionUnion : never;
+type PayloadOf<ActionType extends RuntimeActionType> =
+    Extract2<RuntimeAction, ActionType> extends { payload: infer P } ? P : undefined;
 
-export type PayloadValidator<T extends RuntimeActionType> = (payload: unknown) => payload is PayloadOf<T>;
+export type PayloadValidator<ActionType extends RuntimeActionType> = (
+    payload: unknown
+) => payload is PayloadOf<ActionType>;
 
 // ── Primitive helpers ───────────────────────────────────────────────────
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+function isObj(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
-const isString = (v: unknown): v is string => typeof v === 'string';
-const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
-const isInRange = (v: unknown, min: number, max: number): v is number => isNumber(v) && v >= min && v <= max;
-const isOptional = <T>(v: unknown, check: (v: unknown) => v is T): v is T | undefined => v === undefined || check(v);
-const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every(isString);
+function isString(value: unknown): value is string {
+    return typeof value === 'string';
+}
+function isNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+function isInRange(value: unknown, min: number, max: number): value is number {
+    return isNumber(value) && value >= min && value <= max;
+}
+function isOptional<Value>(value: unknown, check: (value: unknown) => value is Value): value is Value | undefined {
+    return value === undefined || check(value);
+}
+function isStringArray(value: unknown): value is string[] {
+    return Array.isArray(value) && value.every(isString);
+}
 
 // ── Validators (destructive / high-risk actions) ─────────────────────────
 
-const hasTrackId = (p: unknown): p is { trackId: string } => isObj(p) && isString(p.trackId);
-const hasClipId = (p: unknown): p is { clipId: string } => isObj(p) && isString(p.clipId);
+function hasTrackId(param: unknown): param is { trackId: string } {
+    return isObj(param) && isString(param.trackId);
+}
+function hasClipId(param: unknown): param is { clipId: string } {
+    return isObj(param) && isString(param.clipId);
+}
 
 const validators = {
     // Track lifecycle
-    addTrack: (p): p is PayloadOf<'addTrack'> => isObj(p) && isString(p.name) && isString(p.kind),
+    addTrack: (param): param is PayloadOf<'addTrack'> => isObj(param) && isString(param.name) && isString(param.kind),
     removeTrack: hasTrackId as PayloadValidator<'removeTrack'>,
-    renameTrack: (p): p is PayloadOf<'renameTrack'> => isObj(p) && isString(p.trackId) && isString(p.name),
+    renameTrack: (param): param is PayloadOf<'renameTrack'> =>
+        isObj(param) && isString(param.trackId) && isString(param.name),
     duplicateTrack: hasTrackId as PayloadValidator<'duplicateTrack'>,
-    deleteTrackAlternative: (p): p is PayloadOf<'deleteTrackAlternative'> =>
-        isObj(p) && isString(p.trackId) && isString(p.alternativeId),
+    deleteTrackAlternative: (param): param is PayloadOf<'deleteTrackAlternative'> =>
+        isObj(param) && isString(param.trackId) && isString(param.alternativeId),
     freezeTrack: hasTrackId as PayloadValidator<'freezeTrack'>,
     unfreezeTrack: hasTrackId as PayloadValidator<'unfreezeTrack'>,
     flattenTrack: hasTrackId as PayloadValidator<'flattenTrack'>,
@@ -64,64 +84,84 @@ const validators = {
     bounceToNewTrack: hasTrackId as PayloadValidator<'bounceToNewTrack'>,
 
     // Clip lifecycle
-    addClip: (p): p is PayloadOf<'addClip'> =>
-        isObj(p) && isString(p.trackId) && isNumber(p.startBeat) && isNumber(p.endBeat),
+    addClip: (param): param is PayloadOf<'addClip'> =>
+        isObj(param) && isString(param.trackId) && isNumber(param.startBeat) && isNumber(param.endBeat),
     removeClip: hasClipId as PayloadValidator<'removeClip'>,
-    splitClip: (p): p is PayloadOf<'splitClip'> => isObj(p) && isString(p.clipId) && isNumber(p.splitBeat),
-    moveClip: (p): p is PayloadOf<'moveClip'> =>
-        isObj(p) && isString(p.clipId) && isNumber(p.newStartBeat) && isOptional(p.newTrackId, isString),
+    splitClip: (param): param is PayloadOf<'splitClip'> =>
+        isObj(param) && isString(param.clipId) && isNumber(param.splitBeat),
+    moveClip: (param): param is PayloadOf<'moveClip'> =>
+        isObj(param) &&
+        isString(param.clipId) &&
+        isNumber(param.newStartBeat) &&
+        isOptional(param.newTrackId, isString),
     duplicateClip: hasClipId as PayloadValidator<'duplicateClip'>,
 
     // Device lifecycle
-    addDevice: (p): p is PayloadOf<'addDevice'> => isObj(p) && isString(p.trackId) && isString(p.deviceType),
-    removeDevice: (p): p is PayloadOf<'removeDevice'> => isObj(p) && isString(p.trackId) && isString(p.deviceId),
-    setDeviceParameter: (p): p is PayloadOf<'setDeviceParameter'> =>
-        isObj(p) && isString(p.trackId) && isString(p.deviceId) && isString(p.paramId) && isNumber(p.value),
-    loadExternalPlugin: (p): p is PayloadOf<'loadExternalPlugin'> => isObj(p) && isString(p.pluginPath),
+    addDevice: (param): param is PayloadOf<'addDevice'> =>
+        isObj(param) && isString(param.trackId) && isString(param.deviceType),
+    removeDevice: (param): param is PayloadOf<'removeDevice'> =>
+        isObj(param) && isString(param.trackId) && isString(param.deviceId),
+    setDeviceParameter: (param): param is PayloadOf<'setDeviceParameter'> =>
+        isObj(param) &&
+        isString(param.trackId) &&
+        isString(param.deviceId) &&
+        isString(param.paramId) &&
+        isNumber(param.value),
+    loadExternalPlugin: (param): param is PayloadOf<'loadExternalPlugin'> => isObj(param) && isString(param.pluginPath),
 
     // Transport (pre-existing range checks from §91)
-    setTempo: (p): p is PayloadOf<'setTempo'> => isObj(p) && isInRange(p.bpm, 20, 300),
-    setMasterGain: (p): p is PayloadOf<'setMasterGain'> => isObj(p) && isInRange(p.gain, 0, 1),
-    setMetronomeVolume: (p): p is PayloadOf<'setMetronomeVolume'> => isObj(p) && isInRange(p.volume, 0, 1),
+    setTempo: (param): param is PayloadOf<'setTempo'> => isObj(param) && isInRange(param.bpm, 20, 300),
+    setMasterGain: (param): param is PayloadOf<'setMasterGain'> => isObj(param) && isInRange(param.gain, 0, 1),
+    setMetronomeVolume: (param): param is PayloadOf<'setMetronomeVolume'> =>
+        isObj(param) && isInRange(param.volume, 0, 1),
 
     // Automation
-    addAutomationLane: (p): p is PayloadOf<'addAutomationLane'> =>
-        isObj(p) && isString(p.trackId) && isString(p.parameterId),
-    addAutomationPoint: (p): p is PayloadOf<'addAutomationPoint'> =>
-        isObj(p) && isString(p.laneId) && isNumber(p.beat) && isNumber(p.value),
-    removeAutomationPoint: (p): p is PayloadOf<'removeAutomationPoint'> =>
-        isObj(p) && isString(p.laneId) && isNumber(p.beat),
+    addAutomationLane: (param): param is PayloadOf<'addAutomationLane'> =>
+        isObj(param) && isString(param.trackId) && isString(param.parameterId),
+    addAutomationPoint: (param): param is PayloadOf<'addAutomationPoint'> =>
+        isObj(param) && isString(param.laneId) && isNumber(param.beat) && isNumber(param.value),
+    removeAutomationPoint: (param): param is PayloadOf<'removeAutomationPoint'> =>
+        isObj(param) && isString(param.laneId) && isNumber(param.beat),
 
     // Sidechain routing
-    addSidechainRoute: (p): p is PayloadOf<'addSidechainRoute'> =>
-        isObj(p) && isString(p.sourceTrackId) && isString(p.targetTrackId) && isString(p.targetDeviceId),
-    removeSidechainRoute: (p): p is PayloadOf<'removeSidechainRoute'> => isObj(p) && isString(p.routeId),
+    addSidechainRoute: (param): param is PayloadOf<'addSidechainRoute'> =>
+        isObj(param) &&
+        isString(param.sourceTrackId) &&
+        isString(param.targetTrackId) &&
+        isString(param.targetDeviceId),
+    removeSidechainRoute: (param): param is PayloadOf<'removeSidechainRoute'> =>
+        isObj(param) && isString(param.routeId),
 
     // MIDI note batch ops
-    quantizeNotes: (p): p is PayloadOf<'quantizeNotes'> => isObj(p) && isString(p.clipId) && isNumber(p.grid),
-    transposeNotes: (p): p is PayloadOf<'transposeNotes'> => isObj(p) && isString(p.clipId) && isNumber(p.semitones),
+    quantizeNotes: (param): param is PayloadOf<'quantizeNotes'> =>
+        isObj(param) && isString(param.clipId) && isNumber(param.grid),
+    transposeNotes: (param): param is PayloadOf<'transposeNotes'> =>
+        isObj(param) && isString(param.clipId) && isNumber(param.semitones),
 
     // Marker + section
-    removeMarker: (p): p is PayloadOf<'removeMarker'> => isObj(p) && isString(p.markerId),
-    removeSection: (p): p is PayloadOf<'removeSection'> => isObj(p) && isString(p.sectionId),
-    removeTimeSignatureChange: (p): p is PayloadOf<'removeTimeSignatureChange'> => isObj(p) && isString(p.changeId),
+    removeMarker: (param): param is PayloadOf<'removeMarker'> => isObj(param) && isString(param.markerId),
+    removeSection: (param): param is PayloadOf<'removeSection'> => isObj(param) && isString(param.sectionId),
+    removeTimeSignatureChange: (param): param is PayloadOf<'removeTimeSignatureChange'> =>
+        isObj(param) && isString(param.changeId),
 
     // Time operations
-    deleteTime: (p): p is PayloadOf<'deleteTime'> => isObj(p) && isNumber(p.startBeat) && isNumber(p.endBeat),
-    insertTime: (p): p is PayloadOf<'insertTime'> => isObj(p) && isNumber(p.atBeat) && isNumber(p.durationBeats),
+    deleteTime: (param): param is PayloadOf<'deleteTime'> =>
+        isObj(param) && isNumber(param.startBeat) && isNumber(param.endBeat),
+    insertTime: (param): param is PayloadOf<'insertTime'> =>
+        isObj(param) && isNumber(param.atBeat) && isNumber(param.durationBeats),
 
     // Imports / exports / project lifecycle
-    importAudioFile: (p): p is PayloadOf<'importAudioFile'> => isObj(p) && isString(p.path),
-    importMidiFile: (p): p is PayloadOf<'importMidiFile'> => isObj(p) && isString(p.path),
-    exportProject: (p): p is PayloadOf<'exportProject'> => isObj(p) && isOptional(p.format, isString),
-    exportMidi: (p): p is PayloadOf<'exportMidi'> => isObj(p) && isOptional(p.trackIds, isStringArray),
+    importAudioFile: (param): param is PayloadOf<'importAudioFile'> => isObj(param) && isString(param.path),
+    importMidiFile: (param): param is PayloadOf<'importMidiFile'> => isObj(param) && isString(param.path),
+    exportProject: (param): param is PayloadOf<'exportProject'> => isObj(param) && isOptional(param.format, isString),
+    exportMidi: (param): param is PayloadOf<'exportMidi'> => isObj(param) && isOptional(param.trackIds, isStringArray),
     exportDawProject: 'unchecked',
     saveProject: 'unchecked',
     newProject: 'unchecked',
 
     // Collaboration lifecycle
     createCollabSession: 'unchecked',
-    joinCollabSession: (p): p is PayloadOf<'joinCollabSession'> => isObj(p) && isString(p.inviteCode),
+    joinCollabSession: (param): param is PayloadOf<'joinCollabSession'> => isObj(param) && isString(param.inviteCode),
     leaveCollabSession: 'unchecked',
 
     // UI / workspace toggles — no payload validation needed (view state only)
@@ -360,10 +400,10 @@ const validators = {
     // Node view
     toggleNodeView: 'unchecked',
 } as const satisfies {
-    [K in RuntimeActionType]: PayloadValidator<K> | 'unchecked';
+    [ActionType in RuntimeActionType]: PayloadValidator<ActionType> | 'unchecked';
 };
 
 // Export as Record for runtime lookup.
 export const PAYLOAD_VALIDATORS: {
-    [K in RuntimeActionType]: PayloadValidator<K> | 'unchecked';
+    [ActionType in RuntimeActionType]: PayloadValidator<ActionType> | 'unchecked';
 } = validators;

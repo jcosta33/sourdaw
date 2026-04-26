@@ -7,13 +7,15 @@
  * DAW is running in an inactive tab.
  */
 
+type SchedulerMessage = { type: 'start'; interval: number } | { type: 'stop' };
+
 let timerId: ReturnType<typeof setInterval> | null = null;
 
-self.onmessage = (e: MessageEvent) => {
-    const msg = e.data;
+self.onmessage = (event: MessageEvent<SchedulerMessage>) => {
+    const msg = event.data;
 
     if (msg.type === 'start') {
-        const intervalMs = typeof msg.interval === 'number' && msg.interval > 0 ? msg.interval : 10;
+        const intervalMs = msg.interval > 0 ? msg.interval : 10;
         if (timerId !== null) {
             clearInterval(timerId);
         }

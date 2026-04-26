@@ -37,7 +37,7 @@ export function applyGrooveToClip(
         const wrappedIndex = gridIndex % Math.round(1 / groove.gridDivision);
 
         // Find matching groove offset
-        const grooveEntry = groove.offsets.find((o) => o.gridPosition === wrappedIndex);
+        const grooveEntry = groove.offsets.find((output) => output.gridPosition === wrappedIndex);
         if (!grooveEntry) {
             return note;
         }

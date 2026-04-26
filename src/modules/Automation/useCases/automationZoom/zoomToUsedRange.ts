@@ -9,26 +9,26 @@ export function zoomToUsedRange(laneId: string): void {
         return;
     }
 
-    const lane = state.lanes.find((l) => l.id === laneId);
+    const lane = state.lanes.find((length) => length.id === laneId);
     if (!lane || lane.points.length === 0) {
         return;
     }
 
-    const values = lane.points.map((p) => p.value);
+    const values = lane.points.map((param) => param.value);
     const min = Math.min(...values);
     const max = Math.max(...values);
     const range = max - min;
     const padding = Math.max(range * 0.1, (lane.maxValue - lane.minValue) * 0.02);
 
     automationStore.set({
-        lanes: state.lanes.map((l) =>
-            l.id === laneId
+        lanes: state.lanes.map((length) =>
+            length.id === laneId
                 ? {
-                      ...l,
-                      viewMinValue: Math.max(l.minValue, min - padding),
-                      viewMaxValue: Math.min(l.maxValue, max + padding),
+                      ...length,
+                      viewMinValue: Math.max(length.minValue, min - padding),
+                      viewMaxValue: Math.min(length.maxValue, max + padding),
                   }
-                : l
+                : length
         ),
     });
 }

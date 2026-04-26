@@ -6,6 +6,7 @@ import {
     projectCrdtToStores,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
+import { migrateAbsoluteMidiNotes } from '#/modules/MIDI';
 
 import { projectStore } from '../../stores/projectStore';
 
@@ -31,6 +32,9 @@ export async function loadProject(): Promise<boolean> {
     // For stores whose keys don't exist in the doc yet (new project),
     // hydrate() writes initialData through to the CRDT.
     projectCrdtToStores();
+
+    // Run data migrations on loaded stores.
+    migrateAbsoluteMidiNotes();
 
     // Ensure loading flag is cleared — hydrate may not trigger a notification
     // if the value didn't change, so set it explicitly.

@@ -6,6 +6,6 @@ export const handleAddTrack = createHandler<'addTrack'>({
     execute: (action) => {
         addTrack(action.payload);
     },
-    describe: (a) => ({ label: `Add ${a.payload.kind} track "${a.payload.name}"` }),
+    describe: (alpha) => ({ label: `Add ${alpha.payload.kind} track "${alpha.payload.name}"` }),
     undoable: true,
 });

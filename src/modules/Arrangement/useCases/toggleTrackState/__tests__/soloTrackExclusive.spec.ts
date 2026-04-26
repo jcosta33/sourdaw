@@ -3,9 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { soloTrackExclusive } from '../soloTrackExclusive';
 
 const mocks = vi.hoisted(() => ({
-    getTrackState: vi.fn(),
-    mapAllTracks: vi.fn(),
-    applySoloLogic: vi.fn(),
+    getTrackState: vi.fn<() => { tracks: { id: string; soloed: boolean }[]; selectedTrackId: string | null } | null>(),
+    mapAllTracks: vi.fn<(...args: unknown[]) => unknown>(),
+    applySoloLogic: vi.fn<(...args: unknown[]) => void>(),
 }));
 
 vi.mock('#/modules/Arrangement/repositories/track/getTrackState', () => ({
@@ -39,7 +39,7 @@ describe('soloTrackExclusive', () => {
                 { id: 'b', soloed: false },
             ],
             selectedTrackId: null,
-        } as any);
+        });
 
         soloTrackExclusive('a');
 
@@ -60,7 +60,7 @@ describe('soloTrackExclusive', () => {
                 { id: 'b', soloed: false },
             ],
             selectedTrackId: null,
-        } as any);
+        });
 
         soloTrackExclusive('b');
 

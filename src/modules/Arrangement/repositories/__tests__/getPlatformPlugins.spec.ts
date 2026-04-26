@@ -15,11 +15,11 @@ describe('getPlatformPlugins', () => {
     it('filters out native-only plugins (currently all return for web/tauri match)', () => {
         const plugins = getPlatformPlugins();
 
-        expect(plugins.find((p) => p.name === 'Web Only')).toBeDefined();
-        expect(plugins.find((p) => p.name === 'Both')).toBeDefined();
-        expect(plugins.find((p) => p.name === 'Implicit Both')).toBeDefined();
+        expect(plugins.find((param) => param.name === 'Web Only')).toBeDefined();
+        expect(plugins.find((param) => param.name === 'Both')).toBeDefined();
+        expect(plugins.find((param) => param.name === 'Implicit Both')).toBeDefined();
 
         // The implementation specifically filters out p.platform !== 'native'
-        expect(plugins.find((p) => p.name === 'Native Only')).toBeUndefined();
+        expect(plugins.find((param) => param.name === 'Native Only')).toBeUndefined();
     });
 });

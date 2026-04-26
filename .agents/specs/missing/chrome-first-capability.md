@@ -14,7 +14,7 @@ The research (§§1, 3) establishes a **three-layer capability model** as the go
 
 - **Layer 1 — Chrome-leading.** Project Fugu and Chrome-only APIs (File System Access, FileSystemObserver, `scheduler.postTask`) — used only when they provide measurable product advantage and only on the runtimes where they are implemented.
 - **Layer 2 — Cross-browser standards.** OPFS, Web Audio + AudioWorklet, SharedArrayBuffer, WebCodecs, IndexedDB, Cache API, WebGPU (where supported). These form the reliable middle tier across all three WebView engines, subject to documented per-runtime quirks (e.g. WKWebView's 10 MB OPFS per-file limit).
-- **Layer 3 — Rust native.** MIDI, HID, USB, Serial, Bluetooth, file watching, file dialogs, window/shell integration, the real-time audio engine, and VST/CLAP/AU hosting. Rust is the *primary* implementation — not a fallback — for every capability that is either functionally absent on WebKit, requires sub-10 ms deterministic timing, or must behave identically across all platforms.
+- **Layer 3 — Rust native.** MIDI, HID, USB, Serial, Bluetooth, file watching, file dialogs, window/shell integration, the real-time audio engine, and VST/CLAP/AU hosting. Rust is the _primary_ implementation — not a fallback — for every capability that is either functionally absent on WebKit, requires sub-10 ms deterministic timing, or must behave identically across all platforms.
 
 Per the research §1, actual web-API coverage is **~70 % on Windows (WebView2)**, **~45 % on macOS (WKWebView)**, **~40 % on Linux (WebKitGTK)**. The delta is covered by Rust.
 
@@ -54,7 +54,7 @@ Introduce a frozen, startup-detected Capability Registry and a per-domain Capabi
 ### Non-goals (explicitly out of scope)
 
 - **Runtime capability switching mid-session.** The registry is frozen after init. Hot-swapping adapters after startup is not supported and not needed; a runtime change (e.g. user launches the desktop app instead of browser) means a new session and a new registry.
-- **Replacing existing specific Tauri plugin configurations.** This spec does not redesign `tauri-plugin-fs` scoping, the MIDI plugin's permission file, or audio entitlements — those are owned by their own specs. This spec only defines how the frontend adapter layer *consumes* them.
+- **Replacing existing specific Tauri plugin configurations.** This spec does not redesign `tauri-plugin-fs` scoping, the MIDI plugin's permission file, or audio entitlements — those are owned by their own specs. This spec only defines how the frontend adapter layer _consumes_ them.
 - **Designing the concrete Rust audio engine, MIDI plugin, or plugin-hosting sidecar.** Those have their own specs (`../pipelines/audio-generation-browser.md`, the MIDI plugin spec, plugin-hosting skill, etc.). This spec fixes the adapter contract those implementations must satisfy.
 - **Per-call feature detection.** Components must consume adapters, never probe `'showOpenFilePicker' in window` themselves.
 - **"Optimistic try/catch" adapter resolution (Pattern E in research).** Explicitly rejected.
@@ -62,7 +62,7 @@ Introduce a frozen, startup-detected Capability Registry and a per-domain Capabi
 - **Removing already-existing platform checks in unrelated modules.** Migrating callers to the adapter layer is a follow-up workstream tracked separately.
 - **Chromium-only UI scheduling APIs (`scheduler.postTask`, `scheduler.yield`).** Research §§2.10, 4 classify these as Layer 1 with marginal benefit for a DAW; not owned by this adapter layer. If adopted later, they ship as a non-adapter UI-scheduling utility with clear browser gating.
 - **Media decode/encode routing (WebCodecs, container demux).** Owned by the audio engine and media-import specs. Research §§2.13, 13 note WebKitGTK caveats for WebCodecs; the `symphonia`/Rust path is the default on native. This adapter layer does not define a media domain (would have been a potential D9).
-- **Clipboard / drag-drop / Web Share routing.** Research §2.15 notes `navigator.share` is broken on WebView2 and clipboard behavior differs per runtime — these are tracked as risks in Tradeoffs but do not get a D* domain in v1.
+- **Clipboard / drag-drop / Web Share routing.** Research §2.15 notes `navigator.share` is broken on WebView2 and clipboard behavior differs per runtime — these are tracked as risks in Tradeoffs but do not get a D\* domain in v1.
 
 ---
 
@@ -76,11 +76,11 @@ The Layer 1 / Layer 2 / Layer 3 routing model (research §§1, 2, 4–6) is expr
 
 **Expected baselines (research §1):**
 
-| Runtime             | Expected Web-API coverage | Rust-covered remainder |
-| ------------------- | ------------------------- | ---------------------- |
-| WebView2 (Windows)  | ~70 %                     | ~30 %                  |
-| WKWebView (macOS)   | ~45 %                     | ~55 %                  |
-| WebKitGTK (Linux)   | ~40 %                     | ~60 %                  |
+| Runtime            | Expected Web-API coverage | Rust-covered remainder |
+| ------------------ | ------------------------- | ---------------------- |
+| WebView2 (Windows) | ~70 %                     | ~30 %                  |
+| WKWebView (macOS)  | ~45 %                     | ~55 %                  |
+| WebKitGTK (Linux)  | ~40 %                     | ~60 %                  |
 
 These are planning baselines, not compile-time assertions. They inform which adapters must exist; the **per-domain routing in R4 is the normative source of truth**.
 
@@ -225,14 +225,14 @@ Cross-origin isolation headers are configured in Tauri production builds and the
 
 ```json
 {
-  "app": {
-    "security": {
-      "headers": {
-        "Cross-Origin-Opener-Policy": "same-origin",
-        "Cross-Origin-Embedder-Policy": "require-corp"
-      }
+    "app": {
+        "security": {
+            "headers": {
+                "Cross-Origin-Opener-Policy": "same-origin",
+                "Cross-Origin-Embedder-Policy": "require-corp"
+            }
+        }
     }
-  }
 }
 ```
 
@@ -393,13 +393,13 @@ Release gate for this spec. All items must be checked before the adapter layer i
 
 - **Module placement.** `src/modules/Platform/` is the proposed home. The module's root `index.ts` exports only: the frozen `registry` getter, the typed capability interfaces, branded handle types, and the adapter-resolution functions. Adapters under `adapters/<runtime>/<domain>.ts` are private.
 - **One function per file rule** (`AGENTS.md`) applies to any use cases added in this module (e.g. `detectCapabilities.ts`, `resolveMidiAdapter.ts`).
-- **No barrel within adapters/**. Consumers inside the module use relative imports to specific adapter files. The root `index.ts` is for *other* modules.
+- **No barrel within adapters/**. Consumers inside the module use relative imports to specific adapter files. The root `index.ts` is for _other_ modules.
 - **Detection order matters.** Read `window.__TAURI_INTERNALS__` first; platform identity determines which of the WebKit-specific absent-API sets applies.
 - **Branded types.** Use `type Brand<Name extends string, T> = T & { readonly __brand: Name }` in `utils/brand.ts` if not already present. Do not reinvent.
 - **Error types.** Use discriminated unions: `type AdapterError = { kind: 'unsupported'; domain: string } | { kind: 'permission-denied'; … } | …`. Narrow at consumers.
 - **Where Rust capability metadata comes from.** The Tauri-side `capability::probe` command should return only already-available data (plugin registration status, platform identity, granted entitlements) — no side effects, no prompts, no I/O that could block the 50 ms budget.
 - **Audio engine special case.** D6 does not route through the generic factory. The audio module owns its Native Shadow construction; the registry just exposes `audioEngine: { mode: 'native' | 'wasm' }` as a readable tag for the Capabilities panel.
-- **Migration.** Existing call sites that hit web APIs directly are *not* migrated as part of this spec. Each consuming module migrates in its own task. This spec lands the layer and one reference migration (recommend: MIDI, since it's the most consequential gap).
+- **Migration.** Existing call sites that hit web APIs directly are _not_ migrated as part of this spec. Each consuming module migrates in its own task. This spec lands the layer and one reference migration (recommend: MIDI, since it's the most consequential gap).
 - **Frontend command design principle (research §12).** Tauri commands and adapter methods accept **opaque IDs** (`loadProjectFile(projectId)`) rather than raw paths or raw byte streams. This keeps sandboxing, validation, and permissioning on the Rust side; the frontend does not know, and does not need to know, filesystem layout.
 - **Permission prompt timing (research §12.2).** Defer permission prompts to the first user action that actually needs them (MIDI, audio input, file pick). The startup probe must not trigger prompts.
 - **Tauri placement rules (research §9).** Cross-cutting platform glue lives in a Tauri plugin. App-local commands live under `#[tauri::command]` in `src-tauri/src/commands/`. Out-of-process binaries (VST hosting, heavyweight subprocesses) live as a sidecar with heartbeat/restart supervision — those are out of scope here, but the adapter layer must not reach into sidecars directly.
@@ -436,7 +436,7 @@ Release gate for this spec. All items must be checked before the adapter layer i
 ## Tradeoffs and risks
 
 - **Frozen-at-init is deliberately rigid.** If a future feature genuinely needs runtime swap (e.g. hot-attach of a debug backend), it will not fit this spec and will require an explicit rework — not an escape hatch.
-- **Detection budget is tight.** The 50 ms / 20 ms budget depends on no adapter doing I/O at probe time. If a future adapter probes something expensive (e.g. enumerating MIDI devices to see whether any exist), the budget breaks. The rule is: probe API *presence* only; enumerate capabilities on demand later.
+- **Detection budget is tight.** The 50 ms / 20 ms budget depends on no adapter doing I/O at probe time. If a future adapter probes something expensive (e.g. enumerating MIDI devices to see whether any exist), the budget breaks. The rule is: probe API _presence_ only; enumerate capabilities on demand later.
 - **Bundle audit can become brittle.** If bundler internals change the emitted chunk graph, the grep-based audit may false-positive. Treat it as a guardrail, not a perfect barrier; the ESLint rule on forbidden static imports is the primary defense.
 - **WKWebView OPFS 10 MB limit is a trap.** D1 routing correctly handles this by keeping OPFS for autosave only, but any new adapter that tries to store audio data in OPFS on macOS will silently cap out. The D1 OPFS adapter must enforce the limit at write time and surface an `AdapterError { kind: 'unsupported' }` — not an I/O error — so consumers branch correctly.
 - **WebKitGTK version fragmentation** (research §16 risk) means the Linux adapter profile is effectively "WebKitGTK ≥ 2.44". Older distros will degrade further; the probe must record the WebKitGTK version when detectable and surface it in the Capabilities panel for support triage.
@@ -452,10 +452,12 @@ Release gate for this spec. All items must be checked before the adapter layer i
 ## Implementation Status
 
 **What is implemented:**
+
 - None of the explicit Capability Adapter Layer architectures exist yet. The `src/modules/Platform` module is absent.
 - Capabilities are currently resolved via ad-hoc checks directly at the call sites across the codebase.
 
 **What is not implemented:**
+
 - The frozen `CapabilityRegistry` singleton.
 - Centralized detection of platform shape at startup.
 - Concrete `CapabilityAdapter` implementations for domains D1 through D8.
@@ -465,8 +467,10 @@ Release gate for this spec. All items must be checked before the adapter layer i
 - Dedicated testing and contract tests for the adapter layers.
 
 **What is done well:**
+
 - N/A (The spec is unimplemented).
 
 **What needs refactoring:**
+
 - Existing scattered platform checks must be migrated into this adapter architecture once it is scaffolded.
 - Tauri IPC implementations and file/device handling currently bypassing this proposed layer will need adaptation to use the `CapabilityAdapter` interface.

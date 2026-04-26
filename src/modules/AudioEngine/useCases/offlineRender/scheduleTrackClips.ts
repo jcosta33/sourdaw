@@ -121,8 +121,10 @@ export async function scheduleTrackClips(
     onWarning?: (message: string) => void,
     pendingWorkletEvents?: PendingWorkletEvent[],
     allTracks?: ReadonlyArray<Track>,
-    deviceEntriesByTrack?: Map<string, DeviceNodeEntry[]>
+    deviceEntriesByTrack?: Map<string, DeviceNodeEntry[]>,
+    regionStartBeat: number = 0
 ): Promise<void> {
+    const regionStartSec = regionStartBeat > 0 ? beatToSeconds(regionStartBeat, defaultTempo, changes) : 0;
     const compensationDelay = getCompensationDelay(track.id);
 
     const automationLanes = automationStore.value?.lanes ?? [];
@@ -167,28 +169,35 @@ export async function scheduleTrackClips(
     }
 
     const clipsToProcess: { clip: Track['clips'][number]; padIndex: number }[] = [];
-    clipsToProcess.push(...resolveTrackClipsWithComping(track.id, track.clips).map((clip) => ({ clip, padIndex: -1 })));
+    clipsToProcess.push(
+        ...resolveTrackClipsWithComping(track.id, track.clips).map((clip) => ({ clip, padIndex: -1 }))
+    );
 
-    const instrumentEntry = deviceEntries.find((e) => e.instrumentControls);
+    const instrumentEntry = deviceEntries.find((event) => event.instrumentControls);
     const instrumentControls = instrumentEntry?.instrumentControls ?? null;
     const isToaster = instrumentEntry?.deviceType === 'toaster';
 
     // If this is a Toaster track, gather all clips from its child tracks.
     if (isToaster && allTracks) {
-        const children = allTracks.filter((t) => t.parentId === track.id);
-        for (let i = 0; i < children.length; i++) {
-            const childTrack = children[i];
+        const children = allTracks.filter((time) => time.parentId === track.id);
+        for (let index = 0; index < children.length; index++) {
+            const childTrack = children[index];
             if (!childTrack) {
                 continue;
             }
             const childClips = resolveTrackClipsWithComping(childTrack.id, childTrack.clips);
-            clipsToProcess.push(...childClips.map((clip) => ({ clip, padIndex: i })));
+            clipsToProcess.push(...childClips.map((clip) => ({ clip, padIndex: index })));
         }
     }
 
     for (const { clip, padIndex: toasterPadIndex } of clipsToProcess) {
         // Skip muted clips — they should not render audio.
         if (clip.muted) {
+            continue;
+        }
+
+        // Region-bounded export: drop clips that end before the region start.
+        if (clip.endBeat <= regionStartBeat) {
             continue;
         }
 
@@ -212,7 +221,9 @@ export async function scheduleTrackClips(
             }
 
             const drumKit = resolveDrumKit(track.devices);
-            const drumKitDevice = track.devices.find((d) => d.type === 'builtin-drum-kit' || d.type === 'drum-kit');
+            const drumKitDevice = track.devices.find(
+                (data) => data.type === 'builtin-drum-kit' || data.type === 'drum-kit'
+            );
             const kitDef = drumKitDevice
                 ? getDrumKitDefByIndex(drumKitDevice.parameterValues.kit ?? drumKitDevice.parameterValues.kitId ?? 0)
                 : null;
@@ -221,8 +232,8 @@ export async function scheduleTrackClips(
             // is a child track of a Toaster, skip note processing — the parent
             // will gather them.
             if (!instrumentControls && track.parentId && allTracks) {
-                const parentTrack = allTracks.find((t) => t.id === track.parentId);
-                if (parentTrack?.devices.some((d) => d.type === 'toaster')) {
+                const parentTrack = allTracks.find((time) => time.id === track.parentId);
+                if (parentTrack?.devices.some((data) => data.type === 'toaster')) {
                     continue;
                 }
             }
@@ -251,9 +262,15 @@ export async function scheduleTrackClips(
                         continue;
                     }
 
-                    const startTime = beatToSeconds(noteAbsStart, defaultTempo, changes);
                     const noteEndBeat = Math.min(noteAbsStart + note.duration, clip.endBeat);
-                    const endTime = beatToSeconds(noteEndBeat, defaultTempo, changes);
+                    if (noteEndBeat <= regionStartBeat) {
+                        continue;
+                    }
+
+                    const rawStartSec = beatToSeconds(noteAbsStart, defaultTempo, changes);
+                    const rawEndSec = beatToSeconds(noteEndBeat, defaultTempo, changes);
+                    const startTime = Math.max(0, rawStartSec - regionStartSec);
+                    const endTime = rawEndSec - regionStartSec;
                     const duration = endTime - startTime;
                     if (startTime >= durationSeconds || duration <= 0) {
                         continue;
@@ -334,7 +351,16 @@ export async function scheduleTrackClips(
                     break;
                 }
 
-                const iterStartTime = beatToSeconds(iterStartBeat, defaultTempo, changes) + compensationDelay;
+                const remainingBeats = Math.min(loopLen, clip.endBeat - iterStartBeat);
+                const iterEndBeat = iterStartBeat + remainingBeats;
+                if (iterEndBeat <= regionStartBeat) {
+                    continue;
+                }
+
+                const rawIterStartSec = beatToSeconds(iterStartBeat, defaultTempo, changes) + compensationDelay;
+                const rawIterEndSec = beatToSeconds(iterEndBeat, defaultTempo, changes) + compensationDelay;
+                const iterStartTime = rawIterStartSec - regionStartSec;
+                const iterEndTime = rawIterEndSec - regionStartSec;
                 if (iterStartTime >= durationSeconds) {
                     break;
                 }
@@ -342,11 +368,20 @@ export async function scheduleTrackClips(
                 const isFirstIter = iter === 0;
                 const isLastIter = iter === maxIterations - 1 || iterStartBeat + loopLen >= clip.endBeat;
 
-                const remainingBeats = Math.min(loopLen, clip.endBeat - iterStartBeat);
-                const iterEndTime =
-                    beatToSeconds(iterStartBeat + remainingBeats, defaultTempo, changes) + compensationDelay;
                 const iterDurationSec = iterEndTime - iterStartTime;
-                const playDuration = Math.min(iterDurationSec, buffer.duration / safeStretchRatio);
+                const maxBufferSec = buffer.duration / safeStretchRatio;
+                const availableSec = Math.min(iterDurationSec, maxBufferSec);
+
+                // If this iteration straddles the region start, trim the leading portion
+                // by advancing the buffer read offset and clamping start to 0.
+                const trimBeforeSec = Math.max(0, -iterStartTime);
+                const bufferOffsetSec = trimBeforeSec * safeStretchRatio;
+                if (bufferOffsetSec >= buffer.duration) {
+                    continue;
+                }
+
+                const startSec = Math.max(0, iterStartTime);
+                const playDuration = Math.max(0, availableSec - trimBeforeSec);
 
                 if (playDuration <= 0) {
                     continue;
@@ -358,7 +393,6 @@ export async function scheduleTrackClips(
                     source.playbackRate.value = safeStretchRatio;
                 }
 
-                const startSec = Math.max(0, iterStartTime);
                 const endSec = startSec + playDuration;
 
                 const fadeGain = offlineCtx.createGain();
@@ -367,10 +401,11 @@ export async function scheduleTrackClips(
 
                 fadeGain.gain.setValueAtTime(clipGainValue, startSec);
 
-                if (isFirstIter) {
+                if (isFirstIter && trimBeforeSec === 0) {
                     if (clip.fadeInBeats > 0) {
                         const fadeInEndBeat = clip.startBeat + clip.fadeInBeats;
-                        const fadeInEndSec = beatToSeconds(fadeInEndBeat, defaultTempo, changes);
+                        const fadeInEndSec =
+                            beatToSeconds(fadeInEndBeat, defaultTempo, changes) - regionStartSec;
                         const fadeInDuration = Math.min(
                             Math.max(MICRO_FADE_SECONDS, fadeInEndSec - iterStartTime),
                             playDuration * 0.5
@@ -387,7 +422,9 @@ export async function scheduleTrackClips(
                     if (clip.fadeOutBeats > 0) {
                         const fadeOutStartBeat = clip.endBeat - clip.fadeOutBeats;
                         const fadeOutStartSec =
-                            beatToSeconds(fadeOutStartBeat, defaultTempo, changes) + compensationDelay;
+                            beatToSeconds(fadeOutStartBeat, defaultTempo, changes) +
+                            compensationDelay -
+                            regionStartSec;
                         const fadeOutOffset = Math.max(
                             startSec,
                             Math.max(fadeOutStartSec, endSec - playDuration * 0.5)
@@ -401,7 +438,7 @@ export async function scheduleTrackClips(
                 }
 
                 // duration arg is destination-timeline seconds — NOT buffer-time scaled by playbackRate.
-                source.start(startSec, 0, playDuration);
+                source.start(startSec, bufferOffsetSec, playDuration);
             }
         }
     }

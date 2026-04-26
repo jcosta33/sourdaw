@@ -5,7 +5,7 @@ import * as subject from '../getVersionControlHandlers';
 describe('getVersionControlHandlers', () => {
     it('should export getVersionControlHandlers', () => {
         expect(subject.getVersionControlHandlers).toBeDefined();
-        const t = typeof subject.getVersionControlHandlers;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getVersionControlHandlers;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

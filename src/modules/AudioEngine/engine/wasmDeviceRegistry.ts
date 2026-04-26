@@ -17,8 +17,9 @@ import { setEngineReady } from '#/modules/Levain/stores';
 import { registerLevainDevice, unregisterLevainDevice as _unregisterLevainDevice } from '#/modules/Levain/useCases';
 import { isFaustModule } from '#/modules/Plugin/useCases';
 import { updateProofMeters } from '#/modules/Proof/stores';
-import { registerProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
+import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
 import { updateTunerTelemetry } from '#/modules/Scoring/stores';
+import { unregisterToasterDevice } from '#/modules/Toaster';
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
 import { createFaustDeviceNode } from '../useCases/deviceResolvers/createFaustDeviceNode';
@@ -66,7 +67,7 @@ function loadingBypassNode(context: AudioContext, deviceId: string, deviceType: 
 const fermenterDescriptor: WasmDeviceDescriptor = {
     matches: isFermenterDevice,
     create({ context, deviceId, deviceType, onLoaded }) {
-        const pendingParams: Array<[string, number]> = [];
+        const pendingParams: Array<[string, number | number[]]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.fermenterControls = {
             ready: false,
@@ -93,6 +94,14 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: {
+                        ready: true,
+                        noteOn: result.noteOn,
+                        noteOff: result.noteOff,
+                        setParam: result.setParam,
+                        setBypass: result.setBypass,
+                        destroy: result.destroy,
+                    },
                     fermenterControls: {
                         ready: true,
                         noteOn: result.noteOn,
@@ -102,8 +111,12 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Fermenter failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -136,6 +149,18 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: {
+                        ready: true,
+                        noteOn: result.noteOn,
+                        noteOff: result.noteOff,
+                        setParam: result.setParam,
+                        setPadParam: result.setPadParam,
+                        setBypass: result.setBypass,
+                        destroy: () => {
+                            result.destroy();
+                            try { unregisterToasterDevice(deviceId); } catch {}
+                        },
+                    },
                     toasterControls: {
                         ready: true,
                         noteOn: result.noteOn,
@@ -146,9 +171,13 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
-                eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Toaster failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -182,6 +211,19 @@ const levainDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: {
+                        ready: true,
+                        noteOn: result.noteOn,
+                        noteOff: result.noteOff,
+                        allNotesOff: result.allNotesOff,
+                        handleCc: result.handleCc,
+                        setParam: result.setParam,
+                        setBypass: result.setBypass,
+                        destroy: () => {
+                            result.destroy();
+                            try { _unregisterLevainDevice(deviceId); } catch {}
+                        },
+                    },
                     levainControls: {
                         ready: true,
                         noteOn: result.noteOn,
@@ -194,6 +236,7 @@ const levainDescriptor: WasmDeviceDescriptor = {
                     },
                 });
                 registerLevainDevice(
+                    deviceId,
                     {
                         setParam: result.setParam,
                         handleCc: result.handleCc,
@@ -201,9 +244,13 @@ const levainDescriptor: WasmDeviceDescriptor = {
                     },
                     result.workletNode.port
                 );
-                setEngineReady(true);
+                setEngineReady(deviceId, true);
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Levain failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -231,10 +278,15 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Dutch Oven failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -272,10 +324,15 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Gluten failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -306,10 +363,15 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Bacteria failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -357,10 +419,15 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Grinder failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -396,11 +463,16 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: () => { result.destroy(); try { unregisterProofDevice(deviceId); } catch {} } },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
-                syncFullPatch(deviceId);
+                void syncFullPatch(deviceId);
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Proof failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -431,10 +503,15 @@ const scoringDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Scoring failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -473,6 +550,21 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
+                    controller: {
+                        ready: true,
+                        noteOn: result.noteOn,
+                        noteOff: result.noteOff,
+                        setParam: result.setParam,
+                        setSustain: result.setSustain,
+                        setUnaCorda: result.setUnaCorda,
+                        setSostenuto: result.setSostenuto,
+                        noteOnMidi2: result.noteOnMidi2,
+                        setTemperament: result.setTemperament,
+                        loadAttackClip: result.loadAttackClip,
+                        allNotesOff: result.allNotesOff,
+                        setBypass: result.setBypass,
+                        destroy: result.destroy,
+                    },
                     grandBouleControls: {
                         ready: true,
                         noteOn: result.noteOn,
@@ -489,9 +581,13 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
                         destroy: result.destroy,
                     },
                 });
-                eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Grand Boule failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -499,11 +595,23 @@ const grandBouleDescriptor: WasmDeviceDescriptor = {
 const faustDescriptor: WasmDeviceDescriptor = {
     matches: isFaustModule,
     create({ context, deviceId, deviceType, onLoaded }) {
-        const pendingParams: Array<{ name: string; value: number; time?: number }> = [];
+        type PendingParam = { kind: 'param'; name: string; value: number; time?: number };
+        type PendingKey = {
+            kind: 'keyOn' | 'keyOff';
+            channel: number;
+            pitch: number;
+            velocity: number;
+            time?: number;
+        };
+        const pending: Array<PendingParam | PendingKey> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
-        placeholder.wamControls = {
-            setParam: (name, value) => pendingParams.push({ name, value }),
-            scheduleParam: (name, value, time) => pendingParams.push({ name, value, time }),
+        placeholder.controller = {
+            setParam: (name, value) => pending.push({ kind: 'param', name, value }),
+            scheduleParam: (name, value, time) => pending.push({ kind: 'param', name, value, time }),
+            keyOn: (channel, pitch, velocity, time) =>
+                pending.push({ kind: 'keyOn', channel, pitch, velocity, time }),
+            keyOff: (channel, pitch, velocity, time) =>
+                pending.push({ kind: 'keyOff', channel, pitch, velocity, time }),
             destroy: () => {},
         };
         const loadPromise = createFaustDeviceNode(context, deviceType)
@@ -512,11 +620,20 @@ const faustDescriptor: WasmDeviceDescriptor = {
                     return;
                 }
                 const controls = result.wamControls;
-                for (const { name, value, time } of pendingParams) {
-                    if (time !== undefined) {
-                        controls?.scheduleParam(name, value, time);
+                if (!controls) {
+                    return;
+                }
+                for (const event of pending) {
+                    if (event.kind === 'param') {
+                        if (event.time !== undefined) {
+                            controls.scheduleParam(event.name, event.value, event.time);
+                        } else {
+                            controls.setParam(event.name, event.value);
+                        }
+                    } else if (event.kind === 'keyOn') {
+                        controls.keyOn?.(event.channel, event.pitch, event.velocity, event.time);
                     } else {
-                        controls?.setParam(name, value);
+                        controls.keyOff?.(event.channel, event.pitch, event.velocity, event.time);
                     }
                 }
                 onLoaded({
@@ -525,11 +642,21 @@ const faustDescriptor: WasmDeviceDescriptor = {
                     nodes: result.nodes,
                     inputNode: result.inputNode,
                     outputNode: result.outputNode,
-                    wamControls: controls,
+                    controller: {
+                        setParam: controls.setParam,
+                        scheduleParam: controls.scheduleParam,
+                        keyOn: controls.keyOn,
+                        keyOff: controls.keyOff,
+                        destroy: controls.destroy,
+                    },
                 });
-                eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                void eventBus.emit('audioDevice.loaded', { deviceId, deviceType });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Faust failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -537,7 +664,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
 const kneadDescriptor: WasmDeviceDescriptor = {
     matches: isKneadDevice,
     create({ context, deviceId, deviceType, transportSAB, onLoaded }) {
-        const pendingParams: Array<[string, number]> = [];
+        const pendingParams: Array<[string, number | number[]]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.kneadControls = {
             ready: false,
@@ -560,7 +687,7 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
-                    kneadControls: {
+                    controller: {
                         ready: true,
                         updateState: result.updateState,
                         setParam: result.setParam,
@@ -572,9 +699,27 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                             result.workletNode.port.close();
                         },
                     },
+                    kneadControls: {
+                        ready: true,
+                        updateState: result.updateState,
+                        setParam: result.setParam,
+                        setBypass: result.setBypass,
+                        destroy: () => {
+                            try {
+                                result.workletNode.disconnect();
+                            } catch {
+                                // ignore
+                            }
+                            result.workletNode.port.close();
+                        },
+                    },
                 });
+                return;
             })
-            .catch((error) => logger.warn(`[WebAudioEngine] Knead failed: ${error}`));
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${error}`);
+                return;
+            });
         return { placeholder, loadPromise };
     },
 };
@@ -597,5 +742,5 @@ const WASM_DEVICE_DESCRIPTORS: WasmDeviceDescriptor[] = [
 ];
 
 export function findWasmDescriptor(deviceType: string): WasmDeviceDescriptor | undefined {
-    return WASM_DEVICE_DESCRIPTORS.find((d) => d.matches(deviceType));
+    return WASM_DEVICE_DESCRIPTORS.find((data) => data.matches(deviceType));
 }

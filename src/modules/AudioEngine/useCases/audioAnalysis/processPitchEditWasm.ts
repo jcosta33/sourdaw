@@ -1,11 +1,13 @@
 import { audioBufferCache } from '../../stores/audioBufferCache';
-// @ts-ignore
 import { commit_pitch_edit_wasm } from '../../wasm/daw_dsp.js';
+
+import type { PitchContour } from '#/modules/Knead/stores/kneadStore';
+import type { PitchSegment } from './analyzePitchForClip';
 
 export function processPitchEditWasm(
     originalBuffer: AudioBuffer,
-    segments: any[],
-    contour: any,
+    segments: PitchSegment[],
+    contour: PitchContour,
     outputAudioPath: string
 ): void {
     const channelData = originalBuffer.getChannelData(0);

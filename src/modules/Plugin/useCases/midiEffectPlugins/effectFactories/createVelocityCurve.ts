@@ -8,8 +8,8 @@ export function createVelocityCurve(
         id: 'midi-fx-velocity-curve',
         name: `Velocity Curve (${curve})`,
         process: (notes) =>
-            notes.map((n) => {
-                let vel = n.velocity;
+            notes.map((node) => {
+                let vel = node.velocity;
                 switch (curve) {
                     case 'soft':
                         vel = Math.round(Math.sqrt(vel / 127) * 127);
@@ -24,7 +24,7 @@ export function createVelocityCurve(
                     default:
                         break;
                 }
-                return { ...n, velocity: Math.max(1, Math.min(127, vel)) };
+                return { ...node, velocity: Math.max(1, Math.min(127, vel)) };
             }),
     };
 }

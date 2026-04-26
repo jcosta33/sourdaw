@@ -5,7 +5,7 @@ import * as subject from '../setSoloMode';
 describe('setSoloMode', () => {
     it('should export setSoloMode', () => {
         expect(subject.setSoloMode).toBeDefined();
-        const t = typeof subject.setSoloMode;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setSoloMode;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

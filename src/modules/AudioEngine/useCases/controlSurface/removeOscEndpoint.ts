@@ -7,6 +7,6 @@ export function removeOscEndpoint(id: string): void {
     }
     controlSurfaceStore.set({
         ...state,
-        oscEndpoints: state.oscEndpoints.filter((e) => e.id !== id),
+        oscEndpoints: state.oscEndpoints.filter((event) => event.id !== id),
     });
 }

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { toggleRippleEditing } from '../rippleEditing';
 
 const mocks = vi.hoisted(() => ({
-    workspaceStoreValue: { value: { rippleEditing: false } },
+    workspaceStoreValue: { value: { rippleEditing: false } as { rippleEditing: boolean } | null },
     workspaceStoreSet: vi.fn(),
 }));
 
@@ -26,11 +26,11 @@ describe('toggleRippleEditing', () => {
     });
 
     it('toggles ripple editing state', () => {
-        mocks.workspaceStoreValue.value = { rippleEditing: false } as any;
+        mocks.workspaceStoreValue.value = { rippleEditing: false };
         toggleRippleEditing();
         expect(mocks.workspaceStoreSet).toHaveBeenCalledWith(expect.objectContaining({ rippleEditing: true }));
 
-        mocks.workspaceStoreValue.value = { rippleEditing: true } as any;
+        mocks.workspaceStoreValue.value = { rippleEditing: true };
         toggleRippleEditing();
         expect(mocks.workspaceStoreSet).toHaveBeenLastCalledWith(expect.objectContaining({ rippleEditing: false }));
     }, 15000);

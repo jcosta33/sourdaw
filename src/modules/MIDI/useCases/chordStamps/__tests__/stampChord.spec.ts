@@ -5,7 +5,7 @@ import * as subject from '../stampChord';
 describe('stampChord', () => {
     it('should export stampChord', () => {
         expect(subject.stampChord).toBeDefined();
-        const t = typeof subject.stampChord;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.stampChord;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

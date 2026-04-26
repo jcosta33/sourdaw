@@ -5,7 +5,10 @@ import { loopStationStore } from '../../../stores/loopStationStore';
 import { toggleRecord } from '../toggleRecord';
 
 vi.mock('../../../stores/loopStationStore', () => ({
-    loopStationStore: { value: null, set: vi.fn() },
+    loopStationStore: {
+        value: null,
+        set: vi.fn<(state: import('../../../stores/loopStationStore').LoopStationState) => void>(),
+    },
 }));
 
 function emptyLoopState(): LoopStationState {
@@ -42,7 +45,7 @@ describe('toggleRecord', () => {
                     fadeBeats: 0.125,
                 },
             ],
-        } as any;
+        } as LoopStationState;
 
         toggleRecord('s1');
 

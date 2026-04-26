@@ -5,7 +5,7 @@ import * as subject from '../setDefaultAlgorithm';
 describe('setDefaultAlgorithm', () => {
     it('should export setDefaultAlgorithm', () => {
         expect(subject.setDefaultAlgorithm).toBeDefined();
-        const t = typeof subject.setDefaultAlgorithm;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setDefaultAlgorithm;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

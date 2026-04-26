@@ -15,7 +15,7 @@ export async function freezeTrack(trackId: string): Promise<void> {
         return;
     }
 
-    const track = state.tracks.find((t) => t.id === trackId);
+    const track = state.tracks.find((time) => time.id === trackId);
     if (!track || track.freezeState.status === 'frozen') {
         return;
     }
@@ -26,9 +26,9 @@ export async function freezeTrack(trackId: string): Promise<void> {
     const abortController = new AbortController();
     activeFreezeTasks.set(trackId, abortController);
 
-    updateTrack(trackId, (t) => ({
-        ...t,
-        freezeState: { ...t.freezeState, status: 'freezing', renderProgress: 0 },
+    updateTrack(trackId, (time) => ({
+        ...time,
+        freezeState: { ...time.freezeState, status: 'freezing', renderProgress: 0 },
     }));
 
     try {
@@ -36,12 +36,12 @@ export async function freezeTrack(trackId: string): Promise<void> {
 
         let startBeat = Infinity;
         let endBeat = -Infinity;
-        for (const c of track.clips) {
-            if (c.startBeat < startBeat) {
-                startBeat = c.startBeat;
+        for (const context of track.clips) {
+            if (context.startBeat < startBeat) {
+                startBeat = context.startBeat;
             }
-            if (c.endBeat > endBeat) {
-                endBeat = c.endBeat;
+            if (context.endBeat > endBeat) {
+                endBeat = context.endBeat;
             }
         }
 
@@ -52,16 +52,16 @@ export async function freezeTrack(trackId: string): Promise<void> {
 
         // Heuristic: If there's a reverb or delay in the chain, give it a longer tail
         const hasReverbOrDelay = track.devices.some(
-            (d) => d.type.toLowerCase().includes('reverb') || d.type.toLowerCase().includes('delay')
+            (data) => data.type.toLowerCase().includes('reverb') || data.type.toLowerCase().includes('delay')
         );
         const tailBeats = hasReverbOrDelay ? 8 : 4;
 
         const renderedBuffer = await renderTrackOffline(track, startBeat, endBeat + tailBeats, {
             abortSignal: abortController.signal,
-            onProgress: (p) => {
-                updateTrack(trackId, (t) => ({
-                    ...t,
-                    freezeState: { ...t.freezeState, renderProgress: p },
+            onProgress: (param) => {
+                updateTrack(trackId, (time) => ({
+                    ...time,
+                    freezeState: { ...time.freezeState, renderProgress: param },
                 }));
             },
         });
@@ -75,8 +75,8 @@ export async function freezeTrack(trackId: string): Promise<void> {
         const freezeId = `freeze-${trackId}-${Date.now()}`;
         audioBufferCache.set(freezeId, renderedBuffer);
 
-        updateTrack(trackId, (t) => ({
-            ...t,
+        updateTrack(trackId, (time) => ({
+            ...time,
             frozen: true,
             frozenBufferId: freezeId,
             freezeState: {
@@ -98,15 +98,15 @@ export async function freezeTrack(trackId: string): Promise<void> {
 
         if (abortController.signal.aborted) {
             // User cancelled
-            updateTrack(trackId, (t) => ({
-                ...t,
+            updateTrack(trackId, (time) => ({
+                ...time,
                 freezeState: { status: 'unfrozen' },
             }));
             return;
         }
 
-        updateTrack(trackId, (t) => ({
-            ...t,
+        updateTrack(trackId, (time) => ({
+            ...time,
             freezeState: {
                 status: 'error',
                 errorMessage: error instanceof Error ? error.message : String(error),

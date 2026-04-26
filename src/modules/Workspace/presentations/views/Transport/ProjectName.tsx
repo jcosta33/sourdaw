@@ -27,13 +27,13 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
                 <DawCompactInput
                     className="daw-readout-well w-32 px-1.5 font-medium ring-1 ring-ring"
                     value={value}
-                    onChange={(e) => setValue(e.target.value)}
+                    onChange={(event) => setValue(event.target.value)}
                     onBlur={commit}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                    onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
                             commit();
                         }
-                        if (e.key === 'Escape') {
+                        if (event.key === 'Escape') {
                             setEditing(false);
                         }
                     }}

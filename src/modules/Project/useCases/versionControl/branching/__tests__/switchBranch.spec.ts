@@ -5,7 +5,7 @@ import * as subject from '../switchBranch';
 describe('switchBranch', () => {
     it('should export switchBranch', () => {
         expect(subject.switchBranch).toBeDefined();
-        const t = typeof subject.switchBranch;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.switchBranch;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

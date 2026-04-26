@@ -17,7 +17,7 @@ describe('onVoiceToggle', () => {
 
     it('listens to voice.toggle event on the event bus', () => {
         const handler = vi.fn();
-        vi.mocked(eventBus.on).mockReturnValue(vi.fn() as any); // mock unlisten
+        vi.mocked(eventBus.on).mockReturnValue(vi.fn<() => void>()); // mock unlisten
 
         const unlisten = onVoiceToggle(handler);
 

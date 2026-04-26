@@ -3,8 +3,8 @@
 ## Reference research
 
 - `.agents/research/factory/piano-plugin.md` — two-part document:
-  - **Part 1 (§§1–6, lines 1–257):** strategic report — competitive landscape (must-haves, differentiators, pain points), synthesis algorithm options, deployment targets (Tauri / cpal / WASM AudioWorklet / MIDI 2.0 / VST3-CLAP-AU), three-layer architecture, lock-free param/command paths, WASM performance risk, CoOP/COEP / SharedArrayBuffer, pre-allocated voice pool scoring (§4), Rust ecosystem (`basedrop`, `nih-plug` Smoother, `assert_no_alloc`).
-  - **Part 2 (§§1–20, lines 258–1301):** implementation spec — stiff string PDE (§2), hammer nonlinearity (§3), coupled strings / two-stage decay (§4), biquad modal resonator core & numerical-stability notes (§5, §5.4), soundboard options A/B/C (§6–6.4), dampers and per-register behavior (§7), pedals including repedaling catch timing (§8), sympathetic resonance (§9), phantom partials / longitudinal modes (§10), duplex scale resonance (§11), tuning and temperaments (§12), mechanical noise (§13), parameter tables (§14), Rust layout (§15), Pianoteq comparison (§16), perceptual priority ranking (§17), reference pseudocode (§18), open-source references (§19), paths to surpass Pianoteq (§20).
+    - **Part 1 (§§1–6, lines 1–257):** strategic report — competitive landscape (must-haves, differentiators, pain points), synthesis algorithm options, deployment targets (Tauri / cpal / WASM AudioWorklet / MIDI 2.0 / VST3-CLAP-AU), three-layer architecture, lock-free param/command paths, WASM performance risk, CoOP/COEP / SharedArrayBuffer, pre-allocated voice pool scoring (§4), Rust ecosystem (`basedrop`, `nih-plug` Smoother, `assert_no_alloc`).
+    - **Part 2 (§§1–20, lines 258–1301):** implementation spec — stiff string PDE (§2), hammer nonlinearity (§3), coupled strings / two-stage decay (§4), biquad modal resonator core & numerical-stability notes (§5, §5.4), soundboard options A/B/C (§6–6.4), dampers and per-register behavior (§7), pedals including repedaling catch timing (§8), sympathetic resonance (§9), phantom partials / longitudinal modes (§10), duplex scale resonance (§11), tuning and temperaments (§12), mechanical noise (§13), parameter tables (§14), Rust layout (§15), Pianoteq comparison (§16), perceptual priority ranking (§17), reference pseudocode (§18), open-source references (§19), paths to surpass Pianoteq (§20).
 
 All equations, measured parameter tables (string/hammer/damping coefficients per note), filter coefficient derivations, ML training approaches, historical temperament offsets, and dataset links live in the research file. This spec references them by section but does not re-embed them. If an implementer needs a number, they go to the research file; if they need a requirement, they stay here.
 
@@ -126,7 +126,7 @@ Velocity-dependent spectral tilt is implemented per research Part 2 §3 (Stulov 
 
 - Sweep MIDI velocity from 1 to 127 in 1-step increments on C4. For each step, compute the spectral centroid over the first 100 ms. The resulting centroid-vs-velocity curve is monotonically non-decreasing and has no step of more than **10%** of the curve's total range between any two adjacent velocities. (Continuous-curve test.)
 - First-50-ms RMS envelope of a mf C4 note matches the decay shape of the MAESTRO reference recording for C4 at MIDI velocity 80 **within ±3 dB** across that 50 ms window (reference: MAESTRO test split, pick one recording; the exact reference file ID is recorded in the test fixture and committed).
-  > Note: numerical tolerance is the implementer's best estimate; see open question OQ2.
+    > Note: numerical tolerance is the implementer's best estimate; see open question OQ2.
 
 ### R6. Pedals behave continuously
 

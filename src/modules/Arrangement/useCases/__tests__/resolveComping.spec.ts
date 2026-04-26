@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import { type Clip } from '../../models/Track';
+import { type TakeLaneStoreState } from '../../stores/takeLaneStore';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { resolveClipsWithComping } from '../resolveComping';
 
@@ -41,7 +42,7 @@ describe('resolveClipsWithComping', () => {
     });
 
     it('adds region bounds equal to clip bounds when track has no lane', () => {
-        takeLaneStore.value = { lanes: [] } as any;
+        takeLaneStore.value = { lanes: [] } as TakeLaneStoreState;
 
         const clip = testClip({ id: 'b' });
         const out = resolveClipsWithComping('t1', [clip]);

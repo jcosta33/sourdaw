@@ -3,9 +3,9 @@ import { createHandler } from '#/utils/createHandler';
 import { applyGrooveByGrooveId } from '../../useCases/grooveTemplate/applyGrooveByGrooveId';
 
 export const handleApplyGroove = createHandler<'applyGroove'>({
-    execute: (a) => {
-        applyGrooveByGrooveId(a.payload.clipId, a.payload.grooveId, a.payload.amount ?? 1);
+    execute: (alpha) => {
+        applyGrooveByGrooveId(alpha.payload.clipId, alpha.payload.grooveId, alpha.payload.amount ?? 1);
     },
-    describe: (a) => ({ label: `Apply groove "${a.payload.grooveId}"` }),
+    describe: (alpha) => ({ label: `Apply groove "${alpha.payload.grooveId}"` }),
     undoable: true,
 });

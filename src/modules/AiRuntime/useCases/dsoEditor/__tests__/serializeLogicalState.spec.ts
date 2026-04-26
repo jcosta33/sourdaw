@@ -58,8 +58,8 @@ describe('serializeLogicalState', () => {
         });
 
         it('logs edits and caps them to 5', () => {
-            for (let i = 0; i < 6; i++) {
-                logEdit(`Edit ${i}`);
+            for (let index = 0; index < 6; index++) {
+                logEdit(`Edit ${index}`);
             }
             const summary = buildProjectSummary();
             expect(summary.recent_edits).toHaveLength(5);
@@ -189,7 +189,7 @@ describe('serializeLogicalState', () => {
 
         it('truncates routing summary for many tracks', () => {
             mocks.trackStoreValue.value = {
-                tracks: Array.from({ length: 10 }, (_, i) => ({ name: `T${i}` })),
+                tracks: Array.from({ length: 10 }, (_, index) => ({ name: `T${index}` })),
             };
 
             const summary = buildProjectSummary();

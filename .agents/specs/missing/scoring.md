@@ -105,7 +105,7 @@ Provide a robust, phase-locked loop (PLL) synchronization system that slaves the
 
 **Chosen:** Two-tier criterion — **engineering target ±10 ms steady-state** (the PLL must converge to and hold within ±10 ms once locked), **release gate ±40 ms (±1 frame at 25 fps) cumulative drift over 10 minutes** of continuous playback.
 **Considered:** A single ±10 ms criterion over the full 10-minute window (as implied by the research's "±10 ms class accuracy" figure).
-**Justification:** The research's ±10 ms figure describes the PLL's **steady-state convergence band** (the `<10 ms` branch in the three-tier correction algorithm), not a guaranteed long-run envelope. Over 10 minutes the `<video>` element may legitimately cross into the 10–300 ms "medium drift" correction zone (e.g., after a dropped frame, GC pause, tab throttling, or codec reseek), and the PLL is *designed* to allow excursions up to ~300 ms before re-converging. Gating release on ±10 ms for the entire window would fail the product on correct, convergent behavior. We therefore keep ±10 ms as the **engineering target** the control loop must achieve when stable, and use ±40 ms (one frame at the lowest supported frame rate, 25 fps) as the **release gate** — a guaranteed maximum the system never exceeds across a 10-minute window. This matches the ±1-frame tolerance that Logic Pro, Cubase, and Pro Tools target for professional scoring. The ±10 ms target is **not** silently loosened to 40 ms: it is preserved as a distinct acceptance criterion (see `## Acceptance criteria`).
+**Justification:** The research's ±10 ms figure describes the PLL's **steady-state convergence band** (the `<10 ms` branch in the three-tier correction algorithm), not a guaranteed long-run envelope. Over 10 minutes the `<video>` element may legitimately cross into the 10–300 ms "medium drift" correction zone (e.g., after a dropped frame, GC pause, tab throttling, or codec reseek), and the PLL is _designed_ to allow excursions up to ~300 ms before re-converging. Gating release on ±10 ms for the entire window would fail the product on correct, convergent behavior. We therefore keep ±10 ms as the **engineering target** the control loop must achieve when stable, and use ±40 ms (one frame at the lowest supported frame rate, 25 fps) as the **release gate** — a guaranteed maximum the system never exceeds across a 10-minute window. This matches the ±1-frame tolerance that Logic Pro, Cubase, and Pro Tools target for professional scoring. The ±10 ms target is **not** silently loosened to 40 ms: it is preserved as a distinct acceptance criterion (see `## Acceptance criteria`).
 **Rejected:** Accepting 40 ms only, with no engineering target. This would let an implementation that never actually locks the PLL (e.g., permanently running at ±35 ms) pass release — defeating the purpose of the PLL architecture.
 
 ### Decision: Internal time base (Superclock deferred)
@@ -163,13 +163,17 @@ Provide a robust, phase-locked loop (PLL) synchronization system that slaves the
 ## Implementation Status
 
 **What is implemented:**
+
 - N/A. There is a naming collision: the existing `Scoring` module in the codebase is a high-performance **Tuner** (pitch detection), whereas this spec describes a **Video Scoring/SMPTE** engine. None of the video/SMPTE requirements are present.
 
 **What is not implemented:**
+
 - All features described in the spec, including FFmpeg/rsmpeg integration, Rust master clock with PLL sync, SMPTE timecode math, and the video preview UI.
 
 **What is done well:**
+
 - N/A
 
 **What needs refactoring:**
+
 - The existing `Scoring` (Tuner) module should be renamed to avoid collision with this spec once implementation begins.

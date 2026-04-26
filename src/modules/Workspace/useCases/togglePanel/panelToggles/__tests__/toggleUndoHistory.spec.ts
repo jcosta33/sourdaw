@@ -5,7 +5,7 @@ import * as subject from '../toggleUndoHistory';
 describe('toggleUndoHistory', () => {
     it('should export toggleUndoHistory', () => {
         expect(subject.toggleUndoHistory).toBeDefined();
-        const t = typeof subject.toggleUndoHistory;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.toggleUndoHistory;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

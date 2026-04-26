@@ -5,7 +5,7 @@ import * as subject from '../getAudioDevices';
 describe('getAudioDevices', () => {
     it('should export getAudioDevices', () => {
         expect(subject.getAudioDevices).toBeDefined();
-        const t = typeof subject.getAudioDevices;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getAudioDevices;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

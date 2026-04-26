@@ -12,6 +12,6 @@ type PanicGrandBouleInput = {
     engine: GrandBouleEngineHandle;
 };
 
-export const panicGrandBoule = (input: PanicGrandBouleInput): void => {
+export function panicGrandBoule(input: PanicGrandBouleInput): void {
     input.engine.allNotesOff();
-};
+}

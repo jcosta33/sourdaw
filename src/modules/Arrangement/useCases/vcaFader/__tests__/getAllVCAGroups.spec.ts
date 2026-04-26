@@ -5,7 +5,7 @@ import * as subject from '../getAllVCAGroups';
 describe('getAllVCAGroups', () => {
     it('should export getAllVCAGroups', () => {
         expect(subject.getAllVCAGroups).toBeDefined();
-        const t = typeof subject.getAllVCAGroups;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getAllVCAGroups;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

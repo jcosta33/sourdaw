@@ -25,9 +25,12 @@ const defaultMidiLearnState: MidiLearnState = {
     learningTarget: null,
 };
 
-const isTargetMatch = (a: LearningTarget, b: LearningTarget): boolean => {
+const isTargetMatch = (alpha: LearningTarget, buffer: LearningTarget): boolean => {
     return (
-        a.targetType === b.targetType && a.trackId === b.trackId && a.deviceId === b.deviceId && a.paramId === b.paramId
+        alpha.targetType === buffer.targetType &&
+        alpha.trackId === buffer.trackId &&
+        alpha.deviceId === buffer.deviceId &&
+        alpha.paramId === buffer.paramId
     );
 };
 
@@ -41,8 +44,8 @@ export const MidiLearnButton = ({ targetType, trackId, deviceId, paramId }: Midi
 
     const existingMapping = findMappingForTarget(target);
 
-    const handleClick = (e: MouseEvent): void => {
-        e.stopPropagation();
+    const handleClick = (event: MouseEvent): void => {
+        event.stopPropagation();
 
         if (isLearningThis) {
             stopMidiLearn();
@@ -51,11 +54,15 @@ export const MidiLearnButton = ({ targetType, trackId, deviceId, paramId }: Midi
         }
     };
 
-    const label = isLearningThis
-        ? 'Listening for MIDI CC…'
-        : existingMapping
-          ? `MIDI CC ${existingMapping.cc} (ch ${existingMapping.channel + 1})`
-          : 'MIDI Learn';
+    const label = (() => {
+        if (isLearningThis) {
+            return 'Listening for MIDI CC…';
+        }
+        if (existingMapping) {
+            return `MIDI CC ${existingMapping.cc} (ch ${existingMapping.channel + 1})`;
+        }
+        return 'MIDI Learn';
+    })();
 
     return (
         <Tooltip>

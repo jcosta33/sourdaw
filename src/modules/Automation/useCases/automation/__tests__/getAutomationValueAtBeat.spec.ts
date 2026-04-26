@@ -5,7 +5,7 @@ import * as subject from '../getAutomationValueAtBeat';
 describe('getAutomationValueAtBeat', () => {
     it('should export getAutomationValueAtBeat', () => {
         expect(subject.getAutomationValueAtBeat).toBeDefined();
-        const t = typeof subject.getAutomationValueAtBeat;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getAutomationValueAtBeat;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

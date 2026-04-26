@@ -2,9 +2,9 @@ import { addSection } from '#/modules/Arrangement/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 export const handleAddSection = createHandler<'addSection'>({
-    execute: (a) => {
-        addSection(a.payload.startBeat, a.payload.endBeat, a.payload.name);
+    execute: (alpha) => {
+        addSection(alpha.payload.startBeat, alpha.payload.endBeat, alpha.payload.name);
     },
-    describe: (a) => ({ label: `Add section "${a.payload.name}"` }),
+    describe: (alpha) => ({ label: `Add section "${alpha.payload.name}"` }),
     undoable: true,
 });

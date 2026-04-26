@@ -16,7 +16,7 @@ describe('handleSetClipLoop', () => {
     });
 
     it('executes setClipLoop with the provided payload', () => {
-        handleSetClipLoop.execute({
+        void handleSetClipLoop.execute({
             type: 'setClipLoop',
             payload: { clipId: 'c1', enabled: true },
         });

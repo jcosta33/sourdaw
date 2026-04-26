@@ -40,8 +40,8 @@ describe('generateDrumPattern (algorithm)', () => {
         // With swing, off-beats are delayed
         const swung = generateDrumPattern({ style: 'four-on-floor', bars: 1, swing: 0.5, seed: 1 });
 
-        const straightStarts = straight.notes.map((n) => n.startBeat);
-        const swungStarts = swung.notes.map((n) => n.startBeat);
+        const straightStarts = straight.notes.map((node) => node.startBeat);
+        const swungStarts = swung.notes.map((node) => node.startBeat);
 
         // At least one swung note should fall on a non-clean grid division
         const hasSwungNote = swungStarts.some((beat) => beat % 0.25 !== 0);

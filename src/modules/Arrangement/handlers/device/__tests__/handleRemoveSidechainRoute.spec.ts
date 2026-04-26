@@ -20,7 +20,7 @@ describe('handleRemoveSidechainRoute', () => {
     it('bails if the route cannot be found for the target track', () => {
         mocks.getSidechainRoutesForTrack.mockReturnValue([]);
 
-        handleRemoveSidechainRoute.execute({
+        void handleRemoveSidechainRoute.execute({
             type: 'removeSidechainRoute',
             payload: { sourceTrackId: 't1', targetTrackId: 't2' },
         });
@@ -34,7 +34,7 @@ describe('handleRemoveSidechainRoute', () => {
             { id: 'r2', sourceTrackId: 't3' },
         ]);
 
-        handleRemoveSidechainRoute.execute({
+        void handleRemoveSidechainRoute.execute({
             type: 'removeSidechainRoute',
             payload: { sourceTrackId: 't1', targetTrackId: 't2' },
         });

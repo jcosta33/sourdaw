@@ -47,7 +47,7 @@ export function float32ToAudioBuffer(audio: Float32Array, sampleRate = TARGET_SA
     const ctx = new AudioContext({ sampleRate });
     const buffer = ctx.createBuffer(1, audio.length, sampleRate);
     buffer.copyToChannel(new Float32Array(audio), 0);
-    ctx.close();
+    void ctx.close();
     return buffer;
 }
 
@@ -57,10 +57,10 @@ export function float32ToAudioBuffer(audio: Float32Array, sampleRate = TARGET_SA
  */
 export function applyFades(audio: Float32Array, fadeSamples: number): void {
     const fadeLen = Math.min(fadeSamples, Math.floor(audio.length / 2));
-    for (let i = 0; i < fadeLen; i++) {
-        const gain = i / fadeLen;
-        audio[i] = (audio[i] ?? 0) * gain;
-        const endIdx = audio.length - 1 - i;
+    for (let index = 0; index < fadeLen; index++) {
+        const gain = index / fadeLen;
+        audio[index] = (audio[index] ?? 0) * gain;
+        const endIdx = audio.length - 1 - index;
         audio[endIdx] = (audio[endIdx] ?? 0) * gain;
     }
 }
@@ -79,8 +79,8 @@ export function normalizePeak(audio: Float32Array): void {
     }
     if (peak > 0 && peak !== 1) {
         const scale = 1 / peak;
-        for (let i = 0; i < audio.length; i++) {
-            audio[i] = (audio[i] ?? 0) * scale;
+        for (let index = 0; index < audio.length; index++) {
+            audio[index] = (audio[index] ?? 0) * scale;
         }
     }
 }

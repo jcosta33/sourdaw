@@ -8,15 +8,15 @@ This document provides the canonical instructions and architectural rules that Y
 
 Before starting significant implementation work, read the shared process documentation:
 
-| Document                       | What it covers                                                        |
-| ------------------------------ | --------------------------------------------------------------------- |
-| `docs/agents/01-process.md`    | Why documentation-first exists and the five document types            |
-| `docs/agents/02-file-types.md` | Definitions, required sections, and completion criteria for each type |
-| `docs/agents/03-workflow.md`   | Step-by-step execution flow for agent sessions                        |
+| Document                       | What it covers                                                                                                            |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `docs/agents/01-process.md`    | Why documentation-first exists and the five document types                                                                |
+| `docs/agents/02-file-types.md` | Definitions, required sections, and completion criteria for each type                                                     |
+| `docs/agents/03-workflow.md`   | Step-by-step execution flow for agent sessions                                                                            |
 | `docs/agents/04-standards.md`  | Writing quality for specs/audits/tasks; task focus vs opportunistic fixes (not TypeScript — see `docs/07-conventions.md`) |
 | `docs/07-conventions.md`       | Coding patterns for humans; **TypeScript soundness** is canonical in **`AGENTS.md`** (see § TypeScript — soundness there) |
-| `docs/06-testing.md`           | Vitest layout (`__tests__/` folders), mocks, DI in tests                   |
-| `agents/templates/`            | Ready-to-use templates: `audit.md`, `spec.md`, `task.md`              |
+| `docs/06-testing.md`           | Vitest layout (`__tests__/` folders), mocks, DI in tests                                                                  |
+| `agents/templates/`            | Ready-to-use templates: `audit.md`, `spec.md`, `task.md`                                                                  |
 
 Working artifacts for this repo live in:
 
@@ -40,7 +40,7 @@ Agent sandboxes (isolated worktrees) are managed by `docs/08-agents.md` — the 
 
 You are a proactive, cognizant software engineer. Formulate your own paths to success within the established architecture. To scale autonomous work, you must transition from simple task execution to exhaustive self-validation.
 
-- **Force Empirical Proof (Show, Don't Tell):** Mistrust your own code. Never declare a task complete without empirical verification. Always write a failing test or reproduction script *before* touching application code. Paste actual console output (tests, linters, builds) to prove success.
+- **Force Empirical Proof (Show, Don't Tell):** Mistrust your own code. Never declare a task complete without empirical verification. Always write a failing test or reproduction script _before_ touching application code. Paste actual console output (tests, linters, builds) to prove success.
 - **Blast Radius Awareness:** Trace upstream callers and downstream dependencies before modifying code. Rely on the TypeScript compiler (`pnpm typecheck`) to exhaustively navigate the blast radius.
 - **Behavioral Invariants (Holistic Evaluation):** Evaluate the entire application state. Implement error boundaries, fallback UIs, and graceful degradation. Assume everything that can fail will fail. No "happy path only" coding.
 - **Institutionalize Strategic Backtracking (The Three Strikes Rule):** If you attempt to fix a compilation or test error 3 times and fail, **stop**. Discard your current approach, reread the overarching spec, and formulate a fundamentally different strategy to break hallucination loops.
@@ -138,15 +138,14 @@ Prohibited tools and techniques include, but are not limited to:
 - **Local Primitive State:** Use `useState` + React Compiler.
 - **Context:** Used ONLY for deeply local view state (e.g. collapsing a panel). Consume Context using `use()` instead of `useContext`.
 
-## 📝 React 19 & Coding Conventions
+## 📝 Backend CLI & Coding Conventions
 
-- **The React Compiler is ACTIVE:** Do NOT manually invoke `useMemo`, `useCallback`, or `React.memo`. The compiler handles memoization perfectly. Write plain code.
-- **Refs:** `ref` is a regular prop in React 19. Do NOT use `forwardRef`.
-- **Conditional Rendering:** Never use `&&` for rendering (it leaks 0 and false). Use complete ternaries `? :` or explicit early returns.
+- **Module Naming:** Modules MUST be Capitalized (e.g., `Workspace`, `Terminal`, `TaskManagement`).
+- **File Naming:** Filenames MUST use kebab-case (e.g., `git-utils.ts`, `task-types.json`).
+- **Variable/Function Naming:** Variables and functions MUST use snake_case (worm case) (e.g., `my_variable`, `run_command()`). Do NOT use camelCase.
 - **Control Flow:** All `if` statements must use block syntax `{}`. Guard clauses / early returns ONLY. No chained ternaries.
 - **TypeScript Forms:** Prefer `type` over `interface`. Prefer `as const` objects over `enum`. Use explicit type-only imports (`import { type MyType }`).
 - **TypeScript — soundness:** Types must describe real data. **Forbidden:** `any` except at a boundary (e.g. external payload) with **immediate** narrowing — never as a permanent “whatever” type; `as`, `as any`, or `as unknown as …` to silence compiler errors instead of fixing the value or the type; `@ts-expect-error` / `@ts-ignore` without a one-line justification and a path to remove it; `{}`, unconstrained `object`, or `Record<string, …>` as a stand-in for a domain model when a concrete shape or discriminated union exists; optional fields used to encode mutually exclusive states. **Tests:** Do not stop at “defined” / “truthy” / generic `toBeTypeOf('object')` — assert the actual contract (values, shape, or error text). **Prefer:** `unknown` + narrowing, `satisfies`, discriminated unions, `import type`, and runtime validation at I/O boundaries (e.g. Zod).
 - **Imports:** Never use namespace imports (`import * as X from '...'`). Always import named exports individually.
-- **Naming:** No prefixes or suffixes that are entity-type names (e.g. `thingRepository`, `thingUseCase`, `repositoriesThing`). No single-letter variable names or single-letter generic type parameters — use descriptive names.
+- **Naming Constraints:** No prefixes or suffixes that are entity-type names (e.g. `thing_repository`, `thing_use_case`, `repositories_thing`). No single-letter variable names or single-letter generic type parameters — use descriptive names.
 - **Function Signatures:** Functions with more than one parameter take a single object param. For module-level functions, the input type is named `FunctionNameInput` and the output type (if non-scalar) is named `FunctionNameOutput`; both are defined immediately above the function they belong to — not grouped at the top of the file. For class methods, use an inline object type directly in the parameter instead of a named type. If the output is a `Promise`, declare `type FunctionNameOutput = Promise<...>` — do NOT write `Promise<FunctionNameOutput>` at the function signature level.
-- **Styling:** Exclusively use Tailwind V4 classes via `@theme` variables (e.g., `text-[var(--color-accent-orange)]` or standard tokens). No custom CSS outside `main.css`.

@@ -17,7 +17,7 @@ export function propagateParentChanges(parentClipId: string): void {
 
     let parentClip: Clip | undefined;
     for (const track of state.tracks) {
-        parentClip = track.clips.find((c) => c.id === parentClipId);
+        parentClip = track.clips.find((context) => context.id === parentClipId);
         if (parentClip) {
             break;
         }
@@ -38,10 +38,10 @@ export function propagateParentChanges(parentClipId: string): void {
             }
 
             const offset = clip.startBeat - parentClip.startBeat;
-            const clonedNotes = parentNotes.map((n) => ({
-                ...n,
+            const clonedNotes = parentNotes.map((node) => ({
+                ...node,
                 id: `note-inst-${crypto.randomUUID().slice(0, 8)}`,
-                startBeat: n.startBeat + offset,
+                startBeat: node.startBeat + offset,
             }));
             setNotesForClip(clip.id, clonedNotes);
         }

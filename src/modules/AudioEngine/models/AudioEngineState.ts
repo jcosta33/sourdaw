@@ -7,6 +7,31 @@ export type AudioEngineState = {
     baseLatency: number;
 };
 
+export interface DeviceController {
+    ready?: boolean;
+    setParam(name: string, value: number, sampleFrame?: number): void;
+    scheduleParam?(name: string, value: number, time: number): void;
+    setPatch?(patch: Record<string, unknown>): void;
+    setBypass?(bypassed: boolean): void;
+    destroy?(): void;
+
+    // Optional device-specific methods (Shims/Extensions)
+    noteOn?(note: number, velocity: number, sampleFrame?: number): void;
+    noteOff?(note: number, sampleFrame?: number): void;
+    allNotesOff?(): void;
+    handleCc?(cc: number, value: number): void;
+    setPadParam?(pad: number, name: string, value: number): void;
+    setSustain?(position: number): void;
+    setUnaCorda?(engaged: boolean): void;
+    setSostenuto?(engaged: boolean): void;
+    noteOnMidi2?(midiNote: number, velocity16bit: number, pitchOffsetQ24: number): void;
+    setTemperament?(index: number): void;
+    loadAttackClip?(key: number, samples: Float32Array): void;
+    updateState?(clips: Record<string, any>): void;
+    keyOn?(channel: number, pitch: number, velocity: number, time?: number): void;
+    keyOff?(channel: number, pitch: number, velocity: number, time?: number): void;
+}
+
 export type BuiltinDeviceNode = {
     deviceId: string;
     type: string;
@@ -16,23 +41,19 @@ export type BuiltinDeviceNode = {
     bypassed?: boolean;
     /** Stop oscillators and release resources when the device is removed. */
     dispose?: () => void;
+    /** Unified controller for all device types */
+    controller?: DeviceController;
     /** Controls for native Rust/WASM DSP devices (param updates via MessagePort) */
     nativeDspControls?: {
         setParam: (name: string, value: number) => void;
         setBypass: (bypassed: boolean) => void;
-    };
-    /** Generic controls for Web Audio Modules (WAM) / Faust */
-    wamControls?: {
-        setParam: (name: string, value: number) => void;
-        scheduleParam: (name: string, value: number, time: number) => void;
-        destroy?: () => void;
     };
     /** Controls for the Fermenter synthesizer (MIDI + param updates via MessagePort) */
     fermenterControls?: {
         ready: boolean;
         noteOn: (note: number, velocity: number, sampleFrame?: number) => void;
         noteOff: (note: number, sampleFrame?: number) => void;
-        setParam: (name: string, value: number, sampleFrame?: number) => void;
+        setParam: (name: string, value: number | number[], sampleFrame?: number) => void;
         setPatch?: (patch: Record<string, unknown>) => void;
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
@@ -77,8 +98,8 @@ export type BuiltinDeviceNode = {
     /** Controls for the Knead pitch processor (blob sync + param updates via MessagePort) */
     kneadControls?: {
         ready: boolean;
-        updateState: (clips: Record<string, any>) => void;
-        setParam: (name: string, value: number) => void;
+        updateState: (clips: Record<string, unknown>) => void;
+        setParam: (name: string, value: number | number[]) => void;
         setBypass: (bypassed: boolean) => void;
         destroy: () => void;
     };
@@ -151,12 +172,14 @@ export type AudioEngine = {
     updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void;
     updateDevicePatch(trackId: string, deviceId: string, patch: Record<string, unknown>): void;
     scheduleDeviceParam(trackId: string, deviceId: string, paramId: string, value: number, time: number): void;
+    scheduleDeviceKeyOn(trackId: string, deviceId: string, pitch: number, velocity: number, time?: number): void;
+    scheduleDeviceKeyOff(trackId: string, deviceId: string, pitch: number, velocity: number, time?: number): void;
     updateDeviceBypass(trackId: string, deviceId: string, bypassed: boolean): void;
     addMidiFxToStrip(trackId: string, fxId: string, fxType: 'arp' | 'velocity' | 'probability'): void;
     removeMidiFxFromStrip(trackId: string, fxId: string): void;
     updateMidiFxParam(trackId: string, fxId: string, paramId: string, value: number): void;
     updateMidiFxBypass(trackId: string, fxId: string, bypassed: boolean): void;
-    syncKneadState(trackId: string, clips: Record<string, any>): void;
+    syncKneadState(trackId: string, clips: Record<string, unknown>): void;
     registerTuningTable(frequencies: number[]): void;
     ensureBusStrip(busId: string): BusStrip;
     removeBusStrip(busId: string): void;
@@ -179,4 +202,24 @@ export type AudioEngine = {
         loopEnd?: number,
         isLooping?: boolean
     ): void;
+    applyAdjustmentLayerTick?(records: AdjustmentLayerTickInput[]): void;
+    resetAdjustmentLayers?(): void;
+    listLiveAdjustmentBusKeys?(): string[];
+};
+
+export type AdjustmentLayerTickInput = {
+    trackId: string;
+    layerId: string;
+    effectType:
+        | 'eq'
+        | 'compressor'
+        | 'reverb'
+        | 'delay'
+        | 'saturation'
+        | 'filter'
+        | 'stereo-width'
+        | 'volume'
+        | 'pan';
+    parameters: Record<string, number>;
+    blend: number;
 };

@@ -16,7 +16,7 @@ describe('handleDeleteTime', () => {
     });
 
     it('executes deleteTime with the provided payload', () => {
-        handleDeleteTime.execute({
+        void handleDeleteTime.execute({
             type: 'deleteTime',
             payload: { startBeat: 4, endBeat: 8 },
         });

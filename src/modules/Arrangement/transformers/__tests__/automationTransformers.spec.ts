@@ -20,8 +20,8 @@ function pt(
 
 describe('rdpSimplify', () => {
     it('should return two or fewer points unchanged', () => {
-        const a = [pt(0, 0), pt(1, 1)];
-        expect(rdpSimplify(a, 0.01)).toEqual(a);
+        const alpha = [pt(0, 0), pt(1, 1)];
+        expect(rdpSimplify(alpha, 0.01)).toEqual(alpha);
     });
 
     it('should collapse near-colinear middle points within tolerance', () => {
@@ -32,8 +32,8 @@ describe('rdpSimplify', () => {
 
 describe('interpolateAutomationValue', () => {
     it('should return the first value when both points share the same beat', () => {
-        const p = pt(2, 0.25);
-        expect(interpolateAutomationValue(p, { ...p, value: 0.75 }, 2)).toBe(0.25);
+        const param = pt(2, 0.25);
+        expect(interpolateAutomationValue(param, { ...param, value: 0.75 }, 2)).toBe(0.25);
     });
 
     it('should interpolate linearly by default', () => {
@@ -56,9 +56,9 @@ describe('interpolateAutomationValue', () => {
         const p2 = pt(1, 10, 'smooth');
         const prev = pt(-1, -5, 'linear');
         const next = pt(2, 20, 'linear');
-        const v = interpolateAutomationValue(p1, p2, 0.5, prev, next);
-        expect(v).toBeGreaterThan(0);
-        expect(v).toBeLessThan(10);
+        const value = interpolateAutomationValue(p1, p2, 0.5, prev, next);
+        expect(value).toBeGreaterThan(0);
+        expect(value).toBeLessThan(10);
     });
 });
 
@@ -81,7 +81,7 @@ describe('generateShapePoints', () => {
     it('should build square waves with step curves', () => {
         const pts = generateShapePoints('square', 0, 4, 0, 1);
         expect(pts.length).toBeGreaterThanOrEqual(3);
-        expect(pts.some((p) => p.curve === 'step')).toBe(true);
+        expect(pts.some((param) => param.curve === 'step')).toBe(true);
     });
 
     it('should build sawtooth-down as a falling ramp', () => {
@@ -94,7 +94,7 @@ describe('generateShapePoints', () => {
     it('should emit five smooth points for sine', () => {
         const pts = generateShapePoints('sine', 0, 4, 0, 1);
         expect(pts).toHaveLength(5);
-        expect(pts.every((p) => p.curve === 'smooth')).toBe(true);
+        expect(pts.every((param) => param.curve === 'smooth')).toBe(true);
     });
 });
 

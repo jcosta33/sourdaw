@@ -39,7 +39,7 @@ describe('QrInvite', () => {
         expect(screen.getByText(/Copy Invite/i)).toBeInTheDocument();
     });
 
-    it('should copy invite string when button is clicked', async () => {
+    it('should copy invite string when button is clicked', () => {
         render(<QrInvite inviteString={mockInviteString} />);
         const copyButton = screen.getByText(/Copy Invite/i);
         fireEvent.click(copyButton);

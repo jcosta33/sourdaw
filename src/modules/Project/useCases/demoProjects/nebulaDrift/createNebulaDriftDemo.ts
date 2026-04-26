@@ -26,10 +26,17 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane } from '#/modules/Automation/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import { chordTrackStore, midiStore } from '#/modules/MIDI/stores';
+import { addChordEvent } from '#/modules/MIDI/useCases';
+import { addSidechainRoute } from '#/modules/Routing/useCases';
 import { DEFAULT_PAD_NAMES } from '#/modules/Toaster/useCases';
-import { transportStore } from '#/modules/Transport/stores';
-import { defaultTransportState, ensureTrackStrips } from '#/modules/Transport/useCases';
+import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
+import {
+    addTempoChange,
+    addTimeSignatureChange,
+    defaultTransportState,
+    ensureTrackStrips,
+} from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
 import { applyPreset } from '../demoUtils/applyPreset';
@@ -47,6 +54,7 @@ const A2 = 45;
 const D3 = 50;
 const E3 = 52;
 const F3 = 53;
+const G3 = 55;
 const A3 = 57;
 const Bb3 = 58;
 const B3 = 59;
@@ -83,9 +91,9 @@ function levainDevice(overrides: Record<string, number> = {}) {
     };
 }
 
-function addDev(t: { devices?: unknown[] }, type: string, name: string, params: Record<string, number>) {
-    t.devices = [
-        ...(t.devices || []),
+function addDev(time: { devices?: unknown[] }, type: string, name: string, params: Record<string, number>) {
+    time.devices = [
+        ...(time.devices || []),
         {
             id: `dev-${crypto.randomUUID()}`,
             name,
@@ -107,8 +115,8 @@ const S = {
 } as const;
 
 /** Muted pad / clip tints for the Toaster (low chroma; avoids bright default PAD_COLORS). */
-const NEBULA_TOASTER_PAD_COLORS: readonly string[] = Array.from({ length: 16 }, (_, i) => {
-    const h = Math.round((i * 360) / 16);
+const NEBULA_TOASTER_PAD_COLORS: readonly string[] = Array.from({ length: 16 }, (_, index) => {
+    const h = Math.round((index * 360) / 16);
     return `oklch(0.415 0.036 ${h})`;
 });
 
@@ -162,6 +170,15 @@ export async function demo5_NebulaDrift(): Promise<void> {
     const tLevCall = createTrack({ name: 'Levain Call', kind: 'midi', parentId: levainFolder.id });
     const tLevAnswer = createTrack({ name: 'Levain Answer', kind: 'midi', parentId: levainFolder.id });
 
+    // ── Piano + granular texture layer ────────────────────────────────────
+    const pianoFolder = createTrack({ name: '🎼 Piano & Haze', kind: 'folder' });
+    const tGrandCrystal = createTrack({ name: 'Grand Crystal', kind: 'midi', parentId: pianoFolder.id });
+    const tCrumbsHaze = createTrack({ name: 'Crumbs Haze', kind: 'midi', parentId: pianoFolder.id });
+
+    // ── Send/return buses ─────────────────────────────────────────────────
+    const tSpaceBus = createTrack({ name: 'Space Bus', kind: 'bus' });
+    const tDelayBus = createTrack({ name: 'Delay Bus', kind: 'bus' });
+
     // ── Toaster: folder instrument + 16 pad children (same contract as createDrumTrackStack) ──
     const toasterFolder = createTrack({ name: '⚡ Toaster Kit', kind: 'folder' });
     toasterFolder.color = 'oklch(0.39 0.024 255)';
@@ -182,15 +199,15 @@ export async function demo5_NebulaDrift(): Promise<void> {
         },
     ];
 
-    const toasterPadTracks = Array.from({ length: 16 }, (_, i) => {
+    const toasterPadTracks = Array.from({ length: 16 }, (_, index) => {
         const child = createTrack({
-            name: DEFAULT_PAD_NAMES[i] ?? `Pad ${i + 1}`,
+            name: DEFAULT_PAD_NAMES[index] ?? `Pad ${index + 1}`,
             kind: 'midi',
             parentId: toasterFolder.id,
         });
         child.devices = [];
         child.outputId = toasterFolder.id;
-        child.color = NEBULA_TOASTER_PAD_COLORS[i] ?? child.color;
+        child.color = NEBULA_TOASTER_PAD_COLORS[index] ?? child.color;
         return child;
     });
 
@@ -198,6 +215,11 @@ export async function demo5_NebulaDrift(): Promise<void> {
     applyPreset(tSubDrone, 'fermenter-dark-drone');
     applyPreset(tDarkMist, 'fermenter-ambient-texture');
     applyPreset(tGrainHaze, 'fermenter-grain-cloud');
+    // Freeze demonstration — Grain Haze has 9 automation lanes (CPU-heavy),
+    // so it's a natural candidate. No baked buffer exists so playback may be
+    // silent; the UI state is what's being demonstrated.
+    tGrainHaze.frozen = true;
+    tGrainHaze.freezeState = { status: 'frozen', frozenBufferId: 'demo-grain-haze-frozen' };
     applyPreset(tEtherealVeil, 'fermenter-ethereal-pad');
     applyPreset(tSweepHorizon, 'fermenter-sem-sweep');
     applyPreset(tWarmHalo, 'fermenter-warm-pad');
@@ -219,6 +241,73 @@ export async function demo5_NebulaDrift(): Promise<void> {
     tLevLow.devices = [levainDevice({ vibratoDepth: 0.07, humanize: 0.58 })];
     tLevCall.devices = [levainDevice({ vibratoDepth: 0.2, humanize: 0.72 })];
     tLevAnswer.devices = [levainDevice({ vibratoDepth: 0.26, humanize: 0.64 })];
+
+    // Harmony auto-transpose on Levain High — follows the chord track
+    tLevHigh.followChordTrack = true;
+
+    // Grand Boule — physical-modeling piano for sparse dreamy chord roots
+    tGrandCrystal.devices = [
+        {
+            id: `grand-boule-${crypto.randomUUID().slice(0, 8)}`,
+            name: 'Grand Boule',
+            type: 'grand-boule',
+            bypassed: false,
+            parameterValues: {},
+        },
+    ];
+
+    // Crumbs — granular micro-stabs
+    tCrumbsHaze.devices = [
+        {
+            id: `dev-${crypto.randomUUID()}`,
+            name: 'Crumbs',
+            type: 'builtin-crumbs',
+            bypassed: false,
+            parameterValues: { masterGain: 0.62, attack: 0.004, decay: 0.22, sustain: 0.3, release: 0.35 },
+        },
+    ];
+
+    // Space Bus — dutch-oven (Proof Chamber) algorithmic reverb
+    tSpaceBus.devices = [
+        {
+            id: `dev-${crypto.randomUUID()}`,
+            name: 'Proof Chamber',
+            type: 'dutch-oven',
+            bypassed: false,
+            parameterValues: {
+                mix: 1, // fully wet — the bus IS the reverb return
+                decay: 0.78,
+                damping: 0.32,
+                predelay: 28,
+                size: 0.88,
+                mod_rate: 0.35,
+                mod_depth: 0.45,
+                diffusion: 0.82,
+                high_cut: 9500,
+                low_cut: 120,
+                width: 1.6,
+                shimmer: 1,
+                shimmer_amount: 0.18,
+            },
+        },
+    ];
+
+    // Delay Bus — faust tape delay at 3/4 of a beat (76 BPM → 0.789 s/beat × 0.75)
+    const delayBeats = 0.75;
+    const beatSeconds = 60 / bpm;
+    tDelayBus.devices = [
+        {
+            id: `dev-${crypto.randomUUID()}`,
+            name: 'Tape Delay',
+            type: 'faust-tape-delay',
+            bypassed: false,
+            parameterValues: {
+                delay: delayBeats * beatSeconds,
+                feedback: 0.5,
+                dry_wet: 1,
+            },
+        },
+    ];
 
     // Master chain
     addDev(masterTrack, 'builtin-eq', 'Master Tilt', {
@@ -390,6 +479,14 @@ export async function demo5_NebulaDrift(): Promise<void> {
         'eq-high-freq': 3500,
         'eq-high-q': 0.8,
     });
+    // Sidechain compressor on the bass — pumped from Toaster Pad 0 (kick) for an organic peak pulse
+    addDev(tBassGroove, 'builtin-sidechain-compressor', 'Kick Duck', {
+        'sc-comp-threshold': -22,
+        'sc-comp-ratio': 2,
+        'sc-comp-attack': 6,
+        'sc-comp-release': 180,
+        'sc-comp-makeup': 1.5,
+    });
 
     addDev(tLevHigh, 'builtin-reverb', 'High Plate', {
         'rev-size': 0.72,
@@ -411,7 +508,9 @@ export async function demo5_NebulaDrift(): Promise<void> {
     // Initial levels & static pans (automation adds motion)
     const widePans = [-38, 34, -28, 30, -22, 26, -40, 36];
     let pi = 0;
-    const nextPan = () => widePans[pi++ % widePans.length] ?? 0;
+    function nextPan() {
+        return widePans[pi++ % widePans.length] ?? 0;
+    }
 
     tSubDrone.gain = 0;
     tDarkMist.gain = 0;
@@ -463,6 +562,30 @@ export async function demo5_NebulaDrift(): Promise<void> {
         pad.gain = 1;
     }
 
+    // New track levels + pans
+    tGrandCrystal.gain = 0.78;
+    tGrandCrystal.pan = 4;
+    tCrumbsHaze.gain = 0.55;
+    tCrumbsHaze.pan = -8;
+    tSpaceBus.gain = 0.9;
+    tSpaceBus.pan = 0;
+    tDelayBus.gain = 0.7;
+    tDelayBus.pan = 0;
+
+    // Send/return routing ─ reverb on pads + leads, tape delay on leads + pluck
+    const send = (busId: string, level: number, preFader = false) => ({ busId, level, preFader });
+    tWarmHalo.sends = [send(tSpaceBus.id, 0.32)];
+    tEtherealVeil.sends = [send(tSpaceBus.id, 0.38)];
+    tRisingMist.sends = [send(tSpaceBus.id, 0.3)];
+    tDarkMist.sends = [send(tSpaceBus.id, 0.22)];
+    tLeadMoog.sends = [send(tSpaceBus.id, 0.24), send(tDelayBus.id, 0.28)];
+    tLeadSync.sends = [send(tSpaceBus.id, 0.2), send(tDelayBus.id, 0.22)];
+    tLevCall.sends = [send(tSpaceBus.id, 0.26)];
+    tLevAnswer.sends = [send(tSpaceBus.id, 0.24)];
+    tPluckA.sends = [send(tDelayBus.id, 0.3)];
+    tGrandCrystal.sends = [send(tSpaceBus.id, 0.42)];
+    tCrumbsHaze.sends = [send(tSpaceBus.id, 0.36)];
+
     const clip = (trackId: string, name: string) => createMidiClip(trackId, name, 0, TB);
 
     const cSub = clip(tSubDrone.id, 'Sub');
@@ -480,6 +603,8 @@ export async function demo5_NebulaDrift(): Promise<void> {
     const cSeq = clip(tSeqRipple.id, 'Growl');
     const cLMo = clip(tLeadMoog.id, 'Sitar');
     const cLSy = clip(tLeadSync.id, 'Sync');
+    const cGrand = clip(tGrandCrystal.id, 'Crystal');
+    const cCrumb = createMidiClip(tCrumbsHaze.id, 'Crumbs', S.peak, S.breakdown);
     const cBss = clip(tBassGroove.id, 'Reese');
     const cLH = clip(tLevHigh.id, 'High');
     const cLM = clip(tLevMid.id, 'Mid');
@@ -489,17 +614,17 @@ export async function demo5_NebulaDrift(): Promise<void> {
 
     // ── MIDI content ──────────────────────────────────────────────────────
     // Humanization: wider timing offsets (+-0.2 beats), more velocity variation (+-12)
-    const hum = (pitch: number, beat: number, duration: number, velocity: number, salt: number): MidiNote => {
+    function hum(pitch: number, beat: number, duration: number, velocity: number, salt: number): MidiNote {
         const tb = ((salt * 19) % 37) / 95 - 0.2; // +-0.2 beats timing offset
         const td = ((salt * 11) % 13) / 60 - 0.1; // +-0.1 duration variance
         const dv = ((salt * 23) % 25) - 12; // +-12 velocity variance
-        const v = Math.max(1, Math.min(127, Math.round(velocity + dv)));
-        return note(pitch, Math.max(0, beat + tb), Math.max(0.08, duration + td), v);
-    };
+        const value1 = Math.max(1, Math.min(127, Math.round(velocity + dv)));
+        return note(pitch, Math.max(0, beat + tb), Math.max(0.08, duration + td), value1);
+    }
 
     const subN: MidiNote[] = [];
-    for (let b = 0, s = 0; b < TB; b += 20, s++) {
-        subN.push(hum(A2, b, 22, 84, s));
+    for (let b = 0, state = 0; b < TB; b += 20, state++) {
+        subN.push(hum(A2, b, 22, 84, state));
     }
 
     // Dark Mist — evolving 5ths and 7ths, wider velocity range for more drama
@@ -512,21 +637,21 @@ export async function demo5_NebulaDrift(): Promise<void> {
         [A2, E3],
         [F3, C4],
     ];
-    for (let b = 6, s = 0; b < TB; b += 28, s++) {
-        const pair = darkIntervals[s % darkIntervals.length]!;
+    for (let b = 6, state = 0; b < TB; b += 28, state++) {
+        const pair = darkIntervals[state % darkIntervals.length]!;
         const vel1 = b >= S.peak && b < S.breakdown ? 88 : 72;
         const vel2 = vel1 - 8;
-        darkN.push(hum(pair[0]!, b, 24, vel1 + ((s * 5) % 7) - 3, s));
-        darkN.push(hum(pair[1]!, b + 5.5, 18, vel2 + ((s * 3) % 5) - 2, s + 40));
+        darkN.push(hum(pair[0]!, b, 24, vel1 + ((state * 5) % 7) - 3, state));
+        darkN.push(hum(pair[1]!, b + 5.5, 18, vel2 + ((state * 3) % 5) - 2, state + 40));
     }
 
     // Grain Haze — slow granular texture drifting through a pitch field
     const grainN: MidiNote[] = [];
     const grainPitches = [G4, A4, D5, E4, C5, G4, B4, F4]; // wider pitch palette
-    for (let b = 0, s = 0; b < TB; b += 12, s++) {
-        const p = grainPitches[s % grainPitches.length]!;
-        const vel = 48 + (s % 6) * 4 + (b >= S.peak ? 10 : 0);
-        grainN.push(hum(p, b, 9, Math.min(90, vel), s));
+    for (let b = 0, state = 0; b < TB; b += 12, state++) {
+        const param = grainPitches[state % grainPitches.length]!;
+        const vel = 48 + (state % 6) * 4 + (b >= S.peak ? 10 : 0);
+        grainN.push(hum(param, b, 9, Math.min(90, vel), state));
     }
 
     // Ethereal Veil — slow drifting intervals, suspended feel
@@ -539,23 +664,23 @@ export async function demo5_NebulaDrift(): Promise<void> {
         [Fs5, D5],
         [E5, B4],
     ];
-    for (let b = 3, s = 0; b < TB; b += 20, s++) {
-        const vp = veilPitches[s % veilPitches.length]!;
-        veilN.push(hum(vp[0]!, b, 16, 52 + ((s * 3) % 9), s));
-        if (s % 2 === 1 || b >= S.peak) {
-            veilN.push(hum(vp[1]!, b + 7, 10, 44 + ((s * 5) % 7), s + 11));
+    for (let b = 3, state = 0; b < TB; b += 20, state++) {
+        const vp = veilPitches[state % veilPitches.length]!;
+        veilN.push(hum(vp[0]!, b, 16, 52 + ((state * 3) % 9), state));
+        if (state % 2 === 1 || b >= S.peak) {
+            veilN.push(hum(vp[1]!, b + 7, 10, 44 + ((state * 5) % 7), state + 11));
         }
     }
 
     // Sweep Horizon — slow filter sweeps on sustained notes, modal ambiguity
     const sweepN: MidiNote[] = [];
     const sweepPitches = [A4, D5, E5, A4, C5, G4, B4, E5, Fs5, D5];
-    for (let b = 1, s = 0; b < TB; b += 10, s++) {
-        const p = sweepPitches[s % sweepPitches.length]!;
-        const vel = 55 + ((s * 7) % 13) + (b >= S.peak && b < S.breakdown ? 15 : 0);
-        sweepN.push(hum(p, b, 7, Math.min(95, vel), s));
-        if (s % 3 === 0) {
-            sweepN.push(hum(sweepPitches[(s + 3) % sweepPitches.length]!, b + 4.5, 4, vel - 6, s + 3));
+    for (let b = 1, state = 0; b < TB; b += 10, state++) {
+        const param = sweepPitches[state % sweepPitches.length]!;
+        const vel = 55 + ((state * 7) % 13) + (b >= S.peak && b < S.breakdown ? 15 : 0);
+        sweepN.push(hum(param, b, 7, Math.min(95, vel), state));
+        if (state % 3 === 0) {
+            sweepN.push(hum(sweepPitches[(state + 3) % sweepPitches.length]!, b + 4.5, 4, vel - 6, state + 3));
         }
     }
 
@@ -593,44 +718,52 @@ export async function demo5_NebulaDrift(): Promise<void> {
         [C4, E4],
         [F4, A4],
     ];
-    for (let b = 20, s = 0; b < TB; b += 16, s++) {
-        const rp = risePairs[s % risePairs.length]!;
-        const vel = 50 + ((s * 5) % 11) + (b >= S.peak ? 14 : 0);
-        riseN.push(hum(rp[0], b, 13, vel, s));
-        if (s % 2 === 0 || b >= S.build1) {
-            riseN.push(hum(rp[1], b + 6, 8, vel - 6, s + 7));
+    for (let b = 20, state = 0; b < TB; b += 16, state++) {
+        const rp = risePairs[state % risePairs.length]!;
+        const vel = 50 + ((state * 5) % 11) + (b >= S.peak ? 14 : 0);
+        riseN.push(hum(rp[0], b, 13, vel, state));
+        if (state % 2 === 0 || b >= S.build1) {
+            riseN.push(hum(rp[1], b + 6, 8, vel - 6, state + 7));
         }
     }
 
     // Wild Drift — chaotic, unpredictable texture. Wide intervals, chromatic neighbors.
     const wildN: MidiNote[] = [];
     const wildP = [D4, F4, A4, C5, E5, Fs4, Bb3, D5, G4, A3, E5, B4, Fs5];
-    for (let b = 0, s = 0; b < TB; b += 7.5, s++) {
+    for (let b = 0, state = 0; b < TB; b += 7.5, state++) {
         // Sparse during breakdown
-        if (b >= S.breakdown && b < S.final && s % 3 !== 0) {
+        if (b >= S.breakdown && b < S.final && state % 3 !== 0) {
             continue;
         }
         // Wider velocity range for chaos
-        const vel = 42 + ((s * 17) % 20) + (b >= S.peak && b < S.breakdown ? 18 : 0);
+        const vel = 42 + ((state * 17) % 20) + (b >= S.peak && b < S.breakdown ? 18 : 0);
         // Varying durations: some very short, some long and ringing
-        const dur = s % 5 === 0 ? 6.0 : s % 5 === 3 ? 1.2 : 3.6;
-        wildN.push(hum(wildP[s % wildP.length]!, b, dur, Math.min(98, vel), s));
+        const dur = (() => {
+            if (state % 5 === 0) {
+                return 6.0;
+            }
+            if (state % 5 === 3) {
+                return 1.2;
+            }
+            return 3.6;
+        })();
+        wildN.push(hum(wildP[state % wildP.length]!, b, dur, Math.min(98, vel), state));
     }
 
     const stutterN: MidiNote[] = [];
-    for (let b = 18, s = 0; b < TB; b += 4.25, s++) {
-        if (b < S.build1 && s % 2 === 0) {
+    for (let b = 18, state = 0; b < TB; b += 4.25, state++) {
+        if (b < S.build1 && state % 2 === 0) {
             continue;
         }
-        if (b >= S.breakdown && b < S.final && s % 3 !== 0) {
+        if (b >= S.breakdown && b < S.final && state % 3 !== 0) {
             continue;
         }
-        stutterN.push(hum(C5, b, 0.42, 40 + (s % 5) * 3, s));
+        stutterN.push(hum(C5, b, 0.42, 40 + (state % 5) * 3, state));
     }
 
     const metalN: MidiNote[] = [];
-    for (let b = 26, s = 0; b < TB; b += 13, s++) {
-        metalN.push(hum(E5, b, 0.18, 46, s));
+    for (let b = 26, state = 0; b < TB; b += 13, state++) {
+        metalN.push(hum(E5, b, 0.18, 46, state));
     }
 
     // Pluck Constellation — interlocking arpeggios at different rates (Eno-style)
@@ -645,7 +778,15 @@ export async function demo5_NebulaDrift(): Promise<void> {
             px++;
             continue;
         }
-        const baseVel = b >= S.peak && b < S.breakdown ? 85 : b >= S.build1 ? 70 : 55;
+        const baseVel = (() => {
+            if (b >= S.peak && b < S.breakdown) {
+                return 85;
+            }
+            if (b >= S.build1) {
+                return 70;
+            }
+            return 55;
+        })();
         const vel = baseVel + ((px * 11) % 9) - 4;
         const dur = px % 3 === 0 ? 2.2 : 1.1; // alternating long/short
         pluckN.push(hum(pluckA[px % pluckA.length]!, b, dur, Math.max(40, Math.min(100, vel)), px));
@@ -674,9 +815,9 @@ export async function demo5_NebulaDrift(): Promise<void> {
     let bellB = 8,
         bs = 0;
     while (bellB < TB) {
-        const p = bellPitches[bs % bellPitches.length]!;
+        const param = bellPitches[bs % bellPitches.length]!;
         const vel = 38 + ((bs * 11) % 15) + (bellB >= S.peak && bellB < S.breakdown ? 12 : 0);
-        bellN.push(hum(p, bellB, 4, Math.min(85, vel), bs));
+        bellN.push(hum(param, bellB, 4, Math.min(85, vel), bs));
         if (bs % 3 === 0) {
             // Second bell a 5th below, offset
             bellN.push(hum(bellPitches[(bs + 4) % bellPitches.length]!, bellB + 8, 3, vel - 8, bs + 50));
@@ -697,16 +838,25 @@ export async function demo5_NebulaDrift(): Promise<void> {
     let sx = 0;
     // 16th notes at 76bpm = step every 0.25 beats (but use ~1 beat spacing for musicality)
     for (let b = 6; b < TB; b += 1.0) {
-        const pat =
-            b < S.build1
-                ? seqIntro
-                : b < S.peak
-                  ? seqBuild
-                  : b < S.breakdown
-                    ? seqPeak
-                    : b < S.final
-                      ? seqBreak
-                      : seqFinal;
+        const pat = (() => {
+            if (b < S.build1) {
+                return seqIntro;
+            } else {
+                if (b < S.peak) {
+                    return seqBuild;
+                } else {
+                    if (b < S.breakdown) {
+                        return seqPeak;
+                    } else {
+                        if (b < S.final) {
+                            return seqBreak;
+                        } else {
+                            return seqFinal;
+                        }
+                    }
+                }
+            }
+        })();
 
         // Intro: very sparse (every 4th step)
         if (b < S.build1 && sx % 4 !== 0) {
@@ -747,25 +897,50 @@ export async function demo5_NebulaDrift(): Promise<void> {
     let bm = 44;
     while (bm < TB - 10) {
         // Pick phrase based on section
-        const phrase =
-            bm < S.build1
-                ? phraseA
-                : bm < S.peak
-                  ? phraseB
-                  : bm < S.breakdown
-                    ? phraseC
-                    : bm < S.final
-                      ? phraseD
-                      : phraseA;
+        const phrase = (() => {
+            if (bm < S.build1) {
+                return phraseA;
+            } else {
+                if (bm < S.peak) {
+                    return phraseB;
+                } else {
+                    if (bm < S.breakdown) {
+                        return phraseC;
+                    } else {
+                        if (bm < S.final) {
+                            return phraseD;
+                        } else {
+                            return phraseA;
+                        }
+                    }
+                }
+            }
+        })();
         const inBreak = bm >= S.breakdown && bm < S.final - 16;
         if (!inBreak) {
             const pi = mx % phrase.length;
             // Velocity: wide dynamic range, louder at peak
-            const baseVel = bm >= S.peak && bm < S.breakdown ? 88 : bm >= S.build1 ? 76 : 65;
+            const baseVel = (() => {
+                if (bm >= S.peak && bm < S.breakdown) {
+                    return 88;
+                }
+                if (bm >= S.build1) {
+                    return 76;
+                }
+                return 65;
+            })();
             const velVar = ((mx * 17) % 11) - 5; // -5 to +5
             const vel = Math.max(40, Math.min(100, baseVel + velVar));
             // Duration varies: some long, some short for articulation
-            const dur = pi % 3 === 0 ? 4.2 : pi % 3 === 1 ? 2.4 : 3.5;
+            const dur = (() => {
+                if (pi % 3 === 0) {
+                    return 4.2;
+                }
+                if (pi % 3 === 1) {
+                    return 2.4;
+                }
+                return 3.5;
+            })();
             // Rests: skip every 7th note for breathing room
             if (mx % 7 !== 6) {
                 leadMoogN.push(hum(phrase[pi]!, bm, dur, vel, mx + 100));
@@ -773,7 +948,15 @@ export async function demo5_NebulaDrift(): Promise<void> {
         }
         mx++;
         const busy = bm >= S.peak && bm < S.breakdown;
-        const step = busy ? 2.6 : bm >= S.build1 ? 3.5 : 5.2;
+        const step = (() => {
+            if (busy) {
+                return 2.6;
+            }
+            if (bm >= S.build1) {
+                return 3.5;
+            }
+            return 5.2;
+        })();
         bm += step;
     }
 
@@ -793,7 +976,15 @@ export async function demo5_NebulaDrift(): Promise<void> {
         const baseVel = b >= S.peak && b < S.breakdown ? 82 : 65;
         const vel = pi === 0 ? baseVel + 12 : baseVel + ((sy * 13) % 7) - 3;
         // Longer notes for legato feel
-        const dur = pi % 4 === 0 ? 3.8 : pi % 4 === 2 ? 1.6 : 2.8;
+        const dur = (() => {
+            if (pi % 4 === 0) {
+                return 3.8;
+            }
+            if (pi % 4 === 2) {
+                return 1.6;
+            }
+            return 2.8;
+        })();
         leadSyncN.push(hum(phrase[pi]!, b, dur, Math.max(40, Math.min(100, vel)), sy + 200));
         sy++;
     }
@@ -806,7 +997,15 @@ export async function demo5_NebulaDrift(): Promise<void> {
         const step = Math.floor(b / 2) % 8;
         const root = bassRoots[step] ?? A2;
         // Vary duration more: longer sustained notes and short staccato
-        const dur = bi % 4 === 0 ? 3.2 : bi % 4 === 2 ? 0.8 : 1.6;
+        const dur = (() => {
+            if (bi % 4 === 0) {
+                return 3.2;
+            }
+            if (bi % 4 === 2) {
+                return 0.8;
+            }
+            return 1.6;
+        })();
         // More varied velocity (40-95 range)
         const baseVel = b >= S.peak && b < S.breakdown ? 85 : 68;
         const vel = bi % 4 === 0 ? baseVel + 8 : baseVel - 10 + ((bi * 7) % 11);
@@ -851,34 +1050,74 @@ export async function demo5_NebulaDrift(): Promise<void> {
     // Levain Low — slow pedal tones with 5th movement
     const lowN: MidiNote[] = [];
     const lowRoots = [A3, E3, D3, A3, G2, A3, F3, E3]; // harmonic rhythm
-    for (let b = 4, s = 0; b < TB; b += 16, s++) {
-        const root = lowRoots[s % lowRoots.length]!;
-        lowN.push(hum(root, b, 12, 72 + ((s * 5) % 7) - 3, s + 600));
-        if (s % 2 === 1) {
-            lowN.push(hum(root + 7, b + 6, 6, 64, s + 601)); // 5th above
+    for (let b = 4, state = 0; b < TB; b += 16, state++) {
+        const root = lowRoots[state % lowRoots.length]!;
+        lowN.push(hum(root, b, 12, 72 + ((state * 5) % 7) - 3, state + 600));
+        if (state % 2 === 1) {
+            lowN.push(hum(root + 7, b + 6, 6, 64, state + 601)); // 5th above
         }
     }
 
     // Levain Call — longer phrases with dramatic arc
     const callN: MidiNote[] = [];
     const callMelody = [D5, E5, Fs5, G5, A5, G5, E5, D5, C5, A4];
-    for (let b = 32, s = 0; b < TB; b += 30, s++) {
+    for (let b = 32, state = 0; b < TB; b += 30, state++) {
         const len = Math.min(4, callMelody.length);
-        for (let n = 0; n < len; n++) {
-            const vel = 55 + n * 3 + (b >= S.peak ? 12 : 0);
-            callN.push(hum(callMelody[(s * 3 + n) % callMelody.length]!, b + n * 4.5, 4, vel, s * 10 + n + 700));
+        for (let node = 0; node < len; node++) {
+            const vel = 55 + node * 3 + (b >= S.peak ? 12 : 0);
+            callN.push(
+                hum(
+                    callMelody[(state * 3 + node) % callMelody.length]!,
+                    b + node * 4.5,
+                    4,
+                    vel,
+                    state * 10 + node + 700
+                )
+            );
         }
     }
 
     // Levain Answer — response phrases in lower register
     const answerN: MidiNote[] = [];
     const answerMelody = [C5, B4, G4, A4, E4, D4, E4, G4, A4, C5];
-    for (let b = 48, s = 0; b < TB; b += 34, s++) {
+    for (let b = 48, state = 0; b < TB; b += 34, state++) {
         const len = Math.min(3, answerMelody.length);
-        for (let n = 0; n < len; n++) {
-            const vel = 52 + n * 4 + (b >= S.peak ? 10 : 0);
-            answerN.push(hum(answerMelody[(s * 2 + n) % answerMelody.length]!, b + n * 5.2, 5, vel, s * 10 + n + 800));
+        for (let node = 0; node < len; node++) {
+            const vel = 52 + node * 4 + (b >= S.peak ? 10 : 0);
+            answerN.push(
+                hum(
+                    answerMelody[(state * 2 + node) % answerMelody.length]!,
+                    b + node * 5.2,
+                    5,
+                    vel,
+                    state * 10 + node + 800
+                )
+            );
         }
+    }
+
+    // Grand Crystal — sparse chord-root notes aligned with Warm Halo harmony.
+    // 16 notes across 380 beats, dreamy barely-there velocity.
+    // Warm Halo chord roots (cycle of 8, 38-beat spacing starting at beat 14):
+    //   Am A3 | Cmaj C4 | Em E3 | Dm D3 | Fmaj F3 | G7 G2 | Am9 A3 | Bbmaj7 Bb3
+    const crystalRoots = [A3, C4, E3, D3, F3, G2, A3, Bb3];
+    const grandN: MidiNote[] = [];
+    for (let k = 0, b = 18; k < 16 && b < TB - 8; k++, b += 24) {
+        const rootIdx = k % crystalRoots.length;
+        const root = crystalRoots[rootIdx]!;
+        // Pair root + 5th above for a simple dyad — gentle piano voicing
+        grandN.push(hum(root, b, 10, 40 + (k % 5) * 3, k + 900));
+        grandN.push(hum(root + 7, b + 1.8, 8, 34 + (k % 4) * 3, k + 920));
+    }
+
+    // Crumbs Haze — short granular stabs in the Peak / Ridge section (148–232).
+    const crumbN: MidiNote[] = [];
+    const crumbPitches = [G3, C4, E4, G4, B3, D4, F4, A3, E4, C4, G4, D4];
+    for (let k = 0; k < 12; k++) {
+        const p = crumbPitches[k % crumbPitches.length]!;
+        // Spread across 84-beat Peak span, clip-relative (clip starts at S.peak)
+        const rel = (k + 0.5) * (84 / 12) + ((k * 7) % 3) * 0.4;
+        crumbN.push(note(p, rel, 0.125, 48 + ((k * 11) % 9)));
     }
 
     // Toaster: one clip per arr.section per pad (skip empty) — notes are beat-relative to clip start
@@ -891,7 +1130,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
         [S.final, TB],
     ];
 
-    const toasterSegmentIndex = (absBeat: number): number => {
+    function toasterSegmentIndex(absBeat: number): number {
         if (absBeat < S.build1) {
             return 0;
         }
@@ -905,11 +1144,11 @@ export async function demo5_NebulaDrift(): Promise<void> {
             return 3;
         }
         return 4;
-    };
+    }
 
     const padSegNotes: MidiNote[][][] = Array.from({ length: 16 }, () => toasterSegRanges.map(() => [] as MidiNote[]));
 
-    const pushToast = (pad: number, absBeat: number, vel: number, dur = 0.12) => {
+    function pushToast(pad: number, absBeat: number, vel: number, dur = 0.12) {
         const si = toasterSegmentIndex(absBeat);
         const [segStart, segEnd] = toasterSegRanges[si]!;
         if (absBeat < segStart || absBeat >= segEnd) {
@@ -917,7 +1156,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
         }
         const rel = absBeat - segStart;
         padSegNotes[pad]![si]!.push(note(36 + pad, rel, dur, vel));
-    };
+    }
 
     // Intro — almost no drums, just occasional distant texture
     // Pad 5 = metallic shimmer, Pad 13 = subtle click
@@ -983,27 +1222,40 @@ export async function demo5_NebulaDrift(): Promise<void> {
         }
     }
 
+    // Peak drum groove — transform Toaster from texture to rhythm (beats 148–232).
+    // Kick 4-on-floor, snare backbeat (2, 4), hat eighth shimmer.
+    for (let b = S.peak; b < S.breakdown; b++) {
+        pushToast(0, b, 92 + ((b & 3) === 0 ? 8 : 0), 0.18); // kick every beat, accent on downbeat
+    }
+    for (let b = S.peak + 1; b < S.breakdown; b += 2) {
+        pushToast(1, b, 82 + ((b & 3) === 3 ? 6 : 0), 0.12); // snare on 2 and 4 (odd beats)
+    }
+    for (let b = S.peak; b < S.breakdown; b += 0.5) {
+        const isOffbeat = (b * 2) % 2 === 1;
+        pushToast(2, b, isOffbeat ? 46 : 58, 0.06); // eighth-note hat; offbeats quieter
+    }
+
     for (let pi = 0; pi < 16; pi++) {
-        for (let s = 0; s < toasterSegRanges.length; s++) {
-            padSegNotes[pi]![s]!.sort((a, b) => a.startBeat - b.startBeat);
+        for (let state = 0; state < toasterSegRanges.length; state++) {
+            padSegNotes[pi]![state]!.sort((alpha, b) => alpha.startBeat - b.startBeat);
         }
     }
 
     const toasterTrackClips: ReturnType<typeof createMidiClip>[][] = [];
     const toasterNotesByClipId: Record<string, MidiNote[]> = {};
     for (let padIdx = 0; padIdx < 16; padIdx++) {
-        const t = toasterPadTracks[padIdx]!;
+        const time = toasterPadTracks[padIdx]!;
         const list: ReturnType<typeof createMidiClip>[] = [];
-        for (let s = 0; s < toasterSegRanges.length; s++) {
-            const arr = padSegNotes[padIdx]![s]!;
+        for (let state = 0; state < toasterSegRanges.length; state++) {
+            const arr = padSegNotes[padIdx]![state]!;
             if (arr.length === 0) {
                 continue;
             }
-            const [st, en] = toasterSegRanges[s]!;
+            const [st, en] = toasterSegRanges[state]!;
             const padName = DEFAULT_PAD_NAMES[padIdx] ?? `Pad ${padIdx + 1}`;
-            const c = createMidiClip(t.id, `${padName} · ${toasterSegLabels[s]}`, st, en, t.color);
-            list.push(c);
-            toasterNotesByClipId[c.id] = arr;
+            const context = createMidiClip(time.id, `${padName} · ${toasterSegLabels[state]}`, st, en, time.color);
+            list.push(context);
+            toasterNotesByClipId[context.id] = arr;
         }
         toasterTrackClips.push(list);
     }
@@ -1030,10 +1282,12 @@ export async function demo5_NebulaDrift(): Promise<void> {
         tLevLow,
         tLevCall,
         tLevAnswer,
+        tGrandCrystal,
+        tCrumbsHaze,
         ...toasterPadTracks,
     ];
-    for (const t of allMidiTracks) {
-        t.clips = [];
+    for (const time of allMidiTracks) {
+        time.clips = [];
     }
 
     tSubDrone.clips = [cSub];
@@ -1057,6 +1311,8 @@ export async function demo5_NebulaDrift(): Promise<void> {
     tLevLow.clips = [cLL];
     tLevCall.clips = [cLC];
     tLevAnswer.clips = [cLA];
+    tGrandCrystal.clips = [cGrand];
+    tCrumbsHaze.clips = [cCrumb];
     for (const [i, t] of toasterPadTracks.entries()) {
         t.clips = toasterTrackClips[i] ?? [];
     }
@@ -1090,8 +1346,13 @@ export async function demo5_NebulaDrift(): Promise<void> {
         tLevLow,
         tLevCall,
         tLevAnswer,
+        pianoFolder,
+        tGrandCrystal,
+        tCrumbsHaze,
         toasterFolder,
         ...toasterPadTracks,
+        tSpaceBus,
+        tDelayBus,
     ];
 
     trackStore.set({ tracks, selectedTrackId: tLeadMoog.id });
@@ -1118,6 +1379,8 @@ export async function demo5_NebulaDrift(): Promise<void> {
         [cLL.id]: lowN,
         [cLC.id]: callN,
         [cLA.id]: answerN,
+        [cGrand.id]: grandN,
+        [cCrumb.id]: crumbN,
     };
     Object.assign(notesByClipId, toasterNotesByClipId);
 
@@ -1129,23 +1392,24 @@ export async function demo5_NebulaDrift(): Promise<void> {
 
     transportStore.set({ ...defaultTransportState, tempo: bpm, loopEnd: TB, isLooping: true });
 
-    const mkLane = (trackId: string, param: string, label: string, min: number, max: number) =>
-        createAutomationLane(trackId, param, label, min, max);
+    function mkLane(trackId: string, param: string, label: string, min: number, max: number) {
+        return createAutomationLane(trackId, param, label, min, max);
+    }
 
     const dim = 0.07;
     const hero = 0.84;
     const levBed = 0.1;
 
-    const padGainLanes = toasterPadTracks.map((pad, i) =>
+    const padGainLanes = toasterPadTracks.map((pad, index) =>
         Object.assign(mkLane(pad.id, 'gain', `${pad.name} pad`, 0, 1), {
             points: [
                 { beat: 0, value: 0, curve: 'linear', tension: 0 },
-                { beat: 70 + i, value: 0, curve: 'linear', tension: 0 },
-                { beat: 98 + i, value: Math.min(1, 0.55 + (i % 5) * 0.06), curve: 'smooth', tension: 0.36 },
-                { beat: S.peak, value: Math.min(1, 0.52 + (i % 4) * 0.07), curve: 'smooth', tension: 0.3 },
-                { beat: S.breakdown, value: Math.min(1, 0.22 + (i % 3) * 0.05), curve: 'linear', tension: 0 },
-                { beat: S.final, value: Math.min(1, 0.58 + (i % 4) * 0.05), curve: 'smooth', tension: 0.28 },
-                { beat: TB, value: Math.min(1, 0.4 + (i % 5) * 0.05), curve: 'linear', tension: 0 },
+                { beat: 70 + index, value: 0, curve: 'linear', tension: 0 },
+                { beat: 98 + index, value: Math.min(1, 0.55 + (index % 5) * 0.06), curve: 'smooth', tension: 0.36 },
+                { beat: S.peak, value: Math.min(1, 0.52 + (index % 4) * 0.07), curve: 'smooth', tension: 0.3 },
+                { beat: S.breakdown, value: Math.min(1, 0.22 + (index % 3) * 0.05), curve: 'linear', tension: 0 },
+                { beat: S.final, value: Math.min(1, 0.58 + (index % 4) * 0.05), curve: 'smooth', tension: 0.28 },
+                { beat: TB, value: Math.min(1, 0.4 + (index % 5) * 0.05), curve: 'linear', tension: 0 },
             ],
         })
     );
@@ -2001,9 +2265,49 @@ export async function demo5_NebulaDrift(): Promise<void> {
         ],
     });
 
+    // ── Tempo drift (76 → 78 at Peak → back to 76 at Fog) ─────────────────
+    tempoMapStore.set({ changes: [] });
+    addTempoChange(0, bpm, 'instant');
+    addTempoChange(S.peak, 78, 'linear');
+    addTempoChange(S.breakdown, bpm, 'linear');
+
+    // ── Time signature: brief 6/8 excursion at Peak, back to 4/4 ──────────
+    timeSignatureMapStore.set({ changes: [] });
+    addTimeSignatureChange(0, 4, 4);
+    addTimeSignatureChange(S.peak, 6, 8);
+    addTimeSignatureChange(S.peak + 12, 4, 4);
+
+    // ── Chord track — 8-chord progression matching Warm Halo voicings ────
+    //   Am9 | Cmaj9 | Em7 | Dm9 | Fmaj7 | G7 | Am9 | Bbmaj7
+    //   (Cmaj9 and Am9 use available CHORD_TYPES keys; 'maj7' + 'min9' are the
+    //   closest approximations in the type set.)
+    chordTrackStore.set({ enabled: true, events: [] });
+    type ChordQual = 'min9' | 'maj7' | 'min7' | '7';
+    const chordProgression: Array<[number, ChordQual]> = [
+        [9, 'min9'], // Am9
+        [0, 'maj7'], // Cmaj9 approx (maj9 not in CHORD_TYPES)
+        [4, 'min7'], // Em7
+        [2, 'min9'], // Dm9
+        [5, 'maj7'], // Fmaj7
+        [7, '7'], // G7
+        [9, 'min9'], // Am9
+        [10, 'maj7'], // Bbmaj7
+    ];
+    const chordDur = 32;
+    for (let i = 0; i * chordDur < TB; i++) {
+        const [root, quality] = chordProgression[i % chordProgression.length]!;
+        addChordEvent(i * chordDur, root, quality, chordDur);
+    }
+
+    // ── Sidechain route: Toaster Pad 0 (kick) → Rye Reese's sidechain comp ─
+    const reeseSidechainDev = tBassGroove.devices.find((d) => d.type === 'builtin-sidechain-compressor');
+    if (reeseSidechainDev) {
+        addSidechainRoute(toasterPadTracks[0]!.id, tBassGroove.id, reeseSidechainDev.id, 'sc-comp-threshold');
+    }
+
     syncArrangement(tracks);
 
-    const toasterDev = toasterFolder.devices.find((d) => d.type === 'toaster');
+    const toasterDev = toasterFolder.devices.find((data) => data.type === 'toaster');
     if (toasterDev) {
         addDeviceToStrip(toasterFolder.id, toasterDev.id, 'toaster');
         for (const [paramId, value] of Object.entries(toasterDev.parameterValues)) {
@@ -2032,7 +2336,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
         scaleName: 'chromatic',
         tuning: {
             name: 'Equal Temperament',
-            frequencies: Array.from({ length: 128 }, (_, i) => 440 * 2 ** ((i - 69) / 12)),
+            frequencies: Array.from({ length: 128 }, (_, index) => 440 * 2 ** ((index - 69) / 12)),
         },
     });
 }

@@ -3,6 +3,7 @@ import { type ReactElement } from 'react';
 import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { RecentProjectsMenu, ArrangementSelector } from '#/modules/Project/presentations/views';
+import { PunchRecordingControls } from '#/modules/Transport/presentations/views';
 
 import { type Track } from '../../models/TrackViewTypes';
 import { toggleRippleEditing } from '../../useCases/rippleEditing';
@@ -48,8 +49,8 @@ export const TransportBar = (): ReactElement => {
     const project = useProjectState();
 
     const tracks = getTracks(useStore(trackStore, { tracks: [], selectedTrackId: null }));
-    const anyTrackArmed = tracks.some((t) => t.armed);
-    const anyMidiTrackArmed = tracks.some((t) => t.armed && t.kind === 'midi');
+    const anyTrackArmed = tracks.some((time) => time.armed);
+    const anyMidiTrackArmed = tracks.some((time) => time.armed && time.kind === 'midi');
 
     const isRecording = transport.isRecording;
 
@@ -119,6 +120,8 @@ export const TransportBar = (): ReactElement => {
                     />
                     <Sep />
                     <TempoEditor />
+                    <Sep />
+                    <PunchRecordingControls />
                 </div>
 
                 {/* Center stage: Core Transport */}

@@ -66,7 +66,9 @@ describe('removeTrack', () => {
     });
 
     it('should return early when track id is unknown', () => {
-        vi.mocked(getTrackState).mockReturnValue({ tracks: [], selectedTrackId: null } as any);
+        vi.mocked(getTrackState).mockReturnValue({ tracks: [], selectedTrackId: null } as unknown as ReturnType<
+            typeof getTrackState
+        >);
         vi.mocked(getTrackById).mockReturnValue(undefined);
 
         removeTrack('missing');
@@ -85,7 +87,7 @@ describe('removeTrack', () => {
         vi.mocked(getTrackState).mockReturnValue({
             tracks: [track as never],
             selectedTrackId: 't1',
-        } as any);
+        } as unknown as ReturnType<typeof getTrackState>);
         vi.mocked(getTrackById).mockReturnValue(track as never);
 
         removeTrack('t1');

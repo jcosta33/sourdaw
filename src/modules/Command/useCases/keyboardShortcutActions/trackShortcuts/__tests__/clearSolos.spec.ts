@@ -5,7 +5,7 @@ import * as subject from '../clearSolos';
 describe('clearSolos', () => {
     it('should export clearSolos', () => {
         expect(subject.clearSolos).toBeDefined();
-        const t = typeof subject.clearSolos;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.clearSolos;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

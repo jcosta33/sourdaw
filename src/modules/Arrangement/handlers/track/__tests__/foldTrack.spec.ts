@@ -16,7 +16,7 @@ describe('handleFoldTrack', () => {
     });
 
     it('executes foldTrack with the provided payload', () => {
-        handleFoldTrack.execute({
+        void handleFoldTrack.execute({
             type: 'foldTrack',
             payload: { trackId: 't1', folded: true },
         });

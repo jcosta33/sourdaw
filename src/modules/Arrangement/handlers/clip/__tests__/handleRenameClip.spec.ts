@@ -14,7 +14,7 @@ describe('handleRenameClip', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('delegates to renameClip use case', () => {
-        handleRenameClip.execute({
+        void handleRenameClip.execute({
             type: 'renameClip',
             payload: { clipId: 'c1', name: 'New Name' },
         });

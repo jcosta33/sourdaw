@@ -59,11 +59,7 @@ export default function transform(fileInfo: FileInfo, api: API): string | null {
 
         // inner callee must be `inject`
         const injectCallee = innerCall.callee;
-        if (
-            injectCallee.type !== 'Identifier' ||
-            injectCallee.name !== 'inject'
-        )
-            return;
+        if (injectCallee.type !== 'Identifier' || injectCallee.name !== 'inject') return;
 
         // inject first arg: the deps object literal
         const injectArgs = innerCall.arguments;
@@ -109,11 +105,7 @@ export default function transform(fileInfo: FileInfo, api: API): string | null {
         // Factory body: must be a function expression or function declaration
         // (NOT an arrow function body — we only handle the named function case)
         const innerFn = factory.body;
-        if (
-            innerFn.type !== 'FunctionExpression' &&
-            innerFn.type !== 'FunctionDeclaration'
-        )
-            return;
+        if (innerFn.type !== 'FunctionExpression' && innerFn.type !== 'FunctionDeclaration') return;
 
         // Inner function must not be async
         if ((innerFn as any).async) return;
@@ -136,20 +128,18 @@ export default function transform(fileInfo: FileInfo, api: API): string | null {
         const fnDecl = j.functionDeclaration(
             innerFnNode.id ?? j.identifier(String((declarator.id as any).name)),
             innerFnNode.params,
-            innerFnNode.body,
+            innerFnNode.body
         );
         (fnDecl as any).returnType = innerFnNode.returnType ?? null;
         (fnDecl as any).typeParameters = innerFnNode.typeParameters ?? null;
 
         // Preserve `export` if the original declaration was exported
-        const isExported = varDeclNode.kind !== undefined &&
-            varDeclPath.parent?.node?.type === 'ExportNamedDeclaration';
+        const isExported =
+            varDeclNode.kind !== undefined && varDeclPath.parent?.node?.type === 'ExportNamedDeclaration';
 
         if (isExported) {
             // Replace the ExportNamedDeclaration wrapping the var decl
-            j(varDeclPath.parent).replaceWith(
-                j.exportNamedDeclaration(fnDecl, [])
-            );
+            j(varDeclPath.parent).replaceWith(j.exportNamedDeclaration(fnDecl, []));
         } else {
             j(varDeclPath).replaceWith(fnDecl);
         }
@@ -172,9 +162,7 @@ export default function transform(fileInfo: FileInfo, api: API): string | null {
 
             const specifiers = importPath.node.specifiers ?? [];
             const injectSpecifier = specifiers.find(
-                (s) =>
-                    s.type === 'ImportSpecifier' &&
-                    (s as any).imported?.name === 'inject'
+                (s) => s.type === 'ImportSpecifier' && (s as any).imported?.name === 'inject'
             );
             if (!injectSpecifier) return;
 
@@ -183,9 +171,7 @@ export default function transform(fileInfo: FileInfo, api: API): string | null {
                 j(importPath).remove();
             } else {
                 // Remove just the inject specifier
-                importPath.node.specifiers = specifiers.filter(
-                    (s) => s !== injectSpecifier
-                );
+                importPath.node.specifiers = specifiers.filter((s) => s !== injectSpecifier);
             }
         });
     }

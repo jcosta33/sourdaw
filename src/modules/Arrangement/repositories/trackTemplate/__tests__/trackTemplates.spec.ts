@@ -24,7 +24,7 @@ describe('trackTemplate repository', () => {
 
         it('should return the saved templates', () => {
             const templates = [{ id: 't1', name: 'Drums' }];
-            vi.mocked(storage.get).mockReturnValue(templates as any);
+            vi.mocked(storage.get).mockReturnValue(templates as unknown as ReturnType<typeof loadTrackTemplates>);
             expect(loadTrackTemplates()).toEqual(templates);
         });
     });
@@ -32,7 +32,7 @@ describe('trackTemplate repository', () => {
     describe('saveTrackTemplates', () => {
         it('should persist the given templates to storage', () => {
             const templates = [{ id: 't1', name: 'Drums' }];
-            saveTrackTemplates(templates as any);
+            saveTrackTemplates(templates as Parameters<typeof saveTrackTemplates>[0]);
             expect(storage.set).toHaveBeenCalledWith(templates);
         });
     });

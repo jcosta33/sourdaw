@@ -128,8 +128,8 @@ export function selectToolsForPrompt(allTools: readonly ToolSchema[], userPrompt
     // Add keyword-matched tools
     for (const { keywords, tools } of KEYWORD_TOOLS) {
         if (keywords.test(userPrompt)) {
-            for (const t of tools) {
-                selected.add(t);
+            for (const time of tools) {
+                selected.add(time);
             }
         }
     }
@@ -137,8 +137,8 @@ export function selectToolsForPrompt(allTools: readonly ToolSchema[], userPrompt
     // If nothing specific matched, include generation + arrangement tools
     if (selected.size <= CORE_TOOLS.size) {
         for (const { tools } of KEYWORD_TOOLS) {
-            for (const t of tools) {
-                selected.add(t);
+            for (const time of tools) {
+                selected.add(time);
                 if (selected.size >= MAX_TOOLS) {
                     break;
                 }
@@ -150,6 +150,6 @@ export function selectToolsForPrompt(allTools: readonly ToolSchema[], userPrompt
     }
 
     // Filter and cap
-    const result = allTools.filter((t) => selected.has(t.function.name));
+    const result = allTools.filter((time) => selected.has(time.function.name));
     return result.slice(0, MAX_TOOLS);
 }

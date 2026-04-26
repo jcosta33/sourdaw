@@ -59,8 +59,9 @@ async function runWebGpuBenchmark(): Promise<number> {
         const startTime = performance.now();
         // Check if WebGPU adapter is available and responsive
         if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
+            // navigator.gpu is not in lib.dom.d.ts — cast to access the WebGPU API
             const adapter = await (
-                navigator as unknown as { gpu: { requestAdapter: () => Promise<unknown> } }
+                navigator as { gpu: { requestAdapter: () => Promise<unknown> } }
             ).gpu.requestAdapter();
             if (adapter) {
                 const endTime = performance.now();
@@ -96,7 +97,7 @@ export const detectCapabilities = inject({ logger })(
         }: { forceRefresh?: boolean } = {}): DetectCapabilitiesOutput {
             // Check cached result first
             if (!forceRefresh && typeof localStorage !== 'undefined') {
-                const cached = localStorage.getItem(STORAGE_KEY);
+                const cached = window.localStorage.getItem(STORAGE_KEY);
                 if (cached) {
                     try {
                         const parsed = JSON.parse(cached) as CapabilityReport;
@@ -150,7 +151,7 @@ export const detectCapabilities = inject({ logger })(
             // Cache the result
             if (typeof localStorage !== 'undefined') {
                 try {
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(report));
+                    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(report));
                 } catch {
                     // Storage quota exceeded — not critical
                 }

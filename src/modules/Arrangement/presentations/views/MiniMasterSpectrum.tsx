@@ -10,18 +10,18 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const animationRef = useRef<number>(0);
     const { tracks, selectedTrackId } = useTracks();
-    const masterTrack = tracks.find((t) => t.kind === 'master');
+    const masterTrack = tracks.find((time) => time.kind === 'master');
     const isSelected = masterTrack?.id === selectedTrackId;
 
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
 
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return undefined;
         }
 
         // Try getting the master analyser. Might be null if engine isn't ready.
@@ -29,11 +29,11 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
         try {
             analyser = getMasterAnalyser();
         } catch {
-            return;
+            return undefined;
         }
 
         if (!analyser) {
-            return;
+            return undefined;
         }
 
         const bufferLength = analyser.frequencyBinCount;
@@ -65,11 +65,11 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
             ctx.fillStyle = barFill;
 
             let x = 0;
-            for (let i = 0; i < bufferLength; i += 2) {
+            for (let index = 0; index < bufferLength; index += 2) {
                 if (x > canvasWidth) {
                     break;
                 }
-                const barHeight = (dataArray[i]! / 255) * canvasHeight;
+                const barHeight = (dataArray[index]! / 255) * canvasHeight;
                 ctx.fillRect(x, canvasHeight - barHeight, innerBarWidth, barHeight);
                 x += barWidth;
             }
@@ -91,8 +91,8 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
             role="button"
             tabIndex={0}
             onClick={() => selectTrack(masterTrack.id)}
-            onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
+            onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
                     selectTrack(masterTrack.id);
                 }
             }}
@@ -107,9 +107,7 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
             <div className="absolute inset-x-0 bottom-0 h-full pointer-events-none opacity-40">
                 <canvas ref={canvasRef} className="w-full h-full block" width={180} height={80} />
             </div>
-
             <div className="absolute inset-0 pointer-events-none bg-[repeating-linear-gradient(0deg,transparent,transparent_1px,rgba(0,0,0,0.1)_1px,rgba(0,0,0,0.1)_2px)] opacity-50" />
-
             <div className="absolute inset-x-2 top-2 z-10 flex flex-col pointer-events-none">
                 <span
                     className={cn(

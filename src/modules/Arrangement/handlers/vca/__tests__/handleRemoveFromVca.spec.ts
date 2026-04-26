@@ -16,7 +16,7 @@ describe('handleRemoveFromVca', () => {
     });
 
     it('executes removeFromVca with trackId', () => {
-        handleRemoveFromVca.execute({
+        void handleRemoveFromVca.execute({
             type: 'removeFromVca',
             payload: { trackId: 't1' },
         });

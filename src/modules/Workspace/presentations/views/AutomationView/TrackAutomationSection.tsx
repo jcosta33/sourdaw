@@ -50,10 +50,10 @@ const LaneSparkline = ({
 
     const range = maxValue - minValue;
     const pathData = points
-        .map((p, i) => {
-            const x = (p.beat / (points[points.length - 1]!.beat || 1)) * width;
-            const y = SPARKLINE_HEIGHT - ((p.value - minValue) / (range || 1)) * (SPARKLINE_HEIGHT - 4) - 2;
-            return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+        .map((param, index) => {
+            const x = (param.beat / (points[points.length - 1]!.beat || 1)) * width;
+            const y = SPARKLINE_HEIGHT - ((param.value - minValue) / (range || 1)) * (SPARKLINE_HEIGHT - 4) - 2;
+            return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
         })
         .join(' ');
 
@@ -88,7 +88,7 @@ export const TrackAutomationSection = ({
 
     const autoState = useStore<TrackAutomationState>(automationStore, { lanes: [] });
 
-    const trackLanes = autoState.lanes.filter((l) => l.trackId === trackId && !l.clipId);
+    const trackLanes = autoState.lanes.filter((length) => length.trackId === trackId && !length.clipId);
     const availableParams = getAutomatableParams(trackId, devices);
     const unusedParams = availableParams.filter((param) => !trackLanes.some((lane) => lane.parameterId === param.id));
 

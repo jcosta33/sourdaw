@@ -39,8 +39,8 @@ export class BusNode {
             this.strip.analyserNode.getFloatTimeDomainData(data as Float32Array<ArrayBuffer>);
         }
         let peak = 0;
-        for (let i = 0; i < data.length; i++) {
-            const abs = Math.abs(data[i]!);
+        for (let index = 0; index < data.length; index++) {
+            const abs = Math.abs(data[index]!);
             if (abs > peak) {
                 peak = abs;
             }

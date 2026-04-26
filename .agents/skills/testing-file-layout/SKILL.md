@@ -9,10 +9,10 @@ description: Apply when creating, moving, or reviewing Vitest spec files (*.spec
 
 All Vitest specs live in **`__tests__/`** directories **inside** the folder that owns the code under test — never beside the source file.
 
-| Production file | Spec |
-| ----------------- | ---------------------------------------- |
-| `useCases/addTrack.ts` | `useCases/__tests__/addTrack.spec.ts` |
-| `repositories/foo.ts` | `repositories/__tests__/foo.spec.ts` |
+| Production file                    | Spec                                                                                                             |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `useCases/addTrack.ts`             | `useCases/__tests__/addTrack.spec.ts`                                                                            |
+| `repositories/foo.ts`              | `repositories/__tests__/foo.spec.ts`                                                                             |
 | `presentations/views/ClipView.tsx` | `presentations/views/__tests__/ClipView.spec.tsx` (or a subfolder’s `__tests__/` if the concept is scoped there) |
 
 ## Reproduction First (Empirical Proof)

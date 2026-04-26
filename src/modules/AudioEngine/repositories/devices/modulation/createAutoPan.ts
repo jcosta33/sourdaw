@@ -24,8 +24,8 @@ export function createAutoPan(ctx: BaseAudioContext): OfflineDeviceNode {
     splitterNode.connect(rightGain, 1);
     lfo.connect(lfoGainL);
     lfo.connect(lfoGainR);
-    lfoGainL.connect(leftGain.gain as unknown as AudioNode);
-    lfoGainR.connect(rightGain.gain as unknown as AudioNode);
+    lfoGainL.connect(leftGain.gain);
+    lfoGainR.connect(rightGain.gain);
     leftGain.connect(mergerNode, 0, 0);
     rightGain.connect(mergerNode, 0, 1);
     mergerNode.connect(output);
@@ -37,8 +37,18 @@ export function createAutoPan(ctx: BaseAudioContext): OfflineDeviceNode {
         namedNodes: { input, splitterNode, mergerNode, leftGain, rightGain, lfo, lfoGainL, lfoGainR, output },
         dispose() {
             lfo.stop();
-            for (const n of [input, splitterNode, mergerNode, leftGain, rightGain, lfo, lfoGainL, lfoGainR, output]) {
-                n.disconnect();
+            for (const node of [
+                input,
+                splitterNode,
+                mergerNode,
+                leftGain,
+                rightGain,
+                lfo,
+                lfoGainL,
+                lfoGainR,
+                output,
+            ]) {
+                node.disconnect();
             }
         },
     };

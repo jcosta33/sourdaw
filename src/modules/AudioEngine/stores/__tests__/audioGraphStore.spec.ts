@@ -13,7 +13,7 @@ describe('audioGraphStore', () => {
 
     it('should update state', () => {
         const route = { id: 'r1', sourceId: 's1', destinationId: 'd1', gain: 1 };
-        audioGraphStore.update((s) => ({ ...s!, routes: [route] }));
+        audioGraphStore.update((state) => ({ ...state!, routes: [route] }));
         expect(audioGraphStore.value?.routes).toHaveLength(1);
         expect(audioGraphStore.value?.routes[0]).toEqual(route);
     });

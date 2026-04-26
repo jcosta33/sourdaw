@@ -17,6 +17,7 @@ See: `.agents/audits/layout-components/flex-grid-patterns.md`
 ## Goal
 
 Provide a minimal set of layout components (`Stack`, `Row`, `Grid`) that:
+
 1. Enforce the design system spacing scale (1, 2, 3, 4, 6, 8)
 2. Cover 80%+ of current layout patterns
 3. Are type-safe with strict prop interfaces
@@ -27,16 +28,19 @@ Provide a minimal set of layout components (`Stack`, `Row`, `Grid`) that:
 ## User-Visible Behavior
 
 **For developers:** Instead of writing:
+
 ```tsx
 <div className="flex flex-col gap-3">
 ```
 
 They write:
+
 ```tsx
 <Stack gap={3}>
 ```
 
 **Constraints enforced:**
+
 - Only valid spacing tokens accepted (no arbitrary values)
 - Common alignments available as typed props
 - `ref` forwarding supported for all components
@@ -69,6 +73,7 @@ They write:
 **Requirement:** Provide vertical stacking with configurable gap.
 
 **Props:**
+
 - `gap?: 0 | 1 | 2 | 3 | 4 | 6 | 8` — Default: 0
 - `align?: 'start' | 'center' | 'end' | 'stretch'` — Maps to `items-*`
 - `justify?: 'start' | 'center' | 'end' | 'between'` — Maps to `justify-content`
@@ -78,6 +83,7 @@ They write:
 - `as?: 'div' | 'section' | 'article' | 'aside' | 'header' | 'footer' | 'main' | 'nav'`
 
 **CSS output for `<Stack gap={2} align="center">`:**
+
 ```css
 /* Default base classes always applied */
 display: flex;
@@ -90,6 +96,7 @@ align-items: center; /* items-center */
 ```
 
 **Usage examples:**
+
 ```tsx
 // Basic vertical section
 <Stack gap={3}>
@@ -116,6 +123,7 @@ align-items: center; /* items-center */
 **Requirement:** Provide horizontal arrangement with items-center default.
 
 **Props:**
+
 - `gap?: 0 | 1 | 2 | 3 | 4 | 6 | 8` — Default: 0
 - `align?: 'start' | 'center' | 'end' | 'stretch' | 'baseline'` — Default: 'center'
 - `justify?: 'start' | 'center' | 'end' | 'between' | 'around' | 'evenly'` — Default: 'start'
@@ -125,6 +133,7 @@ align-items: center; /* items-center */
 - `as?: 'div' | 'span'`
 
 **CSS output for `<Row gap={2}>`:**
+
 ```css
 display: flex;
 flex-direction: row;
@@ -133,6 +142,7 @@ gap: 0.5rem;
 ```
 
 **Usage examples:**
+
 ```tsx
 // Control strip (replaces DawControlStrip pattern)
 <Row gap={2} className="px-2 py-1">
@@ -163,6 +173,7 @@ gap: 0.5rem;
 **Requirement:** Provide CSS grid with typed column configurations.
 
 **Props:**
+
 - `cols?: 1 | 2 | 3 | 4 | 5 | 6 | 'none'` — Maps to `grid-cols-*`
 - `gap?: 0 | 1 | 2 | 3 | 4 | 6 | 8` — Applies to both x and y
 - `gapX?: 0 | 1 | 2 | 3 | 4 | 6 | 8` — Horizontal gap only
@@ -171,6 +182,7 @@ gap: 0.5rem;
 - `as?: 'div' | 'section'`
 
 **CSS output for `<Grid cols={3} gap={2}>`:**
+
 ```css
 display: grid;
 grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -178,6 +190,7 @@ gap: 0.5rem;
 ```
 
 **Usage examples:**
+
 ```tsx
 // Knob grid (replaces most grid-cols-2/3 usage)
 <Grid cols={3} gap={2}>
@@ -200,15 +213,17 @@ gap: 0.5rem;
 **Requirement:** Provide fixed-size spacing without using margin.
 
 **Props:**
+
 - `size: 1 | 2 | 3 | 4 | 6 | 8 | 12 | 16` — Size in spacing units
 - `axis?: 'x' | 'y'` — Direction (default: both)
 
 **Usage examples:**
+
 ```tsx
 <Row>
-  <Button>Cancel</Button>
-  <Spacer size={2} axis="x" />
-  <Button variant="primary">Save</Button>
+    <Button>Cancel</Button>
+    <Spacer size={2} axis="x" />
+    <Button variant="primary">Save</Button>
 </Row>
 ```
 
@@ -217,16 +232,18 @@ gap: 0.5rem;
 **Requirement:** Visual separator with optional surrounding space.
 
 **Props:**
+
 - `spacing?: 0 | 2 | 3 | 4` — Space before and after divider
 - `tone?: 'subtle' | 'default' | 'strong'` — Opacity variant
 - `axis?: 'x' | 'y'` — Vertical or horizontal divider
 
 **Usage examples:**
+
 ```tsx
 <Stack gap={3}>
-  <SectionA />
-  <Divider spacing={3} />
-  <SectionB />
+    <SectionA />
+    <Divider spacing={3} />
+    <SectionB />
 </Stack>
 ```
 
@@ -251,6 +268,7 @@ gap: 0.5rem;
 **Chosen:** Only accept `0 | 1 | 2 | 3 | 4 | 6 | 8`
 
 **Considered and rejected:**
+
 - Arbitrary numeric values — rejected because it defeats the purpose of design system enforcement
 - String values like `'sm' | 'md' | 'lg'` — rejected because Tailwind's numeric scale is already known by the team
 
@@ -259,6 +277,7 @@ gap: 0.5rem;
 **Chosen:** Different defaults based on common usage patterns from audit
 
 **Rationale:**
+
 - Audit shows 657 occurrences of `items-center` in row-like layouts
 - Vertical stacks typically need `align-items: stretch` for full-width children
 - This reduces prop noise for the most common cases
@@ -268,6 +287,7 @@ gap: 0.5rem;
 **Chosen:** Limit `as` to specific HTML elements per component
 
 **Rationale:**
+
 - Prevents misuse (e.g., `<Stack as="span">` which would be invalid)
 - Keeps types simpler and faster
 - Covers 99% of use cases
@@ -277,6 +297,7 @@ gap: 0.5rem;
 **Chosen:** No `gapMd`, `colsMd`, etc.
 
 **Rationale:**
+
 - Audit found minimal responsive layout usage (DAW is desktop-only)
 - Complex responsive needs can use inline classes
 - Keeps API surface minimal
@@ -299,6 +320,7 @@ gap: 0.5rem;
 ## Implementation Notes
 
 ### File Structure
+
 ```
 src/components/layout/
 ├── Stack.tsx
@@ -331,70 +353,70 @@ type AlignValue = 'start' | 'center' | 'end' | 'stretch';
 type JustifyValue = 'start' | 'center' | 'end' | 'between';
 
 type StackProps<T extends StackElement = 'div'> = Omit<HTMLAttributes<T>, 'as'> & {
-  as?: T;
-  gap?: GapValue;
-  align?: AlignValue;
-  justify?: JustifyValue;
-  grow?: boolean;
-  shrink?: boolean;
-  wrap?: boolean;
-  children: ReactNode;
+    as?: T;
+    gap?: GapValue;
+    align?: AlignValue;
+    justify?: JustifyValue;
+    grow?: boolean;
+    shrink?: boolean;
+    wrap?: boolean;
+    children: ReactNode;
 };
 
 const GAP_CLASS_NAMES: Record<GapValue, string> = {
-  0: 'gap-0',
-  1: 'gap-1',
-  2: 'gap-2',
-  3: 'gap-3',
-  4: 'gap-4',
-  6: 'gap-6',
-  8: 'gap-8',
+    0: 'gap-0',
+    1: 'gap-1',
+    2: 'gap-2',
+    3: 'gap-3',
+    4: 'gap-4',
+    6: 'gap-6',
+    8: 'gap-8',
 };
 
 const ALIGN_CLASS_NAMES: Record<AlignValue, string> = {
-  start: 'items-start',
-  center: 'items-center',
-  end: 'items-end',
-  stretch: 'items-stretch',
+    start: 'items-start',
+    center: 'items-center',
+    end: 'items-end',
+    stretch: 'items-stretch',
 };
 
 const JUSTIFY_CLASS_NAMES: Record<JustifyValue, string> = {
-  start: 'justify-start',
-  center: 'justify-center',
-  end: 'justify-end',
-  between: 'justify-between',
+    start: 'justify-start',
+    center: 'justify-center',
+    end: 'justify-end',
+    between: 'justify-between',
 };
 
 export const Stack = <T extends StackElement = 'div'>({
-  as,
-  gap = 0,
-  align = 'stretch',
-  justify = 'start',
-  grow = false,
-  shrink = true,
-  wrap = false,
-  className,
-  children,
-  ...props
+    as,
+    gap = 0,
+    align = 'stretch',
+    justify = 'start',
+    grow = false,
+    shrink = true,
+    wrap = false,
+    className,
+    children,
+    ...props
 }: StackProps<T>): ReactElement => {
-  const Component = as ?? 'div';
-  return (
-    <Component
-      className={cn(
-        'flex flex-col min-h-0',
-        GAP_CLASS_NAMES[gap],
-        ALIGN_CLASS_NAMES[align],
-        JUSTIFY_CLASS_NAMES[justify],
-        grow && 'flex-1',
-        !shrink && 'shrink-0',
-        wrap && 'flex-wrap',
-        className
-      )}
-      {...props}
-    >
-      {children}
-    </Component>
-  );
+    const Component = as ?? 'div';
+    return (
+        <Component
+            className={cn(
+                'flex flex-col min-h-0',
+                GAP_CLASS_NAMES[gap],
+                ALIGN_CLASS_NAMES[align],
+                JUSTIFY_CLASS_NAMES[justify],
+                grow && 'flex-1',
+                !shrink && 'shrink-0',
+                wrap && 'flex-wrap',
+                className
+            )}
+            {...props}
+        >
+            {children}
+        </Component>
+    );
 };
 ```
 
@@ -407,57 +429,67 @@ import { render, screen } from '@testing-library/react';
 import { Stack } from '../Stack';
 
 describe('Stack', () => {
-  it('renders with default classes', () => {
-    render(<Stack data-testid="stack">Content</Stack>);
-    const element = screen.getByTestId('stack');
-    expect(element).toHaveClass('flex', 'flex-col', 'min-h-0');
-  });
+    it('renders with default classes', () => {
+        render(<Stack data-testid="stack">Content</Stack>);
+        const element = screen.getByTestId('stack');
+        expect(element).toHaveClass('flex', 'flex-col', 'min-h-0');
+    });
 
-  it('applies gap class', () => {
-    render(<Stack gap={2} data-testid="stack">Content</Stack>);
-    expect(screen.getByTestId('stack')).toHaveClass('gap-2');
-  });
+    it('applies gap class', () => {
+        render(
+            <Stack gap={2} data-testid="stack">
+                Content
+            </Stack>
+        );
+        expect(screen.getByTestId('stack')).toHaveClass('gap-2');
+    });
 
-  it('renders as different element', () => {
-    render(<Stack as="section" data-testid="stack">Content</Stack>);
-    expect(screen.getByTestId('stack').tagName).toBe('SECTION');
-  });
+    it('renders as different element', () => {
+        render(
+            <Stack as="section" data-testid="stack">
+                Content
+            </Stack>
+        );
+        expect(screen.getByTestId('stack').tagName).toBe('SECTION');
+    });
 
-  it('forwards ref', () => {
-    const ref = { current: null as HTMLDivElement | null };
-    render(<Stack ref={ref}>Content</Stack>);
-    expect(ref.current).toBeInstanceOf(HTMLDivElement);
-  });
+    it('forwards ref', () => {
+        const ref = { current: null as HTMLDivElement | null };
+        render(<Stack ref={ref}>Content</Stack>);
+        expect(ref.current).toBeInstanceOf(HTMLDivElement);
+    });
 });
 ```
 
 ### Migration Examples
 
-| Before | After |
-|--------|-------|
-| `<div className="flex flex-col gap-3">` | `<Stack gap={3}>` |
-| `<div className="flex flex-col items-center gap-1">` | `<Stack gap={1} align="center">` |
-| `<div className="flex items-center gap-2">` | `<Row gap={2}>` |
-| `<div className="flex items-center justify-between">` | `<Row justify="between">` |
-| `<div className="grid grid-cols-3 gap-2">` | `<Grid cols={3} gap={2}>` |
-| `<div className="space-y-2">` | `<Stack gap={2}>` |
+| Before                                                | After                            |
+| ----------------------------------------------------- | -------------------------------- |
+| `<div className="flex flex-col gap-3">`               | `<Stack gap={3}>`                |
+| `<div className="flex flex-col items-center gap-1">`  | `<Stack gap={1} align="center">` |
+| `<div className="flex items-center gap-2">`           | `<Row gap={2}>`                  |
+| `<div className="flex items-center justify-between">` | `<Row justify="between">`        |
+| `<div className="grid grid-cols-3 gap-2">`            | `<Grid cols={3} gap={2}>`        |
+| `<div className="space-y-2">`                         | `<Stack gap={2}>`                |
 
 ---
 
 ## Test Plan
 
 ### Manual verification
+
 1. Render each component with all prop combinations
 2. Verify correct Tailwind classes in DevTools
 3. Verify TypeScript errors for invalid prop values
 
 ### Automated tests
+
 1. Unit tests for each component covering:
-   - Default rendering
-   - Each prop variation
-   - ref forwarding
-   - className merging
-   - `as` prop polymorphism
+    - Default rendering
+    - Each prop variation
+    - ref forwarding
+    - className merging
+    - `as` prop polymorphism
 
 2. Integration: Replace one existing component's layout (e.g., `DawControlStrip`) and verify no visual regression
 
@@ -466,13 +498,13 @@ describe('Stack', () => {
 ## Open Questions
 
 1. **[MINOR]** Should we export individual components or require `import { Stack } from '#/components/layout'` via barrel?
-   - *Recommendation:* Barrel export for consistency with other component folders
+    - _Recommendation:_ Barrel export for consistency with other component folders
 
 2. **[MINOR]** Should we add a `Inline` component for `flex-wrap` inline layouts?
-   - *Recommendation:* Defer until needed (can use `Row wrap>` initially)
+    - _Recommendation:_ Defer until needed (can use `Row wrap>` initially)
 
 3. **[MINOR]** Should `Grid` support `colSpan` helper props on children?
-   - *Recommendation:* No, use standard Tailwind `className="col-span-2"` on children
+    - _Recommendation:_ No, use standard Tailwind `className="col-span-2"` on children
 
 ---
 
@@ -480,35 +512,39 @@ describe('Stack', () => {
 
 ### Tradeoffs
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| Strict gap typing | Design system enforcement | Occasionally need inline class for special cases |
-| Separate Row/Stack | Clear intent, optimized defaults | Two components instead of one Flex |
-| No responsive props | Simple API | Occasional inline class needed |
+| Approach            | Pros                             | Cons                                             |
+| ------------------- | -------------------------------- | ------------------------------------------------ |
+| Strict gap typing   | Design system enforcement        | Occasionally need inline class for special cases |
+| Separate Row/Stack  | Clear intent, optimized defaults | Two components instead of one Flex               |
+| No responsive props | Simple API                       | Occasional inline class needed                   |
 
 ### Risks
 
 1. **Migration effort**: 1,164+ flex occurrences to evaluate
-   - Mitigation: Gradual adoption, no forced migration deadline
+    - Mitigation: Gradual adoption, no forced migration deadline
 
 2. **Developer resistance**: Some may prefer inline classes
-   - Mitigation: Document benefits, enforce via code review
+    - Mitigation: Document benefits, enforce via code review
 
 ---
 
 ## Implementation Status
 
 **What is implemented:**
+
 - Full suite of layout primitives: `Stack.tsx`, `Row.tsx`, `Grid.tsx`, `Spacer.tsx`, `Divider.tsx` in `src/components/layout/`.
 - Unit tests for all components in `src/components/layout/__tests__/`.
 - Components follow the atomic design and spacing token requirements.
 
 **What is not implemented:**
+
 - None. The core system is complete.
 
 **What is done well:**
+
 - Clean, type-safe implementation of layout primitives.
 - Good test coverage.
 
 **What needs refactoring:**
+
 - Ongoing migration of legacy inline flex styles to these components (though the components themselves are complete).

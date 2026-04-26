@@ -14,7 +14,7 @@ describe('handleSetEditingTool', () => {
     beforeEach(() => vi.clearAllMocks());
 
     it('delegates to setEditingTool use case', () => {
-        handleSetEditingTool.execute({
+        void handleSetEditingTool.execute({
             type: 'setEditingTool',
             payload: { tool: 'cut' },
         });

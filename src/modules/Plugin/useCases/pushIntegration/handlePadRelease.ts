@@ -7,6 +7,6 @@ export function handlePadRelease(padIndex: number): void {
     }
     pushStore.set({
         ...state,
-        pads: state.pads.map((p) => (p.index === padIndex ? { ...p, velocity: 0 } : p)),
+        pads: state.pads.map((param) => (param.index === padIndex ? { ...param, velocity: 0 } : param)),
     });
 }

@@ -1,16 +1,4 @@
-/**
- * Built-in plugin catalog and aggregation helpers.
- *
- * Type definitions live in `./DeviceParameterTypes.ts`; descriptor data is
- * split by family in `./pluginDescriptors/`. This file only owns the
- * variant builders, the aggregated `BUILTIN_PLUGINS` array, and the
- * platform/availability helpers. It re-exports the shared types so existing
- * in-module callers do not need to update their import paths.
- */
-
 import { type PluginDescriptor } from './DeviceParameterTypes';
-
-// ── Descriptor sub-modules ─────────────────────────────────────────────────
 import { BACTERIA_DESCRIPTOR } from './pluginDescriptors/bacteriaDescriptor';
 import { BUILTIN_EFFECT_DESCRIPTORS } from './pluginDescriptors/builtinEffectDescriptors';
 import { BUILTIN_INSTRUMENT_DESCRIPTORS } from './pluginDescriptors/builtinInstrumentDescriptors';
@@ -27,6 +15,18 @@ import { PROOF_DESCRIPTOR } from './pluginDescriptors/proofDescriptor';
 import { TOASTER_DESCRIPTOR } from './pluginDescriptors/toasterDescriptor';
 import { YEAST_DESCRIPTOR } from './pluginDescriptors/yeastDescriptor';
 
+/**
+ * Built-in plugin catalog and aggregation helpers.
+ *
+ * Type definitions live in `./DeviceParameterTypes.ts`; descriptor data is
+ * split by family in `./pluginDescriptors/`. This file only owns the
+ * variant builders, the aggregated `BUILTIN_PLUGINS` array, and the
+ * platform/availability helpers. It re-exports the shared types so existing
+ * in-module callers do not need to update their import paths.
+ */
+
+// ── Descriptor sub-modules ─────────────────────────────────────────────────
+
 export type {
     DeviceParameterType,
     DeviceParameter,
@@ -38,7 +38,7 @@ export type {
 
 // ── Synth variants (generated from builtin-synth base) ─────────────────────
 function createSynthVariant(id: string, name: string, overrides: Record<string, number>): PluginDescriptor {
-    const base = BUILTIN_INSTRUMENT_DESCRIPTORS.find((p) => p.id === 'builtin-synth')!;
+    const base = BUILTIN_INSTRUMENT_DESCRIPTORS.find((param) => param.id === 'builtin-synth')!;
     return {
         id,
         name,
@@ -46,9 +46,9 @@ function createSynthVariant(id: string, name: string, overrides: Record<string, 
         format: 'builtin',
         category: 'instrument',
         hasCustomUI: false,
-        parameters: base.parameters.map((p) => {
-            const val = overrides[p.id] !== undefined ? overrides[p.id]! : p.defaultValue;
-            return { ...p, deviceId: id, value: val, defaultValue: val };
+        parameters: base.parameters.map((param) => {
+            const val = overrides[param.id] !== undefined ? overrides[param.id]! : param.defaultValue;
+            return { ...param, deviceId: id, value: val, defaultValue: val };
         }),
     };
 }
@@ -95,7 +95,7 @@ const SYNTH_VARIANTS: PluginDescriptor[] = [
 
 // ── Drum variants (generated from builtin-drum-kit base) ──────────────────
 function createDrumVariant(id: string, name: string, kitIndex: number): PluginDescriptor {
-    const base = BUILTIN_INSTRUMENT_DESCRIPTORS.find((p) => p.id === 'builtin-drum-kit')!;
+    const base = BUILTIN_INSTRUMENT_DESCRIPTORS.find((param) => param.id === 'builtin-drum-kit')!;
     return {
         id,
         name,
@@ -103,11 +103,11 @@ function createDrumVariant(id: string, name: string, kitIndex: number): PluginDe
         format: 'builtin',
         category: 'instrument',
         hasCustomUI: false,
-        parameters: base.parameters.map((p) => {
-            if (p.id === 'kit') {
-                return { ...p, deviceId: id, value: kitIndex, defaultValue: kitIndex };
+        parameters: base.parameters.map((param) => {
+            if (param.id === 'kit') {
+                return { ...param, deviceId: id, value: kitIndex, defaultValue: kitIndex };
             }
-            return { ...p, deviceId: id };
+            return { ...param, deviceId: id };
         }),
     };
 }
@@ -144,7 +144,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
 // ── Utility functions ──────────────────────────────────────────────────────
 
 export function getPluginById(pluginId: string): PluginDescriptor | undefined {
-    return BUILTIN_PLUGINS.find((p) => p.id === pluginId);
+    return BUILTIN_PLUGINS.find((param) => param.id === pluginId);
 }
 
 /**
@@ -153,7 +153,7 @@ export function getPluginById(pluginId: string): PluginDescriptor | undefined {
  * Native (Tauri) can run both web and native plugins since it uses WebView + Web Audio.
  */
 export function isDeviceSupportedOnCurrentPlatform(deviceType: string): boolean {
-    const descriptor = BUILTIN_PLUGINS.find((p) => p.id === deviceType);
+    const descriptor = BUILTIN_PLUGINS.find((param) => param.id === deviceType);
     if (!descriptor) {
         return true;
     } // unknown devices pass through (e.g. external plugins)

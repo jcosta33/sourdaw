@@ -13,9 +13,9 @@ export function shiftClipAutomation(clipId: string, beatDelta: number): void {
             }
             return {
                 ...lane,
-                points: lane.points.map((p) => ({
-                    ...p,
-                    beat: p.beat + beatDelta,
+                points: lane.points.map((param) => ({
+                    ...param,
+                    beat: param.beat + beatDelta,
                 })),
             };
         }),

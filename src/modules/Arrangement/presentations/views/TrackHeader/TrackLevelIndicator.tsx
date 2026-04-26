@@ -21,8 +21,8 @@ const BAR_WIDTH = 3;
 const DB_FLOOR = -60;
 const DB_CEILING = 0;
 
-const lerp = (a: number, b: number, t: number): string => {
-    const r = Math.round(a + (b - a) * t);
+const lerp = (alpha: number, buffer: number, time: number): string => {
+    const r = Math.round(alpha + (buffer - alpha) * time);
     return r.toString();
 };
 
@@ -34,22 +34,22 @@ const dbToColor = (db: number): string => {
 
     if (norm < 0.3) {
         // Silent → green (fade in)
-        const t = norm / 0.3;
-        return `rgba(0, ${lerp(120, 204, t)}, ${lerp(40, 68, t)}, ${(t * 0.85).toFixed(2)})`;
+        const time = norm / 0.3;
+        return `rgba(0, ${lerp(120, 204, time)}, ${lerp(40, 68, time)}, ${(time * 0.85).toFixed(2)})`;
     }
     if (norm < 0.65) {
         // Green → yellow
-        const t = (norm - 0.3) / 0.35;
-        return `rgb(${lerp(0, 204, t)}, ${lerp(204, 204, t)}, ${lerp(68, 0, t)})`;
+        const time = (norm - 0.3) / 0.35;
+        return `rgb(${lerp(0, 204, time)}, ${lerp(204, 204, time)}, ${lerp(68, 0, time)})`;
     }
     if (norm < 0.85) {
         // Yellow → orange-red
-        const t = (norm - 0.65) / 0.2;
-        return `rgb(${lerp(204, 255, t)}, ${lerp(204, 51, t)}, 0)`;
+        const time = (norm - 0.65) / 0.2;
+        return `rgb(${lerp(204, 255, time)}, ${lerp(204, 51, time)}, 0)`;
     }
     // Hot red zone (above -3dB)
-    const t = (norm - 0.85) / 0.15;
-    return `rgb(255, ${lerp(51, 20, t)}, ${lerp(0, 10, t)})`;
+    const time = (norm - 0.85) / 0.15;
+    return `rgb(255, ${lerp(51, 20, time)}, ${lerp(0, 10, time)})`;
 };
 
 export const TrackLevelIndicator = ({ trackId, height }: TrackLevelIndicatorProps): ReactElement => {
@@ -58,11 +58,11 @@ export const TrackLevelIndicator = ({ trackId, height }: TrackLevelIndicatorProp
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return undefined;
         }
 
         const dpr = window.devicePixelRatio || 1;
@@ -89,8 +89,8 @@ export const TrackLevelIndicator = ({ trackId, height }: TrackLevelIndicatorProp
 
                 // Compute RMS
                 let sum = 0;
-                for (let i = 0; i < analyserData.length; i++) {
-                    sum += analyserData[i]! * analyserData[i]!;
+                for (let index = 0; index < analyserData.length; index++) {
+                    sum += analyserData[index]! * analyserData[index]!;
                 }
                 const rms = Math.sqrt(sum / analyserData.length);
                 currentDb = rms > 0 ? 20 * Math.log10(rms) : DB_FLOOR;

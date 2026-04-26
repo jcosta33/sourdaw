@@ -5,7 +5,7 @@ import { branchStore, MAIN_BRANCH_ID } from '../../stores/branchStore';
 /**
  * Delete a branch. Cannot delete the main branch or the active branch.
  */
-export const deleteBranch = (branchId: string): void => {
+export function deleteBranch(branchId: string): void {
     if (branchId === MAIN_BRANCH_ID) {
         throw createBranchError('Cannot delete the main branch');
     }
@@ -28,4 +28,4 @@ export const deleteBranch = (branchId: string): void => {
         ...state,
         branches: state.branches.filter((b) => b.branchId !== branchId),
     });
-};
+}

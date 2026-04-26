@@ -35,16 +35,16 @@ export type TransportInfo = {
 
 // ── Utility functions ────────────────────────────────────────────────────────
 
-export function samplesPerBeat(t: TransportInfo): number {
-    return (t.sampleRate * 60.0) / t.bpm;
+export function samplesPerBeat(time: TransportInfo): number {
+    return (time.sampleRate * 60.0) / time.bpm;
 }
 
-export function ppqToSamples(ppq: number, t: TransportInfo): number {
-    return ppq * samplesPerBeat(t);
+export function ppqToSamples(ppq: number, time: TransportInfo): number {
+    return ppq * samplesPerBeat(time);
 }
 
-export function samplesToBeats(samples: number, t: TransportInfo): number {
-    return samples / samplesPerBeat(t);
+export function samplesToBeats(samples: number, time: TransportInfo): number {
+    return samples / samplesPerBeat(time);
 }
 
 /** Convert a musical rate (e.g., 1/8) to beat duration. */
@@ -63,4 +63,5 @@ export function rateToBeats(rate: RateValue): number {
         case 'triplet':
             return base * (2.0 / 3.0);
     }
+    return base;
 }

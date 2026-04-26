@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * AudioWorkletProcessor for the Grand Boule physical-modeling piano.
  *
@@ -20,24 +19,26 @@
 const WRITE_HEAD_IDX = 0;
 const READ_HEAD_IDX = 1;
 
+type GrandBouleMsg = { type: 'init'; sab: SharedArrayBuffer };
+
 class GrandBouleProcessor extends AudioWorkletProcessor {
-    _controlInts = null;
-    _leftRing = null;
-    _rightRing = null;
+    _controlInts: Int32Array | null = null;
+    _leftRing: Float32Array | null = null;
+    _rightRing: Float32Array | null = null;
     _ringFrames = 0;
     _ready = false;
 
     constructor() {
         super();
-        this.port.onmessage = (e) => {
-            const msg = e.data;
+        this.port.onmessage = (event: MessageEvent<GrandBouleMsg>) => {
+            const msg = event.data;
             if (msg.type === 'init' && !this._ready) {
                 this._initSab(msg.sab);
             }
         };
     }
 
-    _initSab(sab) {
+    _initSab(sab: SharedArrayBuffer): void {
         this._controlInts = new Int32Array(sab, 0, 2);
         const headerBytes = 2 * Int32Array.BYTES_PER_ELEMENT;
         const floatBytes = sab.byteLength - headerBytes;
@@ -52,8 +53,8 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'ready' });
     }
 
-    process(_inputs, outputs) {
-        if (!this._ready) {
+    process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
+        if (!this._ready || !this._controlInts || !this._leftRing || !this._rightRing) {
             return true;
         }
 
@@ -62,7 +63,12 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        const frames = output[0].length;
+        const out0 = output[0];
+        if (!out0) {
+            return true;
+        }
+        const frames = out0.length;
+
         const writeHead = Atomics.load(this._controlInts, WRITE_HEAD_IDX);
         const readHead = Atomics.load(this._controlInts, READ_HEAD_IDX);
         const available = (writeHead - readHead) | 0;
@@ -77,16 +83,17 @@ class GrandBouleProcessor extends AudioWorkletProcessor {
         const secondChunk = frames - firstChunk;
 
         // Copy left channel.
-        output[0].set(this._leftRing.subarray(offset, offset + firstChunk));
+        out0.set(this._leftRing.subarray(offset, offset + firstChunk));
         if (secondChunk > 0) {
-            output[0].set(this._leftRing.subarray(0, secondChunk), firstChunk);
+            out0.set(this._leftRing.subarray(0, secondChunk), firstChunk);
         }
 
         // Copy right channel.
-        if (output[1]) {
-            output[1].set(this._rightRing.subarray(offset, offset + firstChunk));
+        const out1 = output[1];
+        if (out1) {
+            out1.set(this._rightRing.subarray(offset, offset + firstChunk));
             if (secondChunk > 0) {
-                output[1].set(this._rightRing.subarray(0, secondChunk), firstChunk);
+                out1.set(this._rightRing.subarray(0, secondChunk), firstChunk);
             }
         }
 

@@ -57,14 +57,16 @@ function startPolling(instanceId: string): void {
 
     session.pollTimestamp = performance.now();
 
-    session.pollTimer = setInterval(async () => {
-        try {
-            session.prevPolledFrame = session.lastPolledFrame;
-            session.lastPolledFrame = await getCrumbsPosition(instanceId);
-            session.pollTimestamp = performance.now();
-        } catch (error) {
-            logger.warn(`Crumbs position poll failed for ${instanceId}:`, error);
-        }
+    session.pollTimer = setInterval(() => {
+        void (async () => {
+            try {
+                session.prevPolledFrame = session.lastPolledFrame;
+                session.lastPolledFrame = await getCrumbsPosition(instanceId);
+                session.pollTimestamp = performance.now();
+            } catch (error) {
+                logger.warn(`Crumbs position poll failed for ${instanceId}:`, error);
+            }
+        })();
     }, POLL_INTERVAL_MS);
 
     // rAF loop for 60fps interpolation.

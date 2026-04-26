@@ -9,10 +9,10 @@ function getClipAudioBufferId(clipId: string): string | null {
 }
 
 export const handleDetectTempoAiMidi = createHandler<'detectTempo'>({
-    execute: async (a) => {
-        const audioBufferId = getClipAudioBufferId(a.payload.clipId);
+    execute: async (alpha) => {
+        const audioBufferId = getClipAudioBufferId(alpha.payload.clipId);
         const bpm = audioBufferId ? detectBufferTempo(audioBufferId) : null;
-        logger.info(`[Analysis] Tempo detected for clip ${a.payload.clipId}: ~${String(bpm)} BPM`);
+        logger.info(`[Analysis] Tempo detected for clip ${alpha.payload.clipId}: ~${String(bpm)} BPM`);
     },
     describe: () => ({ label: 'Detect tempo' }),
     undoable: false,

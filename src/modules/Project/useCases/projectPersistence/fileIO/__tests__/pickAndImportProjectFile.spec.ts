@@ -8,7 +8,7 @@ import { loadProjectFromFile } from '../../../../repositories/nativeProjectFiles
 import { importProjectFile, importProjectFromNativePath } from '../pickAndImportProjectFile';
 
 function fileWithText(text: string): File {
-    return { text: async () => text } as File;
+    return { text: () => Promise.resolve(text) } as File;
 }
 
 describe('importProjectFile', () => {

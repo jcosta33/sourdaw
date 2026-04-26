@@ -24,36 +24,71 @@ const STEP_WIDTH = 28;
 const STEP_HEIGHT = 60;
 
 export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthChange }: Props): ReactElement => {
-    const toggleStep = (i: number) => {
-        const step = steps[i]!;
-        onStepChange(i, { ...step, active: !step.active });
+    const toggleStep = (index: number) => {
+        const step = steps[index]!;
+        onStepChange(index, { ...step, active: !step.active });
     };
 
-    const setVelocity = (i: number, e: React.MouseEvent<HTMLDivElement>) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const y = 1 - (e.clientY - rect.top) / rect.height;
+    const setVelocity = (index: number, event: React.MouseEvent<HTMLDivElement>) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const y = 1 - (event.clientY - rect.top) / rect.height;
         const vel = Math.max(1, Math.min(127, Math.round(y * 127)));
-        onStepChange(i, { ...steps[i]!, velocity: vel, velocityOverride: true });
+        onStepChange(index, { ...steps[index]!, velocity: vel, velocityOverride: true });
     };
 
-    const cycleOctave = (i: number) => {
-        const step = steps[i]!;
+    const cycleOctave = (index: number) => {
+        const step = steps[index]!;
         const next = step.octaveOffset >= 2 ? -2 : step.octaveOffset + 1;
-        onStepChange(i, { ...step, octaveOffset: next });
+        onStepChange(index, { ...step, octaveOffset: next });
     };
 
     return (
         <div className="flex flex-col gap-1">
             {/* Step grid */}
             <div className="flex gap-px overflow-x-auto pb-1">
-                {steps.map((step, i) => {
-                    const isPlaying = i === currentStep;
+                {steps.map((step, index) => {
+                    const isPlaying = index === currentStep;
                     const velNorm = step.velocity / 127;
                     const probOpacity = step.probability;
+                    const renderIife_21 = () => {
+                        if (!step.active) {
+                            return 'bg-muted-foreground/10';
+                        }
+                        if (step.stepType === 'rest') {
+                            return 'bg-muted-foreground/20';
+                        }
+                        if (step.stepType === 'tie') {
+                            return 'bg-[var(--color-accent-cyan)]/50';
+                        }
+                        return 'bg-[var(--color-accent-peach)]';
+                    };
+                    const renderIife_22 = () => {
+                        if (step.octaveOffset !== 0) {
+                            return (
+                                <div
+                                    className="absolute bottom-0.5 left-0.5 text-[5px] font-bold cursor-pointer"
+                                    style={{
+                                        color:
+                                            step.octaveOffset > 0
+                                                ? 'var(--color-accent-cyan)'
+                                                : 'var(--color-accent-lavender)',
+                                    }}
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        cycleOctave(index);
+                                    }}
+                                >
+                                    {step.octaveOffset > 0 ? `+${step.octaveOffset}` : step.octaveOffset}
+                                </div>
+                            );
+                        } else {
+                            return null;
+                        }
+                    };
 
                     return (
                         <div
-                            key={i}
+                            key={index}
                             className={`flex flex-col items-center gap-0 cursor-pointer select-none ${isPlaying ? 'ring-1 ring-[var(--color-accent-peach)]' : ''}`}
                             style={{ width: STEP_WIDTH, opacity: step.active ? probOpacity : 0.2 }}
                         >
@@ -61,23 +96,15 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                             <div
                                 className="relative bg-surface-inset rounded-sm overflow-hidden"
                                 style={{ width: STEP_WIDTH - 4, height: STEP_HEIGHT }}
-                                onClick={(e) => setVelocity(i, e)}
-                                onContextMenu={(e) => {
-                                    e.preventDefault();
-                                    toggleStep(i);
+                                onClick={(event) => setVelocity(index, event)}
+                                onContextMenu={(event) => {
+                                    event.preventDefault();
+                                    toggleStep(index);
                                 }}
                             >
                                 {/* Fill */}
                                 <div
-                                    className={`absolute bottom-0 left-0 right-0 rounded-sm transition-all ${
-                                        step.active
-                                            ? step.stepType === 'rest'
-                                                ? 'bg-muted-foreground/20'
-                                                : step.stepType === 'tie'
-                                                  ? 'bg-[var(--color-accent-cyan)]/50'
-                                                  : 'bg-[var(--color-accent-peach)]'
-                                            : 'bg-muted-foreground/10'
-                                    }`}
+                                    className={`absolute bottom-0 left-0 right-0 rounded-sm transition-all ${renderIife_21()}`}
                                     style={{
                                         height: `${velNorm * 100}%`,
                                         width: `${Math.min(100, step.gateMul * 100)}%`,
@@ -92,30 +119,13 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                                 ) : null}
 
                                 {/* Octave badge */}
-                                {step.octaveOffset !== 0 ? (
-                                    <div
-                                        className="absolute bottom-0.5 left-0.5 text-[5px] font-bold cursor-pointer"
-                                        style={{
-                                            color:
-                                                step.octaveOffset > 0
-                                                    ? 'var(--color-accent-cyan)'
-                                                    : 'var(--color-accent-lavender)',
-                                        }}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            cycleOctave(i);
-                                        }}
-                                    >
-                                        {step.octaveOffset > 0 ? `+${step.octaveOffset}` : step.octaveOffset}
-                                    </div>
-                                ) : null}
+                                {renderIife_22()}
                             </div>
-
                             {/* Step number */}
                             <span
                                 className={`text-[6px] ${isPlaying ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/40'}`}
                             >
-                                {i + 1}
+                                {index + 1}
                             </span>
                         </div>
                     );
@@ -131,7 +141,6 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                     +
                 </button>
             </div>
-
             {/* Length control */}
             <div className="flex items-center gap-2 px-1">
                 <span className="text-[7px] text-muted-foreground">Steps: {steps.length}</span>

@@ -18,7 +18,9 @@ describe('DeviceFactoryRegistry', () => {
     it('should register and use a function matcher', async () => {
         const registry = new DeviceFactoryRegistry();
         const creator = vi.fn().mockResolvedValue('mock-strategy' as any);
-        const matcher = (type: string) => type.includes('custom');
+        function matcher(type: string) {
+            return type.includes('custom');
+        }
 
         registry.register(matcher, creator);
 

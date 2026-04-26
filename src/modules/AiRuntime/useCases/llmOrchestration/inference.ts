@@ -26,14 +26,14 @@ import { getBackendChain } from './backendResolution/getBackendChain';
  * - native: mistral.rs structured tool calling (preferred) or text completion + XML parsing (fallback)
  */
 export const generateToolCalls = inject({ logger })(({ logger }) => {
-    const generateNativeToolCalls = async (systemPrompt: string, userMessage: string): Promise<ToolCallResult[]> => {
+    async function generateNativeToolCalls(systemPrompt: string, userMessage: string): Promise<ToolCallResult[]> {
         // Try structured tool calling first (Tauri only)
         if (isTauri()) {
             try {
-                const tools = DAW_TOOL_SCHEMAS.map((t) => ({
-                    name: t.function.name,
-                    description: t.function.description,
-                    parameters: t.function.parameters,
+                const tools = DAW_TOOL_SCHEMAS.map((time) => ({
+                    name: time.function.name,
+                    description: time.function.description,
+                    parameters: time.function.parameters,
                 }));
 
                 const results = (await tauriInvoke('native_tool_calling', {
@@ -59,7 +59,7 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
             `[AI Engine] (native/text) Raw response (${String(content.length)} chars): ${content.slice(0, 500)}`
         );
         return parseToolCallXml(content);
-    };
+    }
 
     return async function generateToolCalls(systemPrompt: string, userMessage: string): Promise<ToolCallResult[]> {
         const chain = getBackendChain();
@@ -101,7 +101,15 @@ export const generateToolCalls = inject({ logger })(({ logger }) => {
                     `[AI Engine] (${backend}) ${String(results.length)} tool call(s): ${results.map((r) => r.name).join(', ')}`
                 );
 
-                const modelId = backend === 'native' ? 'native' : backend === 'cloud' ? 'claude' : WEBLLM_MODEL_ID;
+                const modelId = (() => {
+                    if (backend === 'native') {
+                        return 'native';
+                    }
+                    if (backend === 'cloud') {
+                        return 'claude';
+                    }
+                    return WEBLLM_MODEL_ID;
+                })();
                 llmStatusStore.set({ state: 'ready', modelId });
                 return results;
             } catch (error) {

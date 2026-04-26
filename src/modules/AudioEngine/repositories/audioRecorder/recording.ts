@@ -73,8 +73,8 @@ export async function requestMicPermission(): Promise<boolean> {
                 autoGainControl: false,
             },
         });
-        for (const t of stream.getTracks()) {
-            t.stop();
+        for (const time of stream.getTracks()) {
+            time.stop();
         }
         audioRecordingStore.set({ ...audioRecordingStore.value!, micPermissionGranted: true });
         return true;
@@ -150,7 +150,7 @@ export const startAudioRecording = inject({ logger })(
                         audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: true });
                     } else if (msg.type === 'wav') {
                         // Worker has flushed OPFS → decode WAV on the main thread.
-                        decodeAndDeliver(msg.buffer, ctx);
+                        void decodeAndDeliver(msg.buffer, ctx);
                     } else if (msg.type === 'error') {
                         logger.error(new Error(`Recording worker error: ${msg.message}`));
                         cleanupNodes();
@@ -158,8 +158,8 @@ export const startAudioRecording = inject({ logger })(
                     }
                 };
 
-                recordingSession.recordingWorker.onerror = (e): void => {
-                    logger.error(new Error('Recording worker crashed', { cause: e }));
+                recordingSession.recordingWorker.onerror = (event): void => {
+                    logger.error(new Error('Recording worker crashed', { cause: event }));
                     cleanupNodes();
                     audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: false });
                 };
@@ -225,8 +225,8 @@ function cleanupNodes(): void {
         recordingSession.sourceNode = null;
     }
     if (recordingSession.mediaStream) {
-        for (const t of recordingSession.mediaStream.getTracks()) {
-            t.stop();
+        for (const time of recordingSession.mediaStream.getTracks()) {
+            time.stop();
         }
         recordingSession.mediaStream = null;
     }

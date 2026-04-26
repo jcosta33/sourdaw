@@ -173,7 +173,8 @@ module.exports = {
         {
             name: 'no-models-repos-transformers-in-index',
             severity: 'error',
-            comment: 'Module index.ts files must never import or re-export models, repositories, or transformers from anywhere.',
+            comment:
+                'Module index.ts files must never import or re-export models, repositories, or transformers from anywhere.',
             from: {
                 path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/index\\.ts$',
             },
@@ -251,7 +252,8 @@ module.exports = {
         {
             name: 'presentation-no-direct-services-validators-transformers',
             severity: 'error',
-            comment: 'Presentation code must not access services, validators, or transformers directly. Consume use cases instead.',
+            comment:
+                'Presentation code must not access services, validators, or transformers directly. Consume use cases instead.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'presentations/.+' + SOURCE_FILE_RE,
             },

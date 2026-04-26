@@ -29,7 +29,7 @@
  *    interaction handlers can request an immediate repaint (e.g. on mousemove
  *    during drag) without waiting for the next rAF tick.
  */
-import { type RefObject, useRef, useEffect } from 'react';
+import { type RefObject, useRef, useEffect, useLayoutEffect } from 'react';
 
 import { trackStore } from '#/modules/Arrangement/stores';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -91,31 +91,37 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
     // ── Mirror all layout/config props into refs so the rAF loop always
     //    reads the current value without being re-created on every render. ──
     const beatWidthRef = useRef(deps.beatWidth);
-    beatWidthRef.current = deps.beatWidth;
     const gridSnapRef = useRef(deps.gridSnap);
-    gridSnapRef.current = deps.gridSnap;
     const scaleTypeRef = useRef(deps.scaleType);
-    scaleTypeRef.current = deps.scaleType;
     const scaleRootRef = useRef(deps.scaleRoot);
-    scaleRootRef.current = deps.scaleRoot;
     const isFoldedRef = useRef(deps.isFolded);
-    isFoldedRef.current = deps.isFolded;
     const selectedNoteIdsRef = useRef(deps.selectedNoteIds);
-    selectedNoteIdsRef.current = deps.selectedNoteIds;
     const stepInputRef = useRef(deps.stepInput);
-    stepInputRef.current = deps.stepInput;
     const stepBeatRef = useRef(deps.stepBeat);
-    stepBeatRef.current = deps.stepBeat;
     const stepPitchRef = useRef(deps.stepPitch);
-    stepPitchRef.current = deps.stepPitch;
     const showGhostNotesRef = useRef(deps.showGhostNotes);
-    showGhostNotesRef.current = deps.showGhostNotes;
     const clipIdRef = useRef(deps.clipId);
-    clipIdRef.current = deps.clipId;
     const trackIdRef = useRef(deps.trackId);
-    trackIdRef.current = deps.trackId;
     const openedClipIdsRef = useRef(deps.openedClipIds ?? []);
-    openedClipIdsRef.current = deps.openedClipIds ?? [];
+
+    // Sync props into refs after every render so the rAF closure always sees
+    // the latest values. useLayoutEffect runs synchronously before the browser
+    // paints, ensuring refs are current before the next animation frame fires.
+    useLayoutEffect(() => {
+        beatWidthRef.current = deps.beatWidth;
+        gridSnapRef.current = deps.gridSnap;
+        scaleTypeRef.current = deps.scaleType;
+        scaleRootRef.current = deps.scaleRoot;
+        isFoldedRef.current = deps.isFolded;
+        selectedNoteIdsRef.current = deps.selectedNoteIds;
+        stepInputRef.current = deps.stepInput;
+        stepBeatRef.current = deps.stepBeat;
+        stepPitchRef.current = deps.stepPitch;
+        showGhostNotesRef.current = deps.showGhostNotes;
+        clipIdRef.current = deps.clipId;
+        trackIdRef.current = deps.trackId;
+        openedClipIdsRef.current = deps.openedClipIds ?? [];
+    });
 
     // ── OffscreenCanvas grid cache ──────────────────────────────────────
     const gridCacheRef = useRef<OffscreenCanvas | null>(null);
@@ -174,8 +180,8 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
             const visiblePitches = getVisiblePitches(st, sr, folded);
             // Build O(1) pitch→row lookup to avoid indexOf scans in draw passes
             const pitchToRow = new Map<number, number>();
-            for (let i = 0; i < visiblePitches.length; i++) {
-                pitchToRow.set(visiblePitches[i]!, i);
+            for (let index = 0; index < visiblePitches.length; index++) {
+                pitchToRow.set(visiblePitches[index]!, index);
             }
             const noteAreaHeight = visiblePitches.length * ROW_HEIGHT;
             const containerW = canvas.parentElement?.clientWidth ?? GRID_BEATS * bw;
@@ -297,6 +303,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Intentionally empty — all deps are read via refs inside the loop.
 
+    // eslint-disable-next-line react-hooks/refs -- returning stable draw() ref is intentional; value is set once in useEffect
     return drawFnRef.current;
 };
 
@@ -440,7 +447,7 @@ function drawGhostNotes(
     trackId: string,
     clipId: string
 ): void {
-    const otherMidiTracks = tracks.filter((t) => t.kind === 'midi' && t.id !== trackId);
+    const otherMidiTracks = tracks.filter((time) => time.kind === 'midi' && time.id !== trackId);
     for (const otherTrack of otherMidiTracks) {
         for (const otherClip of otherTrack.clips) {
             if (otherClip.type !== 'midi') {
@@ -457,7 +464,7 @@ function drawGhostNotes(
         }
     }
 
-    const activeTrack = tracks.find((t) => t.id === trackId);
+    const activeTrack = tracks.find((time) => time.id === trackId);
     if (activeTrack) {
         for (const sameTrackClip of activeTrack.clips) {
             if (sameTrackClip.id === clipId || sameTrackClip.type !== 'midi') {
@@ -532,7 +539,7 @@ function drawOpenedClipNotes(
         // Find the clip color from tracks
         let clipColor = 'oklch(0.7 0.12 250)'; // default blue-ish
         for (const track of tracks) {
-            const clip = track.clips.find((c) => c.id === openedId);
+            const clip = track.clips.find((context) => context.id === openedId);
             if (clip) {
                 clipColor = clip.color || track.color;
                 break;
@@ -584,8 +591,8 @@ function drawActiveNotes(
     clipId: string,
     dragPreview: DragPreview = null
 ): void {
-    const activeTrack = tracks?.find((t) => t.id === trackId);
-    const activeClip = activeTrack?.clips.find((c) => c.id === clipId);
+    const activeTrack = tracks?.find((time) => time.id === trackId);
+    const activeClip = activeTrack?.clips.find((context) => context.id === clipId);
     const clipColor = activeClip?.color || activeTrack?.color || 'oklch(0.45 0.06 250)';
     const selectedColor = brightenColor(clipColor, 0.22);
 

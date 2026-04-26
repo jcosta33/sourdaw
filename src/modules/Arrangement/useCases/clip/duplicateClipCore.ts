@@ -13,7 +13,7 @@ export function duplicateClipCore(clipId: string, computeStartBeat: (clip: Clip)
     }
 
     for (const track of state.tracks) {
-        const clip = track.clips.find((c) => c.id === clipId);
+        const clip = track.clips.find((context) => context.id === clipId);
         if (clip) {
             const duration = clip.endBeat - clip.startBeat;
             const startBeat = computeStartBeat(clip);
@@ -30,7 +30,7 @@ export function duplicateClipCore(clipId: string, computeStartBeat: (clip: Clip)
                 duplicateClipAutomation(clipId, newClip.id);
 
                 if (clip.type === 'midi') {
-                    duplicateClipNotes(clipId, newClip.id, startBeat - clip.startBeat);
+                    duplicateClipNotes(clipId, newClip.id);
                 }
             }
             return;

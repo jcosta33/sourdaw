@@ -2,6 +2,7 @@ import { type KeyboardEvent, type RefObject, type FormEvent, useState, useRef, u
 
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
+import { type RuntimeAction } from '#/modules/AiRuntime/models/RuntimeAction';
 import { llmStatusStore, pushAiActionGroup } from '#/modules/AiRuntime/stores';
 import {
     parsePromptToActions,
@@ -16,6 +17,7 @@ import {
     initEngine,
 } from '#/modules/AiRuntime/useCases';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { type AppAction } from '#/modules/Command/models/AppAction';
 import { executeAppAction, generateGroupId, describeAction } from '#/modules/Command/useCases';
 
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
@@ -55,7 +57,7 @@ export type PromptFuzzyResult = {
     score: number;
 };
 
-type PromptAction = Awaited<ReturnType<typeof parsePromptToActions>>['actions'][number];
+type PromptAction = RuntimeAction;
 
 type PromptPreview = {
     actions: PromptAction[];
@@ -88,7 +90,7 @@ export type PromptExecutionState = {
     llmStatus: typeof llmStatusStore.value;
 
     handleKeyDown: (e: KeyboardEvent<HTMLInputElement>) => void;
-    handleSubmit: (e: FormEvent) => void;
+    handleSubmit: (e: FormEvent) => void | Promise<void>;
     executePreset: (result: PromptFuzzyResult) => Promise<void>;
     confirmPreview: () => Promise<void>;
     cancelPreview: () => void;
@@ -125,7 +127,7 @@ export const usePromptExecution = (): PromptExecutionState => {
     const selectedClipIds = wsState?.selectedClipIds ?? [];
 
     if (selectedTrackId) {
-        const track = trackState?.tracks.find((t) => t.id === selectedTrackId);
+        const track = trackState?.tracks.find((time) => time.id === selectedTrackId);
         if (track && !dismissedTags.has(`track:${selectedTrackId}`)) {
             selectionTags.push({ id: `track:${selectedTrackId}`, label: track.name, kind: 'track', icon: 'track' });
         }
@@ -136,8 +138,8 @@ export const usePromptExecution = (): PromptExecutionState => {
             selectionTags.push({ id: key, label: `${selectedClipIds.length} clips`, kind: 'clips', icon: 'clips' });
         }
     } else if (selectedClipId) {
-        const allClips = trackState?.tracks.flatMap((t) => t.clips) ?? [];
-        const clip = allClips.find((c) => c.id === selectedClipId);
+        const allClips = trackState?.tracks.flatMap((time) => time.clips) ?? [];
+        const clip = allClips.find((context) => context.id === selectedClipId);
         if (clip && !dismissedTags.has(`clip:${selectedClipId}`)) {
             selectionTags.push({ id: `clip:${selectedClipId}`, label: clip.name, kind: 'clip', icon: 'clip' });
         }
@@ -148,8 +150,8 @@ export const usePromptExecution = (): PromptExecutionState => {
         selectedTrackId: selectedTrackId ?? undefined,
         selectedClipId: selectedClipId ?? undefined,
         selectedClipType: (() => {
-            const allClips = trackState?.tracks.flatMap((t) => t.clips) ?? [];
-            const clip = allClips.find((c) => c.id === selectedClipId);
+            const allClips = trackState?.tracks.flatMap((time) => time.clips) ?? [];
+            const clip = allClips.find((context) => context.id === selectedClipId);
             return clip?.type;
         })(),
         trackCount: trackState?.tracks.length ?? 0,
@@ -157,6 +159,7 @@ export const usePromptExecution = (): PromptExecutionState => {
 
     // ── Reset dismissed tags when selection changes ─────────────────────
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- Resets UI state when selection changes; no cascade risk since deps are external
         setDismissedTags(new Set());
     }, [selectedTrackId, selectedClipId, selectedClipIds]);
 
@@ -180,10 +183,12 @@ export const usePromptExecution = (): PromptExecutionState => {
     // ── Fuzzy search on input change ────────────────────────────────────
     useEffect(() => {
         if (preview || isProcessing) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional state clear on mode/focus change; no cascade risk
             setFuzzyResults([]);
             return;
         }
         if (!isFocused) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional state clear on mode/focus change; no cascade risk
             setFuzzyResults([]);
             return;
         }
@@ -205,18 +210,18 @@ export const usePromptExecution = (): PromptExecutionState => {
         const executedLabels: Array<{ action: PromptAction; label: string }> = [];
 
         for (const action of actions) {
-            await executeAppAction(action, { ...group, source: 'prompt' });
-            executedLabels.push({ action, label: describeAction(action) });
+            await executeAppAction(action as AppAction, { ...group, source: 'prompt' });
+            executedLabels.push({ action, label: describeAction(action as AppAction) });
         }
 
         if (actions.length > 0) {
             const historyGroup = {
                 id: group.groupId,
                 prompt,
-                actions: executedLabels.map((l) => ({
+                actions: executedLabels.map((length) => ({
                     kind: 'appAction' as const,
-                    actionType: l.action.type,
-                    label: l.label,
+                    actionType: length.action.type,
+                    label: length.label,
                 })),
                 groupId: group.groupId,
                 timestamp: Date.now(),
@@ -256,7 +261,7 @@ export const usePromptExecution = (): PromptExecutionState => {
             if (actions.length > 0) {
                 notifyAiChange(
                     `Executed: ${result.preset.label}`,
-                    actions.map((a) => a.type)
+                    actions.map((alpha) => alpha.type)
                 );
             }
         } catch (error) {
@@ -268,8 +273,8 @@ export const usePromptExecution = (): PromptExecutionState => {
     };
 
     // ── Full prompt submission (for complex / LLM) ──────────────────────
-    const handleSubmit = async (e: FormEvent): Promise<void> => {
-        e.preventDefault();
+    const handleSubmit = async (event: FormEvent): Promise<void> => {
+        event.preventDefault();
         if (!value.trim() || isProcessing) {
             return;
         }
@@ -310,7 +315,7 @@ export const usePromptExecution = (): PromptExecutionState => {
                 await executeWithGroup(result.actions, value);
                 notifyAiChange(
                     `Executed: ${value}`,
-                    result.actions.map((a) => a.type)
+                    result.actions.map((alpha) => alpha.type)
                 );
             } else {
                 notifyAiChange('No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.', []);
@@ -333,7 +338,7 @@ export const usePromptExecution = (): PromptExecutionState => {
         await executeWithGroup(preview.actions, value);
         notifyAiChange(
             `Confirmed: ${value}`,
-            preview.actions.map((a) => a.type)
+            preview.actions.map((alpha) => alpha.type)
         );
         setPreview(null);
         setValue('');
@@ -350,29 +355,29 @@ export const usePromptExecution = (): PromptExecutionState => {
     };
 
     // ── Keyboard navigation ─────────────────────────────────────────────
-    const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
+    const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
         if (fuzzyResults.length > 0) {
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
                 setSelectedIndex((prev) => Math.min(prev + 1, fuzzyResults.length - 1));
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
                 setSelectedIndex((prev) => Math.max(prev - 1, -1));
-            } else if (e.key === 'Tab' && selectedIndex >= 0) {
-                e.preventDefault();
+            } else if (event.key === 'Tab' && selectedIndex >= 0) {
+                event.preventDefault();
                 const selected = fuzzyResults[selectedIndex];
                 if (selected) {
                     setValue(selected.preset.label);
                     setFuzzyResults([]);
                 }
-            } else if (e.key === 'Enter' && selectedIndex >= 0) {
-                e.preventDefault();
+            } else if (event.key === 'Enter' && selectedIndex >= 0) {
+                event.preventDefault();
                 const selected = fuzzyResults[selectedIndex];
                 if (selected) {
-                    executePreset(selected);
+                    void executePreset(selected);
                 }
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
                 setFuzzyResults([]);
                 setSelectedIndex(-1);
             }
@@ -381,7 +386,7 @@ export const usePromptExecution = (): PromptExecutionState => {
 
     const handleLoadModel = (modelId?: string): void => {
         if (isLlmAvailable()) {
-            initEngine(modelId);
+            void initEngine(modelId);
         }
     };
 

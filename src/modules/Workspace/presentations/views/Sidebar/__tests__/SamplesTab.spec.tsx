@@ -16,9 +16,9 @@ describe('SamplesTab', () => {
     ];
     const mockPreview = {
         playingId: null,
-        play: vi.fn(),
-        playTone: vi.fn(),
-        stop: vi.fn(),
+        play: vi.fn<(...args: unknown[]) => unknown>(),
+        playTone: vi.fn<(...args: unknown[]) => unknown>(),
+        stop: vi.fn<(...args: unknown[]) => unknown>(),
     };
 
     beforeEach(() => {
@@ -30,9 +30,9 @@ describe('SamplesTab', () => {
             <SamplesTab
                 samples={mockSamples}
                 favorites={new Set()}
-                onToggleFavorite={vi.fn()}
+                onToggleFavorite={vi.fn<(...args: unknown[]) => unknown>()}
                 selectedTrackId="t1"
-                preview={mockPreview as any}
+                preview={mockPreview as unknown as React.ComponentProps<typeof SamplesTab>['preview']}
             />
         );
         expect(document.body).toBeTruthy();
@@ -43,9 +43,9 @@ describe('SamplesTab', () => {
             <SamplesTab
                 samples={mockSamples}
                 favorites={new Set()}
-                onToggleFavorite={vi.fn()}
+                onToggleFavorite={vi.fn<(...args: unknown[]) => unknown>()}
                 selectedTrackId="t1"
-                preview={mockPreview as any}
+                preview={mockPreview as unknown as React.ComponentProps<typeof SamplesTab>['preview']}
             />
         );
         expect(document.body).toBeTruthy();
@@ -56,9 +56,9 @@ describe('SamplesTab', () => {
             <SamplesTab
                 samples={mockSamples}
                 favorites={new Set()}
-                onToggleFavorite={vi.fn()}
+                onToggleFavorite={vi.fn<(...args: unknown[]) => unknown>()}
                 selectedTrackId="t1"
-                preview={mockPreview as any}
+                preview={mockPreview as unknown as React.ComponentProps<typeof SamplesTab>['preview']}
             />
         );
         const buttons = screen.queryAllByRole('button');

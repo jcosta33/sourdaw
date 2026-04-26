@@ -5,7 +5,7 @@ import * as subject from '../setYeastProcessorParam';
 describe('setYeastProcessorParam', () => {
     it('should export setYeastProcessorParam', () => {
         expect(subject.setYeastProcessorParam).toBeDefined();
-        const t = typeof subject.setYeastProcessorParam;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setYeastProcessorParam;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

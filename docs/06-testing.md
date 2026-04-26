@@ -107,10 +107,10 @@ The business layer uses the `inject()` DI pattern (see `docs/architecture/03-typ
 
 ### When to use which
 
-| Subject under test                                              | Mock its deps with                                                               |
-| --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| An injectable (function wrapped in `inject()`)                  | `spy<T>()` + `injectDependencies()`                                              |
-| An external module you don't own (`@tauri-apps/api/core`, etc.) | `vi.mock(modulePath, ...)`                                                       |
+| Subject under test                                              | Mock its deps with                                                                              |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| An injectable (function wrapped in `inject()`)                  | `spy<T>()` + `injectDependencies()`                                                             |
+| An external module you don't own (`@tauri-apps/api/core`, etc.) | `vi.mock(modulePath, ...)`                                                                      |
 | An internal module that is NOT wrapped with `inject()`          | Refactor the subject to use `inject()` — do not add new `vi.mock()` shims for app collaborators |
 
 Do not mix `vi.mock()` with `injectDependencies()` for the same dependency. Pick one.
@@ -763,13 +763,13 @@ Commands in `src-tauri/src/commands/` are not currently tested. When we add test
 
 ## 9. Running tests
 
-| Command                  | Purpose                                       |
-| ------------------------ | --------------------------------------------- |
-| `pnpm test`              | Vitest in watch mode — use during development |
-| `pnpm test:run`          | Vitest single run — use in CI                 |
+| Command                  | Purpose                                                     |
+| ------------------------ | ----------------------------------------------------------- |
+| `pnpm test`              | Vitest in watch mode — use during development               |
+| `pnpm test:run`          | Vitest single run — use in CI                               |
 | `pnpm test:coverage`     | Vitest with **v8** coverage; HTML + `lcov` in `./coverage/` |
-| `cargo test --workspace` | Run all Rust crate tests                      |
-| `cargo test -p daw-dsp`  | Run tests for a single Rust crate             |
+| `cargo test --workspace` | Run all Rust crate tests                                    |
+| `cargo test -p daw-dsp`  | Run tests for a single Rust crate                           |
 
 Vitest config is in `vite.config.ts` (`test` and `test.coverage` blocks). Global setup is `src/setupTests.ts`, which loads `@testing-library/jest-dom`. Coverage uses `@vitest/coverage-v8`.
 

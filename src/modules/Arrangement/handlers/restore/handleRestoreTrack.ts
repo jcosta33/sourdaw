@@ -13,7 +13,7 @@ import { setTrackState } from '../../useCases/setTrackState';
  * `undoable: false` — invoked only by undo machinery; must not create new undo entries.
  */
 export const handleRestoreTrack = createHandler<'restoreTrack'>({
-    execute: (a) => {
+    execute: (alpha) => {
         const {
             trackSnapshot,
             automationLaneSnapshots,
@@ -21,7 +21,7 @@ export const handleRestoreTrack = createHandler<'restoreTrack'>({
             midiCcByClipId,
             midiPitchBendByClipId,
             takeLaneSnapshots,
-        } = a.payload;
+        } = alpha.payload;
 
         const state = getTrackStoreState();
         if (state) {

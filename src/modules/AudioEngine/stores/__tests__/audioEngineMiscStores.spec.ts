@@ -33,7 +33,7 @@ describe('AudioEngine Misc Stores', () => {
         });
 
         it('should update state', () => {
-            controlRoomStore.update((s) => ({ ...s!, monitorVolume: -10 }));
+            controlRoomStore.update((state) => ({ ...state!, monitorVolume: -10 }));
             expect(controlRoomStore.value?.monitorVolume).toBe(-10);
         });
     });
@@ -53,7 +53,7 @@ describe('AudioEngine Misc Stores', () => {
         });
 
         it('should update state', () => {
-            controlSurfaceStore.update((s) => ({ ...s!, protocol: 'mcu' }));
+            controlSurfaceStore.update((state) => ({ ...state!, protocol: 'mcu' }));
             expect(controlSurfaceStore.value?.protocol).toBe('mcu');
         });
     });
@@ -70,7 +70,7 @@ describe('AudioEngine Misc Stores', () => {
 
         it('should provide getLinkStatusSnapshot', () => {
             expect(getLinkStatusSnapshot()).toBe(false);
-            linkStatusStore.update((s) => ({ ...s!, enabled: true }));
+            linkStatusStore.update((state) => ({ ...state!, enabled: true }));
             expect(getLinkStatusSnapshot()).toBe(true);
         });
     });
@@ -98,7 +98,7 @@ describe('AudioEngine Misc Stores', () => {
         });
 
         it('should update state', () => {
-            raveStore.update((s) => ({ ...s!, transferBlend: 0.8 }));
+            raveStore.update((state) => ({ ...state!, transferBlend: 0.8 }));
             expect(raveStore.value?.transferBlend).toBe(0.8);
         });
     });

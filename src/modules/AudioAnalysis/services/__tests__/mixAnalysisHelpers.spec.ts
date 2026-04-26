@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest';
 
-import { type MixAnalysis } from '../../models/MixAnalysis';
-import { type FrequencyBands } from '../../services/mixAnalysisHelpers';
 import {
     detectIssues,
     generateSuggestions,

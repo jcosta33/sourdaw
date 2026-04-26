@@ -16,7 +16,7 @@ describe('handleCopyClip', () => {
     });
 
     it('executes copySelectedClip', () => {
-        handleCopyClip.execute({ type: 'copyClip', payload: {} });
+        void handleCopyClip.execute({ type: 'copyClip', payload: {} });
         expect(mocks.copySelectedClip).toHaveBeenCalledTimes(1);
     });
 

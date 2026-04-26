@@ -5,7 +5,7 @@ import * as subject from '../helpers';
 describe('helpers', () => {
     it('should export setAutomationSubLanes', () => {
         expect(subject.setAutomationSubLanes).toBeDefined();
-        const t = typeof subject.setAutomationSubLanes;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setAutomationSubLanes;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

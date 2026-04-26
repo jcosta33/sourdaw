@@ -25,39 +25,47 @@ export type CallbackUndoEntry = UndoEntryBase & {
 
 export type UndoEntry = ActionUndoEntry | CallbackUndoEntry;
 
-export const createUndoEntry = (
+export function createUndoEntry(
     label: string,
     action: AppAction,
     inverseAction: AppAction | null,
     source: UndoSource = 'manual'
-): ActionUndoEntry => ({
-    id: `undo-${crypto.randomUUID()}`,
-    kind: 'action',
-    label,
-    action,
-    inverseAction,
-    timestamp: Date.now(),
-    source,
-});
+): ActionUndoEntry {
+    return {
+        id: `undo-${crypto.randomUUID()}`,
+        kind: 'action',
+        label,
+        action,
+        inverseAction,
+        timestamp: Date.now(),
+        source,
+    };
+}
 
-export const createCallbackUndoEntry = (
+export function createCallbackUndoEntry(
     label: string,
     undoFn: () => void,
     redoFn: () => void,
     source: UndoSource = 'manual'
-): CallbackUndoEntry => ({
-    id: `undo-${crypto.randomUUID()}`,
-    kind: 'callback',
-    label,
-    undo: undoFn,
-    redo: redoFn,
-    timestamp: Date.now(),
-    source,
-});
+): CallbackUndoEntry {
+    return {
+        id: `undo-${crypto.randomUUID()}`,
+        kind: 'callback',
+        label,
+        undo: undoFn,
+        redo: redoFn,
+        timestamp: Date.now(),
+        source,
+    };
+}
 
-export const generateGroupId = (label: string): { groupId: string; groupLabel: string } => ({
-    groupId: `group-${crypto.randomUUID()}`,
-    groupLabel: label,
-});
+export function generateGroupId(label: string): { groupId: string; groupLabel: string } {
+    return {
+        groupId: `group-${crypto.randomUUID()}`,
+        groupLabel: label,
+    };
+}
 
-export const isActionEntry = (entry: UndoEntry): entry is ActionUndoEntry => entry.kind === 'action';
+export function isActionEntry(entry: UndoEntry): entry is ActionUndoEntry {
+    return entry.kind === 'action';
+}

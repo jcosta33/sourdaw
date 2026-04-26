@@ -4,7 +4,7 @@ import { snapToGrid } from './snapToGrid';
 
 export function snapToGridOrClips(beat: number, trackId: string, excludeClipId?: string): number {
     const tracks = trackStore.value?.tracks ?? [];
-    const track = tracks.find((t) => t.id === trackId);
+    const track = tracks.find((time) => time.id === trackId);
 
     if (track) {
         const SNAP_THRESHOLD = 0.25;

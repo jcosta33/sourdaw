@@ -44,7 +44,7 @@ vi.mock('#/components/ui/slider', () => ({
             data-testid="slider"
             data-label={ariaLabel}
             value={value[0]}
-            onChange={(e) => onValueChange([Number(e.target.value)])}
+            onChange={(event) => onValueChange([Number(event.target.value)])}
         />
     ),
 }));

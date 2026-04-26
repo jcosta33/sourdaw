@@ -9,8 +9,8 @@ export async function scanCustomPaths(paths: string[]): Promise<void> {
 
     try {
         const result = await scanPlugins(paths);
-        const existingIds = new Set(state.scannedPlugins.map((p) => p.id));
-        const newPlugins = result.plugins.filter((p) => !existingIds.has(p.id));
+        const existingIds = new Set(state.scannedPlugins.map((param) => param.id));
+        const newPlugins = result.plugins.filter((param) => !existingIds.has(param.id));
 
         pluginScanStore.set({
             ...getState(),

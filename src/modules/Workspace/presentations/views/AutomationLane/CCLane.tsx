@@ -33,14 +33,14 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
     });
 
     const allCc = clipId ? (midiState.ccByClipId[clipId] ?? []) : [];
-    const points = [...allCc.filter((c: MidiCC) => c.controller === controller)].sort(
-        (a: MidiCC, b: MidiCC) => a.beat - b.beat
+    const points = [...allCc.filter((context: MidiCC) => context.controller === controller)].sort(
+        (alpha: MidiCC, b: MidiCC) => alpha.beat - b.beat
     );
 
     const beatToX = (beat: number): number => beat * beatWidth + 8;
     const valueToY = (value: number, height: number): number => height - (value / 127) * (height - 8) - 4;
 
-    const handleContainerClick = (e: MouseEvent<HTMLDivElement>) => {
+    const handleContainerClick = (event: MouseEvent<HTMLDivElement>) => {
         if (!clipId) {
             return;
         }
@@ -48,12 +48,12 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         if (!container) {
             return;
         }
-        if ((e.target as HTMLElement).dataset.ccPoint) {
+        if ((event.target as HTMLElement).dataset.ccPoint) {
             return;
         }
         const rect = container.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
         const height = rect.height;
 
         const beat = Math.max(0, (x - 8) / beatWidth);
@@ -67,8 +67,8 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         );
     };
 
-    const handlePointMouseDown = (ccId: string, e: MouseEvent<HTMLDivElement>) => {
-        e.stopPropagation();
+    const handlePointMouseDown = (ccId: string, event: MouseEvent<HTMLDivElement>) => {
+        event.stopPropagation();
         if (!clipId) {
             return;
         }
@@ -76,7 +76,7 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         if (!container) {
             return;
         }
-        const origPoint = points.find((p) => p.id === ccId);
+        const origPoint = points.find((param) => param.id === ccId);
         const origBeat = origPoint?.beat ?? 0;
         const origValue = origPoint?.value ?? 0;
 
@@ -98,7 +98,7 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
             setDragId(null);
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
-            const finalPoint = (midiStore.value?.ccByClipId[clipId] ?? []).find((c) => c.id === ccId);
+            const finalPoint = (midiStore.value?.ccByClipId[clipId] ?? []).find((context) => context.id === ccId);
             if (finalPoint && (finalPoint.beat !== origBeat || finalPoint.value !== origValue)) {
                 const finalBeat = finalPoint.beat;
                 const finalValue = finalPoint.value;
@@ -114,12 +114,12 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         window.addEventListener('mouseup', onUp);
     };
 
-    const handlePointDoubleClick = (ccId: string, e: MouseEvent<HTMLDivElement>) => {
-        e.stopPropagation();
+    const handlePointDoubleClick = (ccId: string, event: MouseEvent<HTMLDivElement>) => {
+        event.stopPropagation();
         if (!clipId) {
             return;
         }
-        const point = points.find((p) => p.id === ccId);
+        const point = points.find((param) => param.id === ccId);
         if (point) {
             const { controller: ctrl, value, beat, channel } = point;
             removeMidiCC(clipId, ccId);
@@ -164,16 +164,15 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
                         opacity="0.5"
                         strokeWidth="1.5"
                         points={points
-                            .map((p: MidiCC) => {
+                            .map((param: MidiCC) => {
                                 const el = containerRef.current;
                                 const h = el?.clientHeight ?? 80;
-                                return `${beatToX(p.beat)},${valueToY(p.value, h)}`;
+                                return `${beatToX(param.beat)},${valueToY(param.value, h)}`;
                             })
                             .join(' ')}
                     />
                 </svg>
             ) : null}
-
             {points.map((point: MidiCC) => {
                 const el = containerRef.current;
                 const h = el?.clientHeight ?? 80;
@@ -193,12 +192,11 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
                         )}
                         style={{ left: x, top: y }}
                         title={`Beat ${point.beat.toFixed(2)}: ${point.value}`}
-                        onMouseDown={(e) => handlePointMouseDown(point.id, e)}
-                        onDoubleClick={(e) => handlePointDoubleClick(point.id, e)}
+                        onMouseDown={(event) => handlePointMouseDown(point.id, event)}
+                        onDoubleClick={(event) => handlePointDoubleClick(point.id, event)}
                     />
                 );
             })}
-
             {points.length === 0 ? (
                 <div className="flex h-full items-center justify-center pointer-events-none">
                     <p className="text-[10px] text-muted-foreground">Click to add CC points</p>

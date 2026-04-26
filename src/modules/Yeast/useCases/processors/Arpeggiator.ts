@@ -101,10 +101,10 @@ export class Arpeggiator extends BaseMidiProcessor {
         let blockEnd: number;
         if (input.length > 0) {
             let maxTime = input[0]!.timeSamples;
-            for (let i = 1; i < input.length; i++) {
-                const t = input[i]!.timeSamples;
-                if (t > maxTime) {
-                    maxTime = t;
+            for (let index = 1; index < input.length; index++) {
+                const time = input[index]!.timeSamples;
+                if (time > maxTime) {
+                    maxTime = time;
                 }
             }
             blockEnd = maxTime + 128;
@@ -223,8 +223,8 @@ export class Arpeggiator extends BaseMidiProcessor {
 
         // Drain scheduled Note Offs that fall in this block
         const drained = this.scheduled.drainRange(0, blockEnd);
-        for (const e of drained) {
-            output.push(e);
+        for (const event1 of drained) {
+            output.push(event1);
         }
     }
 
@@ -333,19 +333,19 @@ export class Arpeggiator extends BaseMidiProcessor {
         const octaves: number[] = [];
 
         if (this.octaveDirection === 'up') {
-            for (let o = 0; o < this.octaveRange; o++) {
-                octaves.push(o);
+            for (let output = 0; output < this.octaveRange; output++) {
+                octaves.push(output);
             }
         } else if (this.octaveDirection === 'down') {
-            for (let o = 0; o > -this.octaveRange; o--) {
-                octaves.push(o);
+            for (let output = 0; output > -this.octaveRange; output--) {
+                octaves.push(output);
             }
         } else {
-            for (let o = 0; o < this.octaveRange; o++) {
-                octaves.push(o);
+            for (let output = 0; output < this.octaveRange; output++) {
+                octaves.push(output);
             }
-            for (let o = this.octaveRange - 2; o > 0; o--) {
-                octaves.push(o);
+            for (let output = this.octaveRange - 2; output > 0; output--) {
+                octaves.push(output);
             }
         }
 
@@ -367,8 +367,8 @@ export class Arpeggiator extends BaseMidiProcessor {
         }
 
         // Sort pool by pitch for Up/Down modes, by press order for Order mode
-        const byPitch = [...pool].sort((a, b) => a.note - b.note);
-        const byOrder = [...pool].sort((a, b) => a.pressedOrder - b.pressedOrder);
+        const byPitch = [...pool].sort((alpha, b) => alpha.note - b.note);
+        const byOrder = [...pool].sort((alpha, b) => alpha.pressedOrder - b.pressedOrder);
 
         switch (this.mode) {
             case 'up':
@@ -397,6 +397,7 @@ export class Arpeggiator extends BaseMidiProcessor {
                 return [byPitch[this.stepIndex % byPitch.length]!];
             }
         }
+        return [];
     }
 
     private reflectedIndex(step: number, len: number): number {
@@ -426,6 +427,7 @@ export class Arpeggiator extends BaseMidiProcessor {
                 return 40 + (this.rngState % 88); // 40-127
             }
         }
+        return inputVel;
     }
 
     private killActiveNotes(output: MidiEvent[], now: number): void {
@@ -442,15 +444,15 @@ export class Arpeggiator extends BaseMidiProcessor {
     private expireNotes(output: MidiEvent[], now: number): void {
         // Audio-thread: in-place removal avoids two .filter() allocations
         let writeIdx = 0;
-        for (let i = 0; i < this.activeGenerated.length; i++) {
-            const n = this.activeGenerated[i]!;
-            if (n.offTimeSamples <= now) {
+        for (let index = 0; index < this.activeGenerated.length; index++) {
+            const node = this.activeGenerated[index]!;
+            if (node.offTimeSamples <= now) {
                 output.push({
-                    timeSamples: n.offTimeSamples,
-                    kind: { type: 'noteOff', channel: n.channel, note: n.note },
+                    timeSamples: node.offTimeSamples,
+                    kind: { type: 'noteOff', channel: node.channel, note: node.note },
                 });
             } else {
-                this.activeGenerated[writeIdx] = n;
+                this.activeGenerated[writeIdx] = node;
                 writeIdx++;
             }
         }

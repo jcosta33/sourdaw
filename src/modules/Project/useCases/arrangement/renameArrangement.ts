@@ -9,7 +9,7 @@ export function renameArrangement(id: string, name: string): void {
 
     arrangementStore.set({
         ...state,
-        arrangements: state.arrangements.map((a) => (a.id === id ? { ...a, name } : a)),
+        arrangements: state.arrangements.map((alpha) => (alpha.id === id ? { ...alpha, name } : alpha)),
     });
     markDirty();
 }

@@ -8,6 +8,6 @@ import { inject } from '#/infra/di/inject';
 export const showDevicePanel = inject({ eventBus })(
     ({ eventBus }) =>
         function showDevicePanel(deviceType: string, deviceId: string | null): void {
-            eventBus.emit('panel.showDevice', { deviceType, deviceId });
+            void eventBus.emit('panel.showDevice', { deviceType, deviceId });
         }
 );

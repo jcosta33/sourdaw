@@ -26,13 +26,13 @@ Template: `docs/agents/templates/audit.template.md`.
 
 5. **Every open issue must have a "Needed".** An issue without a concrete resolution path is not an issue — it is a complaint. Each issue must state what concrete change would close it.
 
-5. **Prioritise issues explicitly.** The `## Priorities` section should list issues in order of impact so the next session has a starting point, not a flat list.
+6. **Prioritise issues explicitly.** The `## Priorities` section should list issues in order of impact so the next session has a starting point, not a flat list.
 
-6. **Risks belong in the audit.** If leaving issues unaddressed carries real risk — correctness, performance, maintainability — state it. Do not leave this implicit.
+7. **Risks belong in the audit.** If leaving issues unaddressed carries real risk — correctness, performance, maintainability — state it. Do not leave this implicit.
 
-7. **Suggested approaches are not specs.** They provide direction and rationale. The spec is where implementation decisions are made. Keep suggested approaches high-level.
+8. **Suggested approaches are not specs.** They provide direction and rationale. The spec is where implementation decisions are made. Keep suggested approaches high-level.
 
-8. **Mark resolved issues.** The `## Resolved` section exists so future sessions do not re-investigate the same ground. Use it.
+9. **Mark resolved issues.** The `## Resolved` section exists so future sessions do not re-investigate the same ground. Use it.
 
 ---
 

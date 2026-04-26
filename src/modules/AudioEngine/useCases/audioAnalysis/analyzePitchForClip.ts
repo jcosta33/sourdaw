@@ -1,9 +1,10 @@
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
-// @ts-expect-error — generated wasm-bindgen glue, no type declarations
 import { analyze_pitch_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
 import { kneadStore } from '#/modules/Knead/stores';
 import { isTauri } from '#/utils/tauriBridge';
@@ -22,6 +23,12 @@ export type PitchContour = {
     sample_rate: number;
     hop_size: number;
     algorithm: string;
+};
+
+export type PitchSegment = {
+    start_time_ms: number;
+    end_time_ms: number;
+    shift_semitones: number;
 };
 
 type AnalysisProgress = {
@@ -75,7 +82,7 @@ function getCachedAudioBuffer(clip: PitchAnalysisClip): AudioBuffer | null {
 export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchForClipOutput> {
     const targetClip = findAudioClip(clipId);
 
-    if (!targetClip || !targetClip.fileId) {
+    if (!targetClip || !targetClip.audioBufferId) {
         logger.info(`[analyzePitchForClip] no buffer resolved for clipId=${clipId}`);
         return { status: 'no-buffer', reason: 'missing-clip-or-buffer' };
     }
@@ -90,7 +97,7 @@ export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchF
         });
     }
 
-    let unlisten: (() => void) | null = null;
+    let unlisten: UnlistenFn | null = null;
 
     try {
         let contour: PitchContour;
@@ -107,7 +114,7 @@ export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchF
             });
 
             contour = (await invoke('analyze_pitch', {
-                audioPath: targetClip.fileId,
+                audioPath: targetClip.fileId ?? targetClip.audioBufferId,
             })) as PitchContour;
         } else {
             // WASM fallback
@@ -119,16 +126,16 @@ export async function analyzePitchForClip(clipId: string): Promise<AnalyzePitchF
             // Artificial progress steps to keep UI somewhat responsive
             const progressSteps = [0.2, 0.5, 0.8];
             for (const step of progressSteps) {
-                await new Promise((r) => setTimeout(r, 0));
-                const s = kneadStore.value;
-                if (s) {
-                    kneadStore.set({ ...s, analysisProgress: step });
+                await new Promise((resolve) => setTimeout(resolve, 0));
+                const state = kneadStore.value;
+                if (state) {
+                    kneadStore.set({ ...state, analysisProgress: step });
                 }
             }
 
             const channelData = buffer.getChannelData(0);
             const jsonStr = analyze_pitch_wasm(channelData, buffer.sampleRate);
-            contour = JSON.parse(jsonStr);
+            contour = JSON.parse(jsonStr) as PitchContour;
         }
 
         // Store the result

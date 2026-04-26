@@ -5,7 +5,7 @@ import * as subject from '../reverseAutomation';
 describe('reverseAutomation', () => {
     it('should export reverseAutomation', () => {
         expect(subject.reverseAutomation).toBeDefined();
-        const t = typeof subject.reverseAutomation;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.reverseAutomation;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

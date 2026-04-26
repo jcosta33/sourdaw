@@ -54,14 +54,41 @@ export const TransportControls = ({
     countInBars,
 }: TransportControlsProps): ReactElement => {
     const cycleCountInBars = (): void => {
-        const next = countInBars >= 4 ? 1 : countInBars >= 2 ? 4 : countInBars >= 1 ? 2 : 1;
+        let next: number;
+        if (countInBars >= 4) {
+            next = 1;
+        } else if (countInBars >= 2) {
+            next = 4;
+        } else if (countInBars >= 1) {
+            next = 2;
+        } else {
+            next = 1;
+        }
         setCountInBars(next);
+    };
+    const renderIife_14 = () => {
+        if (isRecording) {
+            return 'Recording';
+        }
+        if (isPlaying) {
+            return 'Playing';
+        }
+        return 'Stopped';
+    };
+    const renderIife_15 = () => {
+        if (isRecording) {
+            return 'Stop Recording';
+        }
+        if (anyTrackArmed) {
+            return 'Record (tracks armed)';
+        }
+        return 'Record';
     };
 
     return (
         <DawTransportCluster tone="well" role="group" aria-label="Playback controls">
             <span className="sr-only" aria-live="polite" role="status">
-                {isRecording ? 'Recording' : isPlaying ? 'Playing' : 'Stopped'}
+                {renderIife_14()}
             </span>
             <Tooltip>
                 <TooltipTrigger asChild>
@@ -71,6 +98,7 @@ export const TransportControls = ({
                         size="icon"
                         aria-label={isPlaying ? 'Pause' : 'Play'}
                         onClick={togglePlayback}
+                        data-onboarding="transport-play"
                     >
                         {isPlaying ? (
                             <Pause className="size-4" aria-hidden="true" />
@@ -108,9 +136,7 @@ export const TransportControls = ({
                         />
                     </LatchButton>
                 </TooltipTrigger>
-                <TooltipContent>
-                    {isRecording ? 'Stop Recording' : anyTrackArmed ? 'Record (tracks armed)' : 'Record'} (R)
-                </TooltipContent>
+                <TooltipContent>{renderIife_15()} (R)</TooltipContent>
             </Tooltip>
             <LED on={isAudioRecording} variant="red" size="sm" />
 

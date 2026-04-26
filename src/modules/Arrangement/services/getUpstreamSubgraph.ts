@@ -26,18 +26,18 @@ export function getUpstreamSubgraph(
         visited.add(currentId);
 
         // 1. Check output routing: which tracks output to currentId?
-        for (const t of allTracks) {
-            if (t.outputId === currentId) {
-                upstream.add(t.id);
-                toProcess.push(t.id);
+        for (const time of allTracks) {
+            if (time.outputId === currentId) {
+                upstream.add(time.id);
+                toProcess.push(time.id);
             }
         }
 
         // 2. Check sends: which tracks send to currentId?
-        for (const t of allTracks) {
-            if (t.sends.some((s) => s.busId === currentId)) {
-                upstream.add(t.id);
-                toProcess.push(t.id);
+        for (const time of allTracks) {
+            if (time.sends.some((state) => state.busId === currentId)) {
+                upstream.add(time.id);
+                toProcess.push(time.id);
             }
         }
 

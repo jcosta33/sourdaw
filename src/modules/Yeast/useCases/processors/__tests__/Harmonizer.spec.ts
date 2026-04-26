@@ -5,7 +5,7 @@ import * as subject from '../Harmonizer';
 describe('Harmonizer', () => {
     it('should export Harmonizer', () => {
         expect(subject.Harmonizer).toBeDefined();
-        const t = typeof subject.Harmonizer;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.Harmonizer;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

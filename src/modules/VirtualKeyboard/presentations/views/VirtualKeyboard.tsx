@@ -350,6 +350,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
         <div
             ref={panelRef}
             className="flex h-full w-full select-none flex-col overflow-hidden rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(18,18,20,0.98),rgba(11,11,13,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none"
+            // eslint-disable-next-line jsx-a11y-x/no-noninteractive-tabindex -- application role requires programmatic focus for keyboard input
             tabIndex={0}
             onKeyDown={onKeyDown}
             onKeyUp={onKeyUp}
@@ -467,16 +468,21 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                                 const isPressed = pressedNotes.has(midiNote);
                                 const displayOctave = Math.floor(midiNote / 12) - 1;
 
+                                let keyClasses = 'bg-[oklch(0.94_0_0)] hover:bg-[oklch(0.88_0_0)] border-r-neutral-300';
+                                if (isPressed) {
+                                    keyClasses =
+                                        'bg-[var(--color-accent-lavender)]/50 border-r-[var(--color-accent-lavender)]/40';
+                                } else if (isCurrentOctaveStart) {
+                                    keyClasses =
+                                        'bg-[oklch(0.97_0.005_260)] hover:bg-[oklch(0.91_0.01_260)] border-r-neutral-300';
+                                }
+
                                 return (
                                     <div
                                         key={whiteIdx}
                                         className={cn(
                                             'relative shrink-0 border-r flex flex-col justify-end items-center pb-1 cursor-pointer',
-                                            isPressed
-                                                ? 'bg-[var(--color-accent-lavender)]/50 border-r-[var(--color-accent-lavender)]/40'
-                                                : isCurrentOctaveStart
-                                                  ? 'bg-[oklch(0.97_0.005_260)] hover:bg-[oklch(0.91_0.01_260)] border-r-neutral-300'
-                                                  : 'bg-[oklch(0.94_0_0)] hover:bg-[oklch(0.88_0_0)] border-r-neutral-300'
+                                            keyClasses
                                         )}
                                         style={{
                                             width: KEY_W,

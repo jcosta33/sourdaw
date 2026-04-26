@@ -44,8 +44,8 @@ export function createDawApi(): Record<string, unknown> {
             notifyUser(message);
         },
         executeAction: async (action: { type: string; payload?: unknown }) => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            await executeAppAction(action as any, { source: 'ai' });
+            type AppAction = Parameters<typeof executeAppAction>[0];
+            await executeAppAction(action as AppAction, { source: 'ai' });
         },
     };
 }

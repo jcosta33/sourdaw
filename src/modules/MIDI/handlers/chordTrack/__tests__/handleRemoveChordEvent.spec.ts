@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { removeChordEvent } from '../../../useCases/chordTrack/removeChordEvent';
 import { handleRemoveChordEvent } from '../handleRemoveChordEvent';
 
 vi.mock('../../../useCases/chordTrack/removeChordEvent', () => ({
     removeChordEvent: vi.fn(),
 }));
-
-import { removeChordEvent } from '../../../useCases/chordTrack/removeChordEvent';
 
 describe('handleRemoveChordEvent', () => {
     beforeEach(() => {
@@ -14,7 +13,7 @@ describe('handleRemoveChordEvent', () => {
     });
 
     it('forwards event id', () => {
-        handleRemoveChordEvent.execute({ type: 'removeChordEvent', payload: { eventId: 'e1' } });
+        void handleRemoveChordEvent.execute({ type: 'removeChordEvent', payload: { eventId: 'e1' } });
 
         expect(removeChordEvent).toHaveBeenCalledWith('e1');
     });

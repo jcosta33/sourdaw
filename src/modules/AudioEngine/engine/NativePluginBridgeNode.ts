@@ -20,6 +20,7 @@ export type NativePluginBridgeResult = {
     destroy: () => void;
 };
 
+// eslint-disable-next-line @typescript-eslint/require-await -- async API contract; callers use .then(); will await node initialization once native bridge handshake is implemented
 export async function createNativePluginBridgeNode(
     ctx: AudioContext,
     instanceId: string,
@@ -39,8 +40,10 @@ export async function createNativePluginBridgeNode(
     // Backpressure: only one IPC round-trip in flight at a time.
     let pendingBlock = false;
 
+    type WorkletMessage = { type: string; audio?: ArrayBuffer };
+
     // Relay audio between worklet and Rust
-    node.port.onmessage = async (event: MessageEvent) => {
+    node.port.onmessage = async (event: MessageEvent<WorkletMessage>) => {
         if (event.data.type === 'process' && isTauri()) {
             if (pendingBlock) {
                 return;
@@ -82,7 +85,9 @@ export async function createNativePluginBridgeNode(
         destroy() {
             try {
                 node.disconnect();
-            } catch {}
+            } catch {
+                // ignore
+            }
             node.port.close();
         },
     };

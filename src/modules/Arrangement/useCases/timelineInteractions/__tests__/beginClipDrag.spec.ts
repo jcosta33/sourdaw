@@ -2,12 +2,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { beginClipDrag } from '../beginClipDrag';
 
-const mockHitTestClip = vi.fn();
+const mockHitTestClip = vi.fn<(...args: unknown[]) => { clipId: string; trackId: string } | null>();
 vi.mock('../hitTestClip/hitTestClip', () => ({
-    hitTestClip: (...args: any[]) => mockHitTestClip(...args),
+    hitTestClip: (...args: unknown[]) => mockHitTestClip(...args),
 }));
 
-let mockTimelineViewValue: any = null;
+let mockTimelineViewValue: { pixelsPerBeat: number; scrollX: number; scrollY: number } | null = null;
 vi.mock('../../../stores/timelineViewStore', () => ({
     timelineViewStore: {
         get value() {
@@ -16,7 +16,10 @@ vi.mock('../../../stores/timelineViewStore', () => ({
     },
 }));
 
-let mockTrackValue: any = null;
+let mockTrackValue: {
+    tracks: { id: string; clips: { id: string; startBeat: number; endBeat: number }[] }[];
+    selectedTrackId: string | null;
+} | null = null;
 vi.mock('../../../stores/trackStore', () => ({
     trackStore: {
         get value() {

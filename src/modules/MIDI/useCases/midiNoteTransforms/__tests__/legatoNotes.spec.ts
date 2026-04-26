@@ -3,13 +3,15 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { midiStore } from '../../../stores/midiStore';
 import { legatoNotes } from '../legatoNotes';
 
-const note = (id: string, pitch: number, startBeat: number, duration: number) => ({
-    id,
-    pitch,
-    startBeat,
-    duration,
-    velocity: 100,
-});
+function note(id: string, pitch: number, startBeat: number, duration: number) {
+    return {
+        id,
+        pitch,
+        startBeat,
+        duration,
+        velocity: 100,
+    };
+}
 
 describe('legatoNotes', () => {
     beforeEach(() => {
@@ -29,7 +31,7 @@ describe('legatoNotes', () => {
     it('should extend note to next note on same pitch', () => {
         legatoNotes('clip1', ['a']);
         const notes = midiStore.value?.notesByClipId.clip1;
-        const noteA = notes?.find((n) => n.id === 'a');
+        const noteA = notes?.find((node) => node.id === 'a');
         expect(noteA?.duration).toBe(2);
     });
 
@@ -37,7 +39,7 @@ describe('legatoNotes', () => {
         // Remove b, or select a and c.
         legatoNotes('clip1', ['a', 'c']);
         const notes = midiStore.value?.notesByClipId.clip1;
-        const noteA = notes?.find((n) => n.id === 'a');
+        const _noteA = notes?.find((node) => node.id === 'a');
         // It finds 'b' even if not in selection if b is on same pitch.
         // Wait, the logic finds ANY note in the clip for same-pitch, but fallback only selection.
         // Let's test fallback.
@@ -49,13 +51,13 @@ describe('legatoNotes', () => {
             pitchBendByClipId: {},
         });
         legatoNotes('clip1', ['a', 'c']);
-        const noteA2 = midiStore.value?.notesByClipId.clip1?.find((n) => n.id === 'a');
+        const noteA2 = midiStore.value?.notesByClipId.clip1?.find((node) => node.id === 'a');
         expect(noteA2?.duration).toBe(4);
     });
 
     it('should not change last note', () => {
         legatoNotes('clip1', ['c']);
-        const noteC = midiStore.value?.notesByClipId.clip1?.find((n) => n.id === 'c');
+        const noteC = midiStore.value?.notesByClipId.clip1?.find((node) => node.id === 'c');
         expect(noteC?.duration).toBe(0.5);
     });
 });

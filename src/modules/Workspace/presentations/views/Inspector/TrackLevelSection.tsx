@@ -15,6 +15,17 @@ type TrackLevelSectionProps = {
 };
 
 export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactElement => {
+    const renderIife_20 = () => {
+        const param = track.pan;
+        if (param === 0) {
+            return 'C';
+        }
+        if (param > 0) {
+            return `R${param}`;
+        }
+        return `L${Math.abs(param)}`;
+    };
+
     return (
         <div>
             <DawHeaderBand compact className="mb-2 rounded-sm" title="Level" />
@@ -38,9 +49,9 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                         <div className="w-full px-1 flex items-center justify-center">
                             <Slider
                                 value={[track.gain * 100]}
-                                onValueChange={([v]) => {
-                                    if (v !== undefined) {
-                                        setTrackGain(track.id, v / 100);
+                                onValueChange={([value]) => {
+                                    if (value !== undefined) {
+                                        setTrackGain(track.id, value / 100);
                                     }
                                 }}
                                 max={100}
@@ -55,12 +66,7 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                     <div className="flex flex-row items-center w-full min-w-0 gap-3">
                         <div className="flex flex-col flex-1 min-w-0 overflow-hidden justify-center gap-1.5">
                             <label className="text-[10px] font-medium text-foreground truncate w-full">Pan</label>
-                            <span className="text-[10px] font-mono text-muted-foreground">
-                                {(() => {
-                                    const p = track.pan;
-                                    return p === 0 ? 'C' : p > 0 ? `R${p}` : `L${Math.abs(p)}`;
-                                })()}
-                            </span>
+                            <span className="text-[10px] font-mono text-muted-foreground">{renderIife_20()}</span>
                             <div className="flex items-center gap-1.5 mt-0.5">
                                 <MidiLearnButton targetType="trackPan" trackId={track.id} />
                             </div>
@@ -68,8 +74,8 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                         <div className="shrink-0 flex items-center justify-center">
                             <RotaryKnob
                                 value={track.pan}
-                                onChange={(v) => {
-                                    setTrackPan(track.id, v);
+                                onChange={(value) => {
+                                    setTrackPan(track.id, value);
                                 }}
                                 min={-50}
                                 max={50}

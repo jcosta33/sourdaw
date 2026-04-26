@@ -19,7 +19,7 @@ export function rippleInsertClip({ trackId, insertDuration, plan }: RippleInsert
         return;
     }
 
-    const shiftSet = new Set(plan.shiftedClips.map((s) => s.clipId));
+    const shiftSet = new Set(plan.shiftedClips.map((state1) => state1.clipId));
 
     setTrackState({
         ...state,
@@ -53,7 +53,7 @@ export function undoRippleInsertClip({ trackId, plan }: Omit<RippleInsertClipInp
         return;
     }
 
-    const shiftMap = new Map(plan.shiftedClips.map((s) => [s.clipId, s]));
+    const shiftMap = new Map(plan.shiftedClips.map((state1) => [state1.clipId, state1]));
 
     setTrackState({
         ...state,

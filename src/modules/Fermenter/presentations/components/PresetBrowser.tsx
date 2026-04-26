@@ -99,36 +99,37 @@ export const PresetBrowser = ({
                     className="w-full h-6 rounded border border-border/40 bg-surface-inset pl-7 pr-2 text-[9px] text-foreground outline-none focus:border-[var(--color-accent-lavender)]"
                 />
             </div>
-
             {/* Category pills */}
             <div className="flex flex-wrap gap-0.5 px-2 py-1 shrink-0 border-b border-border/20">
-                {CATEGORIES.map((cat) => (
-                    <button
-                        key={cat.id}
-                        type="button"
-                        className={`px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${
-                            category === cat.id ? 'text-white' : 'text-muted-foreground/60 hover:text-foreground'
-                        }`}
-                        style={
-                            category === cat.id && cat.color
-                                ? { backgroundColor: cat.color }
-                                : category === cat.id
-                                  ? { backgroundColor: 'var(--color-accent-lavender)' }
-                                  : undefined
-                        }
-                        onClick={() => {
-                            setCategory(cat.id);
-                            setSelectedTag(null);
-                        }}
-                    >
-                        {cat.id === 'user' ? <Star className="size-2.5 inline mr-0.5" /> : null}
-                        {cat.label}
-                    </button>
-                ))}
-            </div>
+                {CATEGORIES.map((cat) => {
+                    let pillStyle: React.CSSProperties | undefined = undefined;
+                    if (category === cat.id && cat.color) {
+                        pillStyle = { backgroundColor: cat.color };
+                    } else if (category === cat.id) {
+                        pillStyle = { backgroundColor: 'var(--color-accent-lavender)' };
+                    }
 
+                    return (
+                        <button
+                            key={cat.id}
+                            type="button"
+                            className={`px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${
+                                category === cat.id ? 'text-white' : 'text-muted-foreground/60 hover:text-foreground'
+                            }`}
+                            style={pillStyle}
+                            onClick={() => {
+                                setCategory(cat.id);
+                                setSelectedTag(null);
+                            }}
+                        >
+                            {cat.id === 'user' ? <Star className="size-2.5 inline mr-0.5" /> : null}
+                            {cat.label}
+                        </button>
+                    );
+                })}
+            </div>
             {/* Tag filter (contextual) */}
-            {category !== 'user' ? (
+            {category !== 'user' && (
                 <div className="flex flex-wrap gap-0.5 px-2 py-0.5 shrink-0">
                     {TAGS.filter((tag) => {
                         // Only show tags that have matching presets in current category
@@ -150,8 +151,7 @@ export const PresetBrowser = ({
                             </button>
                         ))}
                 </div>
-            ) : null}
-
+            )}
             {/* Preset list */}
             <div className="flex-1 overflow-y-auto px-1 py-0.5">
                 {filtered.length === 0 ? (
@@ -174,7 +174,6 @@ export const PresetBrowser = ({
                     ))
                 )}
             </div>
-
             <div className="px-2 py-0.5 border-t border-border/20 shrink-0">
                 <span className="text-[7px] text-muted-foreground/40">{filtered.length} presets</span>
             </div>

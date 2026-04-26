@@ -9,22 +9,22 @@ import { TrackVcaSection } from '../TrackVcaSection';
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
-const mockAssignToVca = vi.fn();
+const mockAssignToVca = vi.fn<(...args: unknown[]) => void>();
 vi.mock('#/modules/Arrangement/useCases/vca/assignToVca', () => ({
     assignToVca: (...args: unknown[]) => mockAssignToVca(...args),
 }));
 
-const mockRemoveFromVca = vi.fn();
+const mockRemoveFromVca = vi.fn<(...args: unknown[]) => void>();
 vi.mock('#/modules/Arrangement/useCases/vca/removeFromVca', () => ({
     removeFromVca: (...args: unknown[]) => mockRemoveFromVca(...args),
 }));
 
-const mockGetVcaGroups = vi.fn(() => []);
+const mockGetVcaGroups = vi.fn<() => Array<{ id: string; name: string; trackIds: string[] }>>(() => []);
 vi.mock('#/modules/Arrangement/useCases/vca/getVcaGroups', () => ({
     getVcaGroups: () => mockGetVcaGroups(),
 }));
 
-const mockCreateVcaGroup = vi.fn();
+const mockCreateVcaGroup = vi.fn<(...args: unknown[]) => void>();
 vi.mock('#/modules/Arrangement/useCases/vca/createVcaGroup', () => ({
     createVcaGroup: (...args: unknown[]) => mockCreateVcaGroup(...args),
 }));
@@ -115,7 +115,7 @@ describe('TrackVcaSection', () => {
         // Override the global useStore mock to route through the real
         // vcaGroupStore so per-test group fixtures actually show up.
         vcaGroupStore.set({ groups: [] });
-        vi.mocked(useStore).mockImplementation((store: any, defaultValue: any) => {
+        vi.mocked(useStore).mockImplementation((store: unknown, defaultValue: unknown) => {
             if (store === vcaGroupStore) {
                 return vcaGroupStore.value ?? defaultValue;
             }

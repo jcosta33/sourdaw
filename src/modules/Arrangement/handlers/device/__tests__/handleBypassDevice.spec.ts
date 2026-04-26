@@ -16,7 +16,7 @@ describe('handleBypassDevice', () => {
     });
 
     it('executes bypassDevice with the provided payload', () => {
-        handleBypassDevice.execute({
+        void handleBypassDevice.execute({
             type: 'bypassDevice',
             payload: { deviceId: 'd1', bypassed: true },
         });

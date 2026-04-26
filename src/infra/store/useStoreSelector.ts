@@ -19,7 +19,9 @@ export function useStoreSelector<TData, TSelected>(
         lastSelection: undefined,
     });
 
+    // eslint-disable-next-line react-hooks/refs -- intentional: update ref synchronously during render to capture latest selector/equalityFn, avoiding stale-closure issues in getSnapshot
     stateRef.current.selector = selector;
+    // eslint-disable-next-line react-hooks/refs -- same as above
     stateRef.current.equalityFn = equalityFn;
 
     const getSnapshot = useCallback(() => {

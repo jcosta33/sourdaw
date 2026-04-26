@@ -4,6 +4,6 @@ import { inject } from '#/infra/di/inject';
 export const zoomToFit = inject({ eventBus })(
     ({ eventBus }) =>
         function zoomToFit(): void {
-            eventBus.emit('zoom.toFit', undefined);
+            void eventBus.emit('zoom.toFit', undefined);
         }
 );

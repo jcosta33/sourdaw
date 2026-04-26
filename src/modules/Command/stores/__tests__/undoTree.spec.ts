@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { undoTreeStore } from '../undoTree';
+import { createEmptyTree } from '../../models/UndoTree';
+import { type UndoTreeStoreState, undoTreeStore } from '../undoTree';
 
 describe('undoTreeStore', () => {
     beforeEach(() => {
-        undoTreeStore.set({ tree: { rootId: 'r1', currentNodeId: 'r1', nodes: {} } as any, enabled: false });
+        undoTreeStore.set({ tree: createEmptyTree(), enabled: false });
     });
 
     it('should have initial state', () => {
@@ -13,7 +14,7 @@ describe('undoTreeStore', () => {
     });
 
     it('should update state', () => {
-        undoTreeStore.update((s) => ({ ...s!, enabled: true }));
+        undoTreeStore.update((state: UndoTreeStoreState | null) => ({ ...state!, enabled: true }));
         expect(undoTreeStore.value?.enabled).toBe(true);
     });
 });

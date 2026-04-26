@@ -5,7 +5,7 @@ import * as subject from '../createAudioClip';
 describe('createAudioClip', () => {
     it('should export createAudioClip', () => {
         expect(subject.createAudioClip).toBeDefined();
-        const t = typeof subject.createAudioClip;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.createAudioClip;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

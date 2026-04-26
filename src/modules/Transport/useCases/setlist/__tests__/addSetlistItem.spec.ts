@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { SETLIST_ITEM_COLORS } from '../../../repositories/setlistItemIdCounter';
 import { type SetlistState } from '../../../stores/setlistStore';
 import { addSetlistItem } from '../addSetlistItem';
 
 const mockSetlistStore = vi.hoisted(() => ({
-    value: null as any,
-    set: vi.fn(),
+    value: null as SetlistState | null,
+    set: vi.fn<[state: SetlistState | ((prev: SetlistState) => SetlistState)], void>(),
 }));
 
 vi.mock('../../../stores/setlistStore', () => ({
@@ -40,9 +39,14 @@ describe('addSetlistItem', () => {
         addSetlistItem('Song', 60);
         expect(mockSetlistStore.set).toHaveBeenCalledWith(
             expect.objectContaining({
-                items: expect.arrayContaining([expect.objectContaining({ id: 'new-id', name: 'Song' })]),
+                items: expect.arrayContaining([
+                    expect.objectContaining({
+                        id: 'new-id',
+                        name: 'Song',
+                    }) as unknown as import('../../../stores/setlistStore').SetlistItem,
+                ]) as unknown as import('../../../stores/setlistStore').SetlistItem[],
                 totalDuration: 60,
-            })
+            }) as unknown as SetlistState
         );
     });
 });

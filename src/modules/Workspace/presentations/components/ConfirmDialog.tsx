@@ -51,10 +51,10 @@ export const ConfirmDialog = (): ReactElement | null => {
             role="dialog"
             aria-modal="true"
             aria-labelledby="confirm-dialog-title"
-            onKeyDown={(e) => {
-                if (e.key === 'Escape') {
+            onKeyDown={(event) => {
+                if (event.key === 'Escape') {
                     handleCancel();
-                } else if (e.key === 'Enter') {
+                } else if (event.key === 'Enter') {
                     handleConfirm();
                 }
             }}

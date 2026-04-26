@@ -76,22 +76,22 @@ export const renderDiffSingerPhrase = inject({
             const { tokenIds, wordDiv, wordIsSp } = phonemize({ lyrics, phonemeToId });
 
             // Build MIDI tensors
-            const totalDurationSec = notes.reduce((acc, n) => Math.max(acc, n.startSec + n.durationSec), 0);
+            const totalDurationSec = notes.reduce((acc, node) => Math.max(acc, node.startSec + node.durationSec), 0);
             const durationFrames = Math.ceil(totalDurationSec * FRAMES_PER_SECOND);
 
-            const noteMidiArr = new Float32Array(notes.map((n) => n.pitch));
+            const noteMidiArr = new Float32Array(notes.map((node) => node.pitch));
             const noteDurArr = BigInt64Array.from(
-                notes.map((n) => BigInt(Math.round(n.durationSec * FRAMES_PER_SECOND)))
+                notes.map((node) => BigInt(Math.round(node.durationSec * FRAMES_PER_SECOND)))
             );
 
             // Derive word durations from actual note durations.
             // SP word-units get 1 frame (minimal separator). Content words are mapped to
             // notes in order; if there are more words than notes, surplus words share the
             // last note's duration evenly.
-            const noteFrames = notes.map((n) => Math.max(1, Math.round(n.durationSec * FRAMES_PER_SECOND)));
+            const noteFrames = notes.map((node) => Math.max(1, Math.round(node.durationSec * FRAMES_PER_SECOND)));
             let noteIdx = 0;
-            const wordDur = wordDiv.map((_, i) => {
-                if (wordIsSp[i]) {
+            const wordDur = wordDiv.map((_, index) => {
+                if (wordIsSp[index]) {
                     return 1;
                 }
                 const frames = noteFrames[noteIdx] ?? noteFrames[noteFrames.length - 1] ?? 1;
@@ -103,10 +103,10 @@ export const renderDiffSingerPhrase = inject({
             // different note sequences with the same pitches don't collide.
             const inputData = new TextEncoder().encode(
                 `${lyrics}:${voicebankId}:${JSON.stringify(
-                    notes.map((n) => ({
-                        p: n.pitch,
-                        s: Math.round(n.startSec * 1000),
-                        d: Math.round(n.durationSec * 1000),
+                    notes.map((node) => ({
+                        p: node.pitch,
+                        s: Math.round(node.startSec * 1000),
+                        d: Math.round(node.durationSec * 1000),
                     }))
                 )}:${String(depth)}`
             ).buffer;

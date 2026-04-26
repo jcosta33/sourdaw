@@ -2,12 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { setDeviceParameter } from '../setDeviceParameter';
 
+import type { Track } from '#/modules/Arrangement/models/Track';
+import type { TrackState } from '../../../../repositories/track/getTrackState';
+
 const mocks = vi.hoisted(() => ({
-    getTrackState: vi.fn(),
-    updateTrack: vi.fn(),
+    getTrackState: vi.fn<typeof import('../../../../repositories/track/getTrackState').getTrackState>(),
+    updateTrack: vi.fn<typeof import('../../../../repositories/track/updateTrack').updateTrack>(),
     transportStoreValue: { isPlaying: false } as unknown,
-    updateDeviceParam: vi.fn(),
-    recordAutomationValue: vi.fn(),
+    updateDeviceParam: vi.fn<typeof import('#/modules/AudioEngine/useCases').updateDeviceParam>(),
+    recordAutomationValue: vi.fn<typeof import('#/modules/Automation/useCases').recordAutomationValue>(),
 }));
 
 vi.mock('../../../../repositories/track/getTrackState', () => ({
@@ -28,12 +31,12 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     updateDeviceParam: mocks.updateDeviceParam,
 }));
 
 vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+    ...(await importOriginal<typeof import('#/modules/Automation/useCases')>()),
     recordAutomationValue: mocks.recordAutomationValue,
 }));
 
@@ -46,22 +49,22 @@ describe('setDeviceParameter', () => {
     it('updates parameter in store and engine', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ id: 't1', devices: [{ id: 'd1', parameterValues: { gain: 0.1 } }] }],
-        });
+        } as unknown as TrackState);
 
         setDeviceParameter('d1', 'gain', 0.5);
 
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'gain', 0.5);
         expect(mocks.updateTrack).toHaveBeenCalledWith('t1', expect.any(Function));
 
-        const updater = mocks.updateTrack.mock.calls[0][1];
-        const result = updater({ devices: [{ id: 'd1', parameterValues: { gain: 0.1 } }] });
-        expect(result.devices[0].parameterValues.gain).toBe(0.5);
+        const updater = mocks.updateTrack.mock.calls[0]![1];
+        const result = updater({ devices: [{ id: 'd1', parameterValues: { gain: 0.1 } }] } as unknown as Track);
+        expect(result.devices[0]!.parameterValues.gain).toBe(0.5);
     });
 
     it('records automation if playing and recording mode', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ id: 't1', automationMode: 'write', devices: [{ id: 'd1' }] }],
-        });
+        } as unknown as TrackState);
         mocks.transportStoreValue = { isPlaying: true, playheadPosition: 8 };
 
         setDeviceParameter('d1', 'cutoff', 1000);

@@ -34,7 +34,7 @@ export const createGrandBouleTrack = inject({ eventBus })(
 
             addDeviceToStrip(track.id, deviceId, 'grand-boule');
 
-            eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
+            void eventBus.emit('track.added', { trackId: track.id, name: track.name, kind: track.kind });
 
             return track.id;
         }

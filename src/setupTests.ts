@@ -183,6 +183,21 @@ globalThis.OfflineAudioContext = class OfflineAudioContextMock {
     }
 } as unknown as typeof OfflineAudioContext;
 
+// AudioWorkletNode — factories and device code use `node instanceof AudioWorkletNode`
+// to gate AudioParam scheduling. jsdom omits the class entirely, so the instanceof
+// expression throws `ReferenceError: AudioWorkletNode is not defined`. Provide a
+// minimal stub so tests that don't rely on real-worklet behaviour can load the code.
+if (typeof globalThis.AudioWorkletNode === 'undefined') {
+    globalThis.AudioWorkletNode = class AudioWorkletNodeStub {
+        port = { postMessage: (): void => {}, onmessage: null };
+        parameters = new Map<string, AudioParam>();
+        connect(): AudioNode {
+            return this as unknown as AudioNode;
+        }
+        disconnect(): void {}
+    } as unknown as typeof AudioWorkletNode;
+}
+
 // Global mocks for Radix UI / Tooltip components to avoid "must be used within TooltipProvider" errors
 vi.mock('#/components/ui/tooltip', () => ({
     Tooltip: ({ children }: any) => children,

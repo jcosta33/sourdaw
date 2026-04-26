@@ -23,7 +23,7 @@ describe('handleAddSidechainRoute', () => {
     it('bails if the target track cannot be found', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
 
-        handleAddSidechainRoute.execute({
+        void handleAddSidechainRoute.execute({
             type: 'addSidechainRoute',
             payload: { sourceTrackId: 't1', targetTrackId: 't2' },
         });
@@ -36,7 +36,7 @@ describe('handleAddSidechainRoute', () => {
             tracks: [{ id: 't2', devices: [{ id: 'd1', type: 'EQ' }] }],
         });
 
-        handleAddSidechainRoute.execute({
+        void handleAddSidechainRoute.execute({
             type: 'addSidechainRoute',
             payload: { sourceTrackId: 't1', targetTrackId: 't2' },
         });
@@ -49,7 +49,7 @@ describe('handleAddSidechainRoute', () => {
             tracks: [{ id: 't2', devices: [{ id: 'd1', type: 'Compressor (Sidechain)' }] }],
         });
 
-        handleAddSidechainRoute.execute({
+        void handleAddSidechainRoute.execute({
             type: 'addSidechainRoute',
             payload: { sourceTrackId: 't1', targetTrackId: 't2' },
         });

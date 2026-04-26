@@ -10,15 +10,15 @@ export function createPhaser(ctx: BaseAudioContext): OfflineDeviceNode {
     wet.gain.value = 0.5;
     const stages = 4;
     const filters: BiquadFilterNode[] = [];
-    for (let i = 0; i < stages; i++) {
-        const f = ctx.createBiquadFilter();
-        f.type = 'allpass';
-        f.frequency.value = 1000 * (i + 1);
-        f.Q.value = 0.5;
-        filters.push(f);
+    for (let index = 0; index < stages; index++) {
+        const freq = ctx.createBiquadFilter();
+        freq.type = 'allpass';
+        freq.frequency.value = 1000 * (index + 1);
+        freq.Q.value = 0.5;
+        filters.push(freq);
     }
-    for (let i = 0; i < filters.length - 1; i++) {
-        filters[i]!.connect(filters[i + 1]!);
+    for (let index = 0; index < filters.length - 1; index++) {
+        filters[index]!.connect(filters[index + 1]!);
     }
     const lfo = ctx.createOscillator();
     lfo.frequency.value = 0.5;
@@ -31,8 +31,8 @@ export function createPhaser(ctx: BaseAudioContext): OfflineDeviceNode {
     splitter.connect(dry);
     splitter.connect(filters[0]!);
     lfo.connect(lfoGain);
-    for (const f of filters) {
-        lfoGain.connect(f.frequency as unknown as AudioNode);
+    for (const freq of filters) {
+        lfoGain.connect(freq.frequency);
     }
     const lastFilter = filters[filters.length - 1]!;
     lastFilter.connect(feedback);

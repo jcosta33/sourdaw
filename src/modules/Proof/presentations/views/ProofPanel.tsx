@@ -809,6 +809,13 @@ const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string })
     const delta = state.integratedLufs > -100 ? state.integratedLufs - targetLufs : 0;
     const { fftData, fftVersion, sampleRate, fftSize } = useProofAnalyser();
 
+    let platformNormalizationTarget = ` ${patch.target}`;
+    if (patch.target === 'streaming') {
+        platformNormalizationTarget = ' Spotify, Apple Music, and YouTube';
+    } else if (patch.target === 'broadcast') {
+        platformNormalizationTarget = ' broadcast television';
+    }
+
     return (
         <div className="flex-1 flex min-h-0 overflow-hidden">
             {/* Left: Advanced metering dashboard */}
@@ -864,18 +871,13 @@ const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string })
                 </div>
 
                 {/* Platform normalization info */}
-                {delta > 1 ? (
+                {delta > 1 && (
                     <div className="px-3 py-2 rounded bg-[var(--color-accent-peach)]/10 border border-[var(--color-accent-peach)]/20 text-[9px] text-[var(--color-accent-peach)]">
-                        Your master at {formatLufs(state.integratedLufs)} LUFS will be turned down by {delta.toFixed(1)}{' '}
+                        Your master at {formatLufs(state.integratedLufs)}LUFS will be turned down by {delta.toFixed(1)}{' '}
                         dB on
-                        {patch.target === 'streaming'
-                            ? ' Spotify, Apple Music, and YouTube'
-                            : patch.target === 'broadcast'
-                              ? ' broadcast television'
-                              : ` ${patch.target}`}
-                        . Consider targeting {targetLufs} LUFS.
+                        {platformNormalizationTarget}. Consider targeting {targetLufs}LUFS.
                     </div>
-                ) : null}
+                )}
 
                 {/* Reset integrated button */}
                 <button
@@ -886,7 +888,6 @@ const Level5Lab = ({ state, deviceId }: { state: ProofState; deviceId: string })
                     Reset Integrated LUFS + True Peak
                 </button>
             </div>
-
             {/* Right: Input vs Output comparison */}
             <div className="w-[160px] shrink-0 border-l border-border/20 flex flex-col gap-2 p-2 justify-center">
                 <div className="text-center">

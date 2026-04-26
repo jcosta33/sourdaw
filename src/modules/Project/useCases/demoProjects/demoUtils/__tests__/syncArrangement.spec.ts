@@ -5,7 +5,7 @@ import * as subject from '../syncArrangement';
 describe('syncArrangement', () => {
     it('should export syncArrangement', () => {
         expect(subject.syncArrangement).toBeDefined();
-        const t = typeof subject.syncArrangement;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.syncArrangement;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

@@ -29,20 +29,22 @@ vi.mock('../../../stores/controlRoom', () => ({
     },
 }));
 
-const defaultState = () => ({
-    monitors: [],
-    activeMonitorId: 'm1',
-    monitorVolume: -6,
-    dimLevel: -20,
-    dimActive: false,
-    monoActive: false,
-    referenceActive: false,
-    talkbackActive: false,
-    talkbackLevel: -12,
-    cueMixes: [],
-    activeCueId: null,
-    muted: false,
-});
+function defaultState() {
+    return {
+        monitors: [],
+        activeMonitorId: 'm1',
+        monitorVolume: -6,
+        dimLevel: -20,
+        dimActive: false,
+        monoActive: false,
+        referenceActive: false,
+        talkbackActive: false,
+        talkbackLevel: -12,
+        cueMixes: [],
+        activeCueId: null,
+        muted: false,
+    };
+}
 
 describe('setMonitorVolume', () => {
     beforeEach(() => {

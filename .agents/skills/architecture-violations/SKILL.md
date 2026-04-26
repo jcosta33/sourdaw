@@ -242,8 +242,8 @@ export { removeTrack } from './removeTrack';
 export { getArrangementHandlers } from './getArrangementHandlers';
 
 // FORBIDDEN inside useCases/index.ts:
-export type { SomeDto } from './getThing';     // use-case types do not cross modules
-export { Track } from '../models/Track';       // models/ is private; wrong folder
+export type { SomeDto } from './getThing'; // use-case types do not cross modules
+export { Track } from '../models/Track'; // models/ is private; wrong folder
 export { trackStore } from '../stores/trackStore'; // wrong folder — use stores/index.ts
 ```
 
@@ -382,12 +382,12 @@ The rule of thumb: if the type is **defined in this file**, exporting it is fine
 
 Cross-module type consumption goes through the module's contract-folder barrel or it does not happen. The legal type surfaces are:
 
-| Type origin              | Cross-module export rule                                                                                                                           |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `events/` payloads       | **Allowed.** `export type { FooEvent } from './FooEvent'` in `events/index.ts` — the canonical shared type surface.                               |
-| `stores/` value types    | **Allowed.** A `Store<T>` is part of the public contract, so its `T` can be re-exported alongside the store instance from `stores/index.ts`.     |
-| `useCases/` local types  | **Discouraged but legal.** Prefer `ReturnType<typeof fn>` / `Parameters<typeof fn>` or a local shape in the consumer. If a type genuinely must cross, it goes via an `export type { … } from './...'` line on `useCases/index.ts` — never a deep import. |
-| Anything from `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `engine/`, `errors/`, `handlers/` | **Forbidden** — not from any barrel, not laundered through a use case file, not anywhere. |
+| Type origin                                                                                                              | Cross-module export rule                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `events/` payloads                                                                                                       | **Allowed.** `export type { FooEvent } from './FooEvent'` in `events/index.ts` — the canonical shared type surface.                                                                                                                                      |
+| `stores/` value types                                                                                                    | **Allowed.** A `Store<T>` is part of the public contract, so its `T` can be re-exported alongside the store instance from `stores/index.ts`.                                                                                                             |
+| `useCases/` local types                                                                                                  | **Discouraged but legal.** Prefer `ReturnType<typeof fn>` / `Parameters<typeof fn>` or a local shape in the consumer. If a type genuinely must cross, it goes via an `export type { … } from './...'` line on `useCases/index.ts` — never a deep import. |
+| Anything from `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `engine/`, `errors/`, `handlers/` | **Forbidden** — not from any barrel, not laundered through a use case file, not anywhere.                                                                                                                                                                |
 
 If you find yourself wanting to re-export a model type so another module can name it, the answer is always: **define a local type in the consumer**. The duplication is intentional (see `AGENTS.md` model isolation).
 

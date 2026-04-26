@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest';
 
 import { toPublicPatternTemplate, toPromptPreset } from '../helpers';
-import { type PatternTemplateModel } from '../helpers';
+import { type PatternTemplateModel, type PatternTemplateInput } from '../helpers';
 
 describe('aiRuntimeQueries helpers', () => {
     describe('toPublicPatternTemplate', () => {
         it('maps model pattern template to public format', () => {
-            const mockGenerate = () => [{ pitch: 60, startBeat: 0, durationBeats: 1, velocity: 100 }];
+            function mockGenerate() {
+                return [{ pitch: 60, startBeat: 0, durationBeats: 1, velocity: 100 }];
+            }
             const modelTemplate: PatternTemplateModel = {
                 id: 't1',
                 name: 'Test Template',
@@ -28,7 +30,7 @@ describe('aiRuntimeQueries helpers', () => {
             expect(mapped.description).toBe('test description');
             expect(mapped.lengthBeats).toBe(4);
 
-            const notes = mapped.generate({} as any);
+            const notes = mapped.generate({} as PatternTemplateInput);
             expect(notes).toEqual([{ pitch: 60, startBeat: 0, durationBeats: 1, velocity: 100 }]);
         });
     });

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { ClipAudioAiSection } from '../ClipAudioAiSection';
@@ -77,7 +77,7 @@ vi.mock('#/components/ui/slider', () => ({
             step={step}
             className={className}
             aria-label={ariaLabel}
-            onChange={(e) => onValueChange([Number(e.target.value)])}
+            onChange={(event) => onValueChange([Number(event.target.value)])}
         />
     ),
 }));
@@ -85,7 +85,9 @@ vi.mock('#/components/ui/slider', () => ({
 vi.mock('#/components/ui/tooltip', () => ({
     Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     TooltipContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-    TooltipTrigger: ({ children, asChild }: { children: React.ReactNode; asChild?: boolean }) => <>{children}</>,
+    TooltipTrigger: ({ children, asChild: _asChild }: { children: React.ReactNode; asChild?: boolean }) => (
+        <>{children}</>
+    ),
 }));
 
 vi.mock('../../../components/Inspector/ControlHeader', () => ({

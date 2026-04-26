@@ -49,7 +49,7 @@ const renderWithTooltip = (ui: React.ReactElement) => {
 describe('TimelineMinimap', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        global.ResizeObserver = MockResizeObserver as any;
+        global.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
     });
 
     it('should render without crashing', () => {

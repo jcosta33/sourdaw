@@ -16,7 +16,7 @@
  *   → { id, type: 'error', message: string }  (on any failure)
  */
 
-import * as Automerge from '@automerge/automerge';
+import { type Doc, load, loadIncremental, merge, save } from '@automerge/automerge';
 
 const DOC_PREFIX_ROOT = 'root';
 
@@ -39,18 +39,18 @@ function processLoad(bundle: Map<string, Uint8Array>): {
         }
     }
 
-    const docs = new Map<string, Automerge.Doc<AnyDoc>>();
+    const docs = new Map<string, Doc<AnyDoc>>();
     let rootId = DOC_PREFIX_ROOT;
 
     for (const [id, bytes] of baseDocs) {
-        docs.set(id, Automerge.load<AnyDoc>(bytes));
+        docs.set(id, load<AnyDoc>(bytes));
         if (id.startsWith(DOC_PREFIX_ROOT)) {
             rootId = id;
         }
     }
 
-    incrementals.sort((a, b) => {
-        const tA = parseInt(a.key.split(':').pop() ?? '0', 10);
+    incrementals.sort((alpha, b) => {
+        const tA = parseInt(alpha.key.split(':').pop() ?? '0', 10);
         const tB = parseInt(b.key.split(':').pop() ?? '0', 10);
         return tA - tB;
     });
@@ -59,13 +59,13 @@ function processLoad(bundle: Map<string, Uint8Array>): {
         const docId = key.substring(0, key.indexOf(':incremental:'));
         const doc = docs.get(docId);
         if (doc) {
-            docs.set(docId, Automerge.loadIncremental(doc, bytes));
+            docs.set(docId, loadIncremental(doc, bytes));
         }
     }
 
     const compacted: [string, Uint8Array][] = [];
     for (const [id, doc] of docs) {
-        compacted.push([id, Automerge.save(doc)]);
+        compacted.push([id, save(doc)]);
     }
 
     return { compacted, rootId };
@@ -83,19 +83,19 @@ function processMerge(
 } {
     type AnyDoc = Record<string, unknown>;
 
-    const docs = new Map<string, Automerge.Doc<AnyDoc>>();
+    const docs = new Map<string, Doc<AnyDoc>>();
     for (const [id, bytes] of current) {
-        docs.set(id, Automerge.load<AnyDoc>(bytes));
+        docs.set(id, load<AnyDoc>(bytes));
     }
 
     const mergedDocIds: string[] = [];
     const newDocIds: string[] = [];
 
     for (const [id, bytes] of incoming) {
-        const incomingDoc = Automerge.load<AnyDoc>(bytes);
+        const incomingDoc = load<AnyDoc>(bytes);
         const local = docs.get(id);
         if (local) {
-            docs.set(id, Automerge.merge(local, incomingDoc));
+            docs.set(id, merge(local, incomingDoc));
             mergedDocIds.push(id);
         } else {
             docs.set(id, incomingDoc);
@@ -105,7 +105,7 @@ function processMerge(
 
     const compacted: [string, Uint8Array][] = [];
     for (const [id, doc] of docs) {
-        compacted.push([id, Automerge.save(doc)]);
+        compacted.push([id, save(doc)]);
     }
 
     return { compacted, mergedDocIds, newDocIds };
@@ -113,16 +113,20 @@ function processMerge(
 
 // ── Message dispatcher ────────────────────────────────────────────────────────
 
-self.onmessage = ({ data }: MessageEvent): void => {
-    const { id } = data as { id: number };
+type WorkerInMsg =
+    | { id: number; type: 'loadBundle'; bundle: [string, Uint8Array][] }
+    | { id: number; type: 'mergeBundle'; current: [string, Uint8Array][]; incoming: [string, Uint8Array][] };
+
+self.onmessage = ({ data }: MessageEvent<WorkerInMsg>): void => {
+    const { id } = data;
     try {
         if (data.type === 'loadBundle') {
-            const bundle = new Map<string, Uint8Array>(data.bundle as [string, Uint8Array][]);
+            const bundle = new Map<string, Uint8Array>(data.bundle);
             const result = processLoad(bundle);
             self.postMessage({ id, type: 'loaded', compacted: result.compacted, rootId: result.rootId });
         } else if (data.type === 'mergeBundle') {
-            const current = new Map<string, Uint8Array>(data.current as [string, Uint8Array][]);
-            const incoming = new Map<string, Uint8Array>(data.incoming as [string, Uint8Array][]);
+            const current = new Map<string, Uint8Array>(data.current);
+            const incoming = new Map<string, Uint8Array>(data.incoming);
             const result = processMerge(current, incoming);
             self.postMessage({
                 id,

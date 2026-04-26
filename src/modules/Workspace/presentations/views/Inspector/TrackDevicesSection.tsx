@@ -48,17 +48,17 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
     // Snapshot the platform catalog once per render instead of walking it three times
     // (effects / utility / analyzer) and re-querying capabilities twice.
     const platformPlugins = getPlatformPlugins();
-    const effectPlugins = platformPlugins.filter((p) => p.category === 'effect');
-    const utilityPlugins = platformPlugins.filter((p) => p.category === 'utility');
-    const analyzerPlugins = platformPlugins.filter((p) => p.category === 'analyzer');
+    const effectPlugins = platformPlugins.filter((param) => param.category === 'effect');
+    const utilityPlugins = platformPlugins.filter((param) => param.category === 'utility');
+    const analyzerPlugins = platformPlugins.filter((param) => param.category === 'analyzer');
     const platformCapabilities = getPlatformCapabilities();
 
     useEffect(() => {
         if (!showDeviceMenu) {
-            return;
+            return undefined;
         }
-        const handleClick = (e: MouseEvent): void => {
-            if (deviceMenuRef.current && !deviceMenuRef.current.contains(e.target as Node)) {
+        const handleClick = (event: MouseEvent): void => {
+            if (deviceMenuRef.current && !deviceMenuRef.current.contains(event.target as Node)) {
                 setShowDeviceMenu(false);
             }
         };
@@ -210,17 +210,17 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 }
                             }}
                             draggable
-                            onDragStart={(e) => {
-                                e.dataTransfer.setData('text/plain', String(deviceIndex));
-                                e.dataTransfer.effectAllowed = 'move';
+                            onDragStart={(event) => {
+                                event.dataTransfer.setData('text/plain', String(deviceIndex));
+                                event.dataTransfer.effectAllowed = 'move';
                             }}
-                            onDragOver={(e) => {
-                                e.preventDefault();
-                                e.dataTransfer.dropEffect = 'move';
+                            onDragOver={(event) => {
+                                event.preventDefault();
+                                event.dataTransfer.dropEffect = 'move';
                             }}
-                            onDrop={(e) => {
-                                e.preventDefault();
-                                const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                            onDrop={(event) => {
+                                event.preventDefault();
+                                const fromIndex = parseInt(event.dataTransfer.getData('text/plain'), 10);
                                 if (!isNaN(fromIndex) && fromIndex !== deviceIndex) {
                                     reorderDevices(track.id, fromIndex, deviceIndex);
                                 }
@@ -246,8 +246,8 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     className="h-6 w-6"
                                     aria-label={`${device.bypassed ? 'Enable' : 'Bypass'} ${device.name}`}
                                     aria-pressed={device.bypassed}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
+                                    onClick={(event) => {
+                                        event.stopPropagation();
                                         bypassDevice(device.id, !device.bypassed);
                                     }}
                                 >
@@ -263,9 +263,9 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                                 size="icon-xs"
                                                 className="h-6 w-6"
                                                 aria-label={`Open editor for ${device.name}`}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    openPluginGui(device.externalInstanceId!);
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    void openPluginGui(device.externalInstanceId!);
                                                 }}
                                             >
                                                 <LayoutGrid className="size-3 text-primary" />
@@ -279,8 +279,8 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                     size="icon-xs"
                                     className="h-6 w-6"
                                     aria-label={`Remove ${device.name}`}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
+                                    onClick={(event) => {
+                                        event.stopPropagation();
                                         removeDevice(device.id);
                                     }}
                                 >

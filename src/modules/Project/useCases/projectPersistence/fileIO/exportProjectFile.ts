@@ -1,4 +1,10 @@
-import { markerStore, takeLaneStore, trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
+import {
+    adjustmentLayerStore,
+    markerStore,
+    takeLaneStore,
+    trackStore,
+    type TrackStoreState,
+} from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -115,17 +121,18 @@ export async function exportProjectFile(): Promise<void> {
         },
         tempoMap: tempoMapStore.value ?? undefined,
         timeSignatureMap: timeSignatureMapStore.value ?? undefined,
-        markers: (markerStore.value?.markers || []).map((m) => ({
-            id: m.id,
-            beat: m.beat,
-            name: (m as any).name || (m as any).label || 'Untitled',
-            color: m.color,
+        markers: (markerStore.value?.markers || []).map((message) => ({
+            id: message.id,
+            beat: message.beat,
+            name: message.name || (message as { label?: string }).label || 'Untitled',
+            color: message.color,
         })),
         takeLanes: takeLaneStore.value ?? undefined,
         sidechainRoutes: getAllSidechainRoutes(),
         arrangements: arrState.arrangements,
         activeArrangementId: arrState.activeArrangementId,
         audioBuffers: Object.keys(audioBuffers).length > 0 ? audioBuffers : undefined,
+        adjustmentLayers: { layers: adjustmentLayerStore.value?.layers ?? [] },
         history: { checkpoints: [] },
     };
 

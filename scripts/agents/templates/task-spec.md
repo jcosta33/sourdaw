@@ -14,7 +14,7 @@
 ---
 
 > 🔒 **SPEC WRITING SESSION** — This session produces a spec document, not code. You may NOT modify any source files, configuration files, or dependencies. Output: `.agents/specs/{{slug}}.md`.
-> 
+>
 > **PERSONA:** Load `.agents/skills/personas/SKILL.md` and adopt **The Architect** persona.
 
 ---
@@ -137,6 +137,8 @@ Concrete starting points for the next session if this one ends incomplete.
 
 ## Self-review
 
+<self_review>
+
 Stop. A spec that ships with gaps, ambiguities, or unresolved questions will cause a developer to make incorrect assumptions during implementation — and those assumptions compound. Act as a senior engineer who is about to greenlight this spec for implementation and is looking for every reason not to.
 
 > **Hard gate.** The task is not complete until every question below has a written answer directly beneath it. An unanswered question is a skipped check. Incomplete Self-review is an invalid session output. If you cannot point to a specific requirement/section/file for a finding, do not pad the list.
@@ -181,3 +183,5 @@ Stop. A spec that ships with gaps, ambiguities, or unresolved questions will cau
   Answer:
 
 Only when every answer above is written is this task complete.
+
+</self_review>

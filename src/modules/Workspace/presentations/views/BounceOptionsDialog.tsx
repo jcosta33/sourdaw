@@ -88,7 +88,9 @@ export const BounceOptionsDialog = ({
                             <Row gap={3} as="label" className="cursor-pointer group">
                                 <DawCompactCheckbox
                                     checked={options.includeInserts}
-                                    onChange={(e) => setOptions({ ...options, includeInserts: e.target.checked })}
+                                    onChange={(event) =>
+                                        setOptions({ ...options, includeInserts: event.target.checked })
+                                    }
                                 />
                                 <Stack gap={0.5}>
                                     <span className="text-[11px] font-medium text-foreground group-hover:text-primary transition-colors">
@@ -103,7 +105,7 @@ export const BounceOptionsDialog = ({
                             <Row gap={3} as="label" className="cursor-pointer group">
                                 <DawCompactCheckbox
                                     checked={options.includeSends}
-                                    onChange={(e) => setOptions({ ...options, includeSends: e.target.checked })}
+                                    onChange={(event) => setOptions({ ...options, includeSends: event.target.checked })}
                                 />
                                 <Stack gap={0.5}>
                                     <span className="text-[11px] font-medium text-foreground group-hover:text-primary transition-colors">
@@ -118,7 +120,9 @@ export const BounceOptionsDialog = ({
                             <Row gap={3} as="label" className="cursor-pointer group">
                                 <DawCompactCheckbox
                                     checked={options.includeAutomation}
-                                    onChange={(e) => setOptions({ ...options, includeAutomation: e.target.checked })}
+                                    onChange={(event) =>
+                                        setOptions({ ...options, includeAutomation: event.target.checked })
+                                    }
                                 />
                                 <Stack gap={0.5}>
                                     <span className="text-[11px] font-medium text-foreground group-hover:text-primary transition-colors">
@@ -138,7 +142,12 @@ export const BounceOptionsDialog = ({
                             <select
                                 className="w-full bg-surface-inset border border-border/30 rounded px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
                                 value={options.normalization}
-                                onChange={(e) => setOptions({ ...options, normalization: e.target.value as any })}
+                                onChange={(event) => {
+                                    const val = event.target.value;
+                                    if (val === 'off' || val === 'protection' || val === 'full') {
+                                        setOptions({ ...options, normalization: val });
+                                    }
+                                }}
                             >
                                 <option value="off">Off</option>
                                 <option value="protection">Peak Protection</option>
@@ -150,7 +159,12 @@ export const BounceOptionsDialog = ({
                             <select
                                 className="w-full bg-surface-inset border border-border/30 rounded px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
                                 value={options.tailHandling}
-                                onChange={(e) => setOptions({ ...options, tailHandling: e.target.value as any })}
+                                onChange={(event) => {
+                                    const val = event.target.value;
+                                    if (val === 'auto' || val === 'manual' || val === 'off') {
+                                        setOptions({ ...options, tailHandling: val });
+                                    }
+                                }}
                             >
                                 <option value="auto">Auto (Detect)</option>
                                 <option value="manual">Fixed (5s)</option>

@@ -1,6 +1,4 @@
 import { logger } from '#/infra/logger/appLogger';
-import { unregisterLevainDevice } from '#/modules/Levain/useCases';
-import { unregisterProofDevice } from '#/modules/Proof/useCases';
 import { hasSharedArrayBuffer } from '#/utils/capabilities';
 
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
@@ -19,6 +17,9 @@ export type TrackNodeDeps = {
     getSendsForTrack: (tId: string) => SendNode[];
     pendingDevicePromises: Set<Promise<any>>;
     transportSAB?: SharedArrayBuffer;
+    /** Adjustment-layer insert: when non-null for this track, `analyserNode`
+     *  routes to this node instead of the track's default destination. */
+    getAdjustmentBusForTrack?: (trackId: string) => AudioNode | null;
 };
 
 export class TrackNode {
@@ -181,22 +182,29 @@ export class TrackNode {
         this.routeOutput();
     }
 
-    private routeOutput(): void {
-        const { analyserNode, outputId } = this.strip;
+    public getDefaultDestination(): AudioNode {
+        const { outputId } = this.strip;
         const { masterGainNode, getBusGainNode, getTrackGainNode } = this.deps;
+        if (outputId === 'hw_out' || !outputId) {
+            return masterGainNode;
+        }
+        const target = getBusGainNode(outputId) || getTrackGainNode(outputId);
+        return target ?? masterGainNode;
+    }
+
+    public routeOutput(): void {
+        const { analyserNode } = this.strip;
+        const { getAdjustmentBusForTrack } = this.deps;
 
         analyserNode.disconnect();
 
-        if (outputId === 'hw_out' || !outputId) {
-            analyserNode.connect(masterGainNode);
-        } else {
-            const target = getBusGainNode(outputId) || getTrackGainNode(outputId);
-            if (target) {
-                analyserNode.connect(target);
-            } else {
-                analyserNode.connect(masterGainNode);
-            }
+        const adjustmentBus = getAdjustmentBusForTrack?.(this.trackId) ?? null;
+        if (adjustmentBus) {
+            analyserNode.connect(adjustmentBus);
+            return;
         }
+
+        analyserNode.connect(this.getDefaultDestination());
     }
 
     private reconnectSends(): void {
@@ -298,6 +306,20 @@ export class TrackNode {
                 outputChannelCount: [2],
             });
             dn = { deviceId, type: deviceType, nodes: [workletNode], inputNode: workletNode, outputNode: workletNode };
+            dn.controller = {
+                setParam: (name: string, value: number) => {
+                    const param = workletNode.parameters.get(name.replace('sc-comp-', ''));
+                    if (param) {
+                        if (name === 'sc-comp-attack' || name === 'sc-comp-release') {
+                            param.setTargetAtTime(value / 1000, this.deps.context.currentTime, 0.01);
+                        } else {
+                            param.setTargetAtTime(value, this.deps.context.currentTime, 0.01);
+                        }
+                    }
+                },
+                setBypass: (bypassed: boolean) => { dn!.bypassed = bypassed; this.scheduleRebuildChain(); },
+                destroy: () => {}
+            };
         } else if (deviceType === 'external-plugin') {
             // Native plugin bridge: uses SharedArrayBuffer for zero-copy audio transfer
             // between Web Audio and the Rust cpal audio thread.
@@ -311,12 +333,15 @@ export class TrackNode {
             };
 
             const pendingParams: Array<[string, number]> = [];
-            dn.nativeDspControls = {
+            const loadingControls = {
                 setParam: (name: string, value: number) => {
                     pendingParams.push([name, value]);
                 },
                 setBypass: () => {},
+                destroy: () => {}
             };
+            dn.nativeDspControls = loadingControls;
+            dn.controller = loadingControls;
 
             const loadPromise = createNativePluginBridgeNode(
                 context,
@@ -326,17 +351,20 @@ export class TrackNode {
                 .then((result) => {
                     const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
                     if (idx !== -1) {
+                        const controls = {
+                            setParam: (name: string, value: number) =>
+                                result.setParam(parseInt(name, 10) || 0, value),
+                            setBypass: result.setBypass,
+                            destroy: () => result.workletNode.disconnect()
+                        };
                         const bridgeDn: BuiltinDeviceNode = {
                             deviceId,
                             type: deviceType,
                             nodes: [result.workletNode],
                             inputNode: result.workletNode,
                             outputNode: result.workletNode,
-                            nativeDspControls: {
-                                setParam: (name: string, value: number) =>
-                                    result.setParam(parseInt(name, 10) || 0, value),
-                                setBypass: result.setBypass,
-                            },
+                            nativeDspControls: controls,
+                            controller: controls
                         };
                         this.strip.deviceNodes[idx] = bridgeDn;
                         this.scheduleRebuildChain();
@@ -356,6 +384,11 @@ export class TrackNode {
                     inputNode: factoryNode.inputNode,
                     outputNode: factoryNode.outputNode,
                     dispose: factoryNode.dispose,
+                };
+                dn.controller = {
+                    setParam: (name: string, value: number) => applyParams(dn as any, dn.type, { [name]: value }),
+                    setBypass: (bypassed: boolean) => { dn!.bypassed = bypassed; this.scheduleRebuildChain(); },
+                    destroy: () => { if (factoryNode.dispose) factoryNode.dispose(); }
                 };
             } else {
                 const descriptor = findWasmDescriptor(deviceType);
@@ -390,29 +423,15 @@ export class TrackNode {
         if (!dn) {
             return;
         }
-        if (dn.dispose) {
+        
+        if (dn.controller) {
+            dn.controller.destroy?.();
+        } else if (dn.dispose) {
             dn.dispose();
         }
-        if (dn.fermenterControls) {
-            dn.fermenterControls.destroy();
-        }
-        if (dn.toasterControls) {
-            dn.toasterControls.destroy();
-        }
-        if (dn.levainControls) {
-            dn.levainControls.destroy();
-        }
-        if (dn.grandBouleControls) {
-            dn.grandBouleControls.destroy();
-        }
-        if (dn.wamControls) {
-            dn.wamControls.destroy?.();
-        }
-        if (dn.type === 'proof') {
-            unregisterProofDevice(deviceId);
-        }
+        
         for (const n of dn.nodes) {
-            n.disconnect();
+            try { n.disconnect(); } catch {}
         }
         this.strip.deviceNodes = this.strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
         this.rebuildChain();
@@ -420,113 +439,52 @@ export class TrackNode {
 
     public updateParam(deviceId: string, paramId: string, value: number): void {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
-        if (!dn) {
+        if (!dn || !dn.controller) {
             return;
         }
-
-        if (dn.wamControls) {
-            dn.wamControls.setParam(paramId, value);
-            return;
-        }
-
-        if (dn.type === 'builtin-sidechain-compressor') {
-            const worklet = dn.nodes[0];
-            if (!(worklet instanceof AudioWorkletNode)) {
-                return;
-            }
-            const param = worklet.parameters.get(paramId.replace('sc-comp-', ''));
-            if (param) {
-                if (paramId === 'sc-comp-attack' || paramId === 'sc-comp-release') {
-                    param.setTargetAtTime(value / 1000, this.deps.context.currentTime, 0.01);
-                } else {
-                    param.setTargetAtTime(value, this.deps.context.currentTime, 0.01);
-                }
-            }
-            return;
-        }
-
-        if (dn.fermenterControls) {
-            dn.fermenterControls.setParam(paramId, value);
-            return;
-        }
-
-        if (dn.toasterControls) {
-            dn.toasterControls.setParam(paramId, value);
-            return;
-        }
-
-        if (dn.levainControls) {
-            dn.levainControls.setParam(paramId, value);
-            return;
-        }
-
-        if (dn.nativeDspControls) {
-            dn.nativeDspControls.setParam(paramId, value);
-        } else if (DEVICE_FACTORIES[dn.type]) {
-            applyParams(dn as any, dn.type, { [paramId]: value });
-        }
+        dn.controller.setParam(paramId, value);
     }
 
     public updatePatch(deviceId: string, patch: Record<string, unknown>): void {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
-        if (!dn) {
+        if (!dn || !dn.controller) {
             return;
         }
-
-        if (dn.fermenterControls) {
-            dn.fermenterControls.setPatch?.(patch);
+        if (dn.controller.setPatch) {
+            dn.controller.setPatch(patch);
         }
     }
 
     public scheduleParam(deviceId: string, paramId: string, value: number, time: number): void {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
-        if (!dn) {
+        if (!dn || !dn.controller) {
             return;
         }
-        if (dn.wamControls) {
-            dn.wamControls.scheduleParam(paramId, value, time);
-        } else if (dn.type.startsWith('faust-')) {
-            const worklet = dn.nodes[0];
-            if (worklet && worklet instanceof AudioWorkletNode) {
-                let targetParam: AudioParam | null = null;
-                const exact = worklet.parameters.get(paramId);
-                if (exact) {
-                    targetParam = exact;
-                } else {
-                    for (const [key, param] of worklet.parameters) {
-                        if (key.endsWith(`/${paramId}`)) {
-                            targetParam = param;
-                            break;
-                        }
-                    }
-                }
-                if (targetParam) {
-                    targetParam.setValueAtTime(value, time);
-                }
-            }
-        } else if (dn.fermenterControls) {
-            const sampleFrame = Math.round(time * this.deps.context.sampleRate);
-            dn.fermenterControls.setParam(paramId, value, sampleFrame);
+
+        if (dn.controller.scheduleParam) {
+            dn.controller.scheduleParam(paramId, value, time);
+            return;
         }
+
+        // MessagePort-based devices (Fermenter, Toaster, Grand Boule, etc.) schedule
+        // via their internal sample-frame queue — setParam's third arg is that hint.
+        const sampleFrame = Math.round(time * this.deps.context.sampleRate);
+        dn.controller.setParam(paramId, value, sampleFrame);
+    }
+
+    public scheduleDeviceKeyOn(deviceId: string, pitch: number, velocity: number, time?: number): void {
+        const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
+        dn?.controller?.keyOn?.(0, pitch, velocity, time);
+    }
+
+    public scheduleDeviceKeyOff(deviceId: string, pitch: number, velocity: number, time?: number): void {
+        const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
+        dn?.controller?.keyOff?.(0, pitch, velocity, time);
     }
 
     public updateBypass(deviceId: string, bypassed: boolean): void {
         const dn = this.strip.deviceNodes.find((d) => d.deviceId === deviceId);
-        if (!dn) {
-            return;
-        }
-        if (dn.fermenterControls) {
-            dn.fermenterControls.setBypass(bypassed);
-        } else if (dn.toasterControls) {
-            dn.toasterControls.setBypass(bypassed);
-        } else if (dn.levainControls) {
-            dn.levainControls.setBypass(bypassed);
-        } else if (dn.nativeDspControls) {
-            dn.nativeDspControls.setBypass(bypassed);
-        } else {
-            dn.bypassed = bypassed;
-            this.rebuildChain();
-        }
+        dn?.controller?.setBypass?.(bypassed);
     }
 
     public dispose(): void {
@@ -541,33 +499,13 @@ export class TrackNode {
             this.strip.meterNode.disconnect();
         }
         for (const dn of this.strip.deviceNodes) {
-            if (dn.dispose) {
+            if (dn.controller) {
+                dn.controller.destroy?.();
+            } else if (dn.dispose) {
                 dn.dispose();
             }
-            if (dn.fermenterControls) {
-                dn.fermenterControls.destroy();
-            }
-            if (dn.toasterControls) {
-                dn.toasterControls.destroy();
-            }
-            if (dn.levainControls) {
-                dn.levainControls.destroy();
-                unregisterLevainDevice();
-            }
-            if (dn.grandBouleControls) {
-                dn.grandBouleControls.destroy();
-            }
-            if (dn.wamControls) {
-                dn.wamControls.destroy?.();
-            }
-            if (dn.nativeDspControls && 'destroy' in dn.nativeDspControls) {
-                (dn.nativeDspControls as { destroy: () => void }).destroy();
-            }
-            if (dn.type === 'proof') {
-                unregisterProofDevice(dn.deviceId);
-            }
             for (const n of dn.nodes) {
-                n.disconnect();
+                try { n.disconnect(); } catch {}
             }
         }
     }

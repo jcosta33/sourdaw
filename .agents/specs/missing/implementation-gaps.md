@@ -650,11 +650,11 @@ This section extends §6.2 with the full-lifecycle requirements surfaced in `.ag
     - Support the `.ascl` superset (reference pitch, named degrees, category metadata) sufficient to round-trip Ableton Live 12's bundled tunings.
 - **Acceptance Criteria:**
 
-| Format | Read | Write | Notes |
-| --- | --- | --- | --- |
-| `.scl` | Required | Required | Both ratios and cents, octave-repeating and non-octave periods. |
-| `.kbm` | Required | Required | Full seven-header plus mapping; `x` unmapped. |
-| `.ascl` | Required | Required | Round-trip with Ableton Live 12 reference set. |
+| Format  | Read     | Write    | Notes                                                           |
+| ------- | -------- | -------- | --------------------------------------------------------------- |
+| `.scl`  | Required | Required | Both ratios and cents, octave-repeating and non-octave periods. |
+| `.kbm`  | Required | Required | Full seven-header plus mapping; `x` unmapped.                   |
+| `.ascl` | Required | Required | Round-trip with Ableton Live 12 reference set.                  |
 
     - Loading every tuning in `docs/architecture/traces/scala-fixture/` (a curated set of 50 files covering EDO, meantone, historical, JI, and non-octave scales) succeeds with zero parser errors and produces tuning tables whose frequencies match a reference CSV within **1e-9 Hz** per entry.
     - Writing a `.scl` file back and re-reading it produces a byte-identical file for the ratio-form tunings and a file whose parsed frequencies match within **1e-12** for cents-form tunings.
@@ -665,20 +665,24 @@ This section extends §6.2 with the full-lifecycle requirements surfaced in `.ag
 ## Implementation Status
 
 **What is implemented:**
+
 - Foundation instruments are present: `Grinder` (Amp Simulator), `Toaster` (Drum Machine), `Levain` (Orchestral Suite), and `Fermenter` (Master Synth) are all implemented as WASM-backed `AudioWorkletProcessor` nodes.
 - Stem separation is actively implemented using Demucs v4 ONNX locally in the browser (`browserStemSeparation.ts` via `onnxruntime-web`).
 - Foundational architectural patterns for Web Audio device registries, shared array buffers for telemetry, and CRDT project sync exist.
 
 **What is not implemented:**
+
 - The vast majority of the advanced DSP features listed in this tracker (e.g., True Legato Engine, Vital-style Spectral Morphing, ZDF filters).
 - CLAP plugin hosting via `clack-host` (currently relies on custom WASM device implementations or basic native wrappers).
 - Advanced collaboration features like Ghost Playheads, WebRTC voice channels, and Host Approval UX for roles.
 - Scale folding, MTS-ESP host lifecycle, and advanced routing graph visualization.
 
 **What is done well:**
+
 - The integration of complex machine learning models (Demucs) directly into the browser context.
 - The base `AudioWorklet` architecture (`WasmDeviceRegistry`, shared initialization, telemetry allocation) provides a solid launchpad for the advanced instruments.
 
 **What needs refactoring:**
+
 - The monolithic tracker itself should eventually be broken down as individual features graduate to dedicated specs.
 - The native hosting architecture needs a complete overhaul to align with the CLAP standard as specified.

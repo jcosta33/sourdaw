@@ -4,18 +4,20 @@ import { nodeViewStore, type ProcessingNode } from '#/modules/Plugin/stores/node
 
 import { connectNodes } from '../connectNodes';
 
-const node = (id: string): ProcessingNode => ({
-    id,
-    type: 'effect',
-    label: id,
-    deviceId: null,
-    x: 0,
-    y: 0,
-    width: 80,
-    height: 40,
-    bypassed: false,
-    color: '#000',
-});
+function node(id: string): ProcessingNode {
+    return {
+        id,
+        type: 'effect',
+        label: id,
+        deviceId: null,
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 40,
+        bypassed: false,
+        color: '#000',
+    };
+}
 
 describe('connectNodes', () => {
     beforeEach(() => {

@@ -9,14 +9,14 @@ vi.mock('#/modules/AudioEngine/useCases/webMidiInput/setMidiInputTrack', () => (
     setMidiInputTrack: vi.fn(),
 }));
 
-const mockUpdateTrackState = vi.fn();
+const mockUpdateTrackState = vi.fn<(...args: unknown[]) => void>();
 vi.mock('../../../repositories/track/updateTrackState', () => ({
-    updateTrackState: (...args: any[]) => mockUpdateTrackState(...args),
+    updateTrackState: (...args: unknown[]) => mockUpdateTrackState(...args),
 }));
 
-const mockGetTrackById = vi.fn();
+const mockGetTrackById = vi.fn<(...args: unknown[]) => Track | undefined>();
 vi.mock('../../../repositories/track/getTrackById', () => ({
-    getTrackById: (...args: any[]) => mockGetTrackById(...args),
+    getTrackById: (...args: unknown[]) => mockGetTrackById(...args),
 }));
 
 const mockStoreValue = { selectedTrackId: null as string | null };
@@ -28,10 +28,10 @@ vi.mock('../../../stores/trackStore', () => ({
     },
 }));
 
-const mockEmit = vi.fn();
+const mockEmit = vi.fn<(...args: unknown[]) => void>();
 vi.mock('#/app/registerDependencies', () => ({
     eventBus: {
-        emit: (...args: any[]) => mockEmit(...args),
+        emit: (...args: unknown[]) => mockEmit(...args),
         on: vi.fn(() => () => {}),
         off: vi.fn(),
     },

@@ -12,7 +12,7 @@ async function connectFolderBrowser(): Promise<string | null> {
 
     try {
         const handle = await (
-            window as unknown as { showDirectoryPicker: (opts: { mode: string }) => Promise<FileSystemDirectoryHandle> }
+            window as { showDirectoryPicker: (opts: { mode: string }) => Promise<FileSystemDirectoryHandle> }
         ).showDirectoryPicker({ mode: 'read' });
         const id = `lib-${crypto.randomUUID().slice(0, 12)}`;
 
@@ -31,7 +31,7 @@ async function connectFolderBrowser(): Promise<string | null> {
         addLibraryRoot(root);
 
         // Start scanning in background
-        scanBrowserDirectory(root);
+        void scanBrowserDirectory(root);
 
         return id;
     } catch {
@@ -65,7 +65,7 @@ async function connectFolderTauri(): Promise<string | null> {
         addLibraryRoot(root);
 
         // Start scanning in background
-        scanTauriDirectory(root);
+        void scanTauriDirectory(root);
 
         return id;
     } catch {

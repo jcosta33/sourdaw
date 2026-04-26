@@ -182,6 +182,13 @@ export const MidiCalibrationPanel = ({
 
     const hasRecentInput = velocitySamples.length > 0;
 
+    let velocityCurveReadout = 'linear';
+    if (midiCalibration.velocityCurveExponent < 0.95) {
+        velocityCurveReadout = 'soft';
+    } else if (midiCalibration.velocityCurveExponent > 1.05) {
+        velocityCurveReadout = 'hard';
+    }
+
     return (
         <div className={className}>
             <DawPluginSectionCard
@@ -219,13 +226,7 @@ export const MidiCalibrationPanel = ({
                         max={r.velocityCurveExponent.max}
                         step={r.velocityCurveExponent.step}
                         defaultValue={r.velocityCurveExponent.default}
-                        readout={
-                            midiCalibration.velocityCurveExponent < 0.95
-                                ? 'soft'
-                                : midiCalibration.velocityCurveExponent > 1.05
-                                  ? 'hard'
-                                  : 'linear'
-                        }
+                        readout={velocityCurveReadout}
                     />
                     <Knob
                         value={midiCalibration.velocityFloor}

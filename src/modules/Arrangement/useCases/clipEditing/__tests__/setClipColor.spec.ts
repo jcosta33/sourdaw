@@ -5,7 +5,7 @@ import * as subject from '../setClipColor';
 describe('setClipColor', () => {
     it('should export setClipColor', () => {
         expect(subject.setClipColor).toBeDefined();
-        const t = typeof subject.setClipColor;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setClipColor;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

@@ -56,7 +56,11 @@ const LEVELS = [
 
 function loadUserPatches(): Array<{ id: string; name: string; patch: FermenterPatch }> {
     try {
-        return JSON.parse(localStorage.getItem(USER_PATCHES_KEY) ?? '[]');
+        return JSON.parse(window.localStorage.getItem(USER_PATCHES_KEY) ?? '[]') as Array<{
+            id: string;
+            name: string;
+            patch: FermenterPatch;
+        }>;
     } catch {
         return [];
     }
@@ -65,7 +69,7 @@ function loadUserPatches(): Array<{ id: string; name: string; patch: FermenterPa
 function saveUserPatch(name: string, patch: FermenterPatch): void {
     const patches = loadUserPatches();
     patches.push({ id: `user-${Date.now()}`, name, patch: { ...patch, name } });
-    localStorage.setItem(USER_PATCHES_KEY, JSON.stringify(patches));
+    window.localStorage.setItem(USER_PATCHES_KEY, JSON.stringify(patches));
 }
 
 function formatPercent(value: number): string {
@@ -476,8 +480,8 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     const [section, setSection] = useState<FermenterSection>('osc');
     const [showSave, setShowSave] = useState(false);
     const [saveName, setSaveName] = useState('');
-    const [version, setVersion] = useState(0);
-    version;
+    // version counter forces re-render after user-patch save so the preset browser reflects new entries
+    const [, setVersion] = useState(0);
 
     const userPatches = loadUserPatches();
     const sectionMeta = getSectionMeta(section);

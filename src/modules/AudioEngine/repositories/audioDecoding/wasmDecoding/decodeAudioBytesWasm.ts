@@ -35,7 +35,7 @@ async function loadWasmModule(): Promise<WasmModule | null> {
     if (!modulePromise) {
         modulePromise = (async () => {
             try {
-                const mod = (await import(/* @vite-ignore */ WASM_JS_URL)) as unknown as WasmModule;
+                const mod = (await import(/* @vite-ignore */ WASM_JS_URL)) as WasmModule;
                 await mod.default();
                 return mod;
             } catch (error) {

@@ -31,12 +31,12 @@ describe('Workspace Project Handlers', () => {
     });
 
     it('handleNewProject should delegate to newProject', () => {
-        handleNewProject.execute({ type: 'newProject', payload: {} });
+        void handleNewProject.execute({ type: 'newProject', payload: {} });
         expect(newProject).toHaveBeenCalled();
     });
 
     it('handleSaveProject should delegate to saveProject', () => {
-        handleSaveProject.execute({ type: 'saveProject', payload: {} });
+        void handleSaveProject.execute({ type: 'saveProject', payload: {} });
         expect(saveProject).toHaveBeenCalled();
     });
 
@@ -56,7 +56,7 @@ describe('Workspace Project Handlers', () => {
     });
 
     it('handleExportProject should delegate to exportProjectFile', () => {
-        handleExportProject.execute({ type: 'exportProject', payload: {} });
+        void handleExportProject.execute({ type: 'exportProject', payload: {} });
         expect(exportProjectFile).toHaveBeenCalled();
     });
 });

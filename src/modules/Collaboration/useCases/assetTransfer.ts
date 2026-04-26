@@ -134,7 +134,8 @@ export class AssetTransfer {
         });
 
         // Send requested chunks (or all if none specified)
-        const chunksToSend = missingChunks.length > 0 ? missingChunks : Array.from({ length: chunkCount }, (_, i) => i);
+        const chunksToSend =
+            missingChunks.length > 0 ? missingChunks : Array.from({ length: chunkCount }, (_, index1) => index1);
 
         for (const index of chunksToSend) {
             const start = index * CHUNK_SIZE;
@@ -185,7 +186,7 @@ export class AssetTransfer {
 
         // Check if all chunks received
         if (transfer.receivedBitmap.size === transfer.manifest.chunkCount) {
-            this.assembleAsset(hash, transfer);
+            void this.assembleAsset(hash, transfer);
         }
     }
 
@@ -197,15 +198,15 @@ export class AssetTransfer {
         }
     ): Promise<void> {
         const sortedChunks: Uint8Array[] = [];
-        for (let i = 0; i < transfer.manifest.chunkCount; i++) {
-            const chunk = transfer.chunks.get(i);
+        for (let index = 0; index < transfer.manifest.chunkCount; index++) {
+            const chunk = transfer.chunks.get(index);
             if (!chunk) {
                 return;
             }
             sortedChunks.push(chunk);
         }
 
-        const totalSize = sortedChunks.reduce((sum, c) => sum + c.length, 0);
+        const totalSize = sortedChunks.reduce((sum, context) => sum + context.length, 0);
         const assembled = new Uint8Array(totalSize);
         let offset = 0;
         for (const chunk of sortedChunks) {

@@ -5,35 +5,35 @@ import { getWorkspaceState, updateWorkspaceState } from '../../../repositories/w
 import { clearClipSelection } from '../panelToggles/clearClipSelection';
 import { closeBranchManager } from '../panelToggles/closeBranchManager';
 import { closeCollaborationPanel } from '../panelToggles/closeCollaborationPanel';
-import { toggleChatPanel } from '../panelToggles/toggleChatPanel';
-import { toggleMixer } from '../panelToggles/toggleMixer';
-import { toggleVirtualKeyboard } from '../panelToggles/toggleVirtualKeyboard';
+import { closeCommandPalette } from '../panelToggles/closeCommandPalette';
+import { closeScratchPad } from '../panelToggles/closeScratchPad';
+import { closeUndoHistory } from '../panelToggles/closeUndoHistory';
+import { cycleChannelStripWidth } from '../panelToggles/cycleChannelStripWidth';
+import { openInspector } from '../panelToggles/openInspector';
+import { openMixer } from '../panelToggles/openMixer';
+import { openVirtualKeyboard } from '../panelToggles/openVirtualKeyboard';
+import { selectAllClips } from '../panelToggles/selectAllClips';
+import { selectClip } from '../panelToggles/selectClip';
+import { selectClipWithFocus } from '../panelToggles/selectClipWithFocus';
+import { setClipSelection } from '../panelToggles/setClipSelection';
+import { setSnapValue } from '../panelToggles/setSnapValue';
+import { setSoloMode } from '../panelToggles/setSoloMode';
+import { setTrackListWidth } from '../panelToggles/setTrackListWidth';
 import { setVirtualKeyboardOctave } from '../panelToggles/setVirtualKeyboardOctave';
 import { setVirtualKeyboardVelocity } from '../panelToggles/setVirtualKeyboardVelocity';
 import { toggleAutomationPanel } from '../panelToggles/toggleAutomationPanel';
-import { toggleTrackList } from '../panelToggles/toggleTrackList';
-import { setSnapValue } from '../panelToggles/setSnapValue';
-import { closeUndoHistory } from '../panelToggles/closeUndoHistory';
-import { closeCommandPalette } from '../panelToggles/closeCommandPalette';
-import { selectClip } from '../panelToggles/selectClip';
-import { selectClipWithFocus } from '../panelToggles/selectClipWithFocus';
-import { openMixer } from '../panelToggles/openMixer';
-import { openInspector } from '../panelToggles/openInspector';
-import { setTrackListWidth } from '../panelToggles/setTrackListWidth';
-import { closeScratchPad } from '../panelToggles/closeScratchPad';
-import { cycleChannelStripWidth } from '../panelToggles/cycleChannelStripWidth';
-import { openVirtualKeyboard } from '../panelToggles/openVirtualKeyboard';
-import { toggleCollaborationPanel } from '../panelToggles/toggleCollaborationPanel';
-import { toggleUndoHistory } from '../panelToggles/toggleUndoHistory';
-import { toggleTimeDisplayMode } from '../panelToggles/toggleTimeDisplayMode';
-import { toggleClipInSelection } from '../panelToggles/toggleClipInSelection';
-import { setClipSelection } from '../panelToggles/setClipSelection';
-import { selectAllClips } from '../panelToggles/selectAllClips';
-import { setSoloMode } from '../panelToggles/setSoloMode';
 import { toggleBranchManager } from '../panelToggles/toggleBranchManager';
+import { toggleChatPanel } from '../panelToggles/toggleChatPanel';
+import { toggleClipInSelection } from '../panelToggles/toggleClipInSelection';
+import { toggleCollaborationPanel } from '../panelToggles/toggleCollaborationPanel';
 import { toggleCommandPalette } from '../panelToggles/toggleCommandPalette';
 import { toggleInspector } from '../panelToggles/toggleInspector';
+import { toggleMixer } from '../panelToggles/toggleMixer';
 import { toggleSidebar } from '../panelToggles/toggleSidebar';
+import { toggleTimeDisplayMode } from '../panelToggles/toggleTimeDisplayMode';
+import { toggleTrackList } from '../panelToggles/toggleTrackList';
+import { toggleUndoHistory } from '../panelToggles/toggleUndoHistory';
+import { toggleVirtualKeyboard } from '../panelToggles/toggleVirtualKeyboard';
 import { toggleWorkspaceMode } from '../panelToggles/toggleWorkspaceMode';
 
 vi.mock('#/modules/Workspace/repositories/workspace', () => ({
@@ -102,8 +102,10 @@ describe('panelToggles', () => {
         });
     });
 
-    describe('functions that read then update workspace state', () => {
-        const base = (): typeof defaultWorkspaceState => ({ ...defaultWorkspaceState });
+    describe('functions that read current state', () => {
+        function base(): typeof defaultWorkspaceState {
+            return { ...defaultWorkspaceState };
+        }
 
         it.each([
             ['setSoloMode', setSoloMode, () => setSoloMode('pfl'), { soloMode: 'pfl' }],
@@ -148,7 +150,7 @@ describe('panelToggles', () => {
             ['toggleCommandPalette', toggleCommandPalette, () => toggleCommandPalette(), { commandPaletteOpen: true }],
             ['toggleWorkspaceMode', toggleWorkspaceMode, () => toggleWorkspaceMode(), { mode: 'clip' }],
         ])('should patch state for %s', (_label, subject, invoke, expected) => {
-            vi.mocked(getWorkspaceState).mockReturnValue(base() as any);
+            vi.mocked(getWorkspaceState).mockReturnValue(base());
             vi.mocked(updateWorkspaceState).mockClear();
             invoke();
             expect(updateWorkspaceState).toHaveBeenCalledWith(expected);
@@ -158,7 +160,7 @@ describe('panelToggles', () => {
             vi.mocked(getWorkspaceState).mockReturnValue({
                 ...base(),
                 selectedClipIds: [],
-            } as any);
+            });
             vi.mocked(updateWorkspaceState).mockClear();
 
             toggleClipInSelection('n1');
@@ -173,7 +175,7 @@ describe('panelToggles', () => {
             vi.mocked(getWorkspaceState).mockReturnValue({
                 ...base(),
                 selectedClipIds: ['n1', 'n2'],
-            } as any);
+            });
             vi.mocked(updateWorkspaceState).mockClear();
 
             toggleClipInSelection('n1');

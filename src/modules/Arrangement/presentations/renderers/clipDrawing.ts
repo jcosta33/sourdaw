@@ -65,7 +65,15 @@ export const drawClip = (
     // Clip body fill with subtle vertical gradient for dimensionality
     const clipY = trackY + padding;
     const clipH = trackHeight - padding * 2;
-    const baseAlpha = isGhost ? 0.35 : isMuted ? 0.35 : 1;
+    const baseAlpha = (() => {
+        if (isGhost) {
+            return 0.35;
+        }
+        if (isMuted) {
+            return 0.35;
+        }
+        return 1;
+    })();
     const bodyAlpha = baseAlpha * (isSelected ? 0.85 : 0.55);
 
     // Create a gradient that darkens slightly toward the bottom for depth
@@ -89,7 +97,15 @@ export const drawClip = (
     ctx.roundRect(x, clipY, w, clipH, 3);
     ctx.fill();
 
-    ctx.globalAlpha = isGhost ? 0.6 : isMuted ? 0.35 : 1;
+    ctx.globalAlpha = (() => {
+        if (isGhost) {
+            return 0.6;
+        }
+        if (isMuted) {
+            return 0.35;
+        }
+        return 1;
+    })();
 
     // Top-edge highlight for dimensional "lit from above" effect
     if (!isGhost && !isMuted && w > 8) {
@@ -137,11 +153,17 @@ export const drawClip = (
     ctx.font = '500 10px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
     ctx.fillText(clip.name, x + 6, trackY + 14, w - 12);
 
-    const typeLabel = clip.isLinkedInstance
-        ? `${clip.type === 'midi' ? 'MIDI' : 'AUDIO'} ⧉`
-        : clip.type === 'midi'
-          ? 'MIDI'
-          : 'AUDIO';
+    const typeLabel = (() => {
+        if (clip.isLinkedInstance) {
+            return `${clip.type === 'midi' ? 'MIDI' : 'AUDIO'} ⧉`;
+        } else {
+            if (clip.type === 'midi') {
+                return 'MIDI';
+            } else {
+                return 'AUDIO';
+            }
+        }
+    })();
     ctx.fillStyle = clip.isLinkedInstance ? 'rgba(120, 180, 255, 0.5)' : 'rgba(255, 255, 255, 0.25)';
     ctx.font = '7px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
     if (w > 50) {
@@ -326,8 +348,8 @@ const drawMidiNotePreview = (
     let maxPitch = 0;
     if (isInline) {
         // When inline, use a fixed range or a reasonable default if notes are sparse
-        minPitch = Math.min(...notes.map((n) => n.pitch)) - 2;
-        maxPitch = Math.max(...notes.map((n) => n.pitch)) + 2;
+        minPitch = Math.min(...notes.map((node) => node.pitch)) - 2;
+        maxPitch = Math.max(...notes.map((node) => node.pitch)) + 2;
         // Ensure at least an octave range for visibility
         if (maxPitch - minPitch < 12) {
             const center = Math.round((maxPitch + minPitch) / 2);
@@ -335,12 +357,12 @@ const drawMidiNotePreview = (
             maxPitch = center + 6;
         }
     } else {
-        for (const n of notes) {
-            if (n.pitch < minPitch) {
-                minPitch = n.pitch;
+        for (const node of notes) {
+            if (node.pitch < minPitch) {
+                minPitch = node.pitch;
             }
-            if (n.pitch > maxPitch) {
-                maxPitch = n.pitch;
+            if (node.pitch > maxPitch) {
+                maxPitch = node.pitch;
             }
         }
     }
@@ -366,8 +388,8 @@ const drawMidiNotePreview = (
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
         ctx.lineWidth = 0.5;
         const noteHeight = contentHeight / (pitchRange + 1);
-        for (let i = 0; i <= pitchRange + 1; i++) {
-            const ly = contentTop + i * noteHeight;
+        for (let index = 0; index <= pitchRange + 1; index++) {
+            const ly = contentTop + index * noteHeight;
             ctx.beginPath();
             ctx.moveTo(clipX, ly);
             ctx.lineTo(clipX + clipW, ly);
@@ -388,7 +410,7 @@ const drawMidiNotePreview = (
 
     while (loopOffset < clipDuration && iterations < 100) {
         for (const note of notes) {
-            const relStart = note.startBeat - midiOffset - clip.startBeat + loopOffset;
+            const relStart = note.startBeat - midiOffset + loopOffset;
             if (relStart >= clipDuration) {
                 continue;
             }
@@ -485,13 +507,13 @@ const drawWaveformPeaks = (
 
     ctx.beginPath();
     ctx.moveTo(x + padding, midY);
-    for (let i = 0; i < peaks.length; i++) {
-        const peak = peaks[i] ?? 0;
-        ctx.lineTo(x + padding + i * drawBinWidth, midY - peak * amplitude);
+    for (let index = 0; index < peaks.length; index++) {
+        const peak = peaks[index] ?? 0;
+        ctx.lineTo(x + padding + index * drawBinWidth, midY - peak * amplitude);
     }
-    for (let i = peaks.length - 1; i >= 0; i--) {
-        const peak = peaks[i] ?? 0;
-        ctx.lineTo(x + padding + i * drawBinWidth, midY + peak * amplitude);
+    for (let index = peaks.length - 1; index >= 0; index--) {
+        const peak = peaks[index] ?? 0;
+        ctx.lineTo(x + padding + index * drawBinWidth, midY + peak * amplitude);
     }
     ctx.closePath();
     ctx.fill();
@@ -516,8 +538,8 @@ const drawWaveformHint = (
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (let i = 0; i < steps; i++) {
-        const px = x + padding + (i / steps) * (w - padding * 2);
+    for (let index = 0; index < steps; index++) {
+        const px = x + padding + (index / steps) * (w - padding * 2);
         const seed = Math.sin(px * 0.7) * Math.cos(px * 0.3 + 1.5);
         const h = Math.abs(seed) * amplitude;
         ctx.moveTo(px, midY - h);

@@ -4,7 +4,7 @@ import { attachInput, selectMidiInputTauri } from './helpers';
 
 export function selectMidiInput(deviceId: string): void {
     if (getTauriMode()) {
-        selectMidiInputTauri(Number(deviceId));
+        void selectMidiInputTauri(Number(deviceId));
         setState({ selectedInputId: deviceId });
         return;
     }

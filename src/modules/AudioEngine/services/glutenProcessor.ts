@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * AudioWorkletProcessor for the Gluten bus compressor.
  *
@@ -11,7 +10,7 @@
 import { initSync, GlutenInstance } from '../wasm/daw_dsp.js';
 
 /** Map camelCase param names from TypeScript to snake_case for Rust. */
-const PARAM_MAP = {
+const PARAM_MAP: Record<string, string> = {
     threshold: 'threshold',
     ratio: 'ratio',
     attack: 'attack',
@@ -60,18 +59,23 @@ const PARAM_MAP = {
     extSidechain: 'ext_sidechain',
 };
 
+type GlutenMsg =
+    | { type: 'init'; wasmBytes: BufferSource }
+    | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
+    | { type: 'param'; name: string; value: number };
+
 class GlutenProcessor extends AudioWorkletProcessor {
-    _instance = null; // GlutenInstance (generated wasm-bindgen class)
-    _memory = null; // WebAssembly.Memory
+    _instance: GlutenInstance | null = null;
+    _memory: WebAssembly.Memory | null = null;
     _ready = false;
     _faulted = false;
     _meterCounter = 0;
-    _sabView = null; // Float32Array view into the telemetry SharedArrayBuffer slot
+    _sabView: Float32Array | null = null;
 
     constructor() {
         super();
-        this.port.onmessage = (e) => {
-            const msg = e.data;
+        this.port.onmessage = (event: MessageEvent<GlutenMsg>) => {
+            const msg = event.data;
             try {
                 if (msg.type === 'init') {
                     if (this._ready) {
@@ -80,20 +84,23 @@ class GlutenProcessor extends AudioWorkletProcessor {
                     this._initWasm(msg.wasmBytes);
                 } else if (msg.type === 'init-sab') {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
-                } else if (msg.type === 'param' && this._ready && !this._faulted) {
+                } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
                     const rustName = PARAM_MAP[msg.name] ?? msg.name;
                     this._instance.set_param(rustName, msg.value);
                 }
             } catch (error) {
                 console.error('GlutenProcessor error:', error);
                 if (!this._ready) {
-                    this.port.postMessage({ type: 'error', message: error?.message ?? String(error) });
+                    this.port.postMessage({
+                        type: 'error',
+                        message: error instanceof Error ? error.message : String(error),
+                    });
                 }
             }
         };
     }
 
-    _initWasm(wasmBytes) {
+    _initWasm(wasmBytes: BufferSource): void {
         const wasmExports = initSync({ module: new WebAssembly.Module(wasmBytes) });
         this._memory = wasmExports.memory;
         this._instance = new GlutenInstance(sampleRate);
@@ -101,16 +108,18 @@ class GlutenProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'ready' });
     }
 
-    _passthrough(input, output) {
-        if (output[0] && input[0]) {
-            output[0].set(input[0]);
+    _passthrough(input: Float32Array[], output: Float32Array[]): void {
+        const in0 = input[0];
+        const in1 = input[1] ?? in0;
+        if (output[0] && in0) {
+            output[0].set(in0);
         }
-        if (output[1] && (input[1] ?? input[0])) {
-            output[1].set(input[1] ?? input[0]);
+        if (output[1] && in1) {
+            output[1].set(in1);
         }
     }
 
-    process(inputs, outputs) {
+    process(inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
         if (!this._ready || this._faulted) {
             return true;
         }
@@ -121,32 +130,43 @@ class GlutenProcessor extends AudioWorkletProcessor {
             return true;
         }
 
-        const frames = output[0].length;
+        const in0 = input[0];
+        const out0 = output[0];
+        if (!in0 || !out0) {
+            return true;
+        }
+        const frames = out0.length;
 
         try {
             const inst = this._instance;
-            const mem = this._memory.buffer;
+            const mem = this._memory?.buffer;
+            if (!inst || !mem) {
+                return true;
+            }
 
             const inLeftPtr = inst.get_input_left_ptr();
             const inRightPtr = inst.get_input_right_ptr();
-            new Float32Array(mem, inLeftPtr, frames).set(input[0]);
-            new Float32Array(mem, inRightPtr, frames).set(input[1] ?? input[0]);
+            new Float32Array(mem, inLeftPtr, frames).set(in0);
+            new Float32Array(mem, inRightPtr, frames).set(input[1] ?? in0);
 
-            // Write external sidechain if available (input 1)
             const scInput = inputs[1];
-            if (scInput && scInput.length > 0 && scInput[0].length > 0) {
-                const scLeftPtr = inst.get_sc_left_ptr();
-                const scRightPtr = inst.get_sc_right_ptr();
-                new Float32Array(mem, scLeftPtr, frames).set(scInput[0]);
-                new Float32Array(mem, scRightPtr, frames).set(scInput[1] ?? scInput[0]);
+            if (scInput && scInput.length > 0) {
+                const sc0 = scInput[0];
+                if (sc0 && sc0.length > 0) {
+                    const scLeftPtr = inst.get_sc_left_ptr();
+                    const scRightPtr = inst.get_sc_right_ptr();
+                    new Float32Array(mem, scLeftPtr, frames).set(sc0);
+                    new Float32Array(mem, scRightPtr, frames).set(scInput[1] ?? sc0);
+                }
             }
 
             const outLeftPtr = inst.process(frames);
             const outRightPtr = inst.get_right_ptr();
 
-            output[0].set(new Float32Array(mem, outLeftPtr, frames));
-            if (output[1]) {
-                output[1].set(new Float32Array(mem, outRightPtr, frames));
+            out0.set(new Float32Array(mem, outLeftPtr, frames));
+            const out1 = output[1];
+            if (out1) {
+                out1.set(new Float32Array(mem, outRightPtr, frames));
             }
 
             this._meterCounter++;

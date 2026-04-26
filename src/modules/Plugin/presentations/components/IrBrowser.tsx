@@ -21,11 +21,11 @@ export const IrBrowser = ({ onIrLoaded }: IrBrowserProps): ReactElement => {
     const [isDragging, setIsDragging] = useState(false);
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
-    const handleDrop = async (e: DragEvent<HTMLDivElement>): Promise<void> => {
-        e.preventDefault();
+    const handleDrop = async (event: DragEvent<HTMLDivElement>): Promise<void> => {
+        event.preventDefault();
         setIsDragging(false);
 
-        const file = e.dataTransfer.files[0];
+        const file = event.dataTransfer.files[0];
         if (!file) {
             return;
         }
@@ -51,8 +51,8 @@ export const IrBrowser = ({ onIrLoaded }: IrBrowserProps): ReactElement => {
             const data = new Float32Array(frameCount * channels);
             for (let ch = 0; ch < channels; ch++) {
                 const channelData = audioBuffer.getChannelData(ch);
-                for (let i = 0; i < frameCount; i++) {
-                    data[i * channels + ch] = channelData[i] ?? 0;
+                for (let index = 0; index < frameCount; index++) {
+                    data[index * channels + ch] = channelData[index] ?? 0;
                 }
             }
 
@@ -64,10 +64,10 @@ export const IrBrowser = ({ onIrLoaded }: IrBrowserProps): ReactElement => {
             const points = 200;
             const samplesPerPoint = Math.floor(mono.length / points);
             const preview: number[] = [];
-            for (let p = 0; p < points; p++) {
+            for (let param = 0; param < points; param++) {
                 let peak = 0;
-                for (let s = 0; s < samplesPerPoint; s++) {
-                    const val = Math.abs(mono[p * samplesPerPoint + s] ?? 0);
+                for (let state = 0; state < samplesPerPoint; state++) {
+                    const val = Math.abs(mono[param * samplesPerPoint + state] ?? 0);
                     if (val > peak) {
                         peak = val;
                     }
@@ -101,20 +101,20 @@ export const IrBrowser = ({ onIrLoaded }: IrBrowserProps): ReactElement => {
         ctx.strokeStyle = 'rgba(127,184,196,0.7)';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        for (let i = 0; i < waveform.length; i++) {
-            const x = (i / waveform.length) * w;
-            const amp = waveform[i] ?? 0;
+        for (let index = 0; index < waveform.length; index++) {
+            const x = (index / waveform.length) * w;
+            const amp = waveform[index] ?? 0;
             const y = h / 2 - amp * h * 0.45;
-            if (i === 0) {
+            if (index === 0) {
                 ctx.moveTo(x, y);
             } else {
                 ctx.lineTo(x, y);
             }
         }
         // Mirror for bottom half
-        for (let i = waveform.length - 1; i >= 0; i--) {
-            const x = (i / waveform.length) * w;
-            const amp = waveform[i] ?? 0;
+        for (let index = waveform.length - 1; index >= 0; index--) {
+            const x = (index / waveform.length) * w;
+            const amp = waveform[index] ?? 0;
             const y = h / 2 + amp * h * 0.45;
             ctx.lineTo(x, y);
         }
@@ -127,7 +127,6 @@ export const IrBrowser = ({ onIrLoaded }: IrBrowserProps): ReactElement => {
     return (
         <div className="flex flex-col gap-1">
             <span className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">Impulse Response</span>
-
             {/* Drop zone */}
             <div
                 className={`relative rounded border-2 border-dashed transition-colors cursor-pointer ${
@@ -136,13 +135,13 @@ export const IrBrowser = ({ onIrLoaded }: IrBrowserProps): ReactElement => {
                         : 'border-border/30 hover:border-border/50'
                 }`}
                 style={{ minHeight: waveform ? 50 : 40 }}
-                onDragOver={(e) => {
-                    e.preventDefault();
+                onDragOver={(event) => {
+                    event.preventDefault();
                     setIsDragging(true);
                 }}
                 onDragLeave={() => setIsDragging(false)}
-                onDrop={(e) => {
-                    handleDrop(e);
+                onDrop={(event) => {
+                    void handleDrop(event);
                 }}
             >
                 {waveform ? (

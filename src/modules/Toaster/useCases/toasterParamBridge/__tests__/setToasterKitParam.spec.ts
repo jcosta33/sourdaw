@@ -5,7 +5,7 @@ import * as subject from '../setToasterKitParam';
 describe('setToasterKitParam', () => {
     it('should export setToasterKitParam', () => {
         expect(subject.setToasterKitParam).toBeDefined();
-        const t = typeof subject.setToasterKitParam;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setToasterKitParam;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

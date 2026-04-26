@@ -5,7 +5,7 @@ import * as subject from '../getSynthParamsForTrack';
 describe('getSynthParamsForTrack', () => {
     it('should export getSynthParamsForTrack', () => {
         expect(subject.getSynthParamsForTrack).toBeDefined();
-        const t = typeof subject.getSynthParamsForTrack;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getSynthParamsForTrack;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

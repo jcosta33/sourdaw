@@ -5,7 +5,7 @@ import * as subject from '../duplicateClipToNextBar';
 describe('duplicateClipToNextBar', () => {
     it('should export duplicateClipToNextBar', () => {
         expect(subject.duplicateClipToNextBar).toBeDefined();
-        const t = typeof subject.duplicateClipToNextBar;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.duplicateClipToNextBar;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

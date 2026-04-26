@@ -16,15 +16,15 @@ const injectionBus: { listeners: Set<(text: string) => void> } = {
     listeners: new Set(),
 };
 
-export const onPromptInjection = (cb: (text: string) => void): (() => void) => {
+export function onPromptInjection(cb: (text: string) => void): () => void {
     injectionBus.listeners.add(cb);
     return () => {
         injectionBus.listeners.delete(cb);
     };
-};
+}
 
-export const injectPromptCommand = (text: string): void => {
+export function injectPromptCommand(text: string): void {
     for (const listener of injectionBus.listeners) {
         listener(text);
     }
-};
+}

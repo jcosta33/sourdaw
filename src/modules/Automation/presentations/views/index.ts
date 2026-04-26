@@ -1,1 +1,1 @@
-// No React components or hooks exported from this module
+export { ModulationMatrix } from './ModulationMatrix';

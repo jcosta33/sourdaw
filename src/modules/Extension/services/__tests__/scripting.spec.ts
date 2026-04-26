@@ -3,13 +3,15 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { extensionStore } from '../../stores/extension';
 import { appendLog, createDawApi } from '../scripting';
 
-const baseState = (): NonNullable<typeof extensionStore.value> => ({
-    installed: [],
-    commands: [],
-    consoleLog: [],
-    editorOpen: false,
-    editorContent: '',
-});
+function baseState(): NonNullable<typeof extensionStore.value> {
+    return {
+        installed: [],
+        commands: [],
+        consoleLog: [],
+        editorOpen: false,
+        editorContent: '',
+    };
+}
 
 describe('appendLog', () => {
     beforeEach(() => {

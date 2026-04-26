@@ -7,8 +7,8 @@ import { type Clip, type Track } from '#/modules/Arrangement/models/Track';
  */
 function seededRandom(clipId: string, position: number): number {
     let h = 2166136261;
-    for (let i = 0; i < clipId.length; i++) {
-        h ^= clipId.charCodeAt(i);
+    for (let index = 0; index < clipId.length; index++) {
+        h ^= clipId.charCodeAt(index);
         h = Math.imul(h, 16777619);
     }
     h ^= Math.floor(position * 1e4) | 0;
@@ -54,10 +54,10 @@ export function evaluateFollowActions(
                 } else if (clip.followAction === 'play_next') {
                     // Single-pass: find the clip with the smallest startBeat >= clip.endBeat
                     let nearest: Clip | null = null;
-                    for (const c of track.clips) {
-                        if (c.id !== clip.id && c.startBeat >= clip.endBeat) {
-                            if (nearest === null || c.startBeat < nearest.startBeat) {
-                                nearest = c;
+                    for (const context of track.clips) {
+                        if (context.id !== clip.id && context.startBeat >= clip.endBeat) {
+                            if (nearest === null || context.startBeat < nearest.startBeat) {
+                                nearest = context;
                             }
                         }
                     }
@@ -67,10 +67,10 @@ export function evaluateFollowActions(
                 } else if (clip.followAction === 'play_previous') {
                     // Single-pass: find the clip with the largest startBeat where endBeat <= clip.startBeat
                     let nearest: Clip | null = null;
-                    for (const c of track.clips) {
-                        if (c.id !== clip.id && c.endBeat <= clip.startBeat) {
-                            if (nearest === null || c.startBeat > nearest.startBeat) {
-                                nearest = c;
+                    for (const context of track.clips) {
+                        if (context.id !== clip.id && context.endBeat <= clip.startBeat) {
+                            if (nearest === null || context.startBeat > nearest.startBeat) {
+                                nearest = context;
                             }
                         }
                     }
@@ -80,9 +80,9 @@ export function evaluateFollowActions(
                 } else if (clip.followAction === 'play_first') {
                     // Single-pass: find the clip with the smallest startBeat
                     let first: Clip | null = null;
-                    for (const c of track.clips) {
-                        if (first === null || c.startBeat < first.startBeat) {
-                            first = c;
+                    for (const context of track.clips) {
+                        if (first === null || context.startBeat < first.startBeat) {
+                            first = context;
                         }
                     }
                     if (first) {
@@ -91,9 +91,9 @@ export function evaluateFollowActions(
                 } else if (clip.followAction === 'play_last') {
                     // Single-pass: find the clip with the largest startBeat
                     let last: Clip | null = null;
-                    for (const c of track.clips) {
-                        if (last === null || c.startBeat > last.startBeat) {
-                            last = c;
+                    for (const context of track.clips) {
+                        if (last === null || context.startBeat > last.startBeat) {
+                            last = context;
                         }
                     }
                     if (last) {
@@ -102,17 +102,17 @@ export function evaluateFollowActions(
                 } else if (clip.followAction === 'play_random') {
                     // Two-pass without allocation: count eligible clips, then pick the Nth
                     let count = 0;
-                    for (const c of track.clips) {
-                        if (c.id !== clip.id) {
+                    for (const context of track.clips) {
+                        if (context.id !== clip.id) {
                             count++;
                         }
                     }
                     if (count > 0) {
                         let target = Math.floor(seededRandom(clip.id, prevPosition) * count);
-                        for (const c of track.clips) {
-                            if (c.id !== clip.id) {
+                        for (const context of track.clips) {
+                            if (context.id !== clip.id) {
                                 if (target === 0) {
-                                    jumpToPosition = c.startBeat;
+                                    jumpToPosition = context.startBeat;
                                     break;
                                 }
                                 target--;

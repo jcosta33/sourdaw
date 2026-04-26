@@ -5,7 +5,7 @@ import { toggleTalkback } from '../toggleTalkback';
 const mocks = vi.hoisted(() => ({
     state: {
         talkbackActive: false,
-    } as any,
+    } as { talkbackActive: boolean } | null,
     set: vi.fn(),
 }));
 

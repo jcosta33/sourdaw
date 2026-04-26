@@ -16,7 +16,7 @@ describe('handleReverseClip', () => {
     });
 
     it('executes reverseClip with the provided payload', () => {
-        handleReverseClip.execute({
+        void handleReverseClip.execute({
             type: 'reverseClip',
             payload: { clipId: 'c1' },
         });

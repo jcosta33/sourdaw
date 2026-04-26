@@ -3,7 +3,7 @@
 
 export { describeAction } from './actionLabels';
 
-export type { AppAction } from './commandQueries';
+export type { AppAction, ActionHandler } from './commandQueries';
 export { generateGroupId } from './commandQueries';
 
 export { executeAppAction } from './executeAppAction';

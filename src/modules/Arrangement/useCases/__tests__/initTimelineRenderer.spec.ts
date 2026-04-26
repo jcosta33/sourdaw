@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-restricted-imports */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type TimelineRenderer } from '../../models/RendererBackend';
@@ -35,7 +36,7 @@ describe('initTimelineRenderer', () => {
     it('uses canvas when preferred backend is canvas2d', async () => {
         const canvasStub = stubRenderer('canvas2d');
         vi.mocked(getPreferredRendererBackend).mockReturnValue('canvas2d');
-        vi.mocked(createCanvasRenderer).mockReturnValue(canvasStub as any);
+        vi.mocked(createCanvasRenderer).mockReturnValue(canvasStub);
 
         const canvas = document.createElement('canvas');
         const result = await initTimelineRenderer(canvas);
@@ -47,7 +48,7 @@ describe('initTimelineRenderer', () => {
     it('uses webgpu when preferred and creation succeeds', async () => {
         const gpuStub = stubRenderer('webgpu');
         vi.mocked(getPreferredRendererBackend).mockReturnValue('webgpu');
-        vi.mocked(createWebGpuRenderer).mockResolvedValue(gpuStub as any);
+        vi.mocked(createWebGpuRenderer).mockResolvedValue(gpuStub);
 
         const canvas = document.createElement('canvas');
         const result = await initTimelineRenderer(canvas);
@@ -59,8 +60,8 @@ describe('initTimelineRenderer', () => {
     it('falls back to canvas when webgpu path returns null', async () => {
         const canvasStub = stubRenderer('canvas2d');
         vi.mocked(getPreferredRendererBackend).mockReturnValue('webgpu');
-        vi.mocked(createWebGpuRenderer).mockResolvedValue(null as any);
-        vi.mocked(createCanvasRenderer).mockReturnValue(canvasStub as any);
+        vi.mocked(createWebGpuRenderer).mockResolvedValue(null);
+        vi.mocked(createCanvasRenderer).mockReturnValue(canvasStub);
 
         const canvas = document.createElement('canvas');
         const result = await initTimelineRenderer(canvas);
@@ -68,3 +69,4 @@ describe('initTimelineRenderer', () => {
         expect(result).toBe(canvasStub);
     });
 });
+/* eslint-enable @typescript-eslint/no-restricted-imports */

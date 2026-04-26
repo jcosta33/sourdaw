@@ -196,11 +196,11 @@ After implementation, a user can create a rack of one of four kinds (Instrument,
 - The matrix also holds pre-allocated arrays: `source_values[MAX_SOURCES]`, `base_values[MAX_DESTINATIONS]`, `dest_accumulators[MAX_DESTINATIONS]`, `final_values[MAX_DESTINATIONS]`, `current_values[MAX_DESTINATIONS]` (post-interpolation), `per_sample_delta[MAX_DESTINATIONS]`.
 - A connection enforces **type compatibility**: source output domain must match target parameter domain. Attempting to wire an incompatible connection is a UI-level error; the engine never sees the invalid connection.
 - Per-tick cycle (control rate, every 32 samples — research allows 16–64; v1 fixes 32):
-  1. Update source values (LFOs step, envelope followers process the last 32 samples of their source audio, macros read their target UI value, CC sources read the most recent CC value).
-  2. Zero destination accumulators.
-  3. For each active, enabled slot: `accum[dest] += apply_curve(source[src] * depth, curve)`.
-  4. Compute `final[dest] = clamp(base[dest] + accum[dest], min_clamp, max_clamp)`.
-  5. Compute `per_sample_delta[dest] = (final[dest] - current[dest]) / 32`.
+    1. Update source values (LFOs step, envelope followers process the last 32 samples of their source audio, macros read their target UI value, CC sources read the most recent CC value).
+    2. Zero destination accumulators.
+    3. For each active, enabled slot: `accum[dest] += apply_curve(source[src] * depth, curve)`.
+    4. Compute `final[dest] = clamp(base[dest] + accum[dest], min_clamp, max_clamp)`.
+    5. Compute `per_sample_delta[dest] = (final[dest] - current[dest]) / 32`.
 - **Conflict resolution** when multiple sources target the same parameter: **additive summation** of offsets, final value clamped to `[min_clamp, max_clamp]`. (See Open Questions — the additive default is the Bitwig model; an alternative "latest wins" behaviour per-connection is listed as a CRITICAL open question.)
 - All allocation happens off-thread when the matrix is built/edited. On-thread updates mutate pre-allocated slots only.
 
@@ -477,15 +477,15 @@ After implementation, a user can create a rack of one of four kinds (Instrument,
 ## Open questions
 
 - [ ] **[CRITICAL]** Macro maps to a parameter that is subsequently **removed** (device deleted, plugin uninstalled, or nested rack collapsed). What is the defined behavior?
-  - **Option A**: Mapping is kept as "stale," greyed out in the inspector, restorable if the target reappears at the same `ParameterRef`.
-  - **Option B**: Mapping is auto-deleted on first load where the target is missing.
-  - **Option C**: Mapping is kept and silently skipped at runtime until a target of a matching path appears.
-  - This blocks R5 / R13 because the serialization contract depends on the answer. Decide before implementation.
+    - **Option A**: Mapping is kept as "stale," greyed out in the inspector, restorable if the target reappears at the same `ParameterRef`.
+    - **Option B**: Mapping is auto-deleted on first load where the target is missing.
+    - **Option C**: Mapping is kept and silently skipped at runtime until a target of a matching path appears.
+    - This blocks R5 / R13 because the serialization contract depends on the answer. Decide before implementation.
 - [ ] **[CRITICAL]** **Modulation conflict resolution** when two sources target the same parameter. R7 specifies additive summation by default, but the Bitwig/Ableton convention for "slot priority" is not universal.
-  - **Option A**: Always additive (current default).
-  - **Option B**: Per-connection `conflict_policy: Additive | LatestWins | Max | Min`. Adds slot flag space.
-  - **Option C**: Per-target conflict policy set on the parameter itself, not per connection.
-  - This blocks R7 implementation. Decide before writing the matrix evaluator.
+    - **Option A**: Always additive (current default).
+    - **Option B**: Per-connection `conflict_policy: Additive | LatestWins | Max | Min`. Adds slot flag space.
+    - **Option C**: Per-target conflict policy set on the parameter itself, not per connection.
+    - This blocks R7 implementation. Decide before writing the matrix evaluator.
 - [ ] **[MAJOR]** **Macro mapping for third-party plugins** is out of scope for v1 (Non-goals), but the boundary is fuzzy: the rack still lists plugin parameters as targets, the user can still map via the right-click "Map to Macro …" flow. What is the minimum viable v1 behavior for plugin parameters without the drag-to-map UX on the plugin's own editor? (Current answer: users map via the rack's parameter list in the Mapping Inspector only. Confirm.)
 - [ ] **[MINOR]** **Audio-rate modulation of pitched parameters** (frequency, detune) needs a defined unit convention. Is the depth in Hz? Semitones? Normalized fraction? R8 uses normalized `[0, 1]` depth on the target's normalized parameter range, but this gives non-musical results for frequency. A per-parameter-type depth unit might be needed; defer to v2 unless users report unusable behavior.
 - [ ] **[MINOR]** Does v1 support **per-project macros** (scoped to the project, not to a rack)? The future-spec mentions global macros. Current scope: **rack-scoped only**.

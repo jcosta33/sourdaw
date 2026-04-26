@@ -77,8 +77,9 @@ const defaultLevainState: LevainState = {
     currentArticulationDisplay: 'Long',
 };
 
-export const LevainPanel = (): ReactElement => {
-    const state = useStore(levainStore, defaultLevainState);
+export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
+    const instances = useStore(levainStore, {});
+    const state = instances[deviceId] ?? defaultLevainState;
     const [search, setSearch] = useState('');
     const [family, setFamily] = useState('All');
 
@@ -149,7 +150,7 @@ export const LevainPanel = (): ReactElement => {
                                                 ? 'border-white/18 bg-white/[0.03]'
                                                 : 'hover:border-white/12 hover:bg-white/[0.02]'
                                         }`}
-                                        onClick={() => loadInstrument(instrument.id)}
+                                        onClick={() => loadInstrument(deviceId, instrument.id)}
                                     >
                                         <div className="flex w-full items-center justify-between gap-2">
                                             <span className="text-[11px] font-medium text-foreground">
@@ -175,7 +176,7 @@ export const LevainPanel = (): ReactElement => {
                         <ArticulationList
                             articulations={patch.articulations}
                             current={patch.currentArticulation}
-                            onSelect={setCurrentArticulation}
+                            onSelect={(type) => setCurrentArticulation(deviceId, type)}
                         />
                     </section>
                 </aside>
@@ -229,10 +230,10 @@ export const LevainPanel = (): ReactElement => {
                                     expression={patch.expression}
                                     legato={patch.legato}
                                     onChangeExp={(partial) =>
-                                        setLevainParamWithAudio('expression', { ...patch.expression, ...partial })
+                                        setLevainParamWithAudio(deviceId, 'expression', { ...patch.expression, ...partial })
                                     }
                                     onChangeLeg={(partial) =>
-                                        setLevainParamWithAudio('legato', { ...patch.legato, ...partial })
+                                        setLevainParamWithAudio(deviceId, 'legato', { ...patch.legato, ...partial })
                                     }
                                 />
                             </SectionCard>
@@ -245,7 +246,7 @@ export const LevainPanel = (): ReactElement => {
                                     <LegatoTuning
                                         config={patch.legato}
                                         onChange={(partial) =>
-                                            setLevainParamWithAudio('legato', { ...patch.legato, ...partial })
+                                            setLevainParamWithAudio(deviceId, 'legato', { ...patch.legato, ...partial })
                                         }
                                     />
                                 </SectionCard>
@@ -257,7 +258,7 @@ export const LevainPanel = (): ReactElement => {
                                     <HumanizePanel
                                         config={patch.humanize}
                                         onChange={(partial) =>
-                                            setLevainParamWithAudio('humanize', { ...patch.humanize, ...partial })
+                                            setLevainParamWithAudio(deviceId, 'humanize', { ...patch.humanize, ...partial })
                                         }
                                     />
                                 </SectionCard>
@@ -272,8 +273,8 @@ export const LevainPanel = (): ReactElement => {
                                 <MicBlendSlider
                                     micPositions={patch.micPositions}
                                     showFull
-                                    onSendMicParam={sendMicParamToEngine}
-                                    onUpdateMicPosition={updateMicPosition}
+                                    onSendMicParam={(micIndex, name, value) => sendMicParamToEngine(deviceId, micIndex, name, value)}
+                                    onUpdateMicPosition={(name, partial) => updateMicPosition(deviceId, name, partial)}
                                 />
                             </SectionCard>
 
@@ -284,7 +285,7 @@ export const LevainPanel = (): ReactElement => {
                                 <LevainMacroStrip
                                     macros={patch.macros}
                                     labels={patch.macroLabels}
-                                    onMacroChange={setMacroWithAudio}
+                                    onMacroChange={(macro, value) => setMacroWithAudio(deviceId, macro, value)}
                                     compact
                                 />
                             </SectionCard>
@@ -294,7 +295,7 @@ export const LevainPanel = (): ReactElement => {
                                     <div className="flex flex-col items-center gap-1">
                                         <RotaryKnob
                                             value={patch.masterGain}
-                                            onChange={(value) => setLevainParamWithAudio('masterGain', value)}
+                                            onChange={(value) => setLevainParamWithAudio(deviceId, 'masterGain', value)}
                                             min={0}
                                             max={2}
                                             step={0.01}
@@ -316,7 +317,7 @@ export const LevainPanel = (): ReactElement => {
                                             tone="amber"
                                             size="sm"
                                             onClick={() =>
-                                                setLevainParamWithAudio('releaseTriggers', {
+                                                setLevainParamWithAudio(deviceId, 'releaseTriggers', {
                                                     ...patch.releaseTriggers,
                                                     enabled: !patch.releaseTriggers.enabled,
                                                 })
@@ -329,7 +330,7 @@ export const LevainPanel = (): ReactElement => {
                                             tone="amber"
                                             size="sm"
                                             onClick={() =>
-                                                setLevainParamWithAudio('releaseTriggers', {
+                                                setLevainParamWithAudio(deviceId, 'releaseTriggers', {
                                                     ...patch.releaseTriggers,
                                                     dynamicScale: !patch.releaseTriggers.dynamicScale,
                                                 })

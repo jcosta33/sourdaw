@@ -1,5 +1,5 @@
 import { updateTrack } from '../../repositories/track/updateTrack';
 
 export function hideTrack(trackId: string, hidden: boolean): void {
-    updateTrack(trackId, (t) => ({ ...t, hidden }));
+    updateTrack(trackId, (time) => ({ ...time, hidden }));
 }

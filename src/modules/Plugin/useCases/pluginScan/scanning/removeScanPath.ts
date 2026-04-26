@@ -6,6 +6,6 @@ export function removeScanPath(path: string): void {
     const state = getState();
     pluginScanStore.set({
         ...state,
-        scanPaths: state.scanPaths.filter((p) => p !== path),
+        scanPaths: state.scanPaths.filter((param) => param !== path),
     });
 }

@@ -3,7 +3,7 @@ import { audioEngine } from '../../createWebAudioEngine';
 import { getMidiAccess, getActiveInput, activeNotes, channelToNote } from '../state';
 
 export function resetMidiState(): void {
-    for (const [note, noteData] of activeNotes) {
+    for (const [, noteData] of activeNotes) {
         if (noteData.osc) {
             const now = audioEngine.context.currentTime;
             if (noteData.osc._env) {
@@ -15,7 +15,6 @@ export function resetMidiState(): void {
                 // already stopped
             }
         }
-        note;
     }
     activeNotes.clear();
     channelToNote.clear();

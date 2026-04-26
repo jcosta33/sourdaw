@@ -75,17 +75,21 @@ export const StepSequencer = ({
                                 const isBarStart = stepIndex % 4 === 0;
                                 const probabilityTint = step.active ? 0.12 + (1 - step.probability) * 0.18 : 0;
 
+                                let background = 'rgba(255,255,255,0.012)';
+                                if (isCurrent) {
+                                    background =
+                                        'linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.03))';
+                                } else if (stepIndex % 8 < 4) {
+                                    background = 'rgba(255,255,255,0.02)';
+                                }
+
                                 return (
                                     <div
                                         key={stepIndex}
                                         className={`relative min-w-[19px] flex-1 cursor-pointer rounded-[10px] transition-all ${isBarStart ? 'ml-1' : ''}`}
                                         style={{
                                             height: STEP_HEIGHT,
-                                            background: isCurrent
-                                                ? 'linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.03))'
-                                                : stepIndex % 8 < 4
-                                                  ? 'rgba(255,255,255,0.02)'
-                                                  : 'rgba(255,255,255,0.012)',
+                                            background,
                                             boxShadow: isCurrent
                                                 ? `0 0 16px ${pad.color}33`
                                                 : 'inset 0 1px 0 rgba(255,255,255,0.04)',

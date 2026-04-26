@@ -10,7 +10,14 @@ import {
     removeClip,
     addClip,
 } from '#/modules/Arrangement/useCases';
-import { stopPlayback, seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
+import {
+    stopPlayback,
+    seekPlayhead,
+    setLoopRegion,
+    stopAllSlots,
+    triggerPad,
+} from '#/modules/Transport/useCases';
+import { loopStationStore } from '#/modules/Transport/stores';
 import { workspaceStore, toolSwapStore } from '#/modules/Workspace/stores';
 import {
     clearClipSelection,
@@ -31,7 +38,7 @@ import {
     TOOL_SHORTCUTS,
 } from '#/modules/Workspace/useCases';
 
-import { shortcutStore, type ShortcutAction } from '../../../stores/shortcutStore';
+import { parseLoopStationPadCallbackId, shortcutStore, type ShortcutAction } from '../../../stores/shortcutStore';
 import { executeAppAction } from '../../executeAppAction';
 import { pushUndoEntry } from '../../pushUndoEntry';
 import { getAllClipIds } from '../../selectionHelpers/getAllClipIds';
@@ -43,6 +50,59 @@ import { duplicateSelectedClipsForward } from '../clipShortcuts/duplicateSelecte
 import { duplicateTrack } from '../trackShortcuts/duplicateTrack';
 
 const ZOOM_STEP = 4;
+
+const AI_LEADER_TIMEOUT_MS = 1500;
+
+type AiLeaderState = {
+    armedAt: number;
+};
+
+let aiLeaderState: AiLeaderState | null = null;
+
+function armAiLeader(): void {
+    aiLeaderState = { armedAt: performance.now() };
+}
+
+function disarmAiLeader(): void {
+    aiLeaderState = null;
+}
+
+function isAiLeaderArmed(): boolean {
+    if (!aiLeaderState) {
+        return false;
+    }
+    if (performance.now() - aiLeaderState.armedAt > AI_LEADER_TIMEOUT_MS) {
+        aiLeaderState = null;
+        return false;
+    }
+    return true;
+}
+
+function dispatchAiChord(key: string): boolean {
+    disarmAiLeader();
+    const normalized = key.toLowerCase();
+    switch (normalized) {
+        case 'd':
+            executeAppAction({ type: 'generateDrumPattern', payload: { style: 'rock' } });
+            return true;
+        case 'm':
+            executeAppAction({ type: 'generateMelody', payload: { style: 'simple' } });
+            return true;
+        case 'c':
+            executeAppAction({ type: 'generateChordProgression', payload: { style: 'pop' } });
+            return true;
+        case 'b': {
+            const selectedId = workspaceStore.value?.selectedClipId;
+            if (!selectedId) {
+                return true;
+            }
+            executeAppAction({ type: 'generateBassline', payload: { clipId: selectedId, style: 'root-fifth' } });
+            return true;
+        }
+        default:
+            return false;
+    }
+}
 
 const NUMBER_TOOL_MAP: Record<string, EditingTool> = {
     '1': 'select',
@@ -116,13 +176,13 @@ function getSelectedGhostClipId(): string | null {
     const state = trackStore.value;
     const isGhost =
         (state?.ghostClips ?? []).some((g) => g.id === selectedId) ||
-        state?.tracks.flatMap((t) => t.clips).some((c) => c.id === selectedId && c.isGhost);
+        state?.tracks.flatMap((time) => time.clips).some((context) => context.id === selectedId && context.isGhost);
     return isGhost ? selectedId : null;
 }
 
 function executeDuplicateTimeRange(startBeat: number, endBeat: number): void {
     const duration = endBeat - startBeat;
-    const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((t) => t.id);
+    const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((time) => time.id);
     duplicateTimeRange(startBeat, endBeat);
     pushUndoEntry(
         'Duplicate Time Range',
@@ -132,7 +192,7 @@ function executeDuplicateTimeRange(startBeat: number, endBeat: number): void {
 }
 
 export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
-    const executeShortcutAction = (action: ShortcutAction): boolean => {
+    function executeShortcutAction(action: ShortcutAction): boolean {
         if (action.type === 'appAction') {
             const { type, payload } = action.action;
 
@@ -152,7 +212,7 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                 } else {
                     const selectedClipId = workspaceStore.value?.selectedClipId;
                     if (selectedClipId) {
-                        executeAppAction({ type: 'duplicateClip', payload: { clipId: selectedClipId } });
+                        void executeAppAction({ type: 'duplicateClip', payload: { clipId: selectedClipId } });
                     }
                 }
                 return true;
@@ -160,12 +220,12 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
             if (type === 'duplicateClipToNextBar' && (payload as { clipId?: string })?.clipId === 'selected') {
                 const selectedClipId = workspaceStore.value?.selectedClipId;
                 if (selectedClipId) {
-                    executeAppAction({ type: 'duplicateClipToNextBar', payload: { clipId: selectedClipId } });
+                    void executeAppAction({ type: 'duplicateClipToNextBar', payload: { clipId: selectedClipId } });
                 }
                 return true;
             }
 
-            executeAppAction(action.action);
+            void executeAppAction(action.action);
             return true;
         }
         if (action.type === 'callback') {
@@ -180,9 +240,17 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                     const ws = workspaceStore.value;
                     if (ws && (ws.selectedClipIds.length > 0 || ws.selectedClipId)) {
                         clearClipSelection();
-                    } else {
-                        stopPlayback();
+                        return false;
                     }
+                    const loopState = loopStationStore.value;
+                    const hasActiveSlot = (loopState?.slots ?? []).some(
+                        (slot) => slot.state === 'playing' || slot.state === 'overdubbing' || slot.state === 'recording'
+                    );
+                    if (hasActiveSlot) {
+                        stopAllSlots();
+                        return true;
+                    }
+                    stopPlayback();
                     return false;
                 }
                 case 'zoomIn':
@@ -292,7 +360,7 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                             const state = trackStore.value;
                             if (state) {
                                 for (const track of state.tracks) {
-                                    const clip = track.clips.find((c) => c.id === singleId);
+                                    const clip = track.clips.find((context) => context.id === singleId);
                                     if (clip) {
                                         setLoopRegion(clip.startBeat, clip.endBeat);
                                         break;
@@ -321,7 +389,7 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                     }
                     const duration = sel.endBeat - sel.startBeat;
                     const atBeat = sel.startBeat;
-                    const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((t) => t.id);
+                    const trackIdsAtAction = (trackStore.value?.tracks ?? []).map((time) => time.id);
                     insertTime(atBeat, duration);
                     pushUndoEntry(
                         'Insert Silence',
@@ -339,14 +407,18 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                     executeDuplicateTimeRange(sel.startBeat, sel.endBeat);
                     return true;
                 }
+                case 'aiLeaderKey': {
+                    armAiLeader();
+                    return true;
+                }
                 case 'cycleGhostClipNext':
                 case 'cycleGhostClipPrev': {
                     // R-E1.2: Alt+]/[ cycle through ghost clips
                     const state = trackStore.value;
                     const allGhosts = [
-                        ...(state?.tracks ?? []).flatMap((t) => t.clips).filter((c) => c.isGhost),
+                        ...(state?.tracks ?? []).flatMap((time) => time.clips).filter((context) => context.isGhost),
                         ...(state?.ghostClips ?? []),
-                    ].map((c) => c.id);
+                    ].map((context) => context.id);
 
                     if (allGhosts.length === 0) {
                         return false;
@@ -361,12 +433,18 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                     }
                     return true;
                 }
-                default:
+                default: {
+                    const pad = parseLoopStationPadCallbackId(action.id);
+                    if (pad) {
+                        triggerPad({ row: pad.rowIndex, column: pad.columnIndex, record: pad.record });
+                        return true;
+                    }
                     return false;
+                }
             }
         }
         return false;
-    };
+    }
 
     /**
      * Delete callback used by `editing.deleteSelection` (Delete / Backspace).
@@ -393,15 +471,23 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
             return true;
         }
 
-        const ids = ws.selectedClipIds.length > 0 ? ws.selectedClipIds : ws.selectedClipId ? [ws.selectedClipId] : [];
+        const ids = (() => {
+            if (ws.selectedClipIds.length > 0) {
+                return ws.selectedClipIds;
+            }
+            if (ws.selectedClipId) {
+                return [ws.selectedClipId];
+            }
+            return [];
+        })();
         if (ids.length === 0) {
             return false;
         }
 
-        const allClips = trackStore.value?.tracks.flatMap((t) => t.clips) ?? [];
+        const allClips = trackStore.value?.tracks.flatMap((time) => time.clips) ?? [];
         const deletedClips = ids
             .map((id) => allClips.find((clip) => clip.id === id))
-            .filter((clip): clip is NonNullable<typeof clip> => clip != null);
+            .filter((clip): clip is NonNullable<typeof clip> => clip !== undefined);
 
         if (deletedClips.length === 0) {
             return false;
@@ -429,22 +515,30 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
         return true;
     }
 
-    const handleSimpleKeys = (key: string, desc: KeyDescriptor): boolean => {
+    function handleSimpleKeys(key: string, desc: KeyDescriptor): boolean {
         // Check shortcut store first
         const { definitions, customMappings } = shortcutStore.value ?? {
             definitions: [],
             customMappings: {},
         };
+        const loopStationArmed = loopStationStore.value?.armed === true;
         for (const def of definitions) {
             const keys = customMappings[def.id] ?? def.defaultKeys;
             if (matches(desc, keys)) {
+                if (
+                    def.id.startsWith('loopStation.pad.') &&
+                    def.id.endsWith('.play') &&
+                    !loopStationArmed
+                ) {
+                    continue;
+                }
                 return executeShortcutAction(def.action);
             }
         }
 
         switch (key) {
             case 'L':
-                eventBus.emit('zoom.scrollToPlayhead', undefined);
+                void eventBus.emit('zoom.scrollToPlayhead', undefined);
                 return false;
             case 'Home':
                 seekPlayhead(0);
@@ -471,17 +565,27 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                 return false;
             }
         }
-    };
+    }
 
     return function handleKeydown(desc: KeyDescriptor): boolean {
         const { key, mod, shift, alt, repeat, isInput } = desc;
+
+        // AI leader chord resolution — if `g` was pressed recently and this
+        // keypress is a bare letter (no modifiers), consume it as the second
+        // stroke of `g, <letter>`.
+        if (isAiLeaderArmed() && !mod && !shift && !alt && !repeat && !isInput && key.length === 1) {
+            if (dispatchAiChord(key)) {
+                return true;
+            }
+            disarmAiLeader();
+        }
 
         // V: voice toggle (press)
         if (key === 'v' && !mod && !shift && !alt && !repeat) {
             if (isInput) {
                 return false;
             }
-            eventBus.emit('voice.toggle', { active: true });
+            void eventBus.emit('voice.toggle', { active: true });
             return true;
         }
 
@@ -490,12 +594,25 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
             definitions: [],
             customMappings: {},
         };
+        const loopStationArmed = loopStationStore.value?.armed === true;
         for (const def of definitions) {
             const keys = customMappings[def.id] ?? def.defaultKeys;
             if (matches(desc, keys)) {
                 // Some shortcuts (like Cmd+K) should work even in inputs
                 const allowedInInput = def.id === 'workspace.toggleCommandPalette';
                 if (isInput && !allowedInInput) {
+                    continue;
+                }
+                // Gate Loop Station play-pad shortcuts behind the `armed`
+                // toggle so they don't steal letter keys from existing
+                // transport / tool bindings. Shift-press record variants
+                // always fire — they carry a shift modifier that otherwise
+                // has no binding, so there is no conflict to gate against.
+                if (
+                    def.id.startsWith('loopStation.pad.') &&
+                    def.id.endsWith('.play') &&
+                    !loopStationArmed
+                ) {
                     continue;
                 }
                 return executeShortcutAction(def.action);

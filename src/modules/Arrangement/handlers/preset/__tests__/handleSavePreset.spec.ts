@@ -23,7 +23,7 @@ describe('handleSavePreset', () => {
     it('bails if track cannot be found', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
 
-        handleSavePreset.execute({
+        void handleSavePreset.execute({
             type: 'savePreset',
             payload: { trackId: 't1', name: 'My Preset', category: 'Synth' },
         });
@@ -42,7 +42,7 @@ describe('handleSavePreset', () => {
             ],
         });
 
-        handleSavePreset.execute({
+        void handleSavePreset.execute({
             type: 'savePreset',
             payload: { trackId: 't1', name: 'My Preset', category: 'Synth' },
         });

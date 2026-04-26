@@ -1,4 +1,4 @@
-import * as Automerge from '@automerge/automerge';
+import { merge } from '@automerge/automerge';
 
 import { createBranchError } from '../../errors/BranchError';
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
@@ -10,7 +10,7 @@ import { projectCrdtToStores } from '../projection/projectProjection';
 /**
  * Merge a source branch into the current (target) branch.
  */
-export const mergeBranch = async (sourceBranchId: string): Promise<void> => {
+export async function mergeBranch(sourceBranchId: string): Promise<void> {
     const state = branchStore.value;
     if (!state) {
         return;
@@ -28,7 +28,7 @@ export const mergeBranch = async (sourceBranchId: string): Promise<void> => {
         throw createBranchError('Cannot merge: missing documents');
     }
 
-    const merged = Automerge.merge(targetDoc, sourceDoc);
+    const merged = merge(targetDoc, sourceDoc);
     automergeRepository.replaceDoc(DOC_PREFIX_ROOT, merged);
 
     // Persist merged state
@@ -36,4 +36,4 @@ export const mergeBranch = async (sourceBranchId: string): Promise<void> => {
     await saveAllToIdb(bundle);
 
     projectCrdtToStores();
-};
+}

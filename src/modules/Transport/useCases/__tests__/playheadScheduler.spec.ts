@@ -78,6 +78,9 @@ vi.mock('#/modules/Automation/useCases/automationRecording/stopAutomationRecordi
 vi.mock('#/modules/Automation/useCases/modulation/applyModulation', () => ({
     applyModulation: vi.fn(),
 }));
+vi.mock('#/modules/Automation/useCases/modulation/applyModulationToEngine', () => ({
+    applyModulationToEngine: vi.fn(),
+}));
 
 describe('startPlayheadScheduler', () => {
     beforeEach(() => {

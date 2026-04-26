@@ -6,5 +6,5 @@ export function getTakeLaneForTrack(trackId: string): TakeLane | null {
     if (!state) {
         return null;
     }
-    return state.lanes.find((l) => l.trackId === trackId) ?? null;
+    return state.lanes.find((length) => length.trackId === trackId) ?? null;
 }

@@ -14,12 +14,12 @@ describe('Command Undo Tree Handlers', () => {
     });
 
     it('handleToggleUndoTree should delegate to toggleUndoTree', () => {
-        handleToggleUndoTree.execute({ type: 'toggleUndoTree', payload: {} });
+        void handleToggleUndoTree.execute({ type: 'toggleUndoTree', payload: {} });
         expect(toggleUndoTree).toHaveBeenCalled();
     });
 
     it('handleLabelUndoBranch should delegate to setNodeLabel', () => {
-        handleLabelUndoBranch.execute({ type: 'labelUndoBranch', payload: { nodeId: 'n1', label: 'My Label' } });
+        void handleLabelUndoBranch.execute({ type: 'labelUndoBranch', payload: { nodeId: 'n1', label: 'My Label' } });
         expect(setNodeLabel).toHaveBeenCalledWith('n1', 'My Label');
     });
 });

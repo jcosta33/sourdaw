@@ -17,7 +17,7 @@ type SetGrandBouleTemperamentInput = {
     store: Store<GrandBouleState>;
 };
 
-export const setGrandBouleTemperament = (input: SetGrandBouleTemperamentInput): void => {
+export function setGrandBouleTemperament(input: SetGrandBouleTemperamentInput): void {
     const state = input.store.value;
     if (state === null) {
         return;
@@ -30,4 +30,4 @@ export const setGrandBouleTemperament = (input: SetGrandBouleTemperamentInput): 
 
     const engine = resolveGrandBouleEngine({ deviceId: input.deviceId });
     engine.setTemperament({ index: input.temperament });
-};
+}

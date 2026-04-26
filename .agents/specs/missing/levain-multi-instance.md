@@ -30,6 +30,7 @@ Enable true multi-instance support for the Levain plugin. Each Levain device in 
 - Any other plugin's multi-instance behavior (fix Levain first; replicate the pattern elsewhere separately).
 
 ## Requirements
+
 1. **Device-Scoped Stores:** The global `levainStore` must be replaced by a mechanism that provides an isolated store per `deviceId`.
 2. **Device-Scoped Bridge:** The `levainBridge` must manage a registry of active Levain devices and their `MessagePort`s keyed by `deviceId`.
 3. **No Domain Leakage:** The plugin code must not import `getAllTracks` from the Arrangement domain to discover its own ID. The DAW shell must pass the `deviceId` to the plugin panel or bridge upon initialization.
@@ -87,13 +88,17 @@ Enable true multi-instance support for the Levain plugin. Each Levain device in 
 ## Implementation Status
 
 **What is implemented:**
+
 - None. The `levainStore.ts` still uses a singleton `levainStore` rather than a registry.
 
 **What is not implemented:**
+
 - All features described in the spec, including `LevainRegistry`, keyed store management, and multi-instance UI. `LevainPanel.tsx` still consumes the singleton store and does not accept a `deviceId`.
 
 **What is done well:**
+
 - N/A
 
 **What needs refactoring:**
+
 - The entire Levain module needs to transition from singletons to keyed registries as described in the spec.

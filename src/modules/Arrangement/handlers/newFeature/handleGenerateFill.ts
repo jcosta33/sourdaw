@@ -4,11 +4,11 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { generateDrumFill } from '../../useCases/fillTransitionGeneration/generation';
 
 export const handleGenerateFill = createHandler<'generateFill'>({
-    execute: (a) => {
+    execute: (alpha) => {
         const fill = generateDrumFill(
-            a.payload.atBeat,
-            a.payload.durationBeats ?? 2,
-            (a.payload.style ?? 'descending') as 'simple' | 'descending' | 'sixteenth' | 'syncopated'
+            alpha.payload.atBeat,
+            alpha.payload.durationBeats ?? 2,
+            (alpha.payload.style ?? 'descending') as 'simple' | 'descending' | 'sixteenth' | 'syncopated'
         );
         notifyUser(`Generated ${fill.notes.length}-note drum fill`, 'success');
     },

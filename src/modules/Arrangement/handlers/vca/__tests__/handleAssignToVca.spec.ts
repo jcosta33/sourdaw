@@ -16,7 +16,7 @@ describe('handleAssignToVca', () => {
     });
 
     it('executes assignToVca with payload', () => {
-        handleAssignToVca.execute({
+        void handleAssignToVca.execute({
             type: 'assignToVca',
             payload: { trackId: 't1', vcaGroupId: 'vca1' },
         });

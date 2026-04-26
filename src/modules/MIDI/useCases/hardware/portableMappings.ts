@@ -6,7 +6,7 @@ import { hardwareControllerStore } from '../../stores/hardwareControllerStore';
  */
 export function exportHardwareMappings(profileId: string): string | null {
     const state = hardwareControllerStore.value;
-    const profile = state?.profiles.find((p) => p.id === profileId);
+    const profile = state?.profiles.find((param) => param.id === profileId);
     if (!profile) {
         return null;
     }
@@ -49,7 +49,7 @@ export function importHardwareMappings(profileId: string, json: string): void {
         const mappings = parsed as ControllerMapping[];
         hardwareControllerStore.set({
             ...state,
-            profiles: state.profiles.map((p) => (p.id === profileId ? { ...p, mappings } : p)),
+            profiles: state.profiles.map((param) => (param.id === profileId ? { ...param, mappings } : param)),
         });
     } catch (error) {
         console.error('Failed to import hardware mappings:', error);

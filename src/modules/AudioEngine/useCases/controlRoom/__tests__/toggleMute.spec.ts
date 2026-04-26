@@ -5,7 +5,7 @@ import { toggleMute } from '../toggleMute';
 const mocks = vi.hoisted(() => ({
     state: {
         muted: false,
-    } as any,
+    } as { muted: boolean } | null,
     set: vi.fn(),
 }));
 

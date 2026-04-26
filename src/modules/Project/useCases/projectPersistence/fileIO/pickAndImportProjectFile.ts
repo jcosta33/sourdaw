@@ -1,5 +1,3 @@
-import { readTextFile } from '@tauri-apps/plugin-fs';
-
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type ProjectData } from '../../../models/ProjectData';
@@ -52,8 +50,11 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
     }
 
     try {
-        const path = typeof paths[0] === 'string' ? paths[0] : (paths[0] as any).path;
-        const content = await readTextFile(path);
+        const file = paths[0];
+        if (!file) {
+            return false;
+        }
+        const content = await file.text();
         const data = JSON.parse(content) as ProjectData;
 
         if (data.version !== 1 || !data.arrangement?.tracks || !data.meta) {

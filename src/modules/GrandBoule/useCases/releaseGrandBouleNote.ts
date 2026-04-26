@@ -9,9 +9,9 @@ type ReleaseGrandBouleNoteInput = {
     midiNote: number;
 };
 
-export const releaseGrandBouleNote = (input: ReleaseGrandBouleNoteInput): void => {
+export function releaseGrandBouleNote(input: ReleaseGrandBouleNoteInput): void {
     if (!input.engine.isReady()) {
         return;
     }
     input.engine.noteOff({ midiNote: input.midiNote });
-};
+}

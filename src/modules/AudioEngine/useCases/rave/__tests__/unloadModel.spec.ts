@@ -5,7 +5,7 @@ import * as subject from '../unloadModel';
 describe('unloadModel', () => {
     it('should export unloadModel', () => {
         expect(subject.unloadModel).toBeDefined();
-        const t = typeof subject.unloadModel;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.unloadModel;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

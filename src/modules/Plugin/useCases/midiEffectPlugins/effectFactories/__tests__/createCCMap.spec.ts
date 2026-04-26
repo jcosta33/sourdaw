@@ -4,14 +4,16 @@ import { type MidiNote } from '#/modules/Plugin/models/MidiEffectTypes';
 
 import { createCCMap } from '../createCCMap';
 
-const note = (overrides: Partial<MidiNote> = {}): MidiNote => ({
-    pitch: 60,
-    velocity: 100,
-    startBeat: 0,
-    durationBeats: 0.25,
-    channel: 0,
-    ...overrides,
-});
+function note(overrides: Partial<MidiNote> = {}): MidiNote {
+    return {
+        pitch: 60,
+        velocity: 100,
+        startBeat: 0,
+        durationBeats: 0.25,
+        channel: 0,
+        ...overrides,
+    };
+}
 
 describe('createCCMap', () => {
     it('should return a passthrough MidiEffect that passes notes unchanged', () => {

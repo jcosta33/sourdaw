@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
-import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { readNamedProjectJson } from '../../repositories/project/storageOperations';

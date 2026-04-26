@@ -21,7 +21,6 @@ export function getLatencyReport(): LatencyReport {
         tracks,
         maxLatencyMs: getMaxTrackLatency(),
         contextBaseLatencyMs: (ctx.baseLatency ?? 0) * 1000,
-        contextOutputLatencyMs:
-            ('outputLatency' in ctx ? (ctx as unknown as { outputLatency: number }).outputLatency : 0) * 1000,
+        contextOutputLatencyMs: ('outputLatency' in ctx ? (ctx as { outputLatency: number }).outputLatency : 0) * 1000,
     };
 }

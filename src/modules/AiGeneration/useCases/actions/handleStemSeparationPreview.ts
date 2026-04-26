@@ -36,13 +36,17 @@ export async function handleStemSeparationPreview(clipId: string) {
             durationMs: Math.round(performance.now() - start),
         });
     } catch (error: unknown) {
+        let errorMessage: string;
+        if (isAppError(error)) {
+            errorMessage = error.message;
+        } else if (error instanceof Error) {
+            errorMessage = error.message;
+        } else {
+            errorMessage = 'Stem separation failed';
+        }
         updateTask(taskId, {
             status: 'error',
-            error: isAppError(error)
-                ? error.message
-                : error instanceof Error
-                  ? error.message
-                  : 'Stem separation failed',
+            error: errorMessage,
         });
     }
 }

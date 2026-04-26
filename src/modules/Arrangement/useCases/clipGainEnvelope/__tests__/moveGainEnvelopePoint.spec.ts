@@ -22,7 +22,7 @@ describe('moveGainEnvelopePoint', () => {
         moveGainEnvelopePoint('c1', 'p2', 0.5, 3);
 
         const pts = getEnvelope('c1')!.points;
-        expect(pts.map((p) => p.id)).toEqual(['p1', 'p2']);
+        expect(pts.map((param) => param.id)).toEqual(['p1', 'p2']);
         expect(pts[1]!.beatOffset).toBe(0.5);
         expect(pts[1]!.gainDb).toBe(3);
     });

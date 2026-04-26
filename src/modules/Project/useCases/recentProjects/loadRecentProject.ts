@@ -11,7 +11,7 @@ import { projectStore } from '../../stores/projectStore';
 import { hydrateModuleStoresFromProjectData } from '../projectPersistence/helpers/hydrateModuleStoresFromProjectData';
 import { verifyAudioBufferReferences } from '../projectPersistence/helpers/verifyAudioBufferReferences';
 
-export const loadRecentProject = async function loadRecentProject(key: string): Promise<boolean> {
+export async function loadRecentProject(key: string): Promise<boolean> {
     try {
         const raw = readNamedProjectJson(key);
         if (!raw) {
@@ -58,4 +58,4 @@ export const loadRecentProject = async function loadRecentProject(key: string): 
         logger.error(new Error('Failed to load recent project', { cause: error }));
         return false;
     }
-};
+}

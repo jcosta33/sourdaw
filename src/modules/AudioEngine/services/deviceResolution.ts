@@ -3,7 +3,9 @@ import { type DrumKit } from '../models/SynthModels';
 import { type OfflineDeviceNode } from '../repositories/devices/types';
 
 export function resolveDrumKit(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null {
-    const kitDevice = devices.find((d) => d.type === 'builtin-drum-kit' || d.type.startsWith('builtin-drum-machine'));
+    const kitDevice = devices.find(
+        (data) => data.type === 'builtin-drum-kit' || data.type.startsWith('builtin-drum-machine')
+    );
     if (!kitDevice) {
         return null;
     }
@@ -11,11 +13,11 @@ export function resolveDrumKit(devices: { type: string; parameterValues: Record<
     return getDrumKitByIndex(kitIndex);
 }
 
-export const resolveDeviceParam = (
+export function resolveDeviceParam(
     deviceType: string,
     parameterId: string,
     node: OfflineDeviceNode
-): AudioParam | null => {
+): AudioParam | null {
     const paramMap: Record<string, () => AudioParam | null> = {
         'builtin-eq:eq-low-gain': () => (node.nodes[0] as BiquadFilterNode | undefined)?.gain ?? null,
         'builtin-eq:eq-low-freq': () => (node.nodes[0] as BiquadFilterNode | undefined)?.frequency ?? null,
@@ -45,12 +47,12 @@ export const resolveDeviceParam = (
         return resolver();
     }
     return null;
-};
+}
 
 const paramScaleMap: Record<string, number> = {
     'builtin-delay:delay-time': 1 / 1000,
 };
 
-export const resolveDeviceParamScale = (deviceType: string, parameterId: string): number => {
+export function resolveDeviceParamScale(deviceType: string, parameterId: string): number {
     return paramScaleMap[`${deviceType}:${parameterId}`] ?? 1;
-};
+}

@@ -17,8 +17,8 @@ export const PreviewButton = ({ isPlaying, onPlay, onStop }: PreviewButtonProps)
             'size-4 shrink-0 flex items-center justify-center rounded transition-colors',
             isPlaying ? 'text-primary hover:text-primary/80' : 'text-muted-foreground/60 hover:text-foreground'
         )}
-        onClick={(e) => {
-            e.stopPropagation();
+        onClick={(event) => {
+            event.stopPropagation();
             if (isPlaying) {
                 onStop();
             } else {

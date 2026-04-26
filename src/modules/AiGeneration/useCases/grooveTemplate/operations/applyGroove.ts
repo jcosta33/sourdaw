@@ -7,7 +7,7 @@ export function applyGroove(clipId: string, template: GrooveTemplate, amount = 1
     function findClip(id: string) {
         const tracks = getAllTracks();
         for (const track of tracks) {
-            const clip = track.clips.find((c) => c.id === id);
+            const clip = track.clips.find((context) => context.id === id);
             if (clip) {
                 return clip;
             }

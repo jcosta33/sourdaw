@@ -7,12 +7,12 @@ export const handleSetTrackPan = createHandler<'setTrackPan'>({
     execute: (action) => {
         setTrackPan(action.payload.trackId, action.payload.pan);
     },
-    describe: (a) => {
-        const prev = getTrackStoreState()?.tracks.find((t) => t.id === a.payload.trackId);
+    describe: (alpha) => {
+        const prev = getTrackStoreState()?.tracks.find((time) => time.id === alpha.payload.trackId);
         return {
             label: 'Set track pan',
             inverseAction: prev
-                ? { type: 'setTrackPan', payload: { trackId: a.payload.trackId, pan: prev.pan } }
+                ? { type: 'setTrackPan', payload: { trackId: alpha.payload.trackId, pan: prev.pan } }
                 : null,
         };
     },

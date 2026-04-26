@@ -1,9 +1,15 @@
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
-import { markerStore, trackStore } from '#/modules/Arrangement/stores';
-import { type AutomationLane } from '#/modules/Automation/models/Automation';
+import {
+    adjustmentLayerStore,
+    markerStore,
+    trackStore,
+    type AdjustmentEffectType,
+    type AdjustmentLayer,
+} from '#/modules/Arrangement/stores';
+import { type AutomationCurveType, type AutomationLane } from '#/modules/Automation/models/Automation';
 import { automationStore } from '#/modules/Automation/stores';
 
-import { type ProjectData } from '../../../models/ProjectData';
+import { type ProjectAdjustmentLayer, type ProjectData } from '../../../models/ProjectData';
 
 export function hydrateModuleStoresFromProjectData(data: ProjectData): void {
     if (data.arrangement?.tracks) {
@@ -16,19 +22,19 @@ export function hydrateModuleStoresFromProjectData(data: ProjectData): void {
     // 2. Automation
     if (data.automation) {
         automationStore.set({
-            lanes: (data.automation.lanes || []).map((l) => ({
-                ...l,
-                enabled: l.enabled ?? true,
-                visible: l.visible ?? true,
-                collapsed: l.collapsed ?? false,
-                virginTerritory: l.virginTerritory ?? true,
-                minValue: l.minValue ?? 0,
-                maxValue: l.maxValue ?? 1,
-                objects: l.objects || [],
-                points: l.points.map((p) => ({
-                    ...p,
-                    curve: p.curve as any,
-                    tension: p.tension ?? 0,
+            lanes: (data.automation.lanes || []).map((length) => ({
+                ...length,
+                enabled: length.enabled ?? true,
+                visible: length.visible ?? true,
+                collapsed: length.collapsed ?? false,
+                virginTerritory: length.virginTerritory ?? true,
+                minValue: length.minValue ?? 0,
+                maxValue: length.maxValue ?? 1,
+                objects: length.objects || [],
+                points: length.points.map((param) => ({
+                    ...param,
+                    curve: param.curve as AutomationCurveType,
+                    tension: param.tension ?? 0,
                 })),
             })) as AutomationLane[],
         });
@@ -37,13 +43,35 @@ export function hydrateModuleStoresFromProjectData(data: ProjectData): void {
     // 3. Markers
     if (data.markers) {
         markerStore.set({
-            markers: data.markers.map((m) => ({
-                id: m.id,
-                beat: m.beat,
-                name: (m as any).name || (m as any).label || 'Untitled',
-                color: m.color,
+            markers: data.markers.map((message) => ({
+                id: message.id,
+                beat: message.beat,
+                name: message.name || 'Untitled',
+                color: message.color,
             })),
             sections: [],
         });
     }
+
+    // 4. Adjustment layers — hydrate after tracks so affectedTrackIds can resolve.
+    const hydratedLayers = hydrateAdjustmentLayers(data.adjustmentLayers?.layers);
+    adjustmentLayerStore.set({ layers: hydratedLayers });
+}
+
+function hydrateAdjustmentLayers(layers: ProjectAdjustmentLayer[] | undefined): AdjustmentLayer[] {
+    if (!layers) {
+        return [];
+    }
+    return layers.map((layer) => ({
+        id: layer.id,
+        name: layer.name,
+        effectType: layer.effectType as AdjustmentEffectType,
+        parameters: layer.parameters.map((p) => ({ ...p })),
+        affectedTrackIds: [...layer.affectedTrackIds],
+        insertionIndex: layer.insertionIndex,
+        regions: layer.regions.map((r) => ({ ...r })),
+        enabled: layer.enabled,
+        mix: layer.mix,
+        color: layer.color,
+    }));
 }

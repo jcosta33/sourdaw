@@ -28,7 +28,7 @@ export const handleCreateTrackAlternative = createHandler<'createTrackAlternativ
 
                 // Deep clone active clips if duplicating, else empty
                 const newClips: Clip[] = duplicateActive
-                    ? track.clips.map((c) => ({ ...c, id: `clip-${crypto.randomUUID()}` }))
+                    ? track.clips.map((context) => ({ ...context, id: `clip-${crypto.randomUUID()}` }))
                     : [];
 
                 const newAlternative: TrackAlternative = {

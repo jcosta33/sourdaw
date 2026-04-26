@@ -47,9 +47,10 @@ These apply to non-trivial tasks. They are hard constraints, not suggestions.
 
 ## Proactive Research
 
-**You are empowered and expected to perform research.** If you need to understand an API, fix a complex bug, or evaluate a technical approach, do not endlessly ruminate or guess. 
+**You are empowered and expected to perform research.** If you need to understand an API, fix a complex bug, or evaluate a technical approach, do not endlessly ruminate or guess.
+
 - Use your tools to search the codebase and the internet.
-- Finding sources is crucial for decision making. 
+- Finding sources is crucial for decision making.
 - You may create new research files in `.agents/research/` if your findings represent durable domain knowledge that should be kept. Do not fabricate findings; back them up with real documentation, codebase reality, or internet sources.
 
 ---

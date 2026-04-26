@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { removeAutomationPoint } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
+import { getAutomationStoreState } from '#/modules/Automation/useCases/getAutomationStoreState';
+import { pickFiles } from '#/modules/Project/repositories/nativeFileDialog/pickFiles';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { setWorkspaceMode } from '../../../useCases/setWorkspaceMode';
+import { handleImportMidiFile } from '../handleImportMidiFile';
+import { handleRemoveAutomationPoint } from '../handleRemoveAutomationPoint';
 import { handleSetWorkspaceMode } from '../handleSetWorkspaceMode';
 
 vi.mock('../../../useCases/setWorkspaceMode', () => ({
@@ -25,22 +33,13 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
 
-import { getAutomationStoreState } from '#/modules/Automation/useCases/getAutomationStoreState';
-import { removeAutomationPoint } from '#/modules/Automation/useCases/automation/removeAutomationPoint';
-import { pickFiles } from '#/modules/Project/repositories/nativeFileDialog/pickFiles';
-import { notifyUser } from '#/utils/Notification/notifyUser';
-
-import { setWorkspaceMode } from '../../../useCases/setWorkspaceMode';
-import { handleImportMidiFile } from '../handleImportMidiFile';
-import { handleRemoveAutomationPoint } from '../handleRemoveAutomationPoint';
-
 describe('workspace handlers', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
     it('handleSetWorkspaceMode forwards mode', () => {
-        handleSetWorkspaceMode.execute({
+        void handleSetWorkspaceMode.execute({
             type: 'setWorkspaceMode',
             payload: { mode: 'arrange' },
         });
@@ -59,7 +58,7 @@ describe('workspace handlers', () => {
             ],
         });
 
-        handleRemoveAutomationPoint.execute({
+        void handleRemoveAutomationPoint.execute({
             type: 'removeAutomationPoint',
             payload: { laneId: 'lane-1', pointIndex: 0 },
         });
@@ -70,7 +69,7 @@ describe('workspace handlers', () => {
     it('handleImportMidiFile notifies on file dialog failure', async () => {
         vi.mocked(pickFiles).mockRejectedValue(new Error('dialog'));
 
-        handleImportMidiFile.execute({ type: 'importMidiFile', payload: undefined });
+        void handleImportMidiFile.execute({ type: 'importMidiFile', payload: undefined });
 
         await vi.waitFor(() => {
             expect(notifyUser).toHaveBeenCalledWith('Failed to open file dialog', 'error');

@@ -23,7 +23,7 @@ describe('slug utility', () => {
     describe('deriveNames', () => {
         it('should derive branch, task path, and worktree path correctly', () => {
             const config = {
-                worktreeDirPattern: '../{repoName}--{slug}'
+                worktreeDirPattern: '../{repoName}--{slug}',
             };
             const result = deriveNames('my-feature', 'my-repo', config);
 

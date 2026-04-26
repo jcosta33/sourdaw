@@ -22,7 +22,7 @@ export const goToItem = inject({ eventBus })(
             }
 
             if (item.programChange) {
-                bus.emit('midi.out', {
+                void bus.emit('midi.out', {
                     type: 'programChange',
                     channel: item.programChange.channel,
                     program: item.programChange.program,

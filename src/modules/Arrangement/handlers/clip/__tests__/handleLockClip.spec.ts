@@ -16,7 +16,7 @@ describe('handleLockClip', () => {
     });
 
     it('executes lockClip with the provided payload', () => {
-        handleLockClip.execute({
+        void handleLockClip.execute({
             type: 'lockClip',
             payload: { clipId: 'c1', locked: true },
         });

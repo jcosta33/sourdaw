@@ -7,6 +7,6 @@ import { inject } from '#/infra/di/inject';
 export const showFermenterPanel = inject({ eventBus })(
     ({ eventBus }) =>
         function showFermenterPanel(deviceId: string | null): void {
-            eventBus.emit('panel.showFermenter', { deviceId });
+            void eventBus.emit('panel.showFermenter', { deviceId });
         }
 );

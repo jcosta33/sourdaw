@@ -5,6 +5,7 @@ import { addClip } from '../clip/addClip';
 
 import { getBufferForClip } from './helpers';
 
+// eslint-disable-next-line @typescript-eslint/require-await -- async API contract; callers use await; synchronous implementation pending real audio-AI backend
 export async function audioToMidi(clipId: string): Promise<void> {
     const result = getBufferForClip(clipId);
     if (!result) {
@@ -33,30 +34,30 @@ export async function audioToMidi(clipId: string): Promise<void> {
     // 2. Onset detection via amplitude threshold
     const data = buffer.getChannelData(0);
     let maxAmp = 0;
-    for (let i = 0; i < data.length; i++) {
-        if (Math.abs(data[i]!) > maxAmp) {
-            maxAmp = Math.abs(data[i]!);
+    for (let index = 0; index < data.length; index++) {
+        if (Math.abs(data[index]!) > maxAmp) {
+            maxAmp = Math.abs(data[index]!);
         }
     }
     const onsetThreshold = maxAmp * 0.4;
 
     const onsets: number[] = [];
-    for (let i = 0; i < data.length; i++) {
-        if (Math.abs(data[i]!) > onsetThreshold) {
-            onsets.push(i);
-            i += Math.floor(buffer.sampleRate * 0.125); // 8th note skip
+    for (let index = 0; index < data.length; index++) {
+        if (Math.abs(data[index]!) > onsetThreshold) {
+            onsets.push(index);
+            index += Math.floor(buffer.sampleRate * 0.125); // 8th note skip
         }
     }
 
     // 3. For each onset, estimate pitch via zero-crossing frequency
-    for (let i = 0; i < onsets.length; i++) {
-        const onset = onsets[i]!;
+    for (let index = 0; index < onsets.length; index++) {
+        const onset = onsets[index]!;
 
         // Count zero crossings in a window to estimate frequency
         const windowSamples = Math.min(2048, data.length - onset);
         let crossings = 0;
-        for (let j = onset + 1; j < onset + windowSamples; j++) {
-            if ((data[j]! >= 0 && data[j - 1]! < 0) || (data[j]! < 0 && data[j - 1]! >= 0)) {
+        for (let jIndex = onset + 1; jIndex < onset + windowSamples; jIndex++) {
+            if ((data[jIndex]! >= 0 && data[jIndex - 1]! < 0) || (data[jIndex]! < 0 && data[jIndex - 1]! >= 0)) {
                 crossings++;
             }
         }

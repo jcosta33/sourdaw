@@ -26,17 +26,66 @@ type InspectorPanelProps = {
 
 export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
-    const masterTrack = tracks.find((t) => t.kind === 'master');
+    const masterTrack = tracks.find((time) => time.kind === 'master');
 
     const selectedTrack =
-        (selectedTrackId ? tracks.find((t) => t.id === selectedTrackId) : null) ?? masterTrack ?? null;
+        (selectedTrackId ? tracks.find((time) => time.id === selectedTrackId) : null) ?? masterTrack ?? null;
     const wsSelectedClipId = useStore(workspaceStore, defaultWorkspaceState).selectedClipId;
     const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
 
-    const selectedClip = selectedTrack?.clips.find((c) => c.id === wsSelectedClipId) ?? null;
-    const selectedDevice = selectedTrack?.devices.find((d) => d.id === selectedDeviceId) ?? null;
+    const selectedClip = selectedTrack?.clips.find((context) => context.id === wsSelectedClipId) ?? null;
+    const selectedDevice = selectedTrack?.devices.find((data) => data.id === selectedDeviceId) ?? null;
 
     const isDeviceView = !!selectedDevice;
+    const renderIife_22 = () => {
+        if (selectedDevice && selectedTrack) {
+            return (
+                <DeviceInspector
+                    device={selectedDevice}
+                    trackId={selectedTrack.id}
+                    onBack={() => setSelectedDeviceId(null)}
+                />
+            );
+        } else {
+            if (selectedClip && selectedTrack) {
+                return <ClipInspector clip={selectedClip} trackId={selectedTrack.id} onBack={clearClipSelection} />;
+            } else {
+                if (selectedTrack) {
+                    return (
+                        <TrackInspector
+                            track={selectedTrack}
+                            allTracks={tracks}
+                            onSelectClip={selectClipWithFocus}
+                            onSelectDevice={setSelectedDeviceId}
+                        />
+                    );
+                } else {
+                    if (masterTrack) {
+                        return (
+                            <TrackInspector
+                                track={masterTrack}
+                                allTracks={tracks}
+                                onSelectClip={selectClipWithFocus}
+                                onSelectDevice={setSelectedDeviceId}
+                            />
+                        );
+                    } else {
+                        return (
+                            <div className="flex h-full items-center justify-center p-6">
+                                <DawBlockedState
+                                    eyebrow="Inspector"
+                                    className="max-w-64"
+                                    title="No track selected"
+                                    description="Pick a track, clip, or device to inspect its details."
+                                    summary="The inspector follows the current selection and switches between track, clip, and device detail."
+                                />
+                            </div>
+                        );
+                    }
+                }
+            }
+        }
+    };
 
     return (
         <DawPanelSurface
@@ -51,6 +100,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
                 minWidth: isDeviceView ? 300 : 200,
             }}
             aria-label="Inspector panel"
+            data-onboarding="inspector"
         >
             <DawHeaderBand
                 className="rounded-none px-3 py-2"
@@ -62,42 +112,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
                     </Button>
                 }
             />
-
-            <ScrollArea className="flex-1 min-h-0">
-                {selectedDevice && selectedTrack ? (
-                    <DeviceInspector
-                        device={selectedDevice}
-                        trackId={selectedTrack.id}
-                        onBack={() => setSelectedDeviceId(null)}
-                    />
-                ) : selectedClip && selectedTrack ? (
-                    <ClipInspector clip={selectedClip} trackId={selectedTrack.id} onBack={clearClipSelection} />
-                ) : selectedTrack ? (
-                    <TrackInspector
-                        track={selectedTrack}
-                        allTracks={tracks}
-                        onSelectClip={selectClipWithFocus}
-                        onSelectDevice={setSelectedDeviceId}
-                    />
-                ) : masterTrack ? (
-                    <TrackInspector
-                        track={masterTrack}
-                        allTracks={tracks}
-                        onSelectClip={selectClipWithFocus}
-                        onSelectDevice={setSelectedDeviceId}
-                    />
-                ) : (
-                    <div className="flex h-full items-center justify-center p-6">
-                        <DawBlockedState
-                            eyebrow="Inspector"
-                            className="max-w-64"
-                            title="No track selected"
-                            description="Pick a track, clip, or device to inspect its details."
-                            summary="The inspector follows the current selection and switches between track, clip, and device detail."
-                        />
-                    </div>
-                )}
-            </ScrollArea>
+            <ScrollArea className="flex-1 min-h-0">{renderIife_22()}</ScrollArea>
         </DawPanelSurface>
     );
 };

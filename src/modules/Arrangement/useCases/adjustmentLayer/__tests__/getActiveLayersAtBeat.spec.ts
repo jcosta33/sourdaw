@@ -30,13 +30,13 @@ describe('getActiveLayersAtBeat', () => {
         } as any;
 
         const activeAt4 = getActiveLayersAtBeat(4);
-        expect(activeAt4.map((l) => l.id)).toEqual(['l1', 'l2']);
+        expect(activeAt4.map((length) => length.id)).toEqual(['l1', 'l2']);
 
         const activeAt10 = getActiveLayersAtBeat(10);
-        expect(activeAt10.map((l) => l.id)).toEqual(['l1']);
+        expect(activeAt10.map((length) => length.id)).toEqual(['l1']);
 
         const activeAt20 = getActiveLayersAtBeat(20);
-        expect(activeAt20.map((l) => l.id)).toEqual(['l1', 'l3']);
+        expect(activeAt20.map((length) => length.id)).toEqual(['l1', 'l3']);
     });
 
     it('returns empty array if store is unavailable', () => {

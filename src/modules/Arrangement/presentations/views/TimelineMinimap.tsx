@@ -79,9 +79,9 @@ export const TimelineMinimap = (): ReactElement => {
         if (trackCount > 0) {
             const laneOffset = (MINIMAP_HEIGHT - trackCount * clampedLaneHeight) / 2;
 
-            for (let i = 0; i < tracks.length; i++) {
-                const track = tracks[i]!;
-                const y = laneOffset + i * clampedLaneHeight;
+            for (let index = 0; index < tracks.length; index++) {
+                const track = tracks[index]!;
+                const y = laneOffset + index * clampedLaneHeight;
 
                 for (const clip of track.clips) {
                     const x = clip.startBeat * beatsToPixels;
@@ -132,7 +132,7 @@ export const TimelineMinimap = (): ReactElement => {
     useLayoutEffect(() => {
         const container = containerRef.current;
         if (!container) {
-            return;
+            return undefined;
         }
 
         const observer = new ResizeObserver((entries) => {
@@ -173,11 +173,11 @@ export const TimelineMinimap = (): ReactElement => {
         return { canvasWidth, totalBeats, beatsToPixels, viewportWidthPx, viewportStartPx };
     };
 
-    const handleMouseDown = (e: MouseEvent<HTMLDivElement>) => {
-        if (e.button !== 0) {
+    const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+        if (event.button !== 0) {
             return;
         }
-        e.preventDefault();
+        event.preventDefault();
 
         const metrics = getMinimapMetrics();
         if (!metrics) {
@@ -185,11 +185,8 @@ export const TimelineMinimap = (): ReactElement => {
         }
 
         const rect = containerRef.current!.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
+        const clickX = event.clientX - rect.left;
         const { viewportStartPx, viewportWidthPx, beatsToPixels } = metrics;
-
-        // Capture absolute scroll at drag start
-        const dragStartScrollX = viewState?.scrollX ?? 0;
 
         let dragOffsetInMinimapPx: number;
 
@@ -213,9 +210,6 @@ export const TimelineMinimap = (): ReactElement => {
         isDraggingRef.current = true;
         dragOffsetRef.current = dragOffsetInMinimapPx;
 
-        // Remember the scroll at the moment drag started, so we can compute deltas
-        const scrollAtDragStart = dragStartScrollX;
-
         const handleMouseMove = (moveEvent: globalThis.MouseEvent) => {
             if (!isDraggingRef.current) {
                 return;
@@ -231,7 +225,6 @@ export const TimelineMinimap = (): ReactElement => {
             if (currentViewState) {
                 timelineViewStore.set({ ...currentViewState, scrollX: targetScrollX });
             }
-            scrollAtDragStart;
         };
 
         const handleMouseUp = () => {

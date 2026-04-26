@@ -7,8 +7,8 @@ vi.mock('../../../stores/trackStore', () => {
             get value() {
                 return internal.value;
             },
-            set: vi.fn((v) => {
-                internal.value = v;
+            set: vi.fn((value) => {
+                internal.value = value;
             }),
             update: vi.fn((cb) => {
                 internal.value = cb(internal.value);
@@ -33,7 +33,7 @@ describe('updateClip', () => {
         const track = TrackDummy.create({ id: 't1', clips: [clip] });
         trackStore.set({ tracks: [track], selectedTrackId: null });
 
-        updateClip('c1', (c) => ({ ...c, name: 'New' }));
+        updateClip('c1', (context) => ({ ...context, name: 'New' }));
 
         expect(trackStore.value!.tracks[0].clips[0].name).toBe('New');
     });

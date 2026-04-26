@@ -3,7 +3,7 @@ import { type DocumentBundle } from '../../models/CrdtDocumentTypes';
 import { STORE_NAME, openDatabase } from './helpers';
 
 /** Load all documents from IndexedDB. */
-export const loadAllFromIdb = async (): Promise<DocumentBundle | null> => {
+export async function loadAllFromIdb(): Promise<DocumentBundle | null> {
     const database = await openDatabase();
     if (!database) {
         return null;
@@ -26,15 +26,15 @@ export const loadAllFromIdb = async (): Promise<DocumentBundle | null> => {
             }
 
             const bundle: DocumentBundle = new Map();
-            for (let i = 0; i < keys.length; i++) {
-                const value = values[i];
+            for (let index = 0; index < keys.length; index++) {
+                const value = values[index];
                 if (value) {
-                    bundle.set(String(keys[i]), value);
+                    bundle.set(keys[index] as string, value);
                 }
             }
             resolve(bundle);
         };
 
-        tx.onerror = () => reject(tx.error);
+        tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
     });
-};
+}

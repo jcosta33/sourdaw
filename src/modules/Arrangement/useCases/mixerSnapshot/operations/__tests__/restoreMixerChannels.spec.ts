@@ -5,7 +5,7 @@ import * as subject from '../restoreMixerChannels';
 describe('restoreMixerChannels', () => {
     it('should export restoreMixerChannels', () => {
         expect(subject.restoreMixerChannels).toBeDefined();
-        const t = typeof subject.restoreMixerChannels;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.restoreMixerChannels;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

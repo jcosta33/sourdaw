@@ -20,7 +20,7 @@ type TriggerGrandBouleNoteInput = {
     velocity: number;
 };
 
-export const triggerGrandBouleNote = (input: TriggerGrandBouleNoteInput): void => {
+export function triggerGrandBouleNote(input: TriggerGrandBouleNoteInput): void {
     if (!input.engine.isReady()) {
         return;
     }
@@ -29,4 +29,4 @@ export const triggerGrandBouleNote = (input: TriggerGrandBouleNoteInput): void =
     // Map normalized velocity back to 0-127 for applyVelocityCurve, then back to 0-1
     const shaped = calibration ? applyVelocityCurve(input.velocity * 127, calibration) : input.velocity;
     input.engine.noteOn({ midiNote: input.midiNote, velocity: shaped });
-};
+}

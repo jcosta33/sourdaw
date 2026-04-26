@@ -51,7 +51,7 @@ export const downloadModel = inject({ logger })(
             // Request persistent storage on first download
             await requestPersistentStorage().catch(() => undefined);
 
-            const broadcast = (payload: ModelDownloadProgressPayload): void => {
+            function broadcast(payload: ModelDownloadProgressPayload): void {
                 onProgress?.(payload);
                 try {
                     const channel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
@@ -60,7 +60,7 @@ export const downloadModel = inject({ logger })(
                 } catch {
                     // BroadcastChannel not available
                 }
-            };
+            }
 
             let lastError: unknown;
 
@@ -106,7 +106,7 @@ export const downloadModel = inject({ logger })(
                     }
 
                     // Concatenate chunks
-                    const totalLength = chunks.reduce((acc, c) => acc + c.byteLength, 0);
+                    const totalLength = chunks.reduce((acc, context) => acc + context.byteLength, 0);
                     const fullData = new Uint8Array(totalLength);
                     let offset = 0;
                     for (const chunk of chunks) {

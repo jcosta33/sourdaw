@@ -184,12 +184,12 @@ export const EffectItem = ({
     <div
         className="group flex flex-col justify-center rounded-md px-3 py-2.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 hover:border-border/40 hover:from-surface-overlay transition-all cursor-grab active:cursor-grabbing relative overflow-hidden mb-1.5 shadow-sm"
         draggable
-        onDragStart={(e) => {
-            e.dataTransfer.setData(
+        onDragStart={(event) => {
+            event.dataTransfer.setData(
                 'application/x-sourdaw-plugin',
                 JSON.stringify({ name: plugin.name, id: plugin.id })
             );
-            e.dataTransfer.effectAllowed = 'copy';
+            event.dataTransfer.effectAllowed = 'copy';
         }}
         onClick={() => {
             if (selectedTrackId) {
@@ -199,8 +199,8 @@ export const EffectItem = ({
         title={selectedTrackId ? `Add "${plugin.name}" to selected track` : 'Drag to a track or select a track first'}
         role="button"
         tabIndex={0}
-        onKeyDown={(e) => {
-            if ((e.key === 'Enter' || e.key === ' ') && selectedTrackId) {
+        onKeyDown={(event) => {
+            if ((event.key === 'Enter' || event.key === ' ') && selectedTrackId) {
                 addDevice(selectedTrackId, plugin.name);
             }
         }}

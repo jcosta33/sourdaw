@@ -6,11 +6,14 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { addTrack } from '../addTrack';
 
+import type { Track, TrackKind } from '../../models/Track';
+import type { TrackState } from '../../repositories/track/getTrackState';
+
 vi.mock('../../repositories/track/getTrackState', () => ({
-    getTrackState: vi.fn(),
+    getTrackState: vi.fn<typeof getTrackState>(),
 }));
 vi.mock('../../repositories/track/setTrackState', () => ({
-    setTrackState: vi.fn(),
+    setTrackState: vi.fn<typeof setTrackState>(),
 }));
 vi.mock('#/app/registerDependencies', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/app/registerDependencies')>();
@@ -18,7 +21,7 @@ vi.mock('#/app/registerDependencies', async (importOriginal) => {
         ...actual,
         eventBus: {
             ...actual.eventBus,
-            emit: vi.fn(),
+            emit: vi.fn<typeof eventBus.emit>(),
         },
     };
 });
@@ -33,15 +36,15 @@ describe('addTrack', () => {
     it('should return null and not emit when track state is missing', () => {
         vi.mocked(getTrackState).mockReturnValue(null);
 
-        expect(addTrack({ name: 'Drums', kind: 'audio' })).toBeNull();
+        expect(addTrack({ name: 'Drums', kind: 'audio' as TrackKind })).toBeNull();
         expect(eventBus.emit).not.toHaveBeenCalled();
         expect(setTrackState).not.toHaveBeenCalled();
     });
 
     it('should append track, update state, and emit track.added', () => {
-        vi.mocked(getTrackState).mockReturnValue({ tracks: [], selectedTrackId: null } as any);
+        vi.mocked(getTrackState).mockReturnValue({ tracks: [], selectedTrackId: null } as unknown as TrackState);
 
-        const result = addTrack({ name: 'Lead', kind: 'midi' } as any);
+        const result = addTrack({ name: 'Lead', kind: 'midi' } as unknown as Track);
 
         expect(result).not.toBeNull();
         expect(setTrackState).toHaveBeenCalled();

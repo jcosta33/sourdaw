@@ -1,3 +1,18 @@
+import { searchCommands as searchCommandsImpl } from '../services/commandSearch';
+
+import { type CommandEntry } from './CommandEntry';
+import { aiCommands } from './commands/aiCommands';
+import { automationCommands } from './commands/automationCommands';
+import { clipCommands } from './commands/clipCommands';
+import { editCommands } from './commands/editCommands';
+import { elasticCommands } from './commands/elasticCommands';
+import { midiCommands } from './commands/midiCommands';
+import { miscCommands } from './commands/miscCommands';
+import { projectCommands } from './commands/projectCommands';
+import { trackCommands } from './commands/trackCommands';
+import { transportCommands } from './commands/transportCommands';
+import { viewCommands } from './commands/viewCommands';
+
 /**
  * Command registry — aggregates all commands from per-category sub-files.
  *
@@ -9,22 +24,6 @@
  * aggregated catalog. Re-exports the type and helpers so existing in-module
  * consumers (e.g. CommandPalette.tsx) keep working.
  */
-
-import { searchCommands as searchCommandsImpl } from '../services/commandSearch';
-
-import { type CommandEntry } from './CommandEntry';
-
-// ── Category sub-modules ───────────────────────────────────────────────────
-import { aiCommands } from './commands/aiCommands';
-import { automationCommands } from './commands/automationCommands';
-import { clipCommands } from './commands/clipCommands';
-import { editCommands } from './commands/editCommands';
-import { midiCommands } from './commands/midiCommands';
-import { miscCommands } from './commands/miscCommands';
-import { projectCommands } from './commands/projectCommands';
-import { trackCommands } from './commands/trackCommands';
-import { transportCommands } from './commands/transportCommands';
-import { viewCommands } from './commands/viewCommands';
 
 // ── Re-exports for in-module consumers ────────────────────────────────────
 
@@ -44,6 +43,7 @@ export const commandRegistry: CommandEntry[] = [
     ...projectCommands,
     ...viewCommands,
     ...miscCommands,
+    ...elasticCommands,
 ];
 
 /** Search the aggregated catalog. */

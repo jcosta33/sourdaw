@@ -5,7 +5,7 @@ import * as subject from '../isStemSeparationAvailable';
 describe('isStemSeparationAvailable', () => {
     it('should export isStemSeparationAvailable', () => {
         expect(subject.isStemSeparationAvailable).toBeDefined();
-        const t = typeof subject.isStemSeparationAvailable;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.isStemSeparationAvailable;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

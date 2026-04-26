@@ -2,10 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { setProofParam } from '../proofParamBridge/setProofParam';
 
-const persistDeviceParam = vi.fn();
+const persistDeviceParam = vi.fn<typeof import('#/modules/Arrangement/stores').persistDeviceParam>();
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
-    persistDeviceParam: (...args: any[]) => persistDeviceParam(...args),
+    persistDeviceParam: (...args: Parameters<typeof import('#/modules/Arrangement/stores').persistDeviceParam>) =>
+        persistDeviceParam(...args),
 }));
 
 describe('setProofParam', () => {

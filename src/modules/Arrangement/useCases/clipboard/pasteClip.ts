@@ -20,16 +20,16 @@ export function pasteClip(): void {
 
     const playheadBeat = playheadPositionRef.current;
     let minStartBeat = Infinity;
-    for (const e of clipClipboard) {
-        if (e.clip.startBeat < minStartBeat) {
-            minStartBeat = e.clip.startBeat;
+    for (const event of clipClipboard) {
+        if (event.clip.startBeat < minStartBeat) {
+            minStartBeat = event.clip.startBeat;
         }
     }
     const offset = playheadBeat - minStartBeat;
 
     for (const entry of clipClipboard) {
         const targetTrackId = trackState.selectedTrackId ?? entry.sourceTrackId;
-        const targetTrack = trackState.tracks.find((t) => t.id === targetTrackId);
+        const targetTrack = trackState.tracks.find((time) => time.id === targetTrackId);
         if (!targetTrack) {
             continue;
         }
@@ -48,8 +48,8 @@ export function pasteClip(): void {
         }
 
         if (entry.midiNotes && entry.midiNotes.length > 0) {
-            const copiedNotes: MidiNote[] = entry.midiNotes.map((n) => ({
-                ...n,
+            const copiedNotes: MidiNote[] = entry.midiNotes.map((node) => ({
+                ...node,
                 id: `note-${crypto.randomUUID().slice(0, 8)}`,
             }));
 

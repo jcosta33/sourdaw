@@ -4,18 +4,20 @@ import { nodeViewStore, type ProcessingNode } from '#/modules/Plugin/stores/node
 
 import { disconnectNodes } from '../disconnectNodes';
 
-const node = (id: string): ProcessingNode => ({
-    id,
-    type: 'effect',
-    label: id,
-    deviceId: null,
-    x: 0,
-    y: 0,
-    width: 80,
-    height: 40,
-    bypassed: false,
-    color: '#000',
-});
+function node(id: string): ProcessingNode {
+    return {
+        id,
+        type: 'effect',
+        label: id,
+        deviceId: null,
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 40,
+        bypassed: false,
+        color: '#000',
+    };
+}
 
 describe('disconnectNodes', () => {
     beforeEach(() => {
@@ -31,7 +33,7 @@ describe('disconnectNodes', () => {
 
     it('should remove only the connection with the given id', () => {
         disconnectNodes('drop-me');
-        const ids = nodeViewStore.value?.connections.map((c) => c.id) ?? [];
+        const ids = nodeViewStore.value?.connections.map((context) => context.id) ?? [];
         expect(ids).toEqual(['keep-me']);
     });
 

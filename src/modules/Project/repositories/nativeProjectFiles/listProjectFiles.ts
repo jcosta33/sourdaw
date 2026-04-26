@@ -11,6 +11,6 @@ export async function listProjectFiles(dirPath: string): Promise<Array<{ name: s
         path: dirPath,
     });
     return entries
-        .filter((e) => !e.is_directory && e.name.endsWith('.sourdaw'))
-        .map((e) => ({ name: e.name, path: e.path }));
+        .filter((event) => !event.is_directory && event.name.endsWith('.sourdaw'))
+        .map((event) => ({ name: event.name, path: event.path }));
 }

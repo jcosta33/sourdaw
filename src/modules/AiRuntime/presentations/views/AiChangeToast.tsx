@@ -20,7 +20,7 @@ export const AiChangeToast = (): ReactElement | null => {
 
     useEffect(() => {
         if (changes.length === 0) {
-            return;
+            return undefined;
         }
         const timer = setTimeout(() => {
             setChanges((prev) => prev.slice(1));
@@ -48,8 +48,8 @@ export const AiChangeToast = (): ReactElement | null => {
                     <p className="text-xs font-medium text-foreground">{latest.summary}</p>
                     {latest.details.length > 0 ? (
                         <div className="mt-1 space-y-0.5">
-                            {latest.details.map((detail, i) => (
-                                <p key={i} className="text-[10px] text-muted-foreground">
+                            {latest.details.map((detail, index) => (
+                                <p key={index} className="text-[10px] text-muted-foreground">
                                     {detail}
                                 </p>
                             ))}

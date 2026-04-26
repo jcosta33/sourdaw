@@ -22,19 +22,19 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
         return;
     }
 
-    const track = state.tracks.find((t) => t.id === trackId);
+    const track = state.tracks.find((time) => time.id === trackId);
     if (!track || track.clips.length === 0) {
         return;
     }
 
     let startBeat = Infinity;
     let endBeat = -Infinity;
-    for (const c of track.clips) {
-        if (c.startBeat < startBeat) {
-            startBeat = c.startBeat;
+    for (const context of track.clips) {
+        if (context.startBeat < startBeat) {
+            startBeat = context.startBeat;
         }
-        if (c.endBeat > endBeat) {
-            endBeat = c.endBeat;
+        if (context.endBeat > endBeat) {
+            endBeat = context.endBeat;
         }
     }
 
@@ -87,14 +87,14 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
     if (options.destination === 'replace') {
         trackStore.set({
             ...freshState,
-            tracks: freshState.tracks.map((t) => {
-                if (t.id !== trackId) {
-                    return t;
+            tracks: freshState.tracks.map((time) => {
+                if (time.id !== trackId) {
+                    return time;
                 }
                 return {
-                    ...t,
+                    ...time,
                     clips: [bouncedClip],
-                    devices: options.includeInserts ? [] : t.devices,
+                    devices: options.includeInserts ? [] : time.devices,
                 };
             }),
         });
@@ -114,7 +114,7 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
             activeAlternativeId: altId,
         };
 
-        const insertIndex = freshState.tracks.findIndex((t) => t.id === trackId) + 1;
+        const insertIndex = freshState.tracks.findIndex((time) => time.id === trackId) + 1;
         const tracks = [...freshState.tracks];
         tracks.splice(insertIndex, 0, newTrack);
         trackStore.set({ ...freshState, tracks });
@@ -125,15 +125,15 @@ export async function bounceTrack(trackId: string, options: BounceOptions): Prom
     pushUndoEntry(
         'Bounce Track',
         () => {
-            const s = trackStore.value;
-            if (s) {
-                trackStore.set({ ...s, tracks: tracksBefore });
+            const state1 = trackStore.value;
+            if (state1) {
+                trackStore.set({ ...state1, tracks: tracksBefore });
             }
         },
         () => {
-            const s = trackStore.value;
-            if (s) {
-                trackStore.set({ ...s, tracks: tracksAfter });
+            const state1 = trackStore.value;
+            if (state1) {
+                trackStore.set({ ...state1, tracks: tracksAfter });
             }
         }
     );
@@ -168,22 +168,22 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
         return;
     }
 
-    const track = state.tracks.find((t) => t.id === trackId);
+    const track = state.tracks.find((time) => time.id === trackId);
     if (!track) {
         return;
     }
 
-    const clipsInRange = track.clips.filter((c) => c.endBeat > startBeat && c.startBeat < endBeat);
+    const clipsInRange = track.clips.filter((context) => context.endBeat > startBeat && context.startBeat < endBeat);
     if (clipsInRange.length === 0) {
         return;
     }
 
     const virtualTrack: Track = {
         ...track,
-        clips: clipsInRange.map((c) => ({
-            ...c,
-            startBeat: Math.max(c.startBeat, startBeat),
-            endBeat: Math.min(c.endBeat, endBeat),
+        clips: clipsInRange.map((context) => ({
+            ...context,
+            startBeat: Math.max(context.startBeat, startBeat),
+            endBeat: Math.min(context.endBeat, endBeat),
         })),
     };
 
@@ -221,13 +221,15 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
 
     trackStore.set({
         ...freshState,
-        tracks: freshState.tracks.map((t) => {
-            if (t.id !== trackId) {
-                return t;
+        tracks: freshState.tracks.map((time) => {
+            if (time.id !== trackId) {
+                return time;
             }
-            const keptClips = t.clips.filter((c) => c.endBeat <= startBeat || c.startBeat >= endBeat);
+            const keptClips = time.clips.filter(
+                (context) => context.endBeat <= startBeat || context.startBeat >= endBeat
+            );
             return {
-                ...t,
+                ...time,
                 clips: [...keptClips, bouncedClip],
             };
         }),
@@ -237,15 +239,15 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
     pushUndoEntry(
         'Bounce Selection',
         () => {
-            const s = trackStore.value;
-            if (s) {
-                trackStore.set({ ...s, tracks: tracksBefore });
+            const state1 = trackStore.value;
+            if (state1) {
+                trackStore.set({ ...state1, tracks: tracksBefore });
             }
         },
         () => {
-            const s = trackStore.value;
-            if (s) {
-                trackStore.set({ ...s, tracks: tracksAfter });
+            const state1 = trackStore.value;
+            if (state1) {
+                trackStore.set({ ...state1, tracks: tracksAfter });
             }
         }
     );

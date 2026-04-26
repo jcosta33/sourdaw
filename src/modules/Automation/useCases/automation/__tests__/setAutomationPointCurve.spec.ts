@@ -5,7 +5,7 @@ import * as subject from '../setAutomationPointCurve';
 describe('setAutomationPointCurve', () => {
     it('should export setAutomationPointCurve', () => {
         expect(subject.setAutomationPointCurve).toBeDefined();
-        const t = typeof subject.setAutomationPointCurve;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setAutomationPointCurve;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

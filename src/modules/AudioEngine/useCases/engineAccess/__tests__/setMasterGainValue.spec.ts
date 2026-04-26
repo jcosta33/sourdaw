@@ -5,7 +5,7 @@ import * as subject from '../setMasterGainValue';
 describe('setMasterGainValue', () => {
     it('should export setMasterGainValue', () => {
         expect(subject.setMasterGainValue).toBeDefined();
-        const t = typeof subject.setMasterGainValue;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.setMasterGainValue;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

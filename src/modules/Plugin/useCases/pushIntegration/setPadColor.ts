@@ -7,6 +7,6 @@ export function setPadColor(padIndex: number, color: PushPadColor): void {
     }
     pushStore.set({
         ...state,
-        pads: state.pads.map((p) => (p.index === padIndex ? { ...p, color } : p)),
+        pads: state.pads.map((param) => (param.index === padIndex ? { ...param, color } : param)),
     });
 }

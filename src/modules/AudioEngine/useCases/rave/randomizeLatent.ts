@@ -14,9 +14,9 @@ export function randomizeLatent(
     const usedSeed = seed ?? generateSeed();
     const rng = createSeededRandom(usedSeed);
 
-    const result = vectors.map((v) => ({
-        timeSec: v.timeSec,
-        values: v.values.map((val) => {
+    const result = vectors.map((value) => ({
+        timeSec: value.timeSec,
+        values: value.values.map((val) => {
             const noise = (rng() * 2 - 1) * temperature;
             return Math.tanh(val + noise);
         }),

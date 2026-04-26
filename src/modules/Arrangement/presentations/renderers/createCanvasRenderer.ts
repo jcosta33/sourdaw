@@ -49,18 +49,16 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): TimelineRendere
 }
 
 function drawGrid(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, width: number, height: number): void {
-    const { pixelsPerBeat, viewportStartBeat, timeSignatureNumerator, timeSignatureDenominator } = model;
+    const { pixelsPerBeat, viewportStartBeat, timeSignatureNumerator } = model;
     const startBeat = Math.floor(viewportStartBeat);
     const tsChanges = timeSignatureMapStore.value?.changes ?? [];
 
     let barStartBeat = 0;
     let currentNumerator = timeSignatureNumerator;
-    for (const change of [...tsChanges].sort((a, b) => a.beat - b.beat)) {
+    for (const change of [...tsChanges].sort((alpha, buffer) => alpha.beat - buffer.beat)) {
         if (change.beat >= startBeat) {
             break;
         }
-        const beatsInSegment = change.beat - barStartBeat;
-        beatsInSegment;
         barStartBeat = change.beat;
         currentNumerator = change.numerator;
     }
@@ -74,7 +72,7 @@ function drawGrid(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, wid
     let tempBarStart = barStartBeat;
     let tempNumerator = currentNumerator;
     for (let beat = startBeat; beat * pixelsPerBeat < width + viewportStartBeat * pixelsPerBeat; beat++) {
-        const tsChange = tsChanges.find((c) => c.beat === beat);
+        const tsChange = tsChanges.find((context) => context.beat === beat);
         if (tsChange) {
             tempBarStart = beat;
             tempNumerator = tsChange.numerator;
@@ -94,7 +92,7 @@ function drawGrid(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, wid
     tempBarStart = barStartBeat;
     tempNumerator = currentNumerator;
     for (let beat = startBeat; beat * pixelsPerBeat < width + viewportStartBeat * pixelsPerBeat; beat++) {
-        const tsChange = tsChanges.find((c) => c.beat === beat);
+        const tsChange = tsChanges.find((context) => context.beat === beat);
         if (tsChange) {
             tempBarStart = beat;
             tempNumerator = tsChange.numerator;
@@ -107,8 +105,6 @@ function drawGrid(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, wid
         }
     }
     ctx.stroke();
-
-    timeSignatureDenominator;
 }
 
 const TRACK_KIND_LABELS: Record<string, string> = {
@@ -211,8 +207,8 @@ function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, w
             // H3: Render variation lanes below main clips if expanded
             if (track.variationLanes && track.variationLanes.length > 0) {
                 const varLaneHeight = 24;
-                for (const [i, lane] of track.variationLanes.entries()) {
-                    const ly = y + h + i * varLaneHeight;
+                for (const [index, lane] of track.variationLanes.entries()) {
+                    const ly = y + h + index * varLaneHeight;
 
                     // Background for variation lane
                     ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
@@ -271,7 +267,7 @@ function drawTakeLanes(ctx: CanvasRenderingContext2D, model: TimelineRenderModel
     const yOffsets = getTrackYOffsets(tracks);
 
     for (const lane of takeState.lanes) {
-        const trackIndex = tracks.findIndex((t) => t.id === lane.trackId);
+        const trackIndex = tracks.findIndex((time) => time.id === lane.trackId);
         if (trackIndex < 0) {
             continue;
         }
@@ -280,11 +276,11 @@ function drawTakeLanes(ctx: CanvasRenderingContext2D, model: TimelineRenderModel
         const h = tracks[trackIndex]!.height;
         const laneHeight = 16;
 
-        for (let i = 0; i < lane.takes.length; i++) {
-            const take = lane.takes[i]!;
+        for (let index = 0; index < lane.takes.length; index++) {
+            const take = lane.takes[index]!;
             const x = (take.startBeat - viewportStartBeat) * pixelsPerBeat;
             const w = (take.endBeat - take.startBeat) * pixelsPerBeat;
-            const y = trackY + h - laneHeight * (i + 1) - 2;
+            const y = trackY + h - laneHeight * (index + 1) - 2;
 
             ctx.fillStyle = take.selected ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.03)';
             ctx.fillRect(x, y, w, laneHeight - 1);

@@ -35,23 +35,23 @@ class MidiReader {
     }
 
     readUint16(): number {
-        const v = this.data.getUint16(this.pos);
+        const value = this.data.getUint16(this.pos);
         this.pos += 2;
-        return v;
+        return value;
     }
 
     readUint32(): number {
-        const v = this.data.getUint32(this.pos);
+        const value = this.data.getUint32(this.pos);
         this.pos += 4;
-        return v;
+        return value;
     }
 
     readString(len: number): string {
-        let s = '';
-        for (let i = 0; i < len; i++) {
-            s += String.fromCharCode(this.readUint8());
+        let state = '';
+        for (let index = 0; index < len; index++) {
+            state += String.fromCharCode(this.readUint8());
         }
-        return s;
+        return state;
     }
 
     readVarLen(): number {
@@ -64,8 +64,8 @@ class MidiReader {
         return value;
     }
 
-    skip(n: number): void {
-        this.pos += n;
+    skip(node: number): void {
+        this.pos += node;
     }
 
     get position(): number {
@@ -97,7 +97,7 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
     let globalTempo = 120;
     const parsedTracks: ParsedTrack[] = [];
 
-    for (let t = 0; t < numTracks; t++) {
+    for (let time = 0; time < numTracks; time++) {
         const chunkType = reader.readString(4);
         const chunkLength = reader.readUint32();
 
@@ -107,7 +107,7 @@ function parseMidiFile(buffer: ArrayBuffer): { tracks: ParsedTrack[]; ticksPerBe
         }
 
         const chunkEnd = reader.position + chunkLength;
-        let trackName = `Track ${t + 1}`;
+        let trackName = `Track ${time + 1}`;
         const activeNotes = new Map<number, { tick: number; velocity: number }>();
         const notes: ParsedNote[] = [];
         let tick = 0;

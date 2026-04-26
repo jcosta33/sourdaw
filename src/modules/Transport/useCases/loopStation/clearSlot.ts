@@ -1,3 +1,5 @@
+import { pushUndoEntry } from '#/modules/Command/stores';
+
 import { loopStationStore } from '../../stores/loopStationStore';
 
 export function clearSlot(slotId: string): void {
@@ -5,10 +7,32 @@ export function clearSlot(slotId: string): void {
     if (!state) {
         return;
     }
-    loopStationStore.set({
-        ...state,
-        slots: state.slots.map((s) =>
-            s.id === slotId ? { ...s, state: 'empty' as const, layers: [], lengthBeats: 0, loopCount: 0 } : s
-        ),
-    });
+    const targetSlot = state.slots.find((s) => s.id === slotId);
+    if (!targetSlot) {
+        return;
+    }
+
+    const previousSlots = state.slots;
+    const nextSlots = state.slots.map((s) =>
+        s.id === slotId ? { ...s, state: 'empty' as const, layers: [], lengthBeats: 0, loopCount: 0 } : s
+    );
+    loopStationStore.set({ ...state, slots: nextSlots });
+
+    pushUndoEntry(
+        'Clear loop slot',
+        () => {
+            const current = loopStationStore.value;
+            if (!current) {
+                return;
+            }
+            loopStationStore.set({ ...current, slots: previousSlots });
+        },
+        () => {
+            const current = loopStationStore.value;
+            if (!current) {
+                return;
+            }
+            loopStationStore.set({ ...current, slots: nextSlots });
+        }
+    );
 }

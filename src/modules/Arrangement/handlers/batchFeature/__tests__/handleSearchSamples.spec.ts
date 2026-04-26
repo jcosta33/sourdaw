@@ -16,7 +16,7 @@ describe('handleSearchSamples', () => {
     });
 
     it('executes searchSamples from SoundLibrary module with query', () => {
-        handleSearchSamples.execute({ type: 'searchSamples', payload: { query: 'kick drum' } });
+        void handleSearchSamples.execute({ type: 'searchSamples', payload: { query: 'kick drum' } });
         expect(mocks.searchSamples).toHaveBeenCalledWith('kick drum');
     });
 

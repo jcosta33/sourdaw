@@ -5,7 +5,7 @@ import * as subject from '../waitForDevices';
 describe('waitForDevices', () => {
     it('should export waitForDevices', () => {
         expect(subject.waitForDevices).toBeDefined();
-        const t = typeof subject.waitForDevices;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.waitForDevices;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

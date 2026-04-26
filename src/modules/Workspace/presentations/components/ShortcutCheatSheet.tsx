@@ -100,22 +100,33 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
             { keys: '⌘ ,', description: 'Preferences' },
         ],
     },
+    {
+        title: 'Loop Station (arm first)',
+        shortcuts: [
+            { keys: '1 … 8', description: 'Play row 1, tracks 1–8' },
+            { keys: 'Q … I', description: 'Play row 2, tracks 1–8' },
+            { keys: 'A … K', description: 'Play row 3, tracks 1–8' },
+            { keys: 'Z … ,', description: 'Play row 4, tracks 1–8' },
+            { keys: '⇧ pad', description: 'Record / re-record slot' },
+            { keys: 'Esc', description: 'Stop all loop slots' },
+        ],
+    },
 ];
 
 export const ShortcutCheatSheet = (): ReactElement | null => {
     const [open, setOpen] = useState(false);
 
     useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            const target = e.target as HTMLElement;
+        const handler = (event: KeyboardEvent) => {
+            const target = event.target as HTMLElement;
             if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
                 return;
             }
-            if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
-                e.preventDefault();
+            if (event.key === '?' || (event.key === '/' && event.shiftKey)) {
+                event.preventDefault();
                 setOpen((prev) => !prev);
             }
-            if (e.key === 'Escape' && open) {
+            if (event.key === 'Escape' && open) {
                 setOpen(false);
             }
         };
@@ -134,7 +145,7 @@ export const ShortcutCheatSheet = (): ReactElement | null => {
         >
             <DawUtilityPanel
                 className="w-[560px] max-h-[80vh]"
-                onClick={(e) => e.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
                 role="dialog"
                 aria-label="Keyboard shortcuts"
                 aria-modal="true"
@@ -157,13 +168,13 @@ export const ShortcutCheatSheet = (): ReactElement | null => {
                                 {group.title}
                             </h3>
                             <div className="space-y-1.5">
-                                {group.shortcuts.map((s) => (
-                                    <div key={s.keys} className="flex items-center justify-between gap-2">
-                                        <span className="text-xs text-foreground">{s.description}</span>
+                                {group.shortcuts.map((state) => (
+                                    <div key={state.keys} className="flex items-center justify-between gap-2">
+                                        <span className="text-xs text-foreground">{state.description}</span>
                                         <div className="flex gap-0.5">
-                                            {s.keys.split(' ').map((k, i) => (
-                                                <DawKeycap key={`${s.keys}-${i}`} compact>
-                                                    {k}
+                                            {state.keys.split(' ').map((kIndex, index) => (
+                                                <DawKeycap key={`${state.keys}-${index}`} compact>
+                                                    {kIndex}
                                                 </DawKeycap>
                                             ))}
                                         </div>

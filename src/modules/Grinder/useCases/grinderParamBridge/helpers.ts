@@ -2,6 +2,13 @@ import { type persistDeviceParam } from '#/modules/Arrangement/stores';
 import { type updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
+import {
+    SUPPORTED_GRINDER_CHAIN_PEDAL_TYPES,
+    type GrinderPedal,
+    type GrinderSupportedChainPedalType,
+    getGrinderSupportedChainOrder,
+} from '../../models/GrinderPatch';
+
 import type { DeviceRef } from '#/utils/createFindDeviceRef';
 
 export type { DeviceRef, GetAllTracksFn } from '#/utils/createFindDeviceRef';
@@ -21,7 +28,7 @@ export function createFlushParam(updateDeviceParamFn: UpdateDeviceParamFn, persi
 
 export function getAudioParamKeyForPedal(isPost: boolean, pedalType: string, paramKey: string): string | null {
     const prefix = isPost ? 'post' : 'pre';
-    let pedalName = '';
+    let pedalName: string;
 
     switch (pedalType) {
         case 'compressor':
@@ -43,6 +50,36 @@ export function getAudioParamKeyForPedal(isPost: boolean, pedalType: string, par
 
     const capitalizedParam = paramKey.charAt(0).toUpperCase() + paramKey.slice(1);
     return `${prefix}${pedalName}${capitalizedParam}`;
+}
+
+function getAudioOrderKeyForPedal(
+    isPost: boolean,
+    pedal_type: GrinderSupportedChainPedalType
+): string {
+    const prefix = isPost ? 'post' : 'pre';
+
+    switch (pedal_type) {
+        case 'compressor':
+            return `${prefix}CompressorOrder`;
+        case 'overdrive':
+            return `${prefix}OverdriveOrder`;
+        case 'distortion':
+            return `${prefix}DistortionOrder`;
+        case 'fuzz':
+            return `${prefix}FuzzOrder`;
+    }
+}
+
+export function getPedalOrderAudioEntries(
+    isPost: boolean,
+    pedals: readonly GrinderPedal[]
+): Array<{ key: string; value: number }> {
+    const order = getGrinderSupportedChainOrder(pedals);
+
+    return SUPPORTED_GRINDER_CHAIN_PEDAL_TYPES.map((pedal_type) => ({
+        key: getAudioOrderKeyForPedal(isPost, pedal_type),
+        value: order.indexOf(pedal_type),
+    }));
 }
 
 export const AMP_MODELS = ['clean-twin', 'crunch-jcm', 'lead-jcm', 'ac30-tb', 'rectifier', 'custom'] as const;

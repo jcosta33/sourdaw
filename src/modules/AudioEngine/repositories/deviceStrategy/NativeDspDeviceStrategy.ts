@@ -14,10 +14,20 @@ import { type OfflineDeviceNode } from '../devices/types';
 
 import { type AudioDeviceStrategy } from './AudioDeviceStrategy';
 
+type NativeDspNode = {
+    workletNode: AudioWorkletNode;
+    setParam?: (name: string, value: number) => void;
+    setBypass?: (bypassed: boolean) => void;
+    noteOn?: (noteOrPad: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
+    noteOff?: (noteOrPad: number, sampleFrame?: number) => void;
+    destroy?: () => void;
+    ready: Promise<void>;
+};
+
 export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
     public readonly node: OfflineDeviceNode;
 
-    constructor(private readonly dspNode: any) {
+    constructor(private readonly dspNode: NativeDspNode) {
         this.node = {
             inputNode: dspNode.workletNode,
             outputNode: dspNode.workletNode,
@@ -26,38 +36,28 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
     }
 
     setParam(name: string, value: number): void {
-        if (typeof this.dspNode.setParam === 'function') {
-            this.dspNode.setParam(name, value);
-        }
+        this.dspNode.setParam?.(name, value);
     }
 
     setBypass(bypassed: boolean): void {
-        if (typeof this.dspNode.setBypass === 'function') {
-            this.dspNode.setBypass(bypassed);
-        }
+        this.dspNode.setBypass?.(bypassed);
     }
 
     noteOn(noteOrPad: number, velocity: number, midiNote?: number, sampleFrame?: number): void {
-        if (typeof this.dspNode.noteOn === 'function') {
-            this.dspNode.noteOn(noteOrPad, velocity, midiNote, sampleFrame);
-        }
+        this.dspNode.noteOn?.(noteOrPad, velocity, midiNote, sampleFrame);
     }
 
     noteOff(noteOrPad: number, sampleFrame?: number): void {
-        if (typeof this.dspNode.noteOff === 'function') {
-            this.dspNode.noteOff(noteOrPad, sampleFrame);
-        }
+        this.dspNode.noteOff?.(noteOrPad, sampleFrame);
     }
 
     destroy(): void {
-        if (typeof this.dspNode.destroy === 'function') {
-            this.dspNode.destroy();
-        }
+        this.dspNode.destroy?.();
     }
 }
 
 export async function createNativeDspStrategy(ctx: BaseAudioContext, device: Device): Promise<NativeDspDeviceStrategy> {
-    let result: any = null;
+    let result: NativeDspNode | null = null;
 
     if (isFermenterDevice(device.type)) {
         result = await createFermenterNode(ctx);

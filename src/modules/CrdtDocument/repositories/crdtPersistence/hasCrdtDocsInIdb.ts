@@ -1,7 +1,7 @@
 import { STORE_NAME, openDatabase } from './helpers';
 
 /** Check whether any CRDT documents exist in IndexedDB. */
-export const hasCrdtDocsInIdb = async (): Promise<boolean> => {
+export async function hasCrdtDocsInIdb(): Promise<boolean> {
     const database = await openDatabase();
     if (!database) {
         return false;
@@ -12,6 +12,6 @@ export const hasCrdtDocsInIdb = async (): Promise<boolean> => {
         const store = tx.objectStore(STORE_NAME);
         const request = store.count();
         request.onsuccess = () => resolve(request.result > 0);
-        request.onerror = () => reject(request.error);
+        request.onerror = () => reject(request.error ?? new Error('IDB request failed'));
     });
-};
+}

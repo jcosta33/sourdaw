@@ -7,8 +7,14 @@ import {
     stopAudioRecording,
     getAudioContext,
     audioEngine,
+    scheduleAdjustmentLayers,
 } from '#/modules/AudioEngine/useCases';
-import { startAutomationRecording, stopAutomationRecording, applyModulation } from '#/modules/Automation/useCases';
+import {
+    startAutomationRecording,
+    stopAutomationRecording,
+    applyModulation,
+    applyModulationToEngine,
+} from '#/modules/Automation/useCases';
 
 import { getTempoAtBeat } from '../models/TempoMap';
 import { playheadPositionRef } from '../stores/playheadPositionRef';
@@ -73,7 +79,6 @@ export function setStopPlaybackCallback(fn: () => void): void {
 }
 
 const SCHEDULE_AHEAD_SECONDS = 0.1;
-const DEFAULT_SCHEDULE_GRAIN_MS = 10;
 
 export function startPlayheadScheduler(): void {
     const state = transportStore.value;
@@ -90,9 +95,9 @@ export function startPlayheadScheduler(): void {
     schedulerSession.lastScheduledBeat = state.playheadPosition - 0.0001;
     resetMetronomeBeat(state.playheadPosition);
 
-    const grainMs = state.scheduleGrainMs ?? DEFAULT_SCHEDULE_GRAIN_MS;
+    const grainMs = state.scheduleGrainMs;
 
-    const tick = async (): Promise<void> => {
+    async function tick(): Promise<void> {
         const current = transportStore.value;
         if (!current?.isPlaying) {
             return;
@@ -110,14 +115,15 @@ export function startPlayheadScheduler(): void {
 
         if (current.isLooping && current.loopEnd > current.loopStart && newPosition >= current.loopEnd) {
             if (current.isRecording) {
-                const armedTracks = trackStore.value?.tracks.filter((t) => t.armed) ?? [];
+                const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
                 for (const track of armedTracks) {
                     const laneState = takeLaneStore.value;
-                    if (!laneState?.lanes.some((l) => l.trackId === track.id)) {
+                    if (!laneState?.lanes.some((length) => length.trackId === track.id)) {
                         addTakeLane(track.id);
                     }
                     const takeNum =
-                        (takeLaneStore.value?.lanes.find((l) => l.trackId === track.id)?.takes.length ?? 0) + 1;
+                        (takeLaneStore.value?.lanes.find((length) => length.trackId === track.id)?.takes.length ?? 0) +
+                        1;
                     addTake(
                         track.id,
                         `take-${Date.now()}-${track.id}`,
@@ -174,7 +180,7 @@ export function startPlayheadScheduler(): void {
             current.isLooping
         );
 
-        const hasArmedTracks = trackStore.value?.tracks.some((t) => t.armed) ?? false;
+        const hasArmedTracks = trackStore.value?.tracks.some((time) => time.armed) ?? false;
         if (
             current.punchInEnabled &&
             !current.isRecording &&
@@ -187,11 +193,11 @@ export function startPlayheadScheduler(): void {
             const clips = startRecording();
             transportStore.set({ ...transportStore.value!, isRecording: true });
 
-            const armedTracks = trackStore.value?.tracks.filter((t) => t.armed) ?? [];
+            const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
             for (const track of armedTracks) {
                 if (track.kind === 'audio') {
-                    const recClip = clips.find((c) => c.trackId === track.id);
-                    startAudioRecording(track.id, (buffer) => {
+                    const recClip = clips.find((context) => context.trackId === track.id);
+                    void startAudioRecording(track.id, (buffer) => {
                         const bufferId = `rec-${crypto.randomUUID()}`;
                         audioBufferCache.set(bufferId, buffer);
                         if (recClip) {
@@ -199,10 +205,12 @@ export function startPlayheadScheduler(): void {
                             if (ts) {
                                 trackStore.set({
                                     ...ts,
-                                    tracks: ts.tracks.map((t) => ({
-                                        ...t,
-                                        clips: t.clips.map((c) =>
-                                            c.id === recClip.id ? { ...c, audioBufferId: bufferId } : c
+                                    tracks: ts.tracks.map((time) => ({
+                                        ...time,
+                                        clips: time.clips.map((context) =>
+                                            context.id === recClip.id
+                                                ? { ...context, audioBufferId: bufferId }
+                                                : context
                                         ),
                                     })),
                                 });
@@ -252,17 +260,19 @@ export function startPlayheadScheduler(): void {
         applyVcaGains();
         applyAutomation(newPosition);
         applyModulation(newPosition);
+        applyModulationToEngine(newPosition);
+        scheduleAdjustmentLayers(newPosition);
 
         schedulerSession.lastScheduledBeat = scheduleUpTo;
-    };
+    }
 
     if (!schedulerSession.worker) {
         schedulerSession.worker = new Worker(new URL('../workers/schedulerWorker.ts', import.meta.url), {
             type: 'module',
         });
-        schedulerSession.worker.onmessage = (e) => {
-            if (e.data?.type === 'tick') {
-                tick();
+        schedulerSession.worker.onmessage = (event: MessageEvent<unknown>) => {
+            if (event.data && typeof event.data === 'object' && 'type' in event.data && event.data.type === 'tick') {
+                void tick();
             }
         };
     }

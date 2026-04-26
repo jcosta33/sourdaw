@@ -69,8 +69,8 @@ export function trackPitch(audioBufferId: string, options: PitchTrackingOptions 
 
     for (let offset = 0; offset + windowSize <= data.length; offset += hopSize) {
         // Copy windowed segment
-        for (let i = 0; i < windowSize; i++) {
-            window[i] = data[offset + i]!;
+        for (let index = 0; index < windowSize; index++) {
+            window[index] = data[offset + index]!;
         }
 
         const [frequency, clarity] = detector.findPitch(window, sampleRate);
@@ -101,8 +101,8 @@ export function detectDominantPitch(audioBufferId: string, options?: PitchTracki
 
     // Count MIDI pitch occurrences
     const counts = new Map<number, number>();
-    for (const p of pitches) {
-        counts.set(p.midiPitch, (counts.get(p.midiPitch) ?? 0) + 1);
+    for (const param of pitches) {
+        counts.set(param.midiPitch, (counts.get(param.midiPitch) ?? 0) + 1);
     }
 
     // Find the most common pitch
@@ -117,6 +117,6 @@ export function detectDominantPitch(audioBufferId: string, options?: PitchTracki
 
     // Return the representative sample with highest clarity
     return pitches
-        .filter((p) => p.midiPitch === dominantMidi)
-        .reduce((best, p) => (p.clarity > best.clarity ? p : best));
+        .filter((param) => param.midiPitch === dominantMidi)
+        .reduce((best, param) => (param.clarity > best.clarity ? param : best));
 }

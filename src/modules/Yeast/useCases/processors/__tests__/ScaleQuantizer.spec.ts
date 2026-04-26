@@ -5,7 +5,7 @@ import * as subject from '../ScaleQuantizer';
 describe('ScaleQuantizer', () => {
     it('should export ScaleQuantizer', () => {
         expect(subject.ScaleQuantizer).toBeDefined();
-        const t = typeof subject.ScaleQuantizer;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.ScaleQuantizer;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

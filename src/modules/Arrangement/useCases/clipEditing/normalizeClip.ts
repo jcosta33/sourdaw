@@ -10,7 +10,7 @@ export function normalizeClip(clipId: string, mode: NormalizationMode = 'peak', 
         return;
     }
     for (const track of state.tracks) {
-        const clip = track.clips.find((c) => c.id === clipId);
+        const clip = track.clips.find((context) => context.id === clipId);
         if (!clip || clip.type !== 'audio' || !clip.audioBufferId) {
             continue;
         }
@@ -24,7 +24,7 @@ export function normalizeClip(clipId: string, mode: NormalizationMode = 'peak', 
             return;
         }
 
-        updateClip(clipId, (c) => ({ ...c, gain: c.gain * scale }));
+        updateClip(clipId, (context) => ({ ...context, gain: context.gain * scale }));
         return;
     }
 }

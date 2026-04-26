@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 
 import { updateTrack } from '../../../repositories/track/updateTrack';
-import { computeTrackHash } from '../../../services/computeTrackHash';
 import { trackStore } from '../../../stores/trackStore';
 import { freezeTrack } from '../freezeTrack';
 import { renderTrackOffline } from '../renderOffline';

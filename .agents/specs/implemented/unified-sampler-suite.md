@@ -129,7 +129,6 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
 11. **Per-slice articulation and modulation depth**
 
     The user-visible promises of FL Studio-style articulator groups, Bitwig-level modulation, Mod X/Y crossfading, and voice stacking MUST be formalised as engine surface area — they are not implementation-detail footnotes.
-
     - **Articulator groups:** Each pad / slice MUST support at least **8 independent articulator slots**. An articulator is one of `{AHDSR envelope, LFO, MSEG, filter, pitch-shift, pan, bitcrush, drive}`. Each slot is pre-allocated per voice at initialisation; adding or removing slots at runtime MUST go through the SPSC command queue and not allocate on the RT thread.
     - **Mod-matrix surface:** The engine MUST expose a unified modulation matrix where any `{source, destination}` pairing is addressable by stable ID. Sources include MIDI velocity, aftertouch, CC, LFOs, envelopes, MSEGs, mod X, mod Y, macro 1..8. Destinations include per-slot articulator parameters, warp ratio (Flex Speed), filter cutoff/Q, grain density, pitch, pan, and round-robin selection bias. The matrix MUST support up to **32 active routings per pad/slice** (compile-time constant).
     - **Mod X/Y crossfading (dual-deck):** Each pad / slice MAY carry two "decks" (A and B) of independent sample + articulator state. Mod X and Mod Y are two `AtomicF32` parameters in `[0, 1]` that gate crossfading between decks via equal-power (sin/cos) gains. Switching a pad from single-deck to dual-deck MUST occur off-audio-thread through the SPSC queue.
@@ -141,7 +140,6 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
 12. **Engine callback contract (single RT entry point)**
 
     The RT `process()` callback MUST execute the following orchestration for every audio block, in this order (research Part 2 Addendum §11):
-
     1. Drain the SPSC command queue from the engine-management thread into non-allocating voice/sample state mutations. Commands that require allocation or blocking MUST have been resolved on the management thread before enqueue; the callback MUST never take the allocation path.
     2. Drain the MIDI input queue for the block, resolving velocity layer → round-robin → stack → voice allocation per requirements 2, 9, 10, 11.
     3. For each active voice: read preload / ring → warp (PV / WSOLA / repitch / granular, per mode) → filter (SVF) → envelope (AHDSR) → pan / mix into the block accumulator.
@@ -153,7 +151,6 @@ Deliver a Unified Sampler Suite targeting four primary sampler modes (Quick, Dru
 13. **IPC contract (Tauri command / event surface)**
 
     The frontend MUST reach the engine only through the following surface. Changes to this surface require a spec update (research Part 2 Addendum §7):
-
     - **Commands (`invoke`):** `load_sample`, `analyze_onsets`, `set_sampler_mode`, `set_pad_config`, `set_slice_config`, `set_warp_params`, `set_articulator`, `set_mod_route`, `reset_round_robin`, `start_recording`, `stop_recording`, `get_waveform_peaks` (returns `tauri::ipc::Response` with a binary mipmap payload).
     - **Events (server → client):** `playback_position` (~30 Hz), `voice_activity` (per-pad meter, ~30 Hz), `analysis_complete` (onsets / BPM / root key / peaks), `sample_load_progress`, `underrun_event` (telemetry only; the engine does not block on this).
     - All command and event shapes MUST be typed end-to-end via `tauri-specta`; no `any` on the boundary. Large binary payloads (waveform mipmaps, recorder captures) MUST use `tauri::ipc::Response` rather than being JSON-encoded.

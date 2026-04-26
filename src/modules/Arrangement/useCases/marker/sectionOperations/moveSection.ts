@@ -7,13 +7,13 @@ export function moveSection(sectionId: string, newStartBeat: number): void {
     }
     markerStore.set({
         ...state,
-        sections: state.sections.map((s) => {
-            if (s.id !== sectionId) {
-                return s;
+        sections: state.sections.map((state1) => {
+            if (state1.id !== sectionId) {
+                return state1;
             }
-            const duration = s.endBeat - s.startBeat;
+            const duration = state1.endBeat - state1.startBeat;
             const startBeat = Math.max(0, Math.round(newStartBeat));
-            return { ...s, startBeat, endBeat: startBeat + duration };
+            return { ...state1, startBeat, endBeat: startBeat + duration };
         }),
     });
 }

@@ -8,6 +8,6 @@ export function removeChordEvent(eventId: string): void {
 
     chordTrackStore.set({
         ...state,
-        events: state.events.filter((e) => e.id !== eventId),
+        events: state.events.filter((event) => event.id !== eventId),
     });
 }

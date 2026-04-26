@@ -33,12 +33,12 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
     });
 
     const allPb = clipId ? (midiState.pitchBendByClipId[clipId] ?? []) : [];
-    const points = [...allPb].sort((a: MidiPitchBend, b: MidiPitchBend) => a.beat - b.beat);
+    const points = [...allPb].sort((alpha: MidiPitchBend, b: MidiPitchBend) => alpha.beat - b.beat);
 
     const beatToX = (beat: number): number => beat * beatWidth + 8;
     const valueToY = (value: number, height: number): number => height - (value / 127) * (height - 8) - 4;
 
-    const handleContainerClick = (e: MouseEvent<HTMLDivElement>) => {
+    const handleContainerClick = (event: MouseEvent<HTMLDivElement>) => {
         if (!clipId) {
             return;
         }
@@ -47,13 +47,13 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
             return;
         }
 
-        if ((e.target as HTMLElement).dataset.pbPoint) {
+        if ((event.target as HTMLElement).dataset.pbPoint) {
             return;
         }
 
         const rect = container.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
         const height = rect.height;
 
         const beat = Math.max(0, (x - 8) / beatWidth);
@@ -67,8 +67,8 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
         );
     };
 
-    const handlePointMouseDown = (pbId: string, e: MouseEvent<HTMLDivElement>) => {
-        e.stopPropagation();
+    const handlePointMouseDown = (pbId: string, event: MouseEvent<HTMLDivElement>) => {
+        event.stopPropagation();
         if (!clipId) {
             return;
         }
@@ -77,7 +77,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
             return;
         }
 
-        const origPoint = points.find((p) => p.id === pbId);
+        const origPoint = points.find((param) => param.id === pbId);
         const origBeat = origPoint?.beat ?? 0;
         const origValue = origPoint?.value ?? 0;
 
@@ -99,7 +99,7 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
             setDragId(null);
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup', onUp);
-            const finalPoint = (midiStore.value?.pitchBendByClipId[clipId] ?? []).find((p) => p.id === pbId);
+            const finalPoint = (midiStore.value?.pitchBendByClipId[clipId] ?? []).find((param) => param.id === pbId);
             if (finalPoint && (finalPoint.beat !== origBeat || finalPoint.value !== origValue)) {
                 const finalBeat = finalPoint.beat;
                 const finalValue = finalPoint.value;
@@ -115,12 +115,12 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
         window.addEventListener('mouseup', onUp);
     };
 
-    const handlePointDoubleClick = (pbId: string, e: MouseEvent<HTMLDivElement>) => {
-        e.stopPropagation();
+    const handlePointDoubleClick = (pbId: string, event: MouseEvent<HTMLDivElement>) => {
+        event.stopPropagation();
         if (!clipId) {
             return;
         }
-        const point = points.find((p) => p.id === pbId);
+        const point = points.find((param) => param.id === pbId);
         if (point) {
             const { value, beat, channel } = point;
             removePitchBend(clipId, pbId);
@@ -176,15 +176,14 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
                         stroke="rgba(80, 180, 220, 0.5)"
                         strokeWidth="1.5"
                         points={points
-                            .map((p: MidiPitchBend) => {
+                            .map((param: MidiPitchBend) => {
                                 const h = containerRef.current?.clientHeight ?? 80;
-                                return `${beatToX(p.beat)},${valueToY(p.value, h)}`;
+                                return `${beatToX(param.beat)},${valueToY(param.value, h)}`;
                             })
                             .join(' ')}
                     />
                 ) : null}
             </svg>
-
             {points.map((point: MidiPitchBend) => {
                 const h = containerRef.current?.clientHeight ?? 80;
                 const x = beatToX(point.beat);
@@ -203,12 +202,11 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
                         )}
                         style={{ left: x, top: y }}
                         title={`Beat ${point.beat.toFixed(2)}: ${point.value} (center: ${PITCH_BEND_CENTER})`}
-                        onMouseDown={(e) => handlePointMouseDown(point.id, e)}
-                        onDoubleClick={(e) => handlePointDoubleClick(point.id, e)}
+                        onMouseDown={(event) => handlePointMouseDown(point.id, event)}
+                        onDoubleClick={(event) => handlePointDoubleClick(point.id, event)}
                     />
                 );
             })}
-
             {points.length === 0 ? (
                 <div className="flex h-full items-center justify-center pointer-events-none">
                     <p className="text-[10px] text-muted-foreground">

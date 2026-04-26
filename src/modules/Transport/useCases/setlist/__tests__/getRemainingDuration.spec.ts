@@ -4,28 +4,30 @@ import { type SetlistItem, type SetlistState } from '../../../stores/setlistStor
 import { getRemainingDuration } from '../getRemainingDuration';
 
 const mockSetlistStore = vi.hoisted(() => ({
-    value: null as any,
-    set: vi.fn(),
+    value: null as SetlistState | null,
+    set: vi.fn<[state: SetlistState | ((prev: SetlistState) => SetlistState)], void>(),
 }));
 
 vi.mock('../../../stores/setlistStore', () => ({
     setlistStore: mockSetlistStore,
 }));
 
-const item = (id: string, dur: number, gap: number): SetlistItem => ({
-    id,
-    name: id,
-    projectPath: null,
-    bpm: null,
-    timeSignature: null,
-    estimatedDuration: dur,
-    notes: '',
-    programChange: null,
-    color: '#000',
-    autoStop: true,
-    gapSeconds: gap,
-    markers: [],
-});
+function item(id: string, dur: number, gap: number): SetlistItem {
+    return {
+        id,
+        name: id,
+        projectPath: null,
+        bpm: null,
+        timeSignature: null,
+        estimatedDuration: dur,
+        notes: '',
+        programChange: null,
+        color: '#000',
+        autoStop: true,
+        gapSeconds: gap,
+        markers: [],
+    };
+}
 
 describe('getRemainingDuration', () => {
     beforeEach(() => {

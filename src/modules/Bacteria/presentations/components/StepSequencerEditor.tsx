@@ -27,12 +27,6 @@ export const StepSequencerEditor = ({
     );
     const drawingRef = useRef(false);
 
-    // §150.2 — Only redraw when step content or size changes.
-    useEffect(() => {
-        draw();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [steps, numSteps, width, height]);
-
     const draw = (): void => {
         const canvas = canvasRef.current;
         if (!canvas) {
@@ -89,6 +83,12 @@ export const StepSequencerEditor = ({
             ctx.strokeRect(x, 0, stepWidth, height);
         }
     };
+
+    // §150.2 — Only redraw when step content or size changes.
+    useEffect(() => {
+        draw();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [steps, numSteps, width, height]);
 
     const updateStepFromPointer = (e: React.PointerEvent): void => {
         const rect = canvasRef.current?.getBoundingClientRect();

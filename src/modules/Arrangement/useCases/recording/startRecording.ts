@@ -18,21 +18,23 @@ export function startRecording(): Clip[] {
         return [];
     }
 
-    const armedTracks = trackState.tracks.filter((t) => t.armed);
+    const armedTracks = trackState.tracks.filter((time) => time.armed);
     const newClips: Clip[] = [];
 
     for (const track of armedTracks) {
         if (track.kind === 'midi' && transportState.overdubEnabled) {
             const ph = transportState.playheadPosition;
-            const intersecting = track.clips.find((c) => c.type === 'midi' && ph >= c.startBeat && ph < c.endBeat);
+            const intersecting = track.clips.find(
+                (context) => context.type === 'midi' && ph >= context.startBeat && ph < context.endBeat
+            );
 
             const inLoop = transportState.isLooping && ph >= transportState.loopStart && ph <= transportState.loopEnd;
             const loopClip = inLoop
                 ? track.clips.find(
-                      (c) =>
-                          c.type === 'midi' &&
-                          c.startBeat >= transportState.loopStart &&
-                          c.endBeat <= transportState.loopEnd
+                      (context) =>
+                          context.type === 'midi' &&
+                          context.startBeat >= transportState.loopStart &&
+                          context.endBeat <= transportState.loopEnd
                   )
                 : undefined;
 
@@ -74,17 +76,17 @@ export function startRecording(): Clip[] {
     if (newClips.length > 0) {
         setTrackState({
             ...trackState,
-            tracks: trackState.tracks.map((t) => {
-                const clip = newClips.find((c) => c.trackId === t.id);
+            tracks: trackState.tracks.map((time) => {
+                const clip = newClips.find((context) => context.trackId === time.id);
                 if (!clip) {
-                    return t;
+                    return time;
                 }
-                return { ...t, clips: [...t.clips, clip] };
+                return { ...time, clips: [...time.clips, clip] };
             }),
         });
         // Mark these clips as actively recording so the timeline renderer can
         // grow them visually using the live playhead position.
-        activeRecordingRef.current = newClips.map((c) => c.id);
+        activeRecordingRef.current = newClips.map((context) => context.id);
     }
 
     return newClips;

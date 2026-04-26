@@ -10,10 +10,12 @@ import { getTransportState } from '../transportQueries/getTransportState';
 import { getTransportStoreValue } from '../transportQueries/getTransportStoreValue';
 import { updateTransportState } from '../transportQueries/updateTransportState';
 
+import type { TempoMapStoreState } from '../../stores/tempoMapStore';
+
 vi.mock('../../repositories/transport/getTransportState');
 vi.mock('../../repositories/transport/updateTransportState');
 vi.mock('../../stores/tempoMapStore', () => ({
-    tempoMapStore: { value: null },
+    tempoMapStore: { value: null as TempoMapStoreState | null },
 }));
 
 describe('transportQueries injectables', () => {
@@ -44,8 +46,8 @@ describe('transportQueries injectables', () => {
     });
 
     it('should forward getTempoMapState to the tempo map store', () => {
-        const snapshot = { changes: [{ beat: 0, bpm: 120 }] };
-        tempoMapStore.value = snapshot as any;
+        const snapshot: TempoMapStoreState = { changes: [{ id: '1', beat: 0, tempo: 120, curve: 'instant' }] };
+        tempoMapStore.value = snapshot;
 
         expect(getTempoMapState()).toBe(snapshot);
     });

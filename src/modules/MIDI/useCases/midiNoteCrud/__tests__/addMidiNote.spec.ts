@@ -13,11 +13,11 @@ describe('addMidiNote', () => {
     });
 
     it('should append a clamped note and return it', () => {
-        const n = addMidiNote('c1', 300, -2, 0.01, 0);
-        expect(n.pitch).toBe(127);
-        expect(n.startBeat).toBe(0);
-        expect(n.duration).toBeGreaterThanOrEqual(0.0625);
-        expect(n.velocity).toBe(1);
+        const node = addMidiNote('c1', 300, -2, 0.01, 0);
+        expect(node.pitch).toBe(127);
+        expect(node.startBeat).toBe(0);
+        expect(node.duration).toBeGreaterThanOrEqual(0.0625);
+        expect(node.velocity).toBe(1);
         expect(midiStore.value?.notesByClipId.c1).toHaveLength(1);
     });
 

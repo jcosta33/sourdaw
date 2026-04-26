@@ -3,6 +3,7 @@ import { Music2 } from 'lucide-react';
 import { describe, it, expect, vi } from 'vitest';
 
 import { PluginDummy } from '#/modules/Arrangement/__tests__/PluginDummy';
+import { type PluginDescriptor } from '#/modules/Arrangement/models/DeviceParameter';
 
 import { NavCard, EffectItem, UnimplementedBadge, SoonBadge } from '../effectsTabHelpers';
 
@@ -27,7 +28,10 @@ describe('effectsTabHelpers components', () => {
 
     describe('EffectItem', () => {
         it('should render correctly', () => {
-            const mockPlugin = PluginDummy.create({ name: 'Test Effect', parameters: [{}, {}] as any });
+            const mockPlugin = PluginDummy.create({
+                name: 'Test Effect',
+                parameters: [{}, {}] as unknown as PluginDescriptor['parameters'],
+            });
             render(<EffectItem plugin={mockPlugin} selectedTrackId="t1" />);
             expect(screen.getByText('Test Effect')).toBeInTheDocument();
             expect(screen.getByText('2 params')).toBeInTheDocument();

@@ -5,7 +5,7 @@ import * as subject from '../getSongStructureHandlers';
 describe('getSongStructureHandlers', () => {
     it('should export getSongStructureHandlers', () => {
         expect(subject.getSongStructureHandlers).toBeDefined();
-        const t = typeof subject.getSongStructureHandlers;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getSongStructureHandlers;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

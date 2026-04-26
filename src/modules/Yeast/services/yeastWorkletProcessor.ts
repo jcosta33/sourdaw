@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * YeastWorkletProcessor — runs the MIDI rack in the audio thread.
  *
@@ -18,12 +17,30 @@
 import { MidiRack } from '../useCases/MidiRack';
 import { createProcessor } from '../useCases/processorFactory';
 
+import type { MidiEvent, TransportInfo } from '../models/MidiEvent';
+import type { ProcessorType } from '../useCases/processorFactory';
+
+type YeastMsg =
+    | { type: 'addProcessor'; processorType: ProcessorType; processorId: string }
+    | { type: 'removeProcessor'; processorId: string }
+    | { type: 'setParam'; processorId: string; name: string; value: number }
+    | { type: 'setBypass'; processorId: string; bypassed: boolean }
+    | {
+          type: 'processBlock';
+          requestId: string;
+          events: MidiEvent[];
+          blockStart: number;
+          blockEnd: number;
+          transport: TransportInfo;
+      }
+    | { type: 'allNotesOff'; nowSamples?: number };
+
 class YeastWorkletProcessor extends AudioWorkletProcessor {
     _rack = new MidiRack();
 
     constructor() {
         super();
-        this.port.onmessage = ({ data }) => {
+        this.port.onmessage = ({ data }: MessageEvent<YeastMsg>) => {
             switch (data.type) {
                 case 'addProcessor':
                     this._rack.addProcessor(createProcessor(data.processorType, data.processorId));
@@ -54,7 +71,7 @@ class YeastWorkletProcessor extends AudioWorkletProcessor {
         };
     }
 
-    process() {
+    process(): boolean {
         // All work is driven by message port; keep the worklet alive.
         return true;
     }

@@ -22,18 +22,21 @@ export const TrackMidiOutputSection = ({ track, allTracks }: TrackMidiOutputSect
                     <DawCompactSelect
                         className="w-full border-border"
                         value={track.midiOutputTrackId ?? ''}
-                        onChange={(e) => {
-                            const val = e.target.value;
-                            updateTrack(track.id, (t) => ({ ...t, midiOutputTrackId: val || null }));
+                        onChange={(event) => {
+                            const val = event.target.value;
+                            updateTrack(track.id, (current) => ({
+                                ...current,
+                                midiOutputTrackId: val || null,
+                            }));
                         }}
                         aria-label="MIDI output destination"
                     >
                         <option value="">No MIDI routing</option>
                         {allTracks
-                            .filter((t) => t.kind === 'midi' && t.id !== track.id)
-                            .map((t) => (
-                                <option key={t.id} value={t.id}>
-                                    {t.name}
+                            .filter((time) => time.kind === 'midi' && time.id !== track.id)
+                            .map((time) => (
+                                <option key={time.id} value={time.id}>
+                                    {time.name}
                                 </option>
                             ))}
                     </DawCompactSelect>

@@ -10,15 +10,15 @@ function pt(beat: number, value: number, curve: AutomationPoint['curve'] = 'line
 
 describe('interpolateAutomationValue (public automationQueries export)', () => {
     it('should match the transformer implementation for linear interpolation', () => {
-        const a = pt(0, 0);
-        const b = pt(4, 1);
-        expect(interpolateAutomationValue(a, b, 2)).toBe(interpolateFromTransformers(a, b, 2));
+        const alpha = pt(0, 0);
+        const buffer = pt(4, 1);
+        expect(interpolateAutomationValue(alpha, buffer, 2)).toBe(interpolateFromTransformers(alpha, buffer, 2));
     });
 
     it('should match the transformer for coincident beats', () => {
-        const p = pt(2, 0.25);
-        expect(interpolateAutomationValue(p, { ...p, value: 0.75 }, 2)).toBe(
-            interpolateFromTransformers(p, { ...p, value: 0.75 }, 2)
+        const param = pt(2, 0.25);
+        expect(interpolateAutomationValue(param, { ...param, value: 0.75 }, 2)).toBe(
+            interpolateFromTransformers(param, { ...param, value: 0.75 }, 2)
         );
     });
 });

@@ -70,10 +70,6 @@ export const WaveshaperEditor = ({
     );
     const dragRef = useRef<{ segIdx: number; pointKey: 'p1' | 'p2' } | null>(null);
 
-    useEffect(() => {
-        drawCurve();
-    });
-
     const drawCurve = (): void => {
         const canvas = canvasRef.current;
         if (!canvas) {
@@ -164,6 +160,10 @@ export const WaveshaperEditor = ({
             }
         }
     };
+
+    useEffect(() => {
+        drawCurve();
+    });
 
     const handlePointerDown = (e: React.PointerEvent): void => {
         const rect = canvasRef.current?.getBoundingClientRect();

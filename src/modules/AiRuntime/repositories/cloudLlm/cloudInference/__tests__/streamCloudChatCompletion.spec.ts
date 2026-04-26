@@ -16,6 +16,7 @@ describe('streamCloudChatCompletion', () => {
         vi.clearAllMocks();
 
         const mockAsyncIterator = {
+            // eslint-disable-next-line @typescript-eslint/require-await -- async generator uses yield, not await; lint rule doesn't recognise yield as an async operation
             async *[Symbol.asyncIterator]() {
                 yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hello' } };
                 yield { type: 'content_block_delta', delta: { type: 'text_delta', text: ' World' } };
@@ -55,7 +56,9 @@ describe('streamCloudChatCompletion', () => {
 
     it('yields tokens to the onToken callback', async () => {
         const tokens: string[] = [];
-        const onToken = (text: string) => tokens.push(text);
+        function onToken(text: string) {
+            tokens.push(text);
+        }
 
         await streamCloudChatCompletion([{ role: 'user', content: 'test' }], onToken);
 

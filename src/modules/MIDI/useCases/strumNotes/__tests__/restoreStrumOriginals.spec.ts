@@ -2,15 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { restoreStrumOriginals } from '../restoreStrumOriginals';
 
+import type { MidiStoreState } from '../../../stores/midiStore';
+
 const mocks = vi.hoisted(() => ({
     midiStoreValue: {
         value: {
             notesByClipId: {} as Record<string, { id: string; startBeat: number }[]>,
             ccByClipId: {},
             pitchBendByClipId: {},
-        },
+        } as unknown as MidiStoreState,
     },
-    midiStoreSet: vi.fn(),
+    midiStoreSet: vi.fn<typeof import('../../../stores/midiStore').midiStore.set>(),
 }));
 
 vi.mock('../../../stores/midiStore', () => ({
@@ -31,11 +33,11 @@ describe('restoreStrumOriginals', () => {
             },
             ccByClipId: {},
             pitchBendByClipId: {},
-        };
+        } as unknown as MidiStoreState;
     });
 
     it('should not write when the MIDI store is null', () => {
-        mocks.midiStoreValue.value = null as any;
+        mocks.midiStoreValue.value = null as unknown as MidiStoreState;
         restoreStrumOriginals('c1', new Map([['n1', 0]]));
         expect(mocks.midiStoreSet).not.toHaveBeenCalled();
     });
@@ -47,7 +49,7 @@ describe('restoreStrumOriginals', () => {
             expect.objectContaining({
                 notesByClipId: expect.objectContaining({
                     c1: [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
-                }),
+                }) as unknown as MidiStoreState['notesByClipId'],
             })
         );
     });

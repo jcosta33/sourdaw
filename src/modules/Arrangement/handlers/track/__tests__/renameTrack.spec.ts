@@ -16,7 +16,7 @@ describe('handleRenameTrack', () => {
     });
 
     it('executes renameTrack with the provided payload', () => {
-        handleRenameTrack.execute({
+        void handleRenameTrack.execute({
             type: 'renameTrack',
             payload: { trackId: 't1', name: 'Vocals' },
         });

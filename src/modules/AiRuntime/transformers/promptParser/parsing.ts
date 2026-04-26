@@ -83,10 +83,10 @@ export function tryPresetMatch(normalized: string, context: PresetContext): Runt
 }
 
 export function buildPresetContext(context: ProjectContext): PresetContext {
-    const selectedTrack = context.tracks.find((t) => t.id === context.selectedTrackId);
+    const selectedTrack = context.tracks.find((time) => time.id === context.selectedTrackId);
     const selectedClip =
-        selectedTrack?.clips.find((c) => c.id === context.selectedClipId) ??
-        context.tracks.flatMap((t) => t.clips).find((c) => c.id === context.selectedClipId);
+        selectedTrack?.clips.find((context1) => context1.id === context.selectedClipId) ??
+        context.tracks.flatMap((time) => time.clips).find((context1) => context1.id === context.selectedClipId);
 
     return {
         selectedTrackId: context.selectedTrackId ?? undefined,
@@ -99,7 +99,7 @@ export function buildPresetContext(context: ProjectContext): PresetContext {
 // ── Parameterized patterns ──────────────────────────────────────────────
 
 export function tryParameterizedPath(normalized: string, context: ProjectContext): RuntimeAction[] {
-    const selectedTrack = context.tracks.find((t) => t.id === context.selectedTrackId);
+    const selectedTrack = context.tracks.find((time) => time.id === context.selectedTrackId);
     const selectedClipId = context.selectedClipId;
 
     const tempoMatch = normalized.match(/^(?:set\s+)?tempo\s+(?:to\s+)?(\d+)$/i);
@@ -254,7 +254,7 @@ export function tryParameterizedPath(normalized: string, context: ProjectContext
 // ── Compound fast path ──────────────────────────────────────────────────
 
 export function tryCompoundFastPath(normalized: string, context: ProjectContext): RuntimeAction[] | null {
-    const selectedTrack = context.tracks.find((t) => t.id === context.selectedTrackId);
+    const selectedTrack = context.tracks.find((time) => time.id === context.selectedTrackId);
 
     const multiTrackMatch = normalized.match(
         /^(?:create|add|make)\s+(\d+)\s+(audio\s+|midi\s+|bus\s+)?tracks?(?:\s+(?:named|called)\s+(.+))?$/i
@@ -266,28 +266,40 @@ export function tryCompoundFastPath(normalized: string, context: ProjectContext)
         const names = namesStr
             ? namesStr
                   .split(/,\s*|\s+and\s+/i)
-                  .map((n) => n.trim())
+                  .map((node) => node.trim())
                   .filter(Boolean)
             : [];
         const actions: RuntimeAction[] = [];
-        for (let i = 0; i < count; i++) {
-            const name = names[i] ?? `${kind.charAt(0).toUpperCase() + kind.slice(1)} ${i + 1}`;
+        for (let index = 0; index < count; index++) {
+            const name = names[index] ?? `${kind.charAt(0).toUpperCase() + kind.slice(1)} ${index + 1}`;
             actions.push({ type: 'addTrack', payload: { name, kind } });
         }
         return actions;
     }
 
     if (/^mute\s+all\s+tracks$/i.test(normalized)) {
-        return context.tracks.map((t) => ({ type: 'muteTrack' as const, payload: { trackId: t.id, muted: true } }));
+        return context.tracks.map((time) => ({
+            type: 'muteTrack' as const,
+            payload: { trackId: time.id, muted: true },
+        }));
     }
     if (/^unmute\s+all\s+tracks$/i.test(normalized)) {
-        return context.tracks.map((t) => ({ type: 'muteTrack' as const, payload: { trackId: t.id, muted: false } }));
+        return context.tracks.map((time) => ({
+            type: 'muteTrack' as const,
+            payload: { trackId: time.id, muted: false },
+        }));
     }
     if (/^solo\s+all\s+tracks$/i.test(normalized)) {
-        return context.tracks.map((t) => ({ type: 'soloTrack' as const, payload: { trackId: t.id, soloed: true } }));
+        return context.tracks.map((time) => ({
+            type: 'soloTrack' as const,
+            payload: { trackId: time.id, soloed: true },
+        }));
     }
     if (/^unsolo\s+all\s+tracks$/i.test(normalized)) {
-        return context.tracks.map((t) => ({ type: 'soloTrack' as const, payload: { trackId: t.id, soloed: false } }));
+        return context.tracks.map((time) => ({
+            type: 'soloTrack' as const,
+            payload: { trackId: time.id, soloed: false },
+        }));
     }
 
     const multiDeviceMatch = normalized.match(
@@ -309,11 +321,11 @@ export function tryCompoundFastPath(normalized: string, context: ProjectContext)
         };
         const devices = multiDeviceMatch[1]!
             .split(/\s*(?:,|and)\s*/i)
-            .map((d) => d.trim().toLowerCase())
+            .map((data) => data.trim().toLowerCase())
             .filter(Boolean);
         const actions: RuntimeAction[] = [];
-        for (const d of devices) {
-            const deviceType = deviceMap[d];
+        for (const data of devices) {
+            const deviceType = deviceMap[data];
             if (deviceType) {
                 actions.push({ type: 'addDevice', payload: { trackId: selectedTrack.id, deviceType } });
             }
@@ -407,8 +419,8 @@ export function findTrack(context: ProjectContext, name: string): ProjectContext
         .replace(/\s+track$/i, '')
         .trim();
     return (
-        context.tracks.find((t) => t.name.toLowerCase() === lower) ??
-        context.tracks.find((t) => t.name.toLowerCase().includes(lower))
+        context.tracks.find((time) => time.name.toLowerCase() === lower) ??
+        context.tracks.find((time) => time.name.toLowerCase().includes(lower))
     );
 }
 
@@ -418,10 +430,10 @@ export function findTrack(context: ProjectContext, name: string): ProjectContext
  */
 export function requiresConfirmation(actions: RuntimeAction[]): boolean {
     return actions.some(
-        (a) =>
-            a.type === 'removeTrack' ||
-            a.type === 'removeClip' ||
-            a.type === 'removeDevice' ||
-            a.type === 'bounceInPlace'
+        (alpha) =>
+            alpha.type === 'removeTrack' ||
+            alpha.type === 'removeClip' ||
+            alpha.type === 'removeDevice' ||
+            alpha.type === 'bounceInPlace'
     );
 }

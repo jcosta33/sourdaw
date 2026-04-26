@@ -3,9 +3,9 @@ import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 export const handleConnectPush = createHandler<'connectPush'>({
-    execute: (a) => {
-        connectPush(a.payload.model);
-        notifyUser(`Ableton Push ${a.payload.model === 'push2' ? '2' : '3'} connected`, 'success');
+    execute: (alpha) => {
+        connectPush(alpha.payload.model);
+        notifyUser(`Ableton Push ${alpha.payload.model === 'push2' ? '2' : '3'} connected`, 'success');
     },
     describe: () => ({ label: 'Connect Ableton Push' }),
     undoable: false,

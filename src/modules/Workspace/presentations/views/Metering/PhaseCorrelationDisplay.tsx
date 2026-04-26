@@ -21,11 +21,11 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            return;
+            return undefined;
         }
 
         let rafId = 0;
@@ -57,9 +57,9 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
             // the engine would need a ChannelSplitter. Here we approximate by
             // treating odd/even samples as L/R, which works for interleaved sources)
             const halfLen = Math.floor(data.length / 2);
-            for (let i = 0; i < halfLen; i++) {
-                left![i] = data[i * 2]!;
-                right![i] = data[i * 2 + 1]!;
+            for (let index = 0; index < halfLen; index++) {
+                left![index] = data[index * 2]!;
+                right![index] = data[index * 2 + 1]!;
             }
 
             const correlation = meterRef.current.update(left!, right!);
@@ -94,12 +94,14 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
 
             // Correlation indicator
             const indicatorX = midX + correlation * (midX - 4);
-            const color =
-                correlation > 0.5
-                    ? safeColor // Good mono compatibility
-                    : correlation > 0
-                      ? hotColor // Moderate
-                      : clipColor; // Phase issues
+            let color: string;
+            if (correlation > 0.5) {
+                color = safeColor; // Good mono compatibility
+            } else if (correlation > 0) {
+                color = hotColor; // Moderate
+            } else {
+                color = clipColor; // Phase issues
+            }
 
             // Bar from center to correlation value — with glow
             const barStart = Math.min(midX, indicatorX);
@@ -138,16 +140,15 @@ export const PhaseCorrelationDisplay = ({ width = 160, height = 24 }: PhaseCorre
 
     return (
         <DawMeterFrame>
-            <canvas
-                ref={canvasRef}
-                width={width}
-                height={height}
-                className="block"
-                aria-label="Phase correlation meter"
+            <div
                 role="meter"
+                aria-label="Phase correlation meter"
                 aria-valuemin={-1}
                 aria-valuemax={1}
-            />
+                aria-valuenow={0}
+            >
+                <canvas ref={canvasRef} width={width} height={height} className="block" aria-hidden="true" />
+            </div>
         </DawMeterFrame>
     );
 };

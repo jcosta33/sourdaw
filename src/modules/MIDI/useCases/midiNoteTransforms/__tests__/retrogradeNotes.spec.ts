@@ -3,13 +3,15 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { midiStore } from '../../../stores/midiStore';
 import { retrogradeNotes } from '../retrogradeNotes';
 
-const note = (id: string, startBeat: number, duration: number) => ({
-    id,
-    pitch: 60,
-    startBeat,
-    duration,
-    velocity: 100,
-});
+function note(id: string, startBeat: number, duration: number) {
+    return {
+        id,
+        pitch: 60,
+        startBeat,
+        duration,
+        velocity: 100,
+    };
+}
 
 describe('retrogradeNotes', () => {
     beforeEach(() => {
@@ -24,7 +26,7 @@ describe('retrogradeNotes', () => {
 
     it('should reverse note order along the timeline', () => {
         retrogradeNotes('clip1');
-        const starts = midiStore.value?.notesByClipId.clip1?.map((n) => n.startBeat);
+        const starts = midiStore.value?.notesByClipId.clip1?.map((node) => node.startBeat);
         expect(starts).toEqual([0.5, 0]);
     });
 

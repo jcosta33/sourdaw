@@ -111,10 +111,10 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 const historyGroup: AiActionGroup = {
                     id: group.groupId,
                     prompt: userText,
-                    actions: executedLabels.map((l) => ({
+                    actions: executedLabels.map((length) => ({
                         kind: 'appAction',
-                        actionType: l.action.type,
-                        label: l.label,
+                        actionType: length.action.type,
+                        label: length.label,
                     })),
                     groupId: group.groupId,
                     timestamp: Date.now(),
@@ -124,12 +124,12 @@ export async function sendChatMessage(userText: string): Promise<void> {
 
                 notifyAiChange(
                     `Executed: ${userText}`,
-                    result.actions.map((a) => a.type)
+                    result.actions.map((alpha) => alpha.type)
                 );
 
                 updateChatMessage(assistantMsgId, {
                     isStreaming: false,
-                    content: `Executed:\n\n${executedLabels.map((l) => `- **${l.action.type.replaceAll('_', ' ')}**: ${l.label}`).join('\n')}`,
+                    content: `Executed:\n\n${executedLabels.map((length) => `- **${length.action.type.replaceAll('_', ' ')}**: ${length.label}`).join('\n')}`,
                 });
             } else if (result._jsonEditApplied) {
                 // executeDsoEdit already injected the user message and the assistant streaming message.
@@ -204,15 +204,15 @@ export async function sendChatMessage(userText: string): Promise<void> {
         // Keep only the last 24 messages (12 user+assistant pairs) to avoid
         // blowing the context window on long conversations.
         const conversationHistory = chatStore
-            .value!.messages.filter((m) => m.id !== assistantMsgId && !m.error)
+            .value!.messages.filter((message) => message.id !== assistantMsgId && !message.error)
             .slice(-24)
-            .map((m) => ({
-                role: m.role,
-                content: m.content,
+            .map((message) => ({
+                role: message.role,
+                content: message.content,
             }));
 
         const completionMessages = [{ role: 'system' as const, content: systemPrompt }, ...conversationHistory].filter(
-            (m) => m.role === 'system' || m.role === 'user' || m.role === 'assistant'
+            (message) => message.role === 'system' || message.role === 'user' || message.role === 'assistant'
         ) as Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
 
         if (backend === 'native') {
@@ -257,7 +257,7 @@ export async function sendChatMessage(userText: string): Promise<void> {
                 temperature: 0.7,
                 max_tokens: 2048,
                 stream: true,
-            })) as AsyncIterable<any>;
+            })) as AsyncIterable<{ choices: Array<{ delta: { content?: string } }> }>;
 
             for await (const chunk of asyncChunkGenerator) {
                 if (aborter.signal.aborted) {
@@ -276,11 +276,15 @@ export async function sendChatMessage(userText: string): Promise<void> {
         const { reasoning, content: cleanContent } = extractThinkBlock(fullContent);
         updateChatMessage(assistantMsgId, { isStreaming: false, content: cleanContent, reasoning });
     } catch (error) {
-        const errorMessage = isAppError(error)
-            ? error.message
-            : error instanceof Error
-              ? error.message
-              : 'An unknown error occurred during generation.';
+        const errorMessage = (() => {
+            if (isAppError(error)) {
+                return error.message;
+            }
+            if (error instanceof Error) {
+                return error.message;
+            }
+            return 'An unknown error occurred during generation.';
+        })();
         if (errorMessage === 'AbortedByUser' || errorMessage.includes('AbortError')) {
             // Clean abort, leave generated partial content intact and strip parsing blocks
             const parsed = extractThinkBlock(fullContent);

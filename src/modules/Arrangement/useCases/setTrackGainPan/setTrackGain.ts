@@ -10,7 +10,7 @@ import { maybeRecordAutomation, syncToasterPadParam } from './helpers';
 
 export function setTrackGain(trackId: string, gain: number): void {
     const clamped = Math.max(0, Math.min(1, gain));
-    updateTrack(trackId, (t) => ({ ...t, gain: clamped }));
+    updateTrack(trackId, (time) => ({ ...time, gain: clamped }));
     engineSetTrackGain(trackId, clamped);
     syncToasterPadParam(trackId, 'volume', clamped, { updateDeviceParam, getAllTracks });
     maybeRecordAutomation(

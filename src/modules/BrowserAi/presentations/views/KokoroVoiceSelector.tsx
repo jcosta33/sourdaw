@@ -43,8 +43,8 @@ export function KokoroVoiceSelector({
         }
     }
 
-    const handleChange = (e: React.ChangeEvent<HTMLSelectElement>): void => {
-        onChange(e.target.value);
+    const handleChange = (event: React.ChangeEvent<HTMLSelectElement>): void => {
+        onChange(event.target.value);
     };
 
     return (

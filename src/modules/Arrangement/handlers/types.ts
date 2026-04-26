@@ -1,3 +1,5 @@
 import { type AppAction } from '#/modules/Command/useCases';
 
-export type ExtractAction<A extends AppAction, T extends string> = A extends { type: T } ? A : never;
+export type ExtractAction<Action extends AppAction, TypeString extends string> = Action extends { type: TypeString }
+    ? Action
+    : never;

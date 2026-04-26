@@ -10,7 +10,7 @@ export function flattenTrack(trackId: string): void {
         return;
     }
 
-    const track = state.tracks.find((t) => t.id === trackId);
+    const track = state.tracks.find((time) => time.id === trackId);
     if (!track || track.freezeState.status !== 'frozen') {
         return;
     }
@@ -22,12 +22,12 @@ export function flattenTrack(trackId: string): void {
 
     let startBeat = Infinity;
     let endBeat = -Infinity;
-    for (const c of track.clips) {
-        if (c.startBeat < startBeat) {
-            startBeat = c.startBeat;
+    for (const context of track.clips) {
+        if (context.startBeat < startBeat) {
+            startBeat = context.startBeat;
         }
-        if (c.endBeat > endBeat) {
-            endBeat = c.endBeat;
+        if (context.endBeat > endBeat) {
+            endBeat = context.endBeat;
         }
     }
     if (startBeat === Infinity) {
@@ -56,8 +56,8 @@ export function flattenTrack(trackId: string): void {
     };
 
     const altId = `alt-flatten-${crypto.randomUUID().slice(0, 8)}`;
-    updateTrack(trackId, (t) => ({
-        ...t,
+    updateTrack(trackId, (time) => ({
+        ...time,
         kind: 'audio',
         clips: [newClip],
         devices: [],

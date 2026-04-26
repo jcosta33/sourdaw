@@ -24,8 +24,8 @@ export function detectTempoFromOnsets(onsets: number[]): TempoMapResult {
     }
 
     const intervals: number[] = [];
-    for (let i = 1; i < onsets.length; i++) {
-        intervals.push(onsets[i]! - onsets[i - 1]!);
+    for (let index = 1; index < onsets.length; index++) {
+        intervals.push(onsets[index]! - onsets[index - 1]!);
     }
 
     const bpmEstimates = intervals
@@ -54,14 +54,14 @@ export function detectTempoFromOnsets(onsets: number[]): TempoMapResult {
         }
     }
 
-    const averageBpm = maxBin.reduce((a, b) => a + b, 0) / maxBin.length;
+    const averageBpm = maxBin.reduce((alpha, b) => alpha + b, 0) / maxBin.length;
 
     const points: TempoMapPoint[] = [];
     let currentBeat = 0;
 
-    for (let i = 0; i < bpmEstimates.length; i++) {
-        const neighbors = bpmEstimates.slice(Math.max(0, i - 2), i + 3);
-        const smoothedBpm = neighbors.reduce((a, b) => a + b, 0) / neighbors.length;
+    for (let index = 0; index < bpmEstimates.length; index++) {
+        const neighbors = bpmEstimates.slice(Math.max(0, index - 2), index + 3);
+        const smoothedBpm = neighbors.reduce((alpha, b) => alpha + b, 0) / neighbors.length;
         const deviation = Math.abs(smoothedBpm - averageBpm) / averageBpm;
         const confidence = Math.max(0, 1 - deviation * 3);
 
@@ -75,10 +75,10 @@ export function detectTempoFromOnsets(onsets: number[]): TempoMapResult {
         currentBeat += 1;
     }
 
-    const allBpms = points.map((p) => p.bpm);
+    const allBpms = points.map((param) => param.bpm);
     const minBpm = Math.min(...allBpms);
     const maxBpm = Math.max(...allBpms);
-    const overallConfidence = points.reduce((sum, p) => sum + p.confidence, 0) / points.length;
+    const overallConfidence = points.reduce((sum, param) => sum + param.confidence, 0) / points.length;
 
     return {
         points,
@@ -108,13 +108,13 @@ export function estimateOnsetsFromClips(): number[] {
         for (const clip of track.clips) {
             const clipStartSec = clip.startBeat * beatDuration;
             const clipDuration = (clip.endBeat - clip.startBeat) * beatDuration;
-            for (let t = 0; t < clipDuration; t += beatDuration) {
-                onsets.push(clipStartSec + t);
+            for (let time = 0; time < clipDuration; time += beatDuration) {
+                onsets.push(clipStartSec + time);
             }
         }
     }
 
-    return onsets.sort((a, b) => a - b);
+    return onsets.sort((alpha, b) => alpha - b);
 }
 
 export function applyTempoMap(result: TempoMapResult): void {

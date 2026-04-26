@@ -65,7 +65,16 @@ function formatDisplayValue(value: number, param: DeviceParameter): string {
     }
     const range = param.maxValue - param.minValue;
     // For large ranges (>10), show 1 decimal. For small ranges, show 2-3 decimals.
-    const decimals = range >= 100 ? 0 : range >= 10 ? 1 : range >= 1 ? 2 : 3;
+    let decimals: number;
+    if (range >= 100) {
+        decimals = 0;
+    } else if (range >= 10) {
+        decimals = 1;
+    } else if (range >= 1) {
+        decimals = 2;
+    } else {
+        decimals = 3;
+    }
     return value.toFixed(decimals);
 }
 
@@ -105,8 +114,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     const fineStep = step / 10;
     const displayValue = formatDisplayValue(value, param);
 
-    const handleKnobChange = (v: number) => {
-        setDeviceParameter(device.id, param.id, v);
+    const handleKnobChange = (value1: number) => {
+        setDeviceParameter(device.id, param.id, value1);
     };
 
     const handleChoiceChange = (event: ChangeEvent<HTMLSelectElement>) => {
@@ -127,8 +136,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                     onChange={handleChoiceChange}
                     aria-label={param.name}
                 >
-                    {param.choices!.map((label, i) => (
-                        <option key={label} value={i}>
+                    {param.choices!.map((label, index) => (
+                        <option key={label} value={index}>
                             {label}
                         </option>
                     ))}
@@ -156,8 +165,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             ? toLinear(param.defaultValue ?? param.value)
             : (param.defaultValue ?? param.value);
 
-        const onChange = (v: number) => {
-            handleKnobChange(isLog ? toLog(v) : v);
+        const onChange = (value1: number) => {
+            handleKnobChange(isLog ? toLog(value1) : value1);
         };
 
         if (isSlider) {
@@ -169,7 +178,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                     max={max}
                     step={mappedStep}
                     defaultValue={mappedDefaultValue}
-                    formatValue={(v) => `${formatDisplayValue(isLog ? toLog(v) : v, param)} dB`}
+                    formatValue={(value1) => `${formatDisplayValue(isLog ? toLog(value1) : value1, param)} dB`}
                     className="w-full"
                 />
             );

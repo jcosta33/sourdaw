@@ -34,9 +34,9 @@ describe('readFrequencyBalance', () => {
                 // Mid (500-2000): bins ~21 to 85
                 data.fill(-10, 21, 85);
                 // Fill the rest with silence
-                for (let i = 0; i < data.length; i++) {
-                    if ((i < 1 || i >= 3) && (i < 21 || i >= 85)) {
-                        data[i] = -100;
+                for (let index = 0; index < data.length; index++) {
+                    if ((index < 1 || index >= 3) && (index < 21 || index >= 85)) {
+                        data[index] = -100;
                     }
                 }
             },

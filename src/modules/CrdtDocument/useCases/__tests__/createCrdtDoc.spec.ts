@@ -1,9 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 import { createCrdtDoc } from '../createCrdtDoc';
 
 const mocks = vi.hoisted(() => ({
-    createChildDoc: vi.fn(),
+    createChildDoc: vi.fn<typeof import('../../repositories/automergeRepository').automergeRepository.createChildDoc>(),
 }));
 
 vi.mock('../../repositories/automergeRepository', () => ({
@@ -14,7 +14,7 @@ vi.mock('../../repositories/automergeRepository', () => ({
 
 describe('createCrdtDoc', () => {
     it('delegates to automergeRepository', () => {
-        createCrdtDoc('child-1' as any);
+        createCrdtDoc('child-1');
         expect(mocks.createChildDoc).toHaveBeenCalledWith('child-1');
     });
 });

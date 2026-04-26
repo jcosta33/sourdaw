@@ -69,26 +69,26 @@ export class ScheduledEventQueue {
     drainRangeInto(startSamples: number, endSamples: number, out: MidiEvent[]): MidiEvent[] {
         const src = this.events;
         let writeIdx = 0;
-        for (let i = 0; i < src.length; i++) {
-            const e = src[i]!;
-            if (e.timeSamples >= startSamples && e.timeSamples < endSamples) {
-                out.push(e);
+        for (let index = 0; index < src.length; index++) {
+            const event = src[index]!;
+            if (event.timeSamples >= startSamples && event.timeSamples < endSamples) {
+                out.push(event);
             } else {
-                src[writeIdx++] = e;
+                src[writeIdx++] = event;
             }
         }
         src.length = writeIdx;
-        out.sort((a, b) => a.timeSamples - b.timeSamples);
+        out.sort((alpha, b) => alpha.timeSamples - b.timeSamples);
         return out;
     }
 
     /** Flush all scheduled events as immediate Note Offs. */
     flushAllNotesOff(output: MidiEvent[], nowSamples: number): void {
-        for (const e of this.events) {
-            if (e.kind.type === 'noteOn') {
+        for (const event of this.events) {
+            if (event.kind.type === 'noteOn') {
                 output.push({
                     timeSamples: nowSamples,
-                    kind: { type: 'noteOff', channel: e.kind.channel, note: e.kind.note },
+                    kind: { type: 'noteOff', channel: event.kind.channel, note: event.kind.note },
                 });
             }
         }

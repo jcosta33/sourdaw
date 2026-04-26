@@ -5,7 +5,7 @@ import * as subject from '../toggleCollaborationPanel';
 describe('toggleCollaborationPanel', () => {
     it('should export toggleCollaborationPanel', () => {
         expect(subject.toggleCollaborationPanel).toBeDefined();
-        const t = typeof subject.toggleCollaborationPanel;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.toggleCollaborationPanel;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

@@ -12,7 +12,7 @@ export function addGainEnvelopePoint(clipId: string, beatOffset: number, gainDb:
         gainDb: Math.max(-60, Math.min(12, gainDb)),
     };
 
-    const idx = env.points.findIndex((p) => p.beatOffset > beatOffset);
+    const idx = env.points.findIndex((param) => param.beatOffset > beatOffset);
     const nextPoints =
         idx === -1 ? [...env.points, point] : [...env.points.slice(0, idx), point, ...env.points.slice(idx)];
     setEnvelope(clipId, { ...env, points: nextPoints });

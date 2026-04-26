@@ -5,7 +5,7 @@ import * as subject from '../getAllClipIds';
 describe('getAllClipIds', () => {
     it('should export getAllClipIds', () => {
         expect(subject.getAllClipIds).toBeDefined();
-        const t = typeof subject.getAllClipIds;
-        expect(t === 'function' || t === 'object').toBe(true);
+        const time = typeof subject.getAllClipIds;
+        expect(time === 'function' || time === 'object').toBe(true);
     });
 });

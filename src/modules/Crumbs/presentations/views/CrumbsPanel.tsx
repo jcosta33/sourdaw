@@ -4,7 +4,7 @@
  * into the full crumbs interface.
  */
 
-import { type ReactElement, useEffect, useState, useCallback } from 'react';
+import { type ReactElement, useEffect, useState } from 'react';
 
 import { Circle, Cpu, Volume2 } from 'lucide-react';
 
@@ -66,18 +66,12 @@ const SectionCard = ({
 
 export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     // §209.1 — Typed defaults instead of non-null assertion on live values.
-    const state = useStoreSelector(
-        crumbsStore,
-        useCallback((s) => s?.[deviceId] ?? defaultCrumbsState, [deviceId])
-    );
-    const pads = useStoreSelector(
-        padStore,
-        useCallback((s) => s?.[deviceId] ?? defaultPadState, [deviceId])
-    );
-    const slices = useStoreSelector(
-        sliceStore,
-        useCallback((s) => s?.[deviceId] ?? defaultSliceState, [deviceId])
-    );
+    const state = useStoreSelector(crumbsStore, (s) => s?.[deviceId] ?? defaultCrumbsState);
+    const pads = useStoreSelector(padStore, (s) => s?.[deviceId] ?? defaultPadState);
+    const slices = useStoreSelector(sliceStore, (s) => s?.[deviceId] ?? defaultSliceState);
+
+    const [isDragOver, setIsDragOver] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
 
     // Create / destroy crumbs engine instance on mount/unmount.
     useEffect(() => {
@@ -114,9 +108,6 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         voiceStack,
     } = state;
 
-    const [isDragOver, setIsDragOver] = useState(false);
-    const [isRecording, setIsRecording] = useState(false);
-
     function handleParamChange(param: string, value: number): void {
         setCrumbsParamThrottled(deviceId, param, value);
     }
@@ -132,7 +123,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
             onDragLeave={() => setIsDragOver(false)}
             onDrop={(e) => {
                 setIsDragOver(false);
-                handleCrumbsFileDrop(deviceId, e);
+                void handleCrumbsFileDrop(deviceId, e.nativeEvent);
             }}
         >
             {isDragOver ? (
@@ -223,7 +214,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         className="rounded-md bg-white/[0.06] px-3 py-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-white/[0.1]"
                                         onClick={() => {
                                             setIsRecording(true);
-                                            armCrumbsRecording(deviceId, 0.01, pads.selectedPadIndex, 60);
+                                            void armCrumbsRecording(deviceId, 0.01, pads.selectedPadIndex, 60);
                                         }}
                                     >
                                         Arm
@@ -233,7 +224,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                         className="rounded-md bg-white/[0.06] px-3 py-1.5 text-[10px] font-medium text-foreground/80 transition-colors hover:bg-white/[0.1]"
                                         onClick={() => {
                                             setIsRecording(false);
-                                            stopCrumbsRecording(deviceId);
+                                            void stopCrumbsRecording(deviceId);
                                         }}
                                     >
                                         Stop

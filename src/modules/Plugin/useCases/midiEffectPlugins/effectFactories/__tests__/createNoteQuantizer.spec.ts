@@ -4,13 +4,15 @@ import { type MidiNote } from '#/modules/Plugin/models/MidiEffectTypes';
 
 import { createNoteQuantizer } from '../createNoteQuantizer';
 
-const n = (startBeat: number): MidiNote => ({
-    pitch: 60,
-    velocity: 100,
-    startBeat,
-    durationBeats: 0.25,
-    channel: 0,
-});
+function n(startBeat: number): MidiNote {
+    return {
+        pitch: 60,
+        velocity: 100,
+        startBeat,
+        durationBeats: 0.25,
+        channel: 0,
+    };
+}
 
 describe('createNoteQuantizer', () => {
     it('should move startBeat toward the grid by strength', () => {

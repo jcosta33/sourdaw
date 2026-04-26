@@ -44,19 +44,21 @@ export type Modulator = {
     enabled: boolean;
 };
 
-export const createLfoModulator = (trackId: string, name = 'LFO'): Modulator => ({
-    id: `mod-lfo-${crypto.randomUUID().slice(0, 8)}`,
-    name,
-    trackId,
-    kind: 'lfo',
-    config: {
+export function createLfoModulator(trackId: string, name = 'LFO'): Modulator {
+    return {
+        id: `mod-lfo-${crypto.randomUUID().slice(0, 8)}`,
+        name,
+        trackId,
         kind: 'lfo',
-        waveform: 'sine',
-        rate: 1,
-        sync: true,
-        phase: 0,
-        depth: 1,
-    },
-    mappings: [],
-    enabled: true,
-});
+        config: {
+            kind: 'lfo',
+            waveform: 'sine',
+            rate: 1,
+            sync: true,
+            phase: 0,
+            depth: 1,
+        },
+        mappings: [],
+        enabled: true,
+    };
+}

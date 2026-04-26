@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { zoomToFit } from '../zoomToFit';
 
 const { workspaceZoomToFit } = vi.hoisted(() => ({
-    workspaceZoomToFit: vi.fn(),
+    workspaceZoomToFit: vi.fn<typeof import('#/modules/Workspace/useCases').zoomToFit>(),
 }));
 
 vi.mock('#/modules/Workspace/useCases', () => ({

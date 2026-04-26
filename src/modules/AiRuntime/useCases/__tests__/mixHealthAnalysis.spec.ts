@@ -16,11 +16,11 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
-    summarizeFeatures: (...args: any[]) => summarizeFeaturesMock(...args),
+    summarizeFeatures: (...args: unknown[]) => summarizeFeaturesMock(...args),
 }));
 
 vi.mock('../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion', () => ({
-    streamCloudChatCompletion: (...args: any[]) => streamCloudChatCompletionMock(...args),
+    streamCloudChatCompletion: (...args: unknown[]) => streamCloudChatCompletionMock(...args),
 }));
 
 describe('mixHealthAnalysis', () => {

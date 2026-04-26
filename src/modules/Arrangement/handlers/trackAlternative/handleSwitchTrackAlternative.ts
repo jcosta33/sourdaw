@@ -12,7 +12,7 @@ export const handleSwitchTrackAlternative = createHandler<'switchTrackAlternativ
 
         const { trackId, alternativeId } = action.payload;
 
-        const targetTrack = state.tracks.find((t) => t.id === trackId);
+        const targetTrack = state.tracks.find((time) => time.id === trackId);
         if (!targetTrack || targetTrack.activeAlternativeId === alternativeId) {
             return;
         }
@@ -24,7 +24,7 @@ export const handleSwitchTrackAlternative = createHandler<'switchTrackAlternativ
                     return track;
                 }
 
-                const targetAlt = track.alternatives.find((a) => a.id === alternativeId);
+                const targetAlt = track.alternatives.find((alpha) => alpha.id === alternativeId);
                 if (!targetAlt) {
                     return track;
                 }

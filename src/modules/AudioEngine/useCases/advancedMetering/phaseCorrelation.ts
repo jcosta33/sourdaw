@@ -16,11 +16,11 @@ export function computePhaseCorrelation(left: Float32Array, right: Float32Array)
     let sumLL = 0;
     let sumRR = 0;
 
-    for (let i = 0; i < len; i++) {
-        const l = left[i]!;
-        const r = right[i]!;
-        sumLR += l * r;
-        sumLL += l * l;
+    for (let index = 0; index < len; index++) {
+        const length = left[index]!;
+        const r = right[index]!;
+        sumLR += length * r;
+        sumLL += length * length;
         sumRR += r * r;
     }
 

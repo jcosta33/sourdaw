@@ -4,7 +4,6 @@ import {
     type DragEvent,
     useState,
     useRef,
-    useEffect,
     useLayoutEffect,
 } from 'react';
 
@@ -12,6 +11,7 @@ import { Piano, Upload, Headphones } from 'lucide-react';
 
 import { useStore } from '#/infra/store/useStore';
 import {
+    AdjustmentLayerStrip,
     TimelineSurface,
     TimelineMinimap,
     ArrangementBar,
@@ -20,7 +20,7 @@ import {
     TimelineChromeSurface,
     TrackListView,
 } from '#/modules/Arrangement/presentations/views';
-import { timelineViewStore, setScrollX, markerStore } from '#/modules/Arrangement/stores';
+import { adjustmentLayerStore, timelineViewStore, setScrollX, markerStore } from '#/modules/Arrangement/stores';
 import { addTrack, addClip, importMidiFile } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
@@ -51,24 +51,26 @@ export const ArrangeView = (): ReactElement => {
     const { trackListOpen, trackListWidth, scratchPadOpen, scratchPadHeight, dualViewOpen, sessionViewWidth } =
         useWorkspaceState();
 
-    const hasUserTracks = tracks.filter((t) => t.kind !== 'master' && t.kind !== 'folder').length > 0;
+    const hasUserTracks = tracks.filter((time) => time.kind !== 'master' && time.kind !== 'folder').length > 0;
 
     const [localTrackListWidth, setLocalTrackListWidth] = useState(trackListWidth);
     const trackListWidthRef = useRef(localTrackListWidth);
+    const prevTrackListWidth = useRef(trackListWidth);
+    if (prevTrackListWidth.current !== trackListWidth) {
+        prevTrackListWidth.current = trackListWidth;
+        setLocalTrackListWidth(trackListWidth);
+    }
 
     const [localSessionWidth, setLocalSessionWidth] = useState(sessionViewWidth);
     const sessionWidthRef = useRef(localSessionWidth);
+    const prevSessionViewWidth = useRef(sessionViewWidth);
+    if (prevSessionViewWidth.current !== sessionViewWidth) {
+        prevSessionViewWidth.current = sessionViewWidth;
+        setLocalSessionWidth(sessionViewWidth);
+    }
 
     const timelineContainerRef = useRef<HTMLDivElement>(null);
     const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
-
-    useEffect(() => {
-        setLocalTrackListWidth(trackListWidth);
-    }, [trackListWidth]);
-
-    useEffect(() => {
-        setLocalSessionWidth(sessionViewWidth);
-    }, [sessionViewWidth]);
 
     const handleTrackListResize = (delta: number): void => {
         setLocalTrackListWidth((prev) => {
@@ -97,7 +99,7 @@ export const ArrangeView = (): ReactElement => {
     useLayoutEffect(() => {
         const el = timelineContainerRef.current;
         if (!el) {
-            return;
+            return undefined;
         }
         const observer = new ResizeObserver(() => {
             setViewportWidth(el.clientWidth);
@@ -120,8 +122,11 @@ export const ArrangeView = (): ReactElement => {
 
     const chordState = useStore(chordTrackStore, { enabled: false, events: [] });
 
+    const adjustmentState = useStore(adjustmentLayerStore, { layers: [] });
+
     const hasMarkers = (markerState?.markers.length ?? 0) > 0;
     const hasChords = (chordState?.events.length ?? 0) > 0 || (chordState?.enabled ?? false);
+    const adjustmentLayerCount = adjustmentState?.layers.length ?? 0;
     const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
     const scrollX = viewState?.scrollX ?? 0;
 
@@ -155,7 +160,15 @@ export const ArrangeView = (): ReactElement => {
                 <>
                     <TrackListView
                         style={{ width: localTrackListWidth }}
-                        extraHeaderHeight={22 + (hasMarkers ? 20 : 0) + 28 + 22 + (hasChords ? 26 : 0)}
+                        extraHeaderHeight={
+                            22 +
+                            (hasMarkers ? 20 : 0) +
+                            28 +
+                            22 +
+                            (hasChords ? 26 : 0) +
+                            20 +
+                            adjustmentLayerCount * 20
+                        }
                     />
                     <ResizeHandle
                         direction="vertical"
@@ -166,6 +179,7 @@ export const ArrangeView = (): ReactElement => {
             ) : null}
             <div ref={timelineContainerRef} className="flex flex-1 flex-col overflow-hidden relative">
                 <ArrangementBar pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
+                <AdjustmentLayerStrip pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
                 {hasMarkers ? <MarkerLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} /> : null}
                 <TimelineMinimap />
                 <BeatRulerBar />
@@ -196,8 +210,11 @@ const TimelineHScrollbar = ({
     tracks: HScrollbarTrack[];
     viewportWidth: number;
 }): ReactElement | null => {
-    const maxEndBeat = tracks.reduce((max, t) => {
-        const trackMax = t.clips.reduce((m, c) => (c.endBeat > m ? c.endBeat : m), max);
+    const maxEndBeat = tracks.reduce((max, time) => {
+        const trackMax = time.clips.reduce(
+            (message, context) => (context.endBeat > message ? context.endBeat : message),
+            max
+        );
         return trackMax;
     }, 256);
     const totalContentWidth = maxEndBeat * pixelsPerBeat;
@@ -212,9 +229,9 @@ const TimelineHScrollbar = ({
     const trackWidth = viewportWidth - thumbWidth;
     const thumbLeft = Math.min(trackWidth, maxScrollX > 0 ? (scrollX / maxScrollX) * trackWidth : 0);
 
-    const handleMouseDown = (e: ReactMouseEvent<HTMLDivElement>): void => {
-        e.preventDefault();
-        const startClientX = e.clientX;
+    const handleMouseDown = (event: ReactMouseEvent<HTMLDivElement>): void => {
+        event.preventDefault();
+        const startClientX = event.clientX;
         const startScrollX = scrollX;
 
         const onMouseMove = (ev: MouseEvent): void => {
@@ -252,12 +269,12 @@ const TimelineHScrollbar = ({
 const EmptyArrangeOverlay = (): ReactElement => {
     const [isDragOver, setIsDragOver] = useState(false);
 
-    const handleDrop = async (e: DragEvent<HTMLDivElement>): Promise<void> => {
-        e.preventDefault();
-        e.stopPropagation();
+    const handleDrop = async (event: DragEvent<HTMLDivElement>): Promise<void> => {
+        event.preventDefault();
+        event.stopPropagation();
         setIsDragOver(false);
 
-        const files = Array.from(e.dataTransfer.files);
+        const files = Array.from(event.dataTransfer.files);
         const currentBeat = 0;
 
         for (const file of files) {
@@ -305,13 +322,16 @@ const EmptyArrangeOverlay = (): ReactElement => {
                 background:
                     'radial-gradient(ellipse at 50% 40%, rgba(217,119,6,0.05) 0%, rgba(0,0,0,0) 55%), var(--color-surface-base)',
             }}
-            onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'copy';
+            onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'copy';
                 setIsDragOver(true);
             }}
-            onDragLeave={(e) => {
-                if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget as Node)) {
+            onDragLeave={(event) => {
+                if (
+                    event.currentTarget === event.target ||
+                    !event.currentTarget.contains(event.relatedTarget as Node)
+                ) {
                     setIsDragOver(false);
                 }
             }}

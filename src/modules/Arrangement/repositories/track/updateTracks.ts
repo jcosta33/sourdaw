@@ -9,6 +9,6 @@ export function updateTracks(predicate: (track: Track) => boolean, updater: (tra
     }
     trackStore.set({
         ...state,
-        tracks: state.tracks.map((t) => (predicate(t) ? updater(t) : t)),
+        tracks: state.tracks.map((time) => (predicate(time) ? updater(time) : time)),
     });
 }

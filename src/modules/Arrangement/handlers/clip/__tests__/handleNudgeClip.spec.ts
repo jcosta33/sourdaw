@@ -16,7 +16,7 @@ describe('handleNudgeClip', () => {
     });
 
     it('executes nudgeClip with the provided payload', () => {
-        handleNudgeClip.execute({
+        void handleNudgeClip.execute({
             type: 'nudgeClip',
             payload: { clipId: 'c1', beats: 1.5 },
         });

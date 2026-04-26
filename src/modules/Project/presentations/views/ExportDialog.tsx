@@ -10,9 +10,12 @@ import { DawEyebrowLabel } from '#/components/daw/DawEyebrowLabel';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '#/components/ui/dialog';
 import { logger } from '#/infra/logger/appLogger';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { useStore } from '#/infra/store/useStore';
+import { trackStore, defaultTrackState } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
+import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
 
@@ -24,10 +27,13 @@ import {
     encodeWav,
     encodeMp3,
     encodeFlac,
+    getAutoDetectedTailSeconds,
+    renderToClip,
 } from '../../useCases/exportActions';
 
 type ExportFormat = 'wav' | 'mp3' | 'flac';
-type ExportMode = 'mixdown' | 'stems';
+type ExportMode = 'mixdown' | 'stems' | 'render-to-clip';
+type ExportRange = 'project' | 'loop' | 'marquee';
 
 type ExportDialogProps = {
     open: boolean;
@@ -38,6 +44,23 @@ const EXPORT_SETTINGS_KEY = 'sourdaw:export-settings';
 
 type Mp3BitRate = 96 | 128 | 192 | 320;
 
+type StoredExportSettings = {
+    formats?: ExportFormat[];
+    format?: ExportFormat;
+    sampleRate?: number;
+    bitDepth?: number;
+    mp3BitRate?: number;
+};
+
+type WebFileHandle = {
+    createWritable: () => Promise<{
+        write: (data: Uint8Array) => Promise<void>;
+        close: () => Promise<void>;
+    }>;
+};
+
+const validMp3BitRates: readonly number[] = [96, 128, 192, 320];
+
 const loadExportSettings = (): {
     formats: ExportFormat[];
     sampleRate: number;
@@ -45,14 +68,21 @@ const loadExportSettings = (): {
     mp3BitRate: Mp3BitRate;
 } => {
     try {
-        const stored = localStorage.getItem(EXPORT_SETTINGS_KEY);
+        const stored = window.localStorage.getItem(EXPORT_SETTINGS_KEY);
         if (stored) {
-            const parsed = JSON.parse(stored);
+            const parsed = JSON.parse(stored) as StoredExportSettings;
+            let parsedFormats: ExportFormat[] = ['wav'];
+            if (Array.isArray(parsed.formats)) {
+                parsedFormats = parsed.formats;
+            } else if (parsed.format) {
+                parsedFormats = [parsed.format];
+            }
+
             return {
-                formats: Array.isArray(parsed.formats) ? parsed.formats : parsed.format ? [parsed.format] : ['wav'],
+                formats: parsedFormats,
                 sampleRate: parsed.sampleRate ?? 44100,
                 bitDepth: parsed.bitDepth ?? 24,
-                mp3BitRate: ([96, 128, 192, 320] as Mp3BitRate[]).includes(parsed.mp3BitRate)
+                mp3BitRate: validMp3BitRates.includes(parsed.mp3BitRate ?? -1)
                     ? (parsed.mp3BitRate as Mp3BitRate)
                     : 128,
             };
@@ -70,7 +100,7 @@ const saveExportSettings = (settings: {
     mp3BitRate: Mp3BitRate;
 }): void => {
     try {
-        localStorage.setItem(EXPORT_SETTINGS_KEY, JSON.stringify(settings));
+        window.localStorage.setItem(EXPORT_SETTINGS_KEY, JSON.stringify(settings));
     } catch {
         /* ignore */
     }
@@ -78,8 +108,15 @@ const saveExportSettings = (settings: {
 
 export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement => {
     const defaults = loadExportSettings();
+    const transport = useStore(transportStore, defaultTransportState);
+    const workspace = useStore(workspaceStore, defaultWorkspaceState);
+    const tracksState = useStore(trackStore, defaultTrackState);
     const [formats, setFormats] = useState<Set<ExportFormat>>(() => new Set(defaults.formats));
     const [mode, setMode] = useState<ExportMode>('mixdown');
+    const [range, setRange] = useState<ExportRange>('project');
+    const [tailSeconds, setTailSeconds] = useState(2);
+    const [autoTail, setAutoTail] = useState(false);
+    const [renderTargetTrackId, setRenderTargetTrackId] = useState<string>('new');
     const [sampleRate, setSampleRate] = useState(defaults.sampleRate);
     const [bitDepth, setBitDepth] = useState(defaults.bitDepth);
     const [mp3BitRate, setMp3BitRate] = useState<Mp3BitRate>(defaults.mp3BitRate);
@@ -89,14 +126,45 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const [errorText, setErrorText] = useState('');
     const cancelledRef = useRef(false);
 
-    const toggleFormat = (f: ExportFormat) => {
+    const loopAvailable = transport.loopEnd > transport.loopStart;
+    const marqueeAvailable = workspace.marqueeSelection !== null;
+    const audioTracks = tracksState.tracks.filter((t) => t.kind === 'audio');
+
+    const resolveRange = (): { startBeat: number; durationBeats: number } => {
+        const tracks = tracksState.tracks;
+        const projectMaxBeat = Math.max(16, ...tracks.flatMap((t) => t.clips.map((c) => c.endBeat)));
+        if (range === 'loop' && loopAvailable) {
+            return {
+                startBeat: transport.loopStart,
+                durationBeats: Math.max(0.0001, transport.loopEnd - transport.loopStart),
+            };
+        }
+        if (range === 'marquee' && workspace.marqueeSelection) {
+            const sel = workspace.marqueeSelection;
+            return {
+                startBeat: sel.startBeat,
+                durationBeats: Math.max(0.0001, sel.endBeat - sel.startBeat),
+            };
+        }
+        return { startBeat: 0, durationBeats: projectMaxBeat };
+    };
+
+    const effectiveTailSeconds = (): number => {
+        if (!autoTail) {
+            return Math.max(0, Math.min(30, tailSeconds));
+        }
+        const detected = getAutoDetectedTailSeconds();
+        return Math.max(0, Math.min(30, detected));
+    };
+
+    const toggleFormat = (freq: ExportFormat) => {
         setFormats((prev) => {
             const next = new Set(prev);
             // Don't allow empty selections
-            if (next.has(f) && next.size > 1) {
-                next.delete(f);
+            if (next.has(freq) && next.size > 1) {
+                next.delete(freq);
             } else {
-                next.add(f);
+                next.add(freq);
             }
             saveExportSettings({ formats: Array.from(next), sampleRate, bitDepth, mp3BitRate });
             return next;
@@ -132,16 +200,17 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             '.flac': 'audio/flac',
             '.zip': 'application/zip',
         };
+        // eslint-disable-next-line sourdaw/no-type-assertion-escape -- Uint8Array<ArrayBufferLike> requires cast to BlobPart; structurally safe at runtime
         const blob = new Blob([data as unknown as BlobPart], { type: mimeMap[ext] || 'application/octet-stream' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${blobName}${ext}`;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
+        const alpha = document.createElement('a');
+        alpha.href = url;
+        alpha.download = `${blobName}${ext}`;
+        alpha.style.display = 'none';
+        document.body.appendChild(alpha);
+        alpha.click();
         setTimeout(() => {
-            document.body.removeChild(a);
+            document.body.removeChild(alpha);
             URL.revokeObjectURL(url);
         }, 1500); // 1.5s to ensure click dispatches
     };
@@ -156,60 +225,61 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         let tauriFilePath: string | null = null;
 
         // This Handle uses the new FileSystem Access API
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let webFileHandle: any = null;
+        let webFileHandle: WebFileHandle | null = null;
 
         // ── 1. SECURE THE DESTINATION EARLY ──
-        try {
-            if (isTauri()) {
-                const { save, open } = await import('@tauri-apps/plugin-dialog');
-                if (mode === 'stems') {
-                    tauriDirPath = (await open({
-                        directory: true,
-                        multiple: false,
-                        title: 'Select Output Folder for Slices (Stems)',
-                    })) as string | null;
-                    if (!tauriDirPath) {
-                        return;
-                    } // User cancelled
+        if (mode !== 'render-to-clip') {
+            try {
+                if (isTauri()) {
+                    const { save, open } = await import('@tauri-apps/plugin-dialog');
+                    if (mode === 'stems') {
+                        tauriDirPath = (await open({
+                            directory: true,
+                            multiple: false,
+                            title: 'Select Output Folder for Slices (Stems)',
+                        })) as string | null;
+                        if (!tauriDirPath) {
+                            return;
+                        } // User cancelled
+                    } else {
+                        const primaryExt = Array.from(formats)[0] || 'wav';
+                        tauriFilePath = await save({
+                            defaultPath: `${baseName}.${primaryExt}`,
+                            filters: [{ name: 'Audio File', extensions: Array.from(formats) }],
+                        });
+                        if (!tauriFilePath) {
+                            return;
+                        } // User cancelled
+                    }
                 } else {
-                    const primaryExt = Array.from(formats)[0] || 'wav';
-                    tauriFilePath = await save({
-                        defaultPath: `${baseName}.${primaryExt}`,
-                        filters: [{ name: 'Audio File', extensions: Array.from(formats) }],
-                    });
-                    if (!tauriFilePath) {
-                        return;
-                    } // User cancelled
-                }
-            } else {
-                // Web Environment
-                if ('showSaveFilePicker' in window) {
-                    const isZip = mode === 'stems' || formats.size > 1; // Zipping required for >1 file
-                    const primaryExt = Array.from(formats)[0] || 'wav';
-                    const fileExt = isZip ? '.zip' : `.${primaryExt}`;
-                    const mime = isZip
-                        ? 'application/zip'
-                        : primaryExt === 'wav'
-                          ? 'audio/wav'
-                          : primaryExt === 'flac'
-                            ? 'audio/flac'
-                            : 'audio/mpeg';
+                    // Web Environment
+                    if ('showSaveFilePicker' in window) {
+                        const isZip = mode === 'stems' || formats.size > 1; // Zipping required for >1 file
+                        const primaryExt = Array.from(formats)[0] || 'wav';
+                        const fileExt = isZip ? '.zip' : `.${primaryExt}`;
+                        const mime = isZip
+                            ? 'application/zip'
+                            : primaryExt === 'wav'
+                              ? 'audio/wav'
+                              : primaryExt === 'flac'
+                                ? 'audio/flac'
+                                : 'audio/mpeg';
 
-                    webFileHandle = await (
-                        window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<unknown> }
-                    ).showSaveFilePicker({
-                        suggestedName: `${baseName}${fileExt}`,
-                        types: [{ accept: { [mime]: [fileExt] } }],
-                    });
+                        webFileHandle = await (
+                            window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<WebFileHandle> }
+                        ).showSaveFilePicker({
+                            suggestedName: `${baseName}${fileExt}`,
+                            types: [{ accept: { [mime]: [fileExt] } }],
+                        });
+                    }
                 }
+            } catch (error) {
+                // If user clicked cancel, abort quietly
+                if (error instanceof Error && error.name === 'AbortError') {
+                    return;
+                }
+                // Otherwise, allow it to drop to fallback `<a download>` memory mode
             }
-        } catch (error) {
-            // If user clicked cancel, abort quietly
-            if (error instanceof Error && error.name === 'AbortError') {
-                return;
-            }
-            // Otherwise, allow it to drop to fallback `<a download>` memory mode
         }
 
         // ── 2. PREPARATIONS COMPLETE. START INTENSIVE BAKING ──
@@ -229,7 +299,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 // that unrelated takes from other sessions are not mass-loaded.
                 const exportTracks = trackStore.value?.tracks ?? [];
                 const neededIds = exportTracks
-                    .flatMap((t) => t.clips.map((c) => c.audioBufferId))
+                    .flatMap((time) => time.clips.map((context) => context.audioBufferId))
                     .filter((id): id is string => Boolean(id));
                 await audioBufferCache.restoreFromIdb(ctx, neededIds.length > 0 ? neededIds : undefined);
             } else {
@@ -241,7 +311,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             }
 
             const tracks = trackStore.value?.tracks ?? [];
-            const maxBeat = Math.max(16, ...tracks.flatMap((t) => t.clips.map((c) => c.endBeat)));
+            const { startBeat, durationBeats } = resolveRange();
+            const tail = effectiveTailSeconds();
             const bd = bitDepth as 16 | 24 | 32;
             const formatList = Array.from(formats);
 
@@ -255,7 +326,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 fractionRange: number
             ) => {
                 let currentPass = 0;
-                for (const f of formatList) {
+                for (const freq of formatList) {
                     if (cancelledRef.current) {
                         return;
                     }
@@ -265,19 +336,19 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         setProgress(fractionOffset + subFraction * fractionRange);
                     };
 
-                    setStatusText(`Kneading ${name} (${f.toUpperCase()})...`);
+                    setStatusText(`Kneading ${name} (${freq.toUpperCase()})...`);
                     let fileData: Uint8Array | ArrayBuffer;
 
-                    if (f === 'mp3') {
+                    if (freq === 'mp3') {
                         fileData = await encodeMp3(buffer, mp3BitRate, passProgress);
-                    } else if (f === 'flac') {
+                    } else if (freq === 'flac') {
                         fileData = await encodeFlac(buffer, passProgress);
                     } else {
                         fileData = await encodeWav(buffer, bd, passProgress);
                     }
 
                     const uint8Data = fileData instanceof ArrayBuffer ? new Uint8Array(fileData) : fileData;
-                    const finalFileName = `${name}.${f}`;
+                    const finalFileName = `${name}.${freq}`;
 
                     if (isTauri()) {
                         const { writeFile } = await import('@tauri-apps/plugin-fs');
@@ -288,7 +359,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             await writeFile(fullPath, uint8Data);
                         } else if (tauriFilePath) {
                             // Single fallback mapping for mixdown
-                            const adjustedPath = tauriFilePath.replace(/\.[a-z0-9]+$/i, `.${f}`);
+                            const adjustedPath = tauriFilePath.replace(/\.[a-z0-9]+$/i, `.${freq}`);
                             await writeFile(adjustedPath, uint8Data);
                         }
                     } else {
@@ -301,12 +372,68 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             };
 
             // ── ACTUAL PROCESS ORCHESTRATION ──
+            if (mode === 'render-to-clip') {
+                setStatusText('Rendering clip (offline)...');
+                const rtcWarnings = new Set<string>();
+                const buffer = await renderOffline({
+                    durationBeats,
+                    startBeat,
+                    tailSeconds: tail,
+                    sampleRate,
+                    onProgress: (frac) => {
+                        const barPct = frac * 100;
+                        setProgress(barPct);
+                        if (Math.round(barPct) % 5 === 0) {
+                            setStatusText('Rendering clip...');
+                        }
+                    },
+                    onWarning: (msg) => {
+                        logger.warn(msg);
+                        rtcWarnings.add(msg);
+                    },
+                });
+                if (rtcWarnings.size > 0) {
+                    notifyUser(
+                        rtcWarnings.size === 1
+                            ? `Render warning: ${[...rtcWarnings][0]}`
+                            : `Render completed with ${rtcWarnings.size} warnings — check the console for details.`,
+                        'warning'
+                    );
+                }
+                if (cancelledRef.current) {
+                    return;
+                }
+                const endBeat = startBeat + durationBeats;
+                const clipName = `Render ${new Date(ts).toLocaleTimeString()}`;
+                const result = renderToClip({
+                    targetTrackId: renderTargetTrackId,
+                    startBeat,
+                    endBeat,
+                    buffer,
+                    name: clipName,
+                });
+                if (!result) {
+                    throw new Error('Render to Clip: failed to place clip on target track.');
+                }
+                setProgress(100);
+                setStatusText('Clip ready in the timeline.');
+                notifyUser('Rendered audio placed as a new clip', 'success');
+                setTimeout(() => {
+                    if (open) {
+                        onClose();
+                    }
+                }, 1500);
+                return;
+            }
+
             if (mode === 'stems') {
                 setStatusText('Proofing Slices (rendering stems)...');
                 // Accumulate warnings and emit a single summary toast to avoid notification spam
                 const stemWarnings = new Set<string>();
                 const stems = await exportStems({
-                    durationBeats: maxBeat,
+                    durationBeats,
+                    startBeat,
+                    tailSeconds: tail,
                     sampleRate,
                     onProgress: (frac) => {
                         const barPct = frac * 50;
@@ -339,7 +466,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     if (cancelledRef.current) {
                         return;
                     }
-                    const track = tracks.find((t) => t.id === trackId);
+                    const track = tracks.find((time) => time.id === trackId);
                     const safeTName = (track?.name || trackId).replaceAll(/[^a-zA-Z0-9_\- ]/g, '_');
 
                     // We map the remaining 50% of the progress bar to encoding the slices
@@ -354,7 +481,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 // Accumulate warnings and emit a single summary toast to avoid notification spam
                 const mixWarnings = new Set<string>();
                 const buffer = await renderOffline({
-                    durationBeats: maxBeat,
+                    durationBeats,
+                    startBeat,
+                    tailSeconds: tail,
                     sampleRate,
                     onProgress: (frac) => {
                         const barPct = frac * 60;
@@ -411,11 +540,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
                 if (webFileHandle) {
                     // File System Access Method
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     const writable = await webFileHandle.createWritable();
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     await writable.write(finalBytes);
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
                     await writable.close();
                 } else {
                     // Fallback
@@ -465,6 +591,53 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const sampleRates = [44100, 48000, 88200, 96000];
     const bitDepths = [16, 24, 32];
 
+    const renderOvenStatus = (): ReactElement => {
+        if (exporting || progress === 100) {
+            return (
+                <div className="space-y-1.5 animate-in fade-in duration-300">
+                    <div className="flex items-end justify-between text-xs">
+                        <span className={`font-medium ${progress === 100 ? 'text-green-400' : 'text-orange-400'}`}>
+                            {statusText}
+                        </span>
+                        <span className="font-mono text-[10px] text-orange-500/50">{progress.toFixed(0)}%</span>
+                    </div>
+                    <div
+                        className="h-2 w-full overflow-hidden rounded-full border border-stone-800 bg-stone-900 shadow-inner"
+                        role="progressbar"
+                        aria-valuenow={Math.round(progress)}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                    >
+                        <div
+                            className={`h-full rounded-full transition-all duration-300 ease-out ${
+                                progress === 100
+                                    ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]'
+                                    : 'bg-gradient-to-r from-amber-600 to-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.6)]'
+                            }`}
+                            style={{ width: `${progress}%` }}
+                        >
+                            {progress < 100 ? (
+                                <div className="absolute inset-0 w-[30%] animate-[shimmer_1.5s_infinite] bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.4)_50%,transparent_100%)]" />
+                            ) : null}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+        if (errorText) {
+            return (
+                <div className="flex h-full items-center rounded-lg border border-red-900/30 bg-red-950/20 px-3 text-xs text-red-400 animate-in fade-in">
+                    {errorText}
+                </div>
+            );
+        }
+        return (
+            <div className="flex h-full flex-col justify-center text-center text-[10px] uppercase tracking-widest text-stone-500">
+                {isTauri() ? 'Desktop Oven Ready' : 'Web Oven Ready'}
+            </div>
+        );
+    };
+
     return (
         <Dialog
             open={open}
@@ -498,7 +671,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
 
                 <DawDialogBody className="gap-4 bg-transparent px-6 py-5">
                     <DawDialogSection tone="warm" title="Render Order">
-                        <div className="flex gap-2">
+                        <div className="grid grid-cols-3 gap-2">
                             <Button
                                 variant={mode === 'mixdown' ? 'default' : 'outline'}
                                 size="sm"
@@ -527,23 +700,141 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             >
                                 Slices <span className="ml-1 text-[10px] opacity-60">(Stems)</span>
                             </Button>
+                            <Button
+                                variant={mode === 'render-to-clip' ? 'default' : 'outline'}
+                                size="sm"
+                                onClick={() => setMode('render-to-clip')}
+                                className={
+                                    mode === 'render-to-clip'
+                                        ? 'w-full border-amber-500/30 bg-amber-700/20 text-amber-300 hover:bg-amber-700/30'
+                                        : 'w-full border-orange-900/40 text-muted-foreground hover:border-amber-500/20 hover:bg-amber-950/20 hover:text-amber-200'
+                                }
+                                disabled={exporting}
+                                style={
+                                    mode === 'render-to-clip' ? { boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)' } : {}
+                                }
+                            >
+                                To Clip <span className="ml-1 text-[10px] opacity-60">(Inline)</span>
+                            </Button>
                         </div>
                     </DawDialogSection>
 
+                    <DawDialogSection tone="warm" title="Render Range">
+                        <div className="flex flex-col gap-1.5" role="radiogroup" aria-label="Render range">
+                            <RangeRadio
+                                label="Whole project"
+                                value="project"
+                                activeValue={range}
+                                onChange={setRange}
+                                disabled={exporting}
+                            />
+                            <RangeRadio
+                                label={
+                                    loopAvailable
+                                        ? `Loop region (beat ${transport.loopStart.toFixed(2)} → ${transport.loopEnd.toFixed(2)})`
+                                        : 'Loop region (set a loop first)'
+                                }
+                                value="loop"
+                                activeValue={range}
+                                onChange={setRange}
+                                disabled={exporting || !loopAvailable}
+                            />
+                            <RangeRadio
+                                label={
+                                    marqueeAvailable
+                                        ? `Marquee selection (${(workspace.marqueeSelection?.endBeat ?? 0) - (workspace.marqueeSelection?.startBeat ?? 0)} beats)`
+                                        : 'Marquee selection (none)'
+                                }
+                                value="marquee"
+                                activeValue={range}
+                                onChange={setRange}
+                                disabled={exporting || !marqueeAvailable}
+                            />
+                        </div>
+                    </DawDialogSection>
+
+                    <DawDialogSection
+                        tone="warm"
+                        title="Tail"
+                        detail="Extra seconds so reverb/delay can ring out."
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="number"
+                                    min={0}
+                                    max={30}
+                                    step={0.1}
+                                    value={autoTail ? '' : tailSeconds}
+                                    disabled={exporting || autoTail}
+                                    onChange={(e) => {
+                                        const next = Number(e.target.value);
+                                        if (Number.isFinite(next)) {
+                                            setTailSeconds(Math.max(0, Math.min(30, next)));
+                                        }
+                                    }}
+                                    aria-label="Tail seconds"
+                                    className="w-20 rounded-md border border-stone-800 bg-stone-900/70 px-2 py-1 text-xs text-stone-200 disabled:opacity-40"
+                                />
+                                <span className="text-[10px] text-stone-500">seconds</span>
+                            </div>
+                            <label className="flex items-center gap-1.5 text-[11px] text-stone-400">
+                                <input
+                                    type="checkbox"
+                                    checked={autoTail}
+                                    onChange={(e) => setAutoTail(e.target.checked)}
+                                    disabled={exporting}
+                                    className="accent-orange-500"
+                                />
+                                Auto-detect
+                            </label>
+                            {autoTail ? (
+                                <span className="text-[10px] text-orange-400/70">
+                                    {getAutoDetectedTailSeconds().toFixed(2)}s detected
+                                </span>
+                            ) : null}
+                        </div>
+                    </DawDialogSection>
+
+                    {mode === 'render-to-clip' ? (
+                        <DawDialogSection
+                            tone="warm"
+                            title="Target Track"
+                            detail="Where to place the rendered audio clip."
+                        >
+                            <select
+                                value={renderTargetTrackId}
+                                onChange={(e) => setRenderTargetTrackId(e.target.value)}
+                                disabled={exporting}
+                                aria-label="Target track"
+                                className="w-full rounded-md border border-stone-800 bg-stone-900/70 px-2 py-1.5 text-xs text-stone-200"
+                            >
+                                <option value="new">New audio track</option>
+                                {audioTracks.map((t) => (
+                                    <option key={t.id} value={t.id}>
+                                        {t.name || t.id}
+                                    </option>
+                                ))}
+                            </select>
+                        </DawDialogSection>
+                    ) : null}
+
+                    {mode !== 'render-to-clip' ? (
+                    <>
                     <DawDialogSection tone="warm" title="Ingredients">
                         <div className="grid grid-cols-3 gap-2">
-                            {FORMAT_OPTIONS.map((f) => {
-                                const active = formats.has(f.value);
+                            {FORMAT_OPTIONS.map((freq) => {
+                                const active = formats.has(freq.value);
                                 return (
                                     <button
                                         type="button"
-                                        key={f.value}
+                                        key={freq.value}
                                         className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
                                             active
                                                 ? 'border-orange-500/40 bg-orange-950/40 shadow-[inset_0_1px_0_rgba(251,146,60,0.1)]'
                                                 : 'border-stone-800 bg-stone-900/50 hover:border-stone-700 hover:bg-stone-800/80'
                                         }`}
-                                        onClick={() => toggleFormat(f.value)}
+                                        onClick={() => toggleFormat(freq.value)}
                                         aria-pressed={active}
                                         role="checkbox"
                                         aria-checked={active}
@@ -552,12 +843,12 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         <div
                                             className={`text-sm font-semibold ${active ? 'text-orange-200' : 'text-stone-400'}`}
                                         >
-                                            {f.label}
+                                            {freq.label}
                                         </div>
                                         <div
                                             className={`mt-0.5 text-[10px] ${active ? 'text-orange-400/80' : 'text-stone-600'}`}
                                         >
-                                            {f.desc}
+                                            {freq.desc}
                                         </div>
                                     </button>
                                 );
@@ -648,56 +939,15 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             </div>
                         ) : null}
                     </DawDialogSection>
+                    </>
+                    ) : null}
 
                     <DawDialogSection
                         tone="warm"
                         title="Oven Status"
                         detail={isTauri() ? 'Desktop oven ready' : 'Web oven ready'}
                     >
-                        <div className="h-10">
-                            {exporting || progress === 100 ? (
-                                <div className="space-y-1.5 animate-in fade-in duration-300">
-                                    <div className="flex items-end justify-between text-xs">
-                                        <span
-                                            className={`font-medium ${progress === 100 ? 'text-green-400' : 'text-orange-400'}`}
-                                        >
-                                            {statusText}
-                                        </span>
-                                        <span className="font-mono text-[10px] text-orange-500/50">
-                                            {progress.toFixed(0)}%
-                                        </span>
-                                    </div>
-                                    <div
-                                        className="h-2 w-full overflow-hidden rounded-full border border-stone-800 bg-stone-900 shadow-inner"
-                                        role="progressbar"
-                                        aria-valuenow={Math.round(progress)}
-                                        aria-valuemin={0}
-                                        aria-valuemax={100}
-                                    >
-                                        <div
-                                            className={`h-full rounded-full transition-all duration-300 ease-out ${
-                                                progress === 100
-                                                    ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.4)]'
-                                                    : 'bg-gradient-to-r from-amber-600 to-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.6)]'
-                                            }`}
-                                            style={{ width: `${progress}%` }}
-                                        >
-                                            {progress < 100 ? (
-                                                <div className="absolute inset-0 w-[30%] animate-[shimmer_1.5s_infinite] bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.4)_50%,transparent_100%)]" />
-                                            ) : null}
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : errorText ? (
-                                <div className="flex h-full items-center rounded-lg border border-red-900/30 bg-red-950/20 px-3 text-xs text-red-400 animate-in fade-in">
-                                    {errorText}
-                                </div>
-                            ) : (
-                                <div className="flex h-full flex-col justify-center text-center text-[10px] uppercase tracking-widest text-stone-500">
-                                    {isTauri() ? 'Desktop Oven Ready' : 'Web Oven Ready'}
-                                </div>
-                            )}
-                        </div>
+                        <div className="h-10">{renderOvenStatus()}</div>
                     </DawDialogSection>
                 </DawDialogBody>
 
@@ -735,16 +985,48 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                             <Button
                                 size="sm"
                                 onClick={handleExport}
-                                disabled={formats.size === 0 || isExportActive()}
+                                disabled={(mode !== 'render-to-clip' && formats.size === 0) || isExportActive()}
                                 className="border-t border-orange-400/30 bg-orange-600 font-medium text-white shadow-[0_0_15px_rgba(234,88,12,0.3)] transition-all hover:bg-orange-500 hover:shadow-[0_0_20px_rgba(249,115,22,0.5)]"
                             >
                                 <Flame className="mr-1.5 size-3.5 opacity-80" />
-                                Start Baking
+                                {mode === 'render-to-clip' ? 'Render to Clip' : 'Start Baking'}
                             </Button>
                         </>
                     )}
                 </DawDialogFooter>
             </DialogContent>
         </Dialog>
+    );
+};
+
+type RangeRadioProps = {
+    label: string;
+    value: ExportRange;
+    activeValue: ExportRange;
+    disabled: boolean;
+    onChange: (value: ExportRange) => void;
+};
+
+const RangeRadio = ({ label, value, activeValue, disabled, onChange }: RangeRadioProps): ReactElement => {
+    const active = activeValue === value;
+    return (
+        <label
+            className={`flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-[11px] transition-all ${
+                active
+                    ? 'border-orange-500/30 bg-orange-950/40 text-orange-200'
+                    : 'border-stone-800 bg-stone-900/40 text-stone-400 hover:border-stone-700 hover:text-stone-200'
+            } ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
+        >
+            <input
+                type="radio"
+                name="export-range"
+                value={value}
+                checked={active}
+                disabled={disabled}
+                onChange={() => onChange(value)}
+                className="accent-orange-500"
+            />
+            {label}
+        </label>
     );
 };

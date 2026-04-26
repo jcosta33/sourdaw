@@ -2,9 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { reorderDevices } from '../reorderDevices';
 
-const mocks = vi.hoisted(() => ({
-    updateTrack: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+    type Track = { devices: { id: string }[] };
+    return {
+        updateTrack: vi.fn<(trackId: string, updater: (track: Track) => Track) => void>(),
+    };
+});
 
 vi.mock('../../../repositories/track/updateTrack', () => ({
     updateTrack: mocks.updateTrack,

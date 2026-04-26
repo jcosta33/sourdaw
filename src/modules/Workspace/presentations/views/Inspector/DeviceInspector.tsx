@@ -36,7 +36,7 @@ function deriveParamsFromValues(device: Device): DeviceParameter[] {
         const numVal = typeof value === 'number' ? value : 0;
         // Heuristic ranges based on parameter name patterns
         let min = 0;
-        let max = 1;
+        let max: number;
         let unit = '';
         if (/gain|volume|level|mix|output|master/i.test(id)) {
             max = 1;
@@ -67,7 +67,7 @@ function deriveParamsFromValues(device: Device): DeviceParameter[] {
         return {
             id,
             deviceId: device.id,
-            name: id.replaceAll('_', ' ').replaceAll(/\b\w/g, (c) => c.toUpperCase()),
+            name: id.replaceAll('_', ' ').replaceAll(/\b\w/g, (context) => context.toUpperCase()),
             type: 'float' as const,
             value: numVal,
             defaultValue: numVal,
@@ -82,17 +82,30 @@ function deriveParamsFromValues(device: Device): DeviceParameter[] {
 
 export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProps): ReactElement => {
     const plugin = getBuiltinPlugins().find(
-        (p) =>
-            p.id === device.type ||
-            p.id === `builtin-${device.type}` ||
-            p.name.toLowerCase() === device.type?.toLowerCase() ||
-            p.name === device.name
+        (param) =>
+            param.id === device.type ||
+            param.id === `builtin-${device.type}` ||
+            param.name.toLowerCase() === device.type?.toLowerCase() ||
+            param.name === device.name
     );
 
     // Use static descriptor params, or derive from parameterValues for Faust/dynamic devices
     const parameters = plugin?.parameters ?? deriveParamsFromValues(device);
 
     const LayoutComponent = resolveDeviceLayout(device.type ?? '');
+    const renderIife_15 = () => {
+        if (LayoutComponent) {
+            return <LayoutComponent device={device} trackId={trackId} parameters={parameters} />;
+        }
+        if (parameters.length > 0) {
+            return <GenericDeviceLayout device={device} trackId={trackId} parameters={parameters} />;
+        }
+        return (
+            <div className="px-1">
+                <MetaText>No parameters available for this device.</MetaText>
+            </div>
+        );
+    };
 
     return (
         <div className="space-y-4 p-3">
@@ -103,23 +116,13 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
                 actions={
                     <MechanicalSwitch
                         checked={!device.bypassed}
-                        onChange={(c) => bypassDevice(device.id, !c)}
+                        onChange={(context) => bypassDevice(device.id, !context)}
                         size="sm"
                     />
                 }
             />
-
             {/* ── Registry-based layout ── */}
-            {LayoutComponent ? (
-                <LayoutComponent device={device} trackId={trackId} parameters={parameters} />
-            ) : parameters.length > 0 ? (
-                /* ── Smart generic fallback: auto-grouped with collapsible sections ── */
-                <GenericDeviceLayout device={device} trackId={trackId} parameters={parameters} />
-            ) : (
-                <div className="px-1">
-                    <MetaText>No parameters available for this device.</MetaText>
-                </div>
-            )}
+            {renderIife_15()}
         </div>
     );
 };

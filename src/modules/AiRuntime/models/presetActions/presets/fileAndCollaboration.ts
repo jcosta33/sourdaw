@@ -51,7 +51,7 @@ export const filePresets: readonly PresetAction[] = [
         keywords: ['undo', 'ctrl z', 'cmd z'],
         category: 'File',
         buildAction: () => {
-            eventBus.emit('command.undo', undefined);
+            void eventBus.emit('command.undo', undefined);
             return [];
         },
     },
@@ -61,7 +61,7 @@ export const filePresets: readonly PresetAction[] = [
         keywords: ['redo', 'ctrl shift z', 'cmd shift z'],
         category: 'File',
         buildAction: () => {
-            eventBus.emit('command.redo', undefined);
+            void eventBus.emit('command.redo', undefined);
             return [];
         },
     },

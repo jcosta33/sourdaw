@@ -49,7 +49,7 @@
  *   In practice this is rare and a full page reload is the pragmatic
  *   recovery path.
  */
-export function createHmrPersistentState<T>(key: string, factory: () => T): T {
+export function createHmrPersistentState<State>(key: string, factory: () => State): State {
     const hot = import.meta.hot;
     if (!hot) {
         return factory();
@@ -68,5 +68,5 @@ export function createHmrPersistentState<T>(key: string, factory: () => T): T {
     if (!(key in data)) {
         data[key] = factory();
     }
-    return data[key] as T;
+    return data[key] as State;
 }

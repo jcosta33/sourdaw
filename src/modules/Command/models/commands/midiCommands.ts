@@ -12,7 +12,7 @@ export const midiCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'quantizeNotes', payload: { clipId, gridSize: 1 } });
+                void executeAppAction({ type: 'quantizeNotes', payload: { clipId, gridSize: 1 } });
             }
         },
     },
@@ -24,7 +24,7 @@ export const midiCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'transposeNotes', payload: { clipId, semitones: 1 } });
+                void executeAppAction({ type: 'transposeNotes', payload: { clipId, semitones: 1 } });
             }
         },
     },
@@ -36,7 +36,7 @@ export const midiCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'transposeNotes', payload: { clipId, semitones: -1 } });
+                void executeAppAction({ type: 'transposeNotes', payload: { clipId, semitones: -1 } });
             }
         },
     },
@@ -48,7 +48,7 @@ export const midiCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'transposeNotes', payload: { clipId, semitones: 12 } });
+                void executeAppAction({ type: 'transposeNotes', payload: { clipId, semitones: 12 } });
             }
         },
     },
@@ -60,7 +60,7 @@ export const midiCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'transposeNotes', payload: { clipId, semitones: -12 } });
+                void executeAppAction({ type: 'transposeNotes', payload: { clipId, semitones: -12 } });
             }
         },
     },
@@ -72,7 +72,7 @@ export const midiCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'humanizeNotes', payload: { clipId, amount: 0.3 } });
+                void executeAppAction({ type: 'humanizeNotes', payload: { clipId, amount: 0.3 } });
             }
         },
     },
@@ -84,7 +84,7 @@ export const midiCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'invertNotes', payload: { clipId } });
+                void executeAppAction({ type: 'invertNotes', payload: { clipId } });
             }
         },
     },
@@ -96,7 +96,7 @@ export const midiCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'arpeggiate', payload: { clipId } });
+                void executeAppAction({ type: 'arpeggiate', payload: { clipId } });
             }
         },
     },

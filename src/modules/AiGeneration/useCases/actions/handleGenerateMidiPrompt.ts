@@ -42,7 +42,7 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
             const selectedTrackId = tState?.selectedTrackId;
 
             // Prefer selected MIDI track → create new one if selected isn't MIDI or nothing selected
-            let targetTrack = tState?.tracks.find((t) => t.id === selectedTrackId && t.kind === 'midi');
+            let targetTrack = tState?.tracks.find((time) => time.id === selectedTrackId && time.kind === 'midi');
             if (!targetTrack) {
                 const newTrack = addTrack({
                     name: prompt ? `AI: ${prompt.slice(0, 20)}` : 'AI MIDI',
@@ -55,10 +55,10 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                 const transport = getTransportState();
                 const startBeat = transport ? transport.playheadPosition : 0;
                 let maxNoteBeat = 0;
-                for (const n of finalNotes) {
-                    const v = n.start_beat + n.duration_beats;
-                    if (v > maxNoteBeat) {
-                        maxNoteBeat = v;
+                for (const node of finalNotes) {
+                    const value = node.start_beat + node.duration_beats;
+                    if (value > maxNoteBeat) {
+                        maxNoteBeat = value;
                     }
                 }
                 const endBeat = startBeat + maxNoteBeat;
@@ -75,11 +75,11 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                     // Batch-insert all notes in a single store mutation (avoids O(N) CRDT flood)
                     batchAddMidiNotes(
                         clip.id,
-                        finalNotes.map((n) => ({
-                            pitch: n.pitch,
-                            startBeat: n.start_beat,
-                            duration: n.duration_beats,
-                            velocity: n.velocity,
+                        finalNotes.map((node) => ({
+                            pitch: node.pitch,
+                            startBeat: node.start_beat,
+                            duration: node.duration_beats,
+                            velocity: node.velocity,
                         }))
                     );
 
