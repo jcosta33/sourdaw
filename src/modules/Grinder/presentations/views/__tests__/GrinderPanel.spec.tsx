@@ -1,14 +1,29 @@
 import { render, screen, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_PATCH } from '../../../models/GrinderPatch';
+import { grinderNeuralLibraryStore } from '../../../stores/grinderNeuralLibraryStore';
 import { grinderStore } from '../../../stores/grinderStore';
 import { GrinderPanel } from '../GrinderPanel';
+
+vi.mock('../../../useCases/importGrinderNeuralModels', () => ({
+    importGrinderNeuralModels: vi.fn(async () => []),
+}));
+
+vi.mock('../../../useCases/restoreGrinderNeuralLibrary', () => ({
+    restoreGrinderNeuralLibrary: vi.fn(async () => undefined),
+}));
 
 describe('GrinderPanel', () => {
     const device_id = 'test-device';
 
     beforeEach(() => {
+        grinderNeuralLibraryStore.set({
+            hydrated: true,
+            loading: false,
+            error: null,
+            entries: [],
+        });
         grinderStore.set({
             [device_id]: {
                 patch: {
@@ -68,6 +83,92 @@ describe('GrinderPanel', () => {
         expect(screen.queryByText('Mode guide')).not.toBeInTheDocument();
         expect(screen.getByText('Signal path')).toBeInTheDocument();
         expect(screen.getByText(/selecting a library voice now swaps the active built-in capture profile/i)).toBeInTheDocument();
+    });
+
+    it('should render imported neural library entries in the model browser', () => {
+        grinderNeuralLibraryStore.set({
+            hydrated: true,
+            loading: false,
+            error: null,
+            entries: [
+                {
+                    id: 'imported-tight-rhythm',
+                    source: 'imported',
+                    name: 'Tight Rhythm',
+                    family: 'NAM import',
+                    placement: 'amp-capture',
+                    description: 'Imported from tight-rhythm.nam',
+                    importedAt: 1,
+                    profile: {
+                        derivedFrom: 'nam',
+                        sourceArchitecture: 'WaveNet',
+                        sourceSampleRate: 48_000,
+                        sourceWeightCount: 12,
+                        preferredTier: 'standard',
+                        inputDrive: 1.18,
+                        asymmetry: 0.04,
+                        outputTrim: 0.9,
+                        contourMix: 0.22,
+                        recurrentBias: 0.02,
+                        convWeights: [
+                            [0.1, 0.7, 0.2],
+                            [0.09, 0.68, 0.23],
+                            [0.12, 0.66, 0.2],
+                            [0.11, 0.67, 0.19],
+                            [0.08, 0.72, 0.16],
+                            [0.07, 0.74, 0.15],
+                            [0.13, 0.64, 0.19],
+                            [0.1, 0.69, 0.18],
+                            [0.09, 0.7, 0.17],
+                            [0.11, 0.68, 0.17],
+                        ],
+                    },
+                },
+            ],
+        });
+        grinderStore.set({
+            [device_id]: {
+                patch: {
+                    ...DEFAULT_PATCH,
+                    uiSection: 'neural',
+                    engineMode: 'capture',
+                    neuralEnabled: true,
+                    neuralModelId: 'imported-tight-rhythm',
+                    neuralModelName: 'Tight Rhythm',
+                    neuralModelFamily: 'NAM import',
+                    neuralModelSource: 'imported',
+                    neuralModelProfile: {
+                        derivedFrom: 'nam',
+                        sourceArchitecture: 'WaveNet',
+                        sourceSampleRate: 48_000,
+                        sourceWeightCount: 12,
+                        preferredTier: 'standard',
+                        inputDrive: 1.18,
+                        asymmetry: 0.04,
+                        outputTrim: 0.9,
+                        contourMix: 0.22,
+                        recurrentBias: 0.02,
+                        convWeights: [
+                            [0.1, 0.7, 0.2],
+                            [0.09, 0.68, 0.23],
+                            [0.12, 0.66, 0.2],
+                            [0.11, 0.67, 0.19],
+                            [0.08, 0.72, 0.16],
+                            [0.07, 0.74, 0.15],
+                            [0.13, 0.64, 0.19],
+                            [0.1, 0.69, 0.18],
+                            [0.09, 0.7, 0.17],
+                            [0.11, 0.68, 0.17],
+                        ],
+                    },
+                },
+            },
+        });
+
+        render(<GrinderPanel deviceId={device_id} />);
+
+        expect(screen.getByText('Imported captures')).toBeInTheDocument();
+        expect(screen.getAllByText('Tight Rhythm').length).toBeGreaterThan(0);
     });
 
     it('should expose the current front-end pedal chain order in the drive section', () => {

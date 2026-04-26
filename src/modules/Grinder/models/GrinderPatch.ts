@@ -27,17 +27,41 @@ export type GrinderNeuralStatus = 'idle' | 'warming' | 'ready';
 
 export type GrinderUiSection = 'browse' | 'amp' | 'drive' | 'cab' | 'neural' | 'lab';
 
+export type GrinderNeuralModelSource = 'builtin' | 'imported';
+
+export type GrinderNeuralProfile = {
+    derivedFrom: 'nam';
+    sourceArchitecture: string;
+    sourceSampleRate: number;
+    sourceWeightCount: number;
+    preferredTier: GrinderNeuralTier;
+    inputDrive: number;
+    asymmetry: number;
+    outputTrim: number;
+    contourMix: number;
+    recurrentBias: number;
+    convWeights: Array<[number, number, number]>;
+};
+
 export type GrinderNeuralLibraryEntry = {
     id: string;
+    source: GrinderNeuralModelSource;
     name: string;
     family: string;
     placement: GrinderNeuralPlacement;
     description: string;
 };
 
+export type GrinderImportedNeuralModel = GrinderNeuralLibraryEntry & {
+    source: 'imported';
+    importedAt: number;
+    profile: GrinderNeuralProfile;
+};
+
 export const GRINDER_NEURAL_LIBRARY: readonly GrinderNeuralLibraryEntry[] = [
     {
         id: 'factory-amp-a',
+        source: 'builtin',
         name: 'Factory Amp A',
         family: 'NAM-compatible',
         placement: 'amp-capture',
@@ -45,6 +69,7 @@ export const GRINDER_NEURAL_LIBRARY: readonly GrinderNeuralLibraryEntry[] = [
     },
     {
         id: 'factory-rig-b',
+        source: 'builtin',
         name: 'Factory Rig B',
         family: 'A1-ready',
         placement: 'rig-capture',
@@ -52,6 +77,7 @@ export const GRINDER_NEURAL_LIBRARY: readonly GrinderNeuralLibraryEntry[] = [
     },
     {
         id: 'vintage-stack-c',
+        source: 'builtin',
         name: 'Vintage Stack C',
         family: 'NAM-compatible',
         placement: 'amp-capture',
@@ -191,6 +217,8 @@ export type GrinderPatch = {
     neuralModelId: string;
     neuralModelName: string;
     neuralModelFamily: string;
+    neuralModelSource: GrinderNeuralModelSource;
+    neuralModelProfile: GrinderNeuralProfile | null;
     neuralStatus: GrinderNeuralStatus;
     neuralWarmupProgress: number; // 0 – 1
     neuralPlacement: GrinderNeuralPlacement;
@@ -296,6 +324,8 @@ export const DEFAULT_PATCH: GrinderPatch = {
     neuralModelId: '',
     neuralModelName: '',
     neuralModelFamily: 'NAM-compatible',
+    neuralModelSource: 'builtin',
+    neuralModelProfile: null,
     neuralStatus: 'idle',
     neuralWarmupProgress: 0,
     neuralPlacement: 'amp-capture',
@@ -340,6 +370,17 @@ function cloneSnapshot(snapshot: Partial<GrinderSnapshot>, index: number): Grind
     };
 }
 
+function cloneNeuralProfile(profile: GrinderNeuralProfile | null | undefined): GrinderNeuralProfile | null {
+    if (!profile) {
+        return null;
+    }
+
+    return {
+        ...profile,
+        convWeights: profile.convWeights.map((weights) => [weights[0], weights[1], weights[2]]),
+    };
+}
+
 export function isSupportedGrinderChainPedalType(
     pedal_type: GrinderPedalType | string
 ): pedal_type is GrinderSupportedChainPedalType {
@@ -371,6 +412,10 @@ export function migrateGrinderPatch(patch: Partial<GrinderPatch> | GrinderPatch)
         patch.engineMode ??
         ((patch.neuralEnabled ?? DEFAULT_PATCH.neuralEnabled) ? 'hybrid' : DEFAULT_PATCH.engineMode);
     const neuralEnabled = patch.neuralEnabled ?? engineMode !== 'circuit';
+    const neuralModelProfile = cloneNeuralProfile(patch.neuralModelProfile);
+    const neuralModelSource =
+        patch.neuralModelSource ??
+        (neuralModelProfile ? 'imported' : DEFAULT_PATCH.neuralModelSource);
 
     return {
         ...DEFAULT_PATCH,
@@ -387,6 +432,8 @@ export function migrateGrinderPatch(patch: Partial<GrinderPatch> | GrinderPatch)
         neuralEnabled,
         neuralModelName: patch.neuralModelName ?? patch.neuralModelId ?? DEFAULT_PATCH.neuralModelName,
         neuralModelFamily: patch.neuralModelFamily ?? DEFAULT_PATCH.neuralModelFamily,
+        neuralModelSource,
+        neuralModelProfile,
         neuralStatus: patch.neuralStatus ?? DEFAULT_PATCH.neuralStatus,
         neuralWarmupProgress: patch.neuralWarmupProgress ?? DEFAULT_PATCH.neuralWarmupProgress,
         neuralPlacement: patch.neuralPlacement ?? DEFAULT_PATCH.neuralPlacement,

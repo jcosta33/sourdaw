@@ -380,6 +380,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
     matches: isGrinderDevice,
     create({ context, deviceId, deviceType, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
+        let pendingPatch: Record<string, unknown> | null = null;
         let pendingBypass = false;
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
@@ -390,11 +391,25 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                 pendingBypass = bypassed;
             },
         };
+        placeholder.controller = {
+            setParam: (name, value) => {
+                pendingParams.push([name, value]);
+            },
+            setPatch: (patch) => {
+                pendingPatch = patch;
+            },
+            setBypass: (bypassed) => {
+                pendingBypass = bypassed;
+            },
+        };
         const loadPromise = createGrinderNode(context)
             .then(async (result: GrinderNodeResult) => {
                 await result.ready;
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
+                }
+                if (pendingPatch) {
+                    result.setPatch(pendingPatch);
                 }
                 result.onMeterData((data) => {
                     updateGrinderMeters(deviceId, {
@@ -419,7 +434,12 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
-                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
+                    controller: {
+                        setParam: result.setParam,
+                        setPatch: result.setPatch,
+                        setBypass: result.setBypass,
+                        destroy: result.destroy,
+                    },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 return;

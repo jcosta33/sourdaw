@@ -21,12 +21,14 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: vi.fn(),
+    updateDevicePatch: vi.fn(),
 }));
 
 describe('loadGrinderPatchWithAudio', () => {
     const deps = {
         getAllTracks: vi.fn(),
         updateDeviceParam: vi.fn(),
+        updateDevicePatch: vi.fn(),
         persistDeviceParam: vi.fn(),
     };
 
@@ -100,5 +102,65 @@ describe('loadGrinderPatchWithAudio', () => {
 
         expect(deps.updateDeviceParam).toHaveBeenCalledWith(expect.anything(), deviceId, 'neuralModelSlot', 1);
         expect(deps.persistDeviceParam).toHaveBeenCalledWith(deviceId, 'neuralModelSlot', 1);
+    });
+
+    it('should sync an imported neural model as a structured custom profile patch', () => {
+        const deviceId = 'device-1';
+        deps.getAllTracks.mockReturnValue([
+            {
+                id: 'track-1',
+                devices: [{ id: deviceId, type: 'grinder' }],
+            },
+        ]);
+
+        const patch = {
+            ...DEFAULT_PATCH,
+            uiSection: 'neural' as const,
+            engineMode: 'capture' as const,
+            neuralEnabled: true,
+            neuralModelId: 'imported-tight-rhythm',
+            neuralModelName: 'Tight Rhythm',
+            neuralModelFamily: 'NAM import',
+            neuralModelSource: 'imported' as const,
+            neuralModelProfile: {
+                derivedFrom: 'nam' as const,
+                sourceArchitecture: 'WaveNet',
+                sourceSampleRate: 48_000,
+                sourceWeightCount: 12,
+                preferredTier: 'standard' as const,
+                inputDrive: 1.18,
+                asymmetry: 0.04,
+                outputTrim: 0.9,
+                contourMix: 0.22,
+                recurrentBias: 0.02,
+                convWeights: [
+                    [0.1, 0.7, 0.2],
+                    [0.09, 0.68, 0.23],
+                    [0.12, 0.66, 0.2],
+                    [0.11, 0.67, 0.19],
+                    [0.08, 0.72, 0.16],
+                    [0.07, 0.74, 0.15],
+                    [0.13, 0.64, 0.19],
+                    [0.1, 0.69, 0.18],
+                    [0.09, 0.7, 0.17],
+                    [0.11, 0.68, 0.17],
+                ],
+            },
+        };
+        const action = loadGrinderPatchWithAudio(deps as never);
+
+        action(deviceId, patch);
+
+        expect(deps.updateDevicePatch).toHaveBeenCalledWith(
+            'track-1',
+            deviceId,
+            expect.objectContaining({
+                neuralModelMode: 'imported',
+                profile: expect.objectContaining({
+                    sourceArchitecture: 'WaveNet',
+                    convWeights: expect.any(Array),
+                }),
+            })
+        );
     });
 });

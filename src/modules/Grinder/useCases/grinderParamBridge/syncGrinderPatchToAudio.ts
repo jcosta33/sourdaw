@@ -3,6 +3,7 @@ import { type GrinderPatch, type GrinderPedal, migrateGrinderPatch } from '../..
 import {
     AMP_MODELS,
     ENGINE_MODES,
+    type GrinderNeuralAudioPatch,
     INPUT_MODES,
     NEURAL_PLACEMENTS,
     NEURAL_TIERS,
@@ -20,6 +21,7 @@ type SyncGrinderPatchToAudioInput = {
     ref: DeviceRef;
     persist_device_param: (device_id: string, key: string, value: number) => void;
     update_device_param: (track_id: string, device_id: string, key: string, value: number) => void;
+    update_device_patch: (track_id: string, device_id: string, patch: Record<string, unknown>) => void;
 };
 
 const AUDIO_SYNC_KEYS: readonly (keyof GrinderPatch)[] = [
@@ -134,6 +136,13 @@ function findFirstPedal(pedals: readonly GrinderPedal[], types: readonly string[
     return pedals.find((pedal) => types.includes(pedal.type));
 }
 
+function sendPatchToDevice(
+    input: Pick<SyncGrinderPatchToAudioInput, 'ref' | 'update_device_patch'>,
+    patch: GrinderNeuralAudioPatch
+): void {
+    input.update_device_patch(input.ref.trackId, input.ref.deviceId, patch);
+}
+
 export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): void {
     const patch = migrateGrinderPatch(input.patch);
 
@@ -198,9 +207,17 @@ export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): vo
         sendNumericParamToDevice(input, entry.key, entry.value);
     }
 
-    const neural_model_slot = getNeuralModelSlot(patch.neuralModelId);
-    if (neural_model_slot !== null) {
-        sendNumericParamToDevice(input, 'neuralModelSlot', neural_model_slot);
+    if (patch.neuralModelSource === 'imported' && patch.neuralModelProfile) {
+        sendPatchToDevice(input, {
+            neuralModelMode: 'imported',
+            profile: patch.neuralModelProfile,
+        });
+    } else {
+        sendPatchToDevice(input, { neuralModelMode: 'builtin' });
+        const neural_model_slot = getNeuralModelSlot(patch.neuralModelId);
+        if (neural_model_slot !== null) {
+            sendNumericParamToDevice(input, 'neuralModelSlot', neural_model_slot);
+        }
     }
 
     sendNumericParamToDevice(input, 'mic1Enabled', patch.mic1.enabled ? 1 : 0);

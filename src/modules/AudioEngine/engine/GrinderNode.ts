@@ -42,6 +42,7 @@ export type GrinderMeterData = {
 export type GrinderNodeResult = {
     workletNode: AudioWorkletNode;
     setParam: (name: string, value: number) => void;
+    setPatch: (patch: Record<string, unknown>) => void;
     setBypass: (bypassed: boolean) => void;
     onMeterData: (cb: (data: GrinderMeterData) => void) => void;
     connect: (dest: AudioNode) => void;
@@ -111,6 +112,9 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
                     node.port.postMessage({ type: 'param', name, value });
                 }
             }
+        },
+        setPatch(patch: Record<string, unknown>) {
+            node.port.postMessage({ type: 'patch', patch });
         },
         setBypass(state: boolean) {
             node.port.postMessage({ type: 'param', name: 'bypass', value: state ? 1 : 0 });

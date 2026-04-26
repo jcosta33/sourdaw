@@ -29,12 +29,14 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: vi.fn(),
+    updateDevicePatch: vi.fn(),
 }));
 
 describe('setGrinderPedalParamWithAudio', () => {
     const deps = {
         getAllTracks: vi.fn(),
         updateDeviceParam: vi.fn(),
+        updateDevicePatch: vi.fn(),
         persistDeviceParam: vi.fn(),
     };
 

@@ -1,9 +1,10 @@
 import { type persistDeviceParam } from '#/modules/Arrangement/useCases';
-import { type updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { type updateDeviceParam, type updateDevicePatch } from '#/modules/AudioEngine/useCases';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
 import {
     GRINDER_NEURAL_LIBRARY,
+    type GrinderNeuralProfile,
     SUPPORTED_GRINDER_CHAIN_PEDAL_TYPES,
     type GrinderPedal,
     type GrinderSupportedChainPedalType,
@@ -15,6 +16,7 @@ import type { DeviceRef } from '#/utils/createFindDeviceRef';
 export type { DeviceRef, GetAllTracksFn } from '#/utils/createFindDeviceRef';
 export { createFindDeviceRef } from '#/utils/createFindDeviceRef';
 export type UpdateDeviceParamFn = typeof updateDeviceParam;
+export type UpdateDevicePatchFn = typeof updateDevicePatch;
 export type PersistDeviceParamFn = typeof persistDeviceParam;
 
 export type GrinderBatchEntry = { ref: DeviceRef; key: string; value: number };
@@ -97,3 +99,8 @@ export function getNeuralModelSlot(neural_model_id: string): number | null {
     const slot = GRINDER_NEURAL_LIBRARY.findIndex((model) => model.id === neural_model_id);
     return slot >= 0 ? slot : null;
 }
+
+export type GrinderNeuralAudioPatch = {
+    neuralModelMode: 'builtin' | 'imported';
+    profile?: GrinderNeuralProfile;
+};
