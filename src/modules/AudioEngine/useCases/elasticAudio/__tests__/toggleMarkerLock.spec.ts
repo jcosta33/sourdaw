@@ -17,7 +17,7 @@ vi.mock('#/modules/Command/stores', () => ({
     pushUndoEntry: (...args: unknown[]) => mocks.pushUndoEntry(...args),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement/stores', () => ({
     warpStates: mocks.warpStates,
     getWarpState: (clipId: string) =>
         mocks.warpStates.get(clipId) ?? {

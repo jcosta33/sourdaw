@@ -45,3 +45,5 @@ export type { GrooveState, GrooveTemplate } from './grooveStore';
 
 export { gainEnvelopeStore, defaultGainEnvelopeStoreState } from './gainEnvelopeStore';
 export type { GainEnvelopeStoreState, ClipGainEnvelope, GainEnvelopePoint } from './gainEnvelopeStore';
+
+export { warpStates, getWarpState, addWarpMarker } from './warpStates';

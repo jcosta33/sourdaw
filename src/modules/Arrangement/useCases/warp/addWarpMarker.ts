@@ -1,17 +1,4 @@
-import { createWarpMarker, type WarpMarkerOrigin } from '../../models/WarpMarker';
-
-import { getWarpState, warpStates } from './helpers';
-
-export function addWarpMarker(
-    clipId: string,
-    originalBeat: number,
-    warpedBeat: number,
-    options?: { origin?: WarpMarkerOrigin; confidence?: number; locked?: boolean }
-): void {
-    const current = getWarpState(clipId);
-    const marker = createWarpMarker(originalBeat, warpedBeat, options);
-    warpStates.set(clipId, {
-        ...current,
-        markers: [...current.markers, marker].sort((alpha, buffer) => alpha.originalBeat - buffer.originalBeat),
-    });
-}
+// Re-export from `stores/warpStates` so callers within the Arrangement module
+// keep their relative imports working. New cross-module callers should import
+// directly from `#/modules/Arrangement/stores`.
+export { addWarpMarker } from '../../stores/warpStates';

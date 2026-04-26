@@ -1,7 +1,4 @@
-import { defaultWarpState, type WarpState } from '../../models/WarpMarker';
-
-export const warpStates = new Map<string, WarpState>();
-
-export function getWarpState(clipId: string): WarpState {
-    return warpStates.get(clipId) ?? defaultWarpState;
-}
+// Re-export from `stores/warpStates` so callers within the Arrangement module
+// keep their relative imports working. New cross-module callers should import
+// directly from `#/modules/Arrangement/stores`.
+export { warpStates, getWarpState } from '../../stores/warpStates';

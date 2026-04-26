@@ -17,7 +17,7 @@ vi.mock('#/modules/Command/stores', () => ({
     pushUndoEntry: (...args: unknown[]) => mocks.pushUndoEntry(...args),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement/stores', () => ({
     addWarpMarker: (clipId: string, originalBeat: number, warpedBeat: number, options?: { origin?: string }) => {
         const state = mocks.warpStates.get(clipId) ?? {
             enabled: false,

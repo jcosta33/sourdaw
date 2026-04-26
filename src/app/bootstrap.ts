@@ -20,9 +20,15 @@ import {
     updateDevicePatch,
     setTrackGain as engineSetTrackGain,
     setTrackPan as engineSetTrackPan,
+    getAudioContext,
+    getCompensationDelay,
     getFinalFeatureHandlers,
 } from '#/modules/AudioEngine/useCases';
-import { getAutomationHandlers, recordAutomationValue } from '#/modules/Automation/useCases';
+import {
+    getAutomationHandlers,
+    recordAutomationValue,
+    setAutomationRecordingDependencies,
+} from '#/modules/Automation/useCases';
 import { initBrowserAi } from '#/modules/BrowserAi/useCases';
 import { getCollaborationHandlers } from '#/modules/Collaboration';
 import { registerHandlerMap } from '#/modules/Command/stores';
@@ -69,6 +75,11 @@ setFermenterDependencies({
 });
 
 setStopPlaybackCallback(stopPlayback);
+
+setAutomationRecordingDependencies({
+    getAudioContext,
+    getCompensationDelay,
+});
 
 setMidiLearnDependencies({
     setTrackGainArrangement,

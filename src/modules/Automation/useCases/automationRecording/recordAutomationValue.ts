@@ -1,5 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { getAudioContext, getCompensationDelay } from '#/modules/AudioEngine/useCases';
+import { getAutomationRecordingDependencies } from './recordingDependencies';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { type AutomationPoint } from '../../models/Automation';
@@ -23,9 +23,10 @@ export function recordAutomationValue(trackId: string, parameterId: string, valu
     const transport = transportStore.value;
     const tempo = transport?.tempo ?? 120;
 
-    const ctx = getAudioContext();
+    const deps = getAutomationRecordingDependencies();
+    const ctx = deps.getAudioContext();
     const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
-    const trackLatencySec = getCompensationDelay(trackId);
+    const trackLatencySec = deps.getCompensationDelay(trackId);
     const totalLatencySec = totalHardwareLatencySec + trackLatencySec;
     const offsetBeats = (totalLatencySec * tempo) / 60;
 

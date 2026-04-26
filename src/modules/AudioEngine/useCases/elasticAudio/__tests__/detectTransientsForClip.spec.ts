@@ -16,9 +16,6 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             return mocks.trackStoreValue;
         },
     },
-}));
-
-vi.mock('#/modules/Arrangement/useCases', () => ({
     addWarpMarker: (clipId: string, originalBeat: number, _warpedBeat: number, options?: unknown) => {
         mocks.addWarpMarkerCalls.push({ clipId, originalBeat, options });
         const state = mocks.warpStates.get(clipId) ?? {

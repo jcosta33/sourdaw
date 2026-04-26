@@ -28,7 +28,7 @@ import { setElasticSensitivity } from '../../useCases/elasticAudio/setElasticSen
 import { setElasticTool } from '../../useCases/elasticAudio/setElasticTool';
 import { toggleMarkerLock } from '../../useCases/elasticAudio/toggleMarkerLock';
 
-import { getWarpState, warpStates } from '#/modules/Arrangement/useCases';
+import { getWarpState, warpStates } from '#/modules/Arrangement/stores';
 import { audioWarpStore, type WarpAlgorithm } from '../../stores/audioWarp';
 
 type StretchMode = 'repitch' | 'complex' | 'texture' | 'beats';
