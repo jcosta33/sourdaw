@@ -1,7 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
-import { generateToolCalls } from '#/modules/AiRuntime';
-import { trackStore, addClip, addTrack } from '#/modules/Arrangement';
-import { addMidiNote, getNotesForClip } from '#/modules/MIDI';
+import { generateToolCalls } from '#/modules/AiRuntime/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { addClip, addTrack } from '#/modules/Arrangement/useCases';
+import { addMidiNote, getNotesForClip } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { llmGenerateNotes } from './llmNoteHelpers';

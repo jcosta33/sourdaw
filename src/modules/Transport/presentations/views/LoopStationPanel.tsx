@@ -9,7 +9,7 @@ import { LED } from '#/components/daw/LED';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { useStore } from '#/infra/store/useStore';
-import { defaultTrackState, trackStore } from '#/modules/Arrangement';
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { cn } from '#/utils/Styles/cn';
 
 import {

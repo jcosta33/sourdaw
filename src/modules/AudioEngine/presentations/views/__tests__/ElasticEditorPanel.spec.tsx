@@ -88,6 +88,14 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
         ...actual,
         trackStore: { __kind: 'track' },
         defaultTrackState: { tracks: [], selectedTrackId: null },
+        warpStates: mocks.warpStates,
+        getWarpState: (clipId: string) =>
+            mocks.warpStates.get(clipId) ?? {
+                enabled: false,
+                markers: [],
+                stretchMode: 'complex',
+                originalTempo: null,
+            },
     };
 });
 
@@ -179,17 +187,6 @@ vi.mock('../../../useCases/elasticAudio/setElasticTool', () => ({
 
 vi.mock('../../../useCases/elasticAudio/toggleMarkerLock', () => ({
     toggleMarkerLock: (...args: unknown[]) => mocks.toggleMarkerLock(...args),
-}));
-
-vi.mock('../../../../Arrangement/useCases/warp/helpers', () => ({
-    warpStates: mocks.warpStates,
-    getWarpState: (clipId: string) =>
-        mocks.warpStates.get(clipId) ?? {
-            enabled: false,
-            markers: [],
-            stretchMode: 'complex',
-            originalTempo: null,
-        },
 }));
 
 import { ElasticEditorPanel } from '../ElasticEditorPanel';

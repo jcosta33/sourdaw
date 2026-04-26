@@ -3,6 +3,8 @@ import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri } from '#/utils/tauriBridge';
 
+import { exportDawProject } from '../../useCases/dawProject/exportDawProject';
+
 async function saveBytes(bytes: Uint8Array, suggestedName: string): Promise<void> {
     if (isTauri()) {
         const { save } = await import('@tauri-apps/plugin-dialog');
@@ -59,7 +61,6 @@ async function saveBytes(bytes: Uint8Array, suggestedName: string): Promise<void
 export const handleExportDawProject = createHandler<'exportDawProject'>({
     execute: async () => {
         try {
-            const { exportDawProject } = await import('#/modules/Project/useCases');
             const { bytes, fileName } = await exportDawProject();
             await saveBytes(bytes, fileName);
             notifyUser(`Exported ${fileName}`, 'success');

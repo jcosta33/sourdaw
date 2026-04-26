@@ -6,6 +6,7 @@ import { getAiOrganizationHandlers } from '#/modules/AiRuntime/useCases';
 import { persistDeviceParam } from '#/modules/Arrangement/stores';
 import {
     getAllTracks,
+    getPluginById,
     persistDevicePatch,
     cleanupUnusedFreezeFiles,
     setTrackGain as setTrackGainArrangement,
@@ -28,6 +29,7 @@ import {
     getAutomationHandlers,
     recordAutomationValue,
     setAutomationRecordingDependencies,
+    setModulationDependencies,
 } from '#/modules/Automation/useCases';
 import { initBrowserAi } from '#/modules/BrowserAi/useCases';
 import { getCollaborationHandlers } from '#/modules/Collaboration';
@@ -79,6 +81,18 @@ setStopPlaybackCallback(stopPlayback);
 setAutomationRecordingDependencies({
     getAudioContext,
     getCompensationDelay,
+});
+
+setModulationDependencies({
+    updateDeviceParam,
+    getPluginParamRange: (deviceType, paramId) => {
+        const descriptor = getPluginById(deviceType);
+        const paramDef = descriptor?.parameters.find((param) => param.id === paramId);
+        if (!paramDef) {
+            return null;
+        }
+        return { min: paramDef.minValue, max: paramDef.maxValue, defaultValue: paramDef.defaultValue };
+    },
 });
 
 setMidiLearnDependencies({

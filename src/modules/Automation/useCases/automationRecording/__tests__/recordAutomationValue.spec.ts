@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getTrackById } from '#/modules/Arrangement/useCases';
 
 import { recordAutomationValue } from '../recordAutomationValue';
+import { setAutomationRecordingDependencies } from '../recordingDependencies';
 
 type TestTrack = {
     id: string;
@@ -37,14 +38,6 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     };
 });
 
-vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
-    return {
-        ...actual,
-        getAudioContext: vi.fn(() => ({ baseLatency: 0, outputLatency: 0 })),
-        getCompensationDelay: vi.fn(() => 0),
-    };
-});
 
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
@@ -76,6 +69,10 @@ describe('recordAutomationValue', () => {
         touchActive.clear();
         findLaneId.mockReturnValue(null);
         trackSnapshot.value = null;
+        setAutomationRecordingDependencies({
+            getAudioContext: () => ({ baseLatency: 0, outputLatency: 0 }) as AudioContext,
+            getCompensationDelay: () => 0,
+        });
     });
 
     it('does nothing when the track is missing', () => {

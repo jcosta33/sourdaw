@@ -11,7 +11,6 @@ import { handleElasticSetTool } from '../handlers/finalFeature/handleElasticSetT
 import { handleElasticToggleMarkerLock } from '../handlers/finalFeature/handleElasticToggleMarkerLock';
 import { handleEnableMpe } from '../handlers/finalFeature/handleEnableMpe';
 import { handleEnableWarping } from '../handlers/finalFeature/handleEnableWarping';
-import { handleExportDawProject } from '../handlers/finalFeature/handleExportDawProject';
 import { handleGetLatencyReport } from '../handlers/finalFeature/handleGetLatencyReport';
 import { handleLoadRaveModel } from '../handlers/finalFeature/handleLoadRaveModel';
 import { handleOpenElasticEditor } from '../handlers/finalFeature/handleOpenElasticEditor';
@@ -40,7 +39,6 @@ export type FinalFeatureHandlersMap = {
     elasticToggleMarkerLock: typeof handleElasticToggleMarkerLock;
     enableMpe: typeof handleEnableMpe;
     enableWarping: typeof handleEnableWarping;
-    exportDawProject: typeof handleExportDawProject;
     getLatencyReport: typeof handleGetLatencyReport;
     loadRaveModel: typeof handleLoadRaveModel;
     openElasticEditor: typeof handleOpenElasticEditor;
@@ -75,7 +73,6 @@ export function getFinalFeatureHandlers(): FinalFeatureHandlersMap {
         addCvOutput: handleAddCvOutput,
         connectPush: handleConnectPush,
         disconnectPush: handleDisconnectPush,
-        exportDawProject: handleExportDawProject,
         loadRaveModel: handleLoadRaveModel,
         setRaveBlend: handleSetRaveBlend,
         enableWarping: handleEnableWarping,

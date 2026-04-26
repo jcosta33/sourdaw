@@ -8,25 +8,31 @@ const { mocks } = vi.hoisted(() => ({
     },
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    updateDeviceParam: mocks.updateDeviceParam,
-}));
-
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    getPluginById: mocks.getPluginById,
-}));
-
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: mocks.trackStore,
 }));
 
 import { modulationStore } from '../../../stores/modulationStore';
 import { applyModulationToEngine } from '../applyModulationToEngine';
+import { setModulationDependencies } from '../modulationDependencies';
 
 describe('applyModulationToEngine', () => {
     beforeEach(() => {
         mocks.updateDeviceParam.mockReset();
         mocks.getPluginById.mockReset();
+        setModulationDependencies({
+            updateDeviceParam: mocks.updateDeviceParam,
+            getPluginParamRange: (deviceType, paramId) => {
+                const descriptor = mocks.getPluginById(deviceType);
+                const paramDef = descriptor?.parameters.find(
+                    (param: { id: string }) => param.id === paramId
+                );
+                if (!paramDef) {
+                    return null;
+                }
+                return { min: paramDef.minValue, max: paramDef.maxValue, defaultValue: paramDef.defaultValue };
+            },
+        });
 
         mocks.trackStore.value = {
             tracks: [
