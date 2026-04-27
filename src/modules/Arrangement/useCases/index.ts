@@ -192,11 +192,9 @@ export { toggleVcaMembership } from './vca/toggleVcaMembership';
 export { removeTrackFromVCA } from './vcaFader/removeTrackFromVCA';
 export { getAllVCAGroups } from './vcaFader/getAllVCAGroups';
 
-export { getWarpState, warpStates } from './warp/helpers';
 export { enableWarp } from './warp/enableWarp';
 export { disableWarp } from './warp/disableWarp';
 export { setStretchMode } from './warp/setStretchMode';
-export { addWarpMarker } from './warp/addWarpMarker';
 export { removeWarpMarker } from './warp/removeWarpMarker';
 export { moveWarpMarker } from './warp/moveWarpMarker';
 

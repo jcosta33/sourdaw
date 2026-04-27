@@ -114,52 +114,35 @@ vi.mock('#/modules/AudioEngine/stores/audioBufferCache', () => ({
     },
 }));
 
-vi.mock('#/modules/Arrangement/useCases/trackViewActions/decodeAudioFile', () => ({
-    decodeAudioFile: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
-    trackStore: { value: { tracks: [] } },
-}));
-
-vi.mock('#/modules/Arrangement/useCases/replaceClipAudioBuffer', () => ({
-    replaceClipAudioBuffer: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/clipEditing/normalizeClip', () => ({
-    normalizeClip: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/clipEditing/reverseClip', () => ({
-    reverseClip: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/warp/moveWarpMarker', () => ({
-    moveWarpMarker: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/warp/removeWarpMarker', () => ({
-    removeWarpMarker: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/warp/addWarpMarker', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    trackStore: {
+        get value() {
+            return { tracks: [] };
+        },
+        getSnapshot: () => ({ tracks: [] }),
+        subscribeReact: vi.fn(() => () => {}),
+    },
+    defaultTrackState: { tracks: [] },
     addWarpMarker: vi.fn(),
+    getWarpState: vi.fn(() => ({ enabled: false, markers: [], stretchMode: 'complex', originalTempo: null })),
+    warpStates: new Map(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/warp/setStretchMode', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+    replaceClipAudioBuffer: vi.fn(),
+    normalizeClip: vi.fn(),
+    reverseClip: vi.fn(),
+    moveWarpMarker: vi.fn(),
+    removeWarpMarker: vi.fn(),
     setStretchMode: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/warp/disableWarp', () => ({
     disableWarp: vi.fn(),
-}));
-
-vi.mock('#/modules/Arrangement/useCases/warp/enableWarp', () => ({
     enableWarp: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases/warp/helpers', () => ({
-    getWarpState: vi.fn(() => ({ enabled: false, markers: [], stretchMode: 'complex', originalTempo: null })),
+vi.mock('#/modules/Arrangement/useCases/trackViewActions/decodeAudioFile', () => ({
+    decodeAudioFile: vi.fn(),
 }));
 
 vi.mock('#/modules/AiGeneration/useCases/actions/handleAiDenoiseClip', () => ({
@@ -180,6 +163,32 @@ vi.mock('#/modules/AudioAnalysis/useCases/audioToMidi', () => ({
 
 vi.mock('#/modules/AudioEngine/useCases/nativeAiBridge/isTauri', () => ({
     isTauri: vi.fn(() => false),
+}));
+
+vi.mock('#/modules/Knead/stores', () => {
+    const defaultKneadState = {
+        activeClipId: null,
+        clips: {},
+        contours: {},
+        isAnalyzing: false,
+        analysisProgress: 0,
+    };
+    return {
+        kneadStore: {
+            get value() {
+                return defaultKneadState;
+            },
+            getSnapshot: () => defaultKneadState,
+            subscribe: vi.fn(() => () => {}),
+            subscribeReact: vi.fn(() => () => {}),
+            set: vi.fn(),
+        },
+        defaultKneadState,
+    };
+});
+
+vi.mock('#/infra/store/useStore', () => ({
+    useStore: <T,>(_store: unknown, defaultValue: T): T => defaultValue,
 }));
 
 describe('WaveformEditor', () => {
