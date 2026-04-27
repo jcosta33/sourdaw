@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { clearReportedLatency } from '../clearReportedLatency';
-import { externalLatencyRegistry } from '../helpers';
+import { externalLatencyRegistry } from '../externalLatencyRegistry';
 
 describe('clearReportedLatency', () => {
     beforeEach(() => {

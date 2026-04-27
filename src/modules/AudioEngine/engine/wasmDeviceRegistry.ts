@@ -21,6 +21,9 @@ import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/mod
 import { updateTunerTelemetry } from '#/modules/Scoring/stores';
 import { unregisterToasterDevice } from '#/modules/Toaster/stores';
 
+import { reportLatency } from '../useCases/latencyCompensation/compensation/reportLatency';
+import { clearReportedLatency } from '../useCases/latencyCompensation/compensation/clearReportedLatency';
+
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
 import { createFaustDeviceNode } from '../useCases/deviceResolvers/createFaustDeviceNode';
 
@@ -321,6 +324,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                         phaseCorr: data.phaseCorr,
                         latency: data.latency,
                     });
+                    reportLatency(deviceId, (data.latency / context.sampleRate) * 1000);
                 });
                 onLoaded({
                     deviceId,
@@ -328,7 +332,14 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
-                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
+                    controller: {
+                        setParam: result.setParam,
+                        setBypass: result.setBypass,
+                        destroy: () => {
+                            result.destroy();
+                            clearReportedLatency(deviceId);
+                        },
+                    },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 return;
@@ -475,6 +486,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                 }
                 result.onMeterData((data) => {
                     updateProofMeters(deviceId, data);
+                    reportLatency(deviceId, (data.latency / context.sampleRate) * 1000);
                 });
                 registerProofDevice(deviceId, {
                     setParam: result.setParam,
@@ -492,6 +504,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                         setBypass: result.setBypass,
                         destroy: () => {
                             result.destroy();
+                            clearReportedLatency(deviceId);
                             try {
                                 unregisterProofDevice(deviceId);
                             } catch {}

@@ -206,7 +206,7 @@ Issues below were tracked as real but lower priority than dedicated area audits.
 | ---- | -------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | N-19 | **[FIXED]** Param bridge array params only sync on patch load                    | High     | Fixed: `setProofParamWithPatch.ts` now instantly syncs `eqBands`, `dynBands`, `imgBandWidth`, `excBands`, `chainOrder`, `ditherMode`, and `ditherBits` on change. |
 | S-05 | Engine-side param verification                                                   | Medium   | Needs XOI runtime test                                                                                                                                            |
-| I-06 | PDC latency from SAB not consumed by host `getDeviceLatencyMs` / `reportLatency` | Medium   | Worklets call `get_latency_samples()`; recording uses static trim, automation unaligned                                                                           |
+| I-06 | **[FIXED]** PDC latency from SAB consumed and applied | High   | Fixed: `wasmDeviceRegistry.ts` receives latency and stores in `externalLatencyRegistry` using `deviceId`. `getDeviceLatencyMs` wired properly. |
 
 #### Proof param coverage table (N-19 detail)
 

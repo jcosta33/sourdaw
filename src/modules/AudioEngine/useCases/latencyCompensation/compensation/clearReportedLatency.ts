@@ -1,5 +1,5 @@
-import { externalLatencyRegistry } from './helpers';
+import { externalLatencyRegistry } from './externalLatencyRegistry';
 
-export function clearReportedLatency(deviceType: string): void {
-    externalLatencyRegistry.delete(deviceType);
+export function clearReportedLatency(deviceId: string): void {
+    externalLatencyRegistry.delete(deviceId);
 }
