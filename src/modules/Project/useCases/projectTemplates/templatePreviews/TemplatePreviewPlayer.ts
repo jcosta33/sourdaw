@@ -1,4 +1,4 @@
-import { getAudioContext, resumeEngine } from '#/modules/AudioEngine';
+import { getAudioContext, resumeEngine } from '#/modules/AudioEngine/useCases';
 
 import type { PreviewEvent, PreviewVoice, TemplatePreview } from './previewLoops';
 

@@ -13,6 +13,9 @@ pub struct LookaheadLimiter {
     lookahead_samples: usize,
     sample_rate: f32,
     bypassed: bool,
+    // Max tracking to avoid O(N) scan per sample
+    max_peak: f32,
+    max_peak_age: usize,
     // Metering
     meter_gr_db: f32,
     meter_output_peak: f32,
@@ -34,6 +37,8 @@ impl LookaheadLimiter {
             lookahead_samples,
             sample_rate: sr,
             bypassed: false,
+            max_peak: 0.0,
+            max_peak_age: 0,
             meter_gr_db: 0.0,
             meter_output_peak: 0.0,
         }
@@ -58,6 +63,8 @@ impl LookaheadLimiter {
                     self.delay_l.resize(new_size, 0.0);
                     self.delay_r.resize(new_size, 0.0);
                     self.gain_buffer.resize(new_size, 0.0);
+                    self.max_peak = 0.0;
+                    self.max_peak_age = 0;
                 }
             }
             _ => {}
@@ -81,8 +88,28 @@ impl LookaheadLimiter {
             let peak = left[i].abs().max(right[i].abs());
             self.gain_buffer.push_back(peak);
 
-            // Find max peak in lookahead window
-            let future_peak = self.gain_buffer.iter().copied().fold(0.0_f32, f32::max);
+            // Maintain max peak
+            if peak >= self.max_peak {
+                self.max_peak = peak;
+                self.max_peak_age = 0;
+            } else {
+                self.max_peak_age += 1;
+                if self.max_peak_age >= self.lookahead_samples {
+                    // Old max expired, recompute
+                    let mut max_idx = 0;
+                    let mut max_val = 0.0_f32;
+                    for (idx, &val) in self.gain_buffer.iter().enumerate() {
+                        if val >= max_val {
+                            max_val = val;
+                            max_idx = idx;
+                        }
+                    }
+                    self.max_peak = max_val;
+                    self.max_peak_age = self.lookahead_samples.saturating_sub(1).saturating_sub(max_idx);
+                }
+            }
+
+            let future_peak = self.max_peak;
 
             // Required gain to bring peak to ceiling
             let required_gain = if future_peak > self.ceiling {

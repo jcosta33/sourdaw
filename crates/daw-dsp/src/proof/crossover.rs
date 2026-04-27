@@ -65,6 +65,9 @@ pub struct FourBandSplitter {
     xover1: Lr4Crossover,
     xover2: Lr4Crossover,
     xover3: Lr4Crossover,
+    ap_low_2: Lr4Crossover,
+    ap_low_3: Lr4Crossover,
+    ap_low_mid_3: Lr4Crossover,
 }
 
 impl FourBandSplitter {
@@ -73,6 +76,9 @@ impl FourBandSplitter {
             xover1: Lr4Crossover::new(f1, sr),
             xover2: Lr4Crossover::new(f2, sr),
             xover3: Lr4Crossover::new(f3, sr),
+            ap_low_2: Lr4Crossover::new(f2, sr),
+            ap_low_3: Lr4Crossover::new(f3, sr),
+            ap_low_mid_3: Lr4Crossover::new(f3, sr),
         }
     }
 
@@ -80,14 +86,28 @@ impl FourBandSplitter {
         self.xover1.set_freq(f1, sr);
         self.xover2.set_freq(f2, sr);
         self.xover3.set_freq(f3, sr);
+        self.ap_low_2.set_freq(f2, sr);
+        self.ap_low_3.set_freq(f3, sr);
+        self.ap_low_mid_3.set_freq(f3, sr);
     }
 
     /// Returns 4 bands: (low_l, low_r), (low_mid_l, low_mid_r), (high_mid_l, high_mid_r), (high_l, high_r)
     #[inline]
     pub fn process(&mut self, l: f32, r: f32) -> [(f32, f32); 4] {
-        let (low, high_a) = self.xover1.process(l, r);
-        let (low_mid, high_b) = self.xover2.process(high_a.0, high_a.1);
+        let (low_raw, high_a) = self.xover1.process(l, r);
+        let (low_mid_raw, high_b) = self.xover2.process(high_a.0, high_a.1);
         let (high_mid, high) = self.xover3.process(high_b.0, high_b.1);
+
+        // Apply allpass compensation to maintain phase alignment across all bands
+        let (lp_ap2, hp_ap2) = self.ap_low_2.process(low_raw.0, low_raw.1);
+        let low_after_2 = (lp_ap2.0 + hp_ap2.0, lp_ap2.1 + hp_ap2.1);
+        
+        let (lp_ap3, hp_ap3) = self.ap_low_3.process(low_after_2.0, low_after_2.1);
+        let low = (lp_ap3.0 + hp_ap3.0, lp_ap3.1 + hp_ap3.1);
+
+        let (lm_ap3_lp, lm_ap3_hp) = self.ap_low_mid_3.process(low_mid_raw.0, low_mid_raw.1);
+        let low_mid = (lm_ap3_lp.0 + lm_ap3_hp.0, lm_ap3_lp.1 + lm_ap3_hp.1);
+
         [low, low_mid, high_mid, high]
     }
 }

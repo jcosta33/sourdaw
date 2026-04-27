@@ -15,7 +15,7 @@ import {
     getArrangementHandlers,
 } from '#/modules/Arrangement/useCases';
 import { initStalenessDetection } from '#/modules/Arrangement/useCases/freezeBounce/initStalenessDetection';
-import { getAnalysisHandlers } from '#/modules/AudioAnalysis';
+import { getAnalysisHandlers } from '#/modules/AudioAnalysis/useCases';
 import {
     updateDeviceParam,
     updateDevicePatch,
@@ -32,7 +32,7 @@ import {
     setModulationDependencies,
 } from '#/modules/Automation/useCases';
 import { initBrowserAi } from '#/modules/BrowserAi/useCases';
-import { getCollaborationHandlers } from '#/modules/Collaboration';
+import { getCollaborationHandlers } from '#/modules/Collaboration/useCases';
 import { registerHandlerMap } from '#/modules/Command/stores';
 import {
     getMacroHandlers,

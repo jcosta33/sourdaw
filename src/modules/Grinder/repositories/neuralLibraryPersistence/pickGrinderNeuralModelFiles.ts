@@ -1,4 +1,4 @@
-import { pickFiles } from '#/modules/Project';
+import { pickFiles } from '#/modules/Project/useCases';
 
 export function pickGrinderNeuralModelFiles(): Promise<File[] | null> {
     return pickFiles({

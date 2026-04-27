@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react';
 
-import { getPreviewLoop } from '#/modules/Project';
+import { getPreviewLoop } from '#/modules/Project/useCases';
 
 type TemplatePreviewThumbProps = {
     templateId: string;

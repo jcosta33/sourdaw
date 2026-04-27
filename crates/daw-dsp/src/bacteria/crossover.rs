@@ -126,6 +126,10 @@ pub struct CrossoverEngine {
     points_l: Vec<Lr4CrossoverPoint>,
     /// Crossover points for right channel (up to 5)
     points_r: Vec<Lr4CrossoverPoint>,
+    /// Allpass points for left channel to compensate lower bands (up to 10)
+    allpass_points_l: Vec<Lr4CrossoverPoint>,
+    /// Allpass points for right channel to compensate lower bands (up to 10)
+    allpass_points_r: Vec<Lr4CrossoverPoint>,
     band_count: usize,
     sample_rate: f32,
 }
@@ -135,6 +139,8 @@ impl CrossoverEngine {
         Self {
             points_l: Vec::new(),
             points_r: Vec::new(),
+            allpass_points_l: Vec::new(),
+            allpass_points_r: Vec::new(),
             band_count: 1,
             sample_rate,
         }
@@ -144,6 +150,7 @@ impl CrossoverEngine {
     pub fn set_bands(&mut self, band_count: usize, freqs: &[f32]) {
         let n = band_count.clamp(1, 6);
         let num_xovers = n.saturating_sub(1);
+        let num_allpasses = num_xovers.saturating_sub(1) * num_xovers / 2;
 
         self.band_count = n;
         self.points_l.resize_with(num_xovers, || {
@@ -152,11 +159,26 @@ impl CrossoverEngine {
         self.points_r.resize_with(num_xovers, || {
             Lr4CrossoverPoint::new(1000.0, self.sample_rate)
         });
+        self.allpass_points_l.resize_with(num_allpasses, || {
+            Lr4CrossoverPoint::new(1000.0, self.sample_rate)
+        });
+        self.allpass_points_r.resize_with(num_allpasses, || {
+            Lr4CrossoverPoint::new(1000.0, self.sample_rate)
+        });
 
+        let mut ap_idx = 0;
         for i in 0..num_xovers {
             let freq = freqs.get(i).copied().unwrap_or(1000.0).clamp(20.0, 20000.0);
             self.points_l[i].set_freq(freq, self.sample_rate);
             self.points_r[i].set_freq(freq, self.sample_rate);
+            
+            if i > 0 {
+                for _j in 0..i {
+                    self.allpass_points_l[ap_idx].set_freq(freq, self.sample_rate);
+                    self.allpass_points_r[ap_idx].set_freq(freq, self.sample_rate);
+                    ap_idx += 1;
+                }
+            }
         }
     }
 
@@ -190,6 +212,20 @@ impl CrossoverEngine {
         // Last band gets the remaining high-pass
         bands_l[self.band_count - 1] = remaining_l;
         bands_r[self.band_count - 1] = remaining_r;
+
+        // Apply allpasses to lower bands to compensate for phase delays introduced by subsequent crossovers
+        let mut ap_idx = 0;
+        for i in 1..self.band_count - 1 {
+            for j in 0..i {
+                let (lp_l, hp_l) = self.allpass_points_l[ap_idx].process(bands_l[j]);
+                bands_l[j] = lp_l + hp_l;
+                
+                let (lp_r, hp_r) = self.allpass_points_r[ap_idx].process(bands_r[j]);
+                bands_r[j] = lp_r + hp_r;
+                
+                ap_idx += 1;
+            }
+        }
     }
 
     pub fn band_count(&self) -> usize {
@@ -201,6 +237,12 @@ impl CrossoverEngine {
             p.reset();
         }
         for p in &mut self.points_r {
+            p.reset();
+        }
+        for p in &mut self.allpass_points_l {
+            p.reset();
+        }
+        for p in &mut self.allpass_points_r {
             p.reset();
         }
     }

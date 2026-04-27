@@ -49,7 +49,7 @@ type ModulationHalo = {
 
 type RotaryKnobProps = {
     value: number;
-    onChange: (val: number) => void;
+    onChange: (val: number, isTransient?: boolean) => void;
     min?: number;
     max?: number;
     step?: number;
@@ -118,6 +118,7 @@ export const RotaryKnob = ({
     const draggingRef = useRef(false);
     const startY = useRef(0);
     const startValue = useRef(value);
+    const currentValue = useRef(value);
     const rootRef = useRef<HTMLDivElement>(null);
     const px = SIZES[size];
 
@@ -134,7 +135,7 @@ export const RotaryKnob = ({
             return;
         }
         if (event.altKey) {
-            onChange(defaultValue);
+            onChange(defaultValue, false);
             return;
         }
         if (typeof event.currentTarget.setPointerCapture === 'function') {
@@ -143,6 +144,7 @@ export const RotaryKnob = ({
         draggingRef.current = true;
         startY.current = event.clientY;
         startValue.current = value;
+        currentValue.current = value;
         rootRef.current?.setAttribute('data-dragging', '');
     };
 
@@ -177,7 +179,9 @@ export const RotaryKnob = ({
 
         const currentStep = event.shiftKey ? fineStep : step;
         const quantized = Math.round(raw / currentStep) * currentStep;
-        onChange(clamp(quantized));
+        const clamped = clamp(quantized);
+        currentValue.current = clamped;
+        onChange(clamped, true);
     };
 
     const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
@@ -186,10 +190,11 @@ export const RotaryKnob = ({
             event.currentTarget.releasePointerCapture(event.pointerId);
         }
         rootRef.current?.removeAttribute('data-dragging');
+        onChange(currentValue.current, false);
     };
 
     const handleDoubleClick = () => {
-        onChange(defaultValue);
+        onChange(defaultValue, false);
     };
 
     const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {

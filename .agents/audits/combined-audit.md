@@ -82,13 +82,13 @@ last_verified: '2026-04-28'
 | ----- | ------- | -------- |
 | Single global `recordingSession` | **True** | `recording.ts` `createHmrPersistentState` single object |
 | Each `startAudioRecording` overwrites session | **True** | Assigns `mediaStream`, `onRecordingComplete`, nodes in place |
-| Mono `channelCount: 1` | **True** | ~121–127 |
+| Mono `channelCount: 1` | **True** | `recording.ts` ~95-100 |
 | `startRecording` creates clips for all armed | **True** | `startRecording.ts`: loop `armedTracks`, `newClips.push` per track (with MIDI overdub exceptions) |
 | Independent of `selectedTrackId` | **Plausible** | Recording uses `armed` in `toggleRecording` loop |
 
 ---
 
-## Plugin host (Appendix E) — claim-by-claim
+### Plugin host (Appendix E) — claim-by-claim
 
 | Claim | Verdict | Evidence |
 | ----- | ------- | -------- |
@@ -197,16 +197,16 @@ Issues below were tracked as real but lower priority than dedicated area audits.
 | ---- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | I-08 | LR4 crossover cascade does NOT sum flat — bands pass through different numbers of allpass stages causing comb-filtering on reconstruction | High     | `crates/daw-dsp/src/proof/crossover.rs:87-92` and `bacteria/crossover.rs:163-193` — same cascaded topology in both. Fix: parallel LR4s with allpass compensation |
 | I-12 | Crumbs pitch-up no anti-aliasing                                                                                                          | Medium   | `crates/daw-dsp/src/crumbs/voice.rs:218-240`                                                                                                                     |
-| I-22 | Limiter O(window×N) scan                                                                                                                  | Medium   | `crates/daw-dsp/src/proof/limiter.rs:84-92`                                                                                                                      |
+| I-22 | **[FIXED]** Limiter O(window×N) scan                                                                                                                  | Medium   | Fixed: `crates/daw-dsp/src/proof/limiter.rs` now uses amortized O(1) max peak tracking.                                                                                                                      |
 | I-30 | DSP claims needing re-verification                                                                                                        | Mixed    | Per-plugin — see original audit history                                                                                                                          |
 
 ### Proof Plugin
 
 | ID   | Issue                                                                                                                                                                                                                                       | Severity | File                                                        |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------- |
-| N-19 | Param bridge: 12 scalar per-change, 7 array load-only (eqBands, dynBands, dynCrossoverFreqs, excBands, imgBandWidth, ditherMode, ditherBits), 3 never (name, target, targetLufs). Array params only sync on patch load via `syncFullPatch`. | High     | `setProofParamWithPatch.ts`, `syncFullPatch.ts`             |
+| N-19 | **[FIXED]** Param bridge array params only sync on patch load | High     | Fixed: `setProofParamWithPatch.ts` now instantly syncs `eqBands`, `dynBands`, `imgBandWidth`, `excBands`, `chainOrder`, `ditherMode`, and `ditherBits` on change. |
 | S-05 | Engine-side param verification                                                                                                                                                                                                              | Medium   | Needs XOI runtime test                                      |
-| I-06 | PDC latency reported by worklets to SAB but host never reads or compensates                                                                                                                                                                 | Medium   | Worklets call `get_latency_samples()`; no host-side PDC bus |
+| I-06 | PDC latency from SAB not consumed by host `getDeviceLatencyMs` / `reportLatency`                                                                                                                                                                 | Medium   | Worklets call `get_latency_samples()`; recording uses static trim, automation unaligned |
 
 #### Proof param coverage table (N-19 detail)
 
@@ -240,10 +240,10 @@ Issues below were tracked as real but lower priority than dedicated area audits.
 
 | ID   | Issue                                        | Severity | File                                                  |
 | ---- | -------------------------------------------- | -------- | ----------------------------------------------------- |
-| S-01 | Fader write-path storm                       | High     | `TrackLevelSection.tsx:39-41`, `setTrackGain.ts:9-14` |
+| S-01 | **[FIXED]** Fader write-path storm                       | High     | `Workspace/.../TrackLevelSection.tsx`, `setTrackGain.ts`, `setTrackPan.ts` fixed by introducing `isTransient` flag for drags |
 | S-02 | Multi-track selection missing                | High     | `trackStore.ts:22-28` — scalar `selectedTrackId`      |
 | I-14 | Knead/action history not persistent          | Medium   | `kneadStore.ts`, `actionHistoryStore.ts`              |
-| I-15 | Fermenter telemetry at audio-rate            | Medium   | `fermenterStore.ts`                                   |
+| I-15 | **[FIXED]** Fermenter telemetry at audio-rate            | Medium   | Fixed: `fermenterStore.ts` now batches and throttles telemetry updates to 60fps via `requestAnimationFrame`. |
 | I-27 | PianoRoll subscribes to whole stores         | Medium   | `PianoRoll.tsx:98-99`                                 |
 | I-25 | Plugin module duplication (Proof vs Plugin/) | Low      | Product decision                                      |
 | I-28 | Legacy brand-CMS keys in LocalStorage        | Low      | `LocalStorageKeys.ts:14-94` — needs legal review      |
@@ -320,7 +320,7 @@ Faust instruments should support polyphonic playback (chords) and all knob chang
 
 - `FaustPolyDspGenerator` exists in `@grame/faustwasm` but is never imported or used anywhere in the codebase (verified via grep).
 - The poly generator requires a `voices` count and a `mixerModule` (WASM voice mixer). The Faust compiler produces the mixer automatically for DSP files using standard `freq`/`gain`/`gate` convention.
-- **6 of 7 Faust DSP files** use the full `freq`/`gain`/`gate` convention: `fm-synth.dsp`, `rhodes.dsp`, `hammond-b3.dsp`, `minimoog-lead.dsp`, `acid-bass-303.dsp`, `morphing-synth.dsp`. The 7th (`additive-synth.dsp`) has `freq` and `gate` but no `gain` param — would need a gain param added for poly compatibility.
+- **All 5 current Faust DSP instrument files** (`fm-synth.dsp`, `rhodes.dsp`, `hammond-b3.dsp`, `minimoog-lead.dsp`, `acid-bass-303.dsp`) use the full `freq`/`gain`/`gate` convention. The old `additive-synth.dsp` and `morphing-synth.dsp` are no longer present in `builtinDSP.ts`.
 - Note scheduling (`startFaustNote.ts` lines 13-15, `scheduleFaustNote.ts` lines 15-18) sets `freq`/`gain`/`gate` as raw AudioParam values via `scheduleDeviceParam`. For poly, `@grame/faustwasm`'s poly node accepts MIDI-style `keyOn(channel, pitch, velocity)` / `keyOff()` calls instead.
 - ~~N-24 race condition~~ **RETRACTED** — `compilerEngine.ts:222` `resolveReg!()` is safe because Promise executors run synchronously per ECMAScript spec; `resolveReg` is always assigned before line 222 executes.
 
@@ -336,7 +336,7 @@ Faust instruments should support polyphonic playback (chords) and all knob chang
 2. Pass `voices: 8` (or configurable) and the mixer module to `createNode()`.
 3. Replace `scheduleDeviceParam('freq'/'gain'/'gate')` with `keyOn(channel, pitch, velocity)` / `keyOff()` calls on the poly node.
 4. Update `startFaustNote.ts` and `scheduleFaustNote.ts` to use the poly API.
-5. Add `gain` param to `additive-synth.dsp` or mark it as special-case mono.
+5. ~~Add `gain` param to `additive-synth.dsp` or mark it as special-case mono.~~ (Superseded: additive-synth removed).
 
 #### 2. Faust param routing fragile (N-36 / N-48)
 
@@ -372,15 +372,15 @@ One convention for `MidiNote.startBeat` across the entire codebase. Notes visibl
 | --------------------------------- | -------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `clipDrawing.ts`                  | Clip-relative                                      | 386     | `relStart = (note.startBeat - midiOffset) - clip.startBeat + loopOffset`                                                                |
 | `renderOffline.ts`                | **Correct for clip-relative**                      | 97      | `noteStart = (clip.startBeat - startBeat + note.startBeat) / tempo * 60` — adds clip offset from render start + note offset within clip |
-| `duplicateClipCore.ts`            | **WRONG** — adds clip delta to clip-relative notes | 42      | `startBeat: note.startBeat + beatDelta` — should be `note.startBeat` (notes are already clip-relative)                                  |
+| `duplicateClipCore.ts`            | **Fixed** (was adding clip delta)                  | 42      | `startBeat: note.startBeat`                                                                                                             |
 | `usePianoRollRenderer.ts`         | Clip-relative                                      | 526     | `x = note.startBeat * beatWidth`                                                                                                        |
 | `usePianoRollInteractions.ts`     | Clip-relative                                      | 435-469 | `beat = snap(x / beatWidth)`                                                                                                            |
-| `applyMelodyToTrack.ts`           | Timeline-absolute                                  | 42      | `startBeat: startBeat + note.startBeat`                                                                                                 |
-| `applyChordProgressionToTrack.ts` | Timeline-absolute                                  | 44      | `startBeat: startBeat + note.startBeat`                                                                                                 |
-| `applyDrumPatternToTrack.ts`      | Timeline-absolute                                  | 38      | `startBeat: startBeat + note.startBeat`                                                                                                 |
+| `applyMelodyToTrack.ts`           | **Fixed** (was timeline-absolute)                  | 42      | `startBeat: note.startBeat`                                                                                                             |
+| `applyChordProgressionToTrack.ts` | **Fixed** (was timeline-absolute)                  | 44      | `startBeat: note.startBeat`                                                                                                             |
+| `applyDrumPatternToTrack.ts`      | **Fixed** (was timeline-absolute)                  | 38      | `startBeat: note.startBeat`                                                                                                             |
 | `PatternBrowser.tsx`              | Clip-relative                                      | 301     | `startBeat: note.startBeat` (template-local)                                                                                            |
 | `scheduleMidiNotes.ts`            | Expects clip-relative                              | 388     | `rawStartBeat = clip.startBeat + iterOffset + (note.startBeat - midiOffset)` — adds `clip.startBeat` to convert                         |
-| `importMidiFile.ts`               | Masks issue                                        | 52      | Forces `clip.startBeat = 0`                                                                                                             |
+| `Arrangement/.../importMidiFile.ts`| Masks issue                                        | ~46     | Forces `clip.startBeat = 0`                                                                                                             |
 
 ### Current behavior (original narrative)
 
@@ -458,7 +458,7 @@ Arming N audio tracks and pressing record should capture N independent audio str
 1. **Arm multiple tracks** — each track's `armed` flag set in `trackStore`.
 2. **Press record** — `toggleRecording()` calls `beginActualRecording()`.
 3. **`beginActualRecording()`** calls `startRecording()` which creates one clip per armed track (correct).
-4. **Loop over armed audio tracks** (`toggleRecording.ts:26`) — for each, calls `startAudioRecording(trackId, onComplete)`.
+4. **Loop over armed audio tracks** (`toggleRecording.ts:~22`) — for each, calls `startAudioRecording(trackId, onComplete)`.
 5. **`startAudioRecording`** **overwrites** the single global `recordingSession` (mediaStream, sourceNode, onRecordingComplete, recordingNode, recordingWorker).
 6. **Each subsequent call replaces the previous session.** Only the last armed track's callback survives.
 7. **Stop** — only one `onComplete` path delivers audio meaningfully to one clip.
@@ -594,4 +594,6 @@ All adversarial findings have been addressed by The Builder. The `destroy` hooks
 ## Related
 
 - [grinder/control-deck.md](./grinder/control-deck.md) — separate area audit, not merged.
+- Adversarial research: [adversarial-review-plugin-host.md](../research/adversarial-review-plugin-host.md)
+inder/control-deck.md](./grinder/control-deck.md) — separate area audit, not merged.
 - Adversarial research: [adversarial-review-plugin-host.md](../research/adversarial-review-plugin-host.md)

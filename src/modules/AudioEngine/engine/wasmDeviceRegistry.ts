@@ -19,7 +19,7 @@ import { isFaustModule } from '#/modules/Plugin/useCases';
 import { updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
 import { updateTunerTelemetry } from '#/modules/Scoring/stores';
-import { unregisterToasterDevice } from '#/modules/Toaster';
+import { unregisterToasterDevice } from '#/modules/Toaster/stores';
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
 import { createFaustDeviceNode } from '../useCases/deviceResolvers/createFaustDeviceNode';

@@ -116,7 +116,7 @@ module.exports = {
                 'Cross-module imports must target a contract-folder barrel: ' +
                 '<module>/useCases/index.ts, <module>/stores/index.ts, ' +
                 '<module>/events/index.ts, or <module>/presentations/views/index.ts. ' +
-                'During migration, the old <module>/index.ts root-barrel form is also accepted. ' +
+                '' +
                 'Direct imports into models/, repositories/, handlers/, or any non-barrel path are forbidden. ' +
                 'See .agents/specs/contract-folder-barrels.md for the target state.',
             from: {
@@ -210,7 +210,7 @@ module.exports = {
                 // Legacy module-root barrels remain allowed during migration.
                 // This rule targets non-root files (including contract-folder barrels)
                 // importing another index.ts inside the same module.
-                path: '^' + MODULE_ROOT.slice(1) + '(?!index\\.ts$)',
+                path: '^' + MODULE_ROOT.slice(1),
             },
             to: {
                 path: '^$1$2/.*/index\\.ts$',
@@ -224,7 +224,7 @@ module.exports = {
                 'Files inside a module must not import from their own module root index.ts or contract-folder barrels. ' +
                 'Use relative paths to the implementation files.',
             from: {
-                path: '^' + MODULE_ROOT.slice(1) + '(?!index\\.ts)',
+                path: '^' + MODULE_ROOT.slice(1),
             },
             to: {
                 path: '^$1$2/(index\\.ts|(useCases|events|stores|presentations/views)/index\\.ts)$',

@@ -2,7 +2,7 @@ import { type ReactElement, useEffect, useState } from 'react';
 
 import { Volume2 } from 'lucide-react';
 
-import { getAudioContext, resumeEngine } from '#/modules/AudioEngine';
+import { getAudioContext, resumeEngine } from '#/modules/AudioEngine/useCases';
 
 const DISMISSED_KEY = 'wd:audio-resume-dismissed';
 const POLL_INTERVAL_MS = 250;

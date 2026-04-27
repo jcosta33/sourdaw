@@ -16,7 +16,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { commitActionUndoEntry, generateGroupId } from '#/modules/Command/stores';
-import { saveSnapshot } from '#/modules/CrdtDocument/useCases';
+import { transactSnapshot } from '#/modules/CrdtDocument/useCases';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
@@ -251,16 +251,12 @@ async function commitDsos(
     reasoning: string | undefined,
     runDsos: ExecuteDsosFn
 ): Promise<string[]> {
-    // Binary snapshot of ALL Automerge documents before the edit.
-    // Much more compact than structuredClone(store.value) and correctly captures
-    // every store — including midiStore — that the DSO may modify.
-    const bundleBefore = saveSnapshot();
-
-    // Execute
-    const summaries = await runDsos(plan.dsos);
-
-    // Binary snapshot after — used for redo.
-    const bundleAfter = saveSnapshot();
+    // Execute and capture binary snapshots of ONLY the Automerge documents
+    // that were dirtied during the execution.
+    let summaries: string[] = [];
+    const { before: bundleBefore, after: bundleAfter } = await transactSnapshot(async () => {
+        summaries = await runDsos(plan.dsos);
+    });
 
     // Undo entry — typed ActionUndoEntry (serializable data, no anonymous closures)
     const { groupId, groupLabel } = generateGroupId(userRequest);

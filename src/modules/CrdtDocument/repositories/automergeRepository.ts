@@ -12,6 +12,7 @@ import {
     getChanges,
     view,
     getHeads,
+    clone,
 } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
@@ -231,6 +232,51 @@ class AutomergeRepository {
             bundle.set(id, save(doc));
         }
         return bundle;
+    }
+
+    /**
+     * Run an async operation and capture before/after binary snapshots
+     * ONLY for the documents that were modified.
+     */
+    async transactSnapshot(fn: () => Promise<void>): Promise<{ before: DocumentBundle; after: DocumentBundle }> {
+        const dirtied = new Set<DocId>();
+        const preDocs = new Map<DocId, Doc<AnyDoc>>();
+        
+        // Cheaply clone all docs to retain "before" state in memory
+        for (const [id, doc] of this.docs) {
+            preDocs.set(id, clone(doc));
+        }
+
+        const unsub = this.onChange((docId) => {
+            if (docId) {
+                dirtied.add(docId);
+            } else {
+                // Bulk change
+                for (const id of this.docs.keys()) dirtied.add(id);
+            }
+        });
+
+        try {
+            await fn();
+        } finally {
+            unsub();
+        }
+
+        const bundleBefore: DocumentBundle = new Map();
+        const bundleAfter: DocumentBundle = new Map();
+
+        for (const id of dirtied) {
+            const preDoc = preDocs.get(id);
+            if (preDoc) {
+                bundleBefore.set(id, save(preDoc));
+            }
+            const postDoc = this.docs.get(id);
+            if (postDoc) {
+                bundleAfter.set(id, save(postDoc));
+            }
+        }
+
+        return { before: bundleBefore, after: bundleAfter };
     }
 
     /**

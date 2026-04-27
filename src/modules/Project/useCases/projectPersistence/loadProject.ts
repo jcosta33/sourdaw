@@ -6,7 +6,7 @@ import {
     projectCrdtToStores,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
-import { migrateAbsoluteMidiNotes } from '#/modules/MIDI';
+import { migrateAbsoluteMidiNotes } from '#/modules/MIDI/useCases';
 
 import { projectStore } from '../../stores/projectStore';
 

@@ -1,4 +1,4 @@
-import { type ReactElement, type CSSProperties, useState, useRef, useEffect, useId, type KeyboardEvent } from 'react';
+import { type ReactElement, type CSSProperties, useState, useRef, useEffect, useId, type KeyboardEvent, memo } from 'react';
 
 import { X, Trash2, Bot, User, ChevronRight, ChevronDown, Zap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -62,6 +62,67 @@ const ReasoningBlock = ({ reasoning, isStreaming }: { reasoning: string; isStrea
     );
 };
 
+const ChatMessageItem = memo(({ msg }: { msg: any }): ReactElement => {
+    let msgIcon = <User className="size-3" />;
+    if (msg.isDsoAction) {
+        msgIcon = <Zap className="size-3 text-emerald-400" />;
+    } else if (msg.role === 'assistant') {
+        msgIcon = <Bot className="size-3 text-[var(--color-accent-lavender)]" />;
+    }
+
+    let msgRoleLabel = 'You';
+    if (msg.isDsoAction) {
+        msgRoleLabel = 'Action';
+    } else if (msg.role === 'assistant') {
+        msgRoleLabel = 'Assistant';
+    }
+
+    let msgBubbleClassName =
+        'bg-surface-raised text-foreground border border-border/50 rounded-tl-sm w-full';
+    if (msg.role === 'user') {
+        msgBubbleClassName = 'bg-primary text-primary-foreground rounded-tr-sm';
+    } else if (msg.isDsoAction) {
+        msgBubbleClassName =
+            'bg-emerald-500/10 text-foreground border border-emerald-500/20 rounded-tl-sm w-full';
+    }
+
+    return (
+        <div
+            className={cn('flex w-full flex-col', msg.role === 'user' ? 'items-end' : 'items-start')}
+        >
+            <div className="flex items-center gap-1.5 mb-1 opacity-70">
+                {msgIcon}
+                <span className="text-[10px] font-medium tracking-wide">{msgRoleLabel}</span>
+            </div>
+            {/* Reasoning (collapsible) */}
+            {msg.reasoning ? (
+                <ReasoningBlock
+                    reasoning={msg.reasoning}
+                    isStreaming={msg.isStreaming && !msg.content}
+                />
+            ) : null}
+            <div
+                className={cn(
+                    'text-xs px-3 py-2.5 rounded-lg max-w-[92%] leading-relaxed',
+                    msgBubbleClassName,
+                    msg.error && 'bg-destructive/10 border-destructive/30 text-destructive-foreground'
+                )}
+            >
+                {msg.role === 'assistant' ? (
+                    <div className="prose prose-invert prose-xs max-w-none prose-p:my-1.5 prose-pre:my-2 prose-pre:bg-black/40 prose-pre:border prose-pre:border-white/5 prose-a:text-[var(--color-accent-lavender)] hover:prose-a:text-[var(--color-accent-lavender)] prose-ul:my-1.5 prose-ul:pl-4 prose-li:my-0.5 prose-strong:text-[var(--color-accent-lavender)] prose-code:text-[var(--color-accent-lavender)] prose-code:bg-[var(--color-accent-lavender)]/10 prose-code:px-1 prose-code:rounded-sm">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                        {msg.isStreaming && !!msg.content ? (
+                            <span className="inline-block w-1.5 h-3.5 bg-[var(--color-accent-lavender)] ml-1 translate-y-[2px] animate-pulse" />
+                        ) : null}
+                    </div>
+                ) : (
+                    <span className="whitespace-pre-wrap break-words">{msg.content}</span>
+                )}
+            </div>
+        </div>
+    );
+});
+
 type ChatPanelProps = {
     style?: CSSProperties;
 };
@@ -124,67 +185,9 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
     } else {
         chatPanelContent = (
             <div className="flex w-full flex-col gap-5">
-                {chatState.messages.map((msg) => {
-                    let msgIcon = <User className="size-3" />;
-                    if (msg.isDsoAction) {
-                        msgIcon = <Zap className="size-3 text-emerald-400" />;
-                    } else if (msg.role === 'assistant') {
-                        msgIcon = <Bot className="size-3 text-[var(--color-accent-lavender)]" />;
-                    }
-
-                    let msgRoleLabel = 'You';
-                    if (msg.isDsoAction) {
-                        msgRoleLabel = 'Action';
-                    } else if (msg.role === 'assistant') {
-                        msgRoleLabel = 'Assistant';
-                    }
-
-                    let msgBubbleClassName =
-                        'bg-surface-raised text-foreground border border-border/50 rounded-tl-sm w-full';
-                    if (msg.role === 'user') {
-                        msgBubbleClassName = 'bg-primary text-primary-foreground rounded-tr-sm';
-                    } else if (msg.isDsoAction) {
-                        msgBubbleClassName =
-                            'bg-emerald-500/10 text-foreground border border-emerald-500/20 rounded-tl-sm w-full';
-                    }
-
-                    return (
-                        <div
-                            key={msg.id}
-                            className={cn('flex w-full flex-col', msg.role === 'user' ? 'items-end' : 'items-start')}
-                        >
-                            <div className="flex items-center gap-1.5 mb-1 opacity-70">
-                                {msgIcon}
-                                <span className="text-[10px] font-medium tracking-wide">{msgRoleLabel}</span>
-                            </div>
-                            {/* Reasoning (collapsible) */}
-                            {msg.reasoning ? (
-                                <ReasoningBlock
-                                    reasoning={msg.reasoning}
-                                    isStreaming={msg.isStreaming && !msg.content}
-                                />
-                            ) : null}
-                            <div
-                                className={cn(
-                                    'text-xs px-3 py-2.5 rounded-lg max-w-[92%] leading-relaxed',
-                                    msgBubbleClassName,
-                                    msg.error && 'bg-destructive/10 border-destructive/30 text-destructive-foreground'
-                                )}
-                            >
-                                {msg.role === 'assistant' ? (
-                                    <div className="prose prose-invert prose-xs max-w-none prose-p:my-1.5 prose-pre:my-2 prose-pre:bg-black/40 prose-pre:border prose-pre:border-white/5 prose-a:text-[var(--color-accent-lavender)] hover:prose-a:text-[var(--color-accent-lavender)] prose-ul:my-1.5 prose-ul:pl-4 prose-li:my-0.5 prose-strong:text-[var(--color-accent-lavender)] prose-code:text-[var(--color-accent-lavender)] prose-code:bg-[var(--color-accent-lavender)]/10 prose-code:px-1 prose-code:rounded-sm">
-                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                                        {msg.isStreaming && !!msg.content ? (
-                                            <span className="inline-block w-1.5 h-3.5 bg-[var(--color-accent-lavender)] ml-1 translate-y-[2px] animate-pulse" />
-                                        ) : null}
-                                    </div>
-                                ) : (
-                                    <span className="whitespace-pre-wrap break-words">{msg.content}</span>
-                                )}
-                            </div>
-                        </div>
-                    );
-                })}
+                {chatState.messages.map((msg) => (
+                    <ChatMessageItem key={msg.id} msg={msg} />
+                ))}
                 <div ref={messagesEndRef} className="h-2 w-full shrink-0" />
             </div>
         );
