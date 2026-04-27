@@ -1,17 +1,20 @@
 import fs from 'fs';
 import path from 'path';
 
+import ts from 'typescript';
 import { describe, it, expect, beforeEach } from 'vitest';
 
 // Helper to evaluate an AudioWorklet script and extract its class
 function loadProcessorClass(filePath: string, className: string) {
     const code = fs.readFileSync(path.resolve(__dirname, filePath), 'utf-8');
 
-    // Mock global AudioWorklet environment
+    // Mock global AudioWorklet environment. `exports` is a no-op stub so TS's
+    // emitted `Object.defineProperty(exports, '__esModule', ...)` line doesn't
+    // crash inside `new Function`.
     const globals = {
         AudioWorkletProcessor: class {
             port = {
-                onmessage: null as any,
+                onmessage: null as ((event: MessageEvent) => void) | null,
                 postMessage: () => {},
             };
         },
@@ -21,8 +24,19 @@ function loadProcessorClass(filePath: string, className: string) {
         console,
     };
 
-    // We replace the import statements so it doesn't crash on evaluation
-    const safeCode = code.replaceAll(/import\s+.*?;/g, '').replaceAll(/export\s+/g, '');
+    // Strip TypeScript types so `new Function` can parse pure JS. Use ESNext
+    // module mode so imports stay as `import ... from ...;` (easy to regex
+    // out) instead of becoming CommonJS `require(...)` (which has no loader
+    // inside `new Function`).
+    const transpiled = ts.transpileModule(code, {
+        compilerOptions: {
+            target: ts.ScriptTarget.ES2022,
+            module: ts.ModuleKind.ESNext,
+            isolatedModules: true,
+            removeComments: false,
+        },
+    }).outputText;
+    const safeCode = transpiled.replaceAll(/^import\s+.*?;$/gm, '').replaceAll(/^export\s+/gm, '');
 
     // eslint-disable-next-line @typescript-eslint/no-implied-eval -- test utility: dynamically loads AudioWorkletProcessor source to extract class; no user input
     const execute = new Function(
