@@ -517,7 +517,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
     tGrainHaze.gain = 1;
     tEtherealVeil.gain = 1;
     tSweepHorizon.gain = 0.85;
-    tWarmHalo.gain = 1;
+    tWarmHalo.gain = 0.2;
     tRisingMist.gain = 1;
     tWildDrift.gain = 1;
     tGrainStutter.gain = 1;
