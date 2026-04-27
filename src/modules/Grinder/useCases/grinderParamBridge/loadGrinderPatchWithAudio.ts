@@ -10,6 +10,7 @@ import { syncGrinderPatchToAudio } from './syncGrinderPatchToAudio';
 export const loadGrinderPatchWithAudio = inject(grinderParamBridgeDependencies)(({
     getAllTracks: get_all_tracks_fn,
     updateDeviceParam: update_device_param_fn,
+    updateDevicePatch: update_device_patch_fn,
     persistDeviceParam: persist_device_param_fn,
 }) => {
     const find_device_ref = createFindDeviceRef(get_all_tracks_fn);
@@ -27,6 +28,7 @@ export const loadGrinderPatchWithAudio = inject(grinderParamBridgeDependencies)(
             patch: migrated_patch,
             ref,
             update_device_param: update_device_param_fn,
+            update_device_patch: update_device_patch_fn,
             persist_device_param: persist_device_param_fn,
         });
     };

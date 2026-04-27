@@ -69,8 +69,10 @@ pub struct TriodeStage {
 
     // Grid conduction state
     grid_current: f64,
+    grid_conduction_amount: f64,
     coupling_cap_charge: f64,
     coupling_cap_tau: f64,
+    oversample_input_state: f64,
 
     // Miller capacitance
     miller_cap_factor: f64,
@@ -94,8 +96,10 @@ impl TriodeStage {
             supply_voltage: 300.0,
             plate_resistor: 100_000.0,
             grid_current: 0.0,
+            grid_conduction_amount: 0.5,
             coupling_cap_charge: 0.0,
             coupling_cap_tau: 0.01, // 10ms RC time constant
+            oversample_input_state: 0.0,
             miller_cap_factor: 0.5,
             miller_lp_state: 0.0,
             bias_offset: 0.0,
@@ -118,10 +122,10 @@ impl TriodeStage {
                 self.recompute_quiescent_plate_voltage();
             }
             "millerCapacitance" => self.miller_cap_factor = value as f64,
-            "gridConduction" => self.coupling_cap_tau = 0.001 + value as f64 * 0.05,
+            "gridConduction" => self.grid_conduction_amount = value as f64,
             "couplingCapCharge" => {
-                // Scale the coupling cap RC time constant
-                self.coupling_cap_tau = 0.005 + value as f64 * 0.04;
+                // Recovery length after grid-current charging.
+                self.coupling_cap_tau = 0.003 + value as f64 * 0.060;
             }
             _ => {}
         }
@@ -163,20 +167,19 @@ impl TriodeStage {
 
     /// Compute grid current (for grid conduction modeling).
     fn grid_current_model(&self, vgk: f64) -> f64 {
-        if vgk <= 0.0 {
+        let onset = 0.22 - self.grid_conduction_amount * 0.16;
+        if vgk <= onset {
             0.0
         } else {
-            // Piecewise: exponential onset of grid conduction
-            let ig = 0.001 * (vgk * 10.0).tanh() * vgk;
-            ig.max(0.0)
+            let over = vgk - onset;
+            let curvature = 3.5 + self.grid_conduction_amount * 8.5;
+            let strength = 0.0012 + self.grid_conduction_amount * 0.0105;
+            let shaped = 1.0 - (-over * curvature).exp();
+            (over * shaped * strength).max(0.0)
         }
     }
 
-    /// Process a single sample through the triode stage.
-    pub fn process_sample(&mut self, input: f32) -> f32 {
-        let input_d = input as f64;
-        let dt = 1.0 / self.sample_rate;
-
+    fn process_substep(&mut self, input_d: f64, dt: f64) -> f64 {
         // Grid voltage = input signal + bias + coupling cap charge offset
         let vgk = self.vgk + input_d * 50.0 + self.bias_offset - self.coupling_cap_charge;
 
@@ -185,13 +188,16 @@ impl TriodeStage {
         self.grid_current = ig;
 
         // Coupling cap charges from grid current, discharges through RC
+        let charge_drive = 550.0 + self.grid_conduction_amount * 2_400.0;
         self.coupling_cap_charge +=
-            dt * (ig * 1000.0 - self.coupling_cap_charge / self.coupling_cap_tau);
+            dt * (ig * charge_drive - self.coupling_cap_charge / self.coupling_cap_tau);
         self.coupling_cap_charge = self.coupling_cap_charge.clamp(-5.0, 5.0);
 
         // Plate current
+        let conduction_drop = ig * (420.0 + self.grid_conduction_amount * 980.0);
+        let effective_vgk = vgk - conduction_drop;
         let vpk = self.plate_voltage;
-        let ip = self.plate_current(vgk, vpk);
+        let ip = self.plate_current(effective_vgk, vpk);
 
         // Update plate voltage: V_plate = V_supply - Ip * R_plate
         let target_plate_voltage =
@@ -212,7 +218,20 @@ impl TriodeStage {
         let miller_coeff = (-2.0 * std::f64::consts::PI * miller_freq * dt).exp();
         self.miller_lp_state = output + miller_coeff * (self.miller_lp_state - output);
 
-        self.miller_lp_state as f32
+        self.miller_lp_state
+    }
+
+    /// Process a single sample through the triode stage.
+    pub fn process_sample(&mut self, input: f32) -> f32 {
+        let current_input = input as f64;
+        let intermediate_input = 0.5 * (self.oversample_input_state + current_input);
+        let substep_dt = 0.5 / self.sample_rate;
+
+        let first = self.process_substep(intermediate_input, substep_dt);
+        let second = self.process_substep(current_input, substep_dt);
+        self.oversample_input_state = current_input;
+
+        ((first + second) * 0.5) as f32
     }
 
     pub fn reset(&mut self) {
@@ -220,6 +239,7 @@ impl TriodeStage {
         self.plate_voltage = self.quiescent_plate_voltage;
         self.coupling_cap_charge = 0.0;
         self.grid_current = 0.0;
+        self.oversample_input_state = 0.0;
         self.miller_lp_state = 0.0;
     }
 }
@@ -408,6 +428,74 @@ mod tests {
         sum / total as f32
     }
 
+    fn average_abs_output_for_sample_rate(sample_rate: f32) -> f32 {
+        let mut preamp = Preamp::new(sample_rate);
+        preamp.set_param("ampModel", 4.0);
+        preamp.set_param("channel", 2.0);
+        preamp.set_param("gain", 8.4);
+        preamp.set_param("fat", 1.0);
+        preamp.set_param("tubeBias", 0.56);
+        preamp.set_param("millerCapacitance", 0.58);
+
+        let total = 4096;
+        let mut sum = 0.0_f32;
+        for n in 0..total {
+            let phase = (n as f32 * 2.0 * std::f32::consts::PI * 1_750.0) / sample_rate;
+            let sample = phase.sin() * 0.16;
+            let out = preamp.process_sample(sample);
+            assert!(out.is_finite(), "preamp output should remain finite");
+            sum += out.abs();
+        }
+
+        sum / total as f32
+    }
+
+    fn burst_metrics_for_preamp(
+        grid_conduction: f32,
+        coupling_cap_charge: f32,
+    ) -> (f32, f32) {
+        let sample_rate = 48_000.0;
+        let mut preamp = Preamp::new(sample_rate);
+        preamp.set_param("ampModel", 4.0);
+        preamp.set_param("channel", 2.0);
+        preamp.set_param("gain", 8.8);
+        preamp.set_param("fat", 1.0);
+        preamp.set_param("tubeBias", 0.58);
+        preamp.set_param("millerCapacitance", 0.62);
+        preamp.set_param("gridConduction", grid_conduction);
+        preamp.set_param("couplingCapCharge", coupling_cap_charge);
+
+        let total = 2048;
+        let burst_len = 320;
+        let mut attack_peak = 0.0_f32;
+        let mut tail_sum = 0.0_f32;
+        let mut tail_count = 0_usize;
+
+        for n in 0..total {
+            let sample = if n < burst_len {
+                let fundamental =
+                    ((n as f32 * 2.0 * std::f32::consts::PI * 140.0) / sample_rate).sin() * 0.20;
+                let edge =
+                    ((n as f32 * 2.0 * std::f32::consts::PI * 1_950.0) / sample_rate).sin() * 0.10;
+                (fundamental + edge) * 1.6
+            } else {
+                0.0
+            };
+
+            let out = preamp.process_sample(sample);
+            if n < 120 {
+                attack_peak = attack_peak.max(out.abs());
+            }
+            if (480..1200).contains(&n) {
+                tail_sum += out.abs();
+                tail_count += 1;
+            }
+        }
+
+        let tail_avg = tail_sum / tail_count.max(1) as f32;
+        (attack_peak, tail_avg)
+    }
+
     #[test]
     fn crunch_channel_produces_audible_output() {
         assert!(average_abs_output(1) > 1.0e-3);
@@ -475,6 +563,75 @@ mod tests {
         assert!(
             bright_peak < neutral_peak * 1.45,
             "bright voicing should add bite without spiky transient clicks (neutral={neutral_peak}, bright={bright_peak})"
+        );
+    }
+
+    #[test]
+    fn high_gain_preamp_is_reasonably_sample_rate_stable() {
+        let output_48k = average_abs_output_for_sample_rate(48_000.0);
+        let output_96k = average_abs_output_for_sample_rate(96_000.0);
+        let relative_delta = (output_48k - output_96k).abs() / output_96k.max(1.0e-6);
+
+        assert!(
+            relative_delta <= 0.12,
+            "high-gain preamp should stay reasonably stable across sample rates (48k={output_48k}, 96k={output_96k}, delta={relative_delta})"
+        );
+    }
+
+    #[test]
+    fn grid_conduction_changes_hard_attack_clamping() {
+        let (low_peak, _) = burst_metrics_for_preamp(0.0, 0.55);
+        let (high_peak, _) = burst_metrics_for_preamp(1.0, 0.55);
+        let peak_delta = (low_peak - high_peak).abs();
+
+        assert!(
+            peak_delta > 1.5e-2,
+            "grid conduction should audibly change hard-attack clamping (low={low_peak}, high={high_peak}, delta={peak_delta})"
+        );
+    }
+
+    #[test]
+    fn coupling_cap_charge_changes_recovery_tail() {
+        let (_, short_tail) = burst_metrics_for_preamp(0.55, 0.1);
+        let (_, long_tail) = burst_metrics_for_preamp(0.55, 0.95);
+        let tail_delta = (short_tail - long_tail).abs();
+
+        assert!(
+            tail_delta > 2.0e-3,
+            "coupling-cap charge should audibly change blocking recovery (short={short_tail}, long={long_tail}, delta={tail_delta})"
+        );
+    }
+
+    #[test]
+    fn tube_bias_audibly_changes_the_preamp_response() {
+        let total = 4096;
+
+        let mut cold = Preamp::new(48_000.0);
+        cold.set_param("ampModel", 2.0);
+        cold.set_param("channel", 2.0);
+        cold.set_param("gain", 7.2);
+        cold.set_param("tubeBias", 0.2);
+
+        let mut hot = Preamp::new(48_000.0);
+        hot.set_param("ampModel", 2.0);
+        hot.set_param("channel", 2.0);
+        hot.set_param("gain", 7.2);
+        hot.set_param("tubeBias", 0.8);
+
+        let mut diff_sum = 0.0_f32;
+        for n in 0..total {
+            let low = ((n as f32 * 2.0 * std::f32::consts::PI * 130.0) / 48_000.0).sin() * 0.11;
+            let high = ((n as f32 * 2.0 * std::f32::consts::PI * 1_300.0) / 48_000.0).sin() * 0.05;
+            let sample = low + high;
+            let cold_out = cold.process_sample(sample);
+            let hot_out = hot.process_sample(sample);
+            diff_sum += (cold_out - hot_out).abs();
+        }
+
+        let average_diff = diff_sum / total as f32;
+        assert!(
+            average_diff > 5.0e-3,
+            "tube bias should audibly change the preamp response, got diff {average_diff}"
         );
     }
 }

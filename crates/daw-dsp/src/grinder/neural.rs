@@ -168,6 +168,17 @@ fn sigmoid(x: f32) -> f32 {
     1.0 / (1.0 + (-x).exp())
 }
 
+fn parse_custom_conv_weight_param(name: &str) -> Option<(usize, usize)> {
+    let suffix = name.strip_prefix("neuralCustomConvWeight")?;
+    let (layer_index, weight_index) = suffix.split_once('_')?;
+    let layer_index = layer_index.parse::<usize>().ok()?;
+    let weight_index = weight_index.parse::<usize>().ok()?;
+    if weight_index > 2 {
+        return None;
+    }
+    Some((layer_index, weight_index))
+}
+
 /// Neural capture processor supporting multiple architectures.
 #[allow(dead_code)]
 pub struct NeuralCapture {
@@ -181,6 +192,13 @@ pub struct NeuralCapture {
     placement: CapturePlacement,
     mix: f32,
     cpu_budget: u32,
+    selected_model_slot: Option<usize>,
+    custom_profile_active: bool,
+    input_drive: f32,
+    asymmetry: f32,
+    output_trim: f32,
+    contour_mix: f32,
+    contour_state: f32,
     model_loaded: bool,
     sample_rate: f32,
     warmup_samples_total: u32,
@@ -210,6 +228,13 @@ impl NeuralCapture {
             placement: CapturePlacement::Amp,
             mix: 1.0,
             cpu_budget: 1,
+            selected_model_slot: None,
+            custom_profile_active: false,
+            input_drive: 1.0,
+            asymmetry: 0.0,
+            output_trim: 1.0,
+            contour_mix: 0.18,
+            contour_state: 0.0,
             model_loaded: false,
             sample_rate,
             warmup_samples_total: (sample_rate * 0.040) as u32,
@@ -238,19 +263,46 @@ impl NeuralCapture {
                 self.cpu_budget = value.round().clamp(0.0, 2.0) as u32;
                 self.arm_warmup();
             }
+            "neuralModelMode" => {
+                if value > 0.5 {
+                    self.selected_model_slot = None;
+                    self.custom_profile_active = true;
+                    self.reset_runtime_state();
+                    self.arm_warmup();
+                } else {
+                    self.custom_profile_active = false;
+                    self.model_loaded = self.selected_model_slot.is_some();
+                    self.warmup_samples_remaining = 0;
+                }
+            }
+            "neuralModelSlot" => self.load_builtin_model(value.round().max(0.0) as usize),
+            "neuralCustomTier" => self.tier = ModelTier::from_index(value.round().max(0.0) as u32),
+            "neuralCustomInputDrive" => self.input_drive = value.clamp(0.5, 2.0),
+            "neuralCustomAsymmetry" => self.asymmetry = value.clamp(-0.5, 0.5),
+            "neuralCustomOutputTrim" => self.output_trim = value.clamp(0.2, 1.4),
+            "neuralCustomContourMix" => self.contour_mix = value.clamp(0.0, 1.0),
+            "neuralCustomLstmBias" => self.lstm.bias.fill(value.clamp(-1.0, 1.0)),
             _ => {}
+        }
+
+        if let Some((layer_index, weight_index)) = parse_custom_conv_weight_param(name) {
+            if let Some(layer) = self.conv_layers.get_mut(layer_index) {
+                layer.weights[weight_index] = value.clamp(-1.0, 1.0);
+            }
         }
     }
 
     pub fn process_capture(&mut self, input: f32) -> f32 {
-        if self.engine_mode == EngineMode::Circuit {
+        if self.engine_mode == EngineMode::Circuit || !self.has_active_model() || !self.model_loaded {
             return input;
         }
+
+        let shaped_input = input * self.input_drive + input.abs() * input * self.asymmetry;
 
         let processed = match self.tier {
             ModelTier::Standard => {
                 // Full WaveNet: all layers
-                let mut signal = input;
+                let mut signal = shaped_input;
                 let active_layers = self.active_layer_count();
                 for layer in self.conv_layers.iter_mut().take(active_layers) {
                     signal = layer.process(signal);
@@ -259,7 +311,7 @@ impl NeuralCapture {
             }
             ModelTier::Lite => {
                 // Reduced: 6 layers
-                let mut signal = input;
+                let mut signal = shaped_input;
                 for layer in self.conv_layers.iter_mut().take(6) {
                     signal = layer.process(signal);
                 }
@@ -267,7 +319,7 @@ impl NeuralCapture {
             }
             ModelTier::Nano => {
                 // Minimal: 3 layers
-                let mut signal = input;
+                let mut signal = shaped_input;
                 for layer in self.conv_layers.iter_mut().take(3) {
                     signal = layer.process(signal);
                 }
@@ -275,21 +327,32 @@ impl NeuralCapture {
             }
             ModelTier::Recurrent => {
                 // LSTM tier
-                self.lstm.process(input)
+                self.lstm.process(shaped_input)
             }
         };
 
+        let contour_coeff = (2.0 * std::f32::consts::PI * 1_800.0 / self.sample_rate).min(0.3);
+        self.contour_state += contour_coeff * (processed - self.contour_state);
+        let edge = processed - self.contour_state;
+        let voiced = self.contour_state * (1.0 - self.contour_mix) + edge * self.contour_mix;
+        let profiled = voiced * self.output_trim;
+
         let activation = self.next_warmup_mix();
-        input * (1.0 - activation) + processed * activation
+        input * (1.0 - activation) + profiled * activation
     }
 
     pub fn reset(&mut self) {
+        self.reset_runtime_state();
+        self.warmup_samples_remaining = 0;
+        self.model_loaded = self.has_active_model();
+    }
+
+    fn reset_runtime_state(&mut self) {
         for layer in &mut self.conv_layers {
             layer.reset();
         }
         self.lstm.reset();
-        self.warmup_samples_remaining = 0;
-        self.model_loaded = false;
+        self.contour_state = 0.0;
     }
 
     pub fn engine_mode(&self) -> EngineMode {
@@ -353,7 +416,7 @@ impl NeuralCapture {
     }
 
     fn arm_warmup(&mut self) {
-        if self.engine_mode == EngineMode::Circuit {
+        if self.engine_mode == EngineMode::Circuit || !self.has_active_model() {
             self.warmup_samples_remaining = 0;
             return;
         }
@@ -371,5 +434,154 @@ impl NeuralCapture {
             self.model_loaded = true;
         }
         self.warmup_progress().clamp(0.0, 1.0)
+    }
+
+    fn has_active_model(&self) -> bool {
+        self.selected_model_slot.is_some() || self.custom_profile_active
+    }
+
+    fn load_builtin_model(&mut self, slot: usize) {
+        self.selected_model_slot = Some(slot);
+        self.custom_profile_active = false;
+
+        let (weight_triplets, input_drive, asymmetry, output_trim, contour_mix, lstm_bias) = match slot {
+            1 => (
+                [(0.16_f32, 0.60_f32, 0.24_f32), (0.08, 0.72, 0.20)],
+                1.28,
+                -0.10,
+                0.86,
+                0.12,
+                0.14,
+            ),
+            2 => (
+                [(0.22_f32, 0.58_f32, 0.20_f32), (0.12, 0.66, 0.22)],
+                1.08,
+                0.08,
+                0.98,
+                0.22,
+                -0.08,
+            ),
+            _ => (
+                [(0.10_f32, 0.80_f32, 0.10_f32), (0.06, 0.78, 0.16)],
+                1.16,
+                0.03,
+                0.92,
+                0.18,
+                0.04,
+            ),
+        };
+
+        for (index, layer) in self.conv_layers.iter_mut().enumerate() {
+            let profile = weight_triplets[index % weight_triplets.len()];
+            layer.weights[0] = profile.0;
+            layer.weights[1] = profile.1;
+            layer.weights[2] = profile.2;
+            layer.reset();
+        }
+
+        self.input_drive = input_drive;
+        self.asymmetry = asymmetry;
+        self.output_trim = output_trim;
+        self.contour_mix = contour_mix;
+        self.contour_state = 0.0;
+        self.lstm.bias.fill(lstm_bias);
+        self.lstm.reset();
+        self.arm_warmup();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NeuralCapture;
+
+    fn average_abs_output_for_model(slot: usize) -> f32 {
+        let mut neural = NeuralCapture::new(48_000.0);
+        neural.set_param("engineMode", 1.0);
+        neural.set_param("neuralTier", 0.0);
+        neural.set_param("neuralModelSlot", slot as f32);
+
+        let total = 6000;
+        let settle_start = 2500;
+        let mut sum = 0.0_f32;
+        for n in 0..total {
+            let phase = (n as f32 * 2.0 * std::f32::consts::PI * 440.0) / 48_000.0;
+            let input = phase.sin() * 0.12;
+            let output = neural.process_capture(input);
+            assert!(output.is_finite(), "neural output should remain finite");
+            if n >= settle_start {
+                sum += output.abs();
+            }
+        }
+
+        sum / (total - settle_start) as f32
+    }
+
+    #[test]
+    fn builtin_neural_models_produce_distinct_output() {
+        let model_a = average_abs_output_for_model(0);
+        let model_b = average_abs_output_for_model(1);
+        let model_c = average_abs_output_for_model(2);
+
+        let max_delta = (model_a - model_b)
+            .abs()
+            .max((model_a - model_c).abs())
+            .max((model_b - model_c).abs());
+
+        assert!(
+            max_delta > 5.0e-3,
+            "builtin neural models should produce distinct output (a={model_a}, b={model_b}, c={model_c}, max_delta={max_delta})"
+        );
+    }
+
+    #[test]
+    fn imported_custom_profiles_produce_distinct_output() {
+        let mut neural = NeuralCapture::new(48_000.0);
+        neural.set_param("engineMode", 1.0);
+        neural.set_param("neuralModelMode", 1.0);
+        neural.set_param("neuralCustomTier", 0.0);
+        neural.set_param("neuralCustomInputDrive", 1.22);
+        neural.set_param("neuralCustomAsymmetry", 0.08);
+        neural.set_param("neuralCustomOutputTrim", 0.88);
+        neural.set_param("neuralCustomContourMix", 0.24);
+        neural.set_param("neuralCustomLstmBias", 0.03);
+        for index in 0..10 {
+            neural.set_param(&format!("neuralCustomConvWeight{}_0", index), 0.08 + index as f32 * 0.002);
+            neural.set_param(&format!("neuralCustomConvWeight{}_1", index), 0.70 - index as f32 * 0.003);
+            neural.set_param(&format!("neuralCustomConvWeight{}_2", index), 0.18 + index as f32 * 0.001);
+        }
+
+        let mut alternate = NeuralCapture::new(48_000.0);
+        alternate.set_param("engineMode", 1.0);
+        alternate.set_param("neuralModelMode", 1.0);
+        alternate.set_param("neuralCustomTier", 3.0);
+        alternate.set_param("neuralCustomInputDrive", 1.04);
+        alternate.set_param("neuralCustomAsymmetry", -0.06);
+        alternate.set_param("neuralCustomOutputTrim", 0.96);
+        alternate.set_param("neuralCustomContourMix", 0.14);
+        alternate.set_param("neuralCustomLstmBias", -0.02);
+        for index in 0..10 {
+            alternate.set_param(&format!("neuralCustomConvWeight{}_0", index), 0.16 - index as f32 * 0.002);
+            alternate.set_param(&format!("neuralCustomConvWeight{}_1", index), 0.58 + index as f32 * 0.004);
+            alternate.set_param(&format!("neuralCustomConvWeight{}_2", index), 0.22 - index as f32 * 0.001);
+        }
+
+        let total = 6000;
+        let settle_start = 2500;
+        let mut delta_sum = 0.0_f32;
+        for n in 0..total {
+            let phase = (n as f32 * 2.0 * std::f32::consts::PI * 440.0) / 48_000.0;
+            let input = phase.sin() * 0.12;
+            let a = neural.process_capture(input);
+            let b = alternate.process_capture(input);
+            if n >= settle_start {
+                delta_sum += (a - b).abs();
+            }
+        }
+
+        let average_delta = delta_sum / (total - settle_start) as f32;
+        assert!(
+            average_delta > 5.0e-3,
+            "imported custom profiles should produce distinct output (average_delta={average_delta})"
+        );
     }
 }

@@ -1,5 +1,5 @@
 import { trackStore, type Track, persistDeviceParam } from '#/modules/Arrangement/stores';
-import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import { updateDeviceParam, updateDevicePatch } from '#/modules/AudioEngine/useCases';
 
 function getAllTracks(): Track[] {
     return trackStore.value?.tracks ?? [];
@@ -8,5 +8,6 @@ function getAllTracks(): Track[] {
 export const grinderParamBridgeDependencies = {
     getAllTracks,
     updateDeviceParam,
+    updateDevicePatch,
     persistDeviceParam,
 } as const;
