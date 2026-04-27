@@ -1,6 +1,6 @@
 import { addClip, addTrack, removeClip, removeTrack } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { pushUndoEntry } from '#/modules/Command/stores';
 
 export type RenderToClipInput = {
     /** Target track id, or 'new' to create a fresh audio track. */

@@ -1,4 +1,4 @@
-import { getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { type TrackLatency } from '../../../models/LatencyCompensationTypes';
 import { audioEngine } from '../../../repositories/createWebAudioEngine';
@@ -31,7 +31,7 @@ export function getDeviceLatencyMs(deviceType: string): number {
 }
 
 export function getTrackLatency(trackId: string, visited = new Set<string>()): TrackLatency {
-    const state = getTrackStoreState();
+    const state = trackStore.value;
     if (!state) {
         return { trackId, deviceLatencyMs: 0, totalLatencyMs: 0 };
     }
@@ -68,7 +68,7 @@ export function getTrackLatency(trackId: string, visited = new Set<string>()): T
 }
 
 export function getMaxTrackLatency(): number {
-    const state = getTrackStoreState();
+    const state = trackStore.value;
     if (!state) {
         return 0;
     }

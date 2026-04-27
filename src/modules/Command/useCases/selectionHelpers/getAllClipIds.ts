@@ -1,7 +1,7 @@
-import { getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 export function getAllClipIds(): string[] {
-    const state = getTrackStoreState();
+    const state = trackStore.value;
     if (!state) {
         return [];
     }

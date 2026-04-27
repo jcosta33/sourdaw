@@ -1,4 +1,4 @@
-import { getTrackById } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { activeRecording, touchActive, makeKey } from './recordingSessionState';
 
@@ -9,7 +9,7 @@ export function isRecordingAutomation(trackId: string, parameterId: string): boo
         return false;
     }
 
-    const track = getTrackById(trackId);
+    const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
     if (!track) {
         return false;
     }

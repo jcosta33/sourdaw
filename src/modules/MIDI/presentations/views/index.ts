@@ -1,3 +1,3 @@
 // MIDI/presentations/views — public contract surface for cross-module views.
 // Re-exports only from files within this folder. See docs/architecture/03-typescript-module.md §3.3.
-// No cross-module views are currently defined for the MIDI module.
+export { MidiLearnButton } from './MidiLearnButton';

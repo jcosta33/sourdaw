@@ -2,6 +2,7 @@
 // Re-exports only from files within this folder. See docs/architecture/03-typescript-module.md §3.3.
 
 export { getAiOrganizationHandlers } from './getAiOrganizationHandlers';
+export { mixHealthAnalysis } from './mixHealthAnalysis';
 
 export { getMixAnalysisStoreValue } from './aiRuntimeQueries/getMixAnalysisStoreValue';
 export { setMixAnalysisStoreValue } from './aiRuntimeQueries/setMixAnalysisStoreValue';
@@ -11,10 +12,6 @@ export {
     WEBLLM_MODELS,
     getActiveModelId,
     streamCloudChatCompletion,
-    readLevels,
-    readFrequencyBalance,
-    detectIssues,
-    generateSuggestions,
     generateWebLlmCompletion,
     generateNativeCompletion,
     isNativeEngineReady,

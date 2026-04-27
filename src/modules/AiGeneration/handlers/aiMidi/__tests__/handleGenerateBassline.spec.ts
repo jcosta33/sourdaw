@@ -24,21 +24,25 @@ const mocks = vi.hoisted(() => ({
     }
 }));
 
-vi.mock('#/modules/Arrangement', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    addTrack: mocks.addTrack,
-    addClip: mocks.addClip,
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     trackStore: mocks.trackStore,
 }));
 
-vi.mock('#/modules/MIDI', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+    addTrack: mocks.addTrack,
+    addClip: mocks.addClip,
+}));
+
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     getNotesForClip: mocks.getNotesForClip,
     addMidiNote: mocks.addMidiNote,
 }));
 
-vi.mock('#/modules/AiRuntime', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
+vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AiRuntime/useCases')>()),
     generateToolCalls: mocks.generateToolCalls,
 }));
 

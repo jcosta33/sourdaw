@@ -1,5 +1,5 @@
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
-import { getTransportState } from '#/modules/Transport/useCases';
+import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTrackById } from '../repositories/track/getTrackById';
@@ -24,7 +24,7 @@ export async function importAudioClipToTrack(trackId: string, file: File): Promi
         return;
     }
 
-    const transport = getTransportState();
+    const transport = transportStore.value;
     const tempo = transport?.tempo ?? 120;
     const durationBeats = Math.ceil((buffer.duration / 60) * tempo);
     const lastClipEnd = Math.max(0, ...track.clips.map((context) => context.endBeat));

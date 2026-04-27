@@ -1,11 +1,9 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
-
 import { handleAutoOrganizeProject } from '../handlers/aiOrganization/handleAutoOrganizeProject';
-
-type AiOrganizationAppAction = Extract<AppAction, { type: 'autoOrganizeProject' }>;
+import { handleGetMentorTips } from '../handlers/aiOrganization/handleGetMentorTips';
 
 export type AiOrganizationHandlersMap = {
-    [Action in AiOrganizationAppAction as Action['type']]: ActionHandler<Action>;
+    autoOrganizeProject: typeof handleAutoOrganizeProject;
+    getMentorTips: typeof handleGetMentorTips;
 };
 
 /**
@@ -14,5 +12,6 @@ export type AiOrganizationHandlersMap = {
 export function getAiOrganizationHandlers(): AiOrganizationHandlersMap {
     return {
         autoOrganizeProject: handleAutoOrganizeProject,
+        getMentorTips: handleGetMentorTips,
     };
 }

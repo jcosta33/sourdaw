@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { getWorkspaceState } from '#/modules/Workspace/useCases';
+import { workspaceStore } from '#/modules/Workspace/stores';
 
 import { removeClip } from '../../clip/removeClip';
 import { cutSelectedClip } from '../cutSelectedClip';
 
-vi.mock('#/modules/Workspace/useCases', () => ({
-    getWorkspaceState: vi.fn(),
+vi.mock('#/modules/Workspace/stores', () => ({
+    workspaceStore: { value: null },
 }));
 
 vi.mock('../../clip/removeClip', () => ({
@@ -19,7 +19,7 @@ describe('cutSelectedClip', () => {
     });
 
     it('returns early when workspace is unavailable without calling removeClip', () => {
-        vi.mocked(getWorkspaceState).mockReturnValue(null as never);
+        workspaceStore.value = null;
 
         cutSelectedClip();
 

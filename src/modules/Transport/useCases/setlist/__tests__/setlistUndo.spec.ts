@@ -13,7 +13,7 @@ const { pushUndoEntryMock } = vi.hoisted(() => ({
     pushUndoEntryMock: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/stores', () => ({
     pushUndoEntry: pushUndoEntryMock,
 }));
 

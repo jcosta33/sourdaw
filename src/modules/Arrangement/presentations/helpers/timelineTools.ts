@@ -8,7 +8,7 @@ import { type RefObject } from 'react';
 
 import { automationStore } from '#/modules/Automation/stores';
 import { addAutomationPoint, addAutomationLane } from '#/modules/Automation/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { pushUndoEntry } from '#/modules/Command/stores';
 import { addMidiNote, removeMidiNote } from '#/modules/MIDI/useCases';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';

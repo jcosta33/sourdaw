@@ -11,6 +11,4 @@ export {
     getDrumKitDefByIndex,
 } from './drumSynthEngine/kitDefinitions/getDrumKitDefByIndex';
 export { findVoiceByNote, scheduleDrumKitNote } from './drumSynthEngine/kitDefinitions/scheduleDrumKitNote';
-export { scheduleFaustNote } from './faustInstrumentScheduler/scheduleFaustNote';
-export { startFaustNote } from './faustInstrumentScheduler/startFaustNote';
 export { registerProSynthInstruments } from './proSynthInstruments';

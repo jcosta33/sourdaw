@@ -4,20 +4,27 @@ import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { type Track } from '#/modules/Arrangement/models/Track';
 import { createTrack } from '#/modules/Arrangement/useCases/createTrack';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases/getTrackStoreState';
-import { setTrackStoreState } from '#/modules/Arrangement/useCases/setTrackStoreState';
 import { addDeviceToStrip } from '#/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip';
 
 import { createGrandBouleTrack } from '../createGrandBouleTrack';
 
+const mocks = vi.hoisted(() => ({
+    trackStoreValue: null as unknown,
+    appendTrack: vi.fn(),
+}));
+
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    trackStore: {
+        get value() {
+            return mocks.trackStoreValue;
+        },
+    },
+    appendTrack: mocks.appendTrack,
+}));
+
 vi.mock('#/modules/Arrangement/useCases/createTrack', () => ({
     createTrack: vi.fn(),
-}));
-vi.mock('#/modules/Arrangement/useCases/getTrackStoreState', () => ({
-    getTrackStoreState: vi.fn(),
-}));
-vi.mock('#/modules/Arrangement/useCases/setTrackStoreState', () => ({
-    setTrackStoreState: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip', () => ({
     addDeviceToStrip: vi.fn(),
@@ -29,14 +36,14 @@ type EventBusShape = {
 
 describe('createGrandBouleTrack', () => {
     beforeEach(() => {
+        mocks.trackStoreValue = null;
+        mocks.appendTrack.mockReset();
         vi.mocked(createTrack).mockReset();
-        vi.mocked(getTrackStoreState).mockReset();
-        vi.mocked(setTrackStoreState).mockReset();
         vi.mocked(addDeviceToStrip).mockReset();
     });
 
     it('should return null when track store is not ready', () => {
-        vi.mocked(getTrackStoreState).mockReturnValue(null);
+        mocks.trackStoreValue = null;
 
         const eventBus = createMock<EventBusShape>();
         eventBus.emit.mockResolvedValue(undefined);
@@ -54,7 +61,7 @@ describe('createGrandBouleTrack', () => {
             devices: [] as Track['devices'],
         } as Track;
 
-        vi.mocked(getTrackStoreState).mockReturnValue({ tracks: [], selectedTrackId: null });
+        mocks.trackStoreValue = { tracks: [], selectedTrackId: null };
         vi.mocked(createTrack).mockReturnValue(mockTrack);
 
         const eventBus = createMock<EventBusShape>();
@@ -64,7 +71,7 @@ describe('createGrandBouleTrack', () => {
         const id = createGrandBouleTrack();
 
         expect(id).toBe('track-gb');
-        expect(setTrackStoreState).toHaveBeenCalled();
+        expect(mocks.appendTrack).toHaveBeenCalledWith(mockTrack);
         expect(addDeviceToStrip).toHaveBeenCalledWith(
             'track-gb',
             expect.stringMatching(/^grand-boule-/),

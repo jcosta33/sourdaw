@@ -98,9 +98,9 @@ export {
     stepRecordStepDown,
 } from './stepRecording/stepRecordNavigation';
 
-export { setMidiOutput } from './midiRouting/setMidiOutput';
-export { clearMidiOutput } from './midiRouting/clearMidiOutput';
-export { getMidiRoutingHandlers } from './getMidiRoutingHandlers';
+export { getMidiNoteTransformHandlers } from './getMidiNoteTransformHandlers';
+export { setMidiLearnDependencies } from './midiLearn/midiLearnDependencies';
+export type { MidiLearnDependencies } from './midiLearn/midiLearnDependencies';
 
 // ── Pattern Instances ─────────────────────────────────────────────────────────
 export { getPatternInstanceHandlers } from './getPatternInstanceHandlers';

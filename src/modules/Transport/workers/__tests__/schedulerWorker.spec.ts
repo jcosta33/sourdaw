@@ -20,8 +20,9 @@ describe('schedulerWorker', () => {
     beforeEach(() => {
         const rawCode = fs.readFileSync(path.resolve(__dirname, '../schedulerWorker.ts'), 'utf-8');
         workerCode = rawCode
+            .replace(/^type\s+\w[\w\W]*?;\s*$/gm, '')
             .replace(/let timerId:.* = null;/, 'let timerId = null;')
-            .replace(/\(e: MessageEvent\)/, '(e)')
+            .replace(/\(event: MessageEvent<\w+>\)/, '(event)')
             .replaceAll('export ', '');
         vi.useFakeTimers();
     });

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { getWorkspaceState } from '#/modules/Workspace/useCases';
+import { workspaceStore } from '#/modules/Workspace/stores';
 
 import { getTrackStoreState } from '../../getTrackStoreState';
 import { planRippleMove } from '../planRippleMove';
@@ -9,8 +9,8 @@ vi.mock('../../getTrackStoreState', () => ({
     getTrackStoreState: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/useCases', () => ({
-    getWorkspaceState: vi.fn(),
+vi.mock('#/modules/Workspace/stores', () => ({
+    workspaceStore: { value: null },
 }));
 
 describe('planRippleMove', () => {
@@ -19,14 +19,14 @@ describe('planRippleMove', () => {
     });
 
     it('should return null if ripple editing is disabled', () => {
-        (getWorkspaceState as any).mockReturnValue({ rippleEditing: false });
+        workspaceStore.value = { rippleEditing: false } as any;
         expect(
             planRippleMove({ trackId: 't1', clipId: 'c1', oldStartBeat: 0, newStartBeat: 2, clipDuration: 2 })
         ).toBeNull();
     });
 
     it('should identify gap-closed and destination-opened clips', () => {
-        (getWorkspaceState as any).mockReturnValue({ rippleEditing: true });
+        workspaceStore.value = { rippleEditing: true } as any;
         (getTrackStoreState as any).mockReturnValue({
             tracks: [
                 {

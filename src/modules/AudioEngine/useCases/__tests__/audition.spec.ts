@@ -5,8 +5,8 @@ import { playAuditionNote } from '../audition';
 const { mocks } = vi.hoisted(() => {
     return {
         mocks: {
-            getTrackById: vi.fn(() => null),
-            getSynthParamsForTrack: vi.fn(() => ({
+            trackStoreValue: null as unknown,
+            getSynthParamsFromDevices: vi.fn(() => ({
                 release: 0.3,
             })),
             scheduleNote: vi.fn(
@@ -29,38 +29,45 @@ vi.mock('../../repositories/createWebAudioEngine', () => ({
     },
 }));
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
-    return {
-        ...actual,
-        getTrackById: mocks.getTrackById,
-        getSynthParamsForTrack: mocks.getSynthParamsForTrack,
-    };
-});
-
 vi.mock('#/modules/Synth/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Synth/useCases')>();
     return {
         ...actual,
         getDrumKitDefByIndex: vi.fn(() => null),
         scheduleDrumKitNote: vi.fn(),
-        startFaustNote: vi.fn(() => () => {}),
         scheduleNote: mocks.scheduleNote,
+        getSynthParamsFromDevices: mocks.getSynthParamsFromDevices,
     };
 });
+
+vi.mock('../faustScheduler/startFaustNote', () => ({
+    startFaustNote: vi.fn(() => () => {}),
+}));
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
         ...actual,
-        trackStore: { value: null },
+        trackStore: {
+            get value() {
+                return mocks.trackStoreValue;
+            },
+        },
     };
 });
 
 describe('playAuditionNote', () => {
-    it('resolves the track before scheduling', () => {
+    it('falls back to scheduled note when track is missing', () => {
+        mocks.trackStoreValue = null;
         playAuditionNote('track-a', 60, 100);
+        expect(mocks.scheduleNote).toHaveBeenCalled();
+    });
 
-        expect(mocks.getTrackById).toHaveBeenCalledWith('track-a');
+    it('uses track devices to derive synth params when track exists', () => {
+        mocks.trackStoreValue = {
+            tracks: [{ id: 'track-a', devices: [], parentId: null }],
+        };
+        playAuditionNote('track-a', 60, 100);
+        expect(mocks.getSynthParamsFromDevices).toHaveBeenCalledWith([]);
     });
 });

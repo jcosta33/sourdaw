@@ -1,14 +1,12 @@
 import { logger } from '#/infra/logger/appLogger';
 import { addClip, addTrack } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { generateAudio as genAudio, isAudioGenerationAvailable } from '#/modules/AudioAnalysis/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 export const handleGenerateAudioAiMidi = createHandler<'generateAudio'>({
     execute: async (alpha) => {
-        const { generateAudio: genAudio, isAudioGenerationAvailable } =
-            await import('#/modules/AudioAnalysis/useCases');
-
         if (!isAudioGenerationAvailable()) {
             notifyUser('Audio generation requires the Sourdaw desktop app', 'warning');
             throw new Error('Audio generation requires the Sourdaw desktop app');

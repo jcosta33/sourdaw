@@ -10,8 +10,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { logger } from '#/infra/logger/appLogger';
-import { streamCloudChatCompletion } from '#/modules/AiRuntime/useCases';
-import { mixHealthAnalysis } from '#/modules/AudioAnalysis/useCases';
+import { streamCloudChatCompletion, mixHealthAnalysis } from '#/modules/AiRuntime/useCases';
 
 type MixHealthDialogProps = {
     open: boolean;

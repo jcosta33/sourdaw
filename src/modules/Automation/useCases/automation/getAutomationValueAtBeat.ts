@@ -1,5 +1,4 @@
-import { interpolateAutomationValue } from '#/modules/Arrangement/useCases';
-
+import { interpolateAutomationPointValue } from '../../services/automationPointAlgorithms';
 import { automationStore } from '../../stores/automationStore';
 
 type AutomationLane = NonNullable<typeof automationStore.value>['lanes'][number];
@@ -77,5 +76,9 @@ export function getAutomationValueAtBeat(
         return points[beforeIdx]!.value;
     }
 
-    return interpolateAutomationValue(points[beforeIdx]!, points[beforeIdx + 1]!, beat);
+    return interpolateAutomationPointValue({
+        firstPoint: points[beforeIdx]!,
+        secondPoint: points[beforeIdx + 1]!,
+        beat,
+    });
 }

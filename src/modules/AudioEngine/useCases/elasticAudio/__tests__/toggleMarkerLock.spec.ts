@@ -13,11 +13,11 @@ const mocks = vi.hoisted(() => ({
     >(),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/stores', () => ({
     pushUndoEntry: (...args: unknown[]) => mocks.pushUndoEntry(...args),
 }));
 
-vi.mock('../../../../Arrangement/useCases/warp/helpers', () => ({
+vi.mock('#/modules/Arrangement/stores', () => ({
     warpStates: mocks.warpStates,
     getWarpState: (clipId: string) =>
         mocks.warpStates.get(clipId) ?? {

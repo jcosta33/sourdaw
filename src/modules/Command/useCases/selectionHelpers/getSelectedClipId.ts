@@ -1,7 +1,7 @@
-import { getWorkspaceState } from '#/modules/Workspace/useCases';
+import { workspaceStore } from '#/modules/Workspace/stores';
 
 export function getSelectedClipId(): string | null {
-    const ws = getWorkspaceState();
+    const ws = workspaceStore.value;
     if (!ws) {
         return null;
     }

@@ -1,4 +1,4 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { pushUndoEntry } from '#/modules/Command/stores';
 
 import { getNextSlotId } from '../../repositories/loopStationIdCounter/getNextSlotId';
 import { loopStationStore, type LoopSlot } from '../../stores/loopStationStore';

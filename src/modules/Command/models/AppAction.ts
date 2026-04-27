@@ -216,7 +216,16 @@ export type AppAction =
       }
     | {
           type: 'generateMelody';
-          payload: { style: string; key?: number; scale?: string; trackId?: string; bars?: number; startBeat?: number };
+          payload: {
+              style: string;
+              key?: number;
+              scale?: string;
+              trackId?: string;
+              bars?: number;
+              octave?: number;
+              density?: number;
+              startBeat?: number;
+          };
       }
     | {
           type: 'generateChordProgression';

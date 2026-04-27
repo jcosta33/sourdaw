@@ -1,6 +1,12 @@
-import { detectIssues, generateSuggestions, readFrequencyBalance, readLevels } from '#/modules/AiRuntime/useCases';
-import { getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { getMasterAnalyser, getTrackStrip } from '#/modules/AudioEngine/useCases';
+
+import {
+    detectIssues,
+    generateSuggestions,
+    readFrequencyBalance,
+    readLevels,
+} from '../services/mixAnalysisHelpers';
 
 // AudioAnalysis-local shape (AGENTS.md §95 — model isolation). Structurally
 // compatible with AiRuntime's MixAnalysis; no cross-module model import.
@@ -41,8 +47,7 @@ export async function analyzeMix(): Promise<AnalyzeMixOutput> {
     const masterLevels = readLevels(masterAnalyser);
     const frequencyBalance = readFrequencyBalance(masterAnalyser);
 
-    const state = getTrackStoreState();
-    const tracks = state?.tracks ?? [];
+    const tracks = trackStore.value?.tracks ?? [];
 
     const trackLevels: AnalyzeMixOutput['trackLevels'] = [];
 

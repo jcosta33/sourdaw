@@ -3,7 +3,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { addTrack } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory } from '#/modules/Command/useCases';
+import { clearUndoHistory } from '#/modules/Command/stores';
 import { createCrdtProject, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 

@@ -1,4 +1,4 @@
-import { getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { type TrackLatency, type LatencyReport } from '../../../models/LatencyCompensationTypes';
 import { audioEngine } from '../../../repositories/createWebAudioEngine';
@@ -6,7 +6,7 @@ import { audioEngine } from '../../../repositories/createWebAudioEngine';
 import { getMaxTrackLatency, getTrackLatency } from './helpers';
 
 export function getLatencyReport(): LatencyReport {
-    const state = getTrackStoreState();
+    const state = trackStore.value;
     const tracks: TrackLatency[] = [];
 
     if (state) {

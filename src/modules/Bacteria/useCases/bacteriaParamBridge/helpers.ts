@@ -1,4 +1,4 @@
-import { type persistDeviceParam } from '#/modules/Arrangement/useCases';
+import { type persistDeviceParam } from '#/modules/Arrangement/stores';
 import { type updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { createFindDeviceRef, type DeviceRef, type GetAllTracksFn } from '#/utils/createFindDeviceRef';
 import { createRafBatcher, type RafBatcher } from '#/utils/DOM/createRafBatcher';

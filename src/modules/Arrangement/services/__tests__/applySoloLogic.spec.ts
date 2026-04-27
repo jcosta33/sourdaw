@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { setTrackMute, setTrackGain } from '#/modules/AudioEngine/useCases';
-import { getWorkspaceState } from '#/modules/Workspace/useCases';
+import { workspaceStore } from '#/modules/Workspace/stores';
 
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
@@ -16,8 +16,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     setTrackGain: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/useCases', () => ({
-    getWorkspaceState: vi.fn(),
+vi.mock('#/modules/Workspace/stores', () => ({
+    workspaceStore: { value: null },
 }));
 
 describe('applySoloLogic', () => {
@@ -28,7 +28,7 @@ describe('applySoloLogic', () => {
 
     describe('SIP (Solo In Place) mode', () => {
         beforeEach(() => {
-            vi.mocked(getWorkspaceState).mockReturnValue({ soloMode: 'sip' } as any);
+            workspaceStore.value = { soloMode: 'sip' } as any;
         });
 
         it('should follow individual mute states when no tracks are soloed', () => {
@@ -86,7 +86,7 @@ describe('applySoloLogic', () => {
 
     describe('PFL (Pre-Fader Listen) mode', () => {
         beforeEach(() => {
-            vi.mocked(getWorkspaceState).mockReturnValue({ soloMode: 'pfl' } as any);
+            workspaceStore.value = { soloMode: 'pfl' } as any;
         });
 
         it('should boost soloed track to 1.0 gain and save original gain', () => {

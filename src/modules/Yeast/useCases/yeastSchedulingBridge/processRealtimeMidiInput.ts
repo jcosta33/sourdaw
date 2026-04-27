@@ -1,10 +1,14 @@
-import { getAudioContext } from '#/modules/AudioEngine/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 import { getYeastRack } from '../../stores/yeastStore';
 
-export function processYeastMidi(events: MidiEvent[], blockStartSamples: number, blockEndSamples: number): MidiEvent[] {
+export function processYeastMidi(
+    events: MidiEvent[],
+    blockStartSamples: number,
+    blockEndSamples: number,
+    sampleRate: number
+): MidiEvent[] {
     const rack = getYeastRack();
     const processorIds = rack.getProcessorIds();
 
@@ -18,7 +22,7 @@ export function processYeastMidi(events: MidiEvent[], blockStartSamples: number,
     }
 
     const transportInfo: TransportInfo = {
-        sampleRate: getAudioContext().sampleRate,
+        sampleRate,
         bpm: transport.tempo,
         ppqPosition: 0,
         isPlaying: transport.isPlaying,
@@ -40,6 +44,7 @@ export function processRealtimeMidiInput(
     channel: number,
     isNoteOn: boolean,
     sampleTime: number,
+    sampleRate: number,
     blockSize: number = 128
 ): MidiEvent[] {
     const event: MidiEvent = {
@@ -47,5 +52,5 @@ export function processRealtimeMidiInput(
         kind: isNoteOn ? { type: 'noteOn', channel, note, velocity } : { type: 'noteOff', channel, note },
     };
 
-    return processYeastMidi([event], sampleTime, sampleTime + blockSize);
+    return processYeastMidi([event], sampleTime, sampleTime + blockSize, sampleRate);
 }

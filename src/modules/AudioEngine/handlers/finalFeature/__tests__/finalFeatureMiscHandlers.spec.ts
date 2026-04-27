@@ -10,7 +10,6 @@ import { setTransferBlend } from '../../../useCases/rave/setTransferBlend';
 import { handleAddCvOutput } from '../handleAddCvOutput';
 import { handleConnectPush } from '../handleConnectPush';
 import { handleDisconnectPush } from '../handleDisconnectPush';
-import { handleExportDawProject } from '../handleExportDawProject';
 import { handleLoadRaveModel } from '../handleLoadRaveModel';
 import { handleSetControlSurface } from '../handleSetControlSurface';
 import { handleSetRaveBlend } from '../handleSetRaveBlend';
@@ -44,11 +43,6 @@ describe('finalFeatureMiscHandlers', () => {
     it('handleDisconnectPush should delegate to disconnectPush', () => {
         void handleDisconnectPush.execute({ type: 'disconnectPush', payload: {} });
         expect(disconnectPush).toHaveBeenCalled();
-    });
-
-    it('handleExportDawProject should notify user', async () => {
-        await handleExportDawProject.execute({ type: 'exportDawProject', payload: {} });
-        expect(notifyUser).toHaveBeenCalled();
     });
 
     it('handleLoadRaveModel should delegate to loadModel', () => {

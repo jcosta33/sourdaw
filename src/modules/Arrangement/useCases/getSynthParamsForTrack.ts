@@ -1,12 +1,13 @@
-import { defaultSynthParams, type SynthParams } from '#/modules/AudioEngine/useCases';
 import { getSynthParamsFromDevices } from '#/modules/Synth/useCases';
 
 import { getTrackById } from './getTrackById';
 
-export function getSynthParamsForTrack(trackId: string): SynthParams {
+const defaultTrackSynthParams = getSynthParamsFromDevices([]);
+
+export function getSynthParamsForTrack(trackId: string): ReturnType<typeof getSynthParamsFromDevices> {
     const track = getTrackById(trackId);
     if (!track) {
-        return { ...defaultSynthParams };
+        return { ...defaultTrackSynthParams };
     }
     return getSynthParamsFromDevices(track.devices);
 }

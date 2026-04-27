@@ -1,10 +1,10 @@
 import { transportStore } from '#/modules/Transport/stores';
-import { getWorkspaceState } from '#/modules/Workspace/useCases';
+import { workspaceStore } from '#/modules/Workspace/stores';
 
 import { stepRecordStore, defaultStepRecordState } from '../../stores/stepRecordStore';
 
 export function toggleStepRecording(): void {
-    const ws = getWorkspaceState();
+    const ws = workspaceStore.value;
     const ts = transportStore.value;
     if (!ws || !ts) {
         return;

@@ -17,6 +17,7 @@ vi.mock('#/modules/Arrangement/useCases/device/bypassDevice', () => ({
 vi.mock('../deviceLayoutRegistry', () => ({
     resolveDeviceLayout: vi.fn(() => null),
     registerDeviceLayout: vi.fn(),
+    registerPrefixLayout: vi.fn(),
     SectionHeader: ({ title }: { title: string }) => <div data-testid="section-header">{title}</div>,
 }));
 

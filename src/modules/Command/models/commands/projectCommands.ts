@@ -1,5 +1,5 @@
 import { eventBus } from '#/app/registerDependencies';
-import { newProject, saveProject } from '#/modules/Project/useCases';
+import { newProject, pickAndImportProjectFile, saveProject } from '#/modules/Project/useCases';
 
 import { type CommandEntry } from '../CommandEntry';
 
@@ -60,11 +60,8 @@ export const projectCommands: CommandEntry[] = [
         label: 'Import Project',
         description: 'Import a .sourdaw project file',
         category: 'Project',
-        action: () => {
-            void (async () => {
-                const { pickAndImportProjectFile } = await import('#/modules/Project/useCases');
-                await pickAndImportProjectFile();
-            })();
+        action: async () => {
+            await pickAndImportProjectFile();
         },
     },
     {

@@ -1,5 +1,4 @@
 import { createStore } from '#/infra/store/createStore';
-import { updateClip } from '#/modules/Arrangement/useCases';
 
 export type NoteBlob = {
     id: string;
@@ -66,38 +65,4 @@ export function setActiveKneadClip(clipId: string | null): void {
     if (state) {
         kneadStore.set({ ...state, activeClipId: clipId });
     }
-}
-
-export function updateClipKneadState(clipId: string, updater: (state: KneadClipState) => KneadClipState): void {
-    const state = kneadStore.value;
-    if (!state) {
-        return;
-    }
-
-    const clipState = state.clips[clipId] ?? {
-        clipId,
-        blobs: [],
-        retuneSpeedMs: 25,
-        toleranceCents: 25,
-        toleranceTimeMs: 30,
-        humanizePercent: 40,
-        formantPreserve: true,
-    };
-
-    const nextKneadState = updater(clipState);
-
-    // 1. Update local kneadStore (for fast UI reactivity)
-    kneadStore.set({
-        ...state,
-        clips: {
-            ...state.clips,
-            [clipId]: nextKneadState,
-        },
-    });
-
-    // 2. Persist to trackStore / Automerge
-    updateClip(clipId, (clip) => ({
-        ...clip,
-        kneadState: nextKneadState,
-    }));
 }

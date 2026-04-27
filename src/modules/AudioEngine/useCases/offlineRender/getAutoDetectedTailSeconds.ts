@@ -1,4 +1,4 @@
-import { getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { estimateRenderTailSeconds } from '../../services/estimateRenderTailSeconds';
 
@@ -7,13 +7,13 @@ import { estimateRenderTailSeconds } from '../../services/estimateRenderTailSeco
  * in seconds. Used by the export dialog's "auto-detect tail" checkbox.
  */
 export function getAutoDetectedTailSeconds(): number {
-    const tracks = getTrackStoreState()?.tracks ?? [];
+    const tracks = trackStore.value?.tracks ?? [];
     return estimateRenderTailSeconds(
-        tracks.map((t) => ({
-            devices: t.devices.map((d) => ({
-                type: d.type,
-                parameterValues: d.parameterValues,
-                bypassed: d.bypassed,
+        tracks.map((track) => ({
+            devices: track.devices.map((device) => ({
+                type: device.type,
+                parameterValues: device.parameterValues,
+                bypassed: device.bypassed,
             })),
         }))
     );

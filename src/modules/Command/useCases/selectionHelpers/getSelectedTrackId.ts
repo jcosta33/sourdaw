@@ -1,5 +1,5 @@
-import { getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 export function getSelectedTrackId(): string | null {
-    return getTrackStoreState()?.selectedTrackId ?? null;
+    return trackStore.value?.selectedTrackId ?? null;
 }

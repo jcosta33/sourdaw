@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { type persistDeviceParam, type getAllTracks } from '#/modules/Arrangement/useCases';
+import { type Track, type persistDeviceParam } from '#/modules/Arrangement/stores';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
 import { type LevainPatch } from '../../models/LevainPatch';
@@ -13,7 +13,7 @@ export type LevainDevice = {
 };
 
 export type LevainBridgeDeps = {
-    getAllTracks: typeof getAllTracks;
+    getAllTracks: () => Track[];
     persistDeviceParam: typeof persistDeviceParam;
     autoLoadLevainSamples: typeof autoLoadLevainSamples;
 };

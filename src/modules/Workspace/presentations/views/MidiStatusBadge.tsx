@@ -5,11 +5,13 @@ import { KeyboardMusic } from 'lucide-react';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
-import { webMidiStore } from '#/modules/AudioEngine';
+import { webMidiStore } from '#/modules/AudioEngine/useCases';
 
 import { openPreferencesDialog } from '../../useCases/dialogs/openPreferencesDialog';
 
-const defaultWebMidiState = {
+type WebMidiState = NonNullable<typeof webMidiStore.value>;
+
+const defaultWebMidiState: WebMidiState = {
     isSupported: false,
     inputs: [],
     selectedInputId: null,

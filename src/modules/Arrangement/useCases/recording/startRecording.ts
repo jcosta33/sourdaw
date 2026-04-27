@@ -1,4 +1,4 @@
-import { getTransportState } from '#/modules/Transport/useCases';
+import { transportStore } from '#/modules/Transport/stores';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
@@ -13,7 +13,7 @@ let takeCounter = 1;
 
 export function startRecording(): Clip[] {
     const trackState = getTrackState();
-    const transportState = getTransportState();
+    const transportState = transportStore.value;
     if (!trackState || !transportState) {
         return [];
     }

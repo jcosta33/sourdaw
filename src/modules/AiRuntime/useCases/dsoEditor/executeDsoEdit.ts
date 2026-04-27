@@ -15,7 +15,7 @@
  */
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { commitUndoEntry, createUndoEntry, generateGroupId } from '#/modules/Command/useCases';
+import { commitActionUndoEntry, generateGroupId } from '#/modules/Command/stores';
 import { saveSnapshot } from '#/modules/CrdtDocument/useCases';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
@@ -264,15 +264,14 @@ async function commitDsos(
 
     // Undo entry — typed ActionUndoEntry (serializable data, no anonymous closures)
     const { groupId, groupLabel } = generateGroupId(userRequest);
-    const undoEntry = createUndoEntry(
-        `AI: ${plan.intent}`,
-        { type: 'restoreDsoSnapshot', payload: { bundle: bundleAfter } },
-        { type: 'restoreDsoSnapshot', payload: { bundle: bundleBefore } },
-        'ai'
-    );
-    undoEntry.groupId = groupId;
-    undoEntry.groupLabel = groupLabel;
-    commitUndoEntry(undoEntry);
+    commitActionUndoEntry({
+        label: `AI: ${plan.intent}`,
+        action: { type: 'restoreDsoSnapshot', payload: { bundle: bundleAfter } },
+        inverseAction: { type: 'restoreDsoSnapshot', payload: { bundle: bundleBefore } },
+        source: 'ai',
+        groupId,
+        groupLabel,
+    });
 
     // Action history
     pushAiActionGroup({

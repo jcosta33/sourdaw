@@ -1,7 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { addClip, addTrack } from '#/modules/Arrangement/useCases';
 import { generateMidiAI, type MidiGenerationNote, isTauri } from '#/modules/AudioEngine/useCases';
-import { commitUndoEntry, createCallbackUndoEntry } from '#/modules/Command/useCases';
+import { pushUndoEntry } from '#/modules/Command/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { batchAddMidiNotes } from '#/modules/MIDI/useCases';
 import { getTransportState } from '#/modules/Transport/useCases';
@@ -87,7 +87,7 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                     const trackSnapshotAfter = trackStore.value;
                     const midiSnapshotAfter = midiStore.value;
 
-                    const undoEntry = createCallbackUndoEntry(
+                    pushUndoEntry(
                         `AI MIDI: ${prompt ? prompt.slice(0, 30) : 'Generation'}`,
                         () => {
                             if (trackSnapshotBefore) {
@@ -105,9 +105,8 @@ export async function handleGenerateMidiPrompt(prompt: string, numNotes: number 
                                 midiStore.set(midiSnapshotAfter);
                             }
                         },
-                        'ai'
+                        { source: 'ai' }
                     );
-                    commitUndoEntry(undoEntry);
 
                     const ws = workspaceStore.value;
                     if (ws) {

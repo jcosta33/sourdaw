@@ -1,7 +1,7 @@
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
-import { commitUndoEntry, createCallbackUndoEntry } from '#/modules/Command/useCases';
-import { getTransportState } from '#/modules/Transport/useCases';
+import { pushUndoEntry } from '#/modules/Command/stores';
+import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createTrack } from '../models/Track';
@@ -29,7 +29,7 @@ export async function importAudioFile(file: File): Promise<void> {
         return;
     }
 
-    const transport = getTransportState();
+    const transport = transportStore.value;
     const tempo = transport?.tempo ?? 120;
     const durationBeats = (buffer.duration / 60) * tempo;
     const endBeat = Math.ceil(durationBeats / 4) * 4;
@@ -62,19 +62,17 @@ export async function importAudioFile(file: File): Promise<void> {
 
     const trackSnapshotAfter = trackStore.value;
 
-    commitUndoEntry(
-        createCallbackUndoEntry(
-            `Import audio: ${name}`,
-            () => {
-                if (trackSnapshotBefore) {
-                    trackStore.set(trackSnapshotBefore);
-                }
-            },
-            () => {
-                if (trackSnapshotAfter) {
-                    trackStore.set(trackSnapshotAfter);
-                }
+    pushUndoEntry(
+        `Import audio: ${name}`,
+        () => {
+            if (trackSnapshotBefore) {
+                trackStore.set(trackSnapshotBefore);
             }
-        )
+        },
+        () => {
+            if (trackSnapshotAfter) {
+                trackStore.set(trackSnapshotAfter);
+            }
+        }
     );
 }

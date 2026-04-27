@@ -19,12 +19,21 @@ const mocks = vi.hoisted(() => ({
     >(),
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     trackStore: {
         get value() {
             return mocks.trackStoreValue;
         },
     },
+    warpStates: mocks.warpStates,
+    getWarpState: (clipId: string) =>
+        mocks.warpStates.get(clipId) ?? {
+            enabled: false,
+            markers: [],
+            stretchMode: 'complex',
+            originalTempo: null,
+        },
 }));
 
 vi.mock('#/modules/Workspace/stores', () => ({
@@ -35,19 +44,8 @@ vi.mock('#/modules/Workspace/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/stores', () => ({
     pushUndoEntry: (...args: unknown[]) => mocks.pushUndoEntry(...args),
-}));
-
-vi.mock('../../../../Arrangement/useCases/warp/helpers', () => ({
-    warpStates: mocks.warpStates,
-    getWarpState: (clipId: string) =>
-        mocks.warpStates.get(clipId) ?? {
-            enabled: false,
-            markers: [],
-            stretchMode: 'complex',
-            originalTempo: null,
-        },
 }));
 
 import { quantizeTransients } from '../quantizeTransients';

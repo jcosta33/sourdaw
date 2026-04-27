@@ -5,6 +5,10 @@ export { batchAddAutomationPoints } from './automation/batchAddAutomationPoints'
 export { createAutomationLane } from './automation/createAutomationLane';
 export { duplicateClipAutomation } from './automation/duplicateClipAutomation';
 export { recordAutomationValue } from './automationRecording/recordAutomationValue';
+export { setAutomationRecordingDependencies } from './automationRecording/recordingDependencies';
+export type { AutomationRecordingDependencies } from './automationRecording/recordingDependencies';
+export { setModulationDependencies } from './modulation/modulationDependencies';
+export type { ModulationDependencies } from './modulation/modulationDependencies';
 export { removeAutomationLane } from './automation/removeAutomationLane';
 export { removeAutomationPoint } from './automation/removeAutomationPoint';
 export { shiftClipAutomation } from './automation/shiftClipAutomation';

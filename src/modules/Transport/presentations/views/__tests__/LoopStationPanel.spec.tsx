@@ -78,7 +78,8 @@ vi.mock('../../../stores/playheadPositionRef', () => ({
     playheadPositionRef: { current: 0 },
 }));
 
-vi.mock('#/modules/Arrangement', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     trackStore: { __id: 'track' },
     defaultTrackState: { tracks: [], selectedTrackId: null },
 }));

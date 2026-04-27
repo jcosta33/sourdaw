@@ -6,11 +6,11 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 import { trackStore } from '#/modules/Arrangement/stores';
-import { getBufferForClip } from '#/modules/Arrangement/useCases';
 import { analyze_pitch_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
 import { kneadStore } from '#/modules/Knead/stores';
 import { isTauri } from '#/utils/tauriBridge';
 
+import { audioBufferCache } from '../../../stores/audioBufferCache';
 import { analyzePitchForClip } from '../analyzePitchForClip';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -25,8 +25,10 @@ vi.mock('#/utils/tauriBridge', () => ({
     isTauri: vi.fn(() => true),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    getBufferForClip: vi.fn(),
+vi.mock('../../../stores/audioBufferCache', () => ({
+    audioBufferCache: {
+        get: vi.fn(),
+    },
 }));
 
 vi.mock('#/modules/AudioEngine/wasm/daw_dsp.js', () => ({
@@ -44,7 +46,7 @@ describe('analyzePitchForClip', () => {
                 {
                     id: 't1',
                     clips: [
-                        { id: 'c1', type: 'audio', fileId: 'test.wav' },
+                        { id: 'c1', type: 'audio', fileId: 'test.wav', audioBufferId: 'buffer-c1' },
                         { id: 'c2', type: 'midi', fileId: undefined },
                     ],
                 },
@@ -124,11 +126,9 @@ describe('analyzePitchForClip', () => {
         vi.mocked(isTauri).mockReturnValue(false);
         const mockContour = { points: [], sample_rate: 44100, hop_size: 256, algorithm: 'pyin' };
 
-        vi.mocked(getBufferForClip).mockReturnValue({
-            buffer: {
-                sampleRate: 44100,
-                getChannelData: vi.fn().mockReturnValue(new Float32Array(100)),
-            },
+        vi.mocked(audioBufferCache.get).mockReturnValue({
+            sampleRate: 44100,
+            getChannelData: vi.fn().mockReturnValue(new Float32Array(100)),
         } as any);
 
         vi.mocked(analyze_pitch_wasm).mockReturnValue(JSON.stringify(mockContour));
@@ -144,7 +144,7 @@ describe('analyzePitchForClip', () => {
 
     it('should throw error in WASM mode if buffer is missing', async () => {
         vi.mocked(isTauri).mockReturnValue(false);
-        vi.mocked(getBufferForClip).mockReturnValue(null);
+        vi.mocked(audioBufferCache.get).mockReturnValue(undefined);
 
         const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         await expect(analyzePitchForClip('c1')).rejects.toThrow('Could not get audio buffer for clip');

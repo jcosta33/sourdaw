@@ -5,7 +5,6 @@ export { AdjustmentLayerStrip } from './AdjustmentLayerStrip';
 export { ArrangementBar } from './ArrangementBar';
 export { BeatRulerBar } from './BeatRulerBar';
 export { MarkerLane } from './MarkerLane';
-export { MidiLearnButton } from './MidiLearnButton';
 export { TimelineChromeSurface } from './TimelineChromeSurface';
 export { TimelineMinimap } from './TimelineMinimap';
 export { TakeLanesView } from './TakeLanesView';

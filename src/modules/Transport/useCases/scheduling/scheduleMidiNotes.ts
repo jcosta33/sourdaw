@@ -8,13 +8,13 @@ import {
     getCompensationDelay,
     getCurrentTime,
     getDrumKitByIndex,
+    scheduleFaustNote,
 } from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getChordAtBeat, transposeForChordTrack } from '#/modules/MIDI/useCases';
 import {
     getDrumKitDefByIndex,
     scheduleDrumKitNote,
-    scheduleFaustNote,
     scheduleKitNote,
     scheduleNote,
 } from '#/modules/Synth/useCases';

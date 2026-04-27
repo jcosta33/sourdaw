@@ -14,6 +14,16 @@
  */
 import { trackStore, markerStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
+import {
+    addDeviceToStrip,
+    ensureTrackStrip,
+    setTrackGain,
+    setTrackMute,
+    setTrackOutput,
+    setTrackPan,
+    updateDeviceParam,
+    waitForDevices,
+} from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { createAutomationLane } from '#/modules/Automation/useCases';
 import { chordTrackStore, midiStore } from '#/modules/MIDI/stores';
@@ -21,7 +31,12 @@ import { addChordEvent } from '#/modules/MIDI/useCases';
 import { addSidechainRoute } from '#/modules/Routing/useCases';
 import { DEFAULT_PAD_NAMES } from '#/modules/Toaster/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
-import { addTempoChange, addTimeSignatureChange, defaultTransportState } from '#/modules/Transport/useCases';
+import {
+    addTempoChange,
+    addTimeSignatureChange,
+    defaultTransportState,
+    ensureTrackStrips,
+} from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
 import { applyPreset } from '../demoUtils/applyPreset';
@@ -2292,10 +2307,6 @@ export async function demo5_NebulaDrift(): Promise<void> {
 
     syncArrangement(tracks);
 
-    const { addDeviceToStrip, updateDeviceParam } = await import('#/modules/AudioEngine/useCases');
-    const { ensureTrackStrip, setTrackGain, setTrackPan, setTrackOutput, setTrackMute } =
-        await import('#/modules/AudioEngine/useCases');
-
     const toasterDev = toasterFolder.devices.find((data) => data.type === 'toaster');
     if (toasterDev) {
         addDeviceToStrip(toasterFolder.id, toasterDev.id, 'toaster');
@@ -2311,10 +2322,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
     setTrackPan(toasterFolder.id, toasterFolder.pan);
     setTrackMute(toasterFolder.id, toasterFolder.muted, toasterFolder.gain);
 
-    const { ensureTrackStrips } = await import('#/modules/Transport/useCases');
     ensureTrackStrips();
-
-    const { waitForDevices } = await import('#/modules/AudioEngine/useCases');
     await waitForDevices();
 
     projectStore.set({

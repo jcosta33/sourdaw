@@ -1,21 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import {
-    captureArrangementToScratchPad,
-    clearScratchPad,
-    commitScratchPadToArrangement,
-} from '#/modules/Arrangement/useCases';
+import { captureArrangementToScratchPad } from '#/modules/Arrangement/useCases';
 
 import { workspaceStore } from '../../../stores/workspaceStore';
 import { handleCaptureScratchPad } from '../handleCaptureScratchPad';
-import { handleClearScratchPad } from '../handleClearScratchPad';
-import { handleCommitScratchPad } from '../handleCommitScratchPad';
 import { handleToggleScratchPad } from '../handleToggleScratchPad';
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     captureArrangementToScratchPad: vi.fn(),
-    clearScratchPad: vi.fn(),
-    commitScratchPadToArrangement: vi.fn(),
 }));
 
 vi.mock('../../../stores/workspaceStore', () => {
@@ -55,20 +47,6 @@ describe('Workspace Scratch Pad Handlers', () => {
 
             expect(captureArrangementToScratchPad).toHaveBeenCalled();
             expect(workspaceStore.set).not.toHaveBeenCalled();
-        });
-    });
-
-    describe('handleClearScratchPad', () => {
-        it('should clear the scratch pad', () => {
-            void handleClearScratchPad.execute({ type: 'clearScratchPad', payload: {} });
-            expect(clearScratchPad).toHaveBeenCalled();
-        });
-    });
-
-    describe('handleCommitScratchPad', () => {
-        it('should commit scratch pad to arrangement', () => {
-            void handleCommitScratchPad.execute({ type: 'commitScratchPad', payload: {} });
-            expect(commitScratchPadToArrangement).toHaveBeenCalled();
         });
     });
 

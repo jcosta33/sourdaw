@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { logger } from '#/infra/logger/appLogger';
 
 import { midiStore } from '../../stores/midiStore';

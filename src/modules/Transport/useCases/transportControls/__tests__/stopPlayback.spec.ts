@@ -8,8 +8,8 @@ import { getTransportState } from '../../../repositories/transport/getTransportS
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { stopPlayheadScheduler } from '../../playheadScheduler';
+import { stopActiveRecording } from '../recordingLifecycle';
 import { stopPlayback } from '../stopPlayback';
-import { toggleRecording } from '../toggleRecording';
 
 vi.mock('../../playheadScheduler', () => ({
     stopPlayheadScheduler: vi.fn(),
@@ -26,8 +26,9 @@ vi.mock('../../../repositories/transport/getTransportState', () => ({
 vi.mock('../../../repositories/transport/updateTransportState', () => ({
     updateTransportState: vi.fn(),
 }));
-vi.mock('../toggleRecording', () => ({
-    toggleRecording: vi.fn(),
+vi.mock('../recordingLifecycle', () => ({
+    stopActiveRecording: vi.fn(),
+    setCountInTimerId: vi.fn(),
 }));
 
 describe('stopPlayback', () => {
@@ -37,7 +38,7 @@ describe('stopPlayback', () => {
         vi.mocked(resetMidiState).mockClear();
         vi.mocked(getTransportState).mockClear();
         vi.mocked(updateTransportState).mockClear();
-        vi.mocked(toggleRecording).mockClear();
+        vi.mocked(stopActiveRecording).mockClear();
         playheadPositionRef.current = 0;
     });
 
@@ -68,10 +69,10 @@ describe('stopPlayback', () => {
 
         stopPlayback();
 
-        expect(toggleRecording).toHaveBeenCalledTimes(1);
+        expect(stopActiveRecording).toHaveBeenCalledTimes(1);
     });
 
-    it('should not call toggleRecording when not recording', () => {
+    it('should not call stopActiveRecording when not recording', () => {
         vi.mocked(getTransportState).mockReturnValue({
             ...defaultTransportState,
             isPlaying: true,
@@ -80,7 +81,7 @@ describe('stopPlayback', () => {
 
         stopPlayback();
 
-        expect(toggleRecording).not.toHaveBeenCalled();
+        expect(stopActiveRecording).not.toHaveBeenCalled();
     });
 
     it('should jump playhead to loop start when a loop is defined', () => {

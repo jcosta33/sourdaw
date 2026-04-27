@@ -1,4 +1,4 @@
-import { getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { type Clip } from '../../models/TrackViewTypes';
 import { getNotesForClip } from '../midiNoteCrud/getNotesForClip';
@@ -10,7 +10,7 @@ import { setNotesForClip } from '../midiNoteCrud/setNotesForClip';
  * Instances that override 'notes' are skipped.
  */
 export function propagateParentChanges(parentClipId: string): void {
-    const state = getTrackStoreState();
+    const state = trackStore.value;
     if (!state) {
         return;
     }

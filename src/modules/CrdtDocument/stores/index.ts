@@ -6,3 +6,8 @@ export {
 } from './actionHistoryStore';
 export type { ActionHistoryEntry, ActionHistoryState } from './actionHistoryStore';
 export { branchStore } from './branchStore';
+export {
+    setSemanticContext,
+    getSemanticContext,
+    clearSemanticContext,
+} from './semanticChangeContext';

@@ -3,8 +3,7 @@ import { type ReactElement } from 'react';
 import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
-import { toggleChordTrackFollow } from '#/modules/Arrangement/useCases';
-import { setMidiOutput, clearMidiOutput } from '#/modules/MIDI/useCases';
+import { toggleChordTrackFollow, updateTrack } from '#/modules/Arrangement/useCases';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
@@ -25,11 +24,10 @@ export const TrackMidiOutputSection = ({ track, allTracks }: TrackMidiOutputSect
                         value={track.midiOutputTrackId ?? ''}
                         onChange={(event) => {
                             const val = event.target.value;
-                            if (val) {
-                                setMidiOutput(track.id, val);
-                            } else {
-                                clearMidiOutput(track.id);
-                            }
+                            updateTrack(track.id, (current) => ({
+                                ...current,
+                                midiOutputTrackId: val || null,
+                            }));
                         }}
                         aria-label="MIDI output destination"
                     >

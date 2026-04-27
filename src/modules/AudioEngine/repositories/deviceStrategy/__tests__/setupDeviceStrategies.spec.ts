@@ -22,6 +22,7 @@ import { isFermenterDevice } from '../../../engine/FermenterNode';
 import { isProofChamberDevice } from '../../../engine/ProofChamberNode';
 import { isFaustModule } from '../../faustDeviceFactory';
 import { deviceRegistry } from '../AudioDeviceStrategy';
+import { createFaustStrategy } from '../FaustDeviceStrategy';
 import { createNativeDspStrategy } from '../NativeDspDeviceStrategy';
 
 // Now import the module under test

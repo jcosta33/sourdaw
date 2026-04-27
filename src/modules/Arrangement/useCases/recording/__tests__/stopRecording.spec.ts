@@ -9,7 +9,7 @@ import type { TrackState } from '../../../repositories/track/getTrackState';
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn<typeof import('../../../repositories/track/getTrackState').getTrackState>(),
     setTrackState: vi.fn<typeof import('../../../repositories/track/setTrackState').setTrackState>(),
-    getTransportState: vi.fn<typeof import('#/modules/Transport/useCases').getTransportState>(),
+    transportStoreValue: null as TransportState | null,
     takeLaneStoreValue: { value: { lanes: [] } as TakeLaneStoreState | null },
     takeLaneStoreSet: vi.fn<typeof import('#/modules/Arrangement/stores/takeLaneStore').takeLaneStore.set>(),
     activeRecordingRef: { current: ['c1'] },
@@ -23,9 +23,13 @@ vi.mock('../../../repositories/track/setTrackState', () => ({
     setTrackState: mocks.setTrackState,
 }));
 
-vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
-    getTransportState: mocks.getTransportState,
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
+    transportStore: {
+        get value() {
+            return mocks.transportStoreValue;
+        },
+    },
 }));
 
 vi.mock('#/modules/Arrangement/stores/takeLaneStore', () => ({
@@ -56,7 +60,7 @@ describe('stopRecording', () => {
                 },
             ],
         } as unknown as TrackState);
-        mocks.getTransportState.mockReturnValue({ playheadPosition: 8 } as unknown as TransportState);
+        mocks.transportStoreValue = { playheadPosition: 8 } as unknown as TransportState;
         mocks.takeLaneStoreValue.value = null;
 
         stopRecording();
@@ -71,7 +75,7 @@ describe('stopRecording', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ clips: [{ id: 'c1', type: 'midi', startBeat: 4, endBeat: 4 }] }],
         } as unknown as TrackState);
-        mocks.getTransportState.mockReturnValue({ playheadPosition: 4.1 } as unknown as TransportState);
+        mocks.transportStoreValue = { playheadPosition: 4.1 } as unknown as TransportState;
 
         stopRecording();
 
@@ -81,7 +85,7 @@ describe('stopRecording', () => {
 
     it('updates take lanes', () => {
         mocks.getTrackState.mockReturnValue({ tracks: [{ clips: [] }] } as unknown as TrackState);
-        mocks.getTransportState.mockReturnValue({ playheadPosition: 10 } as unknown as TransportState);
+        mocks.transportStoreValue = { playheadPosition: 10 } as unknown as TransportState;
         mocks.takeLaneStoreValue.value = {
             lanes: [{ id: 'l1', takes: [{ clipId: 'c1', startBeat: 0, endBeat: 0 }] }],
         } as unknown as TakeLaneStoreState;
