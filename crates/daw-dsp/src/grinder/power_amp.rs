@@ -64,6 +64,8 @@ pub struct PowerAmp {
     feedback_state: f32,
     feedback_low_state: f32,
     load_envelope: f32,
+    recovery_envelope: f32,
+    output_low_state: f32,
     meter_decay_coeff: f32,
 
     // Metering
@@ -91,6 +93,8 @@ impl PowerAmp {
             feedback_state: 0.0,
             feedback_low_state: 0.0,
             load_envelope: 0.0,
+            recovery_envelope: 0.0,
+            output_low_state: 0.0,
             meter_decay_coeff: (-1.0 / (sample_rate * 0.150)).exp(),
             peak_level: 0.0,
         };
@@ -207,7 +211,34 @@ impl PowerAmp {
         };
         let sag_makeup = 1.0 + (self.v_nominal - self.vb_plus) * 0.12;
         let bias_even = signal * bias_shift * 0.02;
-        let output = (clipped + bias_even + bias_shift * crossover * 0.02) * tube_makeup * sag_makeup;
+        let mut output = (clipped + bias_even + bias_shift * crossover * 0.02) * tube_makeup * sag_makeup;
+
+        // During recovery after a hard burst, real power stages and their load
+        // interaction stop feeling as edge-heavy as the initial attack. Model
+        // that as a bounded release-dependent damping stage instead of a static
+        // low-pass glued on the whole output.
+        let recovery_target = (self.load_envelope - with_nfb.abs()).max(0.0);
+        let recovery_attack = match self.rectifier_type {
+            RectifierType::Tube => 0.010,
+            RectifierType::SolidState => 0.006,
+            RectifierType::Variac => 0.014,
+        };
+        let recovery_coeff = 1.0 - (-dt / recovery_attack).exp();
+        self.recovery_envelope += (recovery_target - self.recovery_envelope) * recovery_coeff;
+        let damping_amount = (self.recovery_envelope
+            * (0.70 + self.sag_amount * 0.24 + (1.0 - self.neg_feedback) * 0.14))
+            .clamp(0.0, 0.82);
+        let damping_cutoff_hz = match self.tube_type {
+            PowerTubeType::Type6L6 => 760.0,
+            PowerTubeType::TypeEL34 => 620.0,
+            PowerTubeType::TypeEL84 => 560.0,
+        } + self.presence * 180.0;
+        let damping_coeff = (2.0 * std::f32::consts::PI * damping_cutoff_hz * dt).min(0.24);
+        self.output_low_state += damping_coeff * (output - self.output_low_state);
+        let low = self.output_low_state;
+        let edge = output - low;
+        let low_hold = 1.0 + damping_amount * (0.55 + self.resonance * 0.28);
+        output = low * low_hold + edge * (1.0 - damping_amount);
 
         // Update negative feedback state
         self.feedback_state = output;
@@ -248,6 +279,8 @@ impl PowerAmp {
         self.feedback_state = 0.0;
         self.feedback_low_state = 0.0;
         self.load_envelope = 0.0;
+        self.recovery_envelope = 0.0;
+        self.output_low_state = 0.0;
         self.peak_level = 0.0;
     }
 }
@@ -382,6 +415,63 @@ mod tests {
         (attack_peak, sustain_avg)
     }
 
+    fn decay_metrics_for_power_amp() -> (f32, f32, f32, f32) {
+        let sample_rate = 48_000.0;
+        let mut amp = PowerAmp::new(sample_rate);
+        amp.set_param("master", 9.0);
+        amp.set_param("powerTubeType", 1.0);
+        amp.set_param("rectifierType", 0.0);
+        amp.set_param("sagAmount", 0.66);
+        amp.set_param("sagRecovery", 280.0);
+        amp.set_param("negFeedback", 0.36);
+        amp.set_param("powerAmpBias", 0.58);
+        amp.set_param("presence", 6.8);
+        amp.set_param("resonance", 6.4);
+
+        let total = 3072;
+        let burst_len = 768;
+        let mut low_state = 0.0_f32;
+        let mut sustain_body = 0.0_f32;
+        let mut sustain_edge = 0.0_f32;
+        let mut tail_body = 0.0_f32;
+        let mut tail_edge = 0.0_f32;
+        let mut sustain_count = 0_usize;
+        let mut tail_count = 0_usize;
+
+        for n in 0..total {
+            let input = if n < burst_len {
+                let low =
+                    ((n as f32 * 2.0 * std::f32::consts::PI * 115.0) / sample_rate).sin() * 0.28;
+                let edge =
+                    ((n as f32 * 2.0 * std::f32::consts::PI * 1_700.0) / sample_rate).sin() * 0.12;
+                low + edge
+            } else {
+                0.0
+            };
+            let out = amp.process_sample(input);
+            let low_coeff = (2.0 * std::f32::consts::PI * 240.0 / sample_rate).min(0.28);
+            low_state += low_coeff * (out - low_state);
+            let edge = out - low_state;
+
+            if (256..640).contains(&n) {
+                sustain_body += low_state.abs();
+                sustain_edge += edge.abs();
+                sustain_count += 1;
+            } else if (768..960).contains(&n) {
+                tail_body += low_state.abs();
+                tail_edge += edge.abs();
+                tail_count += 1;
+            }
+        }
+
+        (
+            sustain_body / sustain_count.max(1) as f32,
+            sustain_edge / sustain_count.max(1) as f32,
+            tail_body / tail_count.max(1) as f32,
+            tail_edge / tail_count.max(1) as f32,
+        )
+    }
+
     #[test]
     fn presence_and_resonance_shape_the_power_stage_response() {
         let total = 4096;
@@ -458,6 +548,19 @@ mod tests {
         assert!(
             el34_diff > 0.045 && el84_diff > 0.09,
             "power-tube families should not collapse into near-identical burst behavior (6L6=({sixl6_peak}, {sixl6_sustain}), EL34=({el34_peak}, {el34_sustain}), EL84=({el84_peak}, {el84_sustain}))"
+        );
+    }
+
+    #[test]
+    fn extreme_gain_power_amp_decay_smooths_after_the_attack() {
+        let (sustain_body, sustain_edge, tail_body, tail_edge) = decay_metrics_for_power_amp();
+        let sustain_ratio = sustain_edge / sustain_body.max(1.0e-6);
+        let tail_ratio = tail_edge / tail_body.max(1.0e-6);
+        let edge_retention = tail_edge / sustain_edge.max(1.0e-6);
+
+        assert!(
+            tail_ratio < 0.95 && edge_retention < 0.50,
+            "extreme-gain power amp decay should get less edge-heavy after the attack (sustain_ratio={sustain_ratio}, tail_ratio={tail_ratio}, sustain_body={sustain_body}, sustain_edge={sustain_edge}, tail_body={tail_body}, tail_edge={tail_edge}, edge_retention={edge_retention})"
         );
     }
 

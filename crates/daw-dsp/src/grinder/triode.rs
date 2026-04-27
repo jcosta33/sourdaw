@@ -597,6 +597,62 @@ mod tests {
         (peak, sustain_sum / sustain_count.max(1) as f32)
     }
 
+    fn decay_edge_ratios_for_preamp(amp_model: f32) -> (f32, f32) {
+        let sample_rate = 48_000.0;
+        let mut preamp = Preamp::new(sample_rate);
+        preamp.set_param("ampModel", amp_model);
+        preamp.set_param("channel", 2.0);
+        preamp.set_param("gain", 8.9);
+        preamp.set_param("fat", 1.0);
+        preamp.set_param("tubeBias", 0.58);
+        preamp.set_param("gridConduction", 0.70);
+        preamp.set_param("couplingCapCharge", 0.82);
+        preamp.set_param("millerCapacitance", 0.68);
+
+        let total = 3072;
+        let burst_len = 640;
+        let mut low_state = 0.0_f32;
+        let mut sustain_body = 0.0_f32;
+        let mut sustain_edge = 0.0_f32;
+        let mut tail_body = 0.0_f32;
+        let mut tail_edge = 0.0_f32;
+        let mut sustain_count = 0_usize;
+        let mut tail_count = 0_usize;
+
+        for n in 0..total {
+            let input = if n < burst_len {
+                let low =
+                    ((n as f32 * 2.0 * std::f32::consts::PI * 130.0) / sample_rate).sin() * 0.24;
+                let edge =
+                    ((n as f32 * 2.0 * std::f32::consts::PI * 2_100.0) / sample_rate).sin() * 0.11;
+                (low + edge) * 1.7
+            } else {
+                0.0
+            };
+
+            let out = preamp.process_sample(input);
+            let low_coeff = (2.0 * std::f32::consts::PI * 260.0 / sample_rate).min(0.3);
+            low_state += low_coeff * (out - low_state);
+            let edge = out - low_state;
+
+            if (224..640).contains(&n) {
+                sustain_body += low_state.abs();
+                sustain_edge += edge.abs();
+                sustain_count += 1;
+            } else if (896..1664).contains(&n) {
+                tail_body += low_state.abs();
+                tail_edge += edge.abs();
+                tail_count += 1;
+            }
+        }
+
+        let sustain_ratio = (sustain_edge / sustain_count.max(1) as f32)
+            / (sustain_body / sustain_count.max(1) as f32).max(1.0e-6);
+        let tail_ratio =
+            (tail_edge / tail_count.max(1) as f32) / (tail_body / tail_count.max(1) as f32).max(1.0e-6);
+        (sustain_ratio, tail_ratio)
+    }
+
     #[test]
     fn crunch_channel_produces_audible_output() {
         assert!(average_abs_output(1) > 1.0e-3);
@@ -725,6 +781,16 @@ mod tests {
         assert!(
             rectifier_ratio + 0.08 < lead_ratio,
             "rectifier preamp should sustain more densely than lead JCM under the same high-gain burst (lead_ratio={lead_ratio}, rectifier_ratio={rectifier_ratio}, lead_peak={lead_peak}, lead_sustain={lead_sustain}, rectifier_peak={rectifier_peak}, rectifier_sustain={rectifier_sustain})"
+        );
+    }
+
+    #[test]
+    fn extreme_gain_preamp_decay_smooths_after_the_attack() {
+        let (sustain_ratio, tail_ratio) = decay_edge_ratios_for_preamp(4.0);
+
+        assert!(
+            tail_ratio + 0.12 < sustain_ratio,
+            "extreme-gain preamp decay should get less edge-heavy after the attack (sustain_ratio={sustain_ratio}, tail_ratio={tail_ratio})"
         );
     }
 
