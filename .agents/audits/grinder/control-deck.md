@@ -41,8 +41,9 @@ Grinder should behave like a trustworthy guitar-amp product: controls stay visua
 - The later amp path is incrementally more honest than before. High-gain preamp/power-amp sample-rate guardrails now exist, `powerAmpBias` in `crates/daw-dsp/src/grinder/power_amp.rs` now changes crossover width, asymmetry, and effective headroom enough to be audible, and phase 10 adds bounded internal 2x substep updates in both `triode.rs` and `power_amp.rs` so the later stages are less brittle under hard drive.
 - Later-stage expert controls are less entangled than before. `gridConduction` now changes grid-current intensity and immediate attack loading, `couplingCapCharge` remains the blocking/recovery-memory control, and `rectifierType` now survives the normal patch sync order instead of being mostly erased once `sagRecovery` is applied afterward.
 - Amp-family labels are more truthful than they were before. The preamp path now separates Rectifier-style low-mid body and denser sustain from Lead JCM-style bite, and the power-amp path keeps 6L6 and EL84 families measurably distinct under the same driven-burst material.
+- Input conditioning is now more honest than before. `inputMode` no longer dies in the bridge-to-DSP handoff: `instrument`, `line`, and `reamp` now produce bounded but measurable front-end differences in level and attack shape inside `crates/daw-dsp/src/grinder/input.rs`.
 - Built-in neural model selection is now materially real. `neuralModelId` maps to a `neuralModelSlot` bridge param, and the Rust neural engine now loads distinct built-in profiles that produce measurably different output for the same stimulus.
-- Several visible or stored concepts remain partially wired. Neural built-ins, documented NAM imports, fixed-chain routing/cabinet presets, and amp-family labels are now materially real, but `inputMode` and fuller external-neural fidelity still lag behind what the product implies.
+- Several visible or stored concepts remain partially wired. Neural built-ins, documented NAM imports, fixed-chain routing/cabinet presets, amp-family labels, and `inputMode` are now materially real, but fuller external-neural fidelity and some extreme-gain polish still lag behind what the product implies.
 
 ## Findings
 
@@ -61,32 +62,33 @@ Grinder should behave like a trustworthy guitar-amp product: controls stay visua
 - Phase 10 closes two more later-stage truth gaps. The new failing tests showed `gridConduction` changing hard-attack clamping by exactly `0` before the fix and `rectifierType` collapsing to the same sag envelope under normal patch-sync ordering (`tube_sag=0.99852294`, `solid_sag=0.99852294`).
 - After the phase 10 retune, Grinder now has explicit regression coverage for hard-attack grid-conduction behavior, coupling-cap recovery behavior, and rectifier burst-sag differentiation in addition to the earlier later-stage bias and sample-rate tests.
 - Phase 11 closes the next named-amp honesty gap. The new regressions now prove Rectifier-style preamp settings retain more palm-muted body and a lower peak-to-sustain ratio than Lead JCM, while the power-amp regressions keep 6L6 and EL84 families from collapsing into near-interchangeable responses.
+- Phase 12 closes the last obvious patch-contract lie in the front end. The new failing tests showed `instrument`, `line`, and `reamp` all producing identical conditioner metrics before the fix, and the conditioner now applies bounded mode-specific calibration and edge/body shaping so those source modes diverge audibly without pretending to be a full pickup/cable simulator.
 - Phase 7 removed the most obvious remaining Neural honesty gap. Built-in library entries now sync a real `neuralModelSlot`, different built-in profiles produce different DSP output, and the Neural panel copy no longer claims the browser is metadata-only.
 - Imported Neural selections are now project-portable instead of depending on hidden local state. The selected imported profile is embedded into the patch and also persisted in a reusable local library, which avoids wrong-sound playback when the modal library has not hydrated yet.
 - Targeted coverage is materially better than before. DSP tests now cover overdrive/distortion/fuzz loudness sanity, fuzz silence behavior, gate closure depth, supported pedal order, cabinet distance/room audibility, cabinet voice selection, cabinet mode selection, routing preset audibility, later-stage sample-rate stability, power-amp bias audibility, built-in neural model distinctness, and imported neural profile distinctness, while UI/preset tests cover Neural non-duplication, built-in/imported Neural honesty, metal taxonomy, snapshot UI, chain order, room control, and the new cab voice/mode/routing selectors.
 
 ## Priorities
 
-1. `I-07` Make the remaining stored patch concepts audibly real end-to-end instead of metadata-only.
+1. `I-06` Keep tightening later-stage extreme-gain voicing now that family labels and input modes are more honest.
 2. `I-05` Extend external Neural delivery beyond NAM-first compact-profile import into fuller model/runtime coverage and management.
-3. `I-06` Keep tightening later-stage extreme-gain voicing now that family labels are more referenceable.
+3. `I-08` Decide whether `inputMode` should stay patch/preset-only or gain an explicit UI affordance later.
 
 ## Open issues
 
-1. **`inputMode` is now the clearest remaining patch-contract lie.**
-   Problem: `inputMode` is passed from the engine to `InputConditioner`, but `InputConditioner::set_param()` ignores it, so the patch model still promises a source-conditioning choice that the live runtime does not honor.
-   Representative files: `src/modules/Grinder/models/GrinderPatch.ts`, `crates/daw-dsp/src/grinder/engine.rs`, `crates/daw-dsp/src/grinder/input.rs`.
-   Needed: make `inputMode` audibly real so the remaining patch contract keeps shrinking toward what the runtime actually does.
+1. **The later amp stages can still use more extreme-gain refinement even after the family-label pass.**
+   Problem: phase 11 makes Rectifier vs Lead JCM and 6L6 vs EL84 materially distinct, and phase 12 makes source conditioning more believable, but the highest-drive edge cases can still get fizzy or overly generic compared with a strong specialist amp plugin.
+   Representative files: `crates/daw-dsp/src/grinder/triode.rs`, `crates/daw-dsp/src/grinder/power_amp.rs`.
+   Needed: keep growing later-stage regressions around palm-muted density, fizz control, and high-gain decay behavior without turning the model into a giant circuit-solver rewrite.
 
 2. **The external Neural path is now real, but it is still a bounded compact-profile implementation rather than full third-party runtime parity.**
    Problem: phase 8 delivers documented NAM import, reusable local library state, patch-portable imported profiles, and live DSP application, but it still derives a compact Grinder profile rather than loading the original external model architecture at full fidelity. There is still no AIDA-X import, no raw-source retention/export path, and no richer asset management beyond import/list/select.
    Representative files: `src/modules/Grinder/services/parseGrinderNamFile.ts`, `src/modules/Grinder/repositories/neuralLibraryPersistence/persistGrinderNeuralLibrary.ts`, `crates/daw-dsp/src/grinder/neural.rs`.
    Needed: decide whether the next Neural phase should pursue higher-fidelity NAM runtime behavior, broader format support, or richer imported-model lifecycle operations.
 
-3. **The later amp stages can still use more extreme-gain refinement even after the family-label pass.**
-   Problem: phase 11 makes Rectifier vs Lead JCM and 6L6 vs EL84 materially distinct, but the highest-drive edge cases can still get fizzy or overly generic compared with a strong specialist amp plugin.
-   Representative files: `crates/daw-dsp/src/grinder/triode.rs`, `crates/daw-dsp/src/grinder/power_amp.rs`.
-   Needed: keep growing later-stage regressions around palm-muted density, fizz control, and high-gain decay behavior without turning the model into a giant circuit-solver rewrite.
+3. **`inputMode` is now real but still mostly a hidden contract.**
+   Problem: the patch and bridge now honor `instrument` / `line` / `reamp`, but Grinder still does not expose that choice prominently in the UI, so the new realism is easier to benefit from through presets or direct patch editing than through obvious control-surface discovery.
+   Representative files: `src/modules/Grinder/models/GrinderPatch.ts`, `src/modules/Grinder/presentations/views/GrinderPanel.tsx`.
+   Needed: decide later whether the product wants an explicit input-mode affordance or whether preset-level authorship is enough.
 
 ## Open questions
 
@@ -103,14 +105,14 @@ Grinder should behave like a trustworthy guitar-amp product: controls stay visua
 
 ## Suggested approaches
 
-- Make `inputMode` real first so the last obvious patch-contract lie stops overpromising.
+- Continue tightening extreme later-stage voicing now that the front-end contract is mostly honest.
 - Revisit external Neural fidelity after routing truth: raw model retention, richer asset management, and broader format support are the next logical Neural expansions.
 - Keep expanding expert-oriented regression tests: pedal enable semantics, gate attenuation behavior, cabinet distance/room audibility, neural model loading, and later gain-stage behavior.
-- Continue tightening extreme later-stage voicing after `inputMode`, but keep those changes bounded to audible ordering and stability rather than full named-amp cloning claims.
+- Decide later whether `inputMode` deserves a dedicated control-surface affordance or should stay a preset-authored behavior.
 
 ## Recommendation
 
-Phase 11 makes the named amp/power-tube labels more believable, so the next move should be `I-07`: make `inputMode` audibly real in `crates/daw-dsp/src/grinder/input.rs` and its patch/bridge path. After that, choose between fuller external-Neural fidelity and another bounded extreme-gain voicing pass.
+Phase 12 closes the remaining obvious input-contract lie, so the next move should return to `I-06`: keep refining extreme later-stage voicing in `triode.rs` and `power_amp.rs` while preserving the newer family-ordering regressions. External-Neural fidelity is the parallel product-expansion track after that.
 
 ## Resolved
 
@@ -130,3 +132,4 @@ Phase 11 makes the named amp/power-tube labels more believable, so the next move
 - ~~`routingMode`, `cabType`, and `cabIrId` existed in the patch contract without changing the live cabinet/routing path.~~ — resolved in `main` on `2026-04-26` by syncing cabinet mode and built-in cab voice selection through the bridge, exposing those controls in the Cab UI, and implementing bounded routing presets plus cabinet mode/voice selection inside `GrinderEngine`.
 - ~~`gridConduction` did not behave like a real independent later-stage control, and `rectifierType` lost most of its identity once normal sag params were synced afterward.~~ — resolved in `main` on `2026-04-27` by separating grid-current intensity from coupling-cap recovery behavior in `TriodeStage`, adding bounded internal 2x substep updates to the later amp stages, and deriving rectifier sag behavior from persistent base sag settings so tube / solid-state / variac modes now diverge under burst load.
 - ~~Rectifier / Lead JCM and 6L6 / EL84 labels were too close to the same underlying later-stage voice.~~ — resolved in `main` on `2026-04-27` by adding family-ordering regressions and retuning `Preamp` voicing/compression so Rectifier retains more palm-muted body and denser sustain than Lead JCM while the power-amp family separation remains measurable under the same driven-burst material.
+- ~~`inputMode` existed in the patch contract without changing the live conditioner path.~~ — resolved in `main` on `2026-04-27` by adding input-mode distinctness regressions and implementing bounded mode-specific conditioning inside `InputConditioner` so `instrument`, `line`, and `reamp` now diverge audibly under the same bright burst stimulus.
