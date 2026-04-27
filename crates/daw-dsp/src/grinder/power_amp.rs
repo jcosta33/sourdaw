@@ -339,6 +339,49 @@ mod tests {
         (min_vb_plus, tail_avg)
     }
 
+    fn tube_family_burst_metrics(power_tube_type: f32) -> (f32, f32) {
+        let sample_rate = 48_000.0;
+        let mut amp = PowerAmp::new(sample_rate);
+        amp.set_param("master", 8.2);
+        amp.set_param("powerTubeType", power_tube_type);
+        amp.set_param("rectifierType", 0.0);
+        amp.set_param("sagAmount", 0.55);
+        amp.set_param("sagRecovery", 240.0);
+        amp.set_param("negFeedback", 0.48);
+        amp.set_param("powerAmpBias", 0.56);
+        amp.set_param("presence", 5.5);
+        amp.set_param("resonance", 5.8);
+
+        let total = 2048;
+        let burst_len = 512;
+        let mut attack_peak = 0.0_f32;
+        let mut sustain_sum = 0.0_f32;
+        let mut sustain_count = 0_usize;
+
+        for n in 0..total {
+            let input = if n < burst_len {
+                let low =
+                    ((n as f32 * 2.0 * std::f32::consts::PI * 115.0) / sample_rate).sin() * 0.26;
+                let edge =
+                    ((n as f32 * 2.0 * std::f32::consts::PI * 1_500.0) / sample_rate).sin() * 0.11;
+                low + edge
+            } else {
+                0.0
+            };
+            let out = amp.process_sample(input);
+            if n < 128 {
+                attack_peak = attack_peak.max(out.abs());
+            }
+            if (192..720).contains(&n) {
+                sustain_sum += out.abs();
+                sustain_count += 1;
+            }
+        }
+
+        let sustain_avg = sustain_sum / sustain_count.max(1) as f32;
+        (attack_peak, sustain_avg)
+    }
+
     #[test]
     fn presence_and_resonance_shape_the_power_stage_response() {
         let total = 4096;
@@ -390,6 +433,31 @@ mod tests {
         assert!(
             sag_delta > 1.5e-2 || tail_delta > 2.5e-3,
             "rectifier type should audibly change burst sag/recovery (tube_sag={tube_min_sag}, solid_sag={solid_state_min_sag}, tube_tail={tube_tail}, solid_tail={solid_state_tail})"
+        );
+    }
+
+    #[test]
+    fn sixl6_keeps_more_attack_headroom_than_el84() {
+        let (sixl6_peak, sixl6_sustain) = tube_family_burst_metrics(0.0);
+        let (el84_peak, el84_sustain) = tube_family_burst_metrics(2.0);
+
+        assert!(
+            sixl6_peak > el84_peak + 0.06,
+            "6L6 should keep more burst headroom than EL84 (6L6_peak={sixl6_peak}, EL84_peak={el84_peak}, 6L6_sustain={sixl6_sustain}, EL84_sustain={el84_sustain})"
+        );
+    }
+
+    #[test]
+    fn power_tube_families_are_not_interchangeable() {
+        let (sixl6_peak, sixl6_sustain) = tube_family_burst_metrics(0.0);
+        let (el34_peak, el34_sustain) = tube_family_burst_metrics(1.0);
+        let (el84_peak, el84_sustain) = tube_family_burst_metrics(2.0);
+        let el34_diff = (sixl6_peak - el34_peak).abs() + (sixl6_sustain - el34_sustain).abs();
+        let el84_diff = (sixl6_peak - el84_peak).abs() + (sixl6_sustain - el84_sustain).abs();
+
+        assert!(
+            el34_diff > 0.045 && el84_diff > 0.09,
+            "power-tube families should not collapse into near-identical burst behavior (6L6=({sixl6_peak}, {sixl6_sustain}), EL34=({el34_peak}, {el34_sustain}), EL84=({el84_peak}, {el84_sustain}))"
         );
     }
 

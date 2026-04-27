@@ -254,6 +254,7 @@ pub struct Preamp {
     bright: bool,
     fat: bool,
     amp_model: AmpModel,
+    model_drive_state: f32,
     bright_cap_state: f32,
     fat_low_state: f32,
     channel: u32,
@@ -275,6 +276,7 @@ impl Preamp {
             bright: false,
             fat: false,
             amp_model: AmpModel::CrunchJcm,
+            model_drive_state: 0.0,
             bright_cap_state: 0.0,
             fat_low_state: 0.0,
             channel: 1,
@@ -299,18 +301,19 @@ impl Preamp {
 
     pub fn process_sample(&mut self, input: f32) -> f32 {
         let gain_scale = self.gain / 10.0;
-        let (model_trim, interstage_attenuation, model_brightness, model_low_end): (
+        let (model_trim, interstage_attenuation, model_brightness, model_low_end, model_compression): (
+            f32,
             f32,
             f32,
             f32,
             f32,
         ) = match self.amp_model {
-            AmpModel::CleanTwin => (0.75, 0.18, 0.05, -0.04),
-            AmpModel::CrunchJcm => (1.00, 0.14, 0.00, 0.02),
-            AmpModel::LeadJcm => (1.15, 0.12, -0.02, 0.05),
-            AmpModel::Ac30TopBoost => (0.95, 0.15, 0.08, -0.03),
-            AmpModel::Rectifier => (1.30, 0.10, -0.08, 0.10),
-            AmpModel::Custom => (1.00, 0.12, 0.00, 0.00),
+            AmpModel::CleanTwin => (0.75, 0.18, 0.05, -0.04, 0.02),
+            AmpModel::CrunchJcm => (1.00, 0.14, 0.00, 0.02, 0.08),
+            AmpModel::LeadJcm => (1.14, 0.12, -0.01, 0.05, 0.10),
+            AmpModel::Ac30TopBoost => (0.95, 0.15, 0.08, -0.03, 0.09),
+            AmpModel::Rectifier => (0.94, 0.10, -0.13, 0.32, 0.84),
+            AmpModel::Custom => (1.00, 0.12, 0.00, 0.00, 0.10),
         };
 
         // Number of active stages depends on channel
@@ -357,6 +360,23 @@ impl Preamp {
             signal += self.fat_low_state * fat_amount;
         }
 
+        if model_compression > 0.0 {
+            let dt = 1.0 / self.sample_rate;
+            let env_coeff = (2.0 * std::f32::consts::PI * 85.0 * dt).min(0.22);
+            self.model_drive_state += env_coeff * (signal.abs() - self.model_drive_state);
+            let clamp = 1.0
+                / (1.0
+                    + self.model_drive_state
+                        * model_compression
+                        * (0.7 + gain_scale * 1.5)
+                        * 2.2);
+            let compressed = signal * clamp;
+            let soft_mix = (model_compression * 0.45).clamp(0.0, 0.22);
+            let softened =
+                (compressed * (1.0 + model_compression * 0.7)).tanh() * (0.98 - model_compression * 0.08);
+            signal = compressed * (1.0 - soft_mix) + softened * soft_mix;
+        }
+
         let mut final_out = 0.0;
         for i in 0..num_stages.min(self.stages.len()) {
             let out = self.stages[i].process_sample(signal);
@@ -390,6 +410,13 @@ impl Preamp {
             return 0.0;
         }
 
+        if model_compression > 0.0 {
+            let post_mix = (model_compression * (0.16 + self.model_drive_state * 0.22)).clamp(0.0, 0.30);
+            let post_shaped =
+                (final_out * (1.0 + model_compression * 0.9)).tanh() * (0.96 - model_compression * 0.06);
+            final_out = final_out * (1.0 - post_mix) + post_shaped * post_mix;
+        }
+
         final_out
     }
 
@@ -397,6 +424,7 @@ impl Preamp {
         for stage in &mut self.stages {
             stage.reset();
         }
+        self.model_drive_state = 0.0;
         self.bright_cap_state = 0.0;
         self.fat_low_state = 0.0;
         self.dc_x.fill(0.0);
@@ -494,6 +522,79 @@ mod tests {
 
         let tail_avg = tail_sum / tail_count.max(1) as f32;
         (attack_peak, tail_avg)
+    }
+
+    fn body_edge_balance_for_amp_model(amp_model: f32) -> f32 {
+        let sample_rate = 48_000.0;
+        let mut preamp = Preamp::new(sample_rate);
+        preamp.set_param("ampModel", amp_model);
+        preamp.set_param("channel", 2.0);
+        preamp.set_param("gain", 8.2);
+        preamp.set_param("tubeBias", 0.56);
+        preamp.set_param("gridConduction", 0.62);
+        preamp.set_param("couplingCapCharge", 0.70);
+
+        let total = 4096;
+        let burst_len = 1024;
+        let mut low_state = 0.0_f32;
+        let mut edge_state = 0.0_f32;
+        let mut body_sum = 0.0_f32;
+        let mut edge_sum = 0.0_f32;
+
+        for n in 0..total {
+            let env = if n < burst_len { 1.0 } else { 0.0 };
+            let low =
+                ((n as f32 * 2.0 * std::f32::consts::PI * 130.0) / sample_rate).sin() * 0.22;
+            let pick =
+                ((n as f32 * 2.0 * std::f32::consts::PI * 1_850.0) / sample_rate).sin() * 0.08;
+            let input = (low + pick) * env;
+            let out = preamp.process_sample(input);
+
+            let low_coeff = (2.0 * std::f32::consts::PI * 220.0 / sample_rate).min(0.25);
+            low_state += low_coeff * (out - low_state);
+            let edge = out - low_state;
+            edge_state += 0.04 * (edge.abs() - edge_state);
+
+            if (256..1400).contains(&n) {
+                body_sum += low_state.abs();
+                edge_sum += edge_state;
+            }
+        }
+
+        body_sum / edge_sum.max(1.0e-6)
+    }
+
+    fn attack_and_sustain_for_amp_model(amp_model: f32) -> (f32, f32) {
+        let sample_rate = 48_000.0;
+        let mut preamp = Preamp::new(sample_rate);
+        preamp.set_param("ampModel", amp_model);
+        preamp.set_param("channel", 2.0);
+        preamp.set_param("gain", 8.6);
+        preamp.set_param("gridConduction", 0.60);
+        preamp.set_param("couplingCapCharge", 0.72);
+        preamp.set_param("tubeBias", 0.56);
+
+        let total = 2048;
+        let mut peak = 0.0_f32;
+        let mut sustain_sum = 0.0_f32;
+        let mut sustain_count = 0_usize;
+        for n in 0..total {
+            let env = if n < 384 { 1.0 } else { 0.0 };
+            let low =
+                ((n as f32 * 2.0 * std::f32::consts::PI * 120.0) / sample_rate).sin() * 0.24;
+            let edge =
+                ((n as f32 * 2.0 * std::f32::consts::PI * 1_600.0) / sample_rate).sin() * 0.09;
+            let out = preamp.process_sample((low + edge) * env);
+            if n < 192 {
+                peak = peak.max(out.abs());
+            }
+            if (192..640).contains(&n) {
+                sustain_sum += out.abs();
+                sustain_count += 1;
+            }
+        }
+
+        (peak, sustain_sum / sustain_count.max(1) as f32)
     }
 
     #[test]
@@ -599,6 +700,31 @@ mod tests {
         assert!(
             tail_delta > 2.0e-3,
             "coupling-cap charge should audibly change blocking recovery (short={short_tail}, long={long_tail}, delta={tail_delta})"
+        );
+    }
+
+    #[test]
+    fn rectifier_preamp_has_more_body_than_lead_jcm() {
+        let lead_balance = body_edge_balance_for_amp_model(2.0);
+        let rectifier_balance = body_edge_balance_for_amp_model(4.0);
+        let balance_delta = rectifier_balance - lead_balance;
+
+        assert!(
+            balance_delta > 0.14,
+            "rectifier preamp should retain more body than lead JCM under the same palm-muted burst (lead={lead_balance}, rectifier={rectifier_balance}, delta={balance_delta})"
+        );
+    }
+
+    #[test]
+    fn rectifier_preamp_has_lower_peak_to_sustain_ratio_than_lead_jcm() {
+        let (lead_peak, lead_sustain) = attack_and_sustain_for_amp_model(2.0);
+        let (rectifier_peak, rectifier_sustain) = attack_and_sustain_for_amp_model(4.0);
+        let lead_ratio = lead_peak / lead_sustain.max(1.0e-6);
+        let rectifier_ratio = rectifier_peak / rectifier_sustain.max(1.0e-6);
+
+        assert!(
+            rectifier_ratio + 0.08 < lead_ratio,
+            "rectifier preamp should sustain more densely than lead JCM under the same high-gain burst (lead_ratio={lead_ratio}, rectifier_ratio={rectifier_ratio}, lead_peak={lead_peak}, lead_sustain={lead_sustain}, rectifier_peak={rectifier_peak}, rectifier_sustain={rectifier_sustain})"
         );
     }
 
