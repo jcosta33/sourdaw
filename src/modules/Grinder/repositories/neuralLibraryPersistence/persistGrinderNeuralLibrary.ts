@@ -4,7 +4,7 @@ type PersistGrinderNeuralLibraryInput = {
     entries: readonly GrinderImportedNeuralModel[];
 };
 
-export async function persistGrinderNeuralLibrary(input: PersistGrinderNeuralLibraryInput): Promise<void> {
+export async function persistGrinderNeuralLibrary(input: PersistGrinderNeuralLibraryInput): Promise<boolean> {
     const database_name = 'sourdaw-grinder-neural';
     const store_name = 'imported-model-library';
 
@@ -29,7 +29,9 @@ export async function persistGrinderNeuralLibrary(input: PersistGrinderNeuralLib
             transaction.onerror = () => reject(transaction.error ?? new Error('Failed to persist Grinder neural library'));
         });
         database.close();
+        return true;
     } catch {
         // Best effort persistence only.
+        return false;
     }
 }

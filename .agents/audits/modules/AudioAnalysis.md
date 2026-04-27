@@ -142,12 +142,11 @@ pure helpers (`readLevels`, `readFrequencyBalance`, `detectIssues`,
    silent-data-loss path.
 
 4. **Krumhansl-Schmuckler implementation in `keyDetection.ts` is
-   misshaped.** `keyDetection.ts:22` runs an outer loop over frames but
-   *re-runs the entire Goertzel filter from sample 0* on every frame
-   (`for (let index = 0; index < fftSize; index++)`), ignoring `frame`
-   in the inner loop. Effectively `frame` only controls the number of
-   times the same global window is re-analysed; chroma is identical for
-   every frame and just multiplied by the frame count. Additionally:
+   under-specified and weakly calibrated.** `keyDetection.ts:22` correctly
+   advances frames with `data[frame + index]`, but the Goertzel pass is
+   still a rectangular-window, per-frame magnitude sum across six octaves
+   with no per-bin normalisation or calibration against the key-profile
+   dot-product range. Additionally:
    - `s0` is declared without an initializer (`let s0: number,`) and read
      before its first assignment when `fftSize === 0` (technically harmless
      here since the body assigns first, but TS strict noises around it).
@@ -494,15 +493,13 @@ are not user-configurable and remove them from the use-case signature.
 Tighten `mode` to `'rhythm' | 'pitched'` and drop the
 `normalizeAudioToMidiMode` helper.
 
-### 4. `keyDetection.ts` Goertzel double-loop is wrong-shaped
+### 4. `keyDetection.ts` key-confidence calibration is under-specified
 
-**Problem:** The outer frame loop iterates `frame += hopSize`, but the
-inner Goertzel filter sums *from sample 0* to `fftSize` for every frame,
-ignoring `frame`. Chroma is identical across frames except for being
-multiplied by the frame count. The implementation is also non-windowed
-(rectangular = spectral leakage), uses `Math.abs` over a quantity that
-should already be non-negative, and the confidence formula is a magic
-constant.
+**Problem:** The outer frame loop advances correctly with `frame +
+index`, but the implementation is still non-windowed (rectangular =
+spectral leakage), sums magnitudes across six octaves without per-bin
+normalisation, uses `Math.abs` over a quantity that should already be
+non-negative, and derives confidence from a magic constant.
 
 **Representative files:**
 

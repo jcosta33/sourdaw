@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { grinderNeuralLibraryStore } from '../../stores/grinderNeuralLibraryStore';
 import { removeGrinderNeuralModel } from '../removeGrinderNeuralModel';
+import { persistGrinderNeuralLibrary } from '../../repositories/neuralLibraryPersistence/persistGrinderNeuralLibrary';
 
 vi.mock('../../repositories/neuralLibraryPersistence/persistGrinderNeuralLibrary', () => ({
-    persistGrinderNeuralLibrary: vi.fn(async () => undefined),
+    persistGrinderNeuralLibrary: vi.fn(async () => true),
 }));
 
 describe('removeGrinderNeuralModel', () => {
@@ -92,5 +93,17 @@ describe('removeGrinderNeuralModel', () => {
         await removeGrinderNeuralModel({ model_id: 'imported-tight-rhythm' });
 
         expect(grinderNeuralLibraryStore.value?.entries.map((entry) => entry.id)).toEqual(['imported-cleans']);
+    });
+
+    it('should leave the reusable library intact when removal cannot be persisted', async () => {
+        vi.mocked(persistGrinderNeuralLibrary).mockResolvedValueOnce(false);
+
+        await removeGrinderNeuralModel({ model_id: 'imported-tight-rhythm' });
+
+        expect(grinderNeuralLibraryStore.value?.entries.map((entry) => entry.id)).toEqual([
+            'imported-tight-rhythm',
+            'imported-cleans',
+        ]);
+        expect(grinderNeuralLibraryStore.value?.error).toMatch(/could not remove tight rhythm/i);
     });
 });
