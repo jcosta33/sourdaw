@@ -28,7 +28,7 @@ function run() {
 
     const { positional } = parseArgs(process.argv.slice(2));
     const targetFile = positional[0];
-    
+
     if (!targetFile) {
         console.log(red('Usage: agents:dead-code <path/to/file.ts>'));
         process.exit(1);
@@ -51,20 +51,18 @@ function run() {
     }
 
     const dead = [];
-    
+
     for (const symbol of exports) {
         // Fast global search for the symbol
         const res = spawnSync('git', ['grep', '-l', '\\b' + symbol + '\\b'], { cwd: repoRoot, encoding: 'utf8' });
-        
+
         if (res.status === 0 && res.stdout) {
             const files = res.stdout.split('\n').filter(Boolean);
             // Check if it is used in files OTHER than itself and specs
-            const usedElsewhere = files.some(f => 
-                f !== targetFile && 
-                !f.endsWith('.spec.ts') && 
-                !f.endsWith('.spec.tsx')
+            const usedElsewhere = files.some(
+                (f) => f !== targetFile && !f.endsWith('.spec.ts') && !f.endsWith('.spec.tsx')
             );
-            
+
             if (!usedElsewhere) {
                 dead.push(symbol);
             }
@@ -77,8 +75,10 @@ function run() {
         console.log(green(`✓ All exported symbols are imported elsewhere in the project.`));
     } else {
         console.log(yellow(`⚠ Found ${dead.length} potentially unused exports:`));
-        dead.forEach(sym => console.log(`  - ${bold(sym)}`));
-        console.log(dim(`  (Note: these are only unused outside this file. They may be used internally or dynamically.)`));
+        dead.forEach((sym) => console.log(`  - ${bold(sym)}`));
+        console.log(
+            dim(`  (Note: these are only unused outside this file. They may be used internally or dynamically.)`)
+        );
     }
     console.log('');
 }

@@ -200,7 +200,9 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
                 <label className="text-[10px] text-muted-foreground">Kind</label>
                 <DawCompactSelect
                     value={form.kind}
-                    onChange={(event: ChangeEvent<HTMLSelectElement>) => setField('kind', event.target.value as ModulatorKind)}
+                    onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                        setField('kind', event.target.value as ModulatorKind)
+                    }
                     aria-label="Modulator kind"
                 >
                     <option value="lfo">LFO</option>
@@ -382,9 +384,7 @@ const AddMappingPicker = ({ modulatorId, tracks, onClose }: AddMappingPickerProp
                 aria-label="Target device"
                 disabled={!selectedTrack || selectedTrack.devices.length === 0}
             >
-                {!selectedTrack || selectedTrack.devices.length === 0 ? (
-                    <option value="">No devices</option>
-                ) : null}
+                {!selectedTrack || selectedTrack.devices.length === 0 ? <option value="">No devices</option> : null}
                 {selectedTrack?.devices.map((device) => (
                     <option key={device.id} value={device.id}>
                         {device.name}
@@ -513,11 +513,7 @@ const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement 
                 </Button>
             </div>
             {pickerOpen ? (
-                <AddMappingPicker
-                    modulatorId={modulator.id}
-                    tracks={tracks}
-                    onClose={() => setPickerOpen(false)}
-                />
+                <AddMappingPicker modulatorId={modulator.id} tracks={tracks} onClose={() => setPickerOpen(false)} />
             ) : null}
         </div>
     );

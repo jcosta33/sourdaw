@@ -1,6 +1,11 @@
 import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
 import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
-import { tempoMapStore, transportStore, type TempoMapStoreState, type TransportState } from '#/modules/Transport/stores';
+import {
+    tempoMapStore,
+    transportStore,
+    type TempoMapStoreState,
+    type TransportState,
+} from '#/modules/Transport/stores';
 
 import { beatToSeconds } from '../../services/beatConversion';
 
@@ -28,7 +33,11 @@ export function resolveRenderContext(input: ResolveRenderContextInput | number):
     const normalized: Required<ResolveRenderContextInput> =
         typeof input === 'number'
             ? { durationBeats: input, startBeat: 0, tailSeconds: 0 }
-            : { durationBeats: input.durationBeats, startBeat: input.startBeat ?? 0, tailSeconds: input.tailSeconds ?? 0 };
+            : {
+                  durationBeats: input.durationBeats,
+                  startBeat: input.startBeat ?? 0,
+                  tailSeconds: input.tailSeconds ?? 0,
+              };
 
     const transport = transportStore.value;
     const tracks = trackStore.value;

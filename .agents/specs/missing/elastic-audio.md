@@ -13,10 +13,10 @@ Ship the user-facing transient-detection + quantization workflow that the `handl
 The use-case directory `src/modules/AudioEngine/useCases/elasticAudio/` referenced in the deadcode audit does not exist on disk today. What exists:
 
 - `src/modules/Command/models/AppAction.ts:369-370` — two action types:
-  ```
-  | { type: 'detectTransients'; payload: { clipId: string; sensitivity?: number } }
-  | { type: 'quantizeTransients'; payload: { clipId: string } }
-  ```
+    ```
+    | { type: 'detectTransients'; payload: { clipId: string; sensitivity?: number } }
+    | { type: 'quantizeTransients'; payload: { clipId: string } }
+    ```
 - `src/modules/AudioEngine/handlers/finalFeature/handleDetectTransients.ts` — stub that only calls `notifyUser`. Does not detect anything.
 - `src/modules/AudioEngine/handlers/finalFeature/handleQuantizeTransients.ts` — stub that only calls `notifyUser('Transients quantized to grid', 'success')`. Does not mutate state.
 - `src/modules/Command/models/commands/miscCommands.ts:200-210` — Command Palette entry `quantize-to-grid-elastic` dispatches `detectTransients` on the selected clip.
@@ -26,6 +26,7 @@ The use-case directory `src/modules/AudioEngine/useCases/elasticAudio/` referenc
 - `src/modules/AudioEngine/useCases/audioWarping/` — existing warp-algorithm parameter surface (`setWarpAlgorithm`, `setStretchRatio`, `setFormantPreservation`).
 
 What is missing:
+
 - Any store for elastic-audio editor state (selected markers, sensitivity, tool mode).
 - Any transient-detection DSP. No `detectTransients` use-case implementation.
 - Any `quantizeTransients` use-case implementation.
@@ -70,6 +71,7 @@ Spectral flux with a median-filter adaptive threshold, as is standard for onset 
 Sensitivity maps `0..1` to `std multiplier 3..0.5` (low sensitivity = few strong hits, high sensitivity = many soft onsets). Default 0.5.
 
 Implementation split:
+
 - Pure detection: `src/modules/AudioEngine/useCases/elasticAudio/detectTransients.ts` — `(samples: Float32Array, sampleRate: number, sensitivity: number) => Array<{ sampleOffset: number; confidence: number }>`.
 - Orchestration: `detectTransientsForClip(clipId, sensitivity)` — loads audio, runs detection in a worker, writes markers to the warp-marker store, diff-merging with existing user-locked markers.
 
@@ -162,10 +164,10 @@ type ElasticActions =
 
 - **Bottom panel tab** — add a new tab to the existing bottom panel (where MIDI editor and automation editor already live). Tab label: "Elastic". Visible only when the selected clip is audio.
 - **Editor layout**:
-  - Toolbar (top): Tool buttons (Select / Add / Remove / Lock), Sensitivity slider, Detect button, Quantize button, Stretch mode dropdown (`repitch` / `timestretch`), Algorithm dropdown (reuses `getAlgorithmInfo`).
-  - Canvas (main): Waveform view with markers. Auto markers in blue (with confidence-based opacity), user markers in orange, locked markers with a small lock icon, grid-snap target ghost markers in dashed grey.
-  - Detail strip (bottom): marker count, undoable action hints.
-- **Drag to move**: dragging a marker moves its `targetBeat`, not `localBeat`. Dragging with Alt moves `localBeat` (advanced — re-locates where the transient *is*). Ctrl-drag snaps to the current grid division.
+    - Toolbar (top): Tool buttons (Select / Add / Remove / Lock), Sensitivity slider, Detect button, Quantize button, Stretch mode dropdown (`repitch` / `timestretch`), Algorithm dropdown (reuses `getAlgorithmInfo`).
+    - Canvas (main): Waveform view with markers. Auto markers in blue (with confidence-based opacity), user markers in orange, locked markers with a small lock icon, grid-snap target ghost markers in dashed grey.
+    - Detail strip (bottom): marker count, undoable action hints.
+- **Drag to move**: dragging a marker moves its `targetBeat`, not `localBeat`. Dragging with Alt moves `localBeat` (advanced — re-locates where the transient _is_). Ctrl-drag snaps to the current grid division.
 - **Sensitivity slider**: live recomputes on release (debounced 150 ms). Each recompute removes prior `transient-auto` markers and reinserts the new set, preserving `user` and `grid-snap` origins.
 - **Keyboard**: `T` (transient tool), `G` (quantize), `Delete` (remove selected).
 - **Command Palette**: existing `quantize-to-grid-elastic` entry stays; add `Elastic: Detect Transients`, `Elastic: Open Editor for Selected Clip`, `Elastic: Quantize Selected Clip`.
@@ -182,7 +184,7 @@ type PersistedWarpMarker = {
     targetBeat: number;
     locked: boolean;
     origin?: 'user' | 'transient-auto' | 'grid-snap'; // NEW, default 'user' for pre-migration markers
-    confidence?: number;                              // NEW
+    confidence?: number; // NEW
 };
 ```
 
@@ -215,29 +217,34 @@ Elastic editor UI state (`openClipId`, `sensitivity`, `tool`, etc.) is **not** p
 ## Milestones
 
 ### M1 — Detection primitive + worker (one session)
+
 - Pure `detectTransients` function with spectral-flux implementation.
 - Dedicated worker at `src/modules/AudioEngine/workers/elasticAudioWorker.ts`.
 - `detectTransientsForClip` orchestration: loads buffer, runs in worker, produces marker list.
 - Replace `handleDetectTransients` stub.
 
 ### M2 — Marker store extension + quantize (one session)
+
 - Add `origin` / `confidence` to `WarpMarker` with migration.
 - Implement `quantizeTransients` snapping `targetBeat` to grid.
 - Replace `handleQuantizeTransients` stub.
 - Sensitivity-change diff-merge logic (preserve user/grid-snap, replace transient-auto).
 
 ### M3 — Editor store + manual marker ops (one session)
+
 - `elasticAudioStore` + `openElasticEditor/closeElasticEditor/setSensitivity/addManualMarker/toggleMarkerLock/removeMarker` use-cases.
 - Corresponding AppActions + handlers.
 - Undo grouping via `generateGroupId()`.
 
 ### M4 — UI: bottom panel tab + waveform renderer (one session)
+
 - Elastic tab component.
 - Toolbar, sensitivity slider, dropdowns, buttons.
 - Waveform marker renderer coloring by `origin`.
 - Command Palette entries.
 
 ### M5 — Polish: algorithm auto-select + perf (one session)
+
 - Auto-select `timestretch` algorithm optimised for transients.
 - Marker virtualisation for dense detection.
 - User preference `defaultSensitivity`.

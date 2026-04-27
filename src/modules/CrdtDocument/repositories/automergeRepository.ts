@@ -241,7 +241,7 @@ class AutomergeRepository {
     async transactSnapshot(fn: () => Promise<void>): Promise<{ before: DocumentBundle; after: DocumentBundle }> {
         const dirtied = new Set<DocId>();
         const preDocs = new Map<DocId, Doc<AnyDoc>>();
-        
+
         // Cheaply clone all docs to retain "before" state in memory
         for (const [id, doc] of this.docs) {
             preDocs.set(id, clone(doc));

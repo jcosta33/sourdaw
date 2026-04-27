@@ -26,7 +26,8 @@ export async function persistGrinderNeuralLibrary(input: PersistGrinderNeuralLib
 
         await new Promise<void>((resolve, reject) => {
             transaction.oncomplete = () => resolve();
-            transaction.onerror = () => reject(transaction.error ?? new Error('Failed to persist Grinder neural library'));
+            transaction.onerror = () =>
+                reject(transaction.error ?? new Error('Failed to persist Grinder neural library'));
         });
         database.close();
         return true;

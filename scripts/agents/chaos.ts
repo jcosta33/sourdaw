@@ -17,7 +17,7 @@ function run() {
 
     const { positional, flags } = parseArgs(process.argv.slice(2));
     const command = positional[0];
-    
+
     const envFile = join(repoRoot, '.env.local');
 
     console.log(cyan(`\nConfiguring Chaos Monkey Environment...\n`));
@@ -25,25 +25,30 @@ function run() {
     if (command === 'start') {
         const delay = flags.get('delay') || '2000';
         const failRate = flags.get('fail-rate') || '0.2';
-        
+
         let envContent = '';
         if (existsSync(envFile)) envContent = readFileSync(envFile, 'utf8');
 
         // Remove old chaos variables
-        envContent = envContent.split('\n').filter(l => !l.startsWith('VITE_CHAOS_')).join('\n');
-        
+        envContent = envContent
+            .split('\n')
+            .filter((l) => !l.startsWith('VITE_CHAOS_'))
+            .join('\n');
+
         envContent += `\nVITE_CHAOS_LATENCY=${delay}\nVITE_CHAOS_FAIL_RATE=${failRate}\n`;
         writeFileSync(envFile, envContent.trim() + '\n', 'utf8');
-        
+
         console.log(yellow(`⚠ Chaos Monkey INJECTED.`));
         console.log(dim(`- Latency: ${delay}ms`));
         console.log(dim(`- Failure Rate: ${parseFloat(failRate) * 100}%`));
         console.log(dim(`All \`fetch\` wrappers will now randomly drop and delay requests.`));
-        
     } else if (command === 'stop') {
         if (existsSync(envFile)) {
             let envContent = readFileSync(envFile, 'utf8');
-            envContent = envContent.split('\n').filter(l => !l.startsWith('VITE_CHAOS_')).join('\n');
+            envContent = envContent
+                .split('\n')
+                .filter((l) => !l.startsWith('VITE_CHAOS_'))
+                .join('\n');
             writeFileSync(envFile, envContent.trim() + '\n', 'utf8');
         }
         console.log(green(`✓ Chaos Monkey STOPPED.`));

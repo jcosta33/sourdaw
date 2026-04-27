@@ -40,16 +40,7 @@ describe('previewLoops', () => {
     });
 
     it('every event has a known voice, non-negative beat, and positive duration', () => {
-        const validVoices = new Set([
-            'kick',
-            'snare',
-            'hat',
-            'bass',
-            'lead',
-            'pad',
-            'chord',
-            'pluck',
-        ]);
+        const validVoices = new Set(['kick', 'snare', 'hat', 'bass', 'lead', 'pad', 'chord', 'pluck']);
         for (const id of EXPECTED_TEMPLATE_IDS) {
             const preview = previewLoops[id];
             if (!preview) {

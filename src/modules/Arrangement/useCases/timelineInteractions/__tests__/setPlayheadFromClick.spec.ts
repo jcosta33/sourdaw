@@ -50,8 +50,6 @@ describe('setPlayheadFromClick', () => {
 
         setPlayheadFromClick(24);
 
-        expect(mocks.transportStoreSet).toHaveBeenCalledWith(
-            expect.objectContaining({ playheadPosition: 2 })
-        );
+        expect(mocks.transportStoreSet).toHaveBeenCalledWith(expect.objectContaining({ playheadPosition: 2 }));
     });
 });

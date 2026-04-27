@@ -65,7 +65,7 @@ export function setLevainParam<K extends keyof LevainPatch>(deviceId: string, ke
         [deviceId]: {
             ...state,
             patch: { ...state.patch, [key]: value },
-        }
+        },
     });
 }
 
@@ -85,7 +85,7 @@ export function setCurrentArticulation(deviceId: string, articulation: Articulat
             ...state,
             patch: { ...state.patch, currentArticulation: articulation },
             currentArticulationDisplay: entry ? entry.name : articulation,
-        }
+        },
     });
 }
 
@@ -100,7 +100,7 @@ export function setMacro(deviceId: string, index: number, value: number): void {
             [deviceId]: {
                 ...state,
                 patch: { ...state.patch, macros },
-            }
+            },
         });
     }
 }
@@ -124,7 +124,7 @@ export function updateMicPosition(deviceId: string, index: number, updates: Part
             [deviceId]: {
                 ...state,
                 patch: { ...state.patch, micPositions },
-            }
+            },
         });
     }
 }

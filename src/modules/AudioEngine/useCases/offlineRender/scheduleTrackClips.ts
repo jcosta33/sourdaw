@@ -169,9 +169,7 @@ export async function scheduleTrackClips(
     }
 
     const clipsToProcess: { clip: Track['clips'][number]; padIndex: number }[] = [];
-    clipsToProcess.push(
-        ...resolveTrackClipsWithComping(track.id, track.clips).map((clip) => ({ clip, padIndex: -1 }))
-    );
+    clipsToProcess.push(...resolveTrackClipsWithComping(track.id, track.clips).map((clip) => ({ clip, padIndex: -1 })));
 
     const instrumentEntry = deviceEntries.find((event) => event.instrumentControls);
     const instrumentControls = instrumentEntry?.instrumentControls ?? null;
@@ -404,8 +402,7 @@ export async function scheduleTrackClips(
                 if (isFirstIter && trimBeforeSec === 0) {
                     if (clip.fadeInBeats > 0) {
                         const fadeInEndBeat = clip.startBeat + clip.fadeInBeats;
-                        const fadeInEndSec =
-                            beatToSeconds(fadeInEndBeat, defaultTempo, changes) - regionStartSec;
+                        const fadeInEndSec = beatToSeconds(fadeInEndBeat, defaultTempo, changes) - regionStartSec;
                         const fadeInDuration = Math.min(
                             Math.max(MICRO_FADE_SECONDS, fadeInEndSec - iterStartTime),
                             playDuration * 0.5
@@ -422,9 +419,7 @@ export async function scheduleTrackClips(
                     if (clip.fadeOutBeats > 0) {
                         const fadeOutStartBeat = clip.endBeat - clip.fadeOutBeats;
                         const fadeOutStartSec =
-                            beatToSeconds(fadeOutStartBeat, defaultTempo, changes) +
-                            compensationDelay -
-                            regionStartSec;
+                            beatToSeconds(fadeOutStartBeat, defaultTempo, changes) + compensationDelay - regionStartSec;
                         const fadeOutOffset = Math.max(
                             startSec,
                             Math.max(fadeOutStartSec, endSec - playDuration * 0.5)

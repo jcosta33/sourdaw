@@ -26,15 +26,54 @@ export async function createPodcastTemplate(): Promise<void> {
     const voiceBus = createBus({
         name: 'Voice Bus',
         devices: [
-            { type: 'builtin-compressor', name: 'Broadcast Comp', params: { 'comp-threshold': -18, 'comp-ratio': 4, 'comp-attack': 5, 'comp-release': 100, 'comp-knee': 6, 'comp-makeup': 3 } },
-            { type: 'builtin-eq', name: 'Broadcast EQ', params: { 'eq-low-gain': -2, 'eq-low-freq': 80, 'eq-low-q': 0.8, 'eq-mid-gain': 2, 'eq-mid-freq': 3000, 'eq-mid-q': 1, 'eq-high-gain': 1.5, 'eq-high-freq': 10000, 'eq-high-q': 0.7 } },
+            {
+                type: 'builtin-compressor',
+                name: 'Broadcast Comp',
+                params: {
+                    'comp-threshold': -18,
+                    'comp-ratio': 4,
+                    'comp-attack': 5,
+                    'comp-release': 100,
+                    'comp-knee': 6,
+                    'comp-makeup': 3,
+                },
+            },
+            {
+                type: 'builtin-eq',
+                name: 'Broadcast EQ',
+                params: {
+                    'eq-low-gain': -2,
+                    'eq-low-freq': 80,
+                    'eq-low-q': 0.8,
+                    'eq-mid-gain': 2,
+                    'eq-mid-freq': 3000,
+                    'eq-mid-q': 1,
+                    'eq-high-gain': 1.5,
+                    'eq-high-freq': 10000,
+                    'eq-high-q': 0.7,
+                },
+            },
             { type: 'builtin-limiter', name: 'Voice Limit', params: { 'lim-threshold': -3, 'lim-release': 80 } },
         ],
     });
     const musicBus = createBus({
         name: 'Music Bus',
         devices: [
-            { type: 'builtin-eq', name: 'Music EQ', params: { 'eq-low-gain': 0, 'eq-low-freq': 100, 'eq-low-q': 0.8, 'eq-mid-gain': 0, 'eq-mid-freq': 1000, 'eq-mid-q': 1, 'eq-high-gain': 0.5, 'eq-high-freq': 10000, 'eq-high-q': 0.7 } },
+            {
+                type: 'builtin-eq',
+                name: 'Music EQ',
+                params: {
+                    'eq-low-gain': 0,
+                    'eq-low-freq': 100,
+                    'eq-low-q': 0.8,
+                    'eq-mid-gain': 0,
+                    'eq-mid-freq': 1000,
+                    'eq-mid-q': 1,
+                    'eq-high-gain': 0.5,
+                    'eq-high-freq': 10000,
+                    'eq-high-q': 0.7,
+                },
+            },
         ],
     });
     const musicSidechainId = attachSidechainCompressor({
@@ -49,24 +88,111 @@ export async function createPodcastTemplate(): Promise<void> {
     });
 
     const voiceFolder = createFolder({ name: 'Voice' });
-    const hostMic = createAudioTrack({ name: 'Host Mic', parentId: voiceFolder.id, devices: [
-        { type: 'builtin-deesser', name: 'De-Ess', params: {} },
-        { type: 'builtin-eq', name: 'Mic EQ', params: { 'eq-low-gain': -3, 'eq-low-freq': 80, 'eq-low-q': 0.8, 'eq-mid-gain': 1.5, 'eq-mid-freq': 3200, 'eq-mid-q': 1, 'eq-high-gain': 2, 'eq-high-freq': 10000, 'eq-high-q': 0.7 } },
-        { type: 'builtin-compressor', name: 'Mic Comp', params: { 'comp-threshold': -20, 'comp-ratio': 3, 'comp-attack': 5, 'comp-release': 120, 'comp-knee': 6, 'comp-makeup': 3 } },
-        { type: 'builtin-gain', name: 'Trim', params: { 'gain-amount': 0 } },
-    ] });
-    const guest1Mic = createAudioTrack({ name: 'Guest 1 Mic', parentId: voiceFolder.id, devices: [
-        { type: 'builtin-deesser', name: 'De-Ess', params: {} },
-        { type: 'builtin-eq', name: 'Mic EQ', params: { 'eq-low-gain': -3, 'eq-low-freq': 80, 'eq-low-q': 0.8, 'eq-mid-gain': 1.5, 'eq-mid-freq': 3200, 'eq-mid-q': 1, 'eq-high-gain': 2, 'eq-high-freq': 10000, 'eq-high-q': 0.7 } },
-        { type: 'builtin-compressor', name: 'Mic Comp', params: { 'comp-threshold': -20, 'comp-ratio': 3, 'comp-attack': 5, 'comp-release': 120, 'comp-knee': 6, 'comp-makeup': 3 } },
-        { type: 'builtin-gain', name: 'Trim', params: { 'gain-amount': 0 } },
-    ] });
-    const guest2Mic = createAudioTrack({ name: 'Guest 2 Mic', parentId: voiceFolder.id, devices: [
-        { type: 'builtin-deesser', name: 'De-Ess', params: {} },
-        { type: 'builtin-eq', name: 'Mic EQ', params: { 'eq-low-gain': -3, 'eq-low-freq': 80, 'eq-low-q': 0.8, 'eq-mid-gain': 1.5, 'eq-mid-freq': 3200, 'eq-mid-q': 1, 'eq-high-gain': 2, 'eq-high-freq': 10000, 'eq-high-q': 0.7 } },
-        { type: 'builtin-compressor', name: 'Mic Comp', params: { 'comp-threshold': -20, 'comp-ratio': 3, 'comp-attack': 5, 'comp-release': 120, 'comp-knee': 6, 'comp-makeup': 3 } },
-        { type: 'builtin-gain', name: 'Trim', params: { 'gain-amount': 0 } },
-    ] });
+    const hostMic = createAudioTrack({
+        name: 'Host Mic',
+        parentId: voiceFolder.id,
+        devices: [
+            { type: 'builtin-deesser', name: 'De-Ess', params: {} },
+            {
+                type: 'builtin-eq',
+                name: 'Mic EQ',
+                params: {
+                    'eq-low-gain': -3,
+                    'eq-low-freq': 80,
+                    'eq-low-q': 0.8,
+                    'eq-mid-gain': 1.5,
+                    'eq-mid-freq': 3200,
+                    'eq-mid-q': 1,
+                    'eq-high-gain': 2,
+                    'eq-high-freq': 10000,
+                    'eq-high-q': 0.7,
+                },
+            },
+            {
+                type: 'builtin-compressor',
+                name: 'Mic Comp',
+                params: {
+                    'comp-threshold': -20,
+                    'comp-ratio': 3,
+                    'comp-attack': 5,
+                    'comp-release': 120,
+                    'comp-knee': 6,
+                    'comp-makeup': 3,
+                },
+            },
+            { type: 'builtin-gain', name: 'Trim', params: { 'gain-amount': 0 } },
+        ],
+    });
+    const guest1Mic = createAudioTrack({
+        name: 'Guest 1 Mic',
+        parentId: voiceFolder.id,
+        devices: [
+            { type: 'builtin-deesser', name: 'De-Ess', params: {} },
+            {
+                type: 'builtin-eq',
+                name: 'Mic EQ',
+                params: {
+                    'eq-low-gain': -3,
+                    'eq-low-freq': 80,
+                    'eq-low-q': 0.8,
+                    'eq-mid-gain': 1.5,
+                    'eq-mid-freq': 3200,
+                    'eq-mid-q': 1,
+                    'eq-high-gain': 2,
+                    'eq-high-freq': 10000,
+                    'eq-high-q': 0.7,
+                },
+            },
+            {
+                type: 'builtin-compressor',
+                name: 'Mic Comp',
+                params: {
+                    'comp-threshold': -20,
+                    'comp-ratio': 3,
+                    'comp-attack': 5,
+                    'comp-release': 120,
+                    'comp-knee': 6,
+                    'comp-makeup': 3,
+                },
+            },
+            { type: 'builtin-gain', name: 'Trim', params: { 'gain-amount': 0 } },
+        ],
+    });
+    const guest2Mic = createAudioTrack({
+        name: 'Guest 2 Mic',
+        parentId: voiceFolder.id,
+        devices: [
+            { type: 'builtin-deesser', name: 'De-Ess', params: {} },
+            {
+                type: 'builtin-eq',
+                name: 'Mic EQ',
+                params: {
+                    'eq-low-gain': -3,
+                    'eq-low-freq': 80,
+                    'eq-low-q': 0.8,
+                    'eq-mid-gain': 1.5,
+                    'eq-mid-freq': 3200,
+                    'eq-mid-q': 1,
+                    'eq-high-gain': 2,
+                    'eq-high-freq': 10000,
+                    'eq-high-q': 0.7,
+                },
+            },
+            {
+                type: 'builtin-compressor',
+                name: 'Mic Comp',
+                params: {
+                    'comp-threshold': -20,
+                    'comp-ratio': 3,
+                    'comp-attack': 5,
+                    'comp-release': 120,
+                    'comp-knee': 6,
+                    'comp-makeup': 3,
+                },
+            },
+            { type: 'builtin-gain', name: 'Trim', params: { 'gain-amount': 0 } },
+        ],
+    });
     for (const mic of [hostMic, guest1Mic, guest2Mic]) {
         addSend({ from: mic, to: voiceBus, level: 0.95 });
     }
@@ -104,10 +230,18 @@ export async function createPodcastTemplate(): Promise<void> {
 
     const tracks = [
         masterTrack,
-        voiceBus, musicBus,
-        voiceFolder, hostMic, guest1Mic, guest2Mic,
-        musicFolder, introMusic, outroMusic, sting,
-        sfxFolder, transitions,
+        voiceBus,
+        musicBus,
+        voiceFolder,
+        hostMic,
+        guest1Mic,
+        guest2Mic,
+        musicFolder,
+        introMusic,
+        outroMusic,
+        sting,
+        sfxFolder,
+        transitions,
     ];
 
     await finalizeTemplate({

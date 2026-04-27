@@ -163,7 +163,7 @@ function tick(deviceId: string, currentStep: number, bpm: number, stepsPerBeat: 
                 const defaultIdx = TOASTER_ENGINE_MAP[pad.engineType] ?? 0;
                 setPadEngineImmediate(toasterDeviceId, track.padIndex, defaultIdx);
             }
-        }
+        };
 
         if (totalDelayMs > 1) {
             setTimeout(fire, totalDelayMs);
@@ -175,7 +175,10 @@ function tick(deviceId: string, currentStep: number, bpm: number, stepsPerBeat: 
             const subInterval = stepDurationMs / (step.retriggerCount + 1);
             for (let r = 1; r <= step.retriggerCount; r++) {
                 const retrigVel = Math.max(20, Math.round(vel * (1 - r * 0.12)));
-                setTimeout(() => triggerToasterPad(deviceId, track.padIndex, retrigVel), totalDelayMs + subInterval * r);
+                setTimeout(
+                    () => triggerToasterPad(deviceId, track.padIndex, retrigVel),
+                    totalDelayMs + subInterval * r
+                );
             }
         }
     }

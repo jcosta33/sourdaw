@@ -7,7 +7,7 @@ describe('usePianoRollRenderer (Coordinate Conventions)', () => {
     it('uses clip-relative coordinates to position notes', () => {
         // usePianoRollRenderer returns a draw function.
         // It calculates x = note.startBeat * beatWidth.
-        
+
         const note = {
             id: 'n1',
             clipId: 'c1',

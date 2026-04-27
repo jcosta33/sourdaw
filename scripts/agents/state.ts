@@ -42,7 +42,7 @@ export function writeState(repoRoot, slug, data) {
     currentState[slug] = {
         ...(currentState[slug] || {}),
         ...data,
-        lastUpdated: new Date().toISOString()
+        lastUpdated: new Date().toISOString(),
     };
     writeFileSync(statePath, JSON.stringify(currentState, null, 2), 'utf8');
 }

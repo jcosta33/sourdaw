@@ -9,6 +9,7 @@ The user drops a target tone (a flute loop) onto a source clip (their vocal take
 The pipeline is built up to the point where a caller only needs to supply actual model weights and a UI. All DSP primitives are pure functions with tests.
 
 What exists:
+
 - `src/modules/AudioEngine/stores/rave.ts` — `RaveModel`, `LatentVector`, `RaveState`, `raveStore`, `FACTORY_MODELS` (5 presets with `modelPath: 'models/rave/<name>.onnx'` strings, **paths do not resolve to real files today**).
 - `src/modules/AudioEngine/useCases/rave/encodeAudio.ts` — simulated encoder using a windowed dot product with sines; input `Float32Array` → `LatentVector[]`. Not real inference.
 - `src/modules/AudioEngine/useCases/rave/decodeLatent.ts` — simulated decoder, additive sines from latent values.
@@ -16,6 +17,7 @@ What exists:
 - `loadModel.ts`, `unloadModel.ts`, `registerFactoryModels.ts`, `setTemperature.ts`, `setTransferBlend.ts`, `toggleRealTime.ts` — store mutators.
 
 What is missing:
+
 - No ONNX runtime wired. `encodeAudio`/`decodeLatent` return plausible shapes but the audio is synthetic.
 - No UI — no panel, no button, no drag target.
 - No wiring to clip → render output. The result of `timbreTransfer()` never reaches `audioBufferCache` or a new clip.
@@ -96,7 +98,7 @@ export async function decodeLatentWithOnnx(
 export async function transferTimbreToClip(args: {
     sourceClipId: string;
     targetClipId: string;
-    blend: number;       // 0..1
+    blend: number; // 0..1
     modelId: string;
     placement: 'replace' | 'newTrack' | 'newClip'; // default 'newClip'
 }): Promise<Result<{ newClipId: string; bufferId: string }, RaveError>>;
@@ -106,7 +108,10 @@ export function ensureRaveWorker(modelId: string): Promise<Worker>;
 export function terminateRaveWorker(modelId: string): void;
 
 // src/modules/AudioEngine/useCases/rave/downloadModel.ts
-export async function downloadModel(modelId: string, onProgress?: (pct: number) => void): Promise<Result<void, RaveError>>;
+export async function downloadModel(
+    modelId: string,
+    onProgress?: (pct: number) => void
+): Promise<Result<void, RaveError>>;
 // loadModel() stays as the store-side flip; downloadModel() is the network fetch.
 
 // src/modules/AudioEngine/useCases/rave/startRealTimeRave.ts
@@ -118,7 +123,16 @@ type RaveActions =
     | { type: 'raveDownloadModel'; payload: { modelId: string } }
     | { type: 'raveLoadModel'; payload: { modelId: string } }
     | { type: 'raveUnloadModel'; payload: { modelId: string } }
-    | { type: 'raveTransferTimbre'; payload: { sourceClipId: string; targetClipId: string; blend: number; modelId: string; placement?: 'replace'|'newTrack'|'newClip' } }
+    | {
+          type: 'raveTransferTimbre';
+          payload: {
+              sourceClipId: string;
+              targetClipId: string;
+              blend: number;
+              modelId: string;
+              placement?: 'replace' | 'newTrack' | 'newClip';
+          };
+      }
     | { type: 'raveStartRealTime'; payload: { trackId: string; modelId: string } }
     | { type: 'raveStopRealTime'; payload: { trackId: string } }
     | { type: 'raveSetBlend'; payload: { blend: number } }
@@ -138,12 +152,12 @@ export type RaveError =
 - **RAVE panel** — new inspector panel at `src/modules/Workspace/presentations/views/Inspector/RavePanel.tsx`. Opens when a clip is selected and the user switches to the RAVE tab.
 - **Model browser** — left column: 5 factory models with size badge, download / loaded state, and an "Import custom .onnx" button.
 - **Transfer controls** — middle column:
-  - Source clip: auto-set from selected clip; user can reassign by dragging another clip in.
-  - Target clip: drop zone that accepts an arrangement clip reference or a file.
-  - Blend slider (0–100%, maps to `transferBlend`).
-  - Temperature slider (0–2, `temperature`).
-  - Placement radio: Replace / New track / New clip (default).
-  - **Transfer** button — triggers `raveTransferTimbre`. Shows progress (encode → transfer → decode → write).
+    - Source clip: auto-set from selected clip; user can reassign by dragging another clip in.
+    - Target clip: drop zone that accepts an arrangement clip reference or a file.
+    - Blend slider (0–100%, maps to `transferBlend`).
+    - Temperature slider (0–2, `temperature`).
+    - Placement radio: Replace / New track / New clip (default).
+    - **Transfer** button — triggers `raveTransferTimbre`. Shows progress (encode → transfer → decode → write).
 - **Real-time section** — right column: toggle "Live Monitor" + model selector. Warning label "~200 ms latency — monitor only". Shown only when the track is armed.
 - **Command Palette entries** — `Rave: Transfer Selected Clips`, `Rave: Download Model <name>`.
 
@@ -157,7 +171,7 @@ type ProjectData = {
     audioEngine?: {
         rave?: {
             activeModelId: string | null;
-            transferBlend: number;     // last used
+            transferBlend: number; // last used
             temperature: number;
             /** per-track real-time assignments that survive reload */
             realTimeAssignments: Array<{ trackId: string; modelId: string }>;
@@ -196,28 +210,33 @@ Migration: add the optional field. Existing projects default to `{ activeModelId
 ## Milestones
 
 ### M1 — Real ONNX encode/decode in worker (one session)
+
 - Add `onnxruntime-web` dependency.
 - Add `src/modules/AudioEngine/services/raveWorkerHost.ts` + worker source at `src/modules/AudioEngine/workers/raveWorker.ts`.
 - Implement `encodeAudioWithOnnx` and `decodeLatentWithOnnx` with a mocked 8-dim identity model (checked-in tiny .onnx for tests) so the pipeline works end-to-end with a real ORT session.
 - Retain existing pure fallbacks behind a feature flag for CI.
 
 ### M2 — Transfer pipeline + clip insertion (one session)
+
 - `transferTimbreToClip` implementation with `placement` handling.
 - AppActions and handlers for `raveTransferTimbre`, `raveLoadModel`, `raveUnloadModel`, `raveDownloadModel`.
 - Writes to `audioBufferCache`, creates clip via `insertClipFromBuffer`, undoable.
 
 ### M3 — UI panel + model browser (one session)
+
 - `RavePanel.tsx` with model browser, transfer controls, drop zones.
 - Progress bar wired to worker message stream.
 - Command Palette entries.
 
 ### M4 — Real-time mode (one session)
+
 - `rave-realtime` device type factory in `TrackNode.addDevice`.
 - `startRealTimeRave` / `stopRealTimeRave` + AppActions.
 - Worklet ring-buffer fallback on jitter.
 - Latency indicator in UI.
 
 ### M5 — Persistence + model cache (one session)
+
 - `ProjectData.audioEngine.rave` schema + hydration.
 - Cache Storage wrapper for model weights, progress events, user-confirm download prompt.
 - Custom `.onnx` import (drop a file → stored in Cache Storage under a user-supplied id).

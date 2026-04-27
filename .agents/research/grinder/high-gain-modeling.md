@@ -48,9 +48,9 @@ Yeh, Abel, and Smith derive efficient pedal models around a conditioning filter,
 Implication for Grinder:
 
 - The distortion and fuzz stages should be structured as:
-  - input tightening / conditioning
-  - controlled nonlinear transfer
-  - post-shape EQ / DC cleanup / output compensation
+    - input tightening / conditioning
+    - controlled nonlinear transfer
+    - post-shape EQ / DC cleanup / output compensation
 - The present "very large gain, then clip, then tone" structure is too uncontrolled for a believable guitar product.
 
 ### 3. Silence invariants matter

@@ -51,9 +51,7 @@ describe('handleAutoFixMix', () => {
 
         expect(mocks.storeSet).toHaveBeenCalledWith(expect.objectContaining({ isAnalyzing: true }));
         expect(analyzeMix).toHaveBeenCalled();
-        expect(mocks.storeSet).toHaveBeenCalledWith(
-            expect.objectContaining({ isAnalyzing: false, panelOpen: true })
-        );
+        expect(mocks.storeSet).toHaveBeenCalledWith(expect.objectContaining({ isAnalyzing: false, panelOpen: true }));
     });
 
     it('should fix clipping tracks and master gain', async () => {

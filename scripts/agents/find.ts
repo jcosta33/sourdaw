@@ -17,7 +17,7 @@ function run() {
     const { positional } = parseArgs(process.argv.slice(2));
     const queryType = positional[0];
     const queryTarget = positional[1];
-    
+
     if (!queryType || !queryTarget) {
         console.log(red('Usage: agents:find <type> <target>'));
         console.log(dim('Types: class, interface, function, implements, extends'));
@@ -50,11 +50,11 @@ function run() {
     }
 
     const res = spawnSync('git', ['grep', '-n', '-E', regex], { cwd: repoRoot, encoding: 'utf8' });
-    
+
     if (res.status === 0 && res.stdout.trim()) {
         const lines = res.stdout.trim().split('\n');
         console.log(green(`✓ Found ${lines.length} match(es):`));
-        lines.forEach(line => {
+        lines.forEach((line) => {
             const parts = line.split(':');
             const file = parts.shift();
             const lineNum = parts.shift();
@@ -64,7 +64,7 @@ function run() {
     } else {
         console.log(dim(`No matches found.`));
     }
-    
+
     console.log('');
 }
 

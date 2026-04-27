@@ -15,17 +15,19 @@ function renderDashboard(repoRoot) {
     const globalState = readState(repoRoot);
 
     moveCursorToTop();
-    console.log(`\n  ${bold(cyan('👾 Swarm Command Center'))}  ${dim(`(Updated: ${new Date().toLocaleTimeString()})`)}`);
+    console.log(
+        `\n  ${bold(cyan('👾 Swarm Command Center'))}  ${dim(`(Updated: ${new Date().toLocaleTimeString()})`)}`
+    );
     console.log(`  ${'─'.repeat(60)}`);
 
     if (sandboxes.length === 0) {
         console.log(`  ${dim('No active agents in the swarm.')}`);
     }
 
-    sandboxes.forEach(s => {
+    sandboxes.forEach((s) => {
         const state = globalState[s.slug] || {};
         let statusTag = dim('[IDLE]');
-        
+
         if (state.status === 'running') {
             if (state.pid) {
                 const alive = isProcessRunning(state.pid);
@@ -39,7 +41,7 @@ function renderDashboard(repoRoot) {
 
         const backend = state.backend ? dim(` via ${state.backend}`) : '';
         const pid = state.pid ? dim(` (PID: ${state.pid})`) : '';
-        
+
         console.log(`  ${statusTag.padEnd(20)} ${bold(s.slug)} ${pid}${backend}`);
         console.log(`  ${dim('↳')} Branch: ${s.branch}`);
     });

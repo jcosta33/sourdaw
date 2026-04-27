@@ -10,7 +10,14 @@ type MockLayer = {
     parameters: Array<{ name: string; value: number; min: number; max: number; unit: string }>;
     affectedTrackIds: string[];
     insertionIndex: number;
-    regions: Array<{ id: string; startBeat: number; endBeat: number; blend: number; fadeInBeats: number; fadeOutBeats: number }>;
+    regions: Array<{
+        id: string;
+        startBeat: number;
+        endBeat: number;
+        blend: number;
+        fadeInBeats: number;
+        fadeOutBeats: number;
+    }>;
     enabled: boolean;
     mix: number;
     color: string;

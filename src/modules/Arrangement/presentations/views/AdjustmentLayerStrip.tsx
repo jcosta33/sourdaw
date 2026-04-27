@@ -34,7 +34,14 @@ type InspectorState = { layerId: string } | null;
 
 type DragState =
     | { kind: 'move'; regionId: string; layerId: string; startClientX: number; origStart: number; origEnd: number }
-    | { kind: 'resizeStart'; regionId: string; layerId: string; startClientX: number; origStart: number; origEnd: number }
+    | {
+          kind: 'resizeStart';
+          regionId: string;
+          layerId: string;
+          startClientX: number;
+          origStart: number;
+          origEnd: number;
+      }
     | { kind: 'resizeEnd'; regionId: string; layerId: string; startClientX: number; origStart: number; origEnd: number }
     | {
           kind: 'fadeIn';
@@ -87,7 +94,9 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
     const [addMenuOpen, setAddMenuOpen] = useState(false);
     const [inspector, setInspector] = useState<InspectorState>(null);
     const [tracksPicker, setTracksPicker] = useState<{ layerId: string } | null>(null);
-    const [dragPreview, setDragPreview] = useState<{ regionId: string; startBeat: number; endBeat: number } | null>(null);
+    const [dragPreview, setDragPreview] = useState<{ regionId: string; startBeat: number; endBeat: number } | null>(
+        null
+    );
     const [fadePreview, setFadePreview] = useState<FadePreview | null>(null);
     const dragStateRef = useRef<DragState>(null);
     const menuRef = useRef<HTMLDivElement>(null);
@@ -324,7 +333,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
         setInspector({ layerId: layer.id });
     };
 
-    const inspectorLayer = inspector ? layers.find((l) => l.id === inspector.layerId) ?? null : null;
+    const inspectorLayer = inspector ? (layers.find((l) => l.id === inspector.layerId) ?? null) : null;
 
     return (
         <TimelineChromeSurface
@@ -334,7 +343,10 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             aria-label="Adjustment layers"
             data-onboarding="adjustment-layer-strip"
         >
-            <div className="flex items-center justify-between border-b border-border/30 px-2" style={{ height: ROW_HEIGHT }}>
+            <div
+                className="flex items-center justify-between border-b border-border/30 px-2"
+                style={{ height: ROW_HEIGHT }}
+            >
                 <div className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
                     <Layers className="size-2.5" />
                     Adjustment Layers
@@ -452,7 +464,8 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
                     {contextMenu.kind === 'region' ? (
                         <>
                             <DawMenuMutedRow className="px-2">
-                                Region: {contextMenu.region.startBeat.toFixed(1)}–{contextMenu.region.endBeat.toFixed(1)}
+                                Region: {contextMenu.region.startBeat.toFixed(1)}–
+                                {contextMenu.region.endBeat.toFixed(1)}
                             </DawMenuMutedRow>
                             <DawMenuButton
                                 onClick={() => {
@@ -775,7 +788,13 @@ type FadeTrianglesProps = {
 
 const FADE_HANDLE_SIZE = 8;
 
-const FadeTriangles = ({ region, pixelsPerBeat, width, fadePreview, onFadeDragStart }: FadeTrianglesProps): ReactElement => {
+const FadeTriangles = ({
+    region,
+    pixelsPerBeat,
+    width,
+    fadePreview,
+    onFadeDragStart,
+}: FadeTrianglesProps): ReactElement => {
     const liveFade =
         fadePreview && fadePreview.regionId === region.id
             ? { fadeInBeats: fadePreview.fadeInBeats, fadeOutBeats: fadePreview.fadeOutBeats }
@@ -880,9 +899,7 @@ const AffectedTracksPicker = ({ layer, tracks, onClose, onChange }: AffectedTrac
                         <div className="text-xs font-semibold" style={{ color: layer.color }}>
                             {layer.name}
                         </div>
-                        <div className="text-[9px] uppercase tracking-wider text-muted-foreground">
-                            Affected Tracks
-                        </div>
+                        <div className="text-[9px] uppercase tracking-wider text-muted-foreground">Affected Tracks</div>
                     </div>
                     <button
                         type="button"

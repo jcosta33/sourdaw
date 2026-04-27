@@ -31,17 +31,17 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     // Modified to include deviceId in the flush param.
     // We can use a composite key for the batcher: `${deviceId}:${rustKey}`
     const paramBatcher = createRafBatcher<number>();
-function flushParam(compositeKey: string, value: number): void {
-    const parts = compositeKey.split(':');
-    const deviceId = parts[0];
-    if (!deviceId) return;
-    const rustKey = parts.slice(1).join(':');
-    const device = activeDevices.get(deviceId);
-    if (device) {
-        device.setParam(rustKey, value);
+    function flushParam(compositeKey: string, value: number): void {
+        const parts = compositeKey.split(':');
+        const deviceId = parts[0];
+        if (!deviceId) return;
+        const rustKey = parts.slice(1).join(':');
+        const device = activeDevices.get(deviceId);
+        if (device) {
+            device.setParam(rustKey, value);
+        }
+        deps.persistDeviceParam(deviceId, rustKey, value);
     }
-    deps.persistDeviceParam(deviceId, rustKey, value);
-}
 
     function queueParam(deviceId: string, rustKey: string, value: number): void {
         paramBatcher.schedule(`${deviceId}:${rustKey}`, value, flushParam);
@@ -99,7 +99,11 @@ function flushParam(compositeKey: string, value: number): void {
         // We can't cancelAll easily per-device without changing the batcher,
         // but it's okay to let pending updates naturally drop since the device is removed from map.
     }
-    function setLevainParamWithAudio<K extends keyof LevainPatch>(deviceId: string, key: K, value: LevainPatch[K]): void {
+    function setLevainParamWithAudio<K extends keyof LevainPatch>(
+        deviceId: string,
+        key: K,
+        value: LevainPatch[K]
+    ): void {
         setLevainParam(deviceId, key, value);
 
         if (key === 'currentArticulation' && typeof value === 'string') {

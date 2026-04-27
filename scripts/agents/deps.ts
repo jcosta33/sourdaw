@@ -26,7 +26,7 @@ function run() {
     // Run pnpm outdated --json or npm outdated --json
     const res = spawnSync('npm', ['outdated', '--json'], { cwd: repoRoot, encoding: 'utf8' });
     let outdated = {};
-    
+
     try {
         if (res.stdout) outdated = JSON.parse(res.stdout);
     } catch (e) {
@@ -47,11 +47,11 @@ function run() {
 
     const epicSlug = `deps-upgrade-${Date.now()}`;
 
-    packages.forEach(pkg => {
+    packages.forEach((pkg) => {
         const info = outdated[pkg];
         const taskSlug = `upgrade-${pkg.replace(/[^a-zA-Z0-9-]/g, '-')}-${info.latest}`;
         const taskPath = join(tasksDir, `${taskSlug}.md`);
-        
+
         const template = `# Upgrade ${pkg}
 
 ## Metadata

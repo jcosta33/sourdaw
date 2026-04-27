@@ -15,13 +15,11 @@ const mocks = vi.hoisted(() => ({
             tracks: [
                 {
                     id: 't1',
-                    clips: [
-                        { id: 'c1', startBeat: 4, endBeat: 8, name: 'Lead', type: 'midi' }
-                    ]
-                }
-            ]
-        }
-    }
+                    clips: [{ id: 'c1', startBeat: 4, endBeat: 8, name: 'Lead', type: 'midi' }],
+                },
+            ],
+        },
+    },
 }));
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({

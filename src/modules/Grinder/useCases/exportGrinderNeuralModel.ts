@@ -11,7 +11,8 @@ export function exportGrinderNeuralModel(entry: GrinderImportedNeuralModel): voi
     }
 
     downloadGrinderNeuralModelFile({
-        file_name: entry.sourceFileName ?? `${entry.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'grinder-capture'}.nam`,
+        file_name:
+            entry.sourceFileName ?? `${entry.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'grinder-capture'}.nam`,
         file_text: entry.sourceFileText,
     });
     setGrinderNeuralLibraryState({ error: null });

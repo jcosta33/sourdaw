@@ -120,7 +120,7 @@ Switching between amp families should feel like choosing a different rig voice, 
 ## Open questions
 
 - [x] **[MINOR]** After phase 11, is the higher-value next slice `inputMode` completion or another later-stage tone pass?
-  Answer: `inputMode` completion is the cleaner next slice now that amp-family labels and power-tube families are no longer acting like near-interchangeable choices.
+      Answer: `inputMode` completion is the cleaner next slice now that amp-family labels and power-tube families are no longer acting like near-interchangeable choices.
 
 ## Tradeoffs and risks
 

@@ -7,9 +7,7 @@ export function removeMapping(modulatorId: string, targetParamId: string): void 
     }
     modulationStore.set({
         modulators: state.modulators.map((m) =>
-            m.id === modulatorId
-                ? { ...m, mappings: m.mappings.filter((x) => x.targetParamId !== targetParamId) }
-                : m
+            m.id === modulatorId ? { ...m, mappings: m.mappings.filter((x) => x.targetParamId !== targetParamId) } : m
         ),
     });
 }

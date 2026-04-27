@@ -24,9 +24,7 @@ describe('applyModulationToEngine', () => {
             updateDeviceParam: mocks.updateDeviceParam,
             getPluginParamRange: (deviceType, paramId) => {
                 const descriptor = mocks.getPluginById(deviceType);
-                const paramDef = descriptor?.parameters.find(
-                    (param: { id: string }) => param.id === paramId
-                );
+                const paramDef = descriptor?.parameters.find((param: { id: string }) => param.id === paramId);
                 if (!paramDef) {
                     return null;
                 }
@@ -56,9 +54,7 @@ describe('applyModulationToEngine', () => {
             return {
                 id: 'builtin-filter',
                 name: 'Filter',
-                parameters: [
-                    { id: 'cutoff', minValue: 0, maxValue: 1000, defaultValue: 500 },
-                ],
+                parameters: [{ id: 'cutoff', minValue: 0, maxValue: 1000, defaultValue: 500 }],
             };
         });
 
@@ -70,9 +66,7 @@ describe('applyModulationToEngine', () => {
                     trackId: 't1',
                     kind: 'lfo',
                     config: { kind: 'lfo', waveform: 'sine', rate: 4, sync: true, phase: 0, depth: 1 },
-                    mappings: [
-                        { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 0.5 },
-                    ],
+                    mappings: [{ targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 0.5 }],
                     enabled: true,
                 },
             ],
@@ -89,7 +83,9 @@ describe('applyModulationToEngine', () => {
         expect(paramId).toBe('cutoff');
         expect(value).toBeCloseTo(1000);
 
-        const tracks = mocks.trackStore.value?.tracks as Array<{ devices: Array<{ parameterValues: Record<string, number> }> }> | undefined;
+        const tracks = mocks.trackStore.value?.tracks as
+            | Array<{ devices: Array<{ parameterValues: Record<string, number> }> }>
+            | undefined;
         expect(tracks?.[0]?.devices[0]?.parameterValues.cutoff).toBe(500);
     });
 
@@ -102,9 +98,7 @@ describe('applyModulationToEngine', () => {
                     trackId: 't1',
                     kind: 'lfo',
                     config: { kind: 'lfo', waveform: 'sine', rate: 4, sync: true, phase: 0, depth: 10 },
-                    mappings: [
-                        { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 1 },
-                    ],
+                    mappings: [{ targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff', amount: 1 }],
                     enabled: true,
                 },
             ],

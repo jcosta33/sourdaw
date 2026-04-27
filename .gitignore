@@ -28,3 +28,6 @@ knip-results.txt
 # Playwright
 playwright-report/
 test-results/
+
+# Agent UI Scripts
+.agents/ui-scripts/*.png

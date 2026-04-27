@@ -40,8 +40,8 @@ last_verified: '2026-04-28'
 
 - WASM processors **do** write `get_latency_samples()` into SAB views (`*Processor.ts`).
 - **Host-side** compensation exists but is **not** driven by those SAB values:
-  - `getDeviceLatencyMs` in `helpers.ts` uses `deviceLatencyMap` (built-ins + sidechain heuristic) and **`externalLatencyRegistry`**.
-  - `reportLatency()` only **writes** to `externalLatencyRegistry` — **no production calls** to `reportLatency` were found (only definition + tests). So runtime **does not** ingest worklet-reported latency into the chain sum.
+    - `getDeviceLatencyMs` in `helpers.ts` uses `deviceLatencyMap` (built-ins + sidechain heuristic) and **`externalLatencyRegistry`**.
+    - `reportLatency()` only **writes** to `externalLatencyRegistry` — **no production calls** to `reportLatency` were found (only definition + tests). So runtime **does not** ingest worklet-reported latency into the chain sum.
 - **`getCompensationDelay`** is used from `toggleRecording.ts` when **finishing** recording to trim clip start by total latency — that uses `getTrackLatency` / static per-device numbers, **not** SAB-reported plugin lookahead.
 
 **Conclusion:** The product **gap** (“true lookahead from each WASM instance’s `get_latency_samples()` is not folded into delay compensation”) remains **fair**. The blanket “host never compensates” is **misleading** — the host compensates **recording trim** with a **different** model. **Recommended backlog text:** split into (a) SAB latency not wired into `getDeviceLatencyMs` / `reportLatency`, (b) recording uses heuristic `getCompensationDelay`, (c) automation/monitoring alignment unverified.
@@ -50,13 +50,13 @@ last_verified: '2026-04-28'
 
 ## Faust (Appendix B) — claim-by-claim
 
-| Claim in audit | Verdict | Evidence |
-| -------------- | ------- | -------- |
-| Only `FaustMonoDspGenerator` for all modules | **False** | `compilerEngine.ts` ~165: `mod.isInstrument ? new FaustPolyDspGenerator() : new FaustMonoDspGenerator()` |
-| Poly never imported | **False** | Same file imports `FaustPolyDspGenerator` |
-| `setParam` bare name fails; only suffix fallback O(N) | **Superseded** | `faustDeviceFactory.ts`: `buildParamAddressCache` from `AudioParam` map; `setParam` uses `paramAddressCache.get(name) ?? name` |
-| Notes use `scheduleDeviceParam('freq'…)` | **False for current scheduler** | `scheduleFaustNote.ts` uses `scheduleDeviceKeyOn` / `scheduleDeviceKeyOff` |
-| N-24 race | **Retracted in audit** | Still valid retraction |
+| Claim in audit                                        | Verdict                         | Evidence                                                                                                                       |
+| ----------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Only `FaustMonoDspGenerator` for all modules          | **False**                       | `compilerEngine.ts` ~165: `mod.isInstrument ? new FaustPolyDspGenerator() : new FaustMonoDspGenerator()`                       |
+| Poly never imported                                   | **False**                       | Same file imports `FaustPolyDspGenerator`                                                                                      |
+| `setParam` bare name fails; only suffix fallback O(N) | **Superseded**                  | `faustDeviceFactory.ts`: `buildParamAddressCache` from `AudioParam` map; `setParam` uses `paramAddressCache.get(name) ?? name` |
+| Notes use `scheduleDeviceParam('freq'…)`              | **False for current scheduler** | `scheduleFaustNote.ts` uses `scheduleDeviceKeyOn` / `scheduleDeviceKeyOff`                                                     |
+| N-24 race                                             | **Retracted in audit**          | Still valid retraction                                                                                                         |
 
 **Open (still real):** timer-based `scheduleCall` for `keyOn`/`keyOff` in `faustDeviceFactory.ts` (not sample-accurate). **Inventory** of instrument DSP files and “additive without gain” **must be re-derived** from current `builtinDSP.ts` + `dsp/*.dsp` list.
 
@@ -64,13 +64,13 @@ last_verified: '2026-04-28'
 
 ## MIDI coordinates (Appendix C) — claim-by-claim
 
-| Claim | Verdict | Evidence |
-| ----- | ------- | -------- |
-| `applyMelodyToTrack` timeline-absolute `startBeat + note.startBeat` | **False now** | `applyToTrack.ts` maps `startBeat: note.startBeat` |
-| Chord / drum apply same bug | **False now** | `generateChordProgression/applyToTrack.ts`, `generateDrumPattern/applyToTrack.ts` use `note.startBeat` |
-| `duplicateClipCore` adds `beatDelta` to notes | **False now** | `duplicateClipCore.ts` copies `startBeat: note.startBeat` |
-| `importMidiFile` line 52 forces `startBeat = 0` | **Right idea, wrong path/line** | `Arrangement/useCases/importMidiFile.ts` ~46: `startBeat: 0` on new clip |
-| Table line numbers for `clipDrawing`, `scheduleMidiNotes`, etc. | **Unverified / likely drift** | Not re-validated line-by-line in this pass |
+| Claim                                                               | Verdict                         | Evidence                                                                                               |
+| ------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `applyMelodyToTrack` timeline-absolute `startBeat + note.startBeat` | **False now**                   | `applyToTrack.ts` maps `startBeat: note.startBeat`                                                     |
+| Chord / drum apply same bug                                         | **False now**                   | `generateChordProgression/applyToTrack.ts`, `generateDrumPattern/applyToTrack.ts` use `note.startBeat` |
+| `duplicateClipCore` adds `beatDelta` to notes                       | **False now**                   | `duplicateClipCore.ts` copies `startBeat: note.startBeat`                                              |
+| `importMidiFile` line 52 forces `startBeat = 0`                     | **Right idea, wrong path/line** | `Arrangement/useCases/importMidiFile.ts` ~46: `startBeat: 0` on new clip                               |
+| Table line numbers for `clipDrawing`, `scheduleMidiNotes`, etc.     | **Unverified / likely drift**   | Not re-validated line-by-line in this pass                                                             |
 
 **Status field `closed`:** Consider **reopening** or adding a “2026-04-27 code verification” note — convention bugs in the named files look **fixed**; **migration** for old projects may remain a **data** task.
 
@@ -78,25 +78,25 @@ last_verified: '2026-04-28'
 
 ## Multi-track recording (Appendix D) — claim-by-claim
 
-| Claim | Verdict | Evidence |
-| ----- | ------- | -------- |
-| Single global `recordingSession` | **True** | `recording.ts` `createHmrPersistentState` single object |
-| Each `startAudioRecording` overwrites session | **True** | Assigns `mediaStream`, `onRecordingComplete`, nodes in place |
-| Mono `channelCount: 1` | **True** | `recording.ts` ~95-100 |
-| `startRecording` creates clips for all armed | **True** | `startRecording.ts`: loop `armedTracks`, `newClips.push` per track (with MIDI overdub exceptions) |
-| Independent of `selectedTrackId` | **Plausible** | Recording uses `armed` in `toggleRecording` loop |
+| Claim                                         | Verdict       | Evidence                                                                                          |
+| --------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------- |
+| Single global `recordingSession`              | **True**      | `recording.ts` `createHmrPersistentState` single object                                           |
+| Each `startAudioRecording` overwrites session | **True**      | Assigns `mediaStream`, `onRecordingComplete`, nodes in place                                      |
+| Mono `channelCount: 1`                        | **True**      | `recording.ts` ~95-100                                                                            |
+| `startRecording` creates clips for all armed  | **True**      | `startRecording.ts`: loop `armedTracks`, `newClips.push` per track (with MIDI overdub exceptions) |
+| Independent of `selectedTrackId`              | **Plausible** | Recording uses `armed` in `toggleRecording` loop                                                  |
 
 ---
 
 ### Plugin host (Appendix E) — claim-by-claim
 
-| Claim | Verdict | Evidence |
-| ----- | ------- | -------- |
-| Four methods full of per-plugin branches only | **Mostly stale** | `TrackNode.ts` uses `dn.controller` for `updateParam`, `scheduleParam`, `updateBypass`, `removeDevice`, `dispose` |
-| Toaster/Levain singleton | **False** | `toasterStore` / `levainStore` are `Record<string, …>` + `getXState(deviceId)` |
-| Crust silent add | **True** | No `crust` in `wasmDeviceRegistry`; `addDevice` returns if `!findWasmDescriptor` |
-| Native bridge per-block `tauriInvoke` | **True** | `NativePluginBridgeNode.ts` ~46–59 |
-| PDC to SAB, host does nothing | **See § PDC nuance** | SAB written; host uses different compensation path; `reportLatency` unused |
+| Claim                                         | Verdict              | Evidence                                                                                                          |
+| --------------------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Four methods full of per-plugin branches only | **Mostly stale**     | `TrackNode.ts` uses `dn.controller` for `updateParam`, `scheduleParam`, `updateBypass`, `removeDevice`, `dispose` |
+| Toaster/Levain singleton                      | **False**            | `toasterStore` / `levainStore` are `Record<string, …>` + `getXState(deviceId)`                                    |
+| Crust silent add                              | **True**             | No `crust` in `wasmDeviceRegistry`; `addDevice` returns if `!findWasmDescriptor`                                  |
+| Native bridge per-block `tauriInvoke`         | **True**             | `NativePluginBridgeNode.ts` ~46–59                                                                                |
+| PDC to SAB, host does nothing                 | **See § PDC nuance** | SAB written; host uses different compensation path; `reportLatency` unused                                        |
 
 **Adversarial / “Final resolution” block:** Treat as **historical** unless re-run with current `removeDevice`/`dispose` + store teardown tests.
 
@@ -108,37 +108,37 @@ last_verified: '2026-04-28'
 
 ### AI Runtime
 
-| ID | Status | Notes |
-| -- | ------ | ----- |
-| I-02 | ? | `sendChatMessage`, `executeDsoEdit`, `inference` not traced end-to-end |
-| I-04 | ✓ | `executeDsoEdit.ts` ~254–262: binary Automerge snapshots before/after edit |
-| I-16 | ✓ / ~ | `ChatPanel.tsx` uses `useStore(chatStore, …)`; line **74–86** not 77–82 — effect deps on `chatState?.messages` — **re-renders on message updates**; whether “every token” needs profiling |
-| S-06 | ? | Surveillance only |
+| ID   | Status | Notes                                                                                                                                                                                     |
+| ---- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| I-02 | ?      | `sendChatMessage`, `executeDsoEdit`, `inference` not traced end-to-end                                                                                                                    |
+| I-04 | ✓      | `executeDsoEdit.ts` ~254–262: binary Automerge snapshots before/after edit                                                                                                                |
+| I-16 | ✓ / ~  | `ChatPanel.tsx` uses `useStore(chatStore, …)`; line **74–86** not 77–82 — effect deps on `chatState?.messages` — **re-renders on message updates**; whether “every token” needs profiling |
+| S-06 | ?      | Surveillance only                                                                                                                                                                         |
 
 ### DSP (crates)
 
-| ID | Status | Notes |
-| -- | ------ | ----- |
-| I-08 | ✓ | Cascaded split in `proof/crossover.rs` `process`, `bacteria/crossover.rs` `process_sample` — topology as described |
-| I-12 | ~ | `crumbs/voice.rs` uses cubic Hermite; **“no AA”** is a **quality** claim, not a one-line disproof |
-| I-22 | ✓ | `limiter.rs` ~85: `fold` on `gain_buffer` per sample |
-| I-30 | ? | Meta-row |
+| ID   | Status | Notes                                                                                                              |
+| ---- | ------ | ------------------------------------------------------------------------------------------------------------------ |
+| I-08 | ✓      | Cascaded split in `proof/crossover.rs` `process`, `bacteria/crossover.rs` `process_sample` — topology as described |
+| I-12 | ~      | `crumbs/voice.rs` uses cubic Hermite; **“no AA”** is a **quality** claim, not a one-line disproof                  |
+| I-22 | ✓      | `limiter.rs` ~85: `fold` on `gain_buffer` per sample                                                               |
+| I-30 | ?      | Meta-row                                                                                                           |
 
 ### Proof
 
-| ID | Status | Notes |
-| -- | ------ | ----- |
-| N-19 | ✓ | `setProofParamWithPatch.ts` only handles a subset of keys; `syncEqBands` / `syncDynBands` / `syncImager` / `syncExciter` / `syncFullPatch` carry arrays and more — **aligns** with table |
-| S-05 | ? | — |
-| I-06 | ~ | **See § PDC** — refine wording |
+| ID   | Status | Notes                                                                                                                                                                                    |
+| ---- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| N-19 | ✓      | `setProofParamWithPatch.ts` only handles a subset of keys; `syncEqBands` / `syncDynBands` / `syncImager` / `syncExciter` / `syncFullPatch` carry arrays and more — **aligns** with table |
+| S-05 | ?      | —                                                                                                                                                                                        |
+| I-06 | ~      | **See § PDC** — refine wording                                                                                                                                                           |
 
 ### UI & state
 
-| ID | Status | Notes |
-| -- | ------ | ----- |
-| S-01 | ✓ | `setTrackGain` updates store + engine + `maybeRecordAutomation` + Toaster — **high write volume** plausible; `TrackLevelSection` is **`Workspace/.../TrackLevelSection.tsx`**, lines ~50–55 for slider (not `TrackLevelSection.tsx:39-41` under Arrangement) |
-| S-02 | ✓ | `trackStore` still `selectedTrackId: string \| null` |
-| I-14 – I-28 | ? | Not checked this pass |
+| ID          | Status | Notes                                                                                                                                                                                                                                                        |
+| ----------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| S-01        | ✓      | `setTrackGain` updates store + engine + `maybeRecordAutomation` + Toaster — **high write volume** plausible; `TrackLevelSection` is **`Workspace/.../TrackLevelSection.tsx`**, lines ~50–55 for slider (not `TrackLevelSection.tsx:39-41` under Arrangement) |
+| S-02        | ✓      | `trackStore` still `selectedTrackId: string \| null`                                                                                                                                                                                                         |
+| I-14 – I-28 | ?      | Not checked this pass                                                                                                                                                                                                                                        |
 
 ### Timeline / browser / features
 
@@ -171,7 +171,7 @@ last_verified: '2026-04-28'
 
 - No **profile** of Chat or fader (behavioral, not just structure).
 - No **plugin-by-plugin** proof pass for I-30.
-- **Timeline (T-*)** and **browser (B-*)** mostly **unread**.
+- **Timeline (T-\*)** and **browser (B-\*)** mostly **unread**.
 - **Knead, Fermenter, LocalStorage, scoring** (I-14, I-15, I-28, N-34) **not** opened.
 
 When those matter for a release, schedule a **scoped** audit or extend the appendices below with proof when an ID closes.
@@ -196,17 +196,17 @@ Issues below were tracked as real but lower priority than dedicated area audits.
 | ID   | Issue                                                                                                                                     | Severity | File                                                                                                                                                             |
 | ---- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | I-08 | LR4 crossover cascade does NOT sum flat — bands pass through different numbers of allpass stages causing comb-filtering on reconstruction | High     | `crates/daw-dsp/src/proof/crossover.rs:87-92` and `bacteria/crossover.rs:163-193` — same cascaded topology in both. Fix: parallel LR4s with allpass compensation |
-| I-12 | Crumbs pitch-up no anti-aliasing                                                                                                          | Medium   | `crates/daw-dsp/src/crumbs/voice.rs:218-240`                                                                                                                     |
-| I-22 | **[FIXED]** Limiter O(window×N) scan                                                                                                                  | Medium   | Fixed: `crates/daw-dsp/src/proof/limiter.rs` now uses amortized O(1) max peak tracking.                                                                                                                      |
+| I-12 | **[FIXED]** Crumbs pitch-up no anti-aliasing                                                                                                          | Medium   | Fixed: Replaced `cubic_hermite` with an 8-point Hann-windowed Sinc interpolator in `crates/daw-dsp/src/crumbs/voice.rs` for bandlimited resampling.                                                                                                                     |
+| I-22 | **[FIXED]** Limiter O(window×N) scan                                                                                                      | Medium   | Fixed: `crates/daw-dsp/src/proof/limiter.rs` now uses amortized O(1) max peak tracking.                                                                          |
 | I-30 | DSP claims needing re-verification                                                                                                        | Mixed    | Per-plugin — see original audit history                                                                                                                          |
 
 ### Proof Plugin
 
-| ID   | Issue                                                                                                                                                                                                                                       | Severity | File                                                        |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------- |
-| N-19 | **[FIXED]** Param bridge array params only sync on patch load | High     | Fixed: `setProofParamWithPatch.ts` now instantly syncs `eqBands`, `dynBands`, `imgBandWidth`, `excBands`, `chainOrder`, `ditherMode`, and `ditherBits` on change. |
-| S-05 | Engine-side param verification                                                                                                                                                                                                              | Medium   | Needs XOI runtime test                                      |
-| I-06 | PDC latency from SAB not consumed by host `getDeviceLatencyMs` / `reportLatency`                                                                                                                                                                 | Medium   | Worklets call `get_latency_samples()`; recording uses static trim, automation unaligned |
+| ID   | Issue                                                                            | Severity | File                                                                                                                                                              |
+| ---- | -------------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| N-19 | **[FIXED]** Param bridge array params only sync on patch load                    | High     | Fixed: `setProofParamWithPatch.ts` now instantly syncs `eqBands`, `dynBands`, `imgBandWidth`, `excBands`, `chainOrder`, `ditherMode`, and `ditherBits` on change. |
+| S-05 | Engine-side param verification                                                   | Medium   | Needs XOI runtime test                                                                                                                                            |
+| I-06 | PDC latency from SAB not consumed by host `getDeviceLatencyMs` / `reportLatency` | Medium   | Worklets call `get_latency_samples()`; recording uses static trim, automation unaligned                                                                           |
 
 #### Proof param coverage table (N-19 detail)
 
@@ -238,15 +238,15 @@ Issues below were tracked as real but lower priority than dedicated area audits.
 
 ### UI & State
 
-| ID   | Issue                                        | Severity | File                                                  |
-| ---- | -------------------------------------------- | -------- | ----------------------------------------------------- |
-| S-01 | **[FIXED]** Fader write-path storm                       | High     | `Workspace/.../TrackLevelSection.tsx`, `setTrackGain.ts`, `setTrackPan.ts` fixed by introducing `isTransient` flag for drags |
-| S-02 | Multi-track selection missing                | High     | `trackStore.ts:22-28` — scalar `selectedTrackId`      |
-| I-14 | Knead/action history not persistent          | Medium   | `kneadStore.ts`, `actionHistoryStore.ts`              |
-| I-15 | **[FIXED]** Fermenter telemetry at audio-rate            | Medium   | Fixed: `fermenterStore.ts` now batches and throttles telemetry updates to 60fps via `requestAnimationFrame`. |
-| I-27 | **[FIXED]** PianoRoll subscribes to whole stores         | Medium   | Fixed: `PianoRoll.tsx` and `usePianoRollRenderer.ts` no longer subscribe to the full `midiStore` or `trackStore`. Subscriptions replaced with targeted `useStoreSelector`. |
-| I-25 | Plugin module duplication (Proof vs Plugin/) | Low      | Product decision                                      |
-| I-28 | Legacy brand-CMS keys in LocalStorage        | Low      | `LocalStorageKeys.ts:14-94` — needs legal review      |
+| ID   | Issue                                            | Severity | File                                                                                                                                                                       |
+| ---- | ------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S-01 | **[FIXED]** Fader write-path storm               | High     | `Workspace/.../TrackLevelSection.tsx`, `setTrackGain.ts`, `setTrackPan.ts` fixed by introducing `isTransient` flag for drags                                               |
+| S-02 | Multi-track selection missing                    | High     | `trackStore.ts:22-28` — scalar `selectedTrackId`                                                                                                                           |
+| I-14 | Knead/action history not persistent              | Medium   | `kneadStore.ts`, `actionHistoryStore.ts`                                                                                                                                   |
+| I-15 | **[FIXED]** Fermenter telemetry at audio-rate    | Medium   | Fixed: `fermenterStore.ts` now batches and throttles telemetry updates to 60fps via `requestAnimationFrame`.                                                               |
+| I-27 | **[FIXED]** PianoRoll subscribes to whole stores | Medium   | Fixed: `PianoRoll.tsx` and `usePianoRollRenderer.ts` no longer subscribe to the full `midiStore` or `trackStore`. Subscriptions replaced with targeted `useStoreSelector`. |
+| I-25 | Plugin module duplication (Proof vs Plugin/)     | Low      | Product decision                                                                                                                                                           |
+| I-28 | Legacy brand-CMS keys in LocalStorage            | Low      | `LocalStorageKeys.ts:14-94` — needs legal review                                                                                                                           |
 
 ### Timeline Editing
 
@@ -368,19 +368,19 @@ One convention for `MidiNote.startBeat` across the entire codebase. Notes visibl
 
 ### Relevant code paths (original table; line numbers may drift)
 
-| File                              | Convention                                         | Line    | Formula                                                                                                                                 |
-| --------------------------------- | -------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `clipDrawing.ts`                  | Clip-relative                                      | 386     | `relStart = (note.startBeat - midiOffset) - clip.startBeat + loopOffset`                                                                |
-| `renderOffline.ts`                | **Correct for clip-relative**                      | 97      | `noteStart = (clip.startBeat - startBeat + note.startBeat) / tempo * 60` — adds clip offset from render start + note offset within clip |
-| `duplicateClipCore.ts`            | **Fixed** (was adding clip delta)                  | 42      | `startBeat: note.startBeat`                                                                                                             |
-| `usePianoRollRenderer.ts`         | Clip-relative                                      | 526     | `x = note.startBeat * beatWidth`                                                                                                        |
-| `usePianoRollInteractions.ts`     | Clip-relative                                      | 435-469 | `beat = snap(x / beatWidth)`                                                                                                            |
-| `applyMelodyToTrack.ts`           | **Fixed** (was timeline-absolute)                  | 42      | `startBeat: note.startBeat`                                                                                                             |
-| `applyChordProgressionToTrack.ts` | **Fixed** (was timeline-absolute)                  | 44      | `startBeat: note.startBeat`                                                                                                             |
-| `applyDrumPatternToTrack.ts`      | **Fixed** (was timeline-absolute)                  | 38      | `startBeat: note.startBeat`                                                                                                             |
-| `PatternBrowser.tsx`              | Clip-relative                                      | 301     | `startBeat: note.startBeat` (template-local)                                                                                            |
-| `scheduleMidiNotes.ts`            | Expects clip-relative                              | 388     | `rawStartBeat = clip.startBeat + iterOffset + (note.startBeat - midiOffset)` — adds `clip.startBeat` to convert                         |
-| `Arrangement/.../importMidiFile.ts`| Masks issue                                        | ~46     | Forces `clip.startBeat = 0`                                                                                                             |
+| File                                | Convention                        | Line    | Formula                                                                                                                                 |
+| ----------------------------------- | --------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `clipDrawing.ts`                    | Clip-relative                     | 386     | `relStart = (note.startBeat - midiOffset) - clip.startBeat + loopOffset`                                                                |
+| `renderOffline.ts`                  | **Correct for clip-relative**     | 97      | `noteStart = (clip.startBeat - startBeat + note.startBeat) / tempo * 60` — adds clip offset from render start + note offset within clip |
+| `duplicateClipCore.ts`              | **Fixed** (was adding clip delta) | 42      | `startBeat: note.startBeat`                                                                                                             |
+| `usePianoRollRenderer.ts`           | Clip-relative                     | 526     | `x = note.startBeat * beatWidth`                                                                                                        |
+| `usePianoRollInteractions.ts`       | Clip-relative                     | 435-469 | `beat = snap(x / beatWidth)`                                                                                                            |
+| `applyMelodyToTrack.ts`             | **Fixed** (was timeline-absolute) | 42      | `startBeat: note.startBeat`                                                                                                             |
+| `applyChordProgressionToTrack.ts`   | **Fixed** (was timeline-absolute) | 44      | `startBeat: note.startBeat`                                                                                                             |
+| `applyDrumPatternToTrack.ts`        | **Fixed** (was timeline-absolute) | 38      | `startBeat: note.startBeat`                                                                                                             |
+| `PatternBrowser.tsx`                | Clip-relative                     | 301     | `startBeat: note.startBeat` (template-local)                                                                                            |
+| `scheduleMidiNotes.ts`              | Expects clip-relative             | 388     | `rawStartBeat = clip.startBeat + iterOffset + (note.startBeat - midiOffset)` — adds `clip.startBeat` to convert                         |
+| `Arrangement/.../importMidiFile.ts` | Masks issue                       | ~46     | Forces `clip.startBeat = 0`                                                                                                             |
 
 ### Current behavior (original narrative)
 
@@ -516,8 +516,8 @@ A uniform `DeviceController` interface that every plugin implements. TrackNode d
 - `src/modules/AudioEngine/engine/TrackNode.ts` — 567 LOC with 4-6 device-specific branches per method
 - `src/modules/AudioEngine/engine/wasmDeviceRegistry.ts` — WASM device matchers
 - `src/modules/AudioEngine/repositories/deviceStrategy/setupDeviceStrategies.ts` — device factory registry
-- `src/modules/Toaster/stores/toasterStore.ts` — singleton store *(analysis: now per-`deviceId` — see § Executive summary)*
-- `src/modules/Levain/stores/levainStore.ts` — singleton store *(same)*
+- `src/modules/Toaster/stores/toasterStore.ts` — singleton store _(analysis: now per-`deviceId` — see § Executive summary)_
+- `src/modules/Levain/stores/levainStore.ts` — singleton store _(same)_
 - `src/modules/Fermenter/stores/fermenterStore.ts` — per-device (correct pattern)
 - `src/modules/Crust/` — full UI, no DSP
 - `src/modules/AudioEngine/engine/{GrinderNode,BacteriaNode,GlutenNode,FermenterNode}.ts` — per-plugin node classes with `destroy()`
@@ -529,7 +529,7 @@ A uniform `DeviceController` interface that every plugin implements. TrackNode d
 ### Findings (original)
 
 - All WASM plugin nodes have `destroy()`. TrackNode.dispose() may not have called all uniformly (historical; see [RESOLVED] below).
-- Toaster and Levain singletons *(superseded if stores are `Record<deviceId, …>`)*.
+- Toaster and Levain singletons _(superseded if stores are `Record<deviceId, …>`)_.
 - **Crust has no DSP** — `findWasmDescriptor('crust')` undefined → silent `return` in `addDevice`. Knobs do nothing.
 - **NativePluginBridge (I-01)** per-block `tauriInvoke` — architectural ceiling, needs SAB transport.
 - **PDC (I-06)** — `get_latency_samples()` in worklets, SAB; host consumption narrative refined in **§ PDC and latency compensation** in the analysis.
@@ -561,13 +561,13 @@ interface DeviceController {
 
 **Resolved by I-05** — uniform `controller.destroy()`.
 
-#### 5. Native plugin transport (I-01) — *still open in analysis*
+#### 5. Native plugin transport (I-01) — _still open in analysis_
 
 **Problem:** Per-block `tauriInvoke('process_plugin_audio')` in `NativePluginBridgeNode:51`.
 
 **Needed:** SAB ring between worklet and Rust.
 
-#### 6. PDC latency host-side consumption (I-06) — *refine with analysis § PDC*
+#### 6. PDC latency host-side consumption (I-06) — _refine with analysis § PDC_
 
 **Needed:** Host-wide PDC that reads SAB latency views, sums chain, compensates recording + automation.
 
@@ -595,5 +595,5 @@ All adversarial findings have been addressed by The Builder. The `destroy` hooks
 
 - [grinder/control-deck.md](./grinder/control-deck.md) — separate area audit, not merged.
 - Adversarial research: [adversarial-review-plugin-host.md](../research/adversarial-review-plugin-host.md)
-inder/control-deck.md](./grinder/control-deck.md) — separate area audit, not merged.
+  inder/control-deck.md](./grinder/control-deck.md) — separate area audit, not merged.
 - Adversarial research: [adversarial-review-plugin-host.md](../research/adversarial-review-plugin-host.md)

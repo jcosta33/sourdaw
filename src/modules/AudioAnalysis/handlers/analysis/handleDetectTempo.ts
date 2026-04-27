@@ -7,9 +7,8 @@ import { detectTempo as detectTempoFromBuffer } from '../../useCases/tempoDetect
 
 export const handleDetectTempo = createHandler<'detectTempo'>({
     execute: (action) => {
-        const clip = trackStore
-            .value
-            ?.tracks.flatMap((track) => track.clips)
+        const clip = trackStore.value?.tracks
+            .flatMap((track) => track.clips)
             .find((candidate) => candidate.id === action.payload.clipId);
         if (clip?.audioBufferId) {
             const bpm = detectTempoFromBuffer(clip.audioBufferId);

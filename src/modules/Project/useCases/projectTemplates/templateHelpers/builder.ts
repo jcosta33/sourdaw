@@ -93,12 +93,15 @@ type SetGrooveInput = {
 export function setGroove(input: SetGrooveInput): void {
     const existing = grooveStore.value?.templates ?? [];
     grooveStore.set({
-        templates: [...existing.filter((template) => template.id !== input.id), {
-            id: input.id,
-            name: input.name,
-            offsets: input.offsets,
-            resolution: input.resolution,
-        }],
+        templates: [
+            ...existing.filter((template) => template.id !== input.id),
+            {
+                id: input.id,
+                name: input.name,
+                offsets: input.offsets,
+                resolution: input.resolution,
+            },
+        ],
         projectGrooveId: input.id,
         projectGrooveIntensity: input.intensity,
     });
@@ -389,7 +392,19 @@ const MASTER_CHAIN_PRESETS: Record<MasterPreset, DeviceSpec[]> = {
         {
             type: 'gluten',
             name: 'Glue Bus Comp',
-            params: { topology: 3, amount: 45, threshold: -14, ratio: 2, attack: 30, release: 180, knee: 6, makeup: 0, mix: 1, autoMakeup: 1, autoRelease: 1 },
+            params: {
+                topology: 3,
+                amount: 45,
+                threshold: -14,
+                ratio: 2,
+                attack: 30,
+                release: 180,
+                knee: 6,
+                makeup: 0,
+                mix: 1,
+                autoMakeup: 1,
+                autoRelease: 1,
+            },
         },
         { type: 'proof', name: 'Proof Mastering', params: { input_gain: 0, output_gain: 0, lim_ceiling: -1 } },
         { type: 'builtin-lufs-meter', name: 'LUFS', params: { 'lufs-target': -10 } },
@@ -413,7 +428,19 @@ const MASTER_CHAIN_PRESETS: Record<MasterPreset, DeviceSpec[]> = {
         {
             type: 'gluten',
             name: 'Trap Glue',
-            params: { topology: 3, amount: 60, threshold: -12, ratio: 3, attack: 20, release: 150, knee: 6, makeup: 0, mix: 1, autoMakeup: 1, autoRelease: 1 },
+            params: {
+                topology: 3,
+                amount: 60,
+                threshold: -12,
+                ratio: 3,
+                attack: 20,
+                release: 150,
+                knee: 6,
+                makeup: 0,
+                mix: 1,
+                autoMakeup: 1,
+                autoRelease: 1,
+            },
         },
         { type: 'proof', name: 'Proof Mastering', params: { input_gain: 1, output_gain: 0, lim_ceiling: -0.8 } },
         { type: 'builtin-lufs-meter', name: 'LUFS', params: { 'lufs-target': -8 } },
@@ -437,7 +464,19 @@ const MASTER_CHAIN_PRESETS: Record<MasterPreset, DeviceSpec[]> = {
         {
             type: 'gluten',
             name: 'EDM Glue',
-            params: { topology: 3, amount: 70, threshold: -10, ratio: 4, attack: 10, release: 120, knee: 4, makeup: 0, mix: 1, autoMakeup: 1, autoRelease: 1 },
+            params: {
+                topology: 3,
+                amount: 70,
+                threshold: -10,
+                ratio: 4,
+                attack: 10,
+                release: 120,
+                knee: 4,
+                makeup: 0,
+                mix: 1,
+                autoMakeup: 1,
+                autoRelease: 1,
+            },
         },
         {
             type: 'builtin-limiter',
@@ -467,7 +506,19 @@ const MASTER_CHAIN_PRESETS: Record<MasterPreset, DeviceSpec[]> = {
         {
             type: 'gluten',
             name: 'Glue Bus Comp',
-            params: { topology: 3, amount: 50, threshold: -14, ratio: 2.5, attack: 25, release: 180, knee: 6, makeup: 0, mix: 1, autoMakeup: 1, autoRelease: 1 },
+            params: {
+                topology: 3,
+                amount: 50,
+                threshold: -14,
+                ratio: 2.5,
+                attack: 25,
+                release: 180,
+                knee: 6,
+                makeup: 0,
+                mix: 1,
+                autoMakeup: 1,
+                autoRelease: 1,
+            },
         },
         { type: 'builtin-limiter', name: 'Brickwall', params: { threshold: -0.5, release: 100, ceiling: -0.5 } },
         { type: 'proof', name: 'Proof Mastering', params: { input_gain: 0, output_gain: 0, lim_ceiling: -0.5 } },
@@ -497,7 +548,19 @@ const MASTER_CHAIN_PRESETS: Record<MasterPreset, DeviceSpec[]> = {
         {
             type: 'gluten',
             name: 'Warm Glue',
-            params: { topology: 2, amount: 40, threshold: -16, ratio: 2, attack: 40, release: 250, knee: 10, makeup: 0, mix: 1, autoMakeup: 1, autoRelease: 1 },
+            params: {
+                topology: 2,
+                amount: 40,
+                threshold: -16,
+                ratio: 2,
+                attack: 40,
+                release: 250,
+                knee: 10,
+                makeup: 0,
+                mix: 1,
+                autoMakeup: 1,
+                autoRelease: 1,
+            },
         },
         { type: 'proof', name: 'Proof Warm', params: { input_gain: 0, output_gain: 0, lim_ceiling: -1.5 } },
         { type: 'builtin-lufs-meter', name: 'LUFS', params: { 'lufs-target': -14 } },
@@ -521,7 +584,19 @@ const MASTER_CHAIN_PRESETS: Record<MasterPreset, DeviceSpec[]> = {
         {
             type: 'gluten',
             name: 'Orch Glue',
-            params: { topology: 1, amount: 30, threshold: -18, ratio: 1.5, attack: 50, release: 250, knee: 10, makeup: 0, mix: 1, autoMakeup: 1, autoRelease: 1 },
+            params: {
+                topology: 1,
+                amount: 30,
+                threshold: -18,
+                ratio: 1.5,
+                attack: 50,
+                release: 250,
+                knee: 10,
+                makeup: 0,
+                mix: 1,
+                autoMakeup: 1,
+                autoRelease: 1,
+            },
         },
         { type: 'proof', name: 'Proof Mastering', params: { input_gain: 0, output_gain: 0, lim_ceiling: -1.5 } },
         { type: 'builtin-lufs-meter', name: 'LUFS', params: { 'lufs-target': -18 } },
@@ -545,7 +620,19 @@ const MASTER_CHAIN_PRESETS: Record<MasterPreset, DeviceSpec[]> = {
         {
             type: 'gluten',
             name: 'Voice Glue',
-            params: { topology: 3, amount: 35, threshold: -18, ratio: 2, attack: 20, release: 150, knee: 6, makeup: 0, mix: 1, autoMakeup: 1, autoRelease: 1 },
+            params: {
+                topology: 3,
+                amount: 35,
+                threshold: -18,
+                ratio: 2,
+                attack: 20,
+                release: 150,
+                knee: 6,
+                makeup: 0,
+                mix: 1,
+                autoMakeup: 1,
+                autoRelease: 1,
+            },
         },
         { type: 'builtin-limiter', name: 'Broadcast Limit', params: { 'lim-threshold': -2, 'lim-release': 100 } },
         { type: 'builtin-lufs-meter', name: 'LUFS', params: { 'lufs-target': -16 } },
@@ -569,7 +656,19 @@ const MASTER_CHAIN_PRESETS: Record<MasterPreset, DeviceSpec[]> = {
         {
             type: 'gluten',
             name: 'Gentle Glue',
-            params: { topology: 1, amount: 35, threshold: -16, ratio: 2, attack: 30, release: 200, knee: 8, makeup: 0, mix: 1, autoMakeup: 1, autoRelease: 1 },
+            params: {
+                topology: 1,
+                amount: 35,
+                threshold: -16,
+                ratio: 2,
+                attack: 30,
+                release: 200,
+                knee: 8,
+                makeup: 0,
+                mix: 1,
+                autoMakeup: 1,
+                autoRelease: 1,
+            },
         },
         { type: 'proof', name: 'Proof Warm', params: { input_gain: 0, output_gain: 0, lim_ceiling: -1 } },
         { type: 'builtin-lufs-meter', name: 'LUFS', params: { 'lufs-target': -14 } },
@@ -593,7 +692,19 @@ const MASTER_CHAIN_PRESETS: Record<MasterPreset, DeviceSpec[]> = {
         {
             type: 'gluten',
             name: 'Soft Glue',
-            params: { topology: 1, amount: 25, threshold: -20, ratio: 1.5, attack: 60, release: 300, knee: 12, makeup: 0, mix: 1, autoMakeup: 1, autoRelease: 1 },
+            params: {
+                topology: 1,
+                amount: 25,
+                threshold: -20,
+                ratio: 1.5,
+                attack: 60,
+                release: 300,
+                knee: 12,
+                makeup: 0,
+                mix: 1,
+                autoMakeup: 1,
+                autoRelease: 1,
+            },
         },
         { type: 'proof', name: 'Proof Mastering', params: { input_gain: 0, output_gain: 0, lim_ceiling: -2 } },
         { type: 'builtin-lufs-meter', name: 'LUFS', params: { 'lufs-target': -18 } },
@@ -630,11 +741,6 @@ export async function finalizeTemplate(input: FinalizeTemplateInput): Promise<vo
     await waitForDevices();
 
     for (const route of input.sidechainRoutes ?? []) {
-        addSidechainRoute(
-            route.trigger.id,
-            route.target.id,
-            route.deviceId,
-            route.parameterId ?? 'sc-comp-threshold'
-        );
+        addSidechainRoute(route.trigger.id, route.target.id, route.deviceId, route.parameterId ?? 'sc-comp-threshold');
     }
 }

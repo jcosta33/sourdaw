@@ -154,7 +154,11 @@ function applyNeuralPatch(instance: GrinderInstance, patch: Record<string, unkno
         return;
     }
 
-    if (neural_patch.neuralModelMode !== 'imported' || !neural_patch.profile || typeof neural_patch.profile !== 'object') {
+    if (
+        neural_patch.neuralModelMode !== 'imported' ||
+        !neural_patch.profile ||
+        typeof neural_patch.profile !== 'object'
+    ) {
         return;
     }
 
@@ -162,9 +166,7 @@ function applyNeuralPatch(instance: GrinderInstance, patch: Record<string, unkno
     const conv_weights = Array.isArray(profile.convWeights) ? profile.convWeights : [];
 
     const preferred_tier =
-        typeof profile.preferredTier === 'string'
-            ? (NEURAL_TIER_INDEX[profile.preferredTier] ?? 0)
-            : 0;
+        typeof profile.preferredTier === 'string' ? (NEURAL_TIER_INDEX[profile.preferredTier] ?? 0) : 0;
     instance.set_param('neuralCustomTier', preferred_tier);
 
     const input_drive = to_finite_number(profile.inputDrive);

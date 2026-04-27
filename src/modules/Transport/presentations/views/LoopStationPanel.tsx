@@ -93,7 +93,13 @@ type LoopStationSlotCellProps = {
     numerator: number;
 };
 
-const LoopStationSlotCell = ({ trackId, row, slot, positionBeats, numerator }: LoopStationSlotCellProps): ReactElement => {
+const LoopStationSlotCell = ({
+    trackId,
+    row,
+    slot,
+    positionBeats,
+    numerator,
+}: LoopStationSlotCellProps): ReactElement => {
     if (!slot) {
         return (
             <div className="flex h-14 items-center justify-center border-b border-r border-border-hairline bg-black/10 transition-colors hover:bg-white/[0.04]">
@@ -163,7 +169,9 @@ const LoopStationSlotCell = ({ trackId, row, slot, positionBeats, numerator }: L
                     <Play
                         className={cn(
                             'size-2.5',
-                            slot.state === 'playing' ? 'fill-[var(--color-accent-mint)] text-[var(--color-accent-mint)]' : ''
+                            slot.state === 'playing'
+                                ? 'fill-[var(--color-accent-mint)] text-[var(--color-accent-mint)]'
+                                : ''
                         )}
                     />
                 </Button>
@@ -211,7 +219,9 @@ export const LoopStationPanel = (): ReactElement => {
     const [tickPosition, setTickPosition] = useState(0);
 
     useEffect(() => {
-        const isActive = loopState.slots.some((slot) => slot.state === 'playing' || slot.state === 'recording' || slot.state === 'overdubbing');
+        const isActive = loopState.slots.some(
+            (slot) => slot.state === 'playing' || slot.state === 'recording' || slot.state === 'overdubbing'
+        );
         if (!isActive) {
             setTickPosition(transport.playheadPosition);
             return;
@@ -263,7 +273,9 @@ export const LoopStationPanel = (): ReactElement => {
                         <Button
                             variant={loopState.syncToTransport ? 'secondary' : 'ghost'}
                             size="xs"
-                            aria-label={loopState.syncToTransport ? 'Disable sync to transport' : 'Enable sync to transport'}
+                            aria-label={
+                                loopState.syncToTransport ? 'Disable sync to transport' : 'Enable sync to transport'
+                            }
                             onClick={toggleSync}
                         >
                             {loopState.syncToTransport ? <Link2 className="size-3" /> : <Unlink className="size-3" />}
@@ -297,12 +309,7 @@ export const LoopStationPanel = (): ReactElement => {
                                 aria-label="Fixed loop length in beats (0 = auto)"
                             />
                         </label>
-                        <Button
-                            variant="ghost"
-                            size="xs"
-                            aria-label="Stop all loops"
-                            onClick={stopAllSlots}
-                        >
+                        <Button variant="ghost" size="xs" aria-label="Stop all loops" onClick={stopAllSlots}>
                             <Square className="size-3" />
                             <span className="ml-1">Stop all</span>
                         </Button>
@@ -340,7 +347,10 @@ export const LoopStationPanel = (): ReactElement => {
                                 <div
                                     className="flex h-6 items-center border-b border-r border-border-hairline px-2 text-[10px] font-medium text-foreground"
                                     style={{
-                                        borderLeft: track.color !== null && track.color !== undefined ? `2px solid ${track.color}` : undefined,
+                                        borderLeft:
+                                            track.color !== null && track.color !== undefined
+                                                ? `2px solid ${track.color}`
+                                                : undefined,
                                     }}
                                     title={track.name}
                                 >

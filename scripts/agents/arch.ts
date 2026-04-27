@@ -38,7 +38,7 @@ function run() {
 
     const srcDir = join(repoRoot, 'src');
     const files = findFiles(srcDir);
-    
+
     let violations = 0;
 
     for (const file of files) {
@@ -48,15 +48,16 @@ function run() {
         // Regex to catch cross-module deep imports.
         // Matches: import ... from '...src/modules/ModuleName/useCases/...'
         // It allows imports from 'src/modules/ModuleName' or 'src/modules/ModuleName/index.ts'
-        const regex = /import\s+.*?from\s+['"](.*src\/modules\/([^\/]+)\/(useCases|stores|presentations|models|repositories|engine|handlers)\/.*)['"]/g;
-        
+        const regex =
+            /import\s+.*?from\s+['"](.*src\/modules\/([^\/]+)\/(useCases|stores|presentations|models|repositories|engine|handlers)\/.*)['"]/g;
+
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             let match;
-            
+
             // Need a fresh regex per line since we have 'g' flag, or just use matchAll
             const lineMatches = [...line.matchAll(regex)];
-            
+
             for (const m of lineMatches) {
                 const importPath = m[1];
                 const targetModule = m[2];

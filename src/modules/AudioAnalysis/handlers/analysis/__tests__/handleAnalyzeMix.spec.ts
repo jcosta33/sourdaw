@@ -50,9 +50,7 @@ describe('handleAnalyzeMix', () => {
 
         expect(mocks.storeSet).toHaveBeenCalledWith(expect.objectContaining({ isAnalyzing: true }));
         expect(analyzeMix).toHaveBeenCalled();
-        expect(mocks.storeSet).toHaveBeenCalledWith(
-            expect.objectContaining({ isAnalyzing: false, panelOpen: true })
-        );
+        expect(mocks.storeSet).toHaveBeenCalledWith(expect.objectContaining({ isAnalyzing: false, panelOpen: true }));
     });
 
     it('no-ops when mix analysis store is missing', async () => {

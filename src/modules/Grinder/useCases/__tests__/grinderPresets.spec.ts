@@ -30,9 +30,7 @@ describe('GRINDER_PRESETS', () => {
         for (const preset of metal_presets) {
             expect(preset.patch.gateEnabled).toBe(true);
             expect(preset.patch.channel).toBe(2);
-            expect(
-                preset.patch.prePedals.some((pedal) => pedal.type === 'overdrive' && pedal.enabled)
-            ).toBe(true);
+            expect(preset.patch.prePedals.some((pedal) => pedal.type === 'overdrive' && pedal.enabled)).toBe(true);
         }
     });
 });

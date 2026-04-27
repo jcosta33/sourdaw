@@ -427,10 +427,7 @@ export function getGrinderSupportedChainOrder(
         return present;
     }
 
-    return [
-        ...present,
-        ...SUPPORTED_GRINDER_CHAIN_PEDAL_TYPES.filter((pedal_type) => !present.includes(pedal_type)),
-    ];
+    return [...present, ...SUPPORTED_GRINDER_CHAIN_PEDAL_TYPES.filter((pedal_type) => !present.includes(pedal_type))];
 }
 
 export function migrateGrinderPatch(patch: Partial<GrinderPatch> | GrinderPatch): GrinderPatch {
@@ -440,10 +437,8 @@ export function migrateGrinderPatch(patch: Partial<GrinderPatch> | GrinderPatch)
     const neuralEnabled = patch.neuralEnabled ?? engineMode !== 'circuit';
     const neuralModelProfile = cloneNeuralProfile(patch.neuralModelProfile);
     const neuralModelSource =
-        patch.neuralModelSource ??
-        (neuralModelProfile ? 'imported' : DEFAULT_PATCH.neuralModelSource);
-    const cabIrId =
-        patch.cabIrId && patch.cabIrId.length > 0 ? patch.cabIrId : DEFAULT_PATCH.cabIrId;
+        patch.neuralModelSource ?? (neuralModelProfile ? 'imported' : DEFAULT_PATCH.neuralModelSource);
+    const cabIrId = patch.cabIrId && patch.cabIrId.length > 0 ? patch.cabIrId : DEFAULT_PATCH.cabIrId;
 
     return {
         ...DEFAULT_PATCH,

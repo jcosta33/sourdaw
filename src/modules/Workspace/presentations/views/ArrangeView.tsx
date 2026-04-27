@@ -161,13 +161,7 @@ export const ArrangeView = (): ReactElement => {
                     <TrackListView
                         style={{ width: localTrackListWidth }}
                         extraHeaderHeight={
-                            22 +
-                            (hasMarkers ? 20 : 0) +
-                            28 +
-                            22 +
-                            (hasChords ? 26 : 0) +
-                            20 +
-                            adjustmentLayerCount * 20
+                            22 + (hasMarkers ? 20 : 0) + 28 + 22 + (hasChords ? 26 : 0) + 20 + adjustmentLayerCount * 20
                         }
                     />
                     <ResizeHandle

@@ -6,9 +6,8 @@ import { detectKey } from '../../useCases/keyDetection';
 
 export const handleDetectKey = createHandler<'detectKey'>({
     execute: (action) => {
-        const clip = trackStore
-            .value
-            ?.tracks.flatMap((track) => track.clips)
+        const clip = trackStore.value?.tracks
+            .flatMap((track) => track.clips)
             .find((candidate) => candidate.id === action.payload.clipId);
         if (!clip?.audioBufferId) {
             return;

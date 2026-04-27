@@ -9,12 +9,14 @@ The user plugs in an Ableton Push 2 over USB, clicks "Connect Push 2" in the DAW
 The store is thorough and the use-case surface covers the major operations; what is absent is any code that speaks to the Push. No USB, no MIDI I/O binding, no LCD framebuffer, no hardware test.
 
 What exists:
+
 - `src/modules/Plugin/stores/push.ts` — `PushPadMode` (6 modes), `PushPadColor` (RGB 0–127), `PushPad` (index, midiNote, velocity, aftertouch, color), `PushEncoder` (index, value, parameterPath, label), `PushDisplay` (4 lines of text), `PushState` (connected, model, padMode, 64 pads, 8 encoders, scale, tempo, touchStripPosition), `PAD_MODE_COLORS`.
 - `src/modules/Plugin/useCases/pushIntegration/` — 10 use-cases: `connectPush`, `disconnectPush`, `setPadMode`, `setPadColor`, `setScale`, `updateDisplay`, `handlePadPress`, `handlePadRelease`, `setEncoderValue`, `mapEncoder`. All pure store mutations; none send anything to hardware.
 - `src/modules/Command/models/AppAction.ts` — `{ type: 'connectPush'; payload: { model: 'push2'|'push3' } }`.
 - `miscCommands.ts:261-270` — Command Palette entries `connect-push-2` and `connect-push-3`.
 
 What is missing:
+
 - No USB / MIDI access — no bridge to `navigator.requestMIDIAccess()` or `navigator.usb.requestDevice()`.
 - No LCD rendering — Push 2 has a 960×160 px colour LCD accessible via USB bulk transfer endpoint 0x01, format 16-bit RGB565. Our `PushDisplay` model is text-only; the real Push 2 display expects a pixel framebuffer.
 - No device message parsing — Push 2 sends pad press/release as MIDI note-on/off; encoders as relative CC messages; touch strip as pitch bend.
@@ -27,10 +29,12 @@ What is missing:
 ### Transport: Web MIDI + Web USB for LCD
 
 Push 2 protocol docs (Ableton, public):
+
 - **MIDI** over USB MIDIClass interface (endpoint 0x02/0x82). Pads and buttons send/receive MIDI. This is Web MIDI API.
 - **Display** over a **separate USB bulk endpoint** (0x01), sending framebuffer packets. Requires Web USB API, cannot go through Web MIDI.
 
 Our architecture uses both:
+
 - MIDI I/O via `navigator.requestMIDIAccess({ sysex: true })` (sysex needed for LED RGB).
 - Display I/O via `navigator.usb.requestDevice({ filters: [{ vendorId: 0x2982, productId: 0x1967 }] })` → `open()` → `claimInterface(0)` → `transferOut(0x01, buffer)`.
 
@@ -38,15 +42,15 @@ Both surfaces are behind user-granted permissions. On Tauri, equivalent native b
 
 ### Push 2 USB protocol reference
 
-| Surface | In | Out | Encoding |
-|---------|-----|-----|----------|
-| Pads | MIDI Note On/Off, channel 1, notes 36–99 | MIDI Note On (colour index) or SysEx RGB | velocity = press velocity |
-| Pad aftertouch | MIDI Poly Pressure | — | 0–127 |
-| Encoders (8 top) | MIDI CC 71–78, channel 1, **relative** (signed 7-bit, two's-complement quirk) | — | Encoders are endless rotary |
-| Tempo encoder | MIDI CC 14, relative | — | |
-| Touch strip | MIDI Pitch Bend, channel 1 | Pitch Bend (visual indicator) | |
-| Function buttons | MIDI CC 3–87 (various), channel 1 | CC 3–87 | On/Off LED state |
-| LCD | — | USB bulk transfer endpoint 0x01 | Framebuffer: 20 lines × 160 px × 16-bit RGB565, XORed with a fixed mask |
+| Surface          | In                                                                            | Out                                      | Encoding                                                                |
+| ---------------- | ----------------------------------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------- |
+| Pads             | MIDI Note On/Off, channel 1, notes 36–99                                      | MIDI Note On (colour index) or SysEx RGB | velocity = press velocity                                               |
+| Pad aftertouch   | MIDI Poly Pressure                                                            | —                                        | 0–127                                                                   |
+| Encoders (8 top) | MIDI CC 71–78, channel 1, **relative** (signed 7-bit, two's-complement quirk) | —                                        | Encoders are endless rotary                                             |
+| Tempo encoder    | MIDI CC 14, relative                                                          | —                                        |                                                                         |
+| Touch strip      | MIDI Pitch Bend, channel 1                                                    | Pitch Bend (visual indicator)            |                                                                         |
+| Function buttons | MIDI CC 3–87 (various), channel 1                                             | CC 3–87                                  | On/Off LED state                                                        |
+| LCD              | —                                                                             | USB bulk transfer endpoint 0x01          | Framebuffer: 20 lines × 160 px × 16-bit RGB565, XORed with a fixed mask |
 
 RGB colour for pads: SysEx `F0 47 7F 15 04 00 08 <pad index 0–63> <colorR> <colorG> <colorB> F7` where each colour component is 7-bit.
 
@@ -94,14 +98,14 @@ The framebuffer is re-sent on every display change, debounced to 30 Hz.
 
 ### Mode mapping
 
-| Mode      | Pad behaviour                                                           | Encoder behaviour                                     |
-|-----------|-------------------------------------------------------------------------|-------------------------------------------------------|
-| session   | Top-left cell = scene 0, row = scene, col = track. Colour from clip.    | 8 encoders = 8 selected tracks' volume.               |
-| note      | Chromatic or scale-quantised pitches (from `rootNote`, `scaleName`).     | 8 encoders = selected device's first 8 parameters.    |
-| drum      | Bottom 4×4 = 16 drum pads → MIDI notes 36–51; top 4×4 = loop / repeat.   | 8 encoders = 8 selected drum pad params.              |
-| chromatic | Every semitone, left-to-right, bottom-to-top.                           | Same as `note`.                                       |
-| scale     | Scale-only pads.                                                        | Same as `note`.                                       |
-| user      | No predefined behaviour — passes raw MIDI.                              | User-mapped via `mapEncoder`.                         |
+| Mode      | Pad behaviour                                                          | Encoder behaviour                                  |
+| --------- | ---------------------------------------------------------------------- | -------------------------------------------------- |
+| session   | Top-left cell = scene 0, row = scene, col = track. Colour from clip.   | 8 encoders = 8 selected tracks' volume.            |
+| note      | Chromatic or scale-quantised pitches (from `rootNote`, `scaleName`).   | 8 encoders = selected device's first 8 parameters. |
+| drum      | Bottom 4×4 = 16 drum pads → MIDI notes 36–51; top 4×4 = loop / repeat. | 8 encoders = 8 selected drum pad params.           |
+| chromatic | Every semitone, left-to-right, bottom-to-top.                          | Same as `note`.                                    |
+| scale     | Scale-only pads.                                                       | Same as `note`.                                    |
+| user      | No predefined behaviour — passes raw MIDI.                             | User-mapped via `mapEncoder`.                      |
 
 ### Hardware → DAW event routing
 
@@ -250,30 +254,35 @@ Not persisted in `ProjectData`: the Push is a controller, not a project asset.
 ## Milestones
 
 ### M1 — Transport primitives (one session)
+
 - `createPushMidi`, `createPushUsb` with permission flow.
 - `midiCodec` decode + encode.
 - `framebufferRenderer` text-only.
 - Unit tests with fake MIDI/USB doubles.
 
 ### M2 — Driver attach/detach + hello world (one session)
+
 - `attachDriver` subscribes to stores, opens connections, sends a "hello" pattern (row of coloured pads + LCD text).
 - `detachDriver` cleans up.
 - `handlePadPress`/`handlePadRelease` called from real hardware events.
 - Hot-unplug recovery.
 
 ### M3 — Mode rendering + input routing (one session)
+
 - `renderSessionMode`, `renderNoteMode`, `renderDrumMode`.
 - `routePadPress(mode)` → AppAction dispatch.
 - Function button handler map for essentials (Play / Stop / Record / metronome / undo / redo / Session / Note / Drum / Scale / arrow nav).
 - Mode-change (hardware button) flips `pushStore.padMode` and re-renders.
 
 ### M4 — Encoders + touch strip + LCD (one session)
+
 - Relative encoder decode + mapping to selected-device first 8 parameters.
 - Touch strip → pitch bend on armed MIDI tracks.
 - LCD updates showing track/param labels (2 lines of context + 2 lines of values).
 - `setPushDisplayLine` AppAction.
 
 ### M5 — User settings + Push 3 stub (one session)
+
 - `UserSettings.pushHardware` schema + persistence.
 - Auto-connect on app start when `enabled`.
 - Push 3 detection path that surfaces "not yet supported" gracefully.

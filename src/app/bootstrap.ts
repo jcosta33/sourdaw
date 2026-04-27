@@ -34,10 +34,7 @@ import {
 import { initBrowserAi } from '#/modules/BrowserAi/useCases';
 import { getCollaborationHandlers } from '#/modules/Collaboration/useCases';
 import { registerHandlerMap } from '#/modules/Command/stores';
-import {
-    getMacroHandlers,
-    getUndoTreeHandlers,
-} from '#/modules/Command/useCases';
+import { getMacroHandlers, getUndoTreeHandlers } from '#/modules/Command/useCases';
 import { getDsoSnapshotHandlers } from '#/modules/CrdtDocument/useCases';
 import { setFermenterDependencies } from '#/modules/Fermenter/useCases/fermenterDependencies';
 import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';

@@ -7,7 +7,10 @@ const DEVICE_ID = 'd1';
 
 const { setMock, mockStore } = vi.hoisted(() => {
     const ref = {
-        value: null as Record<string, { morph: { position: number; targetPatternId: string | null; enabled: boolean } }> | null,
+        value: null as Record<
+            string,
+            { morph: { position: number; targetPatternId: string | null; enabled: boolean } }
+        > | null,
     };
     const setMock = vi.fn((next: typeof ref.value) => {
         ref.value = next;

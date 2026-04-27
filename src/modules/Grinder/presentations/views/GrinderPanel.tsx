@@ -1031,7 +1031,9 @@ function DriveDeck({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                                             caps={false}
                                             disabled={index === 0}
                                             aria-label={`Move ${control.label} left`}
-                                            onClick={() => moveGrinderPedalInChainWithAudio(deviceId, false, pedal_type, 'left')}
+                                            onClick={() =>
+                                                moveGrinderPedalInChainWithAudio(deviceId, false, pedal_type, 'left')
+                                            }
                                         >
                                             Left
                                         </DawPluginChip>
@@ -1666,9 +1668,7 @@ function ControlDeck({
         return (
             <div className="flex flex-wrap gap-3">
                 <div className="grinder-window flex min-w-[220px] flex-col gap-3 px-3 py-3">
-                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
-                        Gate
-                    </div>
+                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">Gate</div>
                     <DawPluginToggle
                         pressed={patch.gateEnabled}
                         tone="cyan"

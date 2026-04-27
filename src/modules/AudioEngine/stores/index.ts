@@ -18,4 +18,3 @@ export { adjustmentApplicationStore } from './adjustmentApplicationStore';
 
 export type { ElasticAudioState, ElasticEditorTool } from './elasticAudio';
 export { elasticAudioStore, defaultElasticAudioState } from './elasticAudio';
-

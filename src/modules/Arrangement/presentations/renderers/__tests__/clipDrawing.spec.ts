@@ -46,7 +46,7 @@ describe('drawClip (Coordinate Conventions)', () => {
                     duration: 1,
                     pitch: 60,
                     velocity: 100,
-                }
+                },
             ],
             isSelected: false,
             color: '#000',
@@ -86,7 +86,7 @@ describe('drawClip (Coordinate Conventions)', () => {
         // x = (8 - 0) * 25 = 200 (clipX)
         // w = (12 - 8) * 25 = 100 (clipW)
         // nx = 200 + (0 / 4) * 100 = 200
-        
+
         // Because trackHeight = 10 (<= 24), it is inline, so it draws using roundRect
         const noteCall = mockCtx.roundRect.mock.calls.find((args: any[]) => args[0] === 200 && args[2] <= 100);
         expect(noteCall).toBeTruthy();

@@ -6,7 +6,13 @@ import { toasterStore } from '../stores/toasterStore';
 
 import { euclidean } from './euclidean';
 
-export function applyEuclideanToTrack(deviceId: string, padIndex: number, hits: number, steps: number, rotation: number = 0): void {
+export function applyEuclideanToTrack(
+    deviceId: string,
+    padIndex: number,
+    hits: number,
+    steps: number,
+    rotation: number = 0
+): void {
     const state = toasterStore.value?.[deviceId];
     if (!state) {
         return;

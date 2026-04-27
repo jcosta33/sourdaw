@@ -711,7 +711,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 }
                                 disabled={exporting}
                                 style={
-                                    mode === 'render-to-clip' ? { boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)' } : {}
+                                    mode === 'render-to-clip'
+                                        ? { boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)' }
+                                        : {}
                                 }
                             >
                                 To Clip <span className="ml-1 text-[10px] opacity-60">(Inline)</span>
@@ -753,11 +755,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                         </div>
                     </DawDialogSection>
 
-                    <DawDialogSection
-                        tone="warm"
-                        title="Tail"
-                        detail="Extra seconds so reverb/delay can ring out."
-                    >
+                    <DawDialogSection tone="warm" title="Tail" detail="Extra seconds so reverb/delay can ring out.">
                         <div className="flex items-center gap-3">
                             <div className="flex items-center gap-2">
                                 <input
@@ -820,126 +818,132 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     ) : null}
 
                     {mode !== 'render-to-clip' ? (
-                    <>
-                    <DawDialogSection tone="warm" title="Ingredients">
-                        <div className="grid grid-cols-3 gap-2">
-                            {FORMAT_OPTIONS.map((freq) => {
-                                const active = formats.has(freq.value);
-                                return (
-                                    <button
-                                        type="button"
-                                        key={freq.value}
-                                        className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
-                                            active
-                                                ? 'border-orange-500/40 bg-orange-950/40 shadow-[inset_0_1px_0_rgba(251,146,60,0.1)]'
-                                                : 'border-stone-800 bg-stone-900/50 hover:border-stone-700 hover:bg-stone-800/80'
-                                        }`}
-                                        onClick={() => toggleFormat(freq.value)}
-                                        aria-pressed={active}
-                                        role="checkbox"
-                                        aria-checked={active}
-                                        disabled={exporting}
-                                    >
-                                        <div
-                                            className={`text-sm font-semibold ${active ? 'text-orange-200' : 'text-stone-400'}`}
-                                        >
-                                            {freq.label}
-                                        </div>
-                                        <div
-                                            className={`mt-0.5 text-[10px] ${active ? 'text-orange-400/80' : 'text-stone-600'}`}
-                                        >
-                                            {freq.desc}
-                                        </div>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </DawDialogSection>
-
-                    <DawDialogSection
-                        tone="warm"
-                        title="Fidelity"
-                        detail="Choose sample rate, bit depth, and compression quality."
-                        bodyClassName={`grid gap-4 ${formats.has('mp3') ? 'grid-cols-3' : 'grid-cols-2'}`}
-                    >
-                        <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
-                            <DawEyebrowLabel size="sm" className="mb-2 block font-bold tracking-widest text-stone-600">
-                                Sample Rate
-                            </DawEyebrowLabel>
-                            <div className="flex flex-wrap gap-1">
-                                {sampleRates.map((sr) => (
-                                    <Button
-                                        key={sr}
-                                        variant="ghost"
-                                        size="sm"
-                                        className={`h-6 rounded-md px-2 text-[10px] ${
-                                            sampleRate === sr
-                                                ? 'bg-stone-800 text-stone-200'
-                                                : 'text-stone-500 hover:bg-stone-800/50 hover:text-stone-300'
-                                        }`}
-                                        onClick={() => updateSampleRate(sr)}
-                                        disabled={exporting}
-                                    >
-                                        {(sr / 1000).toFixed(1)}k
-                                    </Button>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
-                            <DawEyebrowLabel size="sm" className="mb-2 block font-bold tracking-widest text-stone-600">
-                                Bit Depth
-                            </DawEyebrowLabel>
-                            <div className="flex flex-wrap gap-1">
-                                {bitDepths.map((bd) => (
-                                    <Button
-                                        key={bd}
-                                        variant="ghost"
-                                        size="sm"
-                                        className={`h-6 rounded-md px-2 text-[10px] ${
-                                            bitDepth === bd
-                                                ? 'bg-stone-800 text-stone-200'
-                                                : 'text-stone-500 hover:bg-stone-800/50 hover:text-stone-300'
-                                        }`}
-                                        onClick={() => updateBitDepth(bd)}
-                                        disabled={exporting}
-                                    >
-                                        {bd}-bit
-                                    </Button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {formats.has('mp3') ? (
-                            <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
-                                <DawEyebrowLabel
-                                    size="sm"
-                                    className="mb-2 block font-bold tracking-widest text-stone-600"
-                                >
-                                    MP3 Quality
-                                </DawEyebrowLabel>
-                                <div className="flex flex-wrap gap-1">
-                                    {([96, 128, 192, 320] as Mp3BitRate[]).map((br) => (
-                                        <Button
-                                            key={br}
-                                            variant="ghost"
-                                            size="sm"
-                                            className={`h-6 rounded-md px-2 text-[10px] ${
-                                                mp3BitRate === br
-                                                    ? 'bg-stone-800 text-stone-200'
-                                                    : 'text-stone-500 hover:bg-stone-800/50 hover:text-stone-300'
-                                            }`}
-                                            onClick={() => updateMp3BitRate(br)}
-                                            disabled={exporting}
-                                        >
-                                            {br}k
-                                        </Button>
-                                    ))}
+                        <>
+                            <DawDialogSection tone="warm" title="Ingredients">
+                                <div className="grid grid-cols-3 gap-2">
+                                    {FORMAT_OPTIONS.map((freq) => {
+                                        const active = formats.has(freq.value);
+                                        return (
+                                            <button
+                                                type="button"
+                                                key={freq.value}
+                                                className={`rounded-lg border px-3 py-2.5 text-left transition-all ${
+                                                    active
+                                                        ? 'border-orange-500/40 bg-orange-950/40 shadow-[inset_0_1px_0_rgba(251,146,60,0.1)]'
+                                                        : 'border-stone-800 bg-stone-900/50 hover:border-stone-700 hover:bg-stone-800/80'
+                                                }`}
+                                                onClick={() => toggleFormat(freq.value)}
+                                                aria-pressed={active}
+                                                role="checkbox"
+                                                aria-checked={active}
+                                                disabled={exporting}
+                                            >
+                                                <div
+                                                    className={`text-sm font-semibold ${active ? 'text-orange-200' : 'text-stone-400'}`}
+                                                >
+                                                    {freq.label}
+                                                </div>
+                                                <div
+                                                    className={`mt-0.5 text-[10px] ${active ? 'text-orange-400/80' : 'text-stone-600'}`}
+                                                >
+                                                    {freq.desc}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
                                 </div>
-                            </div>
-                        ) : null}
-                    </DawDialogSection>
-                    </>
+                            </DawDialogSection>
+
+                            <DawDialogSection
+                                tone="warm"
+                                title="Fidelity"
+                                detail="Choose sample rate, bit depth, and compression quality."
+                                bodyClassName={`grid gap-4 ${formats.has('mp3') ? 'grid-cols-3' : 'grid-cols-2'}`}
+                            >
+                                <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
+                                    <DawEyebrowLabel
+                                        size="sm"
+                                        className="mb-2 block font-bold tracking-widest text-stone-600"
+                                    >
+                                        Sample Rate
+                                    </DawEyebrowLabel>
+                                    <div className="flex flex-wrap gap-1">
+                                        {sampleRates.map((sr) => (
+                                            <Button
+                                                key={sr}
+                                                variant="ghost"
+                                                size="sm"
+                                                className={`h-6 rounded-md px-2 text-[10px] ${
+                                                    sampleRate === sr
+                                                        ? 'bg-stone-800 text-stone-200'
+                                                        : 'text-stone-500 hover:bg-stone-800/50 hover:text-stone-300'
+                                                }`}
+                                                onClick={() => updateSampleRate(sr)}
+                                                disabled={exporting}
+                                            >
+                                                {(sr / 1000).toFixed(1)}k
+                                            </Button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
+                                    <DawEyebrowLabel
+                                        size="sm"
+                                        className="mb-2 block font-bold tracking-widest text-stone-600"
+                                    >
+                                        Bit Depth
+                                    </DawEyebrowLabel>
+                                    <div className="flex flex-wrap gap-1">
+                                        {bitDepths.map((bd) => (
+                                            <Button
+                                                key={bd}
+                                                variant="ghost"
+                                                size="sm"
+                                                className={`h-6 rounded-md px-2 text-[10px] ${
+                                                    bitDepth === bd
+                                                        ? 'bg-stone-800 text-stone-200'
+                                                        : 'text-stone-500 hover:bg-stone-800/50 hover:text-stone-300'
+                                                }`}
+                                                onClick={() => updateBitDepth(bd)}
+                                                disabled={exporting}
+                                            >
+                                                {bd}-bit
+                                            </Button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {formats.has('mp3') ? (
+                                    <div className="rounded-lg border border-stone-800/50 bg-stone-950/55 p-3">
+                                        <DawEyebrowLabel
+                                            size="sm"
+                                            className="mb-2 block font-bold tracking-widest text-stone-600"
+                                        >
+                                            MP3 Quality
+                                        </DawEyebrowLabel>
+                                        <div className="flex flex-wrap gap-1">
+                                            {([96, 128, 192, 320] as Mp3BitRate[]).map((br) => (
+                                                <Button
+                                                    key={br}
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className={`h-6 rounded-md px-2 text-[10px] ${
+                                                        mp3BitRate === br
+                                                            ? 'bg-stone-800 text-stone-200'
+                                                            : 'text-stone-500 hover:bg-stone-800/50 hover:text-stone-300'
+                                                    }`}
+                                                    onClick={() => updateMp3BitRate(br)}
+                                                    disabled={exporting}
+                                                >
+                                                    {br}k
+                                                </Button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : null}
+                            </DawDialogSection>
+                        </>
                     ) : null}
 
                     <DawDialogSection

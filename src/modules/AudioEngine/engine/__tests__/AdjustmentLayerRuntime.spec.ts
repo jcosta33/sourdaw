@@ -56,9 +56,7 @@ describe('AdjustmentLayerRuntime', () => {
         vi.useFakeTimers();
         const runtime = createAdjustmentLayerRuntime(deps);
 
-        runtime.applyTick([
-            { layerId: 'L1', trackId: 't1', effectType: 'eq', parameters: {}, blend: 1 },
-        ]);
+        runtime.applyTick([{ layerId: 'L1', trackId: 't1', effectType: 'eq', parameters: {}, blend: 1 }]);
         rerouteTrack.mockClear();
 
         runtime.applyTick([]);
@@ -86,14 +84,10 @@ describe('AdjustmentLayerRuntime', () => {
     it('updates existing bus blend without recreating it', () => {
         const runtime = createAdjustmentLayerRuntime(deps);
 
-        runtime.applyTick([
-            { layerId: 'L1', trackId: 't1', effectType: 'eq', parameters: {}, blend: 0.2 },
-        ]);
+        runtime.applyTick([{ layerId: 'L1', trackId: 't1', effectType: 'eq', parameters: {}, blend: 0.2 }]);
         const firstKeys = runtime.listLiveBusKeys();
 
-        runtime.applyTick([
-            { layerId: 'L1', trackId: 't1', effectType: 'eq', parameters: {}, blend: 0.8 },
-        ]);
+        runtime.applyTick([{ layerId: 'L1', trackId: 't1', effectType: 'eq', parameters: {}, blend: 0.8 }]);
         const secondKeys = runtime.listLiveBusKeys();
 
         expect(firstKeys).toEqual(secondKeys);

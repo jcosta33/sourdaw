@@ -14,9 +14,11 @@ export function saveSnapshot(): DocumentBundle {
 }
 
 /**
- * Execute a mutating function and capture binary snapshots only for the 
+ * Execute a mutating function and capture binary snapshots only for the
  * documents that were dirtied during its execution.
  */
-export async function transactSnapshot(fn: () => Promise<void>): Promise<{ before: DocumentBundle; after: DocumentBundle }> {
+export async function transactSnapshot(
+    fn: () => Promise<void>
+): Promise<{ before: DocumentBundle; after: DocumentBundle }> {
     return automergeRepository.transactSnapshot(fn);
 }

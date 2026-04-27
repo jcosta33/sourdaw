@@ -126,9 +126,7 @@ function buildParamAddressCache(node: FaustNode): Map<string, string> {
         }
         const existing = cache.get(bareName);
         if (existing !== undefined) {
-            logger.warn(
-                `[FaustDevice] Duplicate bare param "${bareName}" — keeping "${existing}", ignoring "${key}"`
-            );
+            logger.warn(`[FaustDevice] Duplicate bare param "${bareName}" — keeping "${existing}", ignoring "${key}"`);
             continue;
         }
         cache.set(bareName, key);

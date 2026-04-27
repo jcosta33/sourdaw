@@ -286,11 +286,7 @@ export const TrackListView = ({
                                 {track.showVariationLanes === true &&
                                 track.kind !== 'folder' &&
                                 track.kind !== 'master' ? (
-                                    <TakeLanePanel
-                                        trackId={track.id}
-                                        trackName={track.name}
-                                        trackColor={track.color}
-                                    />
+                                    <TakeLanePanel trackId={track.id} trackName={track.name} trackColor={track.color} />
                                 ) : null}
                             </div>
                         );

@@ -20,11 +20,16 @@ async function saveBytes(bytes: Uint8Array, suggestedName: string): Promise<void
         return;
     }
 
-    const saveFilePicker = (window as unknown as {
-        showSaveFilePicker?: (opts: { suggestedName: string; types?: unknown[] }) => Promise<{
-            createWritable: () => Promise<{ write: (data: Uint8Array) => Promise<void>; close: () => Promise<void> }>;
-        }>;
-    }).showSaveFilePicker;
+    const saveFilePicker = (
+        window as unknown as {
+            showSaveFilePicker?: (opts: { suggestedName: string; types?: unknown[] }) => Promise<{
+                createWritable: () => Promise<{
+                    write: (data: Uint8Array) => Promise<void>;
+                    close: () => Promise<void>;
+                }>;
+            }>;
+        }
+    ).showSaveFilePicker;
 
     if (saveFilePicker) {
         try {

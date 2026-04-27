@@ -68,9 +68,9 @@ describe('AdjustmentBusNode', () => {
             vi.mocked(gainNode.gain.setTargetAtTime).mock.calls.some((call) => call[0] === 0.7)
         );
         const sawDryTarget = gainNodes.some((gainNode) =>
-            vi.mocked(gainNode.gain.setTargetAtTime).mock.calls.some(
-                (call) => Math.abs((call[0] as number) - 0.3) < 1e-6
-            )
+            vi
+                .mocked(gainNode.gain.setTargetAtTime)
+                .mock.calls.some((call) => Math.abs((call[0] as number) - 0.3) < 1e-6)
         );
 
         expect(sawWetTarget).toBe(true);

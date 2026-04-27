@@ -12,12 +12,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getChordAtBeat, transposeForChordTrack } from '#/modules/MIDI/useCases';
-import {
-    getDrumKitDefByIndex,
-    scheduleDrumKitNote,
-    scheduleKitNote,
-    scheduleNote,
-} from '#/modules/Synth/useCases';
+import { getDrumKitDefByIndex, scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { getYeastRack, getYeastWorkletNodeAsync } from '#/modules/Yeast/stores';
 
 import { getTempoAtBeat } from '../../models/TempoMap';
@@ -84,7 +79,9 @@ type TransportInfo = {
 type DrumKitDef = NonNullable<ReturnType<typeof getDrumKitDefByIndex>>;
 
 function isDrumDevice(deviceType: string): boolean {
-    return deviceType === 'builtin-drum-kit' || deviceType === 'drum-kit' || deviceType.startsWith('builtin-drum-machine');
+    return (
+        deviceType === 'builtin-drum-kit' || deviceType === 'drum-kit' || deviceType.startsWith('builtin-drum-machine')
+    );
 }
 
 export function resolveDrumKit(devices: { type: string; parameterValues: Record<string, number> }[]): DrumKit | null {

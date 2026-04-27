@@ -100,11 +100,12 @@ vi.mock('../../../useCases/transportQueries/helpers', () => ({
     defaultTransportState: { playheadPosition: 0, timeSignatureNumerator: 4 },
 }));
 
-const renderPanel = () => render(
-    <TooltipProvider>
-        <LoopStationPanel />
-    </TooltipProvider>
-);
+const renderPanel = () =>
+    render(
+        <TooltipProvider>
+            <LoopStationPanel />
+        </TooltipProvider>
+    );
 
 describe('LoopStationPanel', () => {
     beforeEach(() => {

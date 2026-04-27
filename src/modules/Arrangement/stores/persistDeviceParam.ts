@@ -28,9 +28,7 @@ export function persistDeviceParam(deviceId: string, paramId: string, value: num
                 ? {
                       ...t,
                       devices: t.devices.map((d) =>
-                          d.id === deviceId
-                              ? { ...d, parameterValues: { ...d.parameterValues, [paramId]: value } }
-                              : d
+                          d.id === deviceId ? { ...d, parameterValues: { ...d.parameterValues, [paramId]: value } } : d
                       ),
                   }
                 : t

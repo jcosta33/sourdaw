@@ -21,7 +21,7 @@ function checkDirSize(dirPath) {
         const stats = statSync(dirPath);
         if (stats.isDirectory()) {
             const files = require('fs').readdirSync(dirPath);
-            files.forEach(file => {
+            files.forEach((file) => {
                 size += checkDirSize(join(dirPath, file));
             });
         } else {

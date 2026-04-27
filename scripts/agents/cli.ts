@@ -83,7 +83,7 @@ export function fzfSelect(items, { prompt = '> ', preview = '', multi = false } 
     const args = ['--prompt', prompt, '--height', '60%', '--border', '--ansi'];
     if (multi) args.push('-m');
     if (preview) args.push('--preview', preview, '--preview-window', 'right:55%:wrap');
-    
+
     const result = spawnSync('fzf', args, {
         input: items.join('\n'),
         encoding: 'utf8',
@@ -93,12 +93,14 @@ export function fzfSelect(items, { prompt = '> ', preview = '', multi = false } 
     if (result.error || result.status !== 0 || !result.stdout?.trim()) {
         if (result.error && result.error.code === 'ENOENT') {
             console.error('\nError: fzf is not installed but is required for interactive selection.');
-            console.error('Please install it (e.g., brew install fzf, apt install fzf) or provide arguments directly.\n');
+            console.error(
+                'Please install it (e.g., brew install fzf, apt install fzf) or provide arguments directly.\n'
+            );
             process.exit(1);
         }
         return null;
     }
-    
+
     // If multi, return an array of strings, otherwise just a string.
     if (multi) {
         return result.stdout.trim().split('\n');
@@ -115,7 +117,7 @@ export async function promptInput(promptText, defaultVal = '') {
         input: process.stdin,
         output: process.stdout,
     });
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
         rl.question(promptText, (answer) => {
             rl.close();
             resolve(answer || defaultVal);

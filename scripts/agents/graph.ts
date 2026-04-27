@@ -14,7 +14,7 @@ function extractImports(content) {
         // Match `import ... from '...'` or `import '...'`
         const match = line.match(/import\s+.*?from\s+['"](.*?)['"]/);
         const matchBare = line.match(/import\s+['"](.*?)['"]/);
-        
+
         if (match) {
             dependencies.push(match[1]);
         } else if (matchBare) {
@@ -35,7 +35,7 @@ function run() {
 
     const { positional } = parseArgs(process.argv.slice(2));
     const targetFile = positional[0];
-    
+
     if (!targetFile) {
         console.log(red('Usage: agents:graph <path/to/file.ts>'));
         process.exit(1);
@@ -51,11 +51,11 @@ function run() {
     const deps = extractImports(content);
 
     console.log(cyan(`\nDependency Graph for ${bold(targetFile)}:\n`));
-    
+
     if (deps.length === 0) {
         console.log(dim('  (No internal/external dependencies found)'));
     } else {
-        deps.forEach(dep => {
+        deps.forEach((dep) => {
             // Highlight external packages vs relative imports
             if (dep.startsWith('.') || dep.startsWith('src/')) {
                 console.log(`  ├─ ${bold(dep)}`);

@@ -37,7 +37,8 @@ function applyPatch(deviceId: string, patch: LevainPatch): void {
             ...state,
             patch,
             currentArticulationDisplay:
-                patch.articulations.find((a) => a.type === patch.currentArticulation)?.name ?? patch.currentArticulation,
+                patch.articulations.find((a) => a.type === patch.currentArticulation)?.name ??
+                patch.currentArticulation,
         },
     });
 

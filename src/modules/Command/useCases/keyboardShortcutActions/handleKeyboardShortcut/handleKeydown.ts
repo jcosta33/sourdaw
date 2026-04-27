@@ -10,13 +10,7 @@ import {
     removeClip,
     addClip,
 } from '#/modules/Arrangement/useCases';
-import {
-    stopPlayback,
-    seekPlayhead,
-    setLoopRegion,
-    stopAllSlots,
-    triggerPad,
-} from '#/modules/Transport/useCases';
+import { stopPlayback, seekPlayhead, setLoopRegion, stopAllSlots, triggerPad } from '#/modules/Transport/useCases';
 import { loopStationStore } from '#/modules/Transport/stores';
 import { workspaceStore, toolSwapStore } from '#/modules/Workspace/stores';
 import {
@@ -525,11 +519,7 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
         for (const def of definitions) {
             const keys = customMappings[def.id] ?? def.defaultKeys;
             if (matches(desc, keys)) {
-                if (
-                    def.id.startsWith('loopStation.pad.') &&
-                    def.id.endsWith('.play') &&
-                    !loopStationArmed
-                ) {
+                if (def.id.startsWith('loopStation.pad.') && def.id.endsWith('.play') && !loopStationArmed) {
                     continue;
                 }
                 return executeShortcutAction(def.action);
@@ -608,11 +598,7 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                 // transport / tool bindings. Shift-press record variants
                 // always fire — they carry a shift modifier that otherwise
                 // has no binding, so there is no conflict to gate against.
-                if (
-                    def.id.startsWith('loopStation.pad.') &&
-                    def.id.endsWith('.play') &&
-                    !loopStationArmed
-                ) {
+                if (def.id.startsWith('loopStation.pad.') && def.id.endsWith('.play') && !loopStationArmed) {
                     continue;
                 }
                 return executeShortcutAction(def.action);

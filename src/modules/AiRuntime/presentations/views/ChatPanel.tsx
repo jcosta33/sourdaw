@@ -1,4 +1,13 @@
-import { type ReactElement, type CSSProperties, useState, useRef, useEffect, useId, type KeyboardEvent, memo } from 'react';
+import {
+    type ReactElement,
+    type CSSProperties,
+    useState,
+    useRef,
+    useEffect,
+    useId,
+    type KeyboardEvent,
+    memo,
+} from 'react';
 
 import { X, Trash2, Bot, User, ChevronRight, ChevronDown, Zap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -77,29 +86,22 @@ const ChatMessageItem = memo(({ msg }: { msg: any }): ReactElement => {
         msgRoleLabel = 'Assistant';
     }
 
-    let msgBubbleClassName =
-        'bg-surface-raised text-foreground border border-border/50 rounded-tl-sm w-full';
+    let msgBubbleClassName = 'bg-surface-raised text-foreground border border-border/50 rounded-tl-sm w-full';
     if (msg.role === 'user') {
         msgBubbleClassName = 'bg-primary text-primary-foreground rounded-tr-sm';
     } else if (msg.isDsoAction) {
-        msgBubbleClassName =
-            'bg-emerald-500/10 text-foreground border border-emerald-500/20 rounded-tl-sm w-full';
+        msgBubbleClassName = 'bg-emerald-500/10 text-foreground border border-emerald-500/20 rounded-tl-sm w-full';
     }
 
     return (
-        <div
-            className={cn('flex w-full flex-col', msg.role === 'user' ? 'items-end' : 'items-start')}
-        >
+        <div className={cn('flex w-full flex-col', msg.role === 'user' ? 'items-end' : 'items-start')}>
             <div className="flex items-center gap-1.5 mb-1 opacity-70">
                 {msgIcon}
                 <span className="text-[10px] font-medium tracking-wide">{msgRoleLabel}</span>
             </div>
             {/* Reasoning (collapsible) */}
             {msg.reasoning ? (
-                <ReasoningBlock
-                    reasoning={msg.reasoning}
-                    isStreaming={msg.isStreaming && !msg.content}
-                />
+                <ReasoningBlock reasoning={msg.reasoning} isStreaming={msg.isStreaming && !msg.content} />
             ) : null}
             <div
                 className={cn(

@@ -39,7 +39,6 @@ import { useProjectState } from '../hooks/useProjectState';
 import { useAppInitialization } from '../hooks/useAppInitialization';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 
-
 import { trackStore } from '#/modules/Arrangement/stores';
 
 import { isOnboardingCompleted } from '../../useCases/onboarding/isOnboardingCompleted';
@@ -52,13 +51,11 @@ import { OnboardingTour } from './OnboardingTour';
 import { Sidebar } from './Sidebar';
 import { TransportBar } from './TransportBar';
 
-
 import { MixerPanel } from './MixerPanel';
 import { SessionView } from './SessionView';
 import { RoutingMatrix } from './RoutingMatrix';
 import { ClipView } from './ClipView';
 import { AnalysisPanel } from './AnalysisPanel';
-
 
 import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 
@@ -140,8 +137,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const project = useProjectState();
     const prefs = useStore(preferencesStore, defaultPreferences);
     const tracksSnapshot = useStore(trackStore, { tracks: [], selectedTrackId: null });
-    const isAudioClipSelected = selectedClipId !== null
-        && tracksSnapshot.tracks.some((track) =>
+    const isAudioClipSelected =
+        selectedClipId !== null &&
+        tracksSnapshot.tracks.some((track) =>
             track.clips.some((clip) => clip.id === selectedClipId && clip.type === 'audio')
         );
     const aiState = useStore(aiStore, { tasks: [], isPanelOpen: false });
@@ -654,7 +652,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                         <Button
                                             variant={bottomTab === 'setlist' ? 'secondary' : 'ghost'}
                                             size="xs"
-                                            className={bottomTab === 'setlist' ? 'text-[var(--color-accent-amber)]' : ''}
+                                            className={
+                                                bottomTab === 'setlist' ? 'text-[var(--color-accent-amber)]' : ''
+                                            }
                                             onClick={() => setBottomTab('setlist')}
                                             data-onboarding="setlist-tab"
                                         >

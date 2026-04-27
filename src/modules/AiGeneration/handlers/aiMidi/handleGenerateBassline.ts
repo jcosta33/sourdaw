@@ -29,22 +29,22 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
 
         // If we created a new track, we need to create a new clip on it to hold the notes
         if (targetId !== alpha.payload.trackId) {
-             const trackState = trackStore.value;
-             const refTrack = trackState?.tracks.find(t => t.clips.some(c => c.id === alpha.payload.clipId));
-             const refClip = refTrack?.clips.find(c => c.id === alpha.payload.clipId);
+            const trackState = trackStore.value;
+            const refTrack = trackState?.tracks.find((t) => t.clips.some((c) => c.id === alpha.payload.clipId));
+            const refClip = refTrack?.clips.find((c) => c.id === alpha.payload.clipId);
 
-             if (refClip) {
-                 const newClip = addClip({
-                     trackId: targetId,
-                     startBeat: refClip.startBeat,
-                     endBeat: refClip.endBeat,
-                     name: `Bassline (${style})`,
-                     type: 'midi'
-                 });
-                 if (newClip) {
-                     targetClipId = newClip.id;
-                 }
-             }
+            if (refClip) {
+                const newClip = addClip({
+                    trackId: targetId,
+                    startBeat: refClip.startBeat,
+                    endBeat: refClip.endBeat,
+                    name: `Bassline (${style})`,
+                    type: 'midi',
+                });
+                if (newClip) {
+                    targetClipId = newClip.id;
+                }
+            }
         }
 
         for (const note of notes) {

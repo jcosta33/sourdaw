@@ -210,16 +210,7 @@ export type AudioEngine = {
 export type AdjustmentLayerTickInput = {
     trackId: string;
     layerId: string;
-    effectType:
-        | 'eq'
-        | 'compressor'
-        | 'reverb'
-        | 'delay'
-        | 'saturation'
-        | 'filter'
-        | 'stereo-width'
-        | 'volume'
-        | 'pan';
+    effectType: 'eq' | 'compressor' | 'reverb' | 'delay' | 'saturation' | 'filter' | 'stereo-width' | 'volume' | 'pan';
     parameters: Record<string, number>;
     blend: number;
 };

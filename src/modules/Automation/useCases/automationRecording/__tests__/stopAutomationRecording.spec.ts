@@ -8,22 +8,29 @@ type TestTrack = {
     automationMode: 'read' | 'write' | 'touch' | 'latch';
 };
 
-const { activeRecording, pendingPoints, touchActive, findLaneId, clearPointsInRange, flushPendingPoints, trackSnapshot } =
-    vi.hoisted(() => {
-        const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
-        const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
-        const touchActive = new Set<string>();
-        const trackSnapshot: { value: { tracks: TestTrack[] } | null } = { value: null };
-        return {
-            activeRecording,
-            pendingPoints,
-            touchActive,
-            findLaneId: vi.fn(() => null as string | null),
-            clearPointsInRange: vi.fn(),
-            flushPendingPoints: vi.fn(),
-            trackSnapshot,
-        };
-    });
+const {
+    activeRecording,
+    pendingPoints,
+    touchActive,
+    findLaneId,
+    clearPointsInRange,
+    flushPendingPoints,
+    trackSnapshot,
+} = vi.hoisted(() => {
+    const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
+    const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
+    const touchActive = new Set<string>();
+    const trackSnapshot: { value: { tracks: TestTrack[] } | null } = { value: null };
+    return {
+        activeRecording,
+        pendingPoints,
+        touchActive,
+        findLaneId: vi.fn(() => null as string | null),
+        clearPointsInRange: vi.fn(),
+        flushPendingPoints: vi.fn(),
+        trackSnapshot,
+    };
+});
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();

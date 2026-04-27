@@ -56,10 +56,7 @@ export function getAudioParamKeyForPedal(isPost: boolean, pedalType: string, par
     return `${prefix}${pedalName}${capitalizedParam}`;
 }
 
-function getAudioOrderKeyForPedal(
-    isPost: boolean,
-    pedal_type: GrinderSupportedChainPedalType
-): string {
+function getAudioOrderKeyForPedal(isPost: boolean, pedal_type: GrinderSupportedChainPedalType): string {
     const prefix = isPost ? 'post' : 'pre';
 
     switch (pedal_type) {

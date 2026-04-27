@@ -10,7 +10,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 function findImpactedSpecs(repoRoot, targetFile) {
     const targetName = basename(targetFile, '.ts').replace('.tsx', '');
     const specs = [];
-    
+
     // Very naive blast radius: find any .spec.ts or .spec.tsx files that import the targetName
     // In a real swarm this uses `dependency-cruiser` or a TS Language Service AST graph.
     function scan(dir) {
@@ -33,9 +33,9 @@ function findImpactedSpecs(repoRoot, targetFile) {
             // ignore
         }
     }
-    
+
     scan(join(repoRoot, 'src'));
-    
+
     // Also include the spec file adjacent to the target if it exists
     const adjacentSpecTs = join(dirname(targetFile), `__tests__`, `${targetName}.spec.ts`);
     const adjacentSpecTsx = join(dirname(targetFile), `__tests__`, `${targetName}.spec.tsx`);
@@ -56,7 +56,7 @@ function run() {
 
     const { positional } = parseArgs(process.argv.slice(2));
     const targetFile = positional[0];
-    
+
     if (!targetFile) {
         console.log(red('Usage: agents:test-radius <path/to/modified/file.ts>'));
         process.exit(1);
@@ -71,11 +71,13 @@ function run() {
     }
 
     console.log(green(`Found ${impactedSpecs.length} impacted spec file(s). Running subset...`));
-    impactedSpecs.forEach(s => console.log(dim(`  - ${s.replace(repoRoot + '/', '')}`)));
+    impactedSpecs.forEach((s) => console.log(dim(`  - ${s.replace(repoRoot + '/', '')}`)));
 
     // Run the unified test wrapper with the specific files
     const scriptPath = new URL('./test.ts', import.meta.url).pathname;
-    const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...impactedSpecs], { stdio: 'inherit' });
+    const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...impactedSpecs], {
+        stdio: 'inherit',
+    });
     process.exit(res.status || 0);
 }
 

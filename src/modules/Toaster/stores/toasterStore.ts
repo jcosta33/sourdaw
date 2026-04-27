@@ -92,7 +92,7 @@ export function updateKit(deviceId: string, updates: Partial<ToasterKit>): void 
                 ...state.kit,
                 ...updates,
             },
-        }
+        },
     });
 }
 

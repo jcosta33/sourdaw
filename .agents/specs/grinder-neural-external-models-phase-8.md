@@ -126,8 +126,8 @@ Users can import one or more `.nam` captures from the Neural modal. Imported cap
 - Treat imported NAM files as external source material for a compact Grinder profile, not as a promise of full official NAM runtime parity.
 - Keep the imported profile portable and small: derived nonlinear-shaping values plus bounded neural-weight data is enough for this phase.
 - The reusable imported-model library and the active patch serve different purposes:
-  - library: modal reuse and browsing
-  - patch: audible project truth
+    - library: modal reuse and browsing
+    - patch: audible project truth
 - Restore the reusable library lazily in Grinder UI if needed, but do not let modal hydration timing decide whether the project sounds right.
 
 ## Test plan

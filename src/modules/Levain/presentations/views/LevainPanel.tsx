@@ -230,7 +230,10 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     expression={patch.expression}
                                     legato={patch.legato}
                                     onChangeExp={(partial) =>
-                                        setLevainParamWithAudio(deviceId, 'expression', { ...patch.expression, ...partial })
+                                        setLevainParamWithAudio(deviceId, 'expression', {
+                                            ...patch.expression,
+                                            ...partial,
+                                        })
                                     }
                                     onChangeLeg={(partial) =>
                                         setLevainParamWithAudio(deviceId, 'legato', { ...patch.legato, ...partial })
@@ -258,7 +261,10 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     <HumanizePanel
                                         config={patch.humanize}
                                         onChange={(partial) =>
-                                            setLevainParamWithAudio(deviceId, 'humanize', { ...patch.humanize, ...partial })
+                                            setLevainParamWithAudio(deviceId, 'humanize', {
+                                                ...patch.humanize,
+                                                ...partial,
+                                            })
                                         }
                                     />
                                 </SectionCard>
@@ -273,7 +279,9 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 <MicBlendSlider
                                     micPositions={patch.micPositions}
                                     showFull
-                                    onSendMicParam={(micIndex, name, value) => sendMicParamToEngine(deviceId, micIndex, name, value)}
+                                    onSendMicParam={(micIndex, name, value) =>
+                                        sendMicParamToEngine(deviceId, micIndex, name, value)
+                                    }
                                     onUpdateMicPosition={(name, partial) => updateMicPosition(deviceId, name, partial)}
                                 />
                             </SectionCard>

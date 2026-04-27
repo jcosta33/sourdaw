@@ -347,7 +347,9 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 currentStep={currentStep}
                                 isPlaying={isPlaying}
                                 onToggleStep={(trackId, stepIndex) => toggleStep(deviceId, trackId, stepIndex)}
-                                onSetVelocity={(trackId, stepIndex, vel) => setStepVelocity(deviceId, trackId, stepIndex, vel)}
+                                onSetVelocity={(trackId, stepIndex, vel) =>
+                                    setStepVelocity(deviceId, trackId, stepIndex, vel)
+                                }
                             />
                         ) : null}
                     </div>

@@ -120,11 +120,7 @@ export function interpolateAutomationPointValue({
         const t3 = t2 * t;
 
         return (
-            0.5 *
-            (2 * v1 +
-                (-v0 + v2) * t +
-                (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 +
-                (-v0 + 3 * v1 - 3 * v2 + v3) * t3)
+            0.5 * (2 * v1 + (-v0 + v2) * t + (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 + (-v0 + 3 * v1 - 3 * v2 + v3) * t3)
         );
     }
 

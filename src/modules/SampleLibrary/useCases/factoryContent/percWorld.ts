@@ -19,7 +19,14 @@ function renderTabla(): Float32Array {
     const out = createMono(dur);
     // "Na" — pitched bend with fast decay and mid-range slap transient.
     const body = renderSine(dur, (t) => 250 + 180 * Math.exp(-t * 45));
-    const env = renderEnvelope(dur, { attack: 0.002, decay: 0.05, sustainLevel: 0.2, sustain: 0, release: 0.3, curve: 'exp' });
+    const env = renderEnvelope(dur, {
+        attack: 0.002,
+        decay: 0.05,
+        sustainLevel: 0.2,
+        sustain: 0,
+        release: 0.3,
+        curve: 'exp',
+    });
     applyEnvelope(body, env);
     mixMono(out, body, 0.85);
 
@@ -36,7 +43,14 @@ function renderBongo(): Float32Array {
     const dur = 0.25;
     const out = createMono(dur);
     const body = renderSine(dur, (t) => 220 + 110 * Math.exp(-t * 40));
-    const env = renderEnvelope(dur, { attack: 0.002, decay: 0.05, sustainLevel: 0.2, sustain: 0, release: 0.2, curve: 'exp' });
+    const env = renderEnvelope(dur, {
+        attack: 0.002,
+        decay: 0.05,
+        sustainLevel: 0.2,
+        sustain: 0,
+        release: 0.2,
+        curve: 'exp',
+    });
     applyEnvelope(body, env);
     mixMono(out, body, 0.9);
 
@@ -53,7 +67,14 @@ function renderDjembe(): Float32Array {
     const dur = 0.5;
     const out = createMono(dur);
     const body = renderSine(dur, (t) => 120 + 80 * Math.exp(-t * 25));
-    const env = renderEnvelope(dur, { attack: 0.003, decay: 0.08, sustainLevel: 0.35, sustain: 0, release: 0.4, curve: 'exp' });
+    const env = renderEnvelope(dur, {
+        attack: 0.003,
+        decay: 0.08,
+        sustainLevel: 0.35,
+        sustain: 0,
+        release: 0.4,
+        curve: 'exp',
+    });
     applyEnvelope(body, env);
     mixMono(out, body, 0.85);
 
@@ -83,9 +104,23 @@ function renderAgogo(): Float32Array {
     // Two metal bells — mid (lower cowbell-like pitch) with bright partials.
     const fund = renderTriangle(dur, 880);
     const partial = renderTriangle(dur, 1760);
-    const env = renderEnvelope(dur, { attack: 0.001, decay: 0.03, sustainLevel: 0.3, sustain: 0, release: 0.35, curve: 'exp' });
+    const env = renderEnvelope(dur, {
+        attack: 0.001,
+        decay: 0.03,
+        sustainLevel: 0.3,
+        sustain: 0,
+        release: 0.35,
+        curve: 'exp',
+    });
     applyEnvelope(fund, env);
-    const env2 = renderEnvelope(dur, { attack: 0.001, decay: 0.02, sustainLevel: 0.2, sustain: 0, release: 0.3, curve: 'exp' });
+    const env2 = renderEnvelope(dur, {
+        attack: 0.001,
+        decay: 0.02,
+        sustainLevel: 0.2,
+        sustain: 0,
+        release: 0.3,
+        curve: 'exp',
+    });
     applyEnvelope(partial, env2);
     mixMono(out, fund, 0.7);
     mixMono(out, partial, 0.35);

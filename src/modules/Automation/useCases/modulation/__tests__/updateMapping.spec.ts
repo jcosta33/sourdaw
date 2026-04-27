@@ -13,9 +13,7 @@ describe('updateMapping', () => {
                     trackId: 't1',
                     kind: 'lfo',
                     config: { kind: 'lfo', waveform: 'sine', rate: 1, sync: true, phase: 0, depth: 1 },
-                    mappings: [
-                        { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'p1', amount: 0.5 },
-                    ],
+                    mappings: [{ targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'p1', amount: 0.5 }],
                     enabled: true,
                 },
             ],

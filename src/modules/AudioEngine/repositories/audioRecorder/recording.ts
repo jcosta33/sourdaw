@@ -44,7 +44,10 @@ type RecordingSession = {
 };
 
 // Use a Map to support multi-track simultaneous recording.
-const activeSessions = createHmrPersistentState<Map<string, RecordingSession>>('audioRecorder.activeSessions', () => new Map());
+const activeSessions = createHmrPersistentState<Map<string, RecordingSession>>(
+    'audioRecorder.activeSessions',
+    () => new Map()
+);
 
 // Keep track of the shared media stream to avoid multiple getUserMedia prompts
 // when arming multiple tracks.
@@ -146,12 +149,9 @@ export const startAudioRecording = inject({ logger })(
                 sourceNode.connect(recordingNode);
 
                 // ── OPFS Worker ──────────────────────────────────────────────────────
-                const recordingWorker = new Worker(
-                    new URL('../../workers/recordingWorker.ts', import.meta.url),
-                    {
-                        type: 'module',
-                    }
-                );
+                const recordingWorker = new Worker(new URL('../../workers/recordingWorker.ts', import.meta.url), {
+                    type: 'module',
+                });
 
                 const session: RecordingSession = {
                     trackId,
@@ -208,7 +208,7 @@ export function stopAudioRecording(): void {
         session.recordingWorker?.postMessage({ type: 'stop' });
         cleanupNodesForSession(session);
     }
-    
+
     audioRecordingStore.set({ ...audioRecordingStore.value!, isRecording: false });
 }
 

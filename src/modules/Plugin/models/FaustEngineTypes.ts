@@ -5,7 +5,10 @@ export type FaustModule = {
     paramDescriptors: FaustParamDescriptor[];
     compiled: boolean;
     isInstrument: boolean;
-    generator: import('@grame/faustwasm').FaustMonoDspGenerator | import('@grame/faustwasm').FaustPolyDspGenerator | null;
+    generator:
+        | import('@grame/faustwasm').FaustMonoDspGenerator
+        | import('@grame/faustwasm').FaustPolyDspGenerator
+        | null;
 };
 
 export type FaustParamDescriptor = {

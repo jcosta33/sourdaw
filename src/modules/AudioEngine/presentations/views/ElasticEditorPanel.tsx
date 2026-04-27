@@ -1,11 +1,4 @@
-import {
-    type ReactElement,
-    type PointerEvent,
-    type MouseEvent,
-    useEffect,
-    useRef,
-    useState,
-} from 'react';
+import { type ReactElement, type PointerEvent, type MouseEvent, useEffect, useRef, useState } from 'react';
 
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { Button } from '#/components/ui/button';
@@ -164,9 +157,7 @@ export const ElasticEditorPanel = (): ReactElement => {
         return (
             <div className="flex h-full items-center justify-center p-6 text-center">
                 <div>
-                    <div className="text-sm text-muted-foreground">
-                        Select an audio clip to open the Elastic editor
-                    </div>
+                    <div className="text-sm text-muted-foreground">Select an audio clip to open the Elastic editor</div>
                     <div className="mt-2 text-[11px] text-muted-foreground/70">
                         Detect transients, correct them manually, then quantize to the grid.
                     </div>
@@ -204,8 +195,13 @@ export const ElasticEditorPanel = (): ReactElement => {
     };
 
     const hitTestMarker = (x: number): WarpMarkerView | null => {
-        const markers = visibleMarkers(warpState.markers, beatWidth, viewScrollLeft, containerRef.current?.clientWidth ?? 0);
-        return markers.find((m) => Math.abs((m.warpedBeat * beatWidth) - x) < 8) ?? null;
+        const markers = visibleMarkers(
+            warpState.markers,
+            beatWidth,
+            viewScrollLeft,
+            containerRef.current?.clientWidth ?? 0
+        );
+        return markers.find((m) => Math.abs(m.warpedBeat * beatWidth - x) < 8) ?? null;
     };
 
     const getCanvasX = (e: { clientX: number }): number => {
@@ -268,9 +264,7 @@ export const ElasticEditorPanel = (): ReactElement => {
         didDragRef.current = true;
         const x = getCanvasX(event);
         const beatRaw = Math.max(0, x / beatWidth);
-        const beat = drag.ctrlKey || event.ctrlKey
-            ? snapToGrid(beatRaw, workspaceState.snapValue ?? 1)
-            : beatRaw;
+        const beat = drag.ctrlKey || event.ctrlKey ? snapToGrid(beatRaw, workspaceState.snapValue ?? 1) : beatRaw;
         mutateMarker(clipId, drag.markerId, (m) => {
             if (drag.altKey || event.altKey) {
                 return { ...m, originalBeat: beat };
@@ -297,7 +291,11 @@ export const ElasticEditorPanel = (): ReactElement => {
     return (
         <div className="flex h-full flex-col overflow-hidden" data-testid="elastic-editor-panel">
             <DawControlStrip className="px-3 py-1.5 gap-2">
-                <div className="flex items-center gap-0.5 rounded-md border border-border/40 p-0.5" role="radiogroup" aria-label="Elastic tool">
+                <div
+                    className="flex items-center gap-0.5 rounded-md border border-border/40 p-0.5"
+                    role="radiogroup"
+                    aria-label="Elastic tool"
+                >
                     {TOOL_BUTTONS.map((tool) => (
                         <Button
                             key={tool.id}

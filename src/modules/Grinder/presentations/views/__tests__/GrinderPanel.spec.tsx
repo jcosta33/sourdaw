@@ -82,7 +82,9 @@ describe('GrinderPanel', () => {
 
         expect(screen.queryByText('Mode guide')).not.toBeInTheDocument();
         expect(screen.getByText('Signal path')).toBeInTheDocument();
-        expect(screen.getByText(/selecting a library voice now swaps the active built-in capture profile/i)).toBeInTheDocument();
+        expect(
+            screen.getByText(/selecting a library voice now swaps the active built-in capture profile/i)
+        ).toBeInTheDocument();
     });
 
     it('should render the imported captures section in the Neural browser', () => {

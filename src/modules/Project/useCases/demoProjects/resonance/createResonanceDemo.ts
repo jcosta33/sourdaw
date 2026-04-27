@@ -47,10 +47,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
         resolution: 0.25,
     };
     grooveStore.set({
-        templates: [
-            ...((grooveStore.value?.templates ?? []).filter((t) => t.id !== mpc60Groove.id)),
-            mpc60Groove,
-        ],
+        templates: [...(grooveStore.value?.templates ?? []).filter((t) => t.id !== mpc60Groove.id), mpc60Groove],
         projectGrooveId: mpc60Groove.id,
         projectGrooveIntensity: 0.4,
     });
@@ -2147,9 +2144,7 @@ export async function demo1_TheCompleteMix(): Promise<void> {
             [brassClip.id]: brassN.map((n) => ({ ...n, startBeat: n.startBeat - 224 })),
             // arpClip is the parent; arpClipLinked is a linked instance (same underlying notes).
             // Notes < 512 land in the parent; notes ≥ 512 land in the linked instance offset to 0.
-            [arpClip.id]: arpN
-                .filter((n) => n.startBeat < 512)
-                .map((n) => ({ ...n, startBeat: n.startBeat - 64 })),
+            [arpClip.id]: arpN.filter((n) => n.startBeat < 512).map((n) => ({ ...n, startBeat: n.startBeat - 64 })),
             [arpClipLinked.id]: arpN
                 .filter((n) => n.startBeat >= 512)
                 .map((n) => ({ ...n, startBeat: n.startBeat - 512 })),

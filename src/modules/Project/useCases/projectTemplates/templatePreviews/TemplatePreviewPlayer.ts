@@ -233,7 +233,13 @@ function playPluck(
     osc.stop(startTime + Math.min(duration, 0.8) + 0.05);
 }
 
-function renderEvent(ctx: AudioContext, dest: AudioNode, event: PreviewEvent, startTime: number, beatSec: number): void {
+function renderEvent(
+    ctx: AudioContext,
+    dest: AudioNode,
+    event: PreviewEvent,
+    startTime: number,
+    beatSec: number
+): void {
     const velocity = event.velocity ?? 100;
     const durationSec = event.duration * beatSec;
     const voice: PreviewVoice = event.voice;

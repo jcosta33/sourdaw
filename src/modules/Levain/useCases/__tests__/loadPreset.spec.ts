@@ -4,7 +4,10 @@ const DEVICE_ID = 'd1';
 
 const { mockLevainStore } = vi.hoisted(() => ({
     mockLevainStore: {
-        value: null as Record<string, { patch: { articulations: unknown[] }; currentArticulationDisplay: string }> | null,
+        value: null as Record<
+            string,
+            { patch: { articulations: unknown[] }; currentArticulationDisplay: string }
+        > | null,
         set: vi.fn(),
     },
 }));

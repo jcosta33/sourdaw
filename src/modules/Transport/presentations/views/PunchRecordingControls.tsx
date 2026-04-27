@@ -38,7 +38,16 @@ type NumberFieldProps = {
     testId?: string;
 };
 
-const NumberField = ({ label, value, min = 0, step = 1, onCommit, tooltip, ariaLabel, testId }: NumberFieldProps): ReactElement => {
+const NumberField = ({
+    label,
+    value,
+    min = 0,
+    step = 1,
+    onCommit,
+    tooltip,
+    ariaLabel,
+    testId,
+}: NumberFieldProps): ReactElement => {
     const [draft, setDraft] = useState<string>(String(value));
 
     useEffect(() => {
@@ -108,9 +117,7 @@ export const PunchRecordingControls = (): ReactElement => {
                         <Radio className="size-3" aria-hidden="true" />
                     </LatchButton>
                 </TooltipTrigger>
-                <TooltipContent>
-                    {punch.enabled ? 'Background capture on' : 'Background capture off'}
-                </TooltipContent>
+                <TooltipContent>{punch.enabled ? 'Background capture on' : 'Background capture off'}</TooltipContent>
             </Tooltip>
 
             <NumberField

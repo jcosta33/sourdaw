@@ -21,7 +21,7 @@ Related spec: none on disk.
 A correctness-first analysis surface for the DAW:
 
 - Each detection use case (key, tempo, pitch, audio→MIDI, mix analysis,
-  comparison, stem separation, audio generation) returns *real* signal-derived
+  comparison, stem separation, audio generation) returns _real_ signal-derived
   results, with documented FFT/window sizes, hop sizes, sample-rate handling,
   and clarity/confidence semantics.
 - One canonical `analyzeMix` per concept — the **realtime master analyser**
@@ -82,7 +82,7 @@ TensorFlow.js model and may resample via `OfflineAudioContext`.
    nodes (`getMasterAnalyser`, `getTrackStrip`) and produces a snapshot used
    by `handleAnalyzeMix` / `handleAutoFixMix`.
 2. `useCases/referenceMixComparison/analyzeMix/analyzeMix.ts:53` — sync,
-   reads `trackStore.value` and *estimates* a `MixAnalysis` from track
+   reads `trackStore.value` and _estimates_ a `MixAnalysis` from track
    gain/pan with hard-coded fallback profiles. Used by
    `compareToReference()` / `compareMixes`.
 
@@ -114,7 +114,7 @@ pure helpers (`readLevels`, `readFrequencyBalance`, `detectIssues`,
 1. **Two `analyzeMix` use cases with overlapping responsibilities.** The
    barrel partially papers over the collision by aliasing one
    (`analyzeMixFromTrackLayout`), but downstream callers must know which is
-   which. `referenceMixComparison/analyzeMix/analyzeMix.ts` does *not*
+   which. `referenceMixComparison/analyzeMix/analyzeMix.ts` does _not_
    actually analyse audio — it inspects track gain/pan and synthesises a
    `MixAnalysis` from constants. Anyone wiring it to a "compare to
    reference" UI will be comparing two synthetic profiles
@@ -123,15 +123,15 @@ pure helpers (`readLevels`, `readFrequencyBalance`, `detectIssues`,
 
 2. **Test mocks target the wrong module.** Four specs declare
    `vi.mock('#/modules/AudioEngine/useCases', () => ({ audioBufferCache: …
-   }))` but the production code imports from
+}))` but the production code imports from
    `#/modules/AudioEngine/stores`. The mocks are inert; the tests still
    pass because the production code path naturally returns null for any
    missing buffer id. This means the "happy path" assertions never run
    under test:
-   - `useCases/__tests__/keyDetection.spec.ts:8`
-   - `useCases/__tests__/tempoDetection.spec.ts:3`
-   - `useCases/__tests__/pitchDetection.spec.ts:3`
-   - `useCases/__tests__/audioFeatures.spec.ts:3`
+    - `useCases/__tests__/keyDetection.spec.ts:8`
+    - `useCases/__tests__/tempoDetection.spec.ts:3`
+    - `useCases/__tests__/pitchDetection.spec.ts:3`
+    - `useCases/__tests__/audioFeatures.spec.ts:3`
 
 3. **`audioToMidi` handler silently drops half the action payload.** The
    `AppAction` for `audioToMidi` includes `mode: string` (and the use case
@@ -147,16 +147,16 @@ pure helpers (`readLevels`, `readFrequencyBalance`, `detectIssues`,
    still a rectangular-window, per-frame magnitude sum across six octaves
    with no per-bin normalisation or calibration against the key-profile
    dot-product range. Additionally:
-   - `s0` is declared without an initializer (`let s0: number,`) and read
-     before its first assignment when `fftSize === 0` (technically harmless
-     here since the body assigns first, but TS strict noises around it).
-   - The Goertzel "power" formula uses `s1*s1 + s2*s2 - coeff*s1*s2` —
-     standard Goertzel power is `s1² + s2² − coeff·s1·s2` only when used as
-     squared magnitude; the code then takes `Math.abs` of it, masking sign
-     errors. With this filter design, magnitude is not in dB and is summed
-     across 6 octaves without any windowing or per-bin normalisation.
-   - `confidence = Math.min(1, bestCorr / 30)`: 30 is a magic number with
-     no relation to the chroma-profile dot-product range.
+    - `s0` is declared without an initializer (`let s0: number,`) and read
+      before its first assignment when `fftSize === 0` (technically harmless
+      here since the body assigns first, but TS strict noises around it).
+    - The Goertzel "power" formula uses `s1*s1 + s2*s2 - coeff*s1*s2` —
+      standard Goertzel power is `s1² + s2² − coeff·s1·s2` only when used as
+      squared magnitude; the code then takes `Math.abs` of it, masking sign
+      errors. With this filter design, magnitude is not in dB and is summed
+      across 6 octaves without any windowing or per-bin normalisation.
+    - `confidence = Math.min(1, bestCorr / 30)`: 30 is a magic number with
+      no relation to the chroma-profile dot-product range.
 
 5. **`tempoDetection.ts` uses an O(n²) `slice + reduce` per frame.**
    `tempoDetection.ts:30` calls
@@ -169,7 +169,7 @@ pure helpers (`readLevels`, `readFrequencyBalance`, `detectIssues`,
 
 6. **`compareToReference()` returns synthetic-vs-synthetic results.**
    `referenceMixComparison/compareMixes.ts:117` calls the
-   *track-config* `analyzeMix` (constants + gain heuristics) and then
+   _track-config_ `analyzeMix` (constants + gain heuristics) and then
    `createReferenceAnalysis` (also constants). The "% match" the user
    sees in the toast (`handleCompareToReference.ts:9`) is therefore not
    tied to the actual audio at all. UX-wise this is misleading.
@@ -178,14 +178,14 @@ pure helpers (`readLevels`, `readFrequencyBalance`, `detectIssues`,
    `handleAutoFixMix.ts:41` calls `analyzeMix()` again after applying gain
    changes and stores the result, but the gain changes are dispatched
    through `executeAppAction` which schedules updates via `Command`/store
-   — there is no guarantee they have been *applied to the AudioGraph*
+   — there is no guarantee they have been _applied to the AudioGraph_
    before `analyzeMix` reads `getMasterAnalyser()` again. The user sees a
    "refreshed" analysis that is, in the worst case, the pre-fix snapshot.
    Also: clipping fix math (`overshootDb = peakDb + 0.5`,
    `targetLinear = currentLinear / 10 ** ((overshootDb + 3) / 20)`) reduces
    gain by `peakDb + 3.5 dB` — for a track at +1 dB peak this drops gain
    by ~4.5 dB; for a track at 0 dB peak this drops it by ~3.5 dB; below
-   0 dB peak the formula *increases* gain (inverted sign). The "+3"
+   0 dB peak the formula _increases_ gain (inverted sign). The "+3"
    safety margin and the `Math.min(1, …)` ceiling combine to silently
    produce nonsensical values for non-clipping tracks.
 
@@ -198,19 +198,19 @@ pure helpers (`readLevels`, `readFrequencyBalance`, `detectIssues`,
    pick one shape.
 
 9. **Module-level mutable singletons.**
-   - `browserStemSeparation.ts:30` `ortSession` holds the 235 MB ONNX
-     session and the imported `onnxruntime-web` namespace. The comment
-     acknowledges HMR will leak it.
-   - `polyphonicAudioToMidi.ts:45` `modelHolder` holds the BasicPitch model.
-   - These are not racing-safe: two concurrent calls to `getSession()` /
-     `getBasicPitchModel()` will both observe `null`, both download the
-     model, and both create a session (the second clobbers the first
-     reference). At a ~235 MB allocation, that is a real OOM hazard if a
-     UI panel triggers two stem-separation runs in parallel.
+    - `browserStemSeparation.ts:30` `ortSession` holds the 235 MB ONNX
+      session and the imported `onnxruntime-web` namespace. The comment
+      acknowledges HMR will leak it.
+    - `polyphonicAudioToMidi.ts:45` `modelHolder` holds the BasicPitch model.
+    - These are not racing-safe: two concurrent calls to `getSession()` /
+      `getBasicPitchModel()` will both observe `null`, both download the
+      model, and both create a session (the second clobbers the first
+      reference). At a ~235 MB allocation, that is a real OOM hazard if a
+      UI panel triggers two stem-separation runs in parallel.
 
 10. **`browserStemSeparation.ts` allocates per-segment in a hot loop.**
     `browserStemSeparation.ts:180` allocates a new `Float32Array(2 *
-    343980)` every segment (~2.7 MB each), and the per-sample copy at
+343980)` every segment (~2.7 MB each), and the per-sample copy at
     `:208` is a JS-level `for` over millions of indices instead of
     `set()` with `subarray`. The `outData[lIdx] ?? 0` fallback on a
     `Float32Array` element will only return the fallback if `lIdx` is
@@ -233,11 +233,11 @@ pure helpers (`readLevels`, `readFrequencyBalance`, `detectIssues`,
     - `useCases/audioAi/isStemSeparationAvailable.ts`
     - `useCases/audioAi/generateAudio.ts`
     - `useCases/audioAi/separateStems.ts`
-    These satisfy the "useCases/ wraps repositories/" convention
-    cosmetically but introduce five files of indirection that ship as
-    five identical thin functions. Legitimate use cases should add value
-    (validation, store mutation, error mapping, batching) — these add
-    nothing.
+      These satisfy the "useCases/ wraps repositories/" convention
+      cosmetically but introduce five files of indirection that ship as
+      five identical thin functions. Legitimate use cases should add value
+      (validation, store mutation, error mapping, batching) — these add
+      nothing.
 
 13. **`isAudioAiServerRunning` is `async` for nothing.**
     `repositories/audioAiEngine.ts:35` is `async function … Promise<boolean>`
@@ -256,20 +256,20 @@ pure helpers (`readLevels`, `readFrequencyBalance`, `detectIssues`,
 
 15. **`audioFeatures.summarizeFeatures` numerical drift.** The chroma
     average `chromaProfile[index] = chromaProfile[index] + chromaVal /
-    node` (`audioFeatures.ts:146`) divides each contribution by `node`
+node` (`audioFeatures.ts:146`) divides each contribution by `node`
     inside the sum — across `node` frames this works, but with `node` in
     the thousands the per-element rounding error compounds. Sum first,
     divide once.
 
 16. **`detectOnsets` off-by-one in onset timing.**
     `audioToMidi.ts:129` writes `timeSec = ((index + 1) * HOP_SIZE) /
-    sampleRate` but the *peak frame* is at `index`; the onset is being
+sampleRate` but the _peak frame_ is at `index`; the onset is being
     reported one hop late (~11 ms at 44.1 kHz, 512-sample hop). The
     `amplitude` field uses `energies[index + 1]` for the same reason,
     which compounds the lag.
 
 17. **`audioToMidi.estimatePitch` autocorrelation early-exits with `>
-    0.3`.** `audioToMidi.ts:77` accepts the *first* lag whose normalised
+0.3`.** `audioToMidi.ts:77` accepts the _first_ lag whose normalised
     correlation exceeds 0.3 — but the loop iterates from `minLag`
     upward, so the result is biased toward the highest fundamental that
     crosses the threshold (i.e. octave errors are systematic, not
@@ -296,14 +296,14 @@ pure helpers (`readLevels`, `readFrequencyBalance`, `detectIssues`,
 20. **`insertPolyphonicMidiNotes` minimum duration is wrong unit.**
     `insertPolyphonicMidiNotes.ts:54`
     `Math.max(0.0625, note.durationSeconds * beatsPerSecond)` — `0.0625`
-    is presumably 1/16 beat, but the value being clamped is in *beats*,
+    is presumably 1/16 beat, but the value being clamped is in _beats_,
     so this only bites at extreme tempos. Document or move to a constant.
 
 21. **`compareMixes` mismatched suggestion thresholds.**
     `compareMixes.ts:48` uses `Math.abs(diff) > 0.25 ? 'warning' : 'info'`
     inside a branch already gated on `Math.abs(diff) > 0.15`. The
     `dynamics` branch (`:65-70`) emits a `'critical'` severity at `> 5
-    dB` but the gate is `> 2 dB`, so anything in `(2, 5]` lands in
+dB` but the gate is `> 2 dB`, so anything in `(2, 5]` lands in
     `'warning'`. Across categories the severity ladders are inconsistent
     (loudness uses `1`/`4`, frequency uses `0.15`/`0.25`, dynamics
     `2`/`5`, stereo `0.1`/`0.25`). This is a UX/ DSP review item, not
@@ -311,12 +311,12 @@ pure helpers (`readLevels`, `readFrequencyBalance`, `detectIssues`,
 
 22. **Suggestions sort uses an object lookup that allocates per
     comparison.** `compareMixes.ts:104-106` constructs `{ critical: 0,
-    warning: 1, info: 2 }` inside the comparator, on every pair compared.
+warning: 1, info: 2 }` inside the comparator, on every pair compared.
     Lift it.
 
 23. **`createReferenceAnalysis()` is a hard-coded mastered-track
     fingerprint.** `createReferenceAnalysis.ts:6` returns the same
-    object every call. There is no API to load a *user's* reference
+    object every call. There is no API to load a _user's_ reference
     track, so the entire `referenceMixComparison/` machinery is sealed
     against its purpose.
 
@@ -326,7 +326,7 @@ pure helpers (`readLevels`, `readFrequencyBalance`, `detectIssues`,
     - `analyzeMix.spec.ts:25` uses `(...args: any[]) => …` factories.
     - `polyphonicAudioToMidi.spec.ts:13` uses `(...args: any[])`.
     - `compareMixes.spec.ts` is fine.
-    AGENTS.md "TypeScript — soundness" forbids these escapes.
+      AGENTS.md "TypeScript — soundness" forbids these escapes.
 
 25. **`detectKey` test never exercises `detectKey`.**
     `keyDetection.spec.ts:14`: the production import is
@@ -359,10 +359,10 @@ pure helpers (`readLevels`, `readFrequencyBalance`, `detectIssues`,
 
 29. **AGENTS.md function-signature rule violated.** `audioToMidi.ts:88`
     `detectOnsets(buffer: AudioBuffer, sensitivity: number,
-    minIntervalSec: number)` takes three positional parameters; per
+minIntervalSec: number)` takes three positional parameters; per
     AGENTS.md "Functions with more than one parameter take a single
     object param" this should be `{ buffer, sensitivity, minIntervalSec
-    }`. Same for `detectPitchForOnsets` (`:141`), `computeRmsEnergy`
+}`. Same for `detectPitchForOnsets` (`:141`), `computeRmsEnergy`
     (`:24`), `estimatePitch` (`:37`), `freqToMidiPitch` (`:84`),
     `insertPolyphonicMidiNotes` (`:18`), and the `audioToMidi` use case
     (which already takes an object — but `targetPitch`, `minInterval`
@@ -518,7 +518,7 @@ detects C major from a synthesised C-E-G chord.
 ### 5. `tempoDetection.ts` slice-per-frame and triple-counted histogram
 
 **Problem:** A `slice(...).reduce(...)` is allocated per frame (issue
-#5). The histogram weighting at `:54-62` adds the *same* interval to
+#5). The histogram weighting at `:54-62` adds the _same_ interval to
 the bin, half-bin, and double-bin; if a track's true tempo lands in
 between bins, the half/double bins receive 50% weight that biases the
 histogram peak toward whichever harmonic resolves cleanest. The
@@ -543,7 +543,7 @@ fixture and check the histogram normalisation.
 **Problem:** The "current mix" and "reference" are both synthesised from
 constants (gain heuristics and a hard-coded mastered fingerprint).
 There is no path to load a user-supplied reference track and analyse
-*its* `MixAnalysis`. The percentage shown to users is therefore a
+_its_ `MixAnalysis`. The percentage shown to users is therefore a
 function of mute/gain/pan settings only.
 
 **Representative files:**
@@ -565,8 +565,8 @@ audio analysis happened.
 is no guarantee the audio graph has been updated by the time the second
 read happens. (b) The clipping correction
 `targetLinear = currentLinear / 10 ** ((peakDb + 0.5 + 3) / 20)` is
-defined relative to dBFS, but it is being applied as a *multiplier on
-existing track gain*. For a track at peak −10 dB the formula reduces
+defined relative to dBFS, but it is being applied as a _multiplier on
+existing track gain_. For a track at peak −10 dB the formula reduces
 gain by `−10 + 3.5 = −6.5 dB`. For a non-clipping track this branch is
 correctly skipped, but the handler also unconditionally reduces master
 when `peakDb > −3` using the same formula on master, which can produce
@@ -582,7 +582,7 @@ to actually settle in the audio graph before re-reading the analyser
 (or accept a single pass and remove the second `analyzeMix`). (b)
 Recompute the gain math: target peak = ceiling, required reduction in
 linear units = `currentLinear * (10 ** ((target − peak) / 20))`, then
-multiply *into the existing strip gain*, not replace it. Add tests
+multiply _into the existing strip gain_, not replace it. Add tests
 that verify the new gain for known peakDb inputs.
 
 ### 8. Module-level mutable singletons, racing-unsafe
@@ -650,7 +650,7 @@ edge — pick one and document).
 
 ### 12. `audioToMidi.estimatePitch` octave bias
 
-**Problem:** Loop iterates from `minLag` upward and accepts the *first*
+**Problem:** Loop iterates from `minLag` upward and accepts the _first_
 correlation past 0.3 — meaning the highest fundamental that just
 crosses the threshold wins. A duplicate, less-accurate version of the
 detector that already exists in `pitchDetection.ts` (MPM via `pitchy`).
@@ -668,7 +668,7 @@ autocorrelation implementation.
 **Problem:** Both `audioToMidi` and `insertPolyphonicMidiNotes`
 `Math.ceil(endBeat)` the source clip when creating the destination
 MIDI clip. Combined with note positions in real beats, the MIDI clip
-holds notes that play *past* the source's `endBeat`. The minimum
+holds notes that play _past_ the source's `endBeat`. The minimum
 duration in `insertPolyphonicMidiNotes.ts:54` is `0.0625` (presumably
 1/16 beat) clamped against a beats value, with no comment.
 

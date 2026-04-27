@@ -55,9 +55,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getPluginById: () => ({
-        parameters: [
-            { id: 'cutoff', name: 'Cutoff', automatable: true, minValue: 0, maxValue: 1 },
-        ],
+        parameters: [{ id: 'cutoff', name: 'Cutoff', automatable: true, minValue: 0, maxValue: 1 }],
     }),
 }));
 

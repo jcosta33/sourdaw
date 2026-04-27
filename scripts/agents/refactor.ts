@@ -15,7 +15,12 @@ function findFiles(dir) {
             const fullPath = join(dir, entry);
             if (statSync(fullPath).isDirectory()) {
                 results = results.concat(findFiles(fullPath));
-            } else if (fullPath.endsWith('.ts') || fullPath.endsWith('.tsx') || fullPath.endsWith('.js') || fullPath.endsWith('.jsx')) {
+            } else if (
+                fullPath.endsWith('.ts') ||
+                fullPath.endsWith('.tsx') ||
+                fullPath.endsWith('.js') ||
+                fullPath.endsWith('.jsx')
+            ) {
                 results.push(fullPath);
             }
         }
@@ -37,7 +42,7 @@ function run() {
     const { positional, flags } = parseArgs(process.argv.slice(2));
     const targetDir = positional[0];
     const goal = positional.slice(1).join(' ') || flags.get('goal');
-    
+
     if (!targetDir || !goal) {
         console.log(red('Usage: agents:refactor <directory> <goal>'));
         console.log(dim('Example: agents:refactor src/modules "Move all inline GraphQL to Repositories"'));
@@ -76,9 +81,9 @@ function run() {
     chunks.forEach((chunk, index) => {
         const taskSlug = `${epicSlug}-chunk-${index + 1}`;
         const taskPath = join(tasksDir, `${taskSlug}.md`);
-        
-        const relativeFiles = chunk.map(f => f.replace(repoRoot + '/', ''));
-        
+
+        const relativeFiles = chunk.map((f) => f.replace(repoRoot + '/', ''));
+
         const template = `# Refactor Chunk ${index + 1}
 
 ## Metadata
@@ -94,7 +99,7 @@ function run() {
 ${goal}
 
 Apply this refactoring ONLY to the following files:
-${relativeFiles.map(f => `- ${f}`).join('\n')}
+${relativeFiles.map((f) => `- ${f}`).join('\n')}
 
 ## Progress checklist
 

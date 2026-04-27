@@ -19,7 +19,7 @@ function run() {
     const { positional, flags } = parseArgs(process.argv.slice(2));
     const command = positional[0];
     const url = positional[1] || 'http://localhost:5173';
-    
+
     if (!command || !['baseline', 'compare'].includes(command)) {
         console.log(red('Usage: agents:visual <baseline|compare> [url]'));
         process.exit(1);
@@ -51,11 +51,15 @@ function run() {
             process.exit(1);
         }
         console.log(green(`✓ Compare screenshot saved to .agents/visual/compare.png`));
-        
+
         console.log(yellow(`\nInvoking Vision LLM for pixel delta comparison...`));
         // Simulate Vision LLM call
         console.log(dim(`(Simulated LLM call: Baseline vs Compare)`));
-        console.log(green(`✓ Vision LLM reports: "No structural layout breakages detected. Color variations align with PR specs."`));
+        console.log(
+            green(
+                `✓ Vision LLM reports: "No structural layout breakages detected. Color variations align with PR specs."`
+            )
+        );
     }
 
     console.log('');

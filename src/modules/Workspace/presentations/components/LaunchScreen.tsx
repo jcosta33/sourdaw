@@ -700,10 +700,7 @@ const RecentProjectCard = ({ entry, onOpen }: RecentProjectCardProps): ReactElem
         onClick={() => onOpen(entry)}
     >
         <div className="flex items-center gap-1.5 w-full min-w-0">
-            <FolderOpen
-                className="size-3 shrink-0 text-[var(--color-accent-orange)]/70"
-                aria-hidden="true"
-            />
+            <FolderOpen className="size-3 shrink-0 text-[var(--color-accent-orange)]/70" aria-hidden="true" />
             <span className="text-[11px] font-semibold text-white/80 truncate">{entry.name}</span>
         </div>
         <span className="text-[9px] text-white/35">{formatRelativeTime(entry.updatedAt)}</span>

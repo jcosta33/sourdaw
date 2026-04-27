@@ -10,7 +10,7 @@ import { midiStore } from '../../stores/midiStore';
 export function migrateAbsoluteMidiNotes(): void {
     const state = trackStore.value;
     const midiState = midiStore.value;
-    
+
     if (!state || !midiState) return;
 
     const tracks = state.tracks || [];
@@ -25,14 +25,16 @@ export function migrateAbsoluteMidiNotes(): void {
             if (!notes || notes.length === 0) continue;
 
             const minStart = Math.min(...notes.map((n) => n.startBeat));
-            
+
             // To prevent false positives on user-drawn notes, we rely on the
             // AI clip naming convention and the fact that AI-generated clips
             // previously always stored their notes >= clip.startBeat.
             const isAiGenerated = /melody|chords|drums|copy/i.test(clip.name);
 
             if (isAiGenerated && minStart >= clip.startBeat) {
-                logger.info(`[migrateAbsoluteMidiNotes] Migrating clip ${clip.id} (${clip.name}) from absolute to relative coordinates.`);
+                logger.info(
+                    `[migrateAbsoluteMidiNotes] Migrating clip ${clip.id} (${clip.name}) from absolute to relative coordinates.`
+                );
                 notesByClipId[clip.id] = notes.map((note) => ({
                     ...note,
                     startBeat: note.startBeat - clip.startBeat,

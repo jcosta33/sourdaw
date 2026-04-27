@@ -10,6 +10,6 @@ export function setMorphTarget(deviceId: string, patternId: string | null): void
         [deviceId]: {
             ...state,
             morph: { ...state.morph, targetPatternId: patternId, enabled: patternId !== null },
-        }
+        },
     });
 }

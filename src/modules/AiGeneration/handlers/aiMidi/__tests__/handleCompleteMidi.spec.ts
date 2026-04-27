@@ -14,13 +14,11 @@ const mocks = vi.hoisted(() => ({
             tracks: [
                 {
                     id: 't1',
-                    clips: [
-                        { id: 'c1', startBeat: 4, name: 'Lead', type: 'midi' }
-                    ]
-                }
-            ]
-        }
-    }
+                    clips: [{ id: 'c1', startBeat: 4, name: 'Lead', type: 'midi' }],
+                },
+            ],
+        },
+    },
 }));
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
@@ -94,13 +92,15 @@ describe('handleCompleteMidi', () => {
             'c1'
         );
 
-        expect(mocks.addClip).toHaveBeenCalledWith(expect.objectContaining({
-            trackId: 't1',
-            startBeat: 0, // max(0, 4 - 4)
-            endBeat: 4,
-            name: 'Lead (intro)'
-        }));
-        
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({
+                trackId: 't1',
+                startBeat: 0, // max(0, 4 - 4)
+                endBeat: 4,
+                name: 'Lead (intro)',
+            })
+        );
+
         // Note is shifted relative to its minimum startBeat (-4)
         // Shifted start = -4 - (-4) = 0
         expect(mocks.addMidiNote).toHaveBeenCalledWith('new-clip-id', 58, 0, 1, 80);

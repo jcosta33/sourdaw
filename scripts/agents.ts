@@ -32,7 +32,22 @@ import {
 } from './agents/git.ts';
 import { createOrUpdateTaskFile } from './agents/template.ts';
 import { resolveBackend, launch, checkBackend } from './agents/terminal.ts';
-import { colors, c, red, green, yellow, blue, cyan, dim, bold, success, info, warn as printWarn, error as printError, box } from './agents/colors.ts';
+import {
+    colors,
+    c,
+    red,
+    green,
+    yellow,
+    blue,
+    cyan,
+    dim,
+    bold,
+    success,
+    info,
+    warn as printWarn,
+    error as printError,
+    box,
+} from './agents/colors.ts';
 import { parseArgs, findMarkdownFiles, fzfSelect, promptInput } from './agents/cli.ts';
 
 // ─── Argument parser ─────────────────────────────────────────────────────────
@@ -470,7 +485,7 @@ async function cmdList(argv) {
         const state = globalState[s.slug] || {};
         let processStatus = dim('-');
         let rawStatus = 'unknown';
-        
+
         if (state.status === 'running') {
             if (state.pid) {
                 const alive = isProcessRunning(state.pid);
@@ -503,7 +518,17 @@ async function cmdList(argv) {
     const finalRows = dirtyOnly ? enriched.filter((s) => s.gitStatus.startsWith('dirty')) : enriched;
 
     if (jsonOutput) {
-        printJson(finalRows.map(r => ({ slug: r.slug, branch: r.branch, worktree: r.path, gitStatus: r.gitStatus, status: r.rawStatus, pid: r.pid, agent: r.agent })));
+        printJson(
+            finalRows.map((r) => ({
+                slug: r.slug,
+                branch: r.branch,
+                worktree: r.path,
+                gitStatus: r.gitStatus,
+                status: r.rawStatus,
+                pid: r.pid,
+                agent: r.agent,
+            }))
+        );
         return;
     }
 
@@ -571,7 +596,7 @@ async function cmdTask(argv) {
     }
 
     let note = flags.get('append');
-    
+
     // Interactive prompt if no append flag provided
     if (!note) {
         console.log(`\n${cyan('Interactive Steering')}: Append a note or instructions for ${bold(slug)}`);
@@ -622,7 +647,7 @@ async function cmdMemory(argv) {
         success(`Saved memory to ${file}`);
     } else if (action === 'list') {
         const topics = readMemory(repoRoot);
-        if (topics.length) topics.forEach(t => console.log(`- ${t}`));
+        if (topics.length) topics.forEach((t) => console.log(`- ${t}`));
         else console.log('No memories saved.');
     } else {
         die('Usage: agents memory <get|set|list>');
@@ -638,8 +663,9 @@ async function cmdAst(argv) {
         const file = flags.get('file');
         const oldName = flags.get('old');
         const newName = flags.get('new');
-        if (!file || !oldName || !newName) die('Usage: agents ast rename --file path/to/file.ts --old name --new newName');
-        
+        if (!file || !oldName || !newName)
+            die('Usage: agents ast rename --file path/to/file.ts --old name --new newName');
+
         const res = renameSymbol(repoRoot, file, oldName, newName);
         if (res.success) success(`Renamed ${oldName} -> ${newName} in ${file}`);
         else die(`Rename failed: ${res.error}`);
@@ -1125,211 +1151,281 @@ const commands = {
     test: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/test.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     'test-radius': async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/test-radius.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     pr: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/pr.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     screenshot: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/screenshot.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     ui: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/ui.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     compress: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/compress.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     graph: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/graph.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     references: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/references.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     docs: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/docs.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     complexity: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/complexity.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     'audit-sec': async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/audit-sec.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     'dead-code': async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/dead-code.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     format: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/format.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     logs: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/logs.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     health: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/health.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     epic: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/epic.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     triage: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/triage.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     arch: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/arch.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     review: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/review.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     chat: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/chat.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     repro: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/repro.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     find: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/find.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     mock: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/mock.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     daemon: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/daemon.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     heal: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/heal.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     refactor: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/refactor.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     deps: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/deps.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     migrate: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/migrate.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     fuzz: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/fuzz.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     chaos: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/chaos.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     visual: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/visual.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     knowledge: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/knowledge.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     telemetry: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/telemetry.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     profile: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/profile.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     release: async () => {
         const { spawnSync } = await import('child_process');
         const scriptPath = new URL('./agents/release.ts', import.meta.url).pathname;
-        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], { stdio: 'inherit' });
+        const res = spawnSync(process.execPath, ['--experimental-strip-types', scriptPath, ...process.argv.slice(3)], {
+            stdio: 'inherit',
+        });
         process.exit(res.status || 0);
     },
     context: cmdContext,

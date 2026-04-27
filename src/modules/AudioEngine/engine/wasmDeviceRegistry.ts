@@ -158,7 +158,9 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         setBypass: result.setBypass,
                         destroy: () => {
                             result.destroy();
-                            try { unregisterToasterDevice(deviceId); } catch {}
+                            try {
+                                unregisterToasterDevice(deviceId);
+                            } catch {}
                         },
                     },
                     toasterControls: {
@@ -221,7 +223,9 @@ const levainDescriptor: WasmDeviceDescriptor = {
                         setBypass: result.setBypass,
                         destroy: () => {
                             result.destroy();
-                            try { _unregisterLevainDevice(deviceId); } catch {}
+                            try {
+                                _unregisterLevainDevice(deviceId);
+                            } catch {}
                         },
                     },
                     levainControls: {
@@ -483,7 +487,16 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
-                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: () => { result.destroy(); try { unregisterProofDevice(deviceId); } catch {} } },
+                    controller: {
+                        setParam: result.setParam,
+                        setBypass: result.setBypass,
+                        destroy: () => {
+                            result.destroy();
+                            try {
+                                unregisterProofDevice(deviceId);
+                            } catch {}
+                        },
+                    },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 void syncFullPatch(deviceId);
@@ -628,8 +641,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
         placeholder.controller = {
             setParam: (name, value) => pending.push({ kind: 'param', name, value }),
             scheduleParam: (name, value, time) => pending.push({ kind: 'param', name, value, time }),
-            keyOn: (channel, pitch, velocity, time) =>
-                pending.push({ kind: 'keyOn', channel, pitch, velocity, time }),
+            keyOn: (channel, pitch, velocity, time) => pending.push({ kind: 'keyOn', channel, pitch, velocity, time }),
             keyOff: (channel, pitch, velocity, time) =>
                 pending.push({ kind: 'keyOff', channel, pitch, velocity, time }),
             destroy: () => {},

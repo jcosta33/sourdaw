@@ -18,7 +18,7 @@ function run() {
 
     const { positional } = parseArgs(process.argv.slice(2));
     const url = positional[0] || 'http://localhost:3000';
-    
+
     const screenshotsDir = join(repoRoot, '.agents', 'screenshots');
     if (!existsSync(screenshotsDir)) {
         mkdirSync(screenshotsDir, { recursive: true });

@@ -29,8 +29,33 @@ export async function createHipHopTrapTemplate(): Promise<void> {
         name: 'Vocal Bus',
         devices: [
             { type: 'builtin-deesser', name: 'De-Ess', params: {} },
-            { type: 'builtin-compressor', name: 'Vocal Comp', params: { 'comp-threshold': -18, 'comp-ratio': 4, 'comp-attack': 5, 'comp-release': 100, 'comp-knee': 4, 'comp-makeup': 2 } },
-            { type: 'builtin-eq', name: 'Vocal EQ', params: { 'eq-low-gain': -2, 'eq-low-freq': 100, 'eq-low-q': 0.8, 'eq-mid-gain': 1.5, 'eq-mid-freq': 3000, 'eq-mid-q': 1, 'eq-high-gain': 2, 'eq-high-freq': 12000, 'eq-high-q': 0.7 } },
+            {
+                type: 'builtin-compressor',
+                name: 'Vocal Comp',
+                params: {
+                    'comp-threshold': -18,
+                    'comp-ratio': 4,
+                    'comp-attack': 5,
+                    'comp-release': 100,
+                    'comp-knee': 4,
+                    'comp-makeup': 2,
+                },
+            },
+            {
+                type: 'builtin-eq',
+                name: 'Vocal EQ',
+                params: {
+                    'eq-low-gain': -2,
+                    'eq-low-freq': 100,
+                    'eq-low-q': 0.8,
+                    'eq-mid-gain': 1.5,
+                    'eq-mid-freq': 3000,
+                    'eq-mid-q': 1,
+                    'eq-high-gain': 2,
+                    'eq-high-freq': 12000,
+                    'eq-high-q': 0.7,
+                },
+            },
         ],
     });
     const reverbPlate = createBus({
@@ -39,11 +64,19 @@ export async function createHipHopTrapTemplate(): Promise<void> {
     });
     const reverbHall = createBus({
         name: 'Reverb Hall',
-        devices: [{ type: 'builtin-reverb', name: 'Hall', params: { 'rev-size': 0.9, 'rev-decay': 4.5, 'rev-damping': 0.25, 'rev-mix': 1 } }],
+        devices: [
+            {
+                type: 'builtin-reverb',
+                name: 'Hall',
+                params: { 'rev-size': 0.9, 'rev-decay': 4.5, 'rev-damping': 0.25, 'rev-mix': 1 },
+            },
+        ],
     });
     const tapeDelay = createBus({
         name: 'Tape Delay',
-        devices: [{ type: 'faust-tape-delay', name: 'Tape Delay', params: { delay: 0.375, feedback: 0.5, dry_wet: 1 } }],
+        devices: [
+            { type: 'faust-tape-delay', name: 'Tape Delay', params: { delay: 0.375, feedback: 0.5, dry_wet: 1 } },
+        ],
     });
 
     const drumFolder = createFolder({ name: 'Trap Drums' });
@@ -84,11 +117,37 @@ export async function createHipHopTrapTemplate(): Promise<void> {
         deviceName: '808 Sub',
         deviceParams: { waveform: 0, attack: 0.005, release: 0.5, subOscLevel: 0.8, gain: 0.5 },
         extraDevices: [
-            { type: 'builtin-eq', name: '808 EQ', params: { 'eq-low-gain': 3, 'eq-low-freq': 50, 'eq-low-q': 0.9, 'eq-mid-gain': -1, 'eq-mid-freq': 300, 'eq-mid-q': 1, 'eq-high-gain': 0, 'eq-high-freq': 6000, 'eq-high-q': 0.7 } },
-            { type: 'builtin-distortion', name: 'Sub Sat', params: { 'dist-drive': 2, 'dist-tone': 1800, 'dist-mix': 0.2, 'dist-output': -3 } },
+            {
+                type: 'builtin-eq',
+                name: '808 EQ',
+                params: {
+                    'eq-low-gain': 3,
+                    'eq-low-freq': 50,
+                    'eq-low-q': 0.9,
+                    'eq-mid-gain': -1,
+                    'eq-mid-freq': 300,
+                    'eq-mid-q': 1,
+                    'eq-high-gain': 0,
+                    'eq-high-freq': 6000,
+                    'eq-high-q': 0.7,
+                },
+            },
+            {
+                type: 'builtin-distortion',
+                name: 'Sub Sat',
+                params: { 'dist-drive': 2, 'dist-tone': 1800, 'dist-mix': 0.2, 'dist-output': -3 },
+            },
         ],
     });
-    const bassSidechainId = attachSidechainCompressor({ track: bass808, name: 'SC Duck', threshold: -18, ratio: 8, attack: 1, release: 160, makeup: 2 });
+    const bassSidechainId = attachSidechainCompressor({
+        track: bass808,
+        name: 'SC Duck',
+        threshold: -18,
+        ratio: 8,
+        attack: 1,
+        release: 160,
+        makeup: 2,
+    });
 
     const melodicFolder = createFolder({ name: 'Melodic' });
     const melodicRhodes = createInstrumentTrack({
@@ -102,7 +161,16 @@ export async function createHipHopTrapTemplate(): Promise<void> {
         parentId: melodicFolder.id,
         deviceType: 'builtin-synth',
         deviceName: 'Flute',
-        deviceParams: { waveform: 1, attack: 0.05, release: 0.4, filterCutoff: 3200, filterResonance: 2, vibratoRate: 5, vibratoDepth: 15, gain: 0.35 },
+        deviceParams: {
+            waveform: 1,
+            attack: 0.05,
+            release: 0.4,
+            filterCutoff: 3200,
+            filterResonance: 2,
+            vibratoRate: 5,
+            vibratoDepth: 15,
+            gain: 0.35,
+        },
     });
     const trapPad = createInstrumentTrack({
         name: 'Pad',
@@ -151,7 +219,11 @@ export async function createHipHopTrapTemplate(): Promise<void> {
     addSend({ from: hook, to: reverbHall, level: 0.3 });
 
     addDeviceChain(trapPad, [
-        { type: 'builtin-reverb', name: 'Pad Verb', params: { 'rev-size': 0.85, 'rev-decay': 4, 'rev-damping': 0.3, 'rev-mix': 0.3 } },
+        {
+            type: 'builtin-reverb',
+            name: 'Pad Verb',
+            params: { 'rev-size': 0.85, 'rev-decay': 4, 'rev-damping': 0.3, 'rev-mix': 0.3 },
+        },
     ]);
 
     const drumsVca = createVca({ name: 'Drums VCA', members: [kit808, hats, snareClap, drumPerc] });
@@ -188,11 +260,24 @@ export async function createHipHopTrapTemplate(): Promise<void> {
 
     const tracks = [
         masterTrack,
-        vocalBus, reverbPlate, reverbHall, tapeDelay,
-        drumFolder, kit808, hats, snareClap, drumPerc,
+        vocalBus,
+        reverbPlate,
+        reverbHall,
+        tapeDelay,
+        drumFolder,
+        kit808,
+        hats,
+        snareClap,
+        drumPerc,
         bass808,
-        melodicFolder, melodicRhodes, flute, trapPad,
-        vocalFolder, leadVocal, adLib, hook,
+        melodicFolder,
+        melodicRhodes,
+        flute,
+        trapPad,
+        vocalFolder,
+        leadVocal,
+        adLib,
+        hook,
     ];
 
     await finalizeTemplate({

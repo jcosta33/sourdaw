@@ -1,4 +1,8 @@
-import { type GrinderImportedNeuralModel, type GrinderNeuralProfile, type GrinderNeuralTier } from '../models/GrinderPatch';
+import {
+    type GrinderImportedNeuralModel,
+    type GrinderNeuralProfile,
+    type GrinderNeuralTier,
+} from '../models/GrinderPatch';
 
 type ParseGrinderNamFileInput = {
     file_name: string;
@@ -101,7 +105,9 @@ function derive_preferred_tier(architecture: string, weight_count: number): Grin
 
 function derive_placement(description: string): 'amp-capture' | 'rig-capture' {
     const lowered = description.toLowerCase();
-    return lowered.includes('cab') || lowered.includes('rig') || lowered.includes('room') ? 'rig-capture' : 'amp-capture';
+    return lowered.includes('cab') || lowered.includes('rig') || lowered.includes('room')
+        ? 'rig-capture'
+        : 'amp-capture';
 }
 
 function derive_profile(input: {
@@ -114,7 +120,7 @@ function derive_profile(input: {
     const rms = Math.sqrt(input.weights.reduce((sum, value) => sum + value * value, 0) / input.weights.length);
     const signed_mean = input.weights.reduce((sum, value) => sum + value, 0) / input.weights.length;
     const contour_energy =
-        normalized.reduce((sum, value, index) => sum + Math.abs(value) * ((index % 3) === 1 ? 0.6 : 1.0), 0) /
+        normalized.reduce((sum, value, index) => sum + Math.abs(value) * (index % 3 === 1 ? 0.6 : 1.0), 0) /
         normalized.length;
     const tone_bias = input.tone_type.toLowerCase().includes('high') ? 0.05 : 0;
     const conv_weights: Array<[number, number, number]> = [];
@@ -166,15 +172,13 @@ export function parseGrinderNamFile(input: ParseGrinderNamFileInput): GrinderImp
         throw new Error(`Invalid NAM file: ${input.file_name} is missing documented architecture/version/weights data`);
     }
 
-    const metadata = (nam_json.metadata && typeof nam_json.metadata === 'object' ? nam_json.metadata : {}) as NamMetadata;
-    const config = nam_json.config && typeof nam_json.config === 'object' ? nam_json.config as Record<string, unknown> : {};
-    const sample_rate =
-        get_finite_number(metadata.sample_rate) ??
-        get_finite_number(config.sample_rate) ??
-        48_000;
-    const display_name =
-        get_string(metadata.name) ??
-        input.file_name.replace(/\.(nam|json)$/i, '');
+    const metadata = (
+        nam_json.metadata && typeof nam_json.metadata === 'object' ? nam_json.metadata : {}
+    ) as NamMetadata;
+    const config =
+        nam_json.config && typeof nam_json.config === 'object' ? (nam_json.config as Record<string, unknown>) : {};
+    const sample_rate = get_finite_number(metadata.sample_rate) ?? get_finite_number(config.sample_rate) ?? 48_000;
+    const display_name = get_string(metadata.name) ?? input.file_name.replace(/\.(nam|json)$/i, '');
     const tone_type = get_string(metadata.tone_type) ?? 'capture';
     const modeled_by = get_string(metadata.modeled_by);
     const description = modeled_by

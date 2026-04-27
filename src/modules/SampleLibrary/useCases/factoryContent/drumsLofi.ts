@@ -18,7 +18,14 @@ import {
 function renderLofiKick(): Float32Array {
     const dur = 0.55;
     const body = renderSine(dur, (t) => 50 + 90 * Math.exp(-t * 30));
-    const env = renderEnvelope(dur, { attack: 0.003, decay: 0.1, sustainLevel: 0.35, sustain: 0, release: 0.42, curve: 'exp' });
+    const env = renderEnvelope(dur, {
+        attack: 0.003,
+        decay: 0.1,
+        sustainLevel: 0.35,
+        sustain: 0,
+        release: 0.42,
+        curve: 'exp',
+    });
     applyEnvelope(body, env);
     biquad(body, { type: 'lowpass', freq: 2000, q: 0.6 });
     bitcrush(body, 10, 2);
@@ -31,13 +38,27 @@ function renderLofiSnare(): Float32Array {
     const dur = 0.25;
     const out = createMono(dur);
     const tone = renderSine(dur, 190);
-    const tEnv = renderEnvelope(dur, { attack: 0.001, decay: 0.05, sustainLevel: 0.15, sustain: 0, release: 0.18, curve: 'exp' });
+    const tEnv = renderEnvelope(dur, {
+        attack: 0.001,
+        decay: 0.05,
+        sustainLevel: 0.15,
+        sustain: 0,
+        release: 0.18,
+        curve: 'exp',
+    });
     applyEnvelope(tone, tEnv);
     mixMono(out, tone, 0.4);
 
     const noise = renderNoise(dur, SAMPLE_RATE, 555);
     biquad(noise, { type: 'bandpass', freq: 1800, q: 0.8 });
-    const nEnv = renderEnvelope(dur, { attack: 0.001, decay: 0.04, sustainLevel: 0.3, sustain: 0, release: 0.2, curve: 'exp' });
+    const nEnv = renderEnvelope(dur, {
+        attack: 0.001,
+        decay: 0.04,
+        sustainLevel: 0.3,
+        sustain: 0,
+        release: 0.2,
+        curve: 'exp',
+    });
     applyEnvelope(noise, nEnv);
     mixMono(out, noise, 0.75);
 
@@ -79,7 +100,14 @@ function renderWobblePerc(): Float32Array {
     const dur = 0.6;
     const out = createMono(dur);
     const body = renderSine(dur, (t) => 180 + 40 * Math.sin(2 * Math.PI * 6 * t));
-    const env = renderEnvelope(dur, { attack: 0.005, decay: 0.1, sustainLevel: 0.4, sustain: 0.1, release: 0.4, curve: 'exp' });
+    const env = renderEnvelope(dur, {
+        attack: 0.005,
+        decay: 0.1,
+        sustainLevel: 0.4,
+        sustain: 0.1,
+        release: 0.4,
+        curve: 'exp',
+    });
     applyEnvelope(body, env);
     mixMono(out, body, 0.8);
     biquad(out, { type: 'lowpass', freq: 2800, q: 0.9 });
@@ -91,7 +119,14 @@ function renderWobblePerc(): Float32Array {
 function renderKickGhost(): Float32Array {
     const dur = 0.2;
     const body = renderSine(dur, (t) => 50 + 60 * Math.exp(-t * 30));
-    const env = renderEnvelope(dur, { attack: 0.005, decay: 0.05, sustainLevel: 0.2, sustain: 0, release: 0.14, curve: 'exp' });
+    const env = renderEnvelope(dur, {
+        attack: 0.005,
+        decay: 0.05,
+        sustainLevel: 0.2,
+        sustain: 0,
+        release: 0.14,
+        curve: 'exp',
+    });
     applyEnvelope(body, env);
     biquad(body, { type: 'lowpass', freq: 1800, q: 0.7 });
     bitcrush(body, 10, 2);
@@ -133,14 +168,62 @@ export function generateLofiKit(ctx: AudioContext): FactorySample[] {
     const base = 'factory-lofi';
     const tags = ['lo-fi', 'lofi', 'dusty', 'vintage', 'drum'];
     const samples: FactorySample[] = [
-        { id: `${base}-kick`, name: 'Lo-fi Kick', category: 'drums', tags: [...tags, 'kick'], buffer: toAudioBufferMono(ctx, renderLofiKick()) },
-        { id: `${base}-snare`, name: 'Lo-fi Dusty Snare', category: 'drums', tags: [...tags, 'snare'], buffer: toAudioBufferMono(ctx, renderLofiSnare()) },
-        { id: `${base}-hat`, name: 'Lo-fi Muffled Hat', category: 'drums', tags: [...tags, 'hat'], buffer: toAudioBufferMono(ctx, renderMuffledHat()) },
-        { id: `${base}-vinyl-swirl`, name: 'Lo-fi Vinyl Swirl', category: 'drums', tags: [...tags, 'vinyl', 'texture'], buffer: toAudioBufferMono(ctx, renderVinylSwirl()) },
-        { id: `${base}-wobble-perc`, name: 'Lo-fi Wobble Perc', category: 'drums', tags: [...tags, 'perc', 'wobble'], buffer: toAudioBufferMono(ctx, renderWobblePerc()) },
-        { id: `${base}-kick-ghost`, name: 'Lo-fi Ghost Kick', category: 'drums', tags: [...tags, 'kick', 'ghost'], buffer: toAudioBufferMono(ctx, renderKickGhost()) },
-        { id: `${base}-clap`, name: 'Lo-fi Clap', category: 'drums', tags: [...tags, 'clap'], buffer: toAudioBufferMono(ctx, renderLofiClap()) },
-        { id: `${base}-shaker`, name: 'Lo-fi Shaker', category: 'drums', tags: [...tags, 'shaker'], buffer: toAudioBufferMono(ctx, renderLofiShaker()) },
+        {
+            id: `${base}-kick`,
+            name: 'Lo-fi Kick',
+            category: 'drums',
+            tags: [...tags, 'kick'],
+            buffer: toAudioBufferMono(ctx, renderLofiKick()),
+        },
+        {
+            id: `${base}-snare`,
+            name: 'Lo-fi Dusty Snare',
+            category: 'drums',
+            tags: [...tags, 'snare'],
+            buffer: toAudioBufferMono(ctx, renderLofiSnare()),
+        },
+        {
+            id: `${base}-hat`,
+            name: 'Lo-fi Muffled Hat',
+            category: 'drums',
+            tags: [...tags, 'hat'],
+            buffer: toAudioBufferMono(ctx, renderMuffledHat()),
+        },
+        {
+            id: `${base}-vinyl-swirl`,
+            name: 'Lo-fi Vinyl Swirl',
+            category: 'drums',
+            tags: [...tags, 'vinyl', 'texture'],
+            buffer: toAudioBufferMono(ctx, renderVinylSwirl()),
+        },
+        {
+            id: `${base}-wobble-perc`,
+            name: 'Lo-fi Wobble Perc',
+            category: 'drums',
+            tags: [...tags, 'perc', 'wobble'],
+            buffer: toAudioBufferMono(ctx, renderWobblePerc()),
+        },
+        {
+            id: `${base}-kick-ghost`,
+            name: 'Lo-fi Ghost Kick',
+            category: 'drums',
+            tags: [...tags, 'kick', 'ghost'],
+            buffer: toAudioBufferMono(ctx, renderKickGhost()),
+        },
+        {
+            id: `${base}-clap`,
+            name: 'Lo-fi Clap',
+            category: 'drums',
+            tags: [...tags, 'clap'],
+            buffer: toAudioBufferMono(ctx, renderLofiClap()),
+        },
+        {
+            id: `${base}-shaker`,
+            name: 'Lo-fi Shaker',
+            category: 'drums',
+            tags: [...tags, 'shaker'],
+            buffer: toAudioBufferMono(ctx, renderLofiShaker()),
+        },
     ];
     return samples;
 }

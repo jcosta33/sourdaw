@@ -86,7 +86,7 @@ The result should stay subtle enough to remain believable as front-end condition
 ## Open questions
 
 - [x] Should a later phase expose `inputMode` more explicitly in the Grinder UI, or is patch/preset-level support sufficient for now?
-  Answer: patch/preset-level support is sufficient for this phase because the user-facing lie was the dead DSP contract, not a missing UI affordance. Explicit UI exposure can be evaluated later as a discoverability improvement.
+      Answer: patch/preset-level support is sufficient for this phase because the user-facing lie was the dead DSP contract, not a missing UI affordance. Explicit UI exposure can be evaluated later as a discoverability improvement.
 
 ## Tradeoffs and risks
 

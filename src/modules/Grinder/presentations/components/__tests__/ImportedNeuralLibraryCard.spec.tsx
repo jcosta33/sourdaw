@@ -59,7 +59,13 @@ describe('ImportedNeuralLibraryCard', () => {
     it('should expose a patch-only badge when the original library source is gone', () => {
         render(
             <ImportedNeuralLibraryCard
-                entry={{ ...base_entry, sourceFileName: null, sourceFileText: null, importedAt: 0, description: 'Selected in this patch' }}
+                entry={{
+                    ...base_entry,
+                    sourceFileName: null,
+                    sourceFileText: null,
+                    importedAt: 0,
+                    description: 'Selected in this patch',
+                }}
                 selected={true}
                 on_select={vi.fn()}
                 on_export={vi.fn()}
