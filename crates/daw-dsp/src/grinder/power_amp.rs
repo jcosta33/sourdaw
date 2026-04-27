@@ -52,6 +52,9 @@ pub struct PowerAmp {
     v_nominal: f32,  // unloaded rail voltage
     sag_amount: f32, // load sensitivity k
     sag_tau: f32,    // recovery time constant (seconds)
+    base_sag_amount: f32,
+    base_sag_tau: f32,
+    oversample_input_state: f32,
 
     // Push-pull state
     bias: f32,
@@ -69,7 +72,7 @@ pub struct PowerAmp {
 
 impl PowerAmp {
     pub fn new(sample_rate: f32) -> Self {
-        Self {
+        let mut amp = Self {
             sample_rate,
             tube_type: PowerTubeType::TypeEL34,
             rectifier_type: RectifierType::Tube,
@@ -78,6 +81,9 @@ impl PowerAmp {
             v_nominal: 1.0,
             sag_amount: 0.4,
             sag_tau: 0.2,
+            base_sag_amount: 0.4,
+            base_sag_tau: 0.2,
+            oversample_input_state: 0.0,
             bias: 0.5,
             neg_feedback: 0.5,
             presence: 0.5,
@@ -87,7 +93,9 @@ impl PowerAmp {
             load_envelope: 0.0,
             meter_decay_coeff: (-1.0 / (sample_rate * 0.150)).exp(),
             peak_level: 0.0,
-        }
+        };
+        amp.update_rectifier_params();
+        amp
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {
@@ -98,8 +106,14 @@ impl PowerAmp {
                 self.rectifier_type = RectifierType::from_index(value as u32);
                 self.update_rectifier_params();
             }
-            "sagAmount" => self.sag_amount = value,
-            "sagRecovery" => self.sag_tau = value * 0.001, // ms to seconds
+            "sagAmount" => {
+                self.base_sag_amount = value;
+                self.update_rectifier_params();
+            }
+            "sagRecovery" => {
+                self.base_sag_tau = value * 0.001; // ms to seconds
+                self.update_rectifier_params();
+            }
             "negFeedback" => self.neg_feedback = value,
             "powerAmpBias" => self.bias = value,
             "presence" => self.presence = (value / 10.0).clamp(0.0, 1.0),
@@ -111,24 +125,25 @@ impl PowerAmp {
     fn update_rectifier_params(&mut self) {
         match self.rectifier_type {
             RectifierType::Tube => {
-                // More sag, slower recovery
                 self.v_nominal = 1.0;
+                self.sag_amount = self.base_sag_amount * 2.8;
+                self.sag_tau = self.base_sag_tau * 1.75;
             }
             RectifierType::SolidState => {
-                // Less sag, fast recovery
                 self.v_nominal = 1.0;
-                self.sag_tau = self.sag_tau.min(0.05);
+                self.sag_amount = self.base_sag_amount * 0.65;
+                self.sag_tau = self.base_sag_tau * 0.40;
             }
             RectifierType::Variac => {
-                // Reduced voltage
-                self.v_nominal = 0.75;
+                self.v_nominal = 0.76;
+                self.sag_amount = self.base_sag_amount * 3.5;
+                self.sag_tau = self.base_sag_tau * 2.10;
             }
         }
+        self.vb_plus = self.vb_plus.min(self.v_nominal);
     }
 
-    pub fn process_sample(&mut self, input: f32) -> f32 {
-        let dt = 1.0 / self.sample_rate;
-
+    fn process_substep(&mut self, input: f32, dt: f32) -> f32 {
         // Apply master volume
         let master_drive = 0.15 + self.master * 1.85;
         let driven = input * master_drive;
@@ -146,11 +161,16 @@ impl PowerAmp {
         let with_nfb = driven - shaped_feedback * self.neg_feedback * 0.3;
 
         // Power supply sag: dV_B+/dt = (V_nominal - V_B+)/τ_sag - k·|x(t)|
-        let load = with_nfb.abs();
-        let load_coeff = 1.0 - (-dt / 0.008).exp();
+        let load = with_nfb.abs() * (0.8 + master_drive * 1.15);
+        let load_attack = match self.rectifier_type {
+            RectifierType::Tube => 0.012,
+            RectifierType::SolidState => 0.004,
+            RectifierType::Variac => 0.016,
+        };
+        let load_coeff = 1.0 - (-dt / load_attack).exp();
         self.load_envelope += (load - self.load_envelope) * load_coeff;
         let sag_rate = (self.v_nominal - self.vb_plus) / self.sag_tau.max(0.001)
-            - self.sag_amount * self.load_envelope;
+            - self.sag_amount * self.load_envelope * 3.2;
         self.vb_plus += dt * sag_rate;
         self.vb_plus = self.vb_plus.clamp(0.3, self.v_nominal);
 
@@ -203,6 +223,17 @@ impl PowerAmp {
         output
     }
 
+    pub fn process_sample(&mut self, input: f32) -> f32 {
+        let intermediate = 0.5 * (self.oversample_input_state + input);
+        let substep_dt = 0.5 / self.sample_rate;
+
+        let first = self.process_substep(intermediate, substep_dt);
+        let second = self.process_substep(input, substep_dt);
+        self.oversample_input_state = input;
+
+        (first + second) * 0.5
+    }
+
     pub fn sag_voltage(&self) -> f32 {
         self.vb_plus
     }
@@ -213,6 +244,7 @@ impl PowerAmp {
 
     pub fn reset(&mut self) {
         self.vb_plus = self.v_nominal;
+        self.oversample_input_state = 0.0;
         self.feedback_state = 0.0;
         self.feedback_low_state = 0.0;
         self.load_envelope = 0.0;
@@ -265,6 +297,48 @@ mod tests {
         sum / total as f32
     }
 
+    fn rectifier_burst_metrics(rectifier_type: f32) -> (f32, f32) {
+        let sample_rate = 48_000.0;
+        let mut amp = PowerAmp::new(sample_rate);
+        amp.set_param("master", 8.0);
+        amp.set_param("powerTubeType", 1.0);
+        amp.set_param("rectifierType", rectifier_type);
+        amp.set_param("sagAmount", 0.62);
+        amp.set_param("sagRecovery", 260.0);
+        amp.set_param("negFeedback", 0.42);
+        amp.set_param("powerAmpBias", 0.58);
+        amp.set_param("presence", 6.0);
+        amp.set_param("resonance", 6.0);
+
+        let total = 2048;
+        let burst_len = 448;
+        let mut min_vb_plus = 1.0_f32;
+        let mut tail_sum = 0.0_f32;
+        let mut tail_count = 0_usize;
+
+        for n in 0..total {
+            let sample = if n < burst_len {
+                let low =
+                    ((n as f32 * 2.0 * std::f32::consts::PI * 110.0) / sample_rate).sin() * 0.28;
+                let bite =
+                    ((n as f32 * 2.0 * std::f32::consts::PI * 1_250.0) / sample_rate).sin() * 0.12;
+                low + bite
+            } else {
+                0.0
+            };
+
+            let out = amp.process_sample(sample);
+            min_vb_plus = min_vb_plus.min(amp.sag_voltage());
+            if (512..1200).contains(&n) {
+                tail_sum += out.abs();
+                tail_count += 1;
+            }
+        }
+
+        let tail_avg = tail_sum / tail_count.max(1) as f32;
+        (min_vb_plus, tail_avg)
+    }
+
     #[test]
     fn presence_and_resonance_shape_the_power_stage_response() {
         let total = 4096;
@@ -303,6 +377,19 @@ mod tests {
         assert!(
             relative_delta <= 0.12,
             "high-drive power amp should stay reasonably stable across sample rates (48k={output_48k}, 96k={output_96k}, delta={relative_delta})"
+        );
+    }
+
+    #[test]
+    fn rectifier_type_changes_burst_sag_and_recovery() {
+        let (tube_min_sag, tube_tail) = rectifier_burst_metrics(0.0);
+        let (solid_state_min_sag, solid_state_tail) = rectifier_burst_metrics(1.0);
+        let sag_delta = (tube_min_sag - solid_state_min_sag).abs();
+        let tail_delta = (tube_tail - solid_state_tail).abs();
+
+        assert!(
+            sag_delta > 1.5e-2 || tail_delta > 2.5e-3,
+            "rectifier type should audibly change burst sag/recovery (tube_sag={tube_min_sag}, solid_sag={solid_state_min_sag}, tube_tail={tube_tail}, solid_tail={solid_state_tail})"
         );
     }
 
