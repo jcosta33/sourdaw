@@ -244,7 +244,7 @@ Issues below were tracked as real but lower priority than dedicated area audits.
 | S-02 | Multi-track selection missing                | High     | `trackStore.ts:22-28` — scalar `selectedTrackId`      |
 | I-14 | Knead/action history not persistent          | Medium   | `kneadStore.ts`, `actionHistoryStore.ts`              |
 | I-15 | **[FIXED]** Fermenter telemetry at audio-rate            | Medium   | Fixed: `fermenterStore.ts` now batches and throttles telemetry updates to 60fps via `requestAnimationFrame`. |
-| I-27 | PianoRoll subscribes to whole stores         | Medium   | `PianoRoll.tsx:98-99`                                 |
+| I-27 | **[FIXED]** PianoRoll subscribes to whole stores         | Medium   | Fixed: `PianoRoll.tsx` and `usePianoRollRenderer.ts` no longer subscribe to the full `midiStore` or `trackStore`. Subscriptions replaced with targeted `useStoreSelector`. |
 | I-25 | Plugin module duplication (Proof vs Plugin/) | Low      | Product decision                                      |
 | I-28 | Legacy brand-CMS keys in LocalStorage        | Low      | `LocalStorageKeys.ts:14-94` — needs legal review      |
 

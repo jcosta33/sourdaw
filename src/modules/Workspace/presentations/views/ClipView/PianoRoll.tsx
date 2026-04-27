@@ -14,14 +14,14 @@ import { type ReactElement, type Dispatch, type SetStateAction, useRef, useLayou
 import { DawGridHeaderCell } from '#/components/daw/DawGridHeaderCell';
 import { DawSideRail } from '#/components/daw/DawSideRail';
 import { useStore } from '#/infra/store/useStore';
-import { trackStore } from '#/modules/Arrangement/stores';
-import { midiStore, stepRecordStore } from '#/modules/MIDI/stores';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
+import { midiStore, stepRecordStore, type MidiStoreState } from '#/modules/MIDI/stores';
 import { setNoteVelocity, setNotePressure, setNoteSlide, setNotePitchBend } from '#/modules/MIDI/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { cn } from '#/utils/Styles/cn';
 
-import { type MidiNote } from '../../../models/MidiNoteViewTypes';
+
 import { GRID_BEATS, ROW_HEIGHT, RULER_HEIGHT, getVisiblePitches } from '../../helpers/pianoRollConstants';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
@@ -103,16 +103,18 @@ export const PianoRoll = ({
     }
 
     // ── Store subscriptions ──────────────────────────────────────────
-    const midiState = useStore(midiStore, { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
-    const trackState = useStore(trackStore, { tracks: [], selectedTrackId: null });
-    const notes = midiState?.notesByClipId[clipId] ?? [];
+    const notes = useStoreSelector(midiStore, (state: MidiStoreState | null) => state?.notesByClipId[clipId] ?? []);
     // A9: build notes map for all simultaneously-open clips (excludes primary clipId)
-    const openedClipNotes: Record<string, MidiNote[]> | undefined =
-        openedClipIds && openedClipIds.length > 0
-            ? Object.fromEntries(
-                  openedClipIds.filter((id) => id !== clipId).map((id) => [id, midiState?.notesByClipId[id] ?? []])
-              )
-            : undefined;
+    const openedClipNotes = useStoreSelector(
+        midiStore,
+        (state: MidiStoreState | null) =>
+            openedClipIds && openedClipIds.length > 0
+                ? Object.fromEntries(
+                      openedClipIds.filter((id) => id !== clipId).map((id) => [id, state?.notesByClipId[id] ?? []])
+                  )
+                : undefined,
+        (a, b) => JSON.stringify(a) === JSON.stringify(b)
+    );
 
     // ── Report layout to parent ──────────────────────────────────────
     useLayoutEffect(() => {
@@ -164,8 +166,6 @@ export const PianoRoll = ({
         stepBeat: stepRecord.currentBeat,
         stepPitch: stepRecord.currentPitch,
         showGhostNotes,
-        midiNotesByClipId: midiState?.notesByClipId ?? null,
-        tracks: trackState?.tracks ?? null,
         drawPreviewRef,
         rubberBandRef,
         dragPreviewRef,

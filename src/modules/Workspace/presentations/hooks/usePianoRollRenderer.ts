@@ -64,15 +64,6 @@ type RendererDeps = {
     showGhostNotes: boolean;
     /** A9: additional clip IDs open simultaneously in the piano roll */
     openedClipIds?: string[];
-    /** MIDI state — notesByClipId map */
-    midiNotesByClipId: Record<string, MidiNote[]> | null;
-    /** Track state — track list */
-    tracks: Array<{
-        id: string;
-        kind: string;
-        color: string;
-        clips: Array<{ id: string; type: string; color: string }>;
-    }> | null;
     /** Current draw preview (drag-to-create) */
     drawPreviewRef: RefObject<{ beat: number; pitch: number; duration: number } | null>;
     /** Active rubber band selection rectangle */
