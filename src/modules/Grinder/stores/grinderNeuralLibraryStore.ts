@@ -42,3 +42,15 @@ export function upsertGrinderNeuralLibraryEntries(entries: readonly GrinderImpor
         entries: [...next_by_id.values()].sort((left, right) => right.importedAt - left.importedAt),
     });
 }
+
+export function removeGrinderNeuralLibraryEntry(entry_id: string): GrinderImportedNeuralModel[] {
+    const current = grinderNeuralLibraryStore.value ?? DEFAULT_GRINDER_NEURAL_LIBRARY_STATE;
+    const next_entries = current.entries.filter((entry) => entry.id !== entry_id);
+    grinderNeuralLibraryStore.set({
+        hydrated: true,
+        loading: false,
+        error: null,
+        entries: next_entries,
+    });
+    return next_entries;
+}

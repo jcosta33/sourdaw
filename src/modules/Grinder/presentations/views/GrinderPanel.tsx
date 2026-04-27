@@ -25,6 +25,7 @@ import {
     type GrinderUiSection,
     getGrinderSupportedChainOrder,
 } from '../../models/GrinderPatch';
+import { ImportedNeuralLibraryCard } from '../components/ImportedNeuralLibraryCard';
 import {
     grinderStore,
     getGrinderState,
@@ -37,12 +38,14 @@ import {
 } from '../../stores/grinderNeuralLibraryStore';
 import { grinderTelemetryStore, getGrinderTelemetry, type GrinderTelemetry } from '../../stores/grinderTelemetryStore';
 import { importGrinderNeuralModels } from '../../useCases/importGrinderNeuralModels';
+import { exportGrinderNeuralModel } from '../../useCases/exportGrinderNeuralModel';
 import { loadGrinderPatchWithAudio } from '../../useCases/grinderParamBridge/loadGrinderPatchWithAudio';
 import { moveGrinderPedalInChainWithAudio } from '../../useCases/grinderParamBridge/moveGrinderPedalInChainWithAudio';
 import { recallGrinderSnapshotWithAudio } from '../../useCases/grinderParamBridge/recallGrinderSnapshotWithAudio';
 import { setGrinderMicParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderMicParamWithAudio';
 import { setGrinderParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderParamWithAudio';
 import { setGrinderPedalParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderPedalParamWithAudio';
+import { removeGrinderNeuralModel } from '../../useCases/removeGrinderNeuralModel';
 import { restoreGrinderNeuralLibrary } from '../../useCases/restoreGrinderNeuralLibrary';
 import { GRINDER_PRESETS } from '../../useCases/grinderPresets';
 
@@ -1145,6 +1148,8 @@ function ControlDeck({
                       placement: patch.neuralPlacement,
                       description: 'Selected in this patch',
                       importedAt: 0,
+                      sourceFileName: null,
+                      sourceFileText: null,
                       profile: patch.neuralModelProfile,
                   },
                   ...imported_neural_entries,
@@ -1189,6 +1194,10 @@ function ControlDeck({
         } finally {
             set_is_importing_models(false);
         }
+    }
+
+    async function removeImportedNeuralModel(entry: GrinderImportedNeuralModel): Promise<void> {
+        await removeGrinderNeuralModel({ model_id: entry.id });
     }
 
     if (patch.uiSection === 'amp') {
@@ -1636,25 +1645,14 @@ function ControlDeck({
                             {visible_imported_entries.map((entry) => {
                                 const selected = patch.neuralModelId === entry.id;
                                 return (
-                                    <button
+                                    <ImportedNeuralLibraryCard
                                         key={entry.id}
-                                        type="button"
-                                        className={`rounded-[18px] border px-4 py-3 text-left ${
-                                            selected
-                                                ? 'border-[var(--color-accent-cyan)]/60 bg-[var(--color-accent-cyan)]/12'
-                                                : 'border-white/8 bg-black/20'
-                                        }`}
-                                        onClick={() => selectImportedNeuralModel(entry)}
-                                    >
-                                        <div className="flex items-center justify-between gap-3">
-                                            <span className="text-sm font-medium text-white/88">{entry.name}</span>
-                                            <span className="text-[10px] uppercase tracking-[0.18em] text-white/34">
-                                                {entry.profile.sourceSampleRate} Hz
-                                            </span>
-                                        </div>
-                                        <div className="mt-1 text-xs text-white/44">{entry.family}</div>
-                                        <div className="mt-2 text-[11px] text-white/34">{entry.description}</div>
-                                    </button>
+                                        entry={entry}
+                                        selected={selected}
+                                        on_select={selectImportedNeuralModel}
+                                        on_export={exportGrinderNeuralModel}
+                                        on_remove={(value) => void removeImportedNeuralModel(value)}
+                                    />
                                 );
                             })}
                         </div>

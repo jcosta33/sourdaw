@@ -55,6 +55,8 @@ export type GrinderNeuralLibraryEntry = {
 export type GrinderImportedNeuralModel = GrinderNeuralLibraryEntry & {
     source: 'imported';
     importedAt: number;
+    sourceFileName: string | null;
+    sourceFileText: string | null;
     profile: GrinderNeuralProfile;
 };
 

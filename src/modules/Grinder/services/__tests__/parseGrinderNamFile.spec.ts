@@ -28,6 +28,8 @@ describe('parseGrinderNamFile', () => {
         expect(imported_entry.profile.convWeights).toHaveLength(10);
         expect(imported_entry.profile.derivedFrom).toBe('nam');
         expect(imported_entry.profile.sourceSampleRate).toBe(48_000);
+        expect(imported_entry.sourceFileName).toBe('tight-rhythm.nam');
+        expect(imported_entry.sourceFileText).toBe(nam_json);
     });
 
     it('should reject invalid NAM payloads', () => {

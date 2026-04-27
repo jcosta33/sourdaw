@@ -195,6 +195,8 @@ export function parseGrinderNamFile(input: ParseGrinderNamFileInput): GrinderImp
         placement: derive_placement(`${tone_type} ${description}`),
         description,
         importedAt: Date.now(),
+        sourceFileName: input.file_name,
+        sourceFileText: input.file_text,
         profile,
     };
 }

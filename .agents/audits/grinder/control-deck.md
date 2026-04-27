@@ -44,7 +44,8 @@ Grinder should behave like a trustworthy guitar-amp product: controls stay visua
 - Input conditioning is now more honest than before. `inputMode` no longer dies in the bridge-to-DSP handoff: `instrument`, `line`, and `reamp` now produce bounded but measurable front-end differences in level and attack shape inside `crates/daw-dsp/src/grinder/input.rs`.
 - Extreme-gain release behavior is more disciplined than before. The preamp now has an explicit decay-shape regression, and the power amp now applies bounded recovery-dependent edge damping so a hard-burst tail stops hanging onto as much brittle high-frequency edge after the initial attack in `crates/daw-dsp/src/grinder/triode.rs` and `crates/daw-dsp/src/grinder/power_amp.rs`.
 - Built-in neural model selection is now materially real. `neuralModelId` maps to a `neuralModelSlot` bridge param, and the Rust neural engine now loads distinct built-in profiles that produce measurably different output for the same stimulus.
-- Several visible or stored concepts remain partially wired. Neural built-ins, documented NAM imports, fixed-chain routing/cabinet presets, amp-family labels, and `inputMode` are now materially real, but fuller external-neural fidelity and some extreme-gain polish still lag behind what the product implies.
+- Imported Neural library entries now behave more like real reusable assets. Grinder retains the original imported NAM filename and payload text, the Neural modal exposes export/remove actions for reusable imports, and deleting a reusable library entry no longer hides the currently selected patch-embedded imported voice from the UI in `src/modules/Grinder/presentations/views/GrinderPanel.tsx`, `src/modules/Grinder/presentations/components/ImportedNeuralLibraryCard.tsx`, and the related Neural library repositories/use cases.
+- Several visible or stored concepts remain partially wired. Neural built-ins, documented NAM imports, raw-source retention/export/remove, fixed-chain routing/cabinet presets, amp-family labels, and `inputMode` are now materially real, but fuller external-neural runtime fidelity and some extreme-gain polish still lag behind what the product implies.
 
 ## Findings
 
@@ -65,13 +66,14 @@ Grinder should behave like a trustworthy guitar-amp product: controls stay visua
 - Phase 11 closes the next named-amp honesty gap. The new regressions now prove Rectifier-style preamp settings retain more palm-muted body and a lower peak-to-sustain ratio than Lead JCM, while the power-amp regressions keep 6L6 and EL84 families from collapsing into near-interchangeable responses.
 - Phase 12 closes the last obvious patch-contract lie in the front end. The new failing tests showed `instrument`, `line`, and `reamp` all producing identical conditioner metrics before the fix, and the conditioner now applies bounded mode-specific calibration and edge/body shaping so those source modes diverge audibly without pretending to be a full pickup/cable simulator.
 - Phase 13 closes the next later-stage harshness gap without flattening the whole rig. Grinder now has explicit decay-shape regressions for both the preamp and the power amp, and the power stage uses recovery-dependent edge damping plus low-component hold so a hard-burst tail stops staying as edge-heavy as the earlier sustain window.
+- Phase 14 closes the next Neural management gap. Imported captures now retain original NAM source text plus filename metadata, reusable imports can be exported or removed directly from the Neural modal, and selected patch-embedded imports still remain visible after a reusable library entry is removed.
 - Phase 7 removed the most obvious remaining Neural honesty gap. Built-in library entries now sync a real `neuralModelSlot`, different built-in profiles produce different DSP output, and the Neural panel copy no longer claims the browser is metadata-only.
 - Imported Neural selections are now project-portable instead of depending on hidden local state. The selected imported profile is embedded into the patch and also persisted in a reusable local library, which avoids wrong-sound playback when the modal library has not hydrated yet.
 - Targeted coverage is materially better than before. DSP tests now cover overdrive/distortion/fuzz loudness sanity, fuzz silence behavior, gate closure depth, supported pedal order, cabinet distance/room audibility, cabinet voice selection, cabinet mode selection, routing preset audibility, later-stage sample-rate stability, power-amp bias audibility, built-in neural model distinctness, and imported neural profile distinctness, while UI/preset tests cover Neural non-duplication, built-in/imported Neural honesty, metal taxonomy, snapshot UI, chain order, room control, and the new cab voice/mode/routing selectors.
 
 ## Priorities
 
-1. `I-05` Extend external Neural delivery beyond NAM-first compact-profile import into fuller model/runtime coverage and management.
+1. `I-05` Extend external Neural delivery beyond the current NAM-first compact-profile runtime into fuller model/runtime coverage.
 2. `I-06` Keep tightening later-stage extreme-gain voicing now that decay behavior is better controlled.
 3. `I-08` Decide whether `inputMode` should stay patch/preset-only or gain an explicit UI affordance later.
 
@@ -83,9 +85,9 @@ Grinder should behave like a trustworthy guitar-amp product: controls stay visua
    Needed: keep growing later-stage regressions around palm-muted density, fizz control, and high-gain decay behavior without turning the model into a giant circuit-solver rewrite.
 
 2. **The external Neural path is now real, but it is still a bounded compact-profile implementation rather than full third-party runtime parity.**
-   Problem: phase 8 delivers documented NAM import, reusable local library state, patch-portable imported profiles, and live DSP application, but it still derives a compact Grinder profile rather than loading the original external model architecture at full fidelity. There is still no AIDA-X import, no raw-source retention/export path, and no richer asset management beyond import/list/select.
+   Problem: phases 8 and 14 now deliver documented NAM import, reusable local library state, patch-portable imported profiles, raw-source retention, and export/remove management, but Grinder still derives and runs a compact internal profile rather than loading the original external model architecture at full fidelity. There is still no AIDA-X import and no fuller runtime-comparison story against established Neural capture products.
    Representative files: `src/modules/Grinder/services/parseGrinderNamFile.ts`, `src/modules/Grinder/repositories/neuralLibraryPersistence/persistGrinderNeuralLibrary.ts`, `crates/daw-dsp/src/grinder/neural.rs`.
-   Needed: decide whether the next Neural phase should pursue higher-fidelity NAM runtime behavior, broader format support, or richer imported-model lifecycle operations.
+   Needed: decide whether the next Neural phase should pursue higher-fidelity NAM runtime behavior, broader format support, or side-by-side comparison/management tools for imported captures.
 
 3. **`inputMode` is now real but still mostly a hidden contract.**
    Problem: the patch and bridge now honor `instrument` / `line` / `reamp`, but Grinder still does not expose that choice prominently in the UI, so the new realism is easier to benefit from through presets or direct patch editing than through obvious control-surface discovery.
@@ -104,18 +106,19 @@ Grinder should behave like a trustworthy guitar-amp product: controls stay visua
 - Phase 13 reduces one obvious harsh-tail behavior, but it still does not guarantee that all highest-gain sustained notes or palm-muted passages feel dense and finished enough against specialist guitar products.
 - The new routing presets are honest within the fixed chain, but they are still bounded presets rather than arbitrary user-authored split/merge routing.
 - The external Neural path is now covered, but the compact imported-profile derivation can still collapse too much source-model nuance if later comparison listening shows imports feeling overly interchangeable.
+- Retaining raw imported payloads improves management and future-proofing, but it also increases IndexedDB usage for imported captures.
 - Broader gain-stage coverage is still weaker than the newer Neural/cabinet regressions, so sonic regressions can still slip through in later amp-stage work.
 
 ## Suggested approaches
 
-- Revisit external Neural fidelity next: raw model retention, richer asset management, and broader format support are now the highest-leverage product expansions.
+- Revisit external Neural fidelity next: the management layer is now real, so the remaining high-leverage work is runtime fidelity, broader format support, and comparison tooling.
 - Continue tightening extreme later-stage voicing with targeted regressions around palm-muted density and sustained feel now that decay-shape guardrails exist.
 - Keep expanding expert-oriented regression tests: pedal enable semantics, gate attenuation behavior, cabinet distance/room audibility, neural model loading, and later gain-stage behavior.
 - Decide later whether `inputMode` deserves a dedicated control-surface affordance or should stay a preset-authored behavior.
 
 ## Recommendation
 
-Phase 13 closes the most obvious hard-burst harsh-tail gap, so the next move should shift to `I-05`: extend external-Neural fidelity and model management beyond the current NAM-first compact-profile delivery while keeping the new later-stage decay regressions intact.
+Phase 14 closes the most obvious Neural-library-management gap, so the next move should stay on `I-05`: extend external-Neural fidelity beyond the current compact runtime while keeping the new library-management and later-stage decay regressions intact.
 
 ## Resolved
 
@@ -137,3 +140,4 @@ Phase 13 closes the most obvious hard-burst harsh-tail gap, so the next move sho
 - ~~Rectifier / Lead JCM and 6L6 / EL84 labels were too close to the same underlying later-stage voice.~~ — resolved in `main` on `2026-04-27` by adding family-ordering regressions and retuning `Preamp` voicing/compression so Rectifier retains more palm-muted body and denser sustain than Lead JCM while the power-amp family separation remains measurable under the same driven-burst material.
 - ~~`inputMode` existed in the patch contract without changing the live conditioner path.~~ — resolved in `main` on `2026-04-27` by adding input-mode distinctness regressions and implementing bounded mode-specific conditioning inside `InputConditioner` so `instrument`, `line`, and `reamp` now diverge audibly under the same bright burst stimulus.
 - ~~Extreme-gain later-stage decay stayed too edge-heavy after the initial attack.~~ — resolved in `main` on `2026-04-27` by adding explicit preamp/power-amp decay-shape regressions and retuning `PowerAmp` recovery behavior around bounded release-dependent edge damping instead of a blunt static low-pass.
+- ~~Imported Neural captures were one-way library entries with no raw-source retention or reusable export/remove management.~~ — resolved in `main` on `2026-04-27` by preserving original NAM filename/payload data on imported library entries, adding Neural modal export/remove actions, and keeping selected patch-embedded imported voices visible even after a reusable library entry is removed.
