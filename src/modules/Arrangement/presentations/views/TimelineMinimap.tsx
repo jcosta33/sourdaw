@@ -1,13 +1,14 @@
 import { type ReactElement, type MouseEvent, useRef, useLayoutEffect, useState } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
+import { transportStore } from '#/modules/Transport/stores';
 
-import { timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
+import { setAutoScroll, timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
 import { trackStore, type TrackStoreState } from '../../stores/trackStore';
 
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 
-const MINIMAP_HEIGHT = 28;
+export const MINIMAP_HEIGHT = 28;
 const MIN_PROJECT_BEATS = 64;
 const VIEWPORT_MIN_WIDTH = 6;
 
@@ -182,6 +183,10 @@ export const TimelineMinimap = (): ReactElement => {
         const metrics = getMinimapMetrics();
         if (!metrics) {
             return;
+        }
+
+        if (transportStore.value?.isPlaying) {
+            setAutoScroll(false);
         }
 
         const rect = containerRef.current!.getBoundingClientRect();

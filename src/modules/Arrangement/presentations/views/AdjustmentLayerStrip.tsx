@@ -61,6 +61,9 @@ type FadePreview = { regionId: string; fadeInBeats: number; fadeOutBeats: number
 const ROW_HEIGHT = 20;
 const MIN_DRAG_PX = 3;
 
+export const getAdjustmentLayerStripHeight = (layerCount: number): number =>
+    Math.max(ROW_HEIGHT, layerCount * ROW_HEIGHT) + ROW_HEIGHT;
+
 const ALL_EFFECT_TYPES: AdjustmentEffectType[] = [
     'eq',
     'compressor',

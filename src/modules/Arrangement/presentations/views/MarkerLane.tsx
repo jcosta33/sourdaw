@@ -36,7 +36,7 @@ type DragState = {
     originalBeat: number;
 } | null;
 
-const LANE_HEIGHT = 20;
+export const MARKER_LANE_HEIGHT = 20;
 
 const defaultMarkerState: MarkerStoreState = { markers: [], sections: [] };
 
@@ -176,7 +176,7 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
             ref={laneRef}
             className="select-none"
             style={{
-                height: LANE_HEIGHT,
+                height: MARKER_LANE_HEIGHT,
             }}
             onContextMenu={handleLaneContextMenu}
             role="region"

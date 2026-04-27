@@ -66,7 +66,7 @@ type ChordTrackViewState = {
 
 const defaultState: ChordTrackViewState = { enabled: false, events: [] };
 
-const LANE_HEIGHT = 26;
+export const CHORD_TRACK_LANE_HEIGHT = 26;
 
 /**
  * oklch-based colors per root note — muted and metallic to match
@@ -184,7 +184,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX }: ChordTrackLaneProps):
     return (
         <div
             className="relative flex items-center shrink-0 border-b border-border/40 bg-surface-base/60 select-none overflow-hidden"
-            style={{ height: LANE_HEIGHT }}
+            style={{ height: CHORD_TRACK_LANE_HEIGHT }}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}

@@ -9,7 +9,7 @@ import { timelineViewStore, type TimelineViewState } from '../../stores/timeline
 
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 
-const HEIGHT = 18;
+export const BEAT_RULER_HEIGHT = 18;
 
 export const BeatRulerBar = (): React.ReactElement => {
     const containerRef = useRef<HTMLDivElement | null>(null);
@@ -80,7 +80,7 @@ export const BeatRulerBar = (): React.ReactElement => {
         }
         const dpr = window.devicePixelRatio || 1;
         const w = canvas.offsetWidth;
-        const h = HEIGHT;
+        const h = BEAT_RULER_HEIGHT;
 
         // §182.1 — only resize the backing store + recompute the DPR
         // scale + rebuild the background gradient when the dimensions
@@ -333,7 +333,7 @@ export const BeatRulerBar = (): React.ReactElement => {
         <TimelineChromeSurface
             ref={containerRef}
             className="cursor-col-resize select-none"
-            style={{ height: HEIGHT }}
+            style={{ height: BEAT_RULER_HEIGHT }}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -343,7 +343,7 @@ export const BeatRulerBar = (): React.ReactElement => {
             }}
             title="Click to seek · Drag to scrub · Shift+drag to set loop region · Double-click to disable loop"
         >
-            <canvas ref={setCanvas} className="block w-full" style={{ height: HEIGHT }} />
+            <canvas ref={setCanvas} className="block w-full" style={{ height: BEAT_RULER_HEIGHT }} />
         </TimelineChromeSurface>
     );
 };

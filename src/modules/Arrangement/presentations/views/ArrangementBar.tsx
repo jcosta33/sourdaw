@@ -43,7 +43,7 @@ type DragState = {
     originalEnd: number;
 } | null;
 
-const BAR_HEIGHT = 22;
+export const ARRANGEMENT_BAR_HEIGHT = 22;
 const EDGE_ZONE = 6; // px from edge to detect resize handle
 
 const defaultMarkerState: MarkerStoreState = { markers: [], sections: [] };
@@ -266,7 +266,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
     return (
         <TimelineChromeSurface
             className="select-none"
-            style={{ height: BAR_HEIGHT }}
+            style={{ height: ARRANGEMENT_BAR_HEIGHT }}
             onContextMenu={handleBarContextMenu}
             role="region"
             aria-label="Arrangement sections"
