@@ -1,4 +1,7 @@
 import { createStore } from '#/infra/store/createStore';
+import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+
+const DOC_PREFIX_ROOT = 'root';
 
 export type ActionHistoryAction = {
     type: string;
@@ -25,6 +28,7 @@ export type ActionHistoryState = {
 const MAX_HISTORY = 200;
 
 export const actionHistoryStore = createStore<ActionHistoryState>({
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'actionHistory'),
     initialData: { entries: [] },
 });
 

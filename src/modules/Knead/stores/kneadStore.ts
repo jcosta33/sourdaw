@@ -1,4 +1,7 @@
 import { createStore } from '#/infra/store/createStore';
+import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+
+const DOC_PREFIX_ROOT = 'root';
 
 export type NoteBlob = {
     id: string;
@@ -57,6 +60,7 @@ export const defaultKneadState: KneadStoreState = {
 };
 
 export const kneadStore = createStore<KneadStoreState>({
+    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'knead'),
     initialData: defaultKneadState,
 });
 
