@@ -540,3 +540,65 @@ impl MasterSynth {
             .sum()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{MasterSynth, MidiEvent};
+
+    fn block_energy(left: &[f32], right: &[f32]) -> f32 {
+        left.iter()
+            .chain(right.iter())
+            .map(|sample| sample.abs())
+            .sum::<f32>()
+    }
+
+    #[test]
+    fn note_event_renders_finite_non_silent_audio() {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        let mut left = [0.0; 128];
+        let mut right = [0.0; 128];
+        let events = [MidiEvent {
+            kind: 1,
+            note: 60,
+            velocity: 100,
+            offset: 0,
+        }];
+
+        synth.process_block(&mut left, &mut right, &events);
+
+        assert!(left
+            .iter()
+            .chain(right.iter())
+            .all(|sample| sample.is_finite()));
+        assert!(block_energy(&left, &right) > 0.001);
+    }
+
+    #[test]
+    fn mapped_global_params_update_master_state() {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+
+        synth.set_param("active_layer", 2.0);
+        synth.set_param("num_layers", 4.0);
+        synth.set_param("reverb_type", 1.0);
+        synth.set_param("reverb_mix", 0.35);
+        synth.set_param("delay_feedback", 0.45);
+        synth.set_param("chorus_rate", 2.5);
+        synth.set_param("phaser_depth", 0.75);
+        synth.set_param("dist_tone", 0.2);
+        synth.set_param("comp_ratio", 8.0);
+        synth.set_param("master_gain", 1.5);
+        synth.set_param("stereo_width", 1.7);
+
+        assert_eq!(synth.active_layer, 2);
+        assert_eq!(synth.num_active_layers, 4);
+        assert_eq!(synth.reverb_type, 1);
+        assert_eq!(synth.reverb_mix.target(), 0.35);
+        assert_eq!(synth.delay_feedback.target(), 0.45);
+        assert_eq!(synth.chorus_rate, 2.5);
+        assert_eq!(synth.phaser_depth, 0.75);
+        assert_eq!(synth.dist_tone, 0.2);
+        assert_eq!(synth.comp_ratio, 8.0);
+        assert_eq!(synth.master_gain.target(), 1.5);
+        assert_eq!(synth.stereo_width.target(), 1.7);
+    }
+}
