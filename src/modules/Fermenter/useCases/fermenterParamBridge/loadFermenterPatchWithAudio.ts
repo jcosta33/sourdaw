@@ -3,6 +3,7 @@ import { loadFermenterPatch } from '../../stores/fermenterStore';
 import { getFermenterDependencies } from '../fermenterDependencies';
 
 import { createFindDeviceRef } from './helpers';
+import { mapFermenterPatchToDspPatch } from './mapFermenterPatchToDspPatch';
 
 let findDeviceRef: ReturnType<typeof createFindDeviceRef> | null = null;
 function getFindDeviceRef() {
@@ -22,7 +23,7 @@ export function loadFermenterPatchWithAudio(deviceId: string, patch: FermenterPa
 
     const { updateDevicePatch, persistDevicePatch } = getFermenterDependencies();
     if (updateDevicePatch) {
-        updateDevicePatch(ref.trackId, ref.deviceId, patch as Record<string, unknown>);
+        updateDevicePatch(ref.trackId, ref.deviceId, mapFermenterPatchToDspPatch({ patch }));
     }
     if (persistDevicePatch) {
         persistDevicePatch(ref.deviceId, patch as Record<string, unknown>);
