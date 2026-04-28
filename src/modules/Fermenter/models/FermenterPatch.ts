@@ -333,7 +333,7 @@ export type FermenterParamDef = {
 
 export const FERMENTER_PARAMS: readonly FermenterParamDef[] = [
     // Oscillator
-    { id: 'oscEngine', label: 'Engine', min: 0, max: 1, default: 0, unit: '', step: 1, group: 'osc' },
+    { id: 'oscEngine', label: 'Engine', min: 0, max: 6, default: 0, unit: '', step: 1, group: 'osc' },
     { id: 'oscWaveform', label: 'Waveform', min: 0, max: 3, default: 1, unit: '', step: 1, group: 'osc' },
     { id: 'oscLevel', label: 'Osc Level', min: 0, max: 1, default: 0.8, unit: '', group: 'osc' },
     { id: 'oscCoarse', label: 'Coarse', min: -24, max: 24, default: 0, unit: 'st', step: 1, group: 'osc' },
