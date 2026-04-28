@@ -67,13 +67,14 @@ daw-dsp fermenter::` runs zero tests.
 
 ## Findings
 
-1. **The TS-to-Rust parameter contract is hidden in the AudioEngine processor.**
-   The TS model exposes camelCase IDs (`oscEngine`, `filterCutoff`, `oscDrift`,
-   `portamentoTime`, etc.), while the Rust `set_param` paths are snake_case
-   (`engine`, `cutoff`, `drift`, `portamento`, etc.). The AudioWorklet
-   processor currently adapts several names with a private `camelToSnake`
-   helper, but Fermenter has no explicit tested contract proving every public
-   parameter reaches the intended DSP target.
+1. **The TS-to-Rust parameter contract is now explicit at the Fermenter audio bridge.**
+   The TS model still exposes camelCase IDs (`oscEngine`, `filterCutoff`,
+   `oscDrift`, `portamentoTime`, etc.), while the Rust `set_param` paths are
+   snake_case (`engine`, `cutoff`, `drift`, `portamento`, etc.). The Fermenter
+   param bridge now maps param and patch updates to declared DSP IDs before
+   calling `updateDeviceParam` / `updateDevicePatch`, while persistence keeps
+   the original patch keys. Tests assert every public `FERMENTER_PARAMS` ID maps
+   to a declared DSP parameter ID.
 
 2. **`FERMENTER_PARAMS` now exposes the full engine range.** `oscEngine.max`
    was corrected from `1` to `6`, matching the seven engines in `ENGINE_NAMES`.
@@ -130,45 +131,39 @@ daw-dsp fermenter::` runs zero tests.
 
 ## Priorities
 
-1. Make the TS-to-Rust parameter contract explicit and fully tested.
-2. Add Fermenter-specific Rust DSP tests for engine selection, parameter mapping,
+1. Add Fermenter-specific Rust DSP tests for engine selection, parameter mapping,
    MIDI offsets, and layer triggering.
-3. Decide and implement the actual layer note-triggering model.
-4. Expand macro handling from default mappings into a real assignable macro matrix.
-5. Rename/retune "Spectral warp" claims or implement true spectral-domain
+2. Decide and implement the actual layer note-triggering model.
+3. Expand macro handling from default mappings into a real assignable macro matrix.
+4. Rename/retune "Spectral warp" claims or implement true spectral-domain
    modes from the existing research.
-6. Harden transform-pad interpolation for discrete parameters.
+5. Harden transform-pad interpolation for discrete parameters.
 
 ## Open Issues
 
-### 1. TS-to-Rust parameter mapping is private and only partially covered
+### 1. Rust DSP still lacks parameter behavior regressions
 
-**Problem:** `setFermenterParamWithAudio` and `loadFermenterPatchWithAudio`
-publish camelCase patch keys. The AudioWorklet processor adapts several names
-through `camelToSnake`, while Rust `Layer::set_param` and
-`MasterSynth::set_param` mostly match snake_case names. This adapter is private
-to the processor and is not tested against `FERMENTER_PARAMS` or the full patch
-model. Examples:
+**Status:** TypeScript bridge contract resolved by `09006370b`; Rust behavior
+tests still missing.
 
-- TS `oscEngine` vs Rust `engine`
-- TS `filterCutoff` vs Rust `cutoff`
-- TS `filterResonance` vs Rust `resonance`
-- TS `oscDrift` vs Rust `drift`
-- TS `portamentoTime` vs Rust `portamento`
-- TS `masterGain` vs Rust `master_gain`
+**Problem:** The Fermenter TS bridge now maps every public `FERMENTER_PARAMS`
+ID to a declared DSP ID, and patch updates sent to the audio engine use those
+DSP IDs. The Rust side still accepts unknown names silently and has no
+Fermenter-targeted tests proving mapped IDs change the intended synth state or
+rendered output.
 
 **Representative files:**
 
 - `src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts:24`
 - `src/modules/Fermenter/useCases/fermenterParamBridge/loadFermenterPatchWithAudio.ts:17`
-- `src/modules/AudioEngine/services/fermenterProcessor.ts:14`
+- `src/modules/Fermenter/useCases/fermenterParamBridge/mapFermenterParamToDspParam.ts:11`
+- `src/modules/Fermenter/models/FermenterDspParam.ts:1`
 - `crates/daw-dsp/src/fermenter/synth.rs:351`
 - `crates/daw-dsp/src/fermenter/layer.rs:421`
 
-**Needed:** Move the mapping into an explicit tested contract owned by the
-Fermenter/audio boundary, use it in param updates and patch loads, and test
-every `FERMENTER_PARAMS` ID maps to a handled DSP param. Do not rely on silent
-`_ => {}` in Rust as a contract.
+**Needed:** Add Rust tests or a Rust-side handled-param registry proving each
+declared DSP ID is accepted and behaviorally effective where applicable. Do not
+rely on silent `_ => {}` in Rust as a contract.
 
 ### 2. Generic parameter metadata blocks most oscillator engines
 
@@ -337,8 +332,8 @@ engine with sample/block timing. Document which path is for UI vs playback.
 
 - **User-facing overclaim:** Fermenter is positioned as a flagship synth, but
   several flagship controls are currently silent, approximated, or untested.
-- **Preset trust risk:** Factory/user presets rely on a hidden AudioWorklet
-  name adapter rather than a tested Fermenter contract.
+- **Preset trust risk:** Factory/user presets now use a tested TS bridge mapping,
+  but Rust still silently ignores unknown parameter names.
 - **Performance-control risk:** Macros and XY controls now have default audio
   mappings, but users cannot assign targets, depth, or curves like a flagship
   synth macro system.
@@ -348,16 +343,14 @@ engine with sample/block timing. Document which path is for UI vs playback.
 
 ## Suggested Approaches
 
-1. **Start with the parameter contract.** Extract and test the TS -> audio
-   param mapping table. This unlocks every other Fermenter fix.
-2. **Add DSP regression tests before sonic retuning.** Use simple note renders
+1. **Add DSP regression tests before sonic retuning.** Use simple note renders
    and energy/spectral assertions. Do not tune by UI snapshots.
-3. **Resolve layer semantics before adding more UI.** A flagship synth can have
+2. **Resolve layer semantics before adding more UI.** A flagship synth can have
    active edit layers or playable layer stacks, but the UI must not imply one
    while DSP implements the other.
-4. **Expand macros after the fixed-mapping slice.** Default mappings now exist;
+3. **Expand macros after the fixed-mapping slice.** Default mappings now exist;
    the next step is a patch-owned macro matrix with target depth and curves.
-5. **Treat true spectral morphing as a separate spec.** The current time-domain
+4. **Treat true spectral morphing as a separate spec.** The current time-domain
    warp can stay useful, but Vital/Zebra/Pigments-style claims need an actual
    spectral/harmonic implementation and tests.
 
@@ -368,3 +361,7 @@ engine with sample/block timing. Document which path is for UI vs playback.
 - **Silent macro rig:** The panel now applies fixed macro mappings through
   `loadFermenterPatchWithAudio`, with use-case tests proving mapped parameter
   changes. Remaining macro-matrix work is tracked in Open Issue 4.
+- **TS bridge parameter mapping:** Fermenter now declares DSP parameter IDs,
+  maps param and patch updates before sending them to AudioEngine, keeps
+  persisted patches in the TS patch shape, and tests every public
+  `FERMENTER_PARAMS` ID against the declared DSP contract.
