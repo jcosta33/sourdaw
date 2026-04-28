@@ -21,7 +21,7 @@ type NativeDspNode = {
     noteOn?: (noteOrPad: number, velocity: number, midiNote?: number, sampleFrame?: number) => void;
     noteOff?: (noteOrPad: number, sampleFrame?: number) => void;
     destroy?: () => void;
-    ready: Promise<void>;
+    ready: Promise<Record<string, unknown>>;
 };
 
 export class NativeDspDeviceStrategy implements AudioDeviceStrategy {

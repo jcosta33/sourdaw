@@ -15,7 +15,7 @@ export type KneadNodeResult = {
     setParam: (name: string, value: number | number[]) => void;
     setBypass: (bypassed: boolean) => void;
     updateState: (state: Record<string, unknown>) => void;
-    ready: Promise<void>;
+    ready: Promise<Record<string, unknown>>;
 };
 
 export function isKneadDevice(deviceType: string): boolean {

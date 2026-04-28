@@ -365,10 +365,16 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
         };
         const loadPromise = createBacteriaNode(context)
             .then(async (result: BacteriaNodeResult) => {
-                await result.ready;
+                const readyData = await result.ready;
+                const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
+                reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
+
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                result.onLatencyChanged((latency) => {
+                    reportLatency(deviceId, (latency / context.sampleRate) * 1000);
+                });
                 result.onMeterData((data) => {
                     updateBacteriaMeters(deviceId, data.inputDb, data.outputDb, data.bandLevels, data.latency);
                 });
@@ -378,7 +384,14 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
-                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
+                    controller: {
+                        setParam: result.setParam,
+                        setBypass: result.setBypass,
+                        destroy: () => {
+                            result.destroy();
+                            clearReportedLatency(deviceId);
+                        },
+                    },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 return;
@@ -419,13 +432,19 @@ const grinderDescriptor: WasmDeviceDescriptor = {
         };
         const loadPromise = createGrinderNode(context)
             .then(async (result: GrinderNodeResult) => {
-                await result.ready;
+                const readyData = await result.ready;
+                const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
+                reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
+
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
                 if (pendingPatch) {
                     result.setPatch(pendingPatch);
                 }
+                result.onLatencyChanged((latency) => {
+                    reportLatency(deviceId, (latency / context.sampleRate) * 1000);
+                });
                 result.onMeterData((data) => {
                     updateGrinderMeters(deviceId, {
                         inputDb: data.inputDb,
@@ -453,7 +472,10 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                         setParam: result.setParam,
                         setPatch: result.setPatch,
                         setBypass: result.setBypass,
-                        destroy: result.destroy,
+                        destroy: () => {
+                            result.destroy();
+                            clearReportedLatency(deviceId);
+                        },
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
@@ -480,13 +502,18 @@ const proofDescriptor: WasmDeviceDescriptor = {
         };
         const loadPromise = createProofNode(context)
             .then(async (result: ProofNodeResult) => {
-                await result.ready;
+                const readyData = await result.ready;
+                const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
+                reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
+
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                result.onLatencyChanged((latency) => {
+                    reportLatency(deviceId, (latency / context.sampleRate) * 1000);
+                });
                 result.onMeterData((data) => {
                     updateProofMeters(deviceId, data);
-                    reportLatency(deviceId, (data.latency / context.sampleRate) * 1000);
                 });
                 registerProofDevice(deviceId, {
                     setParam: result.setParam,

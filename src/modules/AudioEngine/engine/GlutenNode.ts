@@ -29,10 +29,11 @@ export type GlutenNodeResult = {
     setParam: (name: string, value: number) => void;
     setBypass: (bypassed: boolean) => void;
     onMeterData: (cb: (data: GlutenMeterData) => void) => void;
+    onLatencyChanged: (cb: (latency: number) => void) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
     destroy: () => void;
-    ready: Promise<void>;
+    ready: Promise<Record<string, unknown>>;
 };
 
 export function isGlutenDevice(deviceType: string): boolean {
@@ -61,6 +62,7 @@ export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string):
 
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
     let meterRafId: number | null = null;
+    let latencyCallback: ((latency: number) => void) | null = null;
 
     if (slot) {
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
@@ -68,7 +70,14 @@ export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string):
 
     const handshake = createReadyHandshake({ pluginName: 'GlutenNode' });
     node.port.onmessage = (event: MessageEvent) => {
-        handshake.onMessage(event);
+        const outcome = handshake.onMessage(event);
+        if (outcome === 'other') {
+            const data = event.data as Record<string, unknown>;
+            if (data && data.type === 'latency-changed' && typeof data.latency === 'number') {
+                latencyCallback?.(data.latency);
+            }
+            return;
+        }
     };
     const readyPromise = handshake.promise;
 
@@ -107,6 +116,9 @@ export async function createGlutenNode(ctx: BaseAudioContext, wasmUrl?: string):
                 meterRafId = requestAnimationFrame(poll);
             };
             meterRafId = requestAnimationFrame(poll);
+        },
+        onLatencyChanged(cb: (latency: number) => void) {
+            latencyCallback = cb;
         },
         connect(dest: AudioNode) {
             node.connect(dest);

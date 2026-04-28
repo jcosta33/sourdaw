@@ -92,8 +92,8 @@ export async function fetchWasmBinary(url: string): Promise<ArrayBuffer> {
  * onto the same message port.
  */
 export type ReadyHandshakeResult = {
-    /** Resolves on `{type: 'ready'}`; rejects on `{type: 'error'}` or timeout. */
-    promise: Promise<void>;
+    /** Resolves with the ready event data; rejects on `{type: 'error'}` or timeout. */
+    promise: Promise<Record<string, unknown>>;
     /**
      * Consume one message. Returns:
      *   - 'ready'   — this event completed the handshake (settled → resolved)
@@ -123,10 +123,10 @@ export type CreateReadyHandshakeInput = {
 export function createReadyHandshake(input: CreateReadyHandshakeInput): ReadyHandshakeResult {
     const { pluginName, timeoutMs = DEFAULT_INIT_TIMEOUT_MS } = input;
     let settled = false;
-    let resolveFn: () => void = () => {};
+    let resolveFn: (data: Record<string, unknown>) => void = () => {};
     let rejectFn: (reason: Error) => void = () => {};
 
-    const promise = new Promise<void>((resolve, reject) => {
+    const promise = new Promise<Record<string, unknown>>((resolve, reject) => {
         resolveFn = resolve;
         rejectFn = reject;
     });
@@ -150,7 +150,7 @@ export function createReadyHandshake(input: CreateReadyHandshakeInput): ReadyHan
             }
             settled = true;
             clearTimeout(timeout);
-            resolveFn();
+            resolveFn(data as Record<string, unknown>);
             return 'ready';
         }
         if (type === 'error') {

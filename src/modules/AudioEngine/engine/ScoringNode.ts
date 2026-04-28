@@ -33,7 +33,7 @@ export type ScoringNodeResult = {
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
     destroy: () => void;
-    ready: Promise<void>;
+    ready: Promise<Record<string, unknown>>;
 };
 
 export function isScoringDevice(deviceType: string): boolean {
