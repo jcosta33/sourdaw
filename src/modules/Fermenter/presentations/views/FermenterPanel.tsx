@@ -12,10 +12,10 @@ import { DEFAULT_PATCH, type FermenterPatch, ENGINE_NAMES } from '../../models/F
 import {
     fermenterStore,
     getFermenterState,
-    loadFermenterPatch,
     setFermenterUiLevel,
     type FermenterState,
 } from '../../stores/fermenterStore';
+import { applyFermenterMacroMapping } from '../../useCases/applyFermenterMacroMapping';
 import { loadFermenterPatchWithAudio } from '../../useCases/fermenterParamBridge/loadFermenterPatchWithAudio';
 import { setFermenterParamWithAudio } from '../../useCases/fermenterParamBridge/setFermenterParamWithAudio';
 import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries/helpers';
@@ -491,9 +491,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     }
 
     function setMacro(index: number, value: number): void {
-        const macros = [...patch.macros] as FermenterPatch['macros'];
-        macros[index] = value;
-        loadFermenterPatch(deviceId, { ...patch, macros });
+        loadFermenterPatchWithAudio(deviceId, applyFermenterMacroMapping({ patch, index, value }));
     }
 
     function loadPreset(presetId: string): void {
