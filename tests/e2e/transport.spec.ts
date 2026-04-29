@@ -1,22 +1,10 @@
 import { test, expect } from '@playwright/test';
 
+import { setupWorkspace } from './e2eUtils';
+
 test.describe('Transport & Engine', () => {
     test.beforeEach(async ({ page }) => {
-        page.on('console', msg => console.log(`[Browser Console] ${msg.text()}`));
-        page.on('pageerror', err => console.log(`[Browser Error] ${err}`));
-
-        // Bypass onboarding tour, audio resume overlay, and alpha notice so they don't intercept clicks
-        await page.addInitScript(() => {
-            window.localStorage.setItem('wd:onboarding-completed', '1');
-            window.localStorage.setItem('wd:audio-resume-dismissed', '1');
-            window.localStorage.setItem('sourdaw-alpha-notice-dismissed', 'true');
-        });
-
-        // Go to the app
-        await page.goto('/');
-
-        // Wait for basic assets to load before clicking
-        await page.waitForLoadState('domcontentloaded');
+        await setupWorkspace(page);
 
         // Bypass the Launch Screen
         const launchScreen = page.getByLabel('Sourdaw — start a project');

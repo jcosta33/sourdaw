@@ -10,6 +10,7 @@ export async function setupWorkspace(page: Page): Promise<void> {
     page.on('pageerror', err => console.log(`[Browser Error] ${err}`));
 
     await page.addInitScript(() => {
+        window.localStorage.clear();
         window.localStorage.setItem('wd:onboarding-completed', '1');
         window.localStorage.setItem('wd:audio-resume-dismissed', '1');
         window.localStorage.setItem('sourdaw-alpha-notice-dismissed', 'true');
