@@ -372,36 +372,21 @@ impl MasterSynth {
         left[..block_size].fill(0.0);
         right[..block_size].fill(0.0);
 
-        // Process MIDI events (sorted by offset)
+        let mut cursor = 0;
         for event in events {
-            match event.kind {
-                1 => self.note_on(event.note, event.velocity),
-                0 => self.note_off(event.note),
-                _ => {}
+            let event_offset = (event.offset as usize).min(block_size);
+            if event_offset > cursor {
+                self.render_layers(
+                    &mut left[cursor..event_offset],
+                    &mut right[cursor..event_offset],
+                );
+                cursor = event_offset;
             }
+            self.apply_midi_event(event);
         }
 
-        // Check if any layer has solo enabled
-        let any_solo = self.layers[..self.num_active_layers].iter().any(|l| l.solo);
-
-        // Render each active layer
-        for i in 0..self.num_active_layers {
-            let layer = &mut self.layers[i];
-
-            // Skip muted layers; if any layer is soloed, skip non-soloed layers
-            if layer.muted {
-                continue;
-            }
-            if any_solo && !layer.solo {
-                continue;
-            }
-
-            layer.render(
-                &mut left[..block_size],
-                &mut right[..block_size],
-                &self.tables,
-                self.sample_rate,
-            );
+        if cursor < block_size {
+            self.render_layers(&mut left[cursor..block_size], &mut right[cursor..block_size]);
         }
 
         // ── Global effects ──────────────────────────────────────────
@@ -523,6 +508,41 @@ impl MasterSynth {
         }
     }
 
+    fn apply_midi_event(&mut self, event: &MidiEvent) {
+        match event.kind {
+            1 => self.note_on(event.note, event.velocity),
+            0 => self.note_off(event.note),
+            _ => {}
+        }
+    }
+
+    fn render_layers(&mut self, left: &mut [f32], right: &mut [f32]) {
+        let block_size = left.len().min(right.len());
+        if block_size == 0 {
+            return;
+        }
+
+        let any_solo = self.layers[..self.num_active_layers].iter().any(|l| l.solo);
+
+        for i in 0..self.num_active_layers {
+            let layer = &mut self.layers[i];
+
+            if layer.muted {
+                continue;
+            }
+            if any_solo && !layer.solo {
+                continue;
+            }
+
+            layer.render(
+                &mut left[..block_size],
+                &mut right[..block_size],
+                &self.tables,
+                self.sample_rate,
+            );
+        }
+    }
+
     pub fn note_on(&mut self, note: u8, velocity: u8) {
         // Send note to the active layer
         self.layers[self.active_layer].note_on(note, velocity);
@@ -571,6 +591,24 @@ mod tests {
             .chain(right.iter())
             .all(|sample| sample.is_finite()));
         assert!(block_energy(&left, &right) > 0.001);
+    }
+
+    #[test]
+    fn note_event_offset_delays_render_until_event_sample() {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        let mut left = [0.0; 128];
+        let mut right = [0.0; 128];
+        let events = [MidiEvent {
+            kind: 1,
+            note: 60,
+            velocity: 100,
+            offset: 64,
+        }];
+
+        synth.process_block(&mut left, &mut right, &events);
+
+        assert_eq!(block_energy(&left[..64], &right[..64]), 0.0);
+        assert!(block_energy(&left[64..], &right[64..]) > 0.001);
     }
 
     #[test]
