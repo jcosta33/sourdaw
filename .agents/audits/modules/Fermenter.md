@@ -94,12 +94,12 @@ non-silent note rendering.
    still lacks user-assignable macro targets, depths, curves, and per-preset
    macro routing.
 
-5. **Modulation and transform interpolation can create invalid discrete states.**
-   `lerpPatch` linearly interpolates every numeric field, including discrete
-   selectors such as `oscEngine`, `filterModel`, `warpMode`, `reverbType`,
-   `samplerMode`, and `activeLayer`. Those fractional values are then sent
-   through the same patch path and get truncated/rounded later depending on the
-   consumer. The UI may show one state while DSP uses another.
+5. **Transform interpolation now keeps discrete selectors discrete.**
+   `lerpPatch` interpolates continuous numeric fields, but selector fields such
+   as `oscEngine`, `filterModel`, `warpMode`, `reverbType`, `samplerMode`,
+   `activeLayer`, and `numLayers` choose the nearest source patch value. Tests
+   cover both linear and bilinear morphing so TransformPad no longer emits
+   fractional selector states.
 
 6. **MIDI note-on offsets are honored inside the DSP block.** `process_block`
    now renders sub-blocks between MIDI event offsets, so a note at sample 64
@@ -138,7 +138,6 @@ non-silent note rendering.
 2. Expand macro handling from default mappings into a real assignable macro matrix.
 3. Rename/retune "Spectral warp" claims or implement true spectral-domain
    modes from the existing research.
-4. Harden transform-pad interpolation for discrete parameters.
 
 ## Open Issues
 
@@ -227,20 +226,24 @@ and user-defined mappings update the intended parameters.
 
 ### 5. Transform pad interpolates discrete selectors as fractional values
 
-**Problem:** `lerpPatch` interpolates all numeric fields. Discrete selectors
-like `oscEngine`, `filterModel`, `filterMode`, `warpMode`, `reverbType`,
-`samplerMode`, `activeLayer`, and `numLayers` are not interpolable continuous
-parameters. Fractional states create UI/DSP disagreement and can land on
-different integer values depending on whether a path floors, casts, or rounds.
+**Status:** Resolved by `ae365b35a`.
+
+**Previous problem:** `lerpPatch` interpolated all numeric fields. Discrete
+selectors like `oscEngine`, `filterModel`, `filterMode`, `warpMode`,
+`reverbType`, `samplerMode`, `activeLayer`, and `numLayers` are not
+interpolable continuous parameters. Fractional states created UI/DSP
+disagreement and could land on different integer values depending on whether a
+path floored, cast, or rounded.
 
 **Representative files:**
 
 - `src/modules/Fermenter/useCases/presetMorph/bilinearPatch.ts:12`
 - `src/modules/Fermenter/presentations/views/TransformPad.tsx`
 
-**Needed:** Split param metadata into continuous vs discrete. Interpolate only
-continuous params. For discrete params, choose nearest corner, crossfade between
-rendered audio, or define an explicit morph strategy per selector.
+**Resolution:** Fermenter morphing now has a local discrete-key set.
+Continuous numeric values still interpolate, while discrete selectors choose
+the nearest source patch value. Regression tests assert `lerpPatch` and
+`bilinearPatch` keep selector values integer and corner-derived.
 
 ### 6. MIDI event offsets are ignored
 
@@ -381,6 +384,9 @@ engine with sample/block timing. Document which path is for UI vs playback.
   `note_off()` releases active layers, and `activeLayer` is retained as the edit
   target. Rust regressions cover two-layer triggering, mute/solo filtering, and
   stacked note release.
+- **TransformPad discrete selectors:** `lerpPatch` and `bilinearPatch` now keep
+  selector values on nearest source patch values instead of interpolating them
+  into fractional states.
 - **Playable layer stack:** `note_on()` now triggers all active playable layers,
   `note_off()` releases active layers, and `activeLayer` is retained as the edit
   target. Rust regressions cover two-layer triggering, mute/solo filtering, and
