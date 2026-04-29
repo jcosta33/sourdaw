@@ -101,10 +101,11 @@ non-silent note rendering.
    through the same patch path and get truncated/rounded later depending on the
    consumer. The UI may show one state while DSP uses another.
 
-6. **Sample-accurate MIDI offsets are ignored.** `MidiEvent` carries `offset`,
-   but `process_block` handles all note on/off events before rendering the
-   block. A note at sample 127 starts at sample 0. That is audible for tight
-   sequenced synth lines and violates the spec's block-processing contract.
+6. **MIDI note-on offsets are honored inside the DSP block.** `process_block`
+   now renders sub-blocks between MIDI event offsets, so a note at sample 64
+   leaves samples before 64 silent and starts rendering at the requested
+   offset. Broader note-off and dense-event timing still need musical
+   regressions.
 
 7. **Spectral warp is explicitly time-domain but marketed as spectral.**
    `spectral.rs` says it is "Inspired by Vital's spectral morph system" but
@@ -132,8 +133,8 @@ non-silent note rendering.
 
 ## Priorities
 
-1. Expand Fermenter-specific Rust DSP tests for engine selection, MIDI offsets,
-   layer triggering, and per-engine audible behavior.
+1. Expand Fermenter-specific Rust DSP tests for engine selection, layer
+   triggering, and per-engine audible behavior.
 2. Decide and implement the actual layer note-triggering model.
 3. Expand macro handling from default mappings into a real assignable macro matrix.
 4. Rename/retune "Spectral warp" claims or implement true spectral-domain
@@ -244,17 +245,21 @@ rendered audio, or define an explicit morph strategy per selector.
 
 ### 6. MIDI event offsets are ignored
 
-**Problem:** `MidiEvent.offset` exists but is unused. `process_block` processes
-every event before rendering, so all events happen at the start of the block.
+**Status:** Resolved for note-on offsets by `b2b91fead`.
+
+**Previous problem:** `MidiEvent.offset` existed but was unused.
+`process_block` processed every event before rendering, so all events happened
+at the start of the block.
 
 **Representative files:**
 
 - `crates/daw-dsp/src/fermenter/synth.rs:11`
 - `crates/daw-dsp/src/fermenter/synth.rs:375`
 
-**Needed:** Sort/group events by offset and render sub-blocks between event
-boundaries, or apply note starts/stops inside the sample loop. Add a Rust test
-where a note-on at offset 64 leaves samples before 64 silent.
+**Resolution:** `process_block` renders layer sub-blocks up to each event
+offset, applies the event, then continues rendering. A Rust regression asserts
+that note-on at offset 64 leaves samples before 64 silent and produces output
+after the offset.
 
 ### 7. "Spectral warp" is not spectral-domain synthesis
 
@@ -282,8 +287,8 @@ spectral assertions, not just waveform snapshots.
 **Problem:** `cargo test -p daw-dsp fermenter::` now runs four tests, covering
 mapped layer parameter IDs, mapped master/global IDs, and one finite
 non-silent note render. The TS tests still mostly verify component rendering
-and use-case paths. There are still no Rust tests for every engine, MIDI
-offsets, layer note routing, unison spread, macro-derived sonic behavior, or
+and use-case paths. There are still no Rust tests for every engine, layer note
+routing, unison spread, note-off timing, macro-derived sonic behavior, or
 per-effect output differences.
 
 **Representative files:**
@@ -295,7 +300,7 @@ per-effect output differences.
 
 - each engine produces finite, non-silent output for a note
 - layer note routing
-- MIDI offsets
+- note-off and dense MIDI timing
 - unison stereo spread
 - macro mapping once implemented
 - sample/granular/additive parameters having audible effect
@@ -342,7 +347,8 @@ engine with sample/block timing. Document which path is for UI vs playback.
 - **Performance-control risk:** Macros and XY controls now have default audio
   mappings, but users cannot assign targets, depth, or curves like a flagship
   synth macro system.
-- **Timing risk:** Ignored MIDI offsets make tight synth sequencing less precise.
+- **Timing risk:** Basic note-on offsets are now honored, but complex note-off
+  and dense-event musical timing still need broader regressions.
 - **Regression risk:** Starter Rust DSP tests now exist, but most synth engines
   and timing behaviors can still regress while all TS tests stay green.
 
@@ -374,3 +380,6 @@ engine with sample/block timing. Document which path is for UI vs playback.
   four Fermenter-targeted tests covering mapped layer params, mapped global
   params, and a finite non-silent note render. Remaining DSP coverage is tracked
   in Open Issue 8.
+- **MIDI note-on offsets:** `process_block` now renders sub-blocks between MIDI
+  event offsets and has a regression proving a note-on at sample 64 does not
+  sound at sample 0.
