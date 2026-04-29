@@ -544,13 +544,22 @@ impl MasterSynth {
     }
 
     pub fn note_on(&mut self, note: u8, velocity: u8) {
-        // Send note to the active layer
-        self.layers[self.active_layer].note_on(note, velocity);
+        let any_solo = self.layers[..self.num_active_layers].iter().any(|l| l.solo);
+        for layer in &mut self.layers[..self.num_active_layers] {
+            if layer.muted {
+                continue;
+            }
+            if any_solo && !layer.solo {
+                continue;
+            }
+            layer.note_on(note, velocity);
+        }
     }
 
     pub fn note_off(&mut self, note: u8) {
-        // Release on the active layer
-        self.layers[self.active_layer].note_off(note);
+        for layer in &mut self.layers[..self.num_active_layers] {
+            layer.note_off(note);
+        }
     }
 
     pub fn active_voice_count(&self) -> usize {
@@ -609,6 +618,51 @@ mod tests {
 
         assert_eq!(block_energy(&left[..64], &right[..64]), 0.0);
         assert!(block_energy(&left[64..], &right[64..]) > 0.001);
+    }
+
+    #[test]
+    fn note_on_triggers_all_playable_active_layers() {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+
+        synth.set_param("num_layers", 2.0);
+        synth.set_param("active_layer", 0.0);
+        synth.note_on(60, 100);
+
+        assert_eq!(synth.active_voice_count(), 2);
+    }
+
+    #[test]
+    fn note_on_skips_muted_layers_and_honors_solo() {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+
+        synth.set_param("num_layers", 3.0);
+        synth.set_param("active_layer", 1.0);
+        synth.set_param("layer_mute", 1.0);
+        synth.set_param("active_layer", 2.0);
+        synth.set_param("layer_solo", 1.0);
+        synth.set_param("active_layer", 0.0);
+        synth.note_on(60, 100);
+
+        assert_eq!(synth.active_voice_count(), 1);
+    }
+
+    #[test]
+    fn note_off_releases_all_playable_layers_for_note() {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        let mut left = [0.0; 128];
+        let mut right = [0.0; 128];
+
+        synth.set_param("num_layers", 2.0);
+        synth.set_param("amp_release", 0.001);
+        synth.note_on(60, 100);
+        assert_eq!(synth.active_voice_count(), 2);
+
+        synth.note_off(60);
+        for _ in 0..4 {
+            synth.process_block(&mut left, &mut right, &[]);
+        }
+
+        assert_eq!(synth.active_voice_count(), 0);
     }
 
     #[test]
