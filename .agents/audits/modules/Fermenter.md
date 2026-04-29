@@ -81,11 +81,11 @@ non-silent note rendering.
    A metadata regression test now asserts that the generic parameter range
    stays aligned with the engine list.
 
-3. **Layering is not real layering for notes.** `MasterSynth::note_on` sends MIDI
-   only to `active_layer`; active layers are rendered only if they already have
-   active voices. Setting `num_layers > 1` does not make a note trigger every
-   layer, so the layer stack is mostly an edit target and mixer for stale voice
-   state, not an Omnisphere/Phase Plant/Pigments-style stack.
+3. **Layering now behaves as a playable active stack.** `activeLayer` remains
+   the edit target for per-layer parameter changes, while `note_on()` triggers
+   every active layer that is playable under mute/solo rules and `note_off()`
+   releases the note across active layers. Rust regressions cover two-layer
+   triggering, mute/solo filtering, and stacked note release.
 
 4. **Macros now have default performance mappings, but no assignable macro matrix.**
    `setMacro` maps the eight macro labels to concrete patch parameters and
@@ -115,10 +115,10 @@ non-silent note rendering.
    overstates the engine.
 
 8. **Rust Fermenter has only initial targeted regression tests.** The command
-   `cargo test -p daw-dsp fermenter::` now runs four tests for mapped params
-   and basic note rendering. This is no longer zero coverage, but it is still
-   far below the release gate requiring integration tests for every part /
-   section.
+   `cargo test -p daw-dsp fermenter::` now runs eight tests for mapped params,
+   basic note rendering, note-on offsets, and layer triggering. This is no
+   longer zero coverage, but it is still far below the release gate requiring
+   integration tests for every part / section.
 
 9. **Several DSP internals expose dead or incomplete implementation clues.**
    Rust warnings identify `FdnReverb.sample_rate`, `Granular::Grain.position`,
@@ -133,13 +133,12 @@ non-silent note rendering.
 
 ## Priorities
 
-1. Expand Fermenter-specific Rust DSP tests for engine selection, layer
-   triggering, and per-engine audible behavior.
-2. Decide and implement the actual layer note-triggering model.
-3. Expand macro handling from default mappings into a real assignable macro matrix.
-4. Rename/retune "Spectral warp" claims or implement true spectral-domain
+1. Expand Fermenter-specific Rust DSP tests for engine selection and per-engine
+   audible behavior.
+2. Expand macro handling from default mappings into a real assignable macro matrix.
+3. Rename/retune "Spectral warp" claims or implement true spectral-domain
    modes from the existing research.
-5. Harden transform-pad interpolation for discrete parameters.
+4. Harden transform-pad interpolation for discrete parameters.
 
 ## Open Issues
 
@@ -186,9 +185,11 @@ mapped parameter flows could clamp or render only two engine choices.
 
 ### 3. Multiple active layers do not receive note-on events
 
-**Problem:** `num_layers` controls how many layers are rendered, but
-`note_on()` only triggers the active layer. A patch with four active layers
-does not play four layers unless those other layers already have active voices
+**Status:** Resolved by `57ac2cceb`.
+
+**Previous problem:** `num_layers` controlled how many layers were rendered,
+but `note_on()` only triggered the active layer. A patch with four active layers
+did not play four layers unless those other layers already had active voices
 from earlier active-layer edits.
 
 **Representative files:**
@@ -197,14 +198,12 @@ from earlier active-layer edits.
 - `crates/daw-dsp/src/fermenter/synth.rs:387`
 - `src/modules/Fermenter/presentations/components/LayerStack.tsx`
 
-**Needed:** Decide the product semantics:
-
-- "Active layer only" means rename the UI to an editor target and remove
-  multi-layer performance implications.
-- "Layer stack" means route note events to all unmuted active layers and make
-  per-layer engine/patch state real.
-
-Add a Rust test for a two-layer patch producing output from both layers.
+**Resolution:** Product semantics are now "Layer stack means playable stack."
+`activeLayer` is the edit target. `num_layers` selects playable layers.
+`note_on()` triggers all active layers that are not muted and satisfy solo
+rules. `note_off()` releases the note across active layers. Rust tests assert
+two-layer triggering, muted/solo filtering, and note release across stacked
+voices.
 
 ### 4. Macro rig and XY pad use fixed mappings only
 
@@ -284,12 +283,12 @@ spectral assertions, not just waveform snapshots.
 
 **Status:** Partially resolved by `474e514cc`.
 
-**Problem:** `cargo test -p daw-dsp fermenter::` now runs four tests, covering
-mapped layer parameter IDs, mapped master/global IDs, and one finite
-non-silent note render. The TS tests still mostly verify component rendering
-and use-case paths. There are still no Rust tests for every engine, layer note
-routing, unison spread, note-off timing, macro-derived sonic behavior, or
-per-effect output differences.
+**Problem:** `cargo test -p daw-dsp fermenter::` now runs eight tests, covering
+mapped layer parameter IDs, mapped master/global IDs, finite non-silent note
+rendering, note-on offsets, and layer-stack triggering. The TS tests still
+mostly verify component rendering and use-case paths. There are still no Rust
+tests for every engine, unison spread, dense MIDI timing, macro-derived sonic
+behavior, or per-effect output differences.
 
 **Representative files:**
 
@@ -299,8 +298,7 @@ per-effect output differences.
 **Needed:** Add Rust tests for:
 
 - each engine produces finite, non-silent output for a note
-- layer note routing
-- note-off and dense MIDI timing
+- dense MIDI timing
 - unison stereo spread
 - macro mapping once implemented
 - sample/granular/additive parameters having audible effect
@@ -356,11 +354,10 @@ engine with sample/block timing. Document which path is for UI vs playback.
 
 1. **Add DSP regression tests before sonic retuning.** Use simple note renders
    and energy/spectral assertions. Do not tune by UI snapshots.
-2. **Resolve layer semantics before adding more UI.** A flagship synth can have
-   active edit layers or playable layer stacks, but the UI must not imply one
-   while DSP implements the other.
-3. **Expand macros after the fixed-mapping slice.** Default mappings now exist;
+2. **Expand macros after the fixed-mapping slice.** Default mappings now exist;
    the next step is a patch-owned macro matrix with target depth and curves.
+3. **Harden transform-pad morphing.** Discrete selectors should use explicit
+   morph strategies instead of linear interpolation.
 4. **Treat true spectral morphing as a separate spec.** The current time-domain
    warp can stay useful, but Vital/Zebra/Pigments-style claims need an actual
    spectral/harmonic implementation and tests.
@@ -377,9 +374,17 @@ engine with sample/block timing. Document which path is for UI vs playback.
   persisted patches in the TS patch shape, and tests every public
   `FERMENTER_PARAMS` ID against the declared DSP contract.
 - **Initial Rust DSP regressions:** `cargo test -p daw-dsp fermenter::` now runs
-  four Fermenter-targeted tests covering mapped layer params, mapped global
-  params, and a finite non-silent note render. Remaining DSP coverage is tracked
-  in Open Issue 8.
+  eight Fermenter-targeted tests covering mapped layer params, mapped global
+  params, finite non-silent note rendering, note-on offsets, and playable layer
+  stack behavior. Remaining DSP coverage is tracked in Open Issue 8.
+- **Playable layer stack:** `note_on()` now triggers all active playable layers,
+  `note_off()` releases active layers, and `activeLayer` is retained as the edit
+  target. Rust regressions cover two-layer triggering, mute/solo filtering, and
+  stacked note release.
+- **Playable layer stack:** `note_on()` now triggers all active playable layers,
+  `note_off()` releases active layers, and `activeLayer` is retained as the edit
+  target. Rust regressions cover two-layer triggering, mute/solo filtering, and
+  stacked note release.
 - **MIDI note-on offsets:** `process_block` now renders sub-blocks between MIDI
   event offsets and has a regression proving a note-on at sample 64 does not
   sound at sample 0.
