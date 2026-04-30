@@ -645,6 +645,34 @@ mod tests {
     }
 
     #[test]
+    fn multiple_note_events_in_one_block_honor_their_offsets() {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        let mut left = [0.0; 128];
+        let mut right = [0.0; 128];
+        let events = [
+            MidiEvent {
+                kind: 1,
+                note: 60,
+                velocity: 100,
+                offset: 32,
+            },
+            MidiEvent {
+                kind: 1,
+                note: 67,
+                velocity: 100,
+                offset: 96,
+            },
+        ];
+
+        synth.process_block(&mut left, &mut right, &events);
+
+        assert_eq!(block_energy(&left[..32], &right[..32]), 0.0);
+        assert!(block_energy(&left[32..96], &right[32..96]) > 0.001);
+        assert!(block_energy(&left[96..], &right[96..]) > 0.001);
+        assert_eq!(synth.active_voice_count(), 2);
+    }
+
+    #[test]
     fn every_advertised_engine_renders_finite_non_silent_audio() {
         for engine in 0..=6 {
             let (left, right) = render_note_for_engine(engine);

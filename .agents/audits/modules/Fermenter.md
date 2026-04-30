@@ -62,9 +62,10 @@ objects and renders one selected engine per active voice.
 
 Tests exist heavily on the TS presentation/use-case side. Rust now has a small
 Fermenter-specific regression base: `cargo test -p daw-dsp fermenter::` runs
-ten tests covering mapped layer params, mapped global params, finite non-silent
+eleven tests covering mapped layer params, mapped global params, finite non-silent
 note rendering, MIDI note-on offsets, playable layer-stack behavior, all
-advertised engines producing output, and unison stereo spread.
+advertised engines producing output, unison stereo spread, and multiple
+same-block note events at different offsets.
 
 ## Findings
 
@@ -116,11 +117,11 @@ advertised engines producing output, and unison stereo spread.
    disperse, and spectral-time skew.
 
 8. **Rust Fermenter has only initial targeted regression tests.** The command
-   `cargo test -p daw-dsp fermenter::` now runs ten tests for mapped params,
+   `cargo test -p daw-dsp fermenter::` now runs eleven tests for mapped params,
    basic note rendering, note-on offsets, layer triggering, all advertised
-   engines producing output, and unison stereo spread. This is no longer zero
-   coverage, but it is still far below the release gate requiring integration
-   tests for every part / section.
+   engines producing output, unison stereo spread, and multiple same-block
+   note-on offsets. This is no longer zero coverage, but it is still far below
+   the release gate requiring integration tests for every part / section.
 
 9. **Several DSP internals expose dead or incomplete implementation clues.**
    Rust warnings identify `FdnReverb.sample_rate`, `Granular::Grain.position`,
@@ -135,8 +136,8 @@ advertised engines producing output, and unison stereo spread.
 
 ## Priorities
 
-1. Expand Fermenter-specific Rust DSP tests for dense MIDI timing and
-   parameter-derived audible behavior.
+1. Expand Fermenter-specific Rust DSP tests for parameter-derived audible
+   behavior.
 2. Expand macro handling from default mappings into a real assignable macro matrix.
 3. Specify and implement true spectral-domain morph modes from the existing
    research.
@@ -291,13 +292,14 @@ snapshots. The current time-domain warp can remain as its own feature.
 **Status:** Partially resolved by `474e514cc`; narrowed again by the engine and
 unison DSP regression checkpoint.
 
-**Problem:** `cargo test -p daw-dsp fermenter::` now runs ten tests, covering
+**Problem:** `cargo test -p daw-dsp fermenter::` now runs eleven tests, covering
 mapped layer parameter IDs, mapped master/global IDs, finite non-silent note
 rendering, note-on offsets, layer-stack triggering, all advertised engines
-producing output, and unison stereo spread. The TS tests still mostly verify
-component rendering and use-case paths. There are still no Rust tests for dense
-MIDI timing, macro-derived sonic behavior, per-effect output differences, or
-engine-specific parameter changes having audible effect.
+producing output, unison stereo spread, and multiple same-block note events at
+different offsets. The TS tests still mostly verify component rendering and
+use-case paths. There are still no Rust tests for macro-derived sonic behavior,
+per-effect output differences, or engine-specific parameter changes having
+audible effect.
 
 **Representative files:**
 
@@ -306,7 +308,6 @@ engine-specific parameter changes having audible effect.
 
 **Needed:** Add Rust tests for:
 
-- dense MIDI timing
 - macro mapping once implemented
 - sample/granular/additive parameters having audible effect
 
@@ -352,8 +353,8 @@ engine with sample/block timing. Document which path is for UI vs playback.
 - **Performance-control risk:** Macros and XY controls now have default audio
   mappings, but users cannot assign targets, depth, or curves like a flagship
   synth macro system.
-- **Timing risk:** Basic note-on offsets are now honored, but complex note-off
-  and dense-event musical timing still need broader regressions.
+- **Timing risk:** Basic and dense note-on offsets are now honored, but complex
+  note-off musical timing still needs broader regressions.
 - **Regression risk:** Starter Rust DSP tests now exist, but engine-specific
   parameter behavior and complex timing can still regress while all TS tests
   stay green.
@@ -380,10 +381,14 @@ engine with sample/block timing. Document which path is for UI vs playback.
   persisted patches in the TS patch shape, and tests every public
   `FERMENTER_PARAMS` ID against the declared DSP contract.
 - **Initial Rust DSP regressions:** `cargo test -p daw-dsp fermenter::` now runs
-  ten Fermenter-targeted tests covering mapped layer params, mapped global
+  eleven Fermenter-targeted tests covering mapped layer params, mapped global
   params, finite non-silent note rendering, note-on offsets, playable layer
   stack behavior, all advertised engines producing output, and unison stereo
   spread. Remaining DSP coverage is tracked in Open Issue 8.
+- **Dense same-block MIDI note-on timing:** A Rust regression now sends two
+  note-on events in one block at different offsets and asserts silence before
+  the first offset, output in both post-event regions, and two active voices by
+  block end.
 - **Playable layer stack:** `note_on()` now triggers all active playable layers,
   `note_off()` releases active layers, and `activeLayer` is retained as the edit
   target. Rust regressions cover two-layer triggering, mute/solo filtering, and
