@@ -107,12 +107,12 @@ non-silent note rendering.
    offset. Broader note-off and dense-event timing still need musical
    regressions.
 
-7. **Spectral warp is explicitly time-domain but marketed as spectral.**
-   `spectral.rs` says it is "Inspired by Vital's spectral morph system" but
-   implements sync, quantize, squeeze, bend, formant, and fold as time-domain
-   or simple waveshaping operations. The existing research already calls out
-   missing true spectral modes. The current UI name "Spectral warp" therefore
-   overstates the engine.
+7. **Warp is now labeled as time-domain, while true spectral morphing remains missing.**
+   The UI-facing label and implementation comments now describe the current
+   Sync/Quantize/Squeeze/Bend/Formant/Fold modes as time-domain warp
+   processing. The existing research still calls out missing true spectral
+   modes such as vocoding, harmonic stretch, smear, spectral filtering, phase
+   disperse, and spectral-time skew.
 
 8. **Rust Fermenter has only initial targeted regression tests.** The command
    `cargo test -p daw-dsp fermenter::` now runs eight tests for mapped params,
@@ -136,8 +136,8 @@ non-silent note rendering.
 1. Expand Fermenter-specific Rust DSP tests for engine selection and per-engine
    audible behavior.
 2. Expand macro handling from default mappings into a real assignable macro matrix.
-3. Rename/retune "Spectral warp" claims or implement true spectral-domain
-   modes from the existing research.
+3. Specify and implement true spectral-domain morph modes from the existing
+   research.
 
 ## Open Issues
 
@@ -265,11 +265,14 @@ after the offset.
 
 ### 7. "Spectral warp" is not spectral-domain synthesis
 
+**Status:** UI/product overclaim resolved by `037b7b45c`; true spectral-domain
+morphing remains future work.
+
 **Problem:** Current warp modes are time-domain transformations. This can sound
-useful, but the label and research/spec compare Fermenter to Vital-style
-spectral morphing, which includes harmonic-domain operations such as vocoding,
-harmonic stretch, smear, spectral filtering, phase disperse, and spectral-time
-skew.
+useful, and the UI now labels them honestly as "Time-Domain Warp". Fermenter
+still does not implement Vital-style spectral morphing, which includes
+harmonic-domain operations such as vocoding, harmonic stretch, smear, spectral
+filtering, phase disperse, and spectral-time skew.
 
 **Representative files:**
 
@@ -277,10 +280,9 @@ skew.
 - `.agents/research/factory/fermenter.md:1`
 - `.agents/specs/implemented/fermenter.md:1`
 
-**Needed:** Either rename the current feature to "Warp" / "Waveshaping warp"
-and mark true spectral modes as missing, or implement an actual harmonic /
-wavetable-frame spectral path. The latter should be spec-driven and tested with
-spectral assertions, not just waveform snapshots.
+**Needed:** Treat actual harmonic / wavetable-frame spectral morphing as a
+separate spec-driven implementation with spectral assertions, not waveform
+snapshots. The current time-domain warp can remain as its own feature.
 
 ### 8. DSP has only starter Fermenter-targeted tests
 
@@ -359,9 +361,7 @@ engine with sample/block timing. Document which path is for UI vs playback.
    and energy/spectral assertions. Do not tune by UI snapshots.
 2. **Expand macros after the fixed-mapping slice.** Default mappings now exist;
    the next step is a patch-owned macro matrix with target depth and curves.
-3. **Harden transform-pad morphing.** Discrete selectors should use explicit
-   morph strategies instead of linear interpolation.
-4. **Treat true spectral morphing as a separate spec.** The current time-domain
+3. **Treat true spectral morphing as a separate spec.** The current time-domain
    warp can stay useful, but Vital/Zebra/Pigments-style claims need an actual
    spectral/harmonic implementation and tests.
 
@@ -387,10 +387,9 @@ engine with sample/block timing. Document which path is for UI vs playback.
 - **TransformPad discrete selectors:** `lerpPatch` and `bilinearPatch` now keep
   selector values on nearest source patch values instead of interpolating them
   into fractional states.
-- **Playable layer stack:** `note_on()` now triggers all active playable layers,
-  `note_off()` releases active layers, and `activeLayer` is retained as the edit
-  target. Rust regressions cover two-layer triggering, mute/solo filtering, and
-  stacked note release.
 - **MIDI note-on offsets:** `process_block` now renders sub-blocks between MIDI
   event offsets and has a regression proving a note-on at sample 64 does not
   sound at sample 0.
+- **Warp overclaim:** Fermenter's UI and implementation comments now label the
+  current warp modes as time-domain processing. True spectral-domain morphing
+  remains future spec-driven work.

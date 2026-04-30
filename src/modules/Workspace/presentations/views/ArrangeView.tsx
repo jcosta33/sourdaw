@@ -19,6 +19,11 @@ import {
     BeatRulerBar,
     TimelineChromeSurface,
     TrackListView,
+    ARRANGEMENT_BAR_HEIGHT,
+    BEAT_RULER_HEIGHT,
+    MARKER_LANE_HEIGHT,
+    MINIMAP_HEIGHT,
+    getAdjustmentLayerStripHeight,
 } from '#/modules/Arrangement/presentations/views';
 import { adjustmentLayerStore, timelineViewStore, setScrollX, markerStore } from '#/modules/Arrangement/stores';
 import { addTrack, addClip, importMidiFile } from '#/modules/Arrangement/useCases';
@@ -37,7 +42,7 @@ import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
 import { ArrangeEmptyStateShell } from './ArrangeEmptyStateShell';
 import { SessionView } from './SessionView';
-import { ChordTrackLane } from './Timeline/ChordTrackLane';
+import { ChordTrackLane, CHORD_TRACK_LANE_HEIGHT } from './Timeline/ChordTrackLane';
 import { ScratchPadView } from './Timeline/ScratchPadView';
 
 const TRACK_LIST_MIN = 120;
@@ -161,7 +166,12 @@ export const ArrangeView = (): ReactElement => {
                     <TrackListView
                         style={{ width: localTrackListWidth }}
                         extraHeaderHeight={
-                            22 + (hasMarkers ? 20 : 0) + 28 + 22 + (hasChords ? 26 : 0) + 20 + adjustmentLayerCount * 20
+                            ARRANGEMENT_BAR_HEIGHT +
+                            getAdjustmentLayerStripHeight(adjustmentLayerCount) +
+                            (hasMarkers ? MARKER_LANE_HEIGHT : 0) +
+                            MINIMAP_HEIGHT +
+                            BEAT_RULER_HEIGHT +
+                            (hasChords ? CHORD_TRACK_LANE_HEIGHT : 0)
                         }
                     />
                     <ResizeHandle
