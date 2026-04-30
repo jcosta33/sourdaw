@@ -49,14 +49,14 @@ collection of partially connected controls:
 
 Fermenter is structurally broad. The TypeScript patch model exposes seven
 engines (`Wavetable`, `Analog`, `FM`, `String`, `Granular`, `Additive`,
-`Sampler`), unison, spectral warp, audio-rate modulation, envelopes, LFO,
+`Sampler`), unison, time-domain warp, audio-rate modulation, envelopes, LFO,
 MSEG, step sequencer, global FX, chaos, macros, and four layers. The UI has
 sections for oscillator, filter, envelopes, modulation, FX, layer stack,
 signal flow, scopes, meters, preset browser, macros, and a transform pad.
 
 The Rust DSP side has modules for additive, chaos, effects, envelopes,
 filters, FM, granular, layer, LFO, modulation, MSEG, noise, oscillator,
-physical modeling, sampler, spectral warp, step sequencing, synth, and voice.
+physical modeling, sampler, time-domain warp, step sequencing, synth, and voice.
 `MasterSynth` owns four `Layer`s and global FX. `Voice` owns multiple engine
 objects and renders one selected engine per active voice.
 
@@ -263,7 +263,7 @@ offset, applies the event, then continues rendering. A Rust regression asserts
 that note-on at offset 64 leaves samples before 64 silent and produces output
 after the offset.
 
-### 7. "Spectral warp" is not spectral-domain synthesis
+### 7. Current warp is time-domain, not spectral-domain synthesis
 
 **Status:** UI/product overclaim resolved by `037b7b45c`; true spectral-domain
 morphing remains future work.
