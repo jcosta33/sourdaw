@@ -28,7 +28,7 @@ export type FermenterPatch = {
     // Analog drift
     oscDrift: number; // 0–1 (analog pitch instability amount)
 
-    // Spectral warp
+    // Time-domain warp
     warpMode: number; // 0=none, 1=sync, 2=quantize, 3=squeeze, 4=bend, 5=formant, 6=fold
     warpAmount: number; // 0–1
 
@@ -352,7 +352,7 @@ export const FERMENTER_PARAMS: readonly FermenterParamDef[] = [
     // Drift
     { id: 'oscDrift', label: 'Drift', min: 0, max: 1, default: 0, unit: '', group: 'osc' },
 
-    // Spectral Warp
+    // Time-Domain Warp
     { id: 'warpMode', label: 'Warp Mode', min: 0, max: 6, default: 0, unit: '', step: 1, group: 'warp' },
     { id: 'warpAmount', label: 'Warp Amount', min: 0, max: 1, default: 0, unit: '', group: 'warp' },
 
@@ -628,7 +628,7 @@ export const LFO_SHAPE_NAMES = ['Sine', 'Triangle', 'Saw', 'Square'] as const;
 /** Noise color names */
 export const NOISE_COLOR_NAMES = ['White', 'Pink', 'Brown'] as const;
 
-/** Spectral warp mode names */
+/** Time-domain warp mode names */
 export const WARP_MODE_NAMES = ['Off', 'Sync', 'Quantize', 'Squeeze', 'Bend', 'Formant', 'Fold'] as const;
 
 /** Audio-rate modulation target names */

@@ -18,5 +18,6 @@ describe('WarpSection', () => {
             />
         );
         expect(screen.getByText('Warp / Mod')).toBeInTheDocument();
+        expect(screen.getByText('Time-Domain Warp')).toBeInTheDocument();
     });
 });

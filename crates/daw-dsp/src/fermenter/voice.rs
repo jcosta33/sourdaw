@@ -428,7 +428,7 @@ impl Voice {
         let has_seq_pitch = p.seq_to_pitch.abs() > 0.001;
         let base_cutoff_kt = p.base_cutoff * keytrack_ratio;
 
-        // Spectral warp setup (per-block)
+        // Time-domain warp setup (per-block)
         self.spectral_warp.set_mode(p.warp_mode);
         self.spectral_warp.set_amount(p.warp_amount);
         let has_warp = p.warp_mode > 0 && p.warp_amount > 0.001;
@@ -573,7 +573,7 @@ impl Voice {
                 (s, s)
             };
 
-            // Spectral warp — apply to oscillator output using current phase
+            // Time-domain warp — apply to oscillator output using current phase
             if has_warp {
                 let phase = match self.engine {
                     1 => self.polyblep_osc.phase(),

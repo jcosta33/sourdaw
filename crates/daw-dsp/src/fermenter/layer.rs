@@ -83,7 +83,7 @@ pub struct Layer {
     // Per-voice drive
     pub voice_drive: f32,
 
-    // Spectral warp
+    // Time-domain warp
     pub warp_mode: u8,
     pub warp_amount: f32,
 
