@@ -581,6 +581,30 @@ mod tests {
             .sum::<f32>()
     }
 
+    fn stereo_difference_energy(left: &[f32], right: &[f32]) -> f32 {
+        left.iter()
+            .zip(right.iter())
+            .map(|(left_sample, right_sample)| (left_sample - right_sample).abs())
+            .sum::<f32>()
+    }
+
+    fn render_note_for_engine(engine: u8) -> ([f32; 256], [f32; 256]) {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        let mut left = [0.0; 256];
+        let mut right = [0.0; 256];
+        let events = [MidiEvent {
+            kind: 1,
+            note: 60,
+            velocity: 100,
+            offset: 0,
+        }];
+
+        synth.set_param("engine", engine as f32);
+        synth.process_block(&mut left, &mut right, &events);
+
+        (left, right)
+    }
+
     #[test]
     fn note_event_renders_finite_non_silent_audio() {
         let mut synth = MasterSynth::new(48_000.0, 8);
@@ -618,6 +642,45 @@ mod tests {
 
         assert_eq!(block_energy(&left[..64], &right[..64]), 0.0);
         assert!(block_energy(&left[64..], &right[64..]) > 0.001);
+    }
+
+    #[test]
+    fn every_advertised_engine_renders_finite_non_silent_audio() {
+        for engine in 0..=6 {
+            let (left, right) = render_note_for_engine(engine);
+
+            assert!(
+                left.iter()
+                    .chain(right.iter())
+                    .all(|sample| sample.is_finite()),
+                "engine {engine} rendered a non-finite sample"
+            );
+            assert!(
+                block_energy(&left, &right) > 0.001,
+                "engine {engine} rendered silence"
+            );
+        }
+    }
+
+    #[test]
+    fn unison_spread_renders_stereo_difference() {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        let mut left = [0.0; 256];
+        let mut right = [0.0; 256];
+        let events = [MidiEvent {
+            kind: 1,
+            note: 60,
+            velocity: 100,
+            offset: 0,
+        }];
+
+        synth.set_param("unison_voices", 4.0);
+        synth.set_param("unison_detune", 12.0);
+        synth.set_param("unison_spread", 1.0);
+        synth.process_block(&mut left, &mut right, &events);
+
+        assert!(block_energy(&left, &right) > 0.001);
+        assert!(stereo_difference_energy(&left, &right) > 0.001);
     }
 
     #[test]
