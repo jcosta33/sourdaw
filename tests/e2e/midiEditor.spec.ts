@@ -52,5 +52,25 @@ test.describe('MIDI Editor & Piano Roll', () => {
         // Check for the Piano Roll toolbar
         const toolBarItem = page.getByRole('button', { name: /Chord/i });
         await expect(toolBarItem).toBeVisible();
+
+        // Ensure piano roll canvas bounds are ready
+        await page.waitForTimeout(500);
+
+        // Double click inside the piano roll to create a note
+        // The piano roll canvas is typically quite large
+        await pianoRoll.dblclick({ position: { x: 100, y: 100 } });
+
+        // Wait for the note to be registered in the CRDT
+        await page.waitForTimeout(500);
+
+        // Open the undo history panel
+        const toggleHistoryButton = page.getByRole('button', { name: /Toggle undo history panel/i });
+        await toggleHistoryButton.click();
+
+        // Look for the note creation action in the history list (it should say 'Add note' or similar)
+        // Even if the exact string varies, we know a new entry was pushed if the Undo button is enabled.
+        const undoButton = page.getByRole('button', { name: 'Undo', exact: true });
+        await expect(undoButton).toBeVisible();
+        await expect(undoButton).not.toBeDisabled();
     });
 });
