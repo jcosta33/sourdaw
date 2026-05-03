@@ -1555,3 +1555,778 @@ The two tracks are independent.
 ## Resolved
 
 _No issues resolved yet._
+
+---
+
+## Adversarial review (2026-04-28)
+
+### Verification status of existing issues
+
+Each of the original 42 numbered issues was verified at its cited file:line.
+Results below; entries not listed verified as-stated.
+
+- **#1 No root `index.ts`** — VERIFIED. `find -maxdepth 1` returns nothing
+  for `src/modules/AiRuntime/`. Note the issue is **deeper** than stated:
+  `useCases/index.ts:25-26,33-39,53,61` re-export `type`s
+  (`MixAnalysisState`, `ModelInfo`, `MixAnalysis`, `MixIssue`,
+  `FuzzyResult`, `ProjectContext`, `ProjectContextClip`,
+  `ProjectContextDevice`, `ProjectContextTrack`,
+  `AiChangeNotification`, `AiActionToastMessages`) through the use-cases
+  barrel. AGENTS.md "Index exports — types should not be re-exported
+  through the use-cases path" is doubly broken: (a) no root barrel, and
+  (b) the surrogate barrels carry types they shouldn't. Severity:
+  **HIGH** (architectural drift compounding).
+
+- **#2 ~70% `'unchecked'`** — VERIFIED (`validateActionPayload.ts:158-401`).
+  The list is even worse than the audit notes:
+  `restoreDsoSnapshot: 'unchecked'` accepts an **arbitrary binary
+  Automerge bundle** from the LLM. Worse: `restoreDsoSnapshot` is the
+  inverse-action used for AI-generated DSO undo (`executeDsoEdit.ts:266`)
+  — so the trust assumption "LLM never emits this" is contradicted by the
+  fact that the **action pipeline emits it itself** with binary bundles
+  built from `transactSnapshot`. Combined with #14 (toolCall trust), an
+  LLM-emitted `restoreDsoSnapshot` with a malformed `bundle` reaches
+  the handler. Severity: **CRITICAL**.
+
+- **#3 DSO auto-create on remove-fail** — VERIFIED
+  (`compileDso.ts:339-368`). The exclusion list is literally
+  `['add_track']` — every other op auto-creates. Even more troubling:
+  `mockTracks.push({ id: newId, name: dso.track_id })` on line 365
+  populates a local in-memory map but the `add_track` DSO is **also
+  inserted into the real `dsos` array** at `:358`, so the real store
+  gets a new track too. This means: (a) `remove_track Bass` →
+  add_track + remove_track applied in sequence (net effect: zero
+  change, plus a UI flicker); (b) `mute_track Bass` → add_track +
+  mute_track on the new track (net effect: a muted Bass track exists).
+  Severity: **HIGH**.
+
+- **#4 mixHealthAnalysis `\\n` literals** — VERIFIED
+  (`mixHealthAnalysis.ts:21,35-37,42-43,47`). All single-quote-escaped
+  inside backtick template literals. Since the source code uses
+  `'\\n'` inside a template string, the JS runtime sees the
+  two-character sequence `\n` (backslash, n). Confirmed: every line
+  ends with literal backslash-n. The mix report is one long line. Add:
+  there is **no test** asserting the prompt structure (no
+  `expect(prompt).toContain('\n')`), which let this slip. Severity:
+  **HIGH**.
+
+- **#5 parseEditPlan trusts LLM JSON** — VERIFIED
+  (`executeDsoEdit.ts:217-218,229-231`). Confirmed: only checks
+  `kind === 'edit_plan'` and `Array.isArray(parsed.dsos)`. No
+  validation that array elements are objects, that `op` is present, or
+  that the wrapper carries `intent`/`moderation`. The cast to
+  `EditPlan` is a soundness escape. Severity: **HIGH**.
+
+- **#7 runAppAction casts away DI `any`** — VERIFIED
+  (`runAppAction.ts:7-10`). Confirmed cast `as Promise<void>`. The
+  comment "executeAppAction is typed as `any` via the inject() DI
+  pattern" is a documented confession that DI leaks `any` everywhere.
+  Severity: **MEDIUM** (the fix is upstream in `inject()`, this site
+  is the symptom).
+
+- **#8 mixHealthAnalysis cloud-only** — VERIFIED
+  (`mixHealthAnalysis.ts:64`). Calls `streamCloudChatCompletion`
+  directly. Severity: **MEDIUM** (functionality gap, not safety).
+
+- **#12 activeAborter race** — VERIFIED (`chatStore.ts:5,109-121`).
+  Confirmed `let activeAborter: AbortController | null = null;` at
+  module scope. The `setActiveAborter` exported helper accepts the
+  controller from anywhere. Two concurrent flows
+  (`sendChatMessage.ts:78,170,196,304` — prompt mode and chat mode)
+  both call `setActiveAborter(aborter)` then `setActiveAborter(null)`
+  in `finally`. If a chat send overlaps a prompt send, the second
+  `setActiveAborter(aborter)` overwrites the first, and the first
+  `finally` clobbers the second's aborter to `null` while it's still
+  needed. Severity: **HIGH** — the cancel button can abort the wrong
+  stream, or no stream at all.
+
+- **#13 validateActions discards type guard** — VERIFIED
+  (`validateActions.ts:266`). Confirmed `validator as (p: unknown) =>
+  boolean`. The narrowing to `payload is PayloadOf<ActionType>` is
+  thrown away. Combined with #2, this means: for the few action types
+  that **do** have validators, the type narrowing is still discarded,
+  so the handler receives `payload: unknown` from a structural
+  perspective and re-validates (or doesn't). Severity: **MEDIUM**.
+
+- **#15 `memo` import in ChatPanel** — VERIFIED (`ChatPanel.tsx:9,74`).
+  The audit understates the violation: line 74 is
+  `const ChatMessageItem = memo(({ msg }: { msg: any }): ReactElement => {`
+  — that is **`msg: any`**, an outright AGENTS.md "no `any`" violation,
+  far worse than `memo`. Severity: **HIGH** (was MEDIUM in audit; the
+  `any` is the bigger problem).
+
+- **#16 bizarre callback names** — VERIFIED. Confirmed `(time)` for
+  `Track`, `(context)` for `Clip`, `(data)` for `Device`, etc.
+  Examples re-verified at `getProjectContext.ts:92,103,111` and
+  `notifyAiChange.ts:20`. Severity: **HIGH** for readability/correctness
+  signalling.
+
+- **#17 Type assertion escapes** — VERIFIED. `engineLifecycle.ts:94`
+  has `created as unknown as WebLlmEngine` with explicit
+  `eslint-disable-next-line sourdaw/no-type-assertion-escape` —
+  the rule was opted out, not satisfied. The pattern at
+  `compileDso.ts:338,349,366,376,386,394,404,414,445` mutates
+  read-only DSO discriminated unions in place via
+  `(dso as Record<string, unknown>).track_id = resolved` — this is the
+  exact "use `unknown` to mutate a typed object" pattern AGENTS.md
+  forbids. The fix is to **return new DSOs from a typed mapper**, not
+  mutate. Severity: **HIGH**.
+
+- **#21 Duplicated exhaustive maps** — VERIFIED. `validateActions.ts:12-241`
+  has `KNOWN_ACTION_TYPES_MAP` listing all ~230 types, and
+  `validateActionPayload.ts:71-401` has `validators` listing all the
+  same types. Both `satisfies Record<RuntimeActionType, ...>`. The
+  compiler catches drift, but the second list shadows the first: a
+  developer adding a new action type fixes the first compile error
+  in `validateActions.ts`, runs `pnpm typecheck`, sees it passes, and
+  forgets `validateActionPayload.ts` until they hit it again. Severity:
+  **MEDIUM**.
+
+- **#23 extractThinkBlock O(n²)** — VERIFIED
+  (`sendChatMessage.ts:30-49,228,242,267-272`). The regex
+  `/^\s*<think>([\s\S]*?)<\/think>\s*/` is non-greedy, so for incoming
+  tokens **without** a closing tag, the engine scans to the end of the
+  string each time. For a 2 048-token native completion streaming
+  character-by-character, that's roughly 2 048 × average string length
+  / 2 = ~2M character comparisons. Add the partial-match regex on line
+  39 which **also** scans `[\s\S]*` from start. Quadratic per token.
+  Severity: **MEDIUM** (perf hazard, not a correctness bug, but the
+  WebLLM streaming UI freezes on long generations are likely caused
+  by this).
+
+- **#25 initEngine race + fallback hole** — VERIFIED (`initEngine.ts:25-65`,
+  `nativeEngine/lifecycle.ts:19,72`). Confirmed: no guard before
+  `initNativeEngine`, no Promise coalescing. Two `initEngine()` calls
+  result in two `tauriInvoke('init_native_llm', ...)` calls — the
+  Rust side may or may not be re-entrant; if it is not, the second
+  call panics. The fallback hole at `initEngine.ts:34-49` is even
+  worse than the audit notes: the `if (typeof navigator !== 'undefined'
+  && 'gpu' in navigator)` branch **does not catch** errors thrown by
+  `initWebLlmEngine` — they propagate to the outer caller. The cloud
+  fallback at `:45-49` only fires if WebGPU is **absent** AND native
+  failed. If WebGPU is present and WebLLM init also fails, no cloud
+  fallback — even when the user has cloud configured. Severity:
+  **HIGH**.
+
+- **#29 Cloud streaming no AbortSignal** — VERIFIED
+  (`streamCloudChatCompletion.ts:5-35`). No `signal` parameter,
+  `client.messages.stream` called without one. The Anthropic SDK's
+  `messages.stream` accepts `{ signal }` (per SDK docs; see
+  `@anthropic-ai/sdk` types). The user-facing stop button is wired
+  to `chatStore.activeAborter` which is **only checked** at native
+  and webllm token boundaries (`sendChatMessage.ts:223,237,263`); the
+  cloud branch checks `aborter.signal.aborted` inside the `onToken`
+  callback (line 237) and throws — but at that point Anthropic has
+  already streamed multiple chunks past the abort point because the
+  stream loop runs server-side and the first abort signal only fires
+  on the next token arrival. Severity: **HIGH** (cloud generations
+  cannot be promptly cancelled).
+
+- **#42 AiTaskResultCard mutates AiGeneration state** — VERIFIED
+  (`AiTaskResultCard.tsx:7,45`). Production imports
+  `removeTask` from `'#/modules/AiGeneration/useCases'` (the barrel).
+  Severity: **MEDIUM**. **However**: see new finding #46 below — the
+  test file's mock targets `'#/modules/AiGeneration/useCases/actions/removeTask'`
+  which is the deep path, **not** the path production uses. The mock
+  is therefore **inert in this test**.
+
+---
+
+### New findings (43–55)
+
+### 43. ChatMessageItem types `msg` as `any` (hard rule violation)
+
+**Problem:** `ChatPanel.tsx:74` declares
+`const ChatMessageItem = memo(({ msg }: { msg: any }): ReactElement => {`.
+Two AGENTS.md violations on one line: `memo` (already #15) and
+`{ msg: any }`. The `any` propagates: every `msg.role`, `msg.content`,
+`msg.isDsoAction`, `msg.reasoning`, `msg.isStreaming`, `msg.error`,
+`msg.id` access on lines 76-122 is unchecked. A future rename of
+`ChatMessage.isStreaming → isLive` would not surface here.
+
+**Representative files:**
+
+- `src/modules/AiRuntime/presentations/views/ChatPanel.tsx:74`
+
+**Needed:** Type as `{ msg: ChatMessage }` (import from
+`../../models/Chat`). Drop `memo`. Severity: **HIGH** — type
+soundness escape on the rendering boundary.
+
+### 44. `runAiActionWithToast` swallows the actual error
+
+**Problem:** `runAiActionWithToast.ts:20-22`:
+```
+} catch {
+    notifyUser(messages.failMsg, 'error');
+}
+```
+The `catch` does not bind the error or log it. The user sees a
+generic `failMsg` ("Could not generate") with no diagnostic. The
+underlying error (network failure, schema mismatch, abort, OOM) is
+discarded. `appLogger` is not even imported.
+
+**Representative files:**
+
+- `src/modules/AiRuntime/useCases/runAiActionWithToast.ts:20-22`
+
+**Needed:** Bind the error: `} catch (error) { logger.warn(...,
+error); notifyUser(...); }`. Surface a one-line cause in the toast
+where safe ("…: network error"). Add a test asserting the error is
+logged. Severity: **MEDIUM** (operational debugging hazard).
+
+### 45. `chatStore.value!.messages` non-null assertion
+
+**Problem:** `sendChatMessage.ts:207` reads
+`chatStore.value!.messages.filter(...)`. The non-null assertion
+defeats the typed Store boundary. Combined with #12 (chatStore
+mutators silently swallow `undefined`), the code says one thing
+("the store is always non-null") and acts another ("…unless someone
+calls `set(undefined)`, in which case we silently break"). Either
+the store type permits `undefined` (then the `!` is a soundness
+escape) or it doesn't (then the chatStore.ts:22-31 defensive checks
+are dead code). Pick one.
+
+**Representative files:**
+
+- `src/modules/AiRuntime/useCases/sendChatMessage.ts:207`
+- `src/modules/AiRuntime/stores/chatStore.ts:22-104`
+
+**Needed:** Type the store as non-nullable
+`createStore<ChatState>` and use the value directly without `!`.
+Drop the defensive `if (!currentState) return;` checks. Severity:
+**MEDIUM**.
+
+### 46. Test mock targets a deep path that production doesn't use
+
+**Problem:** `AiTaskResultCard.spec.tsx:10` mocks
+`'#/modules/AiGeneration/useCases/actions/removeTask'`. The
+production code at `AiTaskResultCard.tsx:7` imports `removeTask`
+from `'#/modules/AiGeneration/useCases'` (the barrel). Vitest
+module mocking is **path-keyed**: the mock at
+`'.../actions/removeTask'` has zero effect on the resolution of
+`'.../useCases'`. The test asserts `removeTaskMock` was called
+(line 28) — but the call goes to the **real** `removeTask`, not the
+mock. The test passes because the real function was apparently
+called once and the mock's `expect(...).toHaveBeenCalledWith('t1')`
+silently passes against zero invocations? No — the test would fail
+with "expected to have been called with t1" if the mock got zero
+calls. Either the test is silently broken (false-pass), or the mock
+is being resolved correctly via Vitest's module cache (less likely
+given the explicit different paths). Either way, the test is
+fragile and likely depends on Vitest implementation detail rather
+than being load-bearing. **This is the same pattern flagged in
+#52** for sweep, but here is a confirmed instance.
+
+**Representative files:**
+
+- `src/modules/AiRuntime/presentations/components/__tests__/AiTaskResultCard.spec.tsx:10`
+- `src/modules/AiRuntime/presentations/components/AiTaskResultCard.tsx:7`
+
+**Needed:** Update the mock path to
+`'#/modules/AiGeneration/useCases'` matching production. Run the
+test and verify it still passes with a real failing implementation
+swapped in. Severity: **HIGH** (test is not what it appears to
+verify — same risk class as #52).
+
+### 47. `handleAutoOrganizeProject` callback param named `alpha`
+
+**Problem:** `handleAutoOrganizeProject.ts:6` is
+`execute: async (alpha) => { ... alpha.payload.tracks ... }`. The
+parameter is the action payload wrapper, not "alpha". Same artefact
+as #16 — automated rename leaving misleading names. Worse: the
+file uses `// eslint-disable-next-line @typescript-eslint/require-await`
+to mark a function async that has no awaits, with the comment
+"handler interface requires async execute". Verify the handler
+interface — if the synchronous form is allowed, drop `async`. If
+not, the rule is the right one and the disable is correct.
+
+**Representative files:**
+
+- `src/modules/AiRuntime/handlers/aiOrganization/handleAutoOrganizeProject.ts:6`
+
+**Needed:** Rename `(alpha)` to `(action)`. Verify the handler
+interface and remove the `async` if synchronous is permitted.
+Severity: **LOW**.
+
+### 48. `useCases/index.ts` re-exports types through the use-cases barrel
+
+**Problem:** AGENTS.md "Index exports — external consumers only"
+specifies "no `type` re-exports through the use-cases path". The
+barrel violates this on at least 11 type exports:
+`MixAnalysisState`, `ModelInfo`, `MixAnalysis`, `MixIssue`,
+`FuzzyResult`, `ProjectContext`, `ProjectContextClip`,
+`ProjectContextDevice`, `ProjectContextTrack`, `AiChangeNotification`,
+`AiActionToastMessages`. Cross-module callers therefore type their
+code against types they obtained from the use-cases path, defeating
+the architectural separation between behaviour (use cases) and
+shape (models).
+
+**Representative files:**
+
+- `src/modules/AiRuntime/useCases/index.ts:25-26,33-39,53,61`
+
+**Needed:** Move type exports to a `models/index.ts` barrel (or the
+root `index.ts` once it exists). Migrate consumers. Audit other
+modules for the same drift. Severity: **MEDIUM**.
+
+### 49. `parseEditPlan` regex catastrophic-backtrack on adversarial input
+
+**Problem:** `executeDsoEdit.ts:226` uses
+`/\{[\s\S]*"kind"\s*:\s*"edit_plan"[\s\S]*\}/` — two unbounded
+greedy `[\s\S]*` segments separated by a literal substring. On a
+malformed LLM response with many `{`s, no closing `}`, and the
+literal `"kind":"edit_plan"` appearing in a string somewhere, the
+regex engine performs catastrophic backtracking. For an
+LLM-generated 2 kB response, this can take seconds; for a longer
+response, indefinite. Note this regex runs **inside the chat
+generation loop** so a single bad response freezes the chat.
+
+**Representative files:**
+
+- `src/modules/AiRuntime/useCases/dsoEditor/executeDsoEdit.ts:210-241`
+
+**Needed:** Replace with a brace-balanced parser. Or anchor the
+regex (`^...$`) and limit to the longest plausible plan size
+(e.g. 16 kB) with a hard size cap before the regex even runs.
+Severity: **HIGH** (denial-of-service via LLM output, exploitable
+via prompt injection).
+
+### 50. `notifyAiChange` change-listener registry is module-mutable
+
+**Problem:** `notifyAiChange.ts:15`
+`let changeListeners: ((change: AiChangeNotification) => void)[] = [];`
+is a module-level mutable array. The add/remove pattern at lines
+17-22 is correct, but the registry is shared across all callers in
+the runtime. `subscribeAiChangeNotification` is exposed via the
+useCases barrel (`useCases/index.ts:53`) — any cross-module
+consumer can register a listener that is never unregistered (a
+component mounting/unmounting that forgets to call the returned
+unlisten will leak). There is no eviction policy.
+
+**Representative files:**
+
+- `src/modules/AiRuntime/useCases/notifyAiChange.ts:15-22`
+
+**Needed:** Either move the registry into a store (so it can be
+inspected, cleared, and tested) or document the contract that
+consumers must always call the unlisten function. Add a leak test:
+mount/unmount a subscribing component 100 times and assert
+`changeListeners.length === 0`. Severity: **MEDIUM**.
+
+### 51. `streamNativeCompletion` browser SSE swallows malformed chunks AND the loop never exits on streamState.error
+
+**Problem:** `streaming.ts:103-105` already swallows malformed
+chunks (already #30). Additionally, `streamNativeCompletion:25-32`
+captures `streamState.error` from the channel callback but only
+checks **after** `tauriInvoke` returns (line 46). If the channel
+emits an error event mid-stream but the Rust side never resolves
+the invoke, the loop hangs forever and the captured error is never
+surfaced. There is no timeout on `tauriInvoke`. The browser SSE
+path `:78-107` has the inverse problem: the `while (true)` loop has
+no abort plumbing — if `aborter.signal` aborts mid-stream, the
+reader keeps pulling tokens until the server closes the connection.
+
+**Representative files:**
+
+- `src/modules/AiRuntime/repositories/nativeEngine/streaming.ts:25-49,78-107`
+
+**Needed:** Add a watchdog timeout on `tauriInvoke`. Plumb
+`aborter.signal` end-to-end into the SSE reader loop and `break` on
+abort. Test: race `streamNativeCompletion` against
+`abort()` and assert the promise rejects within 1 stream chunk.
+Severity: **HIGH** (cancellation broken on the native path).
+
+### 52. `cloudInference/streamCloudChatCompletion` casts `event.delta` without exhaustive type narrowing
+
+**Problem:** `streamCloudChatCompletion.ts:30-33`:
+```
+for await (const event of stream) {
+    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+        onToken(event.delta.text);
+    }
+}
+```
+The Anthropic SDK emits multiple event types (`message_start`,
+`content_block_start`, `content_block_delta`, `content_block_stop`,
+`message_delta`, `message_stop`, `ping`, `error`). The current
+filter only handles `text_delta` deltas. Other delta types
+(`input_json_delta`, `thinking_delta`) are silently dropped.
+`error` events are silently dropped — a server-side error becomes
+"the stream ended early" with no diagnostic. `message_delta` carries
+`stop_reason` (`max_tokens`, `end_turn`, `tool_use`, etc.) which is
+silently dropped. The user has no way to know "the response was
+truncated due to max_tokens".
+
+**Representative files:**
+
+- `src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamCloudChatCompletion.ts:30-34`
+
+**Needed:** Handle `error` events (throw to reject the awaiter).
+Surface `stop_reason !== 'end_turn'` as a diagnostic to `onToken`
+or via a separate callback. Severity: **MEDIUM**.
+
+### 53. `getProjectContext` cache drops on `selectedClipIds` array identity drift
+
+**Problem:** `getProjectContext.ts:75-83` compares the four store
+state objects by reference identity. Stores update by replacement,
+so this works for the **outer** state. But the cache value embeds
+`selectedClipIds: workspaceState?.selectedClipIds ?? []` — the
+default `[]` is **a fresh literal each call**, so when
+`workspaceState.selectedClipIds` is undefined, the cache returns a
+**different `[]` reference** on every call (the cache key doesn't
+mutate, but the embedded value does). Combined with #18 (cache
+returned by reference), if a consumer compares the returned context
+by `===`, it gets stable identity only when `selectedClipIds` is
+defined.
+
+**Representative files:**
+
+- `src/modules/AiRuntime/useCases/getProjectContext.ts:87,128`
+
+**Needed:** Build the result once at module load with a static `[]`
+sentinel, or use `?? EMPTY` where `EMPTY = Object.freeze([])`.
+Better: type `selectedClipIds` as required `string[]` in the
+workspace store and provide a default in `initialData`. Severity:
+**LOW** (perf footnote).
+
+### 54. `notifyAiChange` collision risk: id is `Date.now()` only
+
+**Problem:** `notifyAiChange.ts:26` `id: \`ai-change-${Date.now()}\``.
+Two notifications fired in the same millisecond have the same id.
+React lists keyed on `notification.id` will collapse the second
+into the first. For batch DSO execution where summaries are pushed
+in quick succession, this is observable.
+
+**Representative files:**
+
+- `src/modules/AiRuntime/useCases/notifyAiChange.ts:26`
+
+**Needed:** Use `crypto.randomUUID()` or a monotonically-increasing
+counter combined with `Date.now()`. Severity: **LOW**.
+
+### 55. `clearCloudApiKey` does not invalidate in-flight stream readers (compounds #28)
+
+**Problem:** `keyManagement.ts:32-35` sets
+`cloudAuth.client = null` synchronously. But
+`streamCloudChatCompletion.ts:23` captures the client via
+`getCloudClient()` at the top of the call and then iterates
+`stream` (line 30) over an iterator object that **already holds a
+reference** to the underlying SSE connection. Setting
+`cloudAuth.client = null` does not affect the iteration. The next
+key reset (e.g. user revokes the key) does not stop the
+in-progress request. The audit notes the in-flight problem but
+understates: the current `clearCloudApiKey` does not even **try**
+to abort. Severity: **HIGH** (security: a revoked key continues
+to be used until the request completes, and the response data
+arrives at the page after the user has explicitly disconnected).
+
+**Representative files:**
+
+- `src/modules/AiRuntime/repositories/cloudLlm/keyManagement.ts:32-35`
+- `src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamCloudChatCompletion.ts:10,23`
+
+**Needed:** Track active stream controllers in a module-level
+`Set<AbortController>`. Add `clearCloudApiKey` to abort all in-flight.
+Or refactor to require an `AbortSignal` parameter on every call
+(see #29) and let the caller manage cancellation.
+
+---
+
+### Severity recalibration
+
+The original `Priorities` list ordered correctness/trust before
+architecture. After verification, the list should re-rank:
+
+1. **#2 + #5 + #14 + #49 — LLM trust gaps (compound)**: unchecked
+   destructive payloads + LLM-supplied JSON wrapper trust + tool-call
+   parser accepting any JSON + regex catastrophic-backtrack on
+   adversarial responses. These four together are the attack surface
+   for LLM-driven destructive ops + DoS. Treat as one workstream.
+2. **#3 — DSO auto-create on remove-fail**: high-severity UX trap,
+   one-character fix at `compileDso.ts:339`.
+3. **#4 — mixHealthAnalysis `\\n` literals**: one-character fix per
+   line, ship-grade feature broken.
+4. **#12 + #29 + #51 — Cancellation broken across all three
+   backends**: the cancel button is functionally a UI lie.
+5. **#15 + #43 — ChatPanel `memo` + `msg: any`**: combined HIGH;
+   the `any` is the real problem and was undersold.
+6. **#46 — Inert test mocks**: same risk class as #52, but a
+   confirmed instance instead of "spot-check needed".
+7. **#25 — initEngine race + fallback hole**: cloud fallback
+   unreachable when WebGPU present + WebLLM fails.
+8. **#55 — Revoked cloud key still in use**: security; small fix.
+9. **#1 + #48 — No root barrel + types in use-cases barrel**:
+   architectural drift, but no runtime impact.
+
+Issues #44, #45, #47, #50, #52, #53, #54 are MEDIUM/LOW and
+schedulable behind the above.
+
+---
+
+### 56. `joinCollabSession` validator checks a non-existent field — every fast-path call is silently rejected
+
+**Problem:** Three sites disagree on the payload shape for the same
+action:
+
+- `parsing.ts:191` (fast path) emits
+  `{ type: 'joinCollabSession', payload: { inviteString, peerName } }`.
+- `validateActionPayload.ts:164` validator checks
+  `isObj(param) && isString(param.inviteCode)` — the field **does
+  not exist** on the produced payload.
+- `Collaboration/handlers/.../handleJoinCollabSession.ts:7` reads
+  `alpha.payload.inviteString` and `alpha.payload.peerName` —
+  matching the producer but **not** the validator.
+
+Pipeline: fast-path produces `{inviteString}` → `validateActions`
+calls validator → validator returns false (because `inviteCode`
+isn't there) → action is **silently filtered out** → handler is
+never called → user joins no session, sees no error. The chat shows
+"No actions matched" or similar.
+
+This is the **exact compile-time-vs-runtime drift** that the
+typed `PayloadValidator<ActionType>` was supposed to prevent. But
+because `validateActions.ts:266` casts the validator to
+`(p: unknown) => boolean` (issue #13) and `PayloadOf<'joinCollabSession'>`
+is inferred from `RuntimeAction` (which presumably has
+`inviteString`), the `satisfies` check at `validateActionPayload.ts:402`
+**should have caught this** — unless `PayloadOf<'joinCollabSession'>`
+itself is `inviteCode`-shaped, in which case the producer + handler
+are both wrong. Either way: three sites of truth, two of them
+disagree, and the validator silently drops the action.
+
+**Representative files:**
+
+- `src/modules/AiRuntime/transformers/promptParser/parsing.ts:191`
+- `src/modules/AiRuntime/useCases/validateActionPayload.ts:164`
+- `src/modules/Collaboration/handlers/collaboration/handleJoinCollabSession.ts:7`
+
+**Needed:** Reconcile to a single canonical field name (suggest
+`inviteString`, since the QR/clipboard code in `Collaboration`
+already uses it). Update the validator. Add a test that round-trips:
+fast-path output → `validateActions` → handler. The test must use
+the **real** `validateActions` and the **real** `PAYLOAD_VALIDATORS`
+— not mocks. Severity: **HIGH** (silent-drop of a feature).
+
+### 57. `toolSelector` references five tool names that don't exist anywhere
+
+**Problem:** `toolSelector.ts` populates `CORE_TOOLS` and `KEYWORD_TOOLS`
+with names that are **not in `RuntimeActionType`** and **not in
+`DAW_TOOL_SCHEMAS`**:
+
+- `'setTimeSignature'` (`:20`) — `RuntimeActionType` has
+  `addTimeSignatureChange` and `removeTimeSignatureChange`, not
+  `setTimeSignature`.
+- `'addMidiNote'` (`:27,58`) — `RuntimeActionType` has `addNotes`,
+  not `addMidiNote`.
+- `'quantizeMidi'` (`:59`) — `RuntimeActionType` has `quantizeNotes`
+  and `quantizeNoteLengths`, not `quantizeMidi`.
+- `'transposeMidi'` (`:60,117`) — `RuntimeActionType` has
+  `transposeNotes`, not `transposeMidi`.
+- `'addTempoChange'` (`:73`) — does not exist; closest is `setTempo`.
+
+Verified via `grep -c` — all five names produce 0 matches in both
+`RuntimeAction.ts` and `toolDefinitions.ts`. The downstream filter
+at `:153` `allTools.filter((time) => selected.has(time.function.name))`
+silently drops these — they take up `selected` Set slots but never
+appear in the final list. The `MAX_TOOLS = 30` cap is therefore
+less effective than it appears (e.g. for a "midi" prompt the
+expected 10 keyword tools become 8 after the two ghosts are
+filtered).
+
+**Representative files:**
+
+- `src/modules/AiRuntime/transformers/toolSelector.ts:20,27,58,59,60,73,117`
+
+**Needed:** Update each entry to the actual `RuntimeActionType`
+name. Add a build-time guard:
+`CORE_TOOLS.forEach((name) => { if (!(name in PAYLOAD_VALIDATORS)) throw }`.
+Or type `CORE_TOOLS: ReadonlySet<RuntimeActionType>` so the
+compiler catches typos. Severity: **HIGH** (correctness — wrong
+tools are presented to the LLM, ghost names dilute the cap).
+
+### 58. `extractReasoning` and `extractThinkBlock` are duplicated, divergent implementations
+
+**Problem:** Two parsers for `<think>...</think>` blocks:
+
+- `sendChatMessage.ts:28-49` — handles partial (streaming, no
+  closing tag) blocks; returns `{ reasoning, content }`.
+- `executeDsoEdit.ts:200-208` — does not handle partial blocks;
+  returns `{ reasoning, cleanResponse }`. Different return shape.
+
+`engineLifecycle.ts:163` has a third inline implementation:
+`raw.replaceAll(/<think>[\s\S]*?<\/think>/g, '').trim()` —
+discards the reasoning entirely.
+
+`executeDsoEdit.ts:212` has a fourth: same regex, applied
+after `extractReasoning`. Defensive duplication.
+
+If Qwen3 ever changes its delimiter (e.g. `<reasoning>` instead
+of `<think>`), all four sites need updating. Two of them have
+diverged already (different return shapes, different streaming
+support).
+
+**Representative files:**
+
+- `src/modules/AiRuntime/useCases/sendChatMessage.ts:28-49`
+- `src/modules/AiRuntime/useCases/dsoEditor/executeDsoEdit.ts:200-208,212`
+- `src/modules/AiRuntime/repositories/webLlm/engineLifecycle.ts:163`
+
+**Needed:** Centralize into
+`transformers/extractReasoning.ts` returning a stable
+`{ reasoning, content }` shape with optional `streaming: boolean`.
+Severity: **MEDIUM**.
+
+### 59. `chatStore.value!.messages` length grows unbounded (no eviction)
+
+**Problem:** `chatStore.appendChatMessage` (`chatStore.ts:21-31`)
+spreads into the existing array with no cap. The
+`sendChatMessage.ts:206-208` only **slices** to last-24 for the
+LLM context, but the **store** keeps every message ever sent. For
+a session with 1 000 messages, every `setChatGenerating` /
+`updateChatMessage` call re-renders the entire 1 000-item list
+(messages array is replaced wholesale per `chatStore.ts:28`).
+Combined with `ChatPanel.tsx:190` `chatState.messages.map(...)`
+re-rendering all `<ChatMessageItem>`s, this is O(N) work per
+token in the React tree.
+
+**Representative files:**
+
+- `src/modules/AiRuntime/stores/chatStore.ts:21-31`
+- `src/modules/AiRuntime/presentations/views/ChatPanel.tsx:189-194`
+
+**Needed:** Cap message history at a sensible bound (e.g. 200) in
+`appendChatMessage`. Or virtualize the chat list (react-window).
+Add a perf test on a 500-message store. Severity: **MEDIUM**
+(perf cliff at long sessions; UX hazard).
+
+### 60. ChatPanel's `useStore` default value masks a never-firing null check
+
+**Problem:** `ChatPanel.tsx:137-142` calls `useStore(chatStore, {
+messages: [], isGenerating: false, chatMode: 'chat',
+enableReasoning: false })` — `useStore` returns the default value
+when the store is `undefined`. Then `:171` `if (!chatState) {
+return <></>; }` is tested. With a default supplied, `chatState`
+is **never** `undefined` (the default replaces it), so the early
+return is dead code. The code is defensive against a state the
+infrastructure already eliminated. Either the default should be
+removed (and the null-check meaningful) or the null-check removed
+(and the default load-bearing). Both is wrong.
+
+**Representative files:**
+
+- `src/modules/AiRuntime/presentations/views/ChatPanel.tsx:137-173`
+
+**Needed:** Drop the `if (!chatState)` branch; rely on the default.
+Severity: **LOW**.
+
+---
+
+## Final risk recalibration
+
+After this adversarial pass, the top correctness/security risks are:
+
+1. **#56 `joinCollabSession` field-name mismatch** — silently drops a
+   feature. Three-site drift the type system was supposed to catch.
+2. **#2 + #5 + #14 + #49** — LLM-trust compound (destructive payloads
+   unchecked, EditPlan structure unchecked, toolCall JSON-substring
+   accepted, regex DoS). One workstream.
+3. **#3 DSO auto-create on remove-fail** — net-zero ops + UI flicker
+   + ghost tracks for `mute_track` / `solo_track`.
+4. **#12 + #29 + #51 + #55** — Cancellation broken end-to-end across
+   all backends; revoked cloud key still in use.
+5. **#43 ChatPanel `msg: any`** — type soundness escape on the
+   render boundary, undersold in the original audit.
+6. **#46 + #52 — Inert mocks** — production paths not actually
+   tested. #46 is a confirmed instance.
+7. **#57 toolSelector ghost names** — five-of-30 `selected`
+   slots wasted on names that don't exist.
+8. **#4 mixHealthAnalysis `\\n`** — one-character fix per line, ship-grade
+   feature broken.
+9. **#25 initEngine race + cloud-fallback hole**.
+10. **#1 + #48** — Architectural drift (no root barrel, types in
+    use-cases barrel).
+
+---
+
+### 61. Systemic validator/payload field-name drift (broader than #56)
+
+**Problem:** `joinCollabSession` (#56) is not isolated — the same
+class of bug exists for at least four more actions where the
+validator checks fields that don't exist on the typed payload.
+Verified by cross-referencing `RuntimeAction.ts` against
+`validateActionPayload.ts`:
+
+- `quantizeNotes` (`validateActionPayload.ts:137`): validator checks
+  `isNumber(param.grid)`. Payload type
+  (`RuntimeAction.ts: quantizeNotes`) is
+  `{ clipId, gridSize, strength?, swing? }`. Fast-path emits
+  `{ clipId, gridSize }` (`parsing.ts:146`). Validator returns
+  false on every legitimate call → silently dropped.
+- `importAudioFile` (`:154`): validator checks
+  `isObj(param) && isString(param.path)`. Payload type
+  (`RuntimeAction.ts: importAudioFile`) is `payload?: undefined`.
+  An `undefined` payload fails `isObj` (a primitive). The action
+  is therefore **always rejected** regardless of producer.
+- `importMidiFile` (`:155`): same pattern as `importAudioFile`.
+  Type is `payload?: undefined`, validator demands
+  `isObj(param) && isString(param.path)` — always rejected.
+- `exportMidi` (`:157`): validator checks
+  `isOptional(param.trackIds, isStringArray)`. Payload type is
+  `{ clipId: string }`. Validator passes (trackIds is optional and
+  undefined satisfies `isOptional`), but **does not actually
+  validate** the required `clipId` — a payload of `{}` passes,
+  defeating the point.
+- `joinCollabSession` (`:164`): documented in #56.
+- `addClip` (`:87-88`): validator checks `trackId`, `startBeat`,
+  `endBeat` but the type **also requires** `name: string`. Producer
+  sites that omit `name` (or have `name: 5`) pass the validator
+  and reach the handler with a malformed payload. The validator
+  is incomplete, not wrong.
+
+The root cause is that **`PayloadValidator<ActionType>` claims to
+narrow to `PayloadOf<ActionType>` but TypeScript cannot verify a
+type predicate's body**. The author writes `param is PayloadOf<X>`
+and TS trusts it. The `satisfies Record<RuntimeActionType, ...>`
+guards the **shape of the map**, not the **correctness of each
+predicate**. Since all five validators above lie about what they
+prove, the entire trust boundary is fictitious.
+
+**Representative files:**
+
+- `src/modules/AiRuntime/useCases/validateActionPayload.ts:87-92,137,154-157,164`
+- `src/modules/AiRuntime/models/RuntimeAction.ts` (canonical shapes)
+
+**Needed:**
+- Add a property test that, for every `RuntimeActionType` with a
+  validator, runs the validator against the canonical payload
+  shape (mock data) and asserts it passes.
+- Run the test against malformed variants (missing fields, wrong
+  types) and assert it fails.
+- Replace hand-rolled validators with a Zod (or hand-rolled
+  exhaustive) schema-derived validator: the schema **is** the
+  payload shape, so drift is impossible.
+- This issue is the **root cause** of #56; #56 is a single
+  manifestation. Treating them as separate is a mistake — fix the
+  pipeline.
+
+Severity: **CRITICAL** (the entire payload validation layer is
+unreliable; multiple production-flow actions silently dropped).
+
+---
+
+### Final final-recalibration
+
+Replace the previous top-of-list with:
+
+1. **#61 — Systemic validator/payload drift** (root cause; #56
+   subsumed).
+2. **#2 + #5 + #14 + #49** — LLM-trust compound (now compounded by
+   the fact that the validators that *are* listed are also wrong).
+3. **#3 — DSO auto-create on remove-fail**.
+4. **#12 + #29 + #51 + #55** — Cancellation broken.
+5. **#43 — `msg: any` in ChatPanel**.
+6. **#46 + #52** — Inert mocks.
+7. **#57 — toolSelector ghost names**.
+8. **#4 — mixHealthAnalysis `\\n`**.
+9. **#25 — initEngine race + cloud-fallback hole**.
+10. **#1 + #48** — Architectural drift.

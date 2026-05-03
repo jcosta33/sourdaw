@@ -157,6 +157,10 @@ range coherence with the `.dsp` source.
 
 ## Findings
 
+### Adversarial review log (2026-04-28)
+
+Re-walked every cited file against current source. Verified all 51 prior findings — none have been resolved. Promoted issue #15 (leaky `OscillatorNode` return) to a load-bearing failure mode after discovering audition's `_env` reach-through (new issue #52). Promoted issue #25 (Faust idempotency) to actively destructive after tracing `registerFaustDSP` (`compilerEngine.ts:116-125`) — second call replaces the compiled module with a fresh `compiled: false, generator: null` object, breaking any in-flight uses. Demoted issue #6 (Hz/V mode) but not by much: function is dead code today (#new 56), so the bug ships but never fires. Added 6 new numbered issues (#52-#57) covering: audition `_env` reach-through, `as CvOutputType` cast in handleAddCvOutput, undoable handler with no undo, full CV/Gate dead-code surface, hard-coded velocity-attack inversion, and offline render parity for drum kits.
+
 1. **Two parallel "drum kit" abstractions ship in the same barrel.**
    `drumKitSynth.scheduleKitNote` and
    `drumSynthEngine/.../scheduleDrumKitNote` solve the same problem
@@ -199,23 +203,24 @@ new StereoPannerNode + ctx.createGain` allocations.** Acceptable for
    for the full envelope duration, then collected.
 
 6. **Vibrato LFO timing math is incorrect and inverts the intended
-   envelope.** `builtinSynth.ts:287-289`:
+   envelope.** `builtinSynth.ts:287-289` (verified 2026-04-28):
     ```
     vibratoGain.gain.setValueAtTime(0, startTime);
     vibratoGain.gain.linearRampToValueAtTime(0, attackEnd + vibDelay);
     vibratoGain.gain.linearRampToValueAtTime(params.vibratoDepth, attackEnd + vibDelay + 0.1);
     ```
-   This produces a linear ramp to the **delay endpoint** with value 0
-   (a no-op), then ramps to `vibratoDepth` over 100 ms. The intent
-   appears to be "hold at 0 until `attackEnd + vibDelay`, then ramp
-   in". With the current code the first ramp is mathematically a
-   no-op (`0 → 0`) — but Web Audio still schedules an event at
-   `attackEnd + vibDelay`, so the actual rendered curve is correct by
-   accident. However, if `vibDelay = 0` and `attackEnd > startTime`,
-   the first ramp targets a time **before** the second ramp's start,
-   producing an unintended ramp shape if the gain is later modified.
-   At minimum the redundant zero-ramp should be a `setValueAtTime(0,
-   attackEnd + vibDelay)`.
+   The first ramp is mathematically a no-op (`0 → 0`) — but Web Audio
+   **does** schedule an automation event at `attackEnd + vibDelay`,
+   so the second ramp's interpolation correctly starts from there.
+   Functionally correct **by accident**: the audit author who wrote
+   "happens to work" should have verified that the dead event isn't
+   load-bearing, and it isn't — `linearRampToValueAtTime` always uses
+   the previous event's value at its time as the start, so the
+   sequence behaves as intended. Cosmetic. The real problem is that
+   `attackEnd` here uses the **velocity-modified** `velAttack`
+   (`builtinSynth.ts:127, 256`), so the vibrato delay shifts with
+   note velocity — a hard hit shortens both `velAttack` *and* the
+   vibrato onset point. Whether that is intentional is undocumented.
 
 7. **Vibrato LFO `vibratoDepth` is in **cents** but typed as a plain
    number.** `builtinSynth.ts:289` connects `vibratoGain` to
@@ -389,23 +394,45 @@ scheduleDrumKitNote}.spec.ts` test lookups, not the produced
     coverage at all. Regressions in the kick pitch sweep or the clap
     multi-tap echo would not be caught.
 
-24. **`registerProSynthInstruments` is not idempotent.**
-    `proSynthInstruments.ts:18`: calling it twice (e.g. in a hot
-    reload, or if `useAppInitialization` re-runs) registers the same
-    Faust DSP under the same name twice. Whether `registerFaustDSP`
-    de-dupes is a Plugin-module concern — but Synth gives the caller
-    no guarantee. The function returns `void`. No idempotency check.
+24. **`registerProSynthInstruments` is not idempotent — second call
+    actively destroys the compiled module.** `proSynthInstruments.ts:18`
+    plus `Plugin/useCases/faustEngine/compilerEngine.ts:110-138`
+    (verified 2026-04-28): `registerFaustDSP` builds a fresh
+    `FaustModule` with `compiled: false, generator: null` then runs
+    `modules.set(mod.id, mod)`. The second call therefore **erases**
+    the compilation state and the cached generator from the first
+    call. Any AudioWorkletNodes already created from the first
+    `generator` keep working (they hold the WASM module), but the
+    next `compileFaustDSP(mod.id)` call sees `compiled: false` and
+    re-compiles from scratch — and any caller awaiting the in-flight
+    compile via `compilationPromises` will still get the old promise
+    while subsequent `createFaustNode` lookups see the replaced
+    module. React StrictMode + dev HMR re-mounts `useAppInitialization`
+    (`useAppInitialization.ts:31, 50`) and triggers exactly this
+    scenario.
 
-25. **Faust DSP `addresses` in `proSynthInstruments.ts` are
-    string-typed and not cross-checked against the `.dsp` source at
-    build time.** Each `registerFaustDSP` call hard-codes the
-    `address: '/wt/morph'` etc. The `.dsp` source uses
-    `hslider("morph", …)` (no leading `/wt/`) — Faust prefixes the
-    group name to construct the address path. A drift between the TS
-    side and the DSP side produces a runtime parameter that does
-    nothing. There is no compile-time check, no parser-based
-    extraction, and no runtime warning when an `address` string fails
-    to match a slider in the compiled DSP.
+25. **Faust DSP `address` strings drift silently from `.dsp` source —
+    and the `/wt/`, `/supersaw/`, `/pm/`, `/additive/`, `/synth/`
+    prefixes are fabricated.** Verified 2026-04-28 against
+    `dsp/morphing-synth.dsp`, `dsp/supersaw-unison.dsp`,
+    `dsp/physical-model-string.dsp`, `dsp/additive-synth.dsp`. None
+    of the four `.dsp` files declare a `vgroup("wt", …)`,
+    `vgroup("supersaw", …)`, `vgroup("pm", …)`, or
+    `vgroup("additive", …)` block — every `hslider` is at top level,
+    so the actual Faust-generated address is `/<ProcessorName>/<sliderName>`.
+    The TS side claims `/wt/morph`, `/supersaw/lfo_rate`, etc.
+    Salvaged at runtime by `AudioEngine/repositories/faustDeviceFactory.ts:117-134`
+    `buildParamAddressCache` which strips the path with `key.split('/').pop()`
+    and matches by **bare name** — meaning the labels would survive
+    even if the prefixes were `/totally/wrong/morph` as long as the
+    bare slider name matches. The address string is therefore **a
+    documentation lie**: developers reading `proSynthInstruments.ts:25`
+    believe `/wt/morph` is meaningful, but it is purely advisory;
+    only the last path segment is honoured. The lie compounds: if a
+    `.dsp` source ever does add a `vgroup`, the bare-name cache
+    would silently shadow conflicting names from different groups,
+    and the warning at `:128-130` ("Duplicate bare param") would
+    surface but not surface anywhere actionable.
 
 26. **`proSynthInstruments.makeSynthParams` typing is loose.**
     `proSynthInstruments.ts:254-291`: `extra` is typed `Array<{
@@ -482,13 +509,19 @@ address; label; min; max; defaultValue; step }>`, but the spread
     the destination node. AGENTS.md "user-centric perspective" — DAW
     expectation is `panic / all-notes-off` works.
 
-35. **`useCases/builtinSynth.ts` keeps a `cachedNoiseBuffer: AudioBuffer
-| null` module-level singleton.** `:39-52`. Same pattern called out
-    in the AudioAnalysis audit (issue #25). HMR in dev evicts the
-    cache. Two concurrent calls during a context-rate change would
-    both observe the stale cache and both rebuild. Low risk in
-    practice but AGENTS.md "no module-level mutable state" stance
-    applies.
+35. **`useCases/builtinSynth.ts` keeps a `cachedNoiseBuffer:
+    AudioBuffer | null` module-level singleton — and the cache key is
+    sample-rate-only, not `(ctx, sampleRate)`.** `builtinSynth.ts:39-52`
+    (verified 2026-04-28). Two `BaseAudioContext`s with the same
+    `sampleRate` (e.g. realtime `AudioContext` at 48 kHz and an
+    `OfflineAudioContext` at 48 kHz used for export) will share the
+    same cached buffer — but `AudioBuffer` instances are **bound to
+    a single context**: passing a buffer minted on context A to a
+    `BufferSource` in context B is undefined behaviour in the spec
+    and throws in some browsers. The `engine/drumSynthVoices.ts:22`
+    cache uses `WeakMap<BaseAudioContext, …>` and is correct; this
+    one is wrong by structure. HMR-only concerns are secondary; the
+    cross-context bug is the load-bearing one.
 
 36. **Cross-module imports of `SynthParams` / `MpeParams` create a
     cyclic dependency surface.** `useCases/builtinSynth.ts:6` and
@@ -619,36 +652,118 @@ number> }`. Comment says "Consumer-local shape (AGENTS.md §95 —
     future "undo/redo CV setup" feature would need handler-level
     integration.
 
+52. **Audition reaches into the returned `OscillatorNode` for an
+    `_env` GainNode that `scheduleNote` never attaches.**
+    `AudioEngine/useCases/audition.ts:124` `scheduleNote(...) as
+    OscillatorNode & { _env?: GainNode }` and `:129-132` reads
+    `osc._env` to call `cancelScheduledValues + setTargetAtTime`. But
+    `builtinSynth.scheduleNote` (`builtinSynth.ts:114-333`) never
+    sets `_env` — `grep -n "_env" src/modules/Synth/useCases/builtinSynth.ts`
+    is empty. The release branch is permanently dead. Audition uses
+    `duration = 60` (`audition.ts:121`); a key-up triggers
+    `osc.stop(killTime + releaseTime + 0.05)` which only stops osc1
+    while osc2/sub/noise/vibrato/env keep running until their own
+    pre-scheduled stop times **60+ seconds out**. Zombie note bug,
+    user-visible as "the audition keeps singing after I let go".
+
+53. **`handleAddCvOutput` casts `payload.type as CvOutputType` and is
+    `undoable: true` with no inverse.**
+    `AudioEngine/handlers/finalFeature/handleAddCvOutput.ts:9`. AGENTS.md
+    soundness violation. `addCvOutput` returns `void` and the handler
+    has no undo descriptor — the command bus tracks a non-undoable
+    mutation as undoable, so the user clicks "undo" and the channel
+    stays. Compounding: `payload.type` from `AiRuntime/models/RuntimeAction.ts:318`
+    is `string`, so a malformed AI runtime payload crashes
+    `addCvOutput.ts:8` (`VOLTAGE_RANGES[type]` returns `undefined`,
+    `[minV, maxV]` throws).
+
+54. **Entire CV/Gate sub-system is dead code that ships persisted
+    state.** Verified 2026-04-28 via grep: `midiNoteToCv`,
+    `velocityToCv`, `getClockValue`, `setCvValue`, `removeCvOutput`,
+    `setVoltageStandard`, `setClockDivision` have **zero** external
+    callers. Only `addCvOutput` is wired (one `AppAction`) and that
+    path is broken (#53). There is no DC-coupled output device
+    strategy, no UI rendering CV channel state, no audio-thread code
+    that consumes the persisted `outputs[]`. Yet `cvGateStore`
+    (`stores/cvGate.ts:33-42`) is an Automerge-persisted document
+    written into every project file. The bugs in #5, #6, #7, #19,
+    #28 are all real but unreachable today — they will surface the
+    moment a developer wires the feature, with no test coverage on
+    the integration path.
+
+55. **Velocity-attack scaling is hard-coded with no opt-out and can
+    go negative for out-of-range velocity.** `builtinSynth.ts:127`:
+    `velAttack = params.attack * (1.5 - velocity / 127)`. User
+    configures `attack = 1s` and gets 0.5s..1.5s — 3× variation,
+    no slider to disable. Same shape duplicated in
+    `scheduleNoteOffline.ts:386`. **More serious**: there is no clamp
+    on `velocity` at the entry point. A velocity of 200 (e.g. an
+    MPE pressure source mis-mapped, or an AI runtime payload
+    bypassing validation) yields `velAttack = -0.075 * attack`, so
+    `attackEnd < startTime` and the `linearRampToValueAtTime`
+    schedules an event in the past. Web Audio behaviour for past
+    events is implementation-defined.
+
+56. **Offline render parity gap — drum kits render at full fidelity
+    but builtin synth doesn't.** `AudioEngine/useCases/offlineRender/scheduleTrackClips.ts:286-308`
+    routes `kitDef` and `drumKit` through realtime full-fat
+    schedulers (`scheduleDrumKitNote` / `scheduleKitNote`) but
+    builtin synth tracks through `scheduleNoteOffline` (3 nodes per
+    note, no osc2/sub/noise/vibrato/spread). A track with both will
+    sound like a "small" synth next to "full" drums in the bounce —
+    incoherent mix between layers in the same project. Issue #4
+    captures the synth side; this is the parity-mismatch dimension.
+
+57. **`getSynthParamsFromDevices` and the scheduling-site dispatch
+    define "is this a synth track?" with two different rules.**
+    `builtinSynth.ts:341` matches `d.type === 'synth' ||
+    d.type.startsWith('builtin-synth')`. The scheduling sites
+    (`Transport/scheduling/scheduleMidiNotes.ts:462`,
+    `AudioEngine/useCases/audition.ts:115-124`) call `scheduleNote`
+    for **anything that didn't match drum/Faust/levain/fermenter/toaster/grand-boule** —
+    a "default" branch. A device with `type = 'builtin'` (typo or
+    new feature) routes to `scheduleNote` with **default**
+    `SynthParams` (the `find` returns `undefined`, params resolver
+    returns the default), silently degrading character. The two
+    halves of "what is a synth" disagree.
+
 ---
 
 ## Priorities
 
-1. **Two parallel "drum kit" abstractions in the same barrel** (issue
-   #1) — choose one. The current state is genuinely confusing and
-   ships unused / partially-tested code paths.
-2. **No voice management / polyphony cap / panic** (issues #3, #34,
-   #39) — a high-density sequence can pile up unbounded nodes; user
-   has no panic button. Real-world failure mode.
-3. **`scheduleNoteOffline` drops half the synth** (issue #11) — offline
-   render diverges from realtime monitoring; users get bounces that
-   sound fundamentally different from what they hear while playing.
-4. **CV/Gate semantics are broken in the only mode that matters**
-   (issues #28, #29, #30) — `setCvValue` clamps to the wrong range,
-   Hz/V returns frequency instead of voltage, `clockDivision`
-   multiplies instead of dividing.
-5. **Velocity-clamp drift across three call paths** (issues #12, #13)
-   — drum-kit, drum-engine, and Faust scheduler have three different
-   clamping contracts; one (drum-kit) doesn't clamp at all.
-6. **Test coverage tautologies + zero `engine/drumSynthVoices.ts`
-   coverage** (issues #22, #23, #45) — three spec files assert nothing
-   meaningful; the analog 808 scheduler ships untested.
-7. **`SynthParams` ownership is upside-down** (issue #36) — the
-   canonical synth-parameter model lives in AudioEngine, not Synth.
-8. **No module root barrel `index.ts`** (issue #2) — every external
-   import currently violates AGENTS.md cross-module rules.
-9. **Function signatures are 5-9 positional parameters across the
-   whole module** (issue #20) — AGENTS.md violation that bites every
-   call site.
+1. **Audition's `_env` reach-through is broken — zombie notes after
+   key-up** (finding #52, open issue #36). User-visible audition
+   bug: held notes ring for 60 seconds after release because
+   `osc._env` is `undefined` and the soft-release branch never
+   fires. Priority #1 because it's a bug-on-the-happy-path.
+2. **`registerProSynthInstruments` second call wipes compiled state**
+   (finding #24, deepened). React StrictMode + dev HMR re-runs the
+   effect, the second call replaces the compiled `FaustModule` with
+   `compiled: false, generator: null`, breaking Faust instruments
+   for the rest of the dev session. Real, frequently-encountered.
+3. **Whole CV/Gate sub-tree is dead code with broken handler**
+   (findings #54 + #53, open issues #41 + #38). Either build the
+   feature (DC-coupled output strategy + UI) or delete the
+   sub-tree. Half-shipped state with broken `as` casts and a
+   `undoable: true` no-op handler.
+4. **Two parallel "drum kit" abstractions in the same barrel** (issue
+   #1) — choose one. Confusing, ships partially-tested code paths.
+5. **No voice management / polyphony cap / panic** (issues #3, #34,
+   #39) — high-density sequence piles up unbounded nodes; no panic.
+6. **`scheduleNoteOffline` drops half the synth + drum kits don't**
+   (issues #4 + #40). Offline render is incoherent across layers in
+   the same project.
+7. **CV/Gate semantics are broken** (issues #5, #6, #7) — but moot
+   if the feature is deleted (priority #3).
+8. **Velocity-clamp drift across three call paths** (issue #8) +
+   **velocity-attack negative-attack bug** (#39).
+9. **Test coverage tautologies + zero `engine/drumSynthVoices.ts`
+   coverage** (issues #11, #20, #27).
+10. **`SynthParams` ownership is upside-down** (issue #9) — canonical
+    synth-parameter model lives in AudioEngine, not Synth.
+11. **No module root barrel `index.ts`** (issue #2) — every external
+    import violates AGENTS.md cross-module rules.
+12. **Function signatures are 5-9 positional parameters** (issue #10).
 10. **Faust DSP parameter `address` strings are not cross-checked**
     (issue #25) — silent drift between TS and DSP is a class of bug
     that lands in production with no test coverage.
@@ -1339,6 +1454,221 @@ future modulation work has a starting point. The `models/` directory
 is empty apart from `DrumSynthTypes.ts`; a future `ModulationMatrix`
 type would live there.
 
+### 36. Audition's `osc._env` reach-through is dead code; key-up produces zombie notes
+
+**Problem:** `AudioEngine/useCases/audition.ts:124` casts
+`scheduleNote`'s return as `OscillatorNode & { _env?: GainNode }`.
+The cleanup closure at `:129-132` reads `osc._env` and runs
+`cancelScheduledValues + setTargetAtTime` for a soft release. But
+`builtinSynth.scheduleNote` (`builtinSynth.ts:114-333`) never
+attaches `_env` — verified by `grep -n "_env"`, zero hits. The
+release branch is permanently dead. Audition uses `duration = 60`
+(`audition.ts:121`); the user releases the key, the cleanup runs
+`osc1.stop(killTime + releaseTime + 0.05)` which only stops osc1
+while osc2/sub/noise/vibrato/env keep their original `releaseEnd
++ 0.01` schedule (60+ seconds). The note rings on after release.
+
+The cast itself is an AGENTS.md soundness violation (an `as`-
+extended type that doesn't match reality).
+
+**Representative files:**
+
+- `src/modules/AudioEngine/useCases/audition.ts:116-138`
+- `src/modules/Synth/useCases/builtinSynth.ts:114-333`
+
+**Needed:** Make `scheduleNote` return a `NoteHandle = { stop(when?):
+void; release(when?, releaseTime?): void }` (see issue #15). Audition
+calls `handle.release(killTime, releaseTime)` instead of poking at
+`osc._env`. Drop the cast.
+
+### 37. `registerProSynthInstruments` second call replaces compiled `FaustModule` with empty shell
+
+**Problem:** Verified 2026-04-28: `Plugin/useCases/faustEngine/compilerEngine.ts:110-138`
+builds a fresh `FaustModule` with `compiled: false, generator:
+null` on every call and runs `modules.set(mod.id, mod)`. The
+second call therefore **erases** the compiled state. React
+StrictMode and dev HMR re-mount `useAppInitialization`
+(`useAppInitialization.ts:31, 50`) — `registerProSynthInstruments`
+fires twice in normal development, the second registration wipes
+the first. Subsequent `compileFaustDSP(mod.id)` re-runs the WASM
+compile from scratch (~seconds) and any in-flight `createFaustNode`
+serialised on `contextCreateLock` may be reading the old promise
+while the descriptor map shows an uncompiled module.
+
+This is the deepening of audit issue #25 — it is not "non-
+idempotent in the merely-wasteful sense", it is **actively
+destructive** of cached state.
+
+**Representative files:**
+
+- `src/modules/Synth/useCases/proSynthInstruments.ts:18-252`
+- `src/modules/Plugin/useCases/faustEngine/compilerEngine.ts:110-138`
+- `src/modules/Workspace/presentations/hooks/useAppInitialization.ts:31, 50`
+
+**Needed:** Make `registerFaustDSP` idempotent by checking
+`modules.has(id)` first and either returning the existing module or
+skipping the registration. Or add an explicit `force` flag for the
+test/HMR case. Or have `registerProSynthInstruments` track its own
+"already done" flag.
+
+### 38. `handleAddCvOutput` casts `payload.type as CvOutputType` and is `undoable: true` with no inverse
+
+**Problem:** `AudioEngine/handlers/finalFeature/handleAddCvOutput.ts:9`:
+```ts
+addCvOutput(alpha.payload.name, alpha.payload.channel, alpha.payload.type as CvOutputType);
+```
+The payload's `type` is `string` (`AiRuntime/models/RuntimeAction.ts:318`).
+The cast bypasses runtime validation; an AI-runtime payload with
+`type: 'cv-pich'` (typo) reaches `addCvOutput.ts:8`
+`VOLTAGE_RANGES[type]` returns `undefined`, the destructure
+`[minV, maxV]` throws "Cannot read properties of undefined".
+
+The handler is also `undoable: true` (`:12`), but `addCvOutput`
+returns `void` and the handler emits no inverse — the command bus
+records an undoable mutation that cannot be undone.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/handlers/finalFeature/handleAddCvOutput.ts:7-13`
+- `src/modules/AiRuntime/models/RuntimeAction.ts:318`
+- `src/modules/Synth/useCases/cvGate/cvOutputOperations/addCvOutput.ts:8`
+
+**Needed:** Replace the `as` cast with a runtime guard or Zod parse
+that returns `Result<CvOutputType, …>` (user memory: prefer
+neverthrow). Either implement an undo by tracking the new output's
+id and inverting via `removeCvOutput`, or set `undoable: false`. Add
+a unit test for malformed `payload.type`.
+
+### 39. Velocity-attack scaling is hard-coded; out-of-range velocity produces negative attack
+
+**Problem:** `builtinSynth.ts:127`: `velAttack = params.attack *
+(1.5 - velocity / 127)`. User-configured `attack = 1s` becomes
+0.5s (vel 127) … 1.5s (vel 0): 3× variation, no opt-out. Same
+formula in `scheduleNoteOffline.ts:386`.
+
+`velocity` is not clamped at the entry point. A velocity of 200
+yields `velAttack = -0.075 * attack`; `attackEnd = startTime +
+velAttack < startTime`; `linearRampToValueAtTime(peakGain, attackEnd)`
+schedules an event in the past. Web Audio behaviour for past
+events is implementation-defined.
+
+**Representative files:**
+
+- `src/modules/Synth/useCases/builtinSynth.ts:127, 256, 386, 420`
+
+**Needed:** Clamp `velocity` to `[0, 127]` at the top of both
+schedulers. Either accept the velocity-attack curve as a fixed
+rule and document it, or expose it as a `SynthParams` field
+(`velocityAttackScale: 0..1` where 0 = no scaling, 1 = current
+behaviour) so users who want flat attack can opt out.
+
+### 40. Offline render parity: drum kits render full-fat while builtin synth renders draft
+
+**Problem:** `AudioEngine/useCases/offlineRender/scheduleTrackClips.ts:286-308`:
+- `kitDef` → `scheduleDrumKitNote(offlineCtx, …)` → `scheduleDrumVoice` (full graph: 6-osc hi-hat, multi-tap clap, etc.)
+- `drumKit` → `scheduleKitNote(offlineCtx, …)` → realtime `scheduleNote` (osc2/sub/noise/vibrato/spread all ON)
+- builtin synth → `scheduleNoteOffline(offlineCtx, …)` → 3 nodes, **no** osc2/sub/noise/vibrato/spread.
+
+A track with both synth and drums in the same project bounces
+incoherently: drums sound full, synth sounds thin. The user A/Bs
+realtime monitor vs offline bounce, hears the synth has "lost
+character", and has no way to diagnose the asymmetry.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts:286-308`
+- `src/modules/Synth/useCases/builtinSynth.ts:376-441`
+- `src/modules/Synth/useCases/drumKitSynth.ts:33-48`
+
+**Needed:** Pick one. Either (a) `scheduleNoteOffline` becomes a
+thin alias for `scheduleNote` (and possibly delete it entirely —
+`OfflineAudioContext` runs much faster than realtime, the perf
+"savings" of the lite path are mostly imaginary), or (b)
+`scheduleKitNoteOffline` and `scheduleDrumKitNoteOffline` get
+draft-fidelity siblings to match. The mixed regime is incoherent.
+
+### 41. CV/Gate sub-system is dead code that ships persisted state
+
+**Problem:** Verified 2026-04-28 by grepping `src/modules/` for
+external callers of CV operations:
+- `midiNoteToCv`, `velocityToCv`, `getClockValue`, `setCvValue`,
+  `removeCvOutput`, `setVoltageStandard`, `setClockDivision` — **zero**
+  external callers (only Synth's own tests).
+- `addCvOutput` — wired to one AppAction (`handleAddCvOutput`) which
+  is itself broken (#38).
+
+There is no DC-coupled output device strategy, no UI rendering CV
+channel state, no audio-thread code consuming `cvGateStore.outputs`.
+Yet `cvGateStore` (`stores/cvGate.ts:33-42`) is an Automerge-
+persisted document written into every project file. The semantic
+bugs in #5, #6, #7, #19, #28 are real but unreachable today —
+they will surface the moment a developer wires the feature, with
+zero behavioural test coverage on the integration path.
+
+**Representative files:**
+
+- `src/modules/Synth/useCases/cvGate/**` (8 source files + tests)
+- `src/modules/Synth/stores/cvGate.ts`
+- `src/modules/Synth/useCases/index.ts:2-6`
+- `src/modules/AudioEngine/handlers/finalFeature/handleAddCvOutput.ts`
+- (no other consumer)
+
+**Needed:** Decide. Either (a) build the missing piece — a
+CV-output device strategy (DC-coupled `ConstantSourceNode` per
+channel writing to a chosen output channel via `MediaStreamAudio
+DestinationNode`/`AudioContext.destination`), plus a UI to wire
+MIDI events to CV channels — or (b) delete the entire `cvGate/`
+sub-tree, the store, and the AppAction. Add an Automerge migration
+to strip the dead state from existing projects. Shipping
+unreachable code that touches persisted state is the worst of both
+worlds.
+
+### 42. `getSynthParamsFromDevices` and the scheduling sites disagree on what counts as a synth
+
+**Problem:** `builtinSynth.ts:341` matches synth devices via
+`d.type === 'synth' || d.type.startsWith('builtin-synth')`. The
+scheduling sites (`Transport/scheduling/scheduleMidiNotes.ts:462`,
+`AudioEngine/useCases/audition.ts:115-124`) call `scheduleNote` on
+a "default" branch — anything that didn't match drum/Faust/levain/
+fermenter/toaster/grand-boule. A device with type `'builtin'` (or
+any future feature whose name doesn't begin with `builtin-synth`)
+falls into the synth-default branch but is **not** matched by the
+params resolver, so it gets default `SynthParams`. Silent quality
+regression.
+
+**Representative files:**
+
+- `src/modules/Synth/useCases/builtinSynth.ts:340-368`
+- `src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts:462`
+- `src/modules/AudioEngine/useCases/audition.ts:115-124`
+
+**Needed:** Define a single canonical `isSynthDevice(device)`
+predicate (in a Synth `services/` folder once it exists, see issue
+#17). All call sites consume it.
+
+### 43. `cachedNoiseBuffer` keys on `sampleRate` only, not `(ctx, sampleRate)` — buffers cross AudioContext boundaries
+
+**Problem:** `builtinSynth.ts:39-52` keeps a module-level
+`cachedNoiseBuffer: AudioBuffer | null` and reuses it whenever
+`cachedNoiseBuffer.sampleRate === ctx.sampleRate`. A realtime
+`AudioContext` at 48 kHz and an `OfflineAudioContext` at 48 kHz
+(used during export) will share the same `AudioBuffer` instance.
+`AudioBuffer` instances are bound to a single context in the spec;
+passing one to a `BufferSource` in a different context is
+undefined behaviour and throws in some browser implementations.
+The drum-voice cache (`engine/drumSynthVoices.ts:22`) correctly
+uses `WeakMap<BaseAudioContext, …>`; this one is wrong by
+structure.
+
+**Representative files:**
+
+- `src/modules/Synth/useCases/builtinSynth.ts:39-52`
+
+**Needed:** Replace the module-level singleton with a
+`WeakMap<BaseAudioContext, AudioBuffer>` mirror of
+`drumSynthVoices.ts:22`. Or pre-fill the noise buffer at first
+`scheduleNote(ctx, …)` call and key on `ctx`.
+
 ---
 
 ## Open questions
@@ -1347,11 +1677,16 @@ type would live there.
       `drumSynthEngine/.../scheduleDrumKitNote` both intentional, or
       is one obsolete? The Transport calls both
       (`Transport/scheduling/scheduleMidiNotes.ts:15`). (Affects issue #1.)
+- [ ] **Is the CV/Gate sub-system intended to ship as a feature, or
+      is it a half-finished experiment?** Today it is unreachable
+      code in persisted state (open issue #41, finding #54). The
+      answer determines whether to fix #5/#6/#7/#19/#28 or delete
+      the entire `cvGate/` sub-tree.
 - [ ] What is the intended contract for `setCvValue`? Voltage, or
       normalised `[0, 1]`? (Affects issue #5.)
 - [ ] Is `scheduleNoteOffline`'s "draft" rendering an intentional UX
       choice (faster bounces) or an accidental divergence? (Affects
-      issue #4.)
+      issue #4 and the parity gap in #40.)
 - [ ] What target hardware should the Hz/V CV mode emulate? (Affects
       issue #6.)
 - [ ] Is `triggerPulseMs` / `gateThreshold` reserved for an unfinished
@@ -1361,6 +1696,15 @@ type would live there.
 - [ ] Should `engine/` be allowed to call `ctx.create*` / `connect`
       directly, or should those move to a `repositories/`? (Affects
       issue #24.)
+- [ ] **Is the velocity-attack inversion `(1.5 - vel/127)` a feature
+      or an accident?** (Affects issue #39.) If a feature, expose
+      it as a configurable param; if an accident, remove it. Right
+      now users see a 3× attack-time variation across velocity and
+      cannot opt out.
+- [ ] Is `audition.ts:124`'s `_env` reach-through a vestige of an
+      earlier `scheduleNote` API, or is `scheduleNote` supposed to
+      attach `_env` and someone deleted that line? Git blame on
+      both files would clarify intent. (Affects issue #36.)
 
 ---
 
@@ -1375,19 +1719,51 @@ type would live there.
   drops half the synth. Users mix a track relying on the realtime
   monitoring, then bounce it — the bounce sounds wrong, and the
   reason is invisible.
+- **Audition release is broken.** Issue #36 (was finding #52):
+  `osc._env` reach-through is dead code; key-up does not soften
+  the envelope, only stops osc1 — every other oscillator keeps
+  running for 60 seconds. Encountered any time a user holds a key
+  while auditioning a synth track. User-visible bug today.
+- **Faust pro-instruments break under HMR.** Issue #37: second call
+  to `registerProSynthInstruments` replaces the compiled module
+  with `compiled: false, generator: null`. React StrictMode and
+  dev HMR re-mount `useAppInitialization`. Developers experience
+  "Faust instruments randomly stop working in dev". Users **could**
+  also encounter this if any other code path triggers a second
+  registration.
+- **CV/Gate is dead code with broken handler that ships persisted
+  state.** Issues #38 (handleAddCvOutput cast + bogus undoable),
+  #41 (whole sub-tree unreachable), and the latent semantic bugs
+  in #5/#6/#7/#19/#28. The dead state ships with every project; if
+  the feature is built later without a migration, projects will
+  carry forward bogus `outputs[]` arrays and stale
+  `triggerPulseMs`/`gateThreshold` values.
 - **CV/Gate modular synth integration is broken in the only mode
-  that matters.** Issues #5, #6, #7: if the user actually has
-  a CV-capable interface plugged in, `setCvValue`'s `[0,1]` clamp
-  destroys the pitch range; Hz/V converts to frequency, not voltage;
-  `clockDivision` quadruples the clock instead of quartering it. None
-  of the tests catch any of this.
+  that matters** if the feature were ever wired (issues #5, #6, #7):
+  `setCvValue`'s `[0,1]` clamp destroys the pitch range; Hz/V
+  converts to frequency, not voltage; `clockDivision` quadruples
+  the clock instead of quartering it. Tests don't catch any of it.
+- **Bouncing produces unfaithful renders.** Issue #4 +
+  parity-mismatch issue #40: `scheduleNoteOffline` drops half the
+  synth, but drum kits render at full fidelity in the same offline
+  pass. Users hear an incoherent mix in their export.
 - **Silent regressions in the analog drum kit.** Issues #11, #27:
-  zero behavioural coverage on the 808 voices. A refactor of
-  `schedule808Kick`'s pitch sweep can ship broken with all tests
-  green.
-- **Faust DSP parameters drift silently.** Issue #12: a typo in the
-  TS `address` string makes a slider do nothing at runtime; the user
-  hears it but the developer's UI looks correct.
+  zero behavioural coverage on the 808 voices.
+- **Faust DSP parameters look documented but the addresses are a
+  lie.** Issue #25 (deepened): the `/wt/`, `/supersaw/`, `/pm/`,
+  `/additive/`, `/synth/` prefixes are fabricated — none of the
+  `.dsp` sources declare matching `vgroup`s. The bare-name cache in
+  `faustDeviceFactory.ts:117-134` salvages it, but a developer
+  reading `proSynthInstruments.ts:25` thinks the prefixes are
+  meaningful and has no warning when a typo lands.
+- **Velocity-attack negative-time bug.** Issue #39: out-of-range
+  velocity yields negative `velAttack`, scheduling Web Audio
+  events in the past. Reachable via MPE pressure + mis-mapping or
+  malformed AI-runtime payloads.
+- **Cross-context noise buffer reuse.** Issue #43: `cachedNoiseBuffer`
+  may be shared between realtime `AudioContext` and offline
+  `OfflineAudioContext`, which is undefined behaviour in the spec
+  and throws in some browsers.
 - **Architecture drift.** Issues #2, #9, #10, #16, #17, #21, #24,
   #31, #33: AGENTS.md violations have accumulated; left
   unaddressed they normalise positional-arg signatures, model

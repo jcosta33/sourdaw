@@ -20,6 +20,29 @@ It is an adversarial review focusing on:
 - Type soundness, dead code, AGENTS.md architectural violations,
   testing gaps
 
+**Adversarial review pass 2 (2026-04-28).** Re-verified all 44 prior
+issues at the cited file:line and added new high-impact findings.
+Highlights from this pass:
+
+- **Semantic-change-context messages never reach the CRDT** (issue
+  #46 below). The handshake between `executeAppAction` (sets +
+  synchronously clears) and `createAutomergeStorage`'s
+  `requestAnimationFrame`-deferred writes loses the context
+  every time. The entire `Automerge.getHistory()` annotation feature
+  is silently a no-op.
+- **`transactSnapshot` does not await RAF-deferred store writes**
+  (issue #47). The AI runtime's undo bundle for DSO edits is
+  silently empty for every action that goes through `createAutomergeStorage.set()`.
+- **`forkProjectBranch` activates the new branch but does not swap
+  `DOC_PREFIX_ROOT`** (issue #48). Compounding issue #6: subsequent
+  edits land in `root` (still pointing at the source branch) rather
+  than the just-created branch.
+- **Issue #6 / #7 / #25 status under sync.** During a Collaboration
+  session, the `__branches__` Automerge doc owns the metadata, so the
+  audit's "branchStore is local-only" failure mode partially mitigates
+  while a session is active. Off-session it is unchanged. The two
+  systems still disagree about who owns truth.
+
 It explicitly excludes the Collaboration module (which subscribes to
 `subscribeToCrdtChanges`) and the legacy `Project/useCases/versionControl/*`
 "snapshot" surface (mentioned only where it duplicates this module's
@@ -163,6 +186,63 @@ prove nothing.
 ---
 
 ## Findings
+
+### Structural patterns (pass 2 additions)
+
+- **Semantic context is dropped before reaching Automerge.** Every
+  CRDT-backed store write through `createAutomergeStorage.set()`
+  defers the actual `mutateCrdtDoc` call to `requestAnimationFrame`
+  (see `infra/store/storage/createAutomergeStorage.ts:99`). But
+  `executeAppAction` sets the semantic context immediately before
+  `handler.execute(action)` runs, then synchronously clears it in
+  `finally` (`Command/useCases/executeAppAction.ts:43-53`). The RAF
+  callback fires AFTER the finally block — so when `writeToCrdt`
+  reads `getSemanticContext()` at line :74, it always reads `null`.
+  **Conclusion:** `Automerge.getHistory()` returns changes with
+  `message: undefined` for every store-mediated mutation. The
+  annotation infrastructure is entirely cosmetic in production.
+- **`transactSnapshot` doesn't await RAF-deferred store writes.**
+  Same root cause: `automergeRepository.transactSnapshot` returns as
+  soon as the user `fn()` resolves, but `fn()` typically just calls
+  store setters whose CRDT writes are queued for the next RAF.
+  By the time `transactSnapshot` reads the dirty set and serialises
+  `bundleAfter`, no listener has fired yet. The AI runtime's undo
+  bundle for DSO edits (`AiRuntime/useCases/dsoEditor/executeDsoEdit.ts:257`)
+  is therefore mostly empty in practice.
+- **`actionHistoryStore` is itself a CRDT-backed store under `root`.**
+  `stores/actionHistoryStore.ts:31` wires it through
+  `createAutomergeStorage(DOC_PREFIX_ROOT, 'actionHistory')`. Every
+  push therefore generates a CRDT change on `root`. Two follow-ons:
+  (a) action history syncs to peers via Collaboration's automergeSync
+  — every peer sees every other peer's local history, which contradicts
+  the implicit "history is per-user" assumption in `revertAction.spec`
+  and `AiActionHistoryPanel`; (b) every action triggers TWO root
+  mutations (the state change + the history entry), doubling the
+  CRDT change rate.
+- **Branch slot model is internally inconsistent.** `branchStore`
+  seeds main with `rootDocId: 'root'` (`stores/branchStore.ts:28`) —
+  i.e., main *aliases* the root slot rather than having its own slot.
+  `forkProjectBranch` writes to `branch_<uuid>` (`crdtBranching/forkProjectBranch.ts:31`)
+  AND sets `activeBranchId = branchId` (line :45) — but does NOT
+  call `replaceDoc(DOC_PREFIX_ROOT, forkedDoc)`. Result: just after
+  fork, `activeBranchId` says you are on the new branch, but
+  `DOC_PREFIX_ROOT` still holds the source branch's doc. All store
+  writes go to `root`, so the new branch never receives any of the
+  next edits — the user's edits land in main while the UI says
+  "you're on feature-x".
+- **`models/BranchTypes.ts` is orphaned.** Defines `BranchRecord`,
+  `BranchStoreState`, and `MAIN_BRANCH_ID` — but every importer
+  pulls these from `stores/branchStore.ts` instead. `grep -r
+  BranchTypes` returns zero hits in the codebase. Drift hazard if
+  the two diverge.
+- **`DOC_BRANCHES` is exported but unused.** `models/CrdtDocumentTypes.ts:17`
+  defines `DOC_BRANCHES = '__branches__'`, but the only production
+  reference to that string is `Collaboration/models/syncChannelConstants.ts:5`
+  which redefines it as a private `DOC_ID_BRANCHES = '__branches__'
+  as const`. Two constants for the same key, neither imports the
+  other.
+
+### Numbered issues
 
 1. **No root `index.ts`.** The module has no root barrel. AGENTS.md:
    "Cross-module imports MUST only target the destination module's

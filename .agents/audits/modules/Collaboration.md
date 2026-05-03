@@ -22,6 +22,20 @@ It is an adversarial review, with emphasis on:
 
 Related spec: none on disk.
 
+**Adversarial revision 2 (this pass).** The original audit was
+substantively correct on the major findings (no permission enforcement,
+forgeable peer-info / peer-leave, branch sync with no host filter, asset
+DoS, no reconnect, dead `error` state). This revision verifies every
+open issue against the current source (sessionManagement.ts is now
+**821 lines**, up from 820), promotes severity on items the original
+underrated, and adds **15 new numbered issues** (#37–#51) that the
+original missed — most importantly that the host **auto-grants
+`editor` to every connecting peer** in `handlePeerConnected`, so even
+if permission filtering were wired to the receive boundary the
+filter would say "yes" for everyone, and that the receiver-side
+`presence` JSON-parse swallows malformed messages with **no log**,
+giving any peer a silent CPU-DoS surface.
+
 ---
 
 ## Goal
@@ -932,6 +946,236 @@ has **no spec at all**. `permissions.spec.ts` does not exercise the
     `useCase` and `repository` file must export exactly ONE function."
     `useCases/index.ts:1-13` aggregates them by re-exporting from this
     one file. This is the largest single-file violation in the module.
+
+80. **NEW. The host auto-grants `editor` to every connecting peer.**
+    `handlePeerConnected` at `sessionManagement.ts:685` calls
+    `sessionState.permissionManager?.grantRole(peerId, 'editor')`
+    unconditionally on every successful WebRTC channel-open event.
+    This means even if `permissionManager.canEdit` were wired into
+    the receive boundary (#3), the filter would always pass — there
+    is no admission control, no "viewer-by-default" stance, no
+    host-approval handshake. Combined with #3 the role system is
+    not just unenforced but actively configured as a no-op. The
+    "viewer" role exists in the type but no code path produces a
+    viewer.
+
+81. **NEW. `cursor`-only presence broadcasts also wipe `playheadBeat`
+    and selection fields.** `useTimelineInteractions.ts:283-294` is
+    the only caller of `broadcastPresence` and emits
+    `playheadBeat: null`, `selectedClipIds: []`, `selectedNoteIds: []`,
+    `viewportStartBeat: 0`, etc. on every cursor move (10 Hz
+    throttled). The receiver merge in `usePresence.ts:31` — `existing
+    ? { ...existing, ...data } : data` — therefore wipes the
+    receiver-cached **playhead** every cursor tick, **and** the host's
+    4 Hz heartbeat (#12) wipes the **cursor**. The flicker bug is
+    bidirectional, not just a sender-side heartbeat issue. Fixing
+    `startPlayheadBroadcast` to send a delta does not fix the
+    cursor-side wipe.
+
+82. **NEW. `peerConnection.setupChannel` swallows malformed-JSON
+    `presence` (and `crdt-sync`) messages with no log.**
+    `peerConnection.ts:201-208`: `try { JSON.parse(event.data) ... }
+    catch {}` — the catch body is empty, **not** a `logger.warn`.
+    A peer can stream malformed JSON forever; the receiver burns
+    CPU on `JSON.parse` exceptions and **never** sees a single log
+    line. With 1000 messages/sec this is invisible CPU load. Also
+    a covert channel for "always-noisy" traffic that doesn't show
+    up in any observability surface.
+
+83. **NEW. The receiver-side message dispatch (`presenceListeners.forEach`)
+    has no try/catch around individual listeners.**
+    `sessionManagement.ts:658-660`: a thrown error in any one
+    presence listener (e.g. a render-time exception that bubbles up
+    from a React subscribe path) terminates the loop, dropping the
+    presence message for **all subsequent listeners**. This is a
+    classic event-emitter foot-gun.
+
+84. **NEW. `compressInvite` / `decompressInvite` `void writer.write/close`
+    swallow promise rejections.** `sessionManagement.ts:800-801,
+    816-817`: `void writer.write(bytes); void writer.close();` —
+    the returned Promises are dropped on the floor. If the
+    CompressionStream rejects (e.g. browser bug, OOM during
+    compression on a multi-MB SDP) the rejection becomes an
+    unhandled promise rejection. The `await readAllChunks(...)` only
+    catches stream-reader errors, not writer errors.
+
+85. **NEW. `joiner peer-info` is never re-broadcast by the host to
+    other joiners.** `acceptAnswer` adds the new joiner to the host's
+    local `peers` array (`sessionManagement.ts:458-461`) but does
+    not call `peerManager.broadcastCrdtSync({ type: 'peer-info',
+    peer: joinerInfo })`. `handlePeerConnected` only sends the
+    **host's own** `peer-info` to the new joiner (`:679-682`).
+    Therefore: in a 3-peer star (host + joiner-A + joiner-B), each
+    joiner sees only the host. Joiner-A never learns joiner-B's
+    name / colour / id even though Automerge sync goes
+    host-relayed. Manual signaling tolerates this in star mode but
+    the architecture pretends to be a mesh.
+
+86. **NEW. `MAIN_BRANCH_ID = 'main'` is duplicated **three** times,
+    not twice.** `sessionManagement.ts:28` (Collaboration),
+    `CrdtDocument/stores/branchStore.ts:19`, **and**
+    `CrdtDocument/models/BranchTypes.ts:16`. A typo in any of the
+    three silently breaks branch sync between the modules. The audit
+    issue #27 underestimates the duplication count.
+
+87. **NEW. `addOrUpdatePeer` overrides `peer.lastSeen` with `Date.now()`,
+    discarding the sender's clock.** `sessionManagement.ts:723, 728`:
+    `{ ...peer, isConnected: true, lastSeen: Date.now() }`. The
+    `peer.lastSeen` field in the incoming `peer-info` is wire-supplied
+    but always replaced. Combined with the `peer-info` self-attestation
+    issue (#5) this is a defence — but the **field becomes meaningless
+    for "when did peer X last send something"**, which is what
+    `lastSeen` is supposed to mean. UI labels in `PeerPresenceRow`
+    that show "active 5s ago" derive from this field.
+
+88. **NEW. `requestAsset` doesn't dedupe outstanding requests.**
+    `assetTransfer.ts:75-87`: every call broadcasts. The scheduler
+    (`Transport/scheduling/scheduleAudioClips.ts:116-118`) keeps
+    its own `requestedAssets: Set<hash>` to dedupe externally — a
+    leak of the dedupe responsibility into a consumer that doesn't
+    own the transfer state. A future second consumer of
+    `requestAsset` (e.g. piano roll auditioning a sample) will
+    re-broadcast even if the scheduler already has.
+
+89. **NEW. `incomingTransfers` slot is never timed out.**
+    `assetTransfer.ts:163-173`: a manifest creates a transfer slot;
+    `handleChunk` populates it. If the sender goes silent (peer
+    disconnects mid-transfer), the slot stays in memory until the
+    `AssetTransfer` instance is GC'd at session end. With many
+    sessions opened across a day in the same tab, leaked slots
+    accumulate. Combined with #25 (no manifest cap) the worst
+    case is unbounded.
+
+90. **NEW. `incomingTransfers` is not cleaned up on `assembleAsset`
+    integrity failure path or sender disconnect.** `assetTransfer.ts:222`
+    deletes only on hash-mismatch. A partially-received transfer
+    whose sender drops out is never cleared. There is no
+    `removePeer(peerId)` API on `AssetTransfer` to drop transfers
+    sourced from a specific peer (in fact, the receiver doesn't
+    track which peer owns a transfer slot — `_peerId` is unused at
+    `:163`).
+
+91. **NEW. `permissions.handleMessage` ordering bug — host's `peer-info`
+    can arrive after the `role.grant` it should authorise.**
+    `permissions.ts:122` looks up `state.peers.find(p => p.id ===
+    peerId && p.isHost)`. If the network delivers the host's
+    `role.grant` before its `peer-info` (possible because both go
+    over the same reliable channel but the host sends its
+    `peer-info` from `handlePeerConnected:679` and `grantRole` from
+    `handlePeerConnected:685` synchronously — actually this is host
+    → joiner only, so for host-→-joiner the order is preserved by
+    the channel. But for joiner-A → joiner-B (if the architecture
+    ever became mesh) the ordering is not guaranteed). The receiver
+    silently drops the grant; there's no resend / retry mechanism.
+
+92. **NEW. `PEER_COLORS` is exported as a mutable `Array`, not `as
+    const` / `readonly`.** `models/CollaborationTypes.ts:61-70`. A
+    consumer doing `PEER_COLORS.push(...)` would mutate the source
+    of truth for everyone. Currently nothing does, but the export
+    shape doesn't enforce immutability.
+
+93. **NEW. `closeAll` does not remove peers from
+    `automergeSync.syncStates`.** `peerConnection.ts:302-307`
+    iterates `peers.values()` calling `peer.close()` — but
+    `automergeSync.syncStates` is keyed by `PeerId` and is not
+    iterated through `removePeer`. `cleanupSubsystems` does call
+    `automergeSync.stop()` which invokes `syncStates.clear()` (`automergeSync.ts:74`),
+    so this is **OK on the leaveSession path**. But a unilateral
+    `peerManager.closeAll()` without `automergeSync.stop()` would
+    leave a stale syncStates map. **Verified safe** in current
+    flow but the contract is implicit.
+
+94. **NEW. `handlePeerConnected` initial sync (`sendSyncToPeer`) and
+    `grantRole` happen synchronously in the same tick — but the
+    `automergeSync.start()` listener for `__permissions__` doc
+    changes fires the host's grant via `broadcastCrdtSync`, not
+    `sendCrdtSync` to the new peer.** `permissions.ts:58-62`:
+    `peerManager.broadcastCrdtSync({...})`. So the new joiner
+    receives the grant via broadcast — but only if their crdtChannel
+    is `isReady() === true` at the moment of the broadcast. It is,
+    because we just received `onopen`. **OK** but: any other
+    just-connected joiner (race) receives a grant for someone
+    else, which is fine, but the grant ordering depends on
+    broadcastCrdtSync iterating `peers` Map insertion order — not
+    guaranteed by the spec.
+
+95. **NEW. `acceptAnswer` doesn't validate `pendingPeerId === sessionState.pendingInviteId`.**
+    `sessionManagement.ts:438-443`: `peerManager.getPeer(answer.pendingPeerId)`
+    accepts any pending peer id that has a live `peerConnection`
+    object. After a successful accept of joiner-X, `pendingInviteId`
+    is cleared but joiner-X's peerConnection remains. A second
+    `acceptAnswer` with X's pendingPeerId calls
+    `peer.acceptAnswer(answer.sdp)` on an already-established
+    connection, which throws a `InvalidStateError`. The error
+    surfaces as `logger.warn` and the user has no diagnostic
+    context. (Same shape as #21 in original audit but verified —
+    `pendingInviteId` is consulted **only** at `:444` after the
+    successful path, so the early-return guard is missing.)
+
+96. **NEW. `subscribeToCrdtChanges` callback in `startBranchSync`
+    fires on the host's own seed mutation.** `sessionManagement.ts:131-141`:
+    host calls `mutateCrdtDoc(__branches__, ...)` which triggers
+    `notifyListeners(__branches__)`, which re-enters our callback
+    at `:162`. On first iteration `lastProjectedBranchesJson === null`
+    so the cache miss forces a `branchStore.set(...)` with the same
+    branches. That second `branchStore.set` triggers the
+    `branchStore.subscribe` at `:146`, which (because
+    `isProjectingBranches: true` is set inside the try/finally
+    at `:184-194`) is correctly ignored. **OK** but the design is
+    fragile: any change to the projection that yields a microtask
+    between `isProjectingBranches = true` and `branchStore.set`
+    breaks the guard (see #30). **Wasted work on session start.**
+
+97. **NEW. Joiner permission state is reset to empty on session start
+    but never re-populated.** `permissions.ts:134-137`: `clear()`
+    resets `grants` and `epoch`. After clear, the joiner waits for
+    the host to broadcast `role.grant` events. The host calls
+    `grantRole(peerId, 'editor')` for each new connection, but
+    **doesn't** broadcast a snapshot of all existing grants when a
+    new joiner connects. So a third joiner arriving mid-session
+    has empty grants for everyone except themselves. If
+    `canEdit(otherJoinerId)` were ever called by the third joiner
+    during the time before that other joiner mutates anything, it
+    returns false — even though the host has issued a grant the
+    third joiner missed. **Late-join state-bootstrap is missing.**
+
+98. **NEW. `acceptAnswer` race: `peer.acceptAnswer(answer.sdp)` is
+    awaited but `pendingInviteId = null` is set AFTER the await.**
+    `sessionManagement.ts:443-444`. If `acceptAnswer` is called
+    twice in rapid succession (UI button double-click) before the
+    first await resolves, both invocations see the same
+    `pendingInviteId` and both call `peer.acceptAnswer(...)`. The
+    second's `peer.acceptAnswer` then throws because the WebRTC
+    state machine has already received the answer.
+
+99. **NEW. `handlePeerDisconnected`'s `connectionStatus: 'disconnected'`
+    transition is incorrect when at least one peer remains
+    connected.** `sessionManagement.ts:707-712`: `anyConnected =
+    state.peers.some(p => p.isConnected && p.id !== peerId)` and
+    `state.peers.length > 0`. The condition is right, but it
+    runs **after** `updatePeerConnectionState(peerId, false)` at
+    `:697` mutated the store — so `state` (the unsigned snapshot
+    above) is stale. The `state.peers` it reads still has
+    `peerId.isConnected === true` because `state` was captured
+    before the mutation. **The check is on the wrong snapshot,**
+    so the `anyConnected` calculation includes the just-disconnected
+    peer. After three peers disconnect serially, the connectionStatus
+    correctly settles to 'disconnected' but only because the
+    bug is symmetric — never transitioning to 'connected' is
+    masked by `handlePeerConnected:691` setting it directly.
+
+100. **NEW. No filter on `presence` messages from peers without
+    `peer-info`.** `handlePeerMessage` at `:657-661` invokes all
+    presence listeners regardless of whether `peerId` is in the
+    `peers` array. A connected peer that hasn't sent `peer-info`
+    yet broadcasts presence; receivers get a `PresenceData` with
+    a `peerId` they don't recognise. `usePresence` hook stores it
+    by `data.peerId`. The `PresenceOverlay` renders a marker for
+    a peer with no entry in `collaborationStore.peers`. The
+    `name` and `color` come from `data.name` / `data.color` which
+    are sender-supplied (and unbounded — see #73) — so a peer can
+    render arbitrary names with arbitrary colours on every other
+    peer's screen, and the receiver has no peer-list cross-check.
 
 ---
 

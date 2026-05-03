@@ -242,6 +242,24 @@ are present in: `getAutomationValueAtBeat.spec.ts`,
 
 ## Findings
 
+### Adversarial review log (2026-04-28)
+
+**Verified open issues #1-22** against current source (`Automation/` tree as of commit 0ef2e91d9). Every cited file:line still matches; nothing has been silently fixed and no issue could be moved to `## Resolved`.
+
+**Promoted severity:**
+
+- Issue #2 (silent undo loss) — re-confirmed: `executeAppAction.ts:35-37,66` reads `inverseAction` *only* if `handler.undoable === true` AND `describe()` returned an `inverseAction`; none of the 9 handlers do. `undoRedo.ts:6-12` short-circuits when `inverseAction === null`. The user *also* loses the associated `pushActionHistoryEntry` revert path (`executeAppAction.ts:60-72`), so the action-history "Revert" button is equally inert.
+- Issue #4 (smooth curve degenerate) — promoted: the `automationPoints.spec.ts:122-138` positive-path test **explicitly asserts** the buggy 3-arg call shape (no `previousPoint`/`nextPoint`). The bug is now test-locked, the same way #5 is.
+- Issue #10 (`removeMapping`/`updateMapping` identity) — promoted: cross-checked the React rendering path. `ModulationMatrix.tsx:599` keys `MappingRow` by `${row.modulator.id}:${row.mapping.targetParamId}` — the same wrong identity. Two mappings on different tracks for `cutoff` collide on the React key as well, so even *visually* the user sees one row even though two exist in the store. New issue #54 logs the React-key collision.
+- Issue #16 (test theatre) — promoted: the previous list of 16 smoke specs is essentially correct, but `setAutomationPointCurve.spec.ts` and `quantizeAutomationBeats.spec.ts` were re-read and confirmed as `expect-defined`-only. `automationDrawMode.spec.ts` is *also* an `expect-defined`-only smoke that does not call `beginDrawSession`/`paintDrawPoint` — so `snapToGrid(beat, 0) → NaN` (issue #19e/#40) cannot be caught by any current test.
+
+**Demoted severity:**
+
+- Issue #19c stack overflow on `Math.max(...arr)` — demoted from "blows the stack at 100k+" to "blows the stack at JS-engine-specific arg cap (~32k V8 / ~64k JSC)". Spread-arg cap kicks in *much* earlier than 100k on V8; the audit was being generous. Real ceiling is closer to 32k points — well within reach for a single ~5-min recording session at 100 Hz.
+- Issue #38 (DOC_PREFIX_ROOT shared) — demoted: the comment is correct that runtime store is intentionally storage-less, but the practical risk of a "future refactor" silently persisting it is low because `createAutomergeStorage(...)` requires a positional `prefix, name` and a future writer would need to *add* a config object. Useful belt-and-braces, not load-bearing.
+
+**New issues added in this review (numbered #54–#65):** see issues at the end of `## Findings` and the matching `### NN.` blocks under `## Open issues`.
+
 1. **No module-root `index.ts`.** Every `src/modules/<X>/` in the
    codebase must export through a single root `index.ts` (AGENTS.md
    "Contract Boundaries"). Automation does not. Cross-module
@@ -744,11 +762,165 @@ are present in: `getAutomationValueAtBeat.spec.ts`,
 53. **`zoomToUsedRange` blows the stack on 100k+ points.**
     `zoomToUsedRange.ts:18-19`
     `Math.min(...values)` / `Math.max(...values)` — JS spread
-    has a per-engine arg-count cap (~64k–100k). For a long
-    recording session at 100 Hz, a single hour produces 360k
-    samples. This silently throws. Compare to `getSelectionBounds`
+    has a per-engine arg-count cap (~32k V8 / ~64k JSC). For a
+    long recording session at 100 Hz, ~5 minutes already produces
+    30k samples — within reach during normal use. This silently
+    throws. Compare to `getSelectionBounds`
     (`getSelectionBounds.ts:33-46`) which already does the
     single-pass.
+
+54. **React key collision in `ModulationMatrix.MappingRow`.**
+    `presentations/views/ModulationMatrix.tsx:599`
+    `key={`${row.modulator.id}:${row.mapping.targetParamId}`}`.
+    Two mappings on the same modulator that target the same
+    `targetParamId` (e.g. `cutoff` on Track A's filter and Track
+    B's filter) collide on the React key. React warns in dev and
+    re-uses the DOM node in prod — the second mapping is
+    invisible in the UI. Combined with issue #10
+    (`removeMapping` matches by `targetParamId` only), the user
+    never sees the duplicate, clicks the only "remove" they see,
+    and both mappings disappear. Even the `flatMap` at
+    `ModulationMatrix.tsx:534-540` produces both rows in the
+    array; only React's dedup hides the second.
+
+55. **`recordAutomationValue` silently uses 120 BPM when the
+    transport store is unset.** `recordAutomationValue.ts:23-24`
+    `const tempo = transport?.tempo ?? 120;`. Hardcoded fallback
+    is never logged and never tracked — recordings made before
+    transport hydrates land with the wrong beat-to-second
+    conversion. Worse: `transport` is read fresh on every call,
+    so a tempo *change* mid-recording converts new samples at
+    the new tempo while old samples keep the old timestamp —
+    silent timing drift across the recording.
+
+56. **`applyAutomation` only writes to the FIRST device that
+    exposes the parameter.** `Transport/.../applyAutomation.ts:81-91`
+    iterates `track.devices`, finds the first device with
+    `device.parameterValues[lane.parameterId] !== undefined`,
+    writes, then `break;`. If two devices on the same track
+    expose the same `parameterId` (legitimately — multiple
+    filters with `cutoff`), only the first is automated and the
+    rest never get the lane value. The MIDI FX loop
+    (`:94-104`) has the same `break;`. The Automation lane has
+    no way to disambiguate by device id; it carries
+    `(trackId, parameterId)` only — so this is an *architectural*
+    gap, not just a missing branch.
+
+57. **`removeMapping` / `updateMapping` API is positional and
+    typed as `string`.** `removeMapping.ts:3` takes
+    `(modulatorId: string, targetParamId: string)`;
+    `updateMapping.ts:4` takes
+    `(modulatorId: string, targetParamId: string, patch: ...)`.
+    The two `string`s have no type-level distinction —
+    swap-the-arguments bugs are silent. Together with issue #10,
+    fix the signature to take a discriminated identity object:
+    `{ modulatorId: ModulatorId, mapping: ModulatorMapping }`
+    (with branded ids).
+
+58. **`addMapping` writes amount silently when the mapping
+    already exists.** `addMapping.ts:14-31` — when a duplicate
+    mapping is added (same `targetTrackId/targetDeviceId/targetParamId`),
+    the existing mapping is replaced via `{ ...x, ...mapping }`
+    (`:27`). Net effect: re-adding from the picker silently
+    *resets* the user's `amount` to 0.5 (the picker default,
+    `ModulationMatrix.tsx:366`). The user creates a mapping, dials
+    amount to 0.9, accidentally re-creates the mapping, amount
+    snaps back to 0.5. No warning.
+
+59. **`activeRecording` / `pendingPoints` / `touchActive` are
+    module-level mutable maps — not test-isolated.**
+    `recordingSessionState.ts:21-23` exports raw `Map`/`Set`
+    singletons. Any test that imports `recordAutomationValue` or
+    `isRecordingAutomation` and forgets to `clear()` them in
+    `beforeEach` carries state across specs. The current test
+    suite does the right thing in isolated specs (each one
+    `vi.mock`s the module), but *integration* tests that don't
+    mock will see leftover state. The pattern violates the
+    AGENTS.md "no module-level mutable state without DI seam"
+    principle (the latency dependency went via DI; the recording
+    session state did not).
+
+60. **`startAutomationRecording` does not seed sessions with the
+    current playhead beat — they all start at 0.**
+    `startAutomationRecording.ts:30-35` sets
+    `startBeat: 0` for every active recording, regardless of
+    playhead position. If the user starts recording mid-arrangement
+    at beat 32, then in `latch`/`touch` mode `clearPointsInRange(laneId, 0, lastBeat)`
+    (`stopAutomationRecording.ts:30`) would clear from beat 0 —
+    not from the actual recording start. Saved by happy
+    accident: latch-mode clear is gated on `lastBeat > startBeat`
+    (`:29`), and `lastBeat` is `compensatedBeat` from the
+    recorder which *is* the playhead. So the clear is from beat 0
+    to roughly `playhead`, wiping any pre-existing automation
+    before the user started recording. **This is silent data
+    loss in latch mode, not a near-miss.** Same hazard exists
+    in write mode via `recordAutomationValue.ts:60`
+    `clearPointsInRange(laneId, session.startBeat, compensatedBeat)`
+    where `session.startBeat` is `compensatedBeat` of the *first*
+    recorded value, not 0 — so write mode is OK. Latch is the
+    bug.
+
+61. **`removeModulator` does not clear runtime values for the
+    *modulator's mappings* — only for its own id.**
+    `removeModulator.ts:12-17` deletes `runtimeValues[id]` (the
+    modulator id). But `getModulationForParam.ts:20` reads
+    `rtState?.runtimeValues[mod.id]` — so removing the modulator
+    while playback is active *should* zero its contribution. OK.
+    However `applyModulationToEngine.ts:77-83` writes
+    `engineValue = clamp(baseValue + delta, ...)` *every tick*
+    while the modulator exists — the moment the modulator is
+    removed, no further writes happen, but the engine retains the
+    last written value. The user removes a mapping → the param
+    is stuck at the last modulated value, not the base value.
+    The fix is either to write `binding.baseValue` once on
+    `removeModulator`/`removeMapping`, or to track all modulated
+    params and reset them when their last modulator goes away.
+
+62. **`computeModulatorValue` `'random'` LFO returns
+    `Math.abs((sin(...) * 43758...) % 1)` — `Math.abs(x % 1)`
+    is in `[0, 1)`, but the `Math.sin` argument
+    `Math.floor(playheadBeat / period) * 12.9898` is integer ×
+    12.9898 → as `playheadBeat` grows past ~2³⁰ × period, the
+    integer multiplied by 12.9898 exceeds Number.MAX_SAFE_INTEGER
+    bits and the modulo loses entropy.** At 120 BPM with
+    `period = 1`, that's ~64 hours of playback — beyond practical
+    sessions. **Demote** to "harmless in practice" but document
+    the assumption.
+
+63. **`updateModulator` allows the caller to overwrite `kind`
+    and break the `kind`/`config.kind` discriminator.**
+    `updateModulator.ts:10`
+    `{ ...m, ...patch, id: m.id }` — `patch` is
+    `Partial<Modulator>`. A caller can pass `{ kind: 'envelope' }`
+    while `m.config.kind` stays `'lfo'`. `computeModulatorValue.ts:6`
+    branches on `cfg.kind` (the config-side discriminator), so
+    the modulator computes as LFO but the UI renders the
+    envelope card (`ModulationMatrix.tsx:491` `KIND_LABELS[modulator.kind]`).
+    The two are silently inconsistent.
+
+64. **`stopAutomationRecording` `JSON.stringify` whole-`lanes`
+    deep-equality is a memory and time hazard.**
+    `stopAutomationRecording.ts:39`
+    `JSON.stringify(laneBefore) !== JSON.stringify(laneAfter)`.
+    For 100 lanes × 1k points × ~40 bytes/point that's ~4 MB
+    serialised, twice, on every recording stop — and the
+    serialisation order is array-stable, but Automerge can change
+    object-property order during a sync. A successful recording
+    that adds zero points but changes Automerge metadata can
+    silently push an undo entry that "restores" to the same
+    state, polluting the undo stack with no-ops. Replace with
+    a per-lane `points.length`/`points` reference compare gated
+    by the active recording sessions' lane ids.
+
+65. **`Modulator.config` discriminator and `Modulator.kind` are
+    redundant and forbidden by AGENTS.md "soundness".**
+    `models/Modulator.ts:37-45`. The two fields must agree but
+    nothing enforces it (issues #18b, #63). The cleanest fix is
+    to remove `Modulator.kind` entirely — `m.config.kind` is the
+    single discriminator. Callers that today use `modulator.kind`
+    (`ModulationMatrix.tsx:491,599`, `addModulator.ts:5`) switch
+    to `modulator.config.kind`. The `id` prefix can either stay
+    (`mod-${modulator.config.kind}-...`) or use `'mod'` only.
 
 ---
 
@@ -791,6 +963,21 @@ are present in: `getAutomationValueAtBeat.spec.ts`,
     `useCases/index.ts` exports types (issue #43), `Project`
     imports models directly (issue #44), 22+ functions take
     positional params (issue #42).**
+11. **`startAutomationRecording` seeds sessions with `startBeat: 0`
+    regardless of playhead — latch-mode `clearPointsInRange`
+    wipes pre-existing automation from beat 0 to playhead
+    (issue #60).** Silent data loss when the user starts
+    recording mid-arrangement.
+12. **`applyAutomation` only writes the first device exposing the
+    parameter (issue #56).** Multi-instance plugins on the same
+    track can never be co-automated through the lane.
+13. **`removeModulator`/`removeMapping` leaves the engine param
+    stuck at the last modulated value (issue #61).** No reset
+    to the base value — the user perceives a stuck filter or
+    cutoff after removing a modulator while playing.
+14. **`addMapping` silently resets `amount` to 0.5 on duplicate
+    add (issue #58).** Re-creating a mapping wipes user-tuned
+    amount.
 
 ---
 
@@ -828,6 +1015,17 @@ Demote the existing sub-barrel imports in consumer modules.
 consumed from `past` and **no inverse action runs**. The user's
 edit persists; the user's undo button consumes a slot but does
 nothing.
+
+**Verified call chain (2026-04-28):**
+
+1. `executeAppAction.ts:36-38` — sets `undoResult` only if `handler.undoable`. Every Automation handler has `undoable: true`.
+2. `executeAppAction.ts:50` — runs `handler.execute(action)` (mutates the store irreversibly).
+3. `executeAppAction.ts:60-72` — pushes an action-history entry with `inverseAction: undoResult?.inverseAction ?? null`. Since none of the Automation `describe()` calls return `inverseAction`, this is **always null**.
+4. `executeAppAction.ts:75-87` — calls `commitUndoEntry(createUndoEntry(label, action, undoResult.inverseAction ?? null, …))`. The undo entry is `{ kind: 'action', action, inverseAction: null }`.
+5. `undoRedo.ts:6-12` — `executeUndo` checks `entry.kind === 'callback'` (false — kind is `'action'`), then `entry.inverseAction` (null) — falls through, does nothing.
+6. `undoRedo.ts:50-56` — pops the entry from `past` and pushes to `future`.
+
+Net effect: the user's history entry is consumed, but the underlying state is never reverted. **Redo** is equally broken in the symmetric direction — `executeRedo` re-runs the original action, which produces the *same* mutated state, so the user can't tell from the UI whether they're undoing or redoing.
 
 **Representative files:**
 
@@ -887,6 +1085,19 @@ does not pass them. Every interior point falls back to
 `v0 = firstPoint.value` and `v3 = secondPoint.value`, collapsing
 the spline to a 2-point Hermite that doesn't smooth across
 neighbours.
+
+**Test-locked.** `useCases/automation/__tests__/automationPoints.spec.ts:133-138`
+explicitly asserts:
+
+```ts
+expect(mocks.interpolateAutomationPointValue).toHaveBeenCalledWith({
+    firstPoint: points[0],
+    secondPoint: points[1],
+    beat: 7.5,
+});
+```
+
+The buggy 3-arg call shape is now the *contract* the test enforces. Adding the fix (passing `previousPoint`/`nextPoint`) will fail this test — the test must be updated together with the fix, otherwise a future agent will revert the fix to keep CI green.
 
 **Representative files:**
 
@@ -1032,6 +1243,18 @@ de-dupes on all three. But `removeMapping` and `updateMapping`
 match by `targetParamId` alone. A modulator that drives `cutoff`
 on Track A's filter AND on Track B's filter loses both when the
 user removes one; updating one silently mutates the other.
+
+**Compounded with React-key collision (issue #54).** The
+`MappingRow` component is keyed by
+`${row.modulator.id}:${row.mapping.targetParamId}`
+(`ModulationMatrix.tsx:599`) — same wrong identity. Two mappings
+with matching `(modulatorId, targetParamId)` produce duplicate
+React keys: React will warn in dev and silently reuse the same
+DOM node in prod, so the user *sees* one row in the matrix and
+believes the second mapping doesn't exist. They click "remove"
+on the only visible row → both mappings vanish (because of the
+matching `removeMapping` bug). Two bugs covering for each
+other — the user never sees the second mapping until reload.
 
 **Representative files:**
 
@@ -1326,6 +1549,266 @@ sub-paths instead of going through a single barrel:
 deep imports to the root barrel. Update test mocks to mock the
 barrel paths. Run `pnpm deps:validate` until clean.
 
+### 23. React-key collision in `ModulationMatrix.MappingRow`
+
+**Problem:** `ModulationMatrix.tsx:599` keys the rendered row by
+`${row.modulator.id}:${row.mapping.targetParamId}`. Two mappings
+on the same modulator that target the same parameter id on
+different tracks produce duplicate keys. React warns in dev and
+silently re-uses the same DOM node in prod. The user perceives
+*one* row even though the store contains two.
+
+Combined with issue #10 (`removeMapping` matches on
+`targetParamId` only), the user sees the visible mapping, clicks
+"remove", and *both* mappings disappear silently — they never
+discover the second mapping until reload. This is two bugs
+covering for each other.
+
+**Representative files:**
+
+- `src/modules/Automation/presentations/views/ModulationMatrix.tsx:599`
+  (key)
+- `src/modules/Automation/presentations/views/ModulationMatrix.tsx:534-540`
+  (the `flatMap` that produces both rows)
+- `src/modules/Automation/useCases/modulation/removeMapping.ts:10`
+  (the matching wrong identity)
+
+**Needed:** Key by the full mapping identity:
+`${modulator.id}:${mapping.targetTrackId}:${mapping.targetDeviceId}:${mapping.targetParamId}`.
+Add a Testing Library test that renders two mappings with the
+same `targetParamId` on different tracks and asserts both
+`MappingRow`s are present.
+
+### 24. `recordAutomationValue` hardcodes 120 BPM fallback; no logging on missing transport
+
+**Problem:** `recordAutomationValue.ts:23-24`
+`const tempo = transport?.tempo ?? 120;`. If the transport store
+hasn't hydrated yet (rare, but possible during early bootstrap),
+recordings land with the wrong beat-to-second conversion. No
+warning, no logger call. Worse: `transport` is read fresh per
+call, so a tempo *change* mid-recording converts subsequent
+samples at the new tempo while previously-recorded points keep
+the old timestamp — silent timing drift.
+
+**Representative files:**
+
+- `src/modules/Automation/useCases/automationRecording/recordAutomationValue.ts:22-31`
+- `src/modules/Transport/stores/transportStore.ts` (the source)
+
+**Needed:** Either short-circuit recording entirely when transport
+is unset (return early with a logger.warn — caller should not be
+recording when the transport doesn't exist) or convert all
+in-flight points when tempo changes (re-time the `pendingPoints`
+queue). Document the chosen semantics in the use case header.
+
+### 25. `applyAutomation` writes only the first device that exposes the parameter
+
+**Problem:** `Transport/.../applyAutomation.ts:81-91` iterates
+`track.devices`, finds the first device with
+`device.parameterValues[lane.parameterId] !== undefined`, writes,
+and `break`s. The MIDI FX loop (`:94-104`) has the same `break`.
+If a track has two devices that both expose `cutoff` (e.g.
+parallel filters), only the first is automated. The Automation
+lane carries `(trackId, parameterId)` only — there is no way to
+disambiguate by `deviceId` from the lane.
+
+**Representative files:**
+
+- `src/modules/Transport/useCases/scheduling/applyAutomation/applyAutomation.ts:81-104`
+- `src/modules/Automation/models/Automation.ts:28-50` (the
+  `AutomationLane` type — has no `deviceId` field for plugin
+  lanes)
+
+**Needed:** Either (a) lane carries `deviceId?: string` for plugin
+parameters and the scheduler matches by `(deviceId, parameterId)`,
+or (b) the scheduler iterates *all* devices and writes the same
+value to every device exposing the param (treat them as a single
+logical "track parameter"). Option (a) is the audio-correct
+answer; (b) is a UX shortcut. Decide in the spec, then
+implement.
+
+### 26. `removeMapping`/`updateMapping` API uses positional `string` args — easy to swap
+
+**Problem:** Two `string` parameters with no type-level
+distinction (`removeMapping.ts:3`, `updateMapping.ts:4`) — the
+caller can swap `(modulatorId, targetParamId)` and the code
+won't notice. AGENTS.md "Functions with more than one parameter
+take a single object param" applies.
+
+**Representative files:**
+
+- `src/modules/Automation/useCases/modulation/removeMapping.ts:3`
+- `src/modules/Automation/useCases/modulation/updateMapping.ts:4`
+- `src/modules/Automation/presentations/views/ModulationMatrix.tsx:435,463`
+  (call sites)
+
+**Needed:** Take a single object param of shape
+`{ modulatorId: ModulatorId; mapping: { targetTrackId, targetDeviceId, targetParamId } }`
+(plus `patch` for update). Combined with issue #10's identity
+fix.
+
+### 27. `addMapping` silently resets `amount` on duplicate add
+
+**Problem:** `addMapping.ts:14-31` — when a duplicate mapping is
+added, the use case replaces the existing mapping wholesale via
+`{ ...x, ...mapping }`. The picker (`ModulationMatrix.tsx:362-367`)
+constructs the mapping with `amount: 0.5` (a hardcoded default).
+A user who tunes amount to 0.9 then accidentally re-adds the
+mapping (e.g. via a quick double-click) sees the amount snap
+back to 0.5 with no warning.
+
+**Representative files:**
+
+- `src/modules/Automation/useCases/modulation/addMapping.ts:14-31`
+- `src/modules/Automation/presentations/views/ModulationMatrix.tsx:362-367`
+
+**Needed:** Either (a) `addMapping` no-ops on duplicate (the
+caller can `updateMapping` if they want) — preferred — or (b) the
+duplicate branch preserves the existing `amount` and only patches
+fields that the caller explicitly passed. Add a test for both
+the no-op semantics and the no-amount-clobber semantics.
+
+### 28. Module-level mutable state in `recordingSessionState` has no DI seam
+
+**Problem:** `recordingSessionState.ts:21-23` exports
+`activeRecording: Map`, `pendingPoints: Map`, `touchActive: Set`
+as raw module-level singletons. Tests that don't `vi.mock` them
+inherit state from prior specs. Compare to
+`recordingDependencies.ts` which uses a private `dependencies` +
+`set/get` accessor pattern — the same pattern would suit the
+session state.
+
+**Representative files:**
+
+- `src/modules/Automation/useCases/automationRecording/recordingSessionState.ts:21-23`
+- `src/modules/Automation/useCases/automationRecording/recordingDependencies.ts:14-25`
+  (the DI pattern used elsewhere in the same module)
+
+**Needed:** Wrap the maps in a `getRecordingSessionState()` /
+`resetRecordingSessionState()` accessor pair. The
+`startAutomationRecording.ts:8-10` "clear all" calls become
+`resetRecordingSessionState()`. Tests reset between specs without
+needing to import the internals.
+
+### 29. `startAutomationRecording` seeds `startBeat: 0` — latch-mode wipes prior automation
+
+**Problem:** `startAutomationRecording.ts:30-35` initialises every
+active recording session with `startBeat: 0`, regardless of the
+current playhead position.
+`stopAutomationRecording.ts:24-31` then reads
+`session.startBeat` (= 0) for `latch` mode and calls
+`clearPointsInRange(laneId, 0, lastBeat)` — wiping any
+pre-existing automation between beat 0 and the user's recorded
+range. Even a user who carefully crafts automation from beat 0
+to 16, then records a *latch* tweak from beat 32 to 36, will
+lose every point in `[0, 36]`.
+
+In **write** mode this is masked because
+`recordAutomationValue.ts:42` rebinds `session.startBeat` to
+`compensatedBeat` of the *first* recorded value, then clears
+from there. Only `latch` (and `touch` to a lesser extent) leaks
+the bug.
+
+**Representative files:**
+
+- `src/modules/Automation/useCases/automationRecording/startAutomationRecording.ts:30-35`
+- `src/modules/Automation/useCases/automationRecording/stopAutomationRecording.ts:24-31`
+- `src/modules/Automation/useCases/automationRecording/recordAutomationValue.ts:38-46`
+
+**Needed:** Either (a) seed `startBeat` with the current
+transport playhead at recording-start, or (b) move the
+`startBeat = compensatedBeat` rebinding from `recordAutomationValue`
+into a session-create branch shared by all modes. Add a positive
+test: pre-existing automation in `[0, 16]`, start latch
+recording at beat 32, push a single value, stop — assert the
+`[0, 16]` automation is intact.
+
+### 30. `removeModulator`/`removeMapping` leaves engine params stuck
+
+**Problem:** `applyModulationToEngine.ts:75-83` writes
+`engineValue = clamp(baseValue + delta, ...)` every tick. When a
+modulator or mapping is removed, the next tick simply doesn't
+write — the engine retains the *last* written value, not the
+base. The user removes a filter LFO mid-playback and the cutoff
+sticks at whatever modulated position it was last at.
+
+**Representative files:**
+
+- `src/modules/Automation/useCases/modulation/removeModulator.ts:3-18`
+- `src/modules/Automation/useCases/modulation/removeMapping.ts:3-13`
+- `src/modules/Automation/useCases/modulation/applyModulationToEngine.ts:75-83`
+
+**Needed:** On removal, snapshot the affected `(trackId, deviceId, paramId)` tuples and write `paramDef.defaultValue` (or `binding.baseValue` if available) once. Add a test that removes a modulator with a non-zero amount and asserts the engine receives the base value.
+
+### 31. `computeModulatorValue` `'random'` LFO loses entropy at large playhead beats
+
+**Problem:** `computeModulatorValue.ts:26`
+`Math.abs((Math.sin(Math.floor(playheadBeat / period) * 12.9898) * 43758.5453123) % 1)`.
+The `Math.floor(playheadBeat / period) * 12.9898` argument
+exceeds `Number.MAX_SAFE_INTEGER` precision for very large
+playheads. At 120 BPM with `period = 1`, this kicks in around
+64 hours of playback — beyond practical sessions, but the hash
+is also non-seedable, so undo/redo round-trips are
+non-deterministic and CRDT collaborators see different values
+for the same beat.
+
+**Representative files:**
+
+- `src/modules/Automation/useCases/modulation/computeModulatorValue.ts:26`
+
+**Needed:** Replace with a seeded PRNG (mulberry32 or splitmix64)
+keyed on `(modulatorId, floor(playheadBeat / period))`. The
+modulator's id provides per-instance variation; the floor index
+provides per-step variation. Deterministic across undo/redo and
+collaborators. Document the assumption.
+
+### 32. `Modulator.kind` and `Modulator.config.kind` discriminator redundancy
+
+**Problem:** `models/Modulator.ts:37-45` declares `kind` at both
+`Modulator` and `Modulator.config`. They must agree but nothing
+enforces it. `updateModulator.ts:10`'s `Partial<Modulator>` patch
+lets a caller pass `{ kind: 'envelope' }` without updating
+`config.kind`. The `applyModulationToEngine` /
+`computeModulatorValue` branch on `config.kind` (the inner one),
+while the UI branches on `modulator.kind` (the outer one).
+Silent disagreement.
+
+**Representative files:**
+
+- `src/modules/Automation/models/Modulator.ts:37-45`
+- `src/modules/Automation/useCases/modulation/computeModulatorValue.ts:6,32`
+- `src/modules/Automation/presentations/views/ModulationMatrix.tsx:491,532-540`
+- `src/modules/Automation/useCases/modulation/updateModulator.ts:10`
+
+**Needed:** Drop `Modulator.kind`. Use `m.config.kind` everywhere.
+Update callers (`addModulator.ts:5`, `ModulationMatrix.tsx:424,491`,
+test fixtures). Use a discriminated `UpdateModulatorPatch` type
+that explicitly forbids changing the discriminator without a
+matching new config (issue #18a).
+
+### 33. `stopAutomationRecording` whole-lane `JSON.stringify` is a memory hazard and undo-stack polluter
+
+**Problem:** `stopAutomationRecording.ts:17,37,39` snapshots the
+entire `lanes` array via `structuredClone`, then deep-equals via
+`JSON.stringify`. For 100 lanes × 1k points × 40 bytes/point that
+is ~4 MB serialised on every stop. Worse, Automerge can re-order
+object properties for the same logical state; the
+`JSON.stringify` comparison is order-sensitive — a recording that
+*added zero points* but triggered an Automerge re-order pushes
+an undo entry that restores to the same state. The user's undo
+stack fills with no-ops.
+
+**Representative files:**
+
+- `src/modules/Automation/useCases/automationRecording/stopAutomationRecording.ts:17,37-55`
+
+**Needed:** Replace with per-lane snapshot keyed on the *active*
+recording session lane ids. For each session in
+`activeRecording`, snapshot the lane's `points` (and `objects` if
+modified) — not the whole `lanes` array — and compare lengths
+plus reference identity before serialising. If reference
+unchanged, skip the snapshot.
+
 ---
 
 ## Open questions
@@ -1396,6 +1879,24 @@ barrel paths. Run `pnpm deps:validate` until clean.
   surface ships with no behavioural coverage. The undo-loss bug
   (#2), the bezier-no-op bug (#3), the envelope-no-op bug (#5),
   and the wrong-mock-path bug (#51) all pass through CI green.
+- **Latch-mode silent data loss.** Issue #29: starting a latch
+  recording mid-arrangement deletes pre-existing automation from
+  beat 0 to the playhead at stop time. A user with carefully
+  drawn automation in the first 32 bars who records a latch tweak
+  in bar 33 loses everything before bar 33. There is no warning;
+  CRDT history records the deletion as a normal "Record
+  Automation" undo entry whose snapshot also restores the
+  deletion (via #11/#33), so even the undo path is poisoned.
+- **Multi-instance plugin under-coverage.** Issue #25: tracks with
+  two devices exposing the same parameter id (e.g. parallel
+  filters with `cutoff`) only ever see the first device
+  automated. The lane carries no `deviceId` for plugin
+  parameters; the architecture cannot disambiguate.
+- **Stuck params after modulator removal.** Issue #30: removing a
+  modulator while playback is active leaves the engine param at
+  the last modulated value rather than the base. The user
+  experiences a "stuck filter" with no visual indication of
+  why.
 
 ---
 
@@ -1425,6 +1926,22 @@ barrel paths. Run `pnpm deps:validate` until clean.
   slewer.
 - **AGENTS.md compliance pass** (issue #15) as a follow-up sweep —
   small mechanical refactors in one commit.
+- **Fix latch-mode `startBeat` seeding** (issue #29) before
+  shipping any "release notes" mentioning latch recording. One
+  line in `startAutomationRecording.ts` plus a positive-path
+  test against pre-existing automation.
+- **Fix the React-key collision** (issue #54/#23) at the same
+  time as `removeMapping` identity (#10/#26). They are
+  symptoms of the same wrong-identity assumption. Pair the two
+  fixes in a single commit so neither lands without the other.
+- **Combine modulation reset into removeModulator/removeMapping**
+  (issue #30). On removal, snapshot affected `(track, device,
+  param)` tuples and write the base value once. This both fixes
+  the stuck-param bug and removes the need for a separate
+  "modulation halo" reset path.
+- **Drop `Modulator.kind`** (issue #32/#65). `m.config.kind` is
+  the single discriminator; the outer `kind` field is redundant
+  and a footgun. Touches a handful of UI sites.
 
 ---
 
@@ -1443,9 +1960,22 @@ otherwise). Add a per-handler test that asserts undo restores the
 prior state.
 
 After those two land, the next session can pick between the
-"correctness pass" (issues #3, #4, #5, #8, #9, #10, #11, #12, #28)
-and the "architecture pass" (issues #1, #7, #15, #22). They are
-independent.
+"correctness pass" (issues #3, #4, #5, #8, #9, #10, #11, #12, #28,
+plus the new entries #29 latch-startBeat, #25 multi-device,
+#30 stuck params, #27 amount-clobber, #24 BPM fallback, #31 PRNG)
+and the "architecture pass" (issues #1, #7, #15, #22, plus
+#26 positional API, #28 module-state DI, #32 discriminator
+redundancy, #33 JSON.stringify undo). The two passes are
+independent; no need to serialise.
+
+**Sequencing constraint discovered in this review:** issue #4
+(smooth curve degeneracy) cannot be fixed without simultaneously
+updating `automationPoints.spec.ts:122-138`, which currently
+asserts the buggy 3-arg call shape — see the deepening note on
+issue #4. Likewise issue #5 has a test that locks in `return 0`
+for envelopes (`computeModulatorValue.spec.ts:65-76`).
+Test-locked bugs must be untangled before the implementation
+fix lands, otherwise CI will reject the fix.
 
 ---
 

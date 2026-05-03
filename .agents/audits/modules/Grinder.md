@@ -17,6 +17,16 @@ hazards, and AGENTS.md compliance.
 
 Related spec: none on disk.
 
+**Adversarial verification pass (this revision).** Every numbered issue
+below has been re-verified against `src/modules/Grinder/` at the cited
+line. Verified items are unchanged; reclassified items moved between
+priority bands; bogus items dropped or downgraded; new findings
+appended at the end of `## Open issues` with `### NEW-N` ids. The most
+critical addition: `GrinderPanel.replacePatch` (line 1955-1957) routes
+**every** single-field UI mutation through `loadGrinderPatchWithAudio`
+→ `syncGrinderPatchToAudio` — toggling one boolean ships ~80
+postMessages.
+
 ---
 
 ## Goal
@@ -849,51 +859,80 @@ the updated Neural library."`. The regex matches "could not
 
 ## Priorities
 
-1. **Type-soundness escapes that hide real bugs** (issues #4, #5,
-   #10, #18, #45–47): `as never` in snapshot recall lets enum
+1. **`replacePatch` flushes 80 postMessages per single-field UI
+   change** (NEW-1): every `replacePatch` callsite (toggling
+   `cabEnabled`, picking an amp model, switching engine mode, …)
+   re-routes through `loadGrinderPatchWithAudio` →
+   `syncGrinderPatchToAudio`. 21 callsites, each one ~80
+   `update_device_param` calls per click. Replaces #8 as the
+   highest-impact issue: the bypass of the rAF batcher is
+   compounded by being on the trivial mutation path.
+
+2. **Type-soundness escapes that hide real bugs** (issues #3, #5,
+   #31, plus NEW-2): `as never` in snapshot recall lets enum
    strings be clobbered by numbers; `unknown as GrinderMic[Key]`
-   casts in mic param bridge mask drift; 19+ `as` casts in
-   `setGrinderParamWithAudio` / `syncGrinderPatchToAudio`. CLAUDE.md
-   "no `as never` escapes" / "TypeScript soundness" forbids these.
+   casts in mic param bridge mask drift; 23 `as` casts in
+   `setGrinderParamWithAudio` / `syncGrinderPatchToAudio`. The
+   `(patchValue ? 'hybrid' : 'circuit') as GrinderPatch['engineMode']`
+   on line 86 is doubly broken — `patchValue` is the union
+   `GrinderPatch[Key]` but the runtime guard
+   (`key === 'neuralEnabled'`) does not narrow TS. CLAUDE.md "no
+   `as never` escapes" / "TypeScript soundness" forbids these.
 
-2. **Architectural / contract violations** (issues #1, #2, #3, #6,
-   #7, #74): no module-root `index.ts`, half the param-bridge use
-   cases not in the use-cases barrel, custom `getAllTracks`
-   re-implementation bypassing the use case, `Track` type imported
-   across modules.
-
-3. **Param bridge `engineMode` ↔ `neuralEnabled` triple-source
-   coupling** (issue #11): three independent pieces of code
-   maintain "if engineMode === circuit then neuralEnabled = false";
-   one of them only updates the store, not the audio engine.
+3. **`engineMode` ↔ `neuralEnabled` quadruple-source coupling**
+   (issue #6 + NEW-3): four call sites maintain the rule. The
+   migration helper (line 433-437) computes it backwards relative
+   to the bridge: a project with `engineMode: 'capture'` and
+   `neuralEnabled: false` is preserved as-is by `migrateGrinderPatch`
+   but the panel and bridge would both treat that state as
+   inconsistent.
 
 4. **`syncGrinderPatchToAudio` bypasses the rAF batcher and ships
-   80 messages per preset click** (issue #12) with three sources
-   of truth for pedal defaults (#13) and a missing `inputMode` sync
-   (#15, #16).
+   80 messages per call** (issue #8) — and `replacePatch` makes
+   that the default flush for trivial UI events (NEW-1). Three
+   sources of truth for pedal defaults (#9), `inputMode` is
+   handled by `toAudioValue` (line 106-107) but missing from
+   `AUDIO_SYNC_KEYS` so the case is dead code (#10/#32).
 
-5. **`useEffect` race in neural-library hydration** (issue #23) —
+5. **Architectural / contract violations** (issues #1, #2, #7):
+   no module-root `index.ts`, half the param-bridge use cases not
+   in the use-cases barrel, custom `getAllTracks` re-implementation
+   bypassing the use case, `Track` type imported across modules.
+
+6. **`useEffect` race in neural-library hydration** (issue #11) —
    two `GrinderPanel`s mount → two concurrent IndexedDB reads →
    imported entries can be silently clobbered.
+   `restoreGrinderNeuralLibrary` then unconditionally overwrites
+   the store entries (audit issue #35).
 
-6. **Telemetry-store rendering pattern re-renders the whole panel
-   at 60 Hz** (issues #21, #22): every meter subscribes the entire
+7. **Telemetry-store rendering pattern re-renders the whole panel
+   at 60 Hz** (issues #12, #13): every meter subscribes the entire
    store, defeating the "decoupled telemetry store" comment.
+   `useStore` (`src/infra/store/useStore.ts:6`) has no selector
+   API — the issue is structural at the store layer.
 
-7. **Snapshot recall is fundamentally type-broken** (issues #4, #5,
-   #38): `paramOverrides: Record<string, number>` cannot represent
-   a real snapshot of an amp model with strings, booleans, and
-   nested pedal state.
+8. **Snapshot recall is fundamentally type-broken** (issues #3, #4,
+   plus the deeper diagnosis below): `paramOverrides:
+   Record<string, number>` cannot represent a real snapshot of an
+   amp model with strings, booleans, and nested pedal state.
 
-8. **`grinderTelemetryStore` not reset on project change** (issue
-   #35) — meters from a closed project linger.
+9. **`grinderTelemetryStore` not reset on project change** (issue
+   #14) — meters from a closed project linger.
 
-9. **`GrinderPanel.tsx` is 1981 lines** (issue #20) — a refactor
-   blocker for any UI work.
+10. **`GrinderPanel.tsx` is 1981 lines** (issue #15) — a refactor
+    blocker for any UI work, and the locus of issues #1, #6, #11,
+    #12, #25, NEW-1.
 
-10. **Test mocks don't exercise production code paths** (issues
-    #58, #60, #61, #63): `inject` is mocked to identity; most
+11. **Test mocks don't exercise production code paths** (issues
+    #16, #17, #18, #19): `inject` is mocked to identity; most
     bridge tests pass via a different code shape than what ships.
+
+12. **Audio-engine contract drift** (NEW-4): `setGrinderParamWithAudio`
+    ships the raw input number to the worklet for boolean keys
+    (e.g. `gateEnabled: 0.7` instead of `gateEnabled: 1`), while
+    `syncGrinderPatchToAudio` sends a normalised `0`/`1`. The
+    worklet must threshold; either side could change and the
+    contract is implicit.
 
 ---
 
@@ -942,24 +981,45 @@ external consumers.
 
 ### 3. `recallGrinderSnapshot` uses `as never` to clobber the patch
 
-**Problem:** `grinderStore.ts:254`
-`nextPatch[key as keyof GrinderPatch] = value as never`. `value` is
-`number` (from `Record<string, number>` on the snapshot's
-`paramOverrides`), but the patch field may be `string` (enum) or
-`boolean`. The `as never` disables the type system. A snapshot
-storing `engineMode: 0` would set the patch's `engineMode` to the
-literal number `0`, which `syncGrinderPatchToAudio.toAudioValue`
-would then cast to `'0' as string` and run through `options.indexOf`
-— dropping it silently.
+**Verified at:** `grinderStore.ts:254`
+`nextPatch[key as keyof GrinderPatch] = value as never`.
+`paramOverrides: Record<string, number>` (model file line 157) →
+`value` is `number`. The `as never` short-circuits the indexed-write
+type check. **Repro:** save a snapshot named `'Lead'` with
+`paramOverrides: { ampModel: 2, engineMode: 1, gateEnabled: 1 }`
+(plausible if a future `setGrinderSnapshotParam` UI ever ships).
+Recall sets `patch.ampModel` to numeric `2` (instead of
+`'lead-jcm'`). `syncGrinderPatchToAudio.toAudioValue` (line 92)
+detects `typeof value === 'number'` and ships the raw `2` to the
+audio engine — but the audio engine expects `0..AMP_MODELS.length-1`
+which **is** `2`, so this happens to land. The store, however,
+holds the literal number `2` for a field typed as `GrinderAmpModel`.
+Any later code reading `patch.ampModel === 'lead-jcm'` is
+silently false. **Blast radius:** narrow today (no UI saves
+non-numeric overrides) but the type system stops protecting the
+contract.
+
+**Adversarial note:** the existing test fixture
+(`grinderStore.spec.ts:103`) only ever uses `paramOverrides: { gain: 7 }`
+where `gain: number`. So the bug is invisible to current tests
+because **the test silently confirms** that `as never` is "safe
+in practice" — the test is type-laundering, exactly the failure
+mode CLAUDE.md describes.
 
 **Representative files:**
 
-- `src/modules/Grinder/stores/grinderStore.ts:236-271`
-- `src/modules/Grinder/models/GrinderPatch.ts:154-159`
+- `src/modules/Grinder/stores/grinderStore.ts:236-271` (verified)
+- `src/modules/Grinder/models/GrinderPatch.ts:154-159` (verified)
+- `src/modules/Grinder/stores/__tests__/grinderStore.spec.ts:103-104`
+  (test launders the `as never`)
 
 **Needed:** Type-narrow the loop: discriminate on the key's expected
-type and refuse silently-incompatible overrides (or migrate the
-snapshot model to allow string/boolean overrides). Drop `as never`.
+type and refuse silently-incompatible overrides. Or — preferred —
+redefine `paramOverrides: Partial<GrinderPatch>` and let TS enforce
+the per-key types end-to-end. Drop `as never`. Add a test that
+saving a `'Crunch'` snapshot with `paramOverrides: { ampModel:
+'crunch-jcm', gateEnabled: true }` round-trips through recall and
+the patch's `ampModel` is the literal `'crunch-jcm'`.
 
 ### 4. Snapshot model cannot represent enum / boolean state
 
@@ -996,32 +1056,66 @@ a future drift (e.g. `'enabled'` switching to a string discriminator
 `switch (key)` returning the typed value at each branch, and a
 `satisfies GrinderMic[Key]` check at each branch). Drop the `as`.
 
-### 6. Three-source `engineMode` ↔ `neuralEnabled` coupling
+### 6. Quadruple-source `engineMode` ↔ `neuralEnabled` coupling
 
-**Problem:**
-1. `migrateGrinderPatch` (model file) computes `neuralEnabled =
-patch.neuralEnabled ?? engineMode !== 'circuit'`.
-2. `setGrinderParamWithAudio` (use-case file) handles the inverse,
-   updating one when the other changes.
-3. `GrinderPanel.tsx:1517-1521` (presentation file) uses
-   `replacePatch({ ...patch, engineMode, neuralEnabled: mode.id !== 'circuit' })`.
+**Verified at:** four independent code paths each maintain a
+slightly different version of the rule:
 
-Three places, two coupling rules ("when X then Y" and "when Y then X"),
-three separate code paths. Any divergence is a bug; the
-`setGrinderParamWithAudio` path notably only updates the **store**
-copy, not the audio engine — so the worklet is briefly out of sync.
+1. **Migration** (`GrinderPatch.ts:433-437`):
+   ```ts
+   const engineMode = patch.engineMode ?? ((patch.neuralEnabled ?? DEFAULT_PATCH.neuralEnabled) ? 'hybrid' : DEFAULT_PATCH.engineMode);
+   const neuralEnabled = patch.neuralEnabled ?? engineMode !== 'circuit';
+   ```
+   This **respects an explicit `neuralEnabled: false` even with
+   `engineMode: 'capture'`** (because of the `??` short-circuit on
+   line 437). So a deserialised patch with
+   `{ engineMode: 'capture', neuralEnabled: false }` survives — the
+   bridge will then re-derive on next user action and they will
+   diverge.
+2. **Bridge** (`setGrinderParamWithAudio.ts:83-87`): if `key ===
+   'engineMode'`, write store `neuralEnabled = patchValue !== 'circuit'`.
+   If `key === 'neuralEnabled'`, write store `engineMode =
+   patchValue ? 'hybrid' : 'circuit'` (note: not preserving
+   `'capture'`!).
+3. **Panel mode buttons** (`GrinderPanel.tsx:1517-1521`):
+   `replacePatch({ ...patch, engineMode: mode.id, neuralEnabled:
+   mode.id !== 'circuit' })`. Since `replacePatch` =
+   `loadGrinderPatchWithAudio`, this **also** reapplies migration
+   on the way through (line 19 of that bridge), giving the
+   migration rule final say.
+4. **Audio sync** (`syncGrinderPatchToAudio.ts:159` reads `engineMode`
+   from `AUDIO_SYNC_KEYS`, separately reads `neuralEnabled`): two
+   separate `update_device_param` calls, no coupling enforcement
+   on the audio side at all.
+
+**Worse:** the bridge's coupled write (step 2) only updates the
+store — the audio engine receives only the original
+`update_device_param`. So flipping `engineMode` from circuit →
+hybrid via a numeric knob (the RotaryKnob path) ships only the
+`engineMode` change to the worklet; the worklet's internal
+`neuralEnabled` parameter stays at its previous value until the
+**next** full sync.
+
+**Blast radius:** real audio bug. User flips a mode knob; UI
+reflects the new state; audio engine plays the wrong path until
+something else triggers a full sync (preset change, project
+reload).
 
 **Representative files:**
 
-- `src/modules/Grinder/models/GrinderPatch.ts:434-437`
-- `src/modules/Grinder/useCases/grinderParamBridge/setGrinderParamWithAudio.ts:83-87`
-- `src/modules/Grinder/presentations/views/GrinderPanel.tsx:1517-1521`
+- `src/modules/Grinder/models/GrinderPatch.ts:433-437` (verified)
+- `src/modules/Grinder/useCases/grinderParamBridge/setGrinderParamWithAudio.ts:83-87` (verified)
+- `src/modules/Grinder/presentations/views/GrinderPanel.tsx:1517-1521` (verified)
+- `src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts:30,72` (engineMode/neuralEnabled in AUDIO_SYNC_KEYS)
 
 **Needed:** Move the coupling into a single helper (e.g.
-`models/derivedNeuralEnabled.ts` or a `services/`-layer normaliser).
-Have all three call sites delegate. Add a test that flipping
-`engineMode === 'circuit'` correctly disables `neuralEnabled` in
-both store **and** audio path.
+`services/deriveNeuralEnabled.ts`). Have all three coupling sites
+delegate. The bridge must **also** dispatch the derived
+`neuralEnabled` to the audio engine, not just the store. Add a
+test that flipping `engineMode === 'circuit'` correctly disables
+`neuralEnabled` in both store **and** audio path. Decide whether
+"capture without neural" is a legal state or always coerced to
+`'circuit'`.
 
 ### 7. `grinderParamBridgeDependencies` reaches into `Arrangement/stores`
 
@@ -1048,21 +1142,44 @@ needs. Drop the `Track` cross-module import.
 
 ### 8. `syncGrinderPatchToAudio` bypasses the rAF batcher
 
-**Problem:** Loading a preset triggers ~80 `update_device_param`
-postMessages in one synchronous tick. The `paramBatcher` was built
-to debounce exactly this kind of fan-out, but `syncGrinderPatchToAudio`
-calls the raw `update_device_param` directly. Rapid-fire preset
-clicks compound to hundreds of postMessages per second.
+**Verified at:** `syncGrinderPatchToAudio.ts:127-138`
+(`sendNumericParamToDevice`) calls `input.update_device_param`
+synchronously. The body of `syncGrinderPatchToAudio` (lines
+151-243) issues:
+- 1 `cabIrSlot` (line 156)
+- 56 keys via `AUDIO_SYNC_KEYS` (line 159-166)
+- 16 pre-pedal scalar params (line 172-188)
+- 16 post-pedal scalar params (line 194-210)
+- 4+4 pedal-order entries (line 212-218)
+- 1 `neuralModelSlot` or 1 `update_device_patch` (line 220-231)
+- 10 mic params (line 233-242)
+
+→ ~107 messages per call (not 80). All synchronous. The
+`paramBatcher` (helpers.ts:24) is module-scope and unused on this
+path.
+
+**Verified worklet has a `setPatch` API:**
+`wasmDeviceRegistry.ts:426,443,473` — the worklet exposes
+`setPatch: (patch: Record<string, unknown>) => void`. One message
+could replace 107.
+
+**Severity escalation:** see NEW-1 below — `replacePatch` at
+`GrinderPanel.tsx:1955-1957` invokes `loadGrinderPatchWithAudio`
+on **every** single-field UI change (21 `replacePatch` callsites,
+including toggling a single boolean). The audit previously framed
+this as "preset click" load — actually it's the default mutation
+path.
 
 **Representative files:**
 
-- `src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts:127-138`
+- `src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts:127-138,151-243`
+- `src/modules/AudioEngine/engine/wasmDeviceRegistry.ts:426,443,473`
+- `src/modules/Grinder/presentations/views/GrinderPanel.tsx:1955-1957` (single replacePatch entry point)
 
-**Needed:** Either route through the batcher (composite key
-`${deviceId}:${audioKey}`) so the last write wins — or use the
-worklet's existing `setPatch` (full-state) API in a single message.
-The latter is preferable for "load preset" since the entire patch
-is replaced.
+**Needed:** Route this through `update_device_patch` (the bulk
+API) in one message. Audit `replacePatch` callsites (NEW-1) to
+remove the unnecessary full-sync mutations — single-field changes
+should call `setGrinderParamWithAudio` directly, not `replacePatch`.
 
 ### 9. Three sources of truth for pedal default values
 
@@ -1085,22 +1202,45 @@ constant in `models/GrinderPatch.ts` referenced by both. Or send
 `enabled: 0` only when the pedal is missing and let the worklet
 hold its own defaults.
 
-### 10. `inputMode` is never synced to the audio engine
+### 10. `inputMode` is never synced to the audio engine (dispatch case is dead code)
 
-**Problem:** `inputMode: 'instrument' | 'line' | 'reamp'` is part
-of `GrinderPatch` and `INPUT_MODES` is in the helpers, but
-`AUDIO_SYNC_KEYS` does not include it and `toAudioValue` does not
-handle it. Changing `inputMode` updates only the store; the audio
-engine never sees it.
+**Verified at:** `syncGrinderPatchToAudio.ts:29-85` —
+`AUDIO_SYNC_KEYS` does **not** include `'inputMode'`. But
+`toAudioValue` (lines 106-107) DOES handle it:
+```ts
+case 'inputMode':
+    return getOptionIndex(INPUT_MODES, value as string);
+```
+This case is **unreachable** because `toAudioValue` is only called
+from inside the `for (const key of AUDIO_SYNC_KEYS)` loop on line
+159-166. The author appears to have remembered to handle the
+conversion but forgot to add the key to the sync list.
+
+`setGrinderParamWithAudio` (lines 50-51) also handles it via
+`toPatchValue`, so a knob-style UI control could route an
+`inputMode` change directly. But there is no `inputMode` UI in
+`GrinderPanel.tsx` (`grep -n inputMode` returns 0 results in
+the panel). The patch field exists, the migration preserves it,
+the bridge has a hook for it — **and it is unreachable from the
+UI**. Dead surface.
+
+**Blast radius:** any project file with `inputMode: 'line'` or
+`'reamp'` (e.g. exported from an older build) loads the value into
+the patch, but the audio engine plays as if `inputMode:
+'instrument'` (the worklet's default).
 
 **Representative files:**
 
-- `src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts:29-85`
+- `src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts:29-85,106-107` (verified)
+- `src/modules/Grinder/models/GrinderPatch.ts:171,290` (field + default)
 
-**Needed:** Add `'inputMode'` to `AUDIO_SYNC_KEYS` and add a
-`case 'inputMode'` to `toAudioValue`. Add a test that loading a
-patch with `inputMode: 'reamp'` calls `update_device_param` with
-`inputMode: 2`.
+**Needed:** Add `'inputMode'` to `AUDIO_SYNC_KEYS`. Either expose
+an `inputMode` UI control in the amp section, or remove the field
+from the model. Add a test that loading a patch with `inputMode:
+'reamp'` calls `update_device_param` with `inputMode: 2`. Better:
+make `AUDIO_SYNC_KEYS` a `satisfies Record<keyof GrinderPatch,
+SyncStrategy>` type so the next "added a field, forgot to wire it"
+fails the typecheck (issue #32).
 
 ### 11. `useEffect` race condition in neural-library hydration
 
@@ -1533,6 +1673,584 @@ allocations per render until the worklet warms up.
 **Needed:** Cache the default object at module scope and return
 the cached reference (it's read-only).
 
+### NEW-1. `replacePatch` triggers a full ~107-msg audio sync on every UI mutation
+
+**Problem (added in adversarial review):** `GrinderPanel.tsx:1955-1957`:
+```ts
+function replacePatch(next: GrinderPatch): void {
+    loadGrinderPatchWithAudio(deviceId, next);
+}
+```
+`replacePatch` is the panel's catch-all "apply this patch" path —
+21 callsites use it for trivial single-field mutations:
+
+- Toggle `cabEnabled` (line 1421) → 107 postMessages
+- Toggle `cabOpenBack` (line 1429) → 107 postMessages
+- Pick `ampModel` (line 937) → 107 postMessages
+- Pick `engineMode` (line 1517-1521) → 107 postMessages + the
+  bridge's coupled `neuralEnabled` write
+- Pick `cabIrId` / `cabType` / `routingMode` / `powerTubeType` /
+  `rectifierType` / each lab toggle (lines 1305, 1320, 1333, 1448,
+  1468, 1488) → each 107 postMessages
+
+A real user dragging through cab voicings (10 IRs × 107 messages)
+spams ~1000 postMessages over a couple of frames. The worklet's
+port queue can't drop messages, so this latency-stacks even if the
+worklet itself is idle. There is also no selective `setPatch`
+diff: the bridge replaces every field even when only `cabIrId`
+changed.
+
+This is the **default** mutation path. Issue #8 mentioned "preset
+click" but the actual hot path is "any UI gesture that doesn't
+go through a `RotaryKnob`".
+
+**Representative files:**
+
+- `src/modules/Grinder/presentations/views/GrinderPanel.tsx:1955-1957` (single replacePatch entry point)
+- `src/modules/Grinder/presentations/views/GrinderPanel.tsx:902,937,1305,1320,1333,1421,1429,1448,1468,1488,1517,1568,1599,…` (callsites; 21 total per `grep -c replacePatch`)
+- `src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts` (the bulk-sync path)
+
+**Needed:** Three orthogonal fixes:
+
+1. Replace single-field `replacePatch({...patch, key: value})`
+   with `setGrinderParamWithAudio(deviceId, key, value)` so the
+   bridge takes the per-key path (rAF batched, 1 message per key).
+2. For multi-field UI events (e.g. picking an amp model that
+   should reset gain/master/tone defaults), introduce a
+   `replaceGrinderPatchPartial(deviceId, partial)` API that takes a
+   `Partial<GrinderPatch>` and dispatches **only** the changed
+   keys via the param batcher.
+3. For preset clicks (the legitimate full-replacement case),
+   route through the worklet's `setPatch` (`update_device_patch`)
+   so it's a single message, then batch any per-field DSP updates
+   for keys not in the worklet's full-patch contract.
+
+### NEW-2. `setGrinderParamWithAudio.toPatchValue` cast on line 86 is structurally unsound
+
+**Problem:** Line 86:
+```ts
+setGrinderParam(deviceId, 'engineMode', (patchValue ? 'hybrid' : 'circuit') as GrinderPatch['engineMode']);
+```
+The runtime guard `else if (key === 'neuralEnabled')` does **not**
+narrow the TS type of `patchValue` (which is `GrinderPatch[Key]`,
+a union). The ternary `patchValue ? 'hybrid' : 'circuit'` requires
+`patchValue` to be `boolean`-ish; under the union, TS cannot prove
+it. The `as GrinderPatch['engineMode']` cast silences the
+resulting type error.
+
+This is fragile in two ways: (a) if `key` is `'neuralEnabled'` but
+the caller passes `value: 0.5`, `BOOLEAN_PATCH_KEYS` includes
+`'neuralEnabled'` so `toPatchValue` returns `(0.5 > 0.5) === false`;
+the ternary evaluates to `'circuit'`; OK. (b) if a future refactor
+removes `neuralEnabled` from `BOOLEAN_PATCH_KEYS`, `patchValue` is
+now `number` and the ternary `0 ? 'hybrid' : 'circuit'` evaluates
+to `'circuit'` for any falsy number — the cast hides the
+inconsistency.
+
+The `(patchValue ? 'hybrid' : 'circuit')` also drops the legitimate
+`'capture'` state — toggling neural on always lands on
+`'hybrid'`, never `'capture'`.
+
+**Representative files:**
+
+- `src/modules/Grinder/useCases/grinderParamBridge/setGrinderParamWithAudio.ts:81-87`
+
+**Needed:** Refactor the coupling helper out (per issue #6) and
+have it return a `{ engineMode, neuralEnabled }` pair from a single
+typed input. Drop both `as` casts.
+
+### NEW-3. `migrateGrinderPatch` re-derives `engineMode` differently from the bridge
+
+**Problem:** `GrinderPatch.ts:434-437`:
+```ts
+const engineMode = patch.engineMode ?? ((patch.neuralEnabled ?? DEFAULT_PATCH.neuralEnabled) ? 'hybrid' : DEFAULT_PATCH.engineMode);
+const neuralEnabled = patch.neuralEnabled ?? engineMode !== 'circuit';
+```
+This **only** assigns when the corresponding field is `undefined`.
+A persisted patch with `{ engineMode: 'capture', neuralEnabled:
+false }` (a logically-broken state) survives migration unchanged.
+The bridge (`setGrinderParamWithAudio.ts:86`) and the panel
+(`GrinderPanel.tsx:1520`) both treat any non-`'circuit'` engine
+as `neuralEnabled = true` — but the migration does not enforce
+this. A round-trip through project save/load preserves the broken
+state.
+
+The `{...DEFAULT_PATCH, ...patch}` spread on line 444 also means
+that any newly-introduced `GrinderPatch` field arrives at
+`DEFAULT_PATCH`'s value — but this is exactly what `AUDIO_SYNC_KEYS`
+is supposed to track, except it doesn't (issue #32). Three
+contracts, two of them implicit.
+
+**Representative files:**
+
+- `src/modules/Grinder/models/GrinderPatch.ts:433-465`
+
+**Needed:** Move the coupling rule into a single helper (per
+issue #6) and call it from migration too. Decide whether
+`{ engineMode: 'capture', neuralEnabled: false }` is legal — and
+either preserve it (by removing the bridge's coupling) or coerce
+it (by enforcing the same rule in migration).
+
+### NEW-4. `setGrinderParamWithAudio` ships raw input number to the worklet for booleans
+
+**Problem:** `setGrinderParamWithAudio.ts:81-95` — for boolean
+keys, `toPatchValue` returns `(value > 0.5)` for the **store**
+(line 41), but line 95 schedules `{ ref, key, value }` with the
+**raw** input number. So toggling `gateEnabled` by sending
+`value: 0.7` ships `gateEnabled: 0.7` to the worklet.
+`syncGrinderPatchToAudio.ts:97-99` sends boolean as `1`/`0`
+exactly — two divergent contracts over the same audio param key.
+The worklet must threshold at the cab boundary; either handler
+could change and silently break.
+
+There is also no test asserting that `setGrinderParamWithAudio` and
+`syncGrinderPatchToAudio` produce **the same** `update_device_param`
+arg sequence for the same patch field. The existing test
+(`setGrinderParamWithAudio.spec.ts:67-80`) uses `value: 1` for
+`'bright'` so the divergence is invisible.
+
+**Representative files:**
+
+- `src/modules/Grinder/useCases/grinderParamBridge/setGrinderParamWithAudio.ts:81-95` (verified)
+- `src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts:97-99` (the canonical form)
+
+**Needed:** Always normalise to `0`/`1` at the boundary, in both
+sites. Add a test that `setGrinderParamWithAudio(d, 'bright', 0.6)`
+ships `1`, not `0.6`.
+
+### NEW-5. `downloadGrinderNeuralModelFile` synchronously revokes the Object URL
+
+**Problem:** `downloadGrinderNeuralModelFile.ts:6-13`:
+```ts
+const url = URL.createObjectURL(blob);
+const anchor = document.createElement('a');
+anchor.href = url;
+anchor.download = input.file_name;
+anchor.click();
+URL.revokeObjectURL(url);   // ← synchronous after click
+```
+`anchor.click()` schedules the download asynchronously. Calling
+`URL.revokeObjectURL(url)` immediately after can cancel the
+download in browsers that haven't yet started the network/disk
+operation (Safari is most affected; Chromium tolerates it because
+it copies the blob synchronously).
+
+**Repro:** in Safari, clicking "Export NAM" on a large NAM file
+(50 MB+) downloads either an empty file or fails silently.
+
+**Representative files:**
+
+- `src/modules/Grinder/repositories/neuralLibraryPersistence/downloadGrinderNeuralModelFile.ts:6-13`
+
+**Needed:** Defer the revoke into a `setTimeout(..., 0)` or
+`requestAnimationFrame` after `click()`. Or use the Streams API
+download flow if the file is reused. Add a test that exercises
+the export path and asserts the URL is revoked after the click
+fires (use a fake timer).
+
+### NEW-6. `removeGrinderNeuralModel` persists pre-removal entries, then mutates the store separately
+
+**Problem:** `removeGrinderNeuralModel.ts:13-28` is non-atomic:
+
+1. Compute `next_entries = current.entries.filter(...)`.
+2. `await persistGrinderNeuralLibrary({ entries: next_entries })`
+   — disk now reflects removal.
+3. If `persisted`, then call `removeGrinderNeuralLibraryEntry(id)`
+   — store now reflects removal.
+
+If a concurrent `importGrinderNeuralModels` runs between steps 2
+and 3, its store-side `upsertGrinderNeuralLibraryEntries(successes)`
+adds new entries; the subsequent `removeGrinderNeuralLibraryEntry`
+filters out only the removed entry — the new imports survive in
+the store. But step 2 already persisted the **pre-import**
+`next_entries`. Disk and store now diverge: store has [old - X +
+new], disk has [old - X].
+
+The next `restoreGrinderNeuralLibrary` (e.g. on page reload) reads
+disk and overwrites store with [old - X], silently losing the
+imported entries.
+
+**Representative files:**
+
+- `src/modules/Grinder/useCases/removeGrinderNeuralModel.ts:13-28`
+
+**Needed:** Hold a mutex/promise-lock across import/remove/restore
+operations on the neural library. Or compute `next_entries` from
+the **current store value** at the moment of `removeGrinderNeuralLibraryEntry`,
+not from the pre-await snapshot.
+
+### NEW-7. `neuralWarmupProgress` lives in both the patch and the telemetry store
+
+**Problem:** `GrinderPatch.ts:249` declares
+`neuralWarmupProgress: number` (the **persistent** patch field),
+default `0` (line 356). `grinderTelemetryStore.ts:13` also
+declares `neuralWarmupProgress: number` (the **live** telemetry
+field). The audio engine
+(`wasmDeviceRegistry.ts:459`) only writes to telemetry — the
+patch's copy is **never** updated by the engine.
+
+Result: project saves persist `neuralWarmupProgress: 0`
+permanently. UI code that reads `patch.neuralWarmupProgress`
+(none currently — verified `grep -rn neuralWarmupProgress` shows
+only definitions/defaults) would always see `0`. The patch field
+is dead surface that occupies a `migrateGrinderPatch` line and a
+`AUDIO_SYNC_KEYS`-eligible slot it (correctly) does not occupy.
+
+Same pattern likely applies to `neuralStatus: GrinderNeuralStatus`
+on line 248 — verify the audio engine writes it.
+
+**Representative files:**
+
+- `src/modules/Grinder/models/GrinderPatch.ts:248-249` (patch fields)
+- `src/modules/Grinder/stores/grinderTelemetryStore.ts:13` (telemetry field)
+- `src/modules/AudioEngine/engine/wasmDeviceRegistry.ts:459` (only writes to telemetry)
+
+**Needed:** Drop `neuralWarmupProgress` and `neuralStatus` from
+`GrinderPatch` if the audio engine never updates them. They are
+volatile state, not patch state — telemetry store is the right
+home.
+
+### NEW-8. `patch.uiSection` is persisted to disk
+
+**Problem:** `GrinderPatch.ts:166` declares `uiSection: GrinderUiSection`
+as a patch field. `loadGrinderPatch` writes it; `migrateGrinderPatch`
+preserves it; `replaceGrinderPatchLocally` writes it
+(`GrinderPanel.tsx:966`):
+```ts
+onClick={() => replaceGrinderPatchLocally(deviceId, { ...patch, uiSection: tab.id })}
+```
+
+This means: which tab the user was viewing at the moment of save
+becomes part of the saved project. Open the project two days
+later → land on the same tab. Functional, but a leaky abstraction
+between presentation and domain. The `AUDIO_SYNC_KEYS` correctly
+excludes `uiSection`, but the panel's `replacePatch`-everywhere
+pattern (NEW-1) means an export-import round-trip preserves
+ephemeral UI state.
+
+It is also what saves the panel from being noisy on `replacePatch`
+— if `uiSection` changes were routed through the bridge, every
+tab click would flush 107 messages.
+
+**Representative files:**
+
+- `src/modules/Grinder/models/GrinderPatch.ts:166,286`
+- `src/modules/Grinder/presentations/views/GrinderPanel.tsx:966`
+
+**Needed:** Move `uiSection` to a **per-device UI state store**
+keyed by `deviceId`. Drop it from the patch. Once dropped, the
+`replaceGrinderPatchLocally` pattern at line 966 can disappear too
+(its only caller).
+
+### NEW-9. `ImportedNeuralLibraryCard` lacks `aria-pressed` for the selection state
+
+**Problem:** `ImportedNeuralLibraryCard.tsx:31-40` — the outer
+select button has `selected: boolean` driving only background and
+border colors (lines 24-28). No `aria-pressed`, no `role="option"`,
+no `aria-current`. Screen readers cannot tell the user which entry
+is selected. The neighbouring "selected" buttons in
+`GrinderPanel.tsx` (e.g. line 1512) **do** use the same visual
+distinction without semantic hooks.
+
+**Representative files:**
+
+- `src/modules/Grinder/presentations/components/ImportedNeuralLibraryCard.tsx:23-40`
+- `src/modules/Grinder/presentations/views/GrinderPanel.tsx:1510-1525` (similar pattern in mode picker)
+
+**Needed:** Add `aria-pressed={selected}` to the outer button.
+Audit the panel's other "highlighted button" patterns for the
+same gap. (Note: the `Snapshots` recall buttons on line 1949ff
+already use `aria-pressed` per the test on line 249 — so the
+pattern is known; it's just inconsistently applied.)
+
+### NEW-10. `loadGrinderPatchWithAudio` re-migrates a patch the bridge already migrated
+
+**Problem:** `loadGrinderPatchWithAudio.ts:19-20`:
+```ts
+const migrated_patch = migrateGrinderPatch(patch);
+loadGrinderPatch(deviceId, migrated_patch);
+```
+`loadGrinderPatch` (`grinderStore.ts:79`) **also** calls
+`migrateGrinderPatch(patch)` and then again on line 85
+`migrateGrinderPatch(migrated_patch)` for the basePatch. So a
+single `loadGrinderPatchWithAudio` call runs `migrateGrinderPatch`
+**three times** on the same data.
+
+`migrateGrinderPatch` deep-clones pedals/snapshots/profiles per
+call — three clones per load. The `cloneNeuralProfile` deep-copies
+30 `convWeights` triples (line 406).
+
+`syncGrinderPatchToAudio.ts:152` then runs migration a **fourth**
+time on its way to the audio engine.
+
+For preset clicks (NEW-1 makes those frequent), this is wasted CPU
+on the main thread.
+
+**Representative files:**
+
+- `src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts:19-20`
+- `src/modules/Grinder/stores/grinderStore.ts:79,85`
+- `src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts:152`
+
+**Needed:** Make `migrateGrinderPatch` idempotent-fast (return the
+same object if already migrated, gated by an internal symbol). Or
+audit each call site and remove redundant migrations.
+
+### NEW-11. `useCases/index.ts` re-exports test helper paths but not the production composition
+
+**Problem:** `useCases/index.ts:1-7` re-exports `loadGrinderPatchWithAudio`,
+`setGrinderMicParamWithAudio`, `setGrinderParamWithAudio`,
+`setGrinderPedalParamWithAudio`, `grinderPresets`,
+`importGrinderNeuralModels`, `restoreGrinderNeuralLibrary`. **Missing:**
+
+- `recallGrinderSnapshotWithAudio`
+- `moveGrinderPedalInChainWithAudio`
+- `syncGrinderPatchToAudio`
+- `removeGrinderNeuralModel`
+- `exportGrinderNeuralModel`
+
+The five missing ones are exactly the ones the panel imports via
+deep relative paths (`../../useCases/...`). Issue #2 already
+flagged this — but I want to add: `syncGrinderPatchToAudio` is the
+audio engine's contract surface; not exposing it from the barrel
+means external callers (a hypothetical `Project/projectPersistence`
+that wants to re-sync devices on project load) cannot use it
+without reaching into the bridge folder. The barrel is incomplete
+**by design pattern**: it only exports what the panel happens to
+use today.
+
+**Representative files:**
+
+- `src/modules/Grinder/useCases/index.ts:1-7` (verified)
+
+**Needed:** Already covered in issue #2. This NEW-N entry is here
+only to register the additional finding that
+`syncGrinderPatchToAudio` should be the **public** sync entry point
+for any caller (project persistence, device reload, snapshot
+recall). It currently is reachable only from inside the bridge.
+
+### NEW-12. `useStore` has no selector — the "decoupled telemetry store" is structurally undermined
+
+**Problem:** `src/infra/store/useStore.ts:5-7` is a thin wrapper:
+```ts
+export const useStore = <TData>(store: Store<TData>, defaultValue?: TData): TData => {
+    return useSyncExternalStore(store.subscribeReact, () => store.getSnapshot() ?? (defaultValue as TData));
+};
+```
+There is no selector argument and no equality function. Every
+caller subscribes to the **whole** store. The `grinderTelemetryStore`
+comment on line 32 ("Decoupled from the persistent patch store to
+prevent full-UI re-renders at 60fps") is a false claim:
+`useSyncExternalStore` will fire on every `set` regardless of
+which key changed. React 19's compiler memoization stops the
+**children** from re-rendering — but only if their props are
+referentially stable, which they are not (the meter's `value` is
+read off the same telemetry object that just changed).
+
+This is a Grinder-visible issue (audit #12) but the root cause is
+the missing selector API in `useStore`. Fixing only the meter
+subscriptions without addressing the store API is patching the
+symptom.
+
+**Representative files:**
+
+- `src/infra/store/useStore.ts:5-7` (root cause)
+- `src/modules/Grinder/presentations/views/GrinderPanel.tsx:334,729,740,750,1136,1951` (six whole-store subscriptions)
+
+**Needed:** Land a `useStoreSelector(store, selector, isEqual?)`
+helper at the infra layer. Issue #12 then becomes "use the new
+selector". This widens the spec but is the only fix that doesn't
+re-introduce the same problem in every other module that uses
+`useStore`.
+
+### NEW-13. `grinderTelemetryStore` reads `neuralWarmupProgress` but has no contract for `neuralStatus`
+
+**Problem:** `wasmDeviceRegistry.ts:449-460` updates 10 telemetry
+fields including `neuralWarmupProgress` but **not** `neuralStatus`.
+The patch carries `neuralStatus: GrinderNeuralStatus` (line 248);
+no UI surface in `GrinderPanel.tsx` updates it (verified by grep);
+no audio engine path writes it. It is a write-only patch field.
+
+This pairs with NEW-7: both `neuralWarmupProgress` and
+`neuralStatus` are nominally patch state but only ever updated
+(if at all) via the telemetry path.
+
+**Representative files:**
+
+- `src/modules/Grinder/models/GrinderPatch.ts:248`
+- `src/modules/AudioEngine/engine/wasmDeviceRegistry.ts:449-460`
+
+**Needed:** Move `neuralStatus` to telemetry. Or have the worklet
+emit status transitions and pipe them into the store via a
+`updateGrinderStatus(deviceId, status)` action.
+
+### NEW-14. `parseGrinderNamFile.hash_string` collides on near-identical content
+
+**Problem:** Already noted as issue #32 in the previous audit
+(`audit issue #32` not the **NEW-N** numbering — let me re-locate).
+Actually the original audit had this at line 488 ("issue #32" in
+the older numbering scheme but now embedded in the deeper review
+text). Re-stating with verification:
+
+`parseGrinderNamFile.ts:39-45` uses djb2 hash:
+```ts
+function hash_string(value: string): string {
+    let hash = 5381;
+    for (let index = 0; index < value.length; index++) {
+        hash = (hash * 33) ^ value.charCodeAt(index);
+    }
+    return Math.abs(hash >>> 0).toString(36);
+}
+```
+djb2 is 32-bit; `Math.abs(hash >>> 0).toString(36)` outputs a
+5-7 char base-36 string. Collision probability for 50 imports is
+small (~10^-9) but **not zero** — and the hash is appended to the
+`id` (line 195: `imported-${slug}-${hash}`). A collision means the
+second import overwrites the first under
+`upsertGrinderNeuralLibraryEntries`'s Map keying.
+
+For a NAM library shipped as part of a tutorial dataset (hundreds
+of similar captures), the collision risk grows.
+
+**Representative files:**
+
+- `src/modules/Grinder/services/parseGrinderNamFile.ts:39-45,195`
+
+**Needed:** Use `crypto.subtle.digest('SHA-256', ...)` or include
+both the content hash and the import time in the id (e.g.
+`imported-${slug}-${importedAt.toString(36)}-${hash}`). For
+file-content-addressed dedup, the id should be the SHA-256 hash of
+the canonical JSON (so re-importing the same file produces the
+same id and updates `importedAt`).
+
+### NEW-15. `GrinderPanel.tsx` mounting two instances breaks `useState`-driven `is_importing_models`
+
+**Problem:** `ControlDeck` declares
+`const [is_importing_models, set_is_importing_models] = useState(false)`
+(line 1160) — local component state. With two `GrinderPanel`s
+mounted (e.g. two Grinder devices on different tracks), each owns
+its own `is_importing_models` state. But the import action is
+**global** (it touches the global `grinderNeuralLibraryStore`). If
+panel A starts an import and panel B is open, only A's button
+shows "Importing…" — B does nothing visible while the global
+library mutates underneath it.
+
+Worse: if A unmounts mid-import (route change, panel close), the
+`finally` block (line 1196-1198) calls `set_is_importing_models(false)`
+on an unmounted component → React warning. The audit's older issue
+#52 mentioned this; verifying it: yes, no `isMounted` guard.
+
+**Representative files:**
+
+- `src/modules/Grinder/presentations/views/GrinderPanel.tsx:1160,1188-1199`
+
+**Needed:** Move `is_importing_models` to the
+`grinderNeuralLibraryStore` (e.g. `{ ...state, importing: true }`).
+Both panels then share one source of truth and unmount-during-
+import is a no-op.
+
+### NEW-16. `BrowserRail.filteredPresets` recomputes per render with `.toLowerCase()` per preset per keystroke
+
+**Problem:** `GrinderPanel.tsx:829-834` (verified):
+```ts
+const filteredPresets = GRINDER_PRESETS.filter((preset) => {
+    const haystack = `${preset.name} ${preset.category}`.toLowerCase();
+    return matchesCategory && haystack.includes(query.toLowerCase());
+});
+```
+For `N` presets, this is `N` `.toLowerCase()` allocations per
+render. Each keystroke in the search field re-renders. With
+`GRINDER_PRESETS` at ~12 entries this is fine; the audit's older
+issue #50 correctly noted "fine at 12 presets". But the loop also
+calls `query.toLowerCase()` `N` times instead of once.
+
+**Representative files:**
+
+- `src/modules/Grinder/presentations/views/GrinderPanel.tsx:829-834`
+
+**Needed:** Hoist `query.toLowerCase()` outside the filter. If
+preset count grows, precompute the haystack at module scope.
+
+### NEW-17. `restoreGrinderNeuralLibrary` use case races vs ongoing imports — audit issue #35 was correct, the audit's earlier cross-reference (#24) named the wrong contract
+
+**Problem:** `useCases/restoreGrinderNeuralLibrary.ts:7-12` (verified):
+```ts
+setGrinderNeuralLibraryState({
+    hydrated: true,
+    loading: false,
+    error: null,
+    entries,    // ← unconditionally overwrites
+});
+```
+The audit issue #35 correctly identifies the bug. I want to add
+the **specific concurrent-call repro**:
+
+1. User clicks "Import NAM" → `importGrinderNeuralModels` runs.
+2. While step 1's `await pickGrinderNeuralModelFiles()` is open,
+   user mounts a second Grinder panel → its `useEffect` (line
+   1168-1173) sees `hydrated: false, loading: false` (because step
+   1 only set `loading: true`, but its initial state was
+   `hydrated: false`)…
+
+Wait — verifying: step 1 calls `setGrinderNeuralLibraryState({
+loading: true, error: null })` first (importGrinderNeuralModels.ts:13),
+keeping `hydrated: false`. The second panel's useEffect sees
+`hydrated: false, loading: true` → early return. So actually only
+**one** restore can be in flight at a time. The race the audit
+identified is real but narrower:
+
+- Two panels mount simultaneously, neither has run the effect yet,
+  both observe `hydrated: false, loading: false`.
+- Both call `restoreGrinderNeuralLibrary()` simultaneously.
+- React batches the `setGrinderNeuralLibraryState({loading: true})`
+  → only one batch wins; both async flows now diverge from each
+  other but both see "I started the restore".
+
+**Representative files:**
+
+- `src/modules/Grinder/useCases/restoreGrinderNeuralLibrary.ts:4-13`
+- `src/modules/Grinder/presentations/views/GrinderPanel.tsx:1168-1173`
+
+**Needed:** Promise-coalesce the restore. Hold a module-scope
+`let inflightRestore: Promise<void> | null = null` and return the
+same promise if one is in-flight. Better: move hydration to
+top-level app bootstrap.
+
+### NEW-18. `inject` test mock breaks production semantics — audit issue #16 understated
+
+**Problem:** `setGrinderParamWithAudio.spec.ts:22-23` mocks
+`#/infra/di/inject` to identity. The audit issue #16 notes this.
+What I want to add: the production `inject` from
+`src/infra/di/inject.ts:79-147` does **lazy resolution with
+caching**. The first call resolves deps, caches the inner function,
+and forwards args; subsequent calls hit the cache. In the
+identity-mocked test, there is no cache — the factory runs every
+time the user "calls" the use case.
+
+This means:
+
+- The test cannot detect a circular-dependency error (the real
+  `inject` throws on resolution-stack re-entry; the mock doesn't).
+- The test cannot detect missing dep registrations (real `inject`
+  asserts on async deps; mock identity has no contract).
+- The test cannot detect cached-state leakage (e.g. if the inner
+  function captures a `paramBatcher` reference, the real cache
+  preserves it across calls; the mock recreates it).
+
+The bridge tests therefore protect against **none of** the failure
+modes the DI layer is supposed to catch.
+
+**Representative files:**
+
+- `src/modules/Grinder/useCases/grinderParamBridge/__tests__/setGrinderParamWithAudio.spec.ts:22-23`
+- `src/modules/Grinder/useCases/grinderParamBridge/__tests__/setGrinderPedalParamWithAudio.spec.ts:21-23`
+- `src/modules/Grinder/useCases/grinderParamBridge/__tests__/loadGrinderPatchWithAudio.spec.ts:13-15`
+- `src/infra/di/inject.ts:79-147`
+
+**Needed:** Use `Container.setTestOverride` (the real DI test
+hook) instead of mocking the `inject` module. This exercises the
+production resolution path and catches DI mistakes.
+
 ---
 
 ## Open questions
@@ -1559,99 +2277,246 @@ the cached reference (it's read-only).
       are synthesised by the panel for an imported model whose
       `sourceFileText` was lost; they cannot be exported or
       removed via the library UI.
+- [ ] Is `{ engineMode: 'capture', neuralEnabled: false }` a legal
+      patch state (NEW-3)? `migrateGrinderPatch` preserves it; the
+      panel and bridge would coerce it on next user action. The
+      coupling rule needs an explicit answer.
+- [ ] Should `replacePatch` exist at all (NEW-1)? It is the
+      panel's universal "apply this patch" handler but is misused
+      for single-field changes. If the answer is "yes for genuine
+      multi-field changes, no for single-field", a `replaceGrinderPatchPartial`
+      API is needed.
+- [ ] Should `useStore` grow a selector (NEW-12)? Affects every
+      module, not just Grinder.
+
+## Bogus / downgraded findings (verified false alarms)
+
+- **Original issue #54 (nested `<button>`):** Verified false alarm
+  per `ImportedNeuralLibraryCard.tsx:23-66`. The outer container
+  is a `<div>`; select-button and action-button group are siblings
+  inside an inner flex `<div>`. Not a DOM nesting violation. The
+  audit already noted "false alarm" but the issue should be moved
+  to `## Resolved` (or deleted) so it doesn't distract from real
+  issues.
+- **Original issue #50 (`filteredPresets` rerender cost):**
+  Mostly bogus given React Compiler memoization and 12-preset
+  scale. Re-cast as NEW-16 with the **actually-fixable** subpart
+  (hoist `query.toLowerCase()`).
+- **Original issue #55 (`handleDrag` typing):** "Loose typing" of
+  `React.MouseEvent` is correct per React 19's relaxed event
+  typing. The "two messages per drag tick" framing is true but
+  redundant with NEW-1: every mic drag goes through
+  `setGrinderMicParamWithAudio` which **does** route through the
+  rAF batcher. So the per-frame fanout is already debounced. Only
+  cosmetic concern.
 
 ---
 
 ## Risks
 
-- **Snapshot recall corruption.** Issues #3 + #4: `as never` lets
+- **postMessage flood from trivial UI events** (NEW-1). Every
+  `replacePatch` callsite ships ~107 messages per click. 21
+  callsites in the panel. Toggle a single boolean → 107 messages.
+  This is the **default mutation path**. Sustained clicking (e.g.
+  scrolling through cab voicings) trivially queues thousands of
+  messages on the AudioWorklet port, with the worklet processing
+  one per render quantum. Audible artifacts under load.
+- **Audio-engine state divergence from store** (issue #6 +
+  NEW-2/-3). The bridge updates the store's coupled
+  `engineMode`/`neuralEnabled` but only ships the user's pressed
+  field to the worklet — the worklet's other coupled field stays
+  stale until the next full sync. Users hear the wrong mode.
+- **Snapshot recall corruption** (issues #3, #4). `as never` lets
   numeric `paramOverrides` clobber enum-typed patch fields.
   `syncGrinderPatchToAudio` then silently fails to ship the
   resulting nonsense to the worklet. The user thinks a snapshot
   recalled but neither the store nor the audio reflects what they
-  saved.
-- **Audio-engine contract drift.** Issues #10, #15, #16: `inputMode`
-  is never synced; new patch fields silently miss audio sync; three
-  sources of truth for pedal defaults disagree. Users hear "the
-  preset" through a worklet that received an inconsistent subset of
-  it.
+  saved. The existing test fixture launders the bug.
+- **Audio-engine contract drift.** Issues #10, #32, NEW-4:
+  `inputMode` is in the dispatch but missing from the sync list
+  (dead branch); booleans round-trip differently between
+  `setGrinderParamWithAudio` and `syncGrinderPatchToAudio`; new
+  patch fields silently miss audio sync.
 - **IndexedDB silent failures.** Issue #22: persistence/restore
   swallow all errors. Users with quota issues see "no library" with
   no hint why; users with stale schemas (v1 → v2) silently lose
-  imported entries.
-- **Race in neural-library hydration.** Issue #11: two concurrent
-  `restoreGrinderNeuralLibrary` calls compete; an import landing
-  between them can be silently overwritten.
-- **Telemetry-store rendering at 60 Hz.** Issue #12: defeats the
-  point of having a separate telemetry store. CPU cost is real on
-  modest machines; with two Grinder instances, the panel fan-out
-  doubles.
-- **Architectural drift.** Issues #1, #2, #6, #7, #74: no module
-  root, incomplete barrel, cross-module type imports, three-source
-  coupling. Each new feature compounds.
-- **Test theatre.** Issues #16, #17, #18, #19: the test surface
-  passes; production code paths are not covered. A refactor that
-  changes `inject` semantics, or moves the bridge composition,
-  ships green.
+  imported entries. Combined with NEW-6, removal can persist
+  pre-import state and clobber recent imports on next restore.
+- **Race in neural-library hydration.** Issue #11 / NEW-17: two
+  concurrent `restoreGrinderNeuralLibrary` calls compete; an
+  import landing between them can be silently overwritten.
+- **Safari export breakage.** NEW-5: synchronous
+  `URL.revokeObjectURL` after `anchor.click()` cancels downloads in
+  Safari. Real user-visible bug, narrow blast radius.
+- **Dead patch fields creating false expectations.** NEW-7, NEW-8,
+  NEW-13: `neuralWarmupProgress` and `neuralStatus` exist in the
+  patch but are never written by the engine; `uiSection` is in the
+  patch but should be ephemeral UI state. Project files persist
+  ephemeral state; future code that reads these patch fields will
+  see stale or wrong values.
+- **Telemetry-store rendering at 60 Hz.** Issue #12 / NEW-12: the
+  underlying `useStore` API has no selector. The "decoupled
+  telemetry store" claim is false at the React layer. CPU cost is
+  real; with two Grinder instances, the panel fan-out doubles.
+- **Architectural drift.** Issues #1, #2, #7, NEW-11: no module
+  root, incomplete barrel, cross-module type imports. Each new
+  feature compounds.
+- **Test theatre.** Issues #16, #17, #18, #19, NEW-18: the test
+  surface passes; production code paths are not covered. The
+  `inject` mock-to-identity pattern actively hides DI failure
+  modes (circular deps, missing registrations, stale caches).
 
 ---
 
 ## Suggested approaches
 
-- **Land a "type soundness" pass first** (issues #3, #4, #5, #31).
-  Removing the `as never` and the enum-string-vs-number conflation
-  is mechanical and exposes the snapshot-model bug (#4) by failing
-  the existing recall test. Drive #4 test-first.
+- **First, kill `replacePatch`'s 107-message fanout** (NEW-1). Two
+  paths: (a) replace single-field `replacePatch({...patch, key:
+  value})` callsites with `setGrinderParamWithAudio(deviceId, key,
+  value)`; (b) for genuinely-multi-field changes, route through
+  `update_device_patch` (one worklet message). This is by far the
+  highest-value refactor — every other "audio drift" bug becomes
+  smaller once the bulk-sync stops being the default path.
+- **Then, land a "type soundness" pass** (issues #3, #5, #31,
+  NEW-2). Removing the `as never` and the enum-string-vs-number
+  conflation is mechanical and exposes the snapshot-model bug (#4)
+  by failing the existing recall test. Drive test-first by adding
+  a snapshot whose `paramOverrides` includes a string-typed key.
 - **Create the module root `index.ts`** (issue #1) and complete the
-  `useCases/index.ts` barrel (issue #2). Update the three external
-  callers in one commit. Run `pnpm deps:validate` to confirm.
+  `useCases/index.ts` barrel (issue #2 + NEW-11). Update the three
+  external callers in one commit. Run `pnpm deps:validate` to
+  confirm.
 - **Replace `grinderParamBridgeDependencies.getAllTracks` with the
   `Arrangement/useCases.getAllTracks` import** (issue #7). Replace
   the `Track` type import with a local `GrinderTrackRef` minimal
   shape.
-- **Fix the `engineMode` ↔ `neuralEnabled` triple coupling** (issue
-  #6) by extracting a `services/deriveNeuralEnabled.ts` helper and
-  having migration, bridge, and panel call it.
+- **Fix the `engineMode` ↔ `neuralEnabled` quadruple coupling**
+  (issue #6 + NEW-2/-3) by extracting a
+  `services/deriveNeuralEnabled.ts` helper and having migration,
+  bridge, panel, **and** the audio-side path call it. Decide
+  upfront whether `{capture, neuralEnabled: false}` is legal.
 - **Route `syncGrinderPatchToAudio` through `setPatch`** (issue
   #8). The worklet already accepts a full patch via `setPatch` (see
-  `wasmDeviceRegistry.ts:436`). One message replaces 80 — and the
-  rAF batcher can debounce it.
-- **Rewrite the telemetry-meter subscription** (issue #12) using a
+  `wasmDeviceRegistry.ts:426,443,473`). One message replaces 107.
+- **Add a `useStoreSelector` at the infra layer** (NEW-12). Then
+  rewrite the telemetry-meter subscription (issue #12) using a
   per-deviceId-per-key selector. Move the meters into
-  `presentations/components/`. Consider a `useTelemetryValue`
-  custom hook.
+  `presentations/components/`.
 - **Decompose `GrinderPanel.tsx`** (issue #15) into per-section
-  files. Bring it down to &lt;200 LoC at the panel level.
-- **Replace `useEffect`-based hydration** (issue #11) with TanStack
-  Query (`useSuspenseQuery`) or a top-level bootstrap.
-- **Wire `GRINDER_PARAMS` into the knobs** (issue #21) or delete it.
-- **Replace identity-mocked `inject` tests** (issue #16) with real
-  DI fixtures. Add interaction tests to `GrinderPanel.spec.tsx`
-  (issue #19).
+  files under `presentations/components/`. Bring it down to ≤200
+  LoC at the panel level. Move `uiSection` (NEW-8) out of
+  `GrinderPatch` while you're there.
+- **Replace `useEffect`-based hydration** (issue #11 + NEW-17) with
+  TanStack Query (`useSuspenseQuery`) or a top-level bootstrap.
+  Promise-coalesce the restore.
+- **Drop `neuralWarmupProgress`/`neuralStatus` from `GrinderPatch`**
+  (NEW-7, NEW-13). They are telemetry, not patch state.
+- **Defer the Object URL revoke** (NEW-5) — `setTimeout(() =>
+  URL.revokeObjectURL(url), 0)` after `anchor.click()`.
+- **Hold a mutex/promise-lock on the neural library** (NEW-6).
+  Import/remove/restore must serialise, or the disk and store
+  diverge.
+- **Replace identity-mocked `inject` tests** (issue #16 + NEW-18)
+  with `Container.setTestOverride`. Add interaction tests to
+  `GrinderPanel.spec.tsx` (issue #19).
+- **Wire `GRINDER_PARAMS` into the knobs** (issue #21) or delete
+  it.
 
 ---
 
 ## Recommendation
 
-Start with **issue #4 (snapshot model + `as never` escape)**: a
-single bug, a single fix, exposes the type-soundness problem
-clearly, and the test in `grinderStore.spec.ts` can be extended
-to cover the enum/boolean override case. This unblocks the broader
-"replace `as` casts" sweep (#31) because the snapshot model fix
-forces `paramOverrides` to be typed.
+**The single largest impact is from NEW-1.** Audit the 21
+`replacePatch` callsites in `GrinderPanel.tsx`; convert single-field
+mutations to `setGrinderParamWithAudio(deviceId, key, value)`. Each
+conversion drops a 107-message fanout to 1. Most callsites are
+trivially mechanical (the existing pattern
+`replacePatch({...patch, [key]: value})` is exactly what
+`setGrinderParamWithAudio` does). For the multi-field cases that
+remain (preset clicks, mode-button clicks that update both
+`engineMode` and `neuralEnabled`), route through the worklet's
+`setPatch` API (`update_device_patch`) — one message instead of 107.
 
-Then tackle **issue #6 (engineMode/neuralEnabled triple-coupling)**
-because it has the highest "audio engine out of sync with store"
-risk: today the user can flip `engineMode` and the worklet doesn't
-hear about `neuralEnabled` until the next full sync.
+Once that lands, the "engine out of sync" risk (issue #6 / NEW-2,
+NEW-3, NEW-4) becomes far smaller because the full-sync becomes
+rare again. Then tackle the type-soundness sweep (issues #3, #5,
+#31, NEW-2) — the snapshot `as never` is the canonical example
+and a single test will surface the bug.
 
-After those two land, the next session can decide between the
-"contracts pass" (issues #1, #2, #7, #14, #29) and the "param
-bridge correctness" pass (issues #8, #9, #10, #16, #32). They are
-independent.
+After those two land, the next session can choose between:
+
+- **Architecture pass** (issues #1, #2, #7, NEW-11, NEW-12): no
+  module root, incomplete barrel, `useStore` selector. The
+  `useStore` change is required for the telemetry rerender fix.
+- **Persistence/race pass** (issues #11, NEW-6, NEW-17, NEW-5):
+  hydration coalescing, IDB-vs-store atomicity, the Safari
+  download bug.
+- **Patch model cleanup** (NEW-7, NEW-8, NEW-13, NEW-10): kill
+  ephemeral patch fields, deduplicate redundant migrations.
+
+These three are independent and can run in parallel.
 
 ---
 
 ## Resolved
 
 _No issues resolved yet._
+
+---
+
+## Adversarial verification log (this revision)
+
+The following items were re-verified against `src/modules/Grinder/`
+during the adversarial review pass. All file:line references match
+the working tree at HEAD.
+
+| Issue | Verified at | Status |
+| ----- | ----------- | ------ |
+| #1 (no module-root) | `ls src/modules/Grinder/` confirms no `index.ts` | unchanged |
+| #2 (incomplete barrel) | `useCases/index.ts:1-7` lists 7 exports; missing 5 | unchanged |
+| #3 (`as never`) | `grinderStore.ts:254` literal match | deepened |
+| #4 (snapshot model) | `GrinderPatch.ts:154-159` `Record<string, number>` | unchanged |
+| #5 (`unknown` cast) | `setGrinderMicParamWithAudio.ts:25,33` | unchanged |
+| #6 (engineMode coupling) | 4 sites confirmed; deepened to quadruple-source | deepened |
+| #7 (Track type import) | `grinderParamBridgeDependencies.ts:1` literal match | unchanged |
+| #8 (rAF bypass) | `syncGrinderPatchToAudio.ts:127-138`; counted 107 messages | deepened |
+| #9 (default divergence) | `?? -20` vs `DRIVE_CONTROLS:204` `-24` | unchanged |
+| #10 (`inputMode` not synced) | line 29-85 vs lines 106-107 — dispatch case is dead | deepened |
+| #11 (hydration race) | `GrinderPanel.tsx:1168-1173` | refined repro (NEW-17) |
+| #12 (telemetry rerender) | `useStore.ts:5-7` no selector — root cause (NEW-12) | escalated |
+| #13 (whole-store subscription) | `GrinderPanel.tsx:1951` | unchanged |
+| #14 (no telemetry reset) | `resetModuleStoresToDefault.ts:34` resets only grinderStore | unchanged |
+| #15 (1981 LoC) | `wc -l GrinderPanel.tsx` confirms | unchanged |
+| #16/#17/#18 (test mocks) | identity mock at `setGrinderParamWithAudio.spec.ts:22-23` etc. | deepened (NEW-18) |
+| #19 (panel test interaction) | spec file confirmed: only `render` + assertions, no clicks | unchanged |
+| #20 (model file mixing) | 615 LoC confirmed | unchanged |
+| #21 (`GRINDER_PARAMS` dead) | `grep -rn GRINDER_PARAMS` = 0 callers | unchanged |
+| #22 (error swallowing) | `persist:34-37`, `restore:42-44` | unchanged |
+| #23 (O(n²) flatten) | `parseGrinderNamFile.ts:60-72` `unshift` | unchanged |
+| #24 (`version` required) | `parseGrinderNamFile.ts:171` | unchanged |
+| #25 (`&&` rendering) | `GrinderPanel.tsx:591` | unchanged |
+| #26 (duplicate functions) | `grinderStore.ts:76-103` | unchanged |
+| #27 (IDB quota) | `persist:24-25` writes raw `sourceFileText` | unchanged |
+| #28-30 | as previously stated | unchanged |
+| #31 (`as` casts) | counted 23 across the two bridge files | unchanged |
+| #32 (`AUDIO_SYNC_KEYS` incompleteness) | `inputMode` is the proven omission | unchanged |
+| #33-37 | as previously stated | unchanged |
+| #54 (nested buttons) | `ImportedNeuralLibraryCard.tsx:23-66` confirms NOT nested | bogus → resolved |
+| NEW-1 | `GrinderPanel.tsx:1955-1957` + 21 callsites of `replacePatch` | new |
+| NEW-2 | `setGrinderParamWithAudio.ts:86` cast | new |
+| NEW-3 | `GrinderPatch.ts:434-437` migration rule | new |
+| NEW-4 | bridge-vs-sync boolean dispatch divergence | new |
+| NEW-5 | `downloadGrinderNeuralModelFile.ts:6-13` synchronous revoke | new |
+| NEW-6 | `removeGrinderNeuralModel.ts:13-28` non-atomic | new |
+| NEW-7 | `neuralWarmupProgress` patch+telemetry duplication | new |
+| NEW-8 | `uiSection` persisted to disk | new |
+| NEW-9 | `ImportedNeuralLibraryCard` no `aria-pressed` | new |
+| NEW-10 | redundant `migrateGrinderPatch` calls (3-4× per load) | new |
+| NEW-11 | `syncGrinderPatchToAudio` not exposed via barrel | new |
+| NEW-12 | `useStore` has no selector — root cause of #12 | new |
+| NEW-13 | `neuralStatus` is a write-only patch field | new |
+| NEW-14 | `hash_string` djb2 collision concern (re-stated from older audit) | new |
+| NEW-15 | `is_importing_models` is per-component for global action | new |
+| NEW-16 | `BrowserRail` `query.toLowerCase()` per-preset | new |
+| NEW-17 | `restoreGrinderNeuralLibrary` race — narrower repro than #35 | new |
+| NEW-18 | `inject` mock breaks DI failure detection | new |

@@ -1,5 +1,20 @@
 # Yeast module audit
 
+## Adversarial-review status (2026-04-28)
+
+This file has been re-verified against `src/modules/Yeast/` head-of-tree. Every issue below was opened against a specific file:line. Verification notes record what changed; correctness disputes are flagged inline.
+
+**Headline corrections from prior audit:**
+
+- **Issue #6 ("worklet rack mirrored but never driven") was wrong.** The worklet's `processBlock` IS called — by `src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts:248-251`. That path is the offline MIDI-clip transformation ("bake the rack into the recorded notes"), and it uses the worklet when available, falling back to the main-thread rack otherwise. The bridge in `useCases/yeastSchedulingBridge/` serves a *different* purpose: real-time MIDI input from `messageHandlers.ts:349`. So the architecture is "two consumers, one of them uses the worklet, the other uses the main-thread rack". The **bug is now**: the real-time path silently never uses the worklet (duplicated singleton state), and the two paths build divergent `TransportInfo` payloads — see new issue #59.
+- **Issue #14 ("upDown asymmetry") is partly wrong.** The `[0, 1, 2, 1]` cycle for `octaveRange = 3` is the *standard tent pattern* used by every commercial arpeggiator (Roland, Sequential, Ableton). Including 0 in the descent would produce `[0, 1, 2, 1, 0, 0, 1, 2, 1, 0, …]` — a doubled root. The audit's claim that the cycle "should be" `[0, 1, 2, 1, 0]` is wrong. The descent loop is correct.
+- **Issue #13 over-counted.** "13 processors hand-roll the LCG" is wrong — there are **6 processors** with **9 inline LCG sites**. Full list below.
+- **Issue #2 listed 7 string-key processors but missed `GrooveModule`.** Real count: 6 (string keys), 2 (numeric keys). Full list below.
+
+The audit's verification status is captured per-issue. Resolved issues are moved to `## Resolved`; new issues are appended after the last open issue.
+
+---
+
 ## Scope
 
 Adversarial audit of `src/modules/Yeast/` in full — the MIDI rack, all 15 processors, the `MidiRack` host, the AudioWorkletNode wrapper / processor, the cross-module scheduling bridge, the public store, the use-case write surface, and the React presentation views/components. Cross-module callers (`AudioEngine`, `Transport`, `Performance`/Command, etc.) are referenced where they import this module, but their internals are out of scope.
@@ -172,14 +187,25 @@ A correctness-first MIDI-effect rack that:
 
 ---
 
-## Priorities
+## Priorities (updated 2026-04-28 — adversarial re-review)
 
-1. **Missing root `index.ts` and dead worklet pipeline (issues #1, #6, #7, #9)** — the module's entire cross-module contract is informal. Fix the barrel + decide whether the worklet path lives or dies.
-2. **Audio-thread allocation hazards (issues #2, #13, #15, #16, #29, #30, #36, #43)** — the rack enforces "no allocation" but processors widely violate it via string keys and per-step array spreads.
-3. **Block-window misuse and transport seek (issues #3, #4, #5, #21, #22)** — step generators silently underschedule; `processYeastMidi` is fed wrong transport metadata; real-time MIDI input through the rack does not generate arp output.
-4. **Worklet IPC bugs (issues #7, #8, #25, #26, #27, #28)** — race condition, Promise leak, no error path, no retry.
-5. **Processor correctness (issues #14, #32, #33, #39, #40, #45)** — arp octave cycle is asymmetric; ChordMemory commits prematurely; Humanizer can emit pre-block events.
-6. **AGENTS.md violations (issues #1, #46, #47, #48, #49)** — barrel, function signatures, deep imports, type re-exports.
+1. **Critical-severity audited correctness bugs:**
+   - **#62** — Live-keyboard Note Offs bypass the Yeast rack → hanging notes through Transposer / ChordGenerator / Harmonizer / etc. (single-line fix in `messageHandlers.ts`).
+   - **#26** — `ChordMemory` recall is keyed by absolute MIDI note, so the entire feature only works for the exact stored note. Transposition is unreachable.
+   - **#15** — Every UI knob/select displays a hard-coded literal value, not the processor's actual state. UI is misleading across all 15 processor types.
+   - **#19a** — 21 of 28 spec files are placeholder no-ops. CI green is meaningless. The behavioural specs that exist (#20) use a wrong `TransportInfo` shape.
+2. **Cross-path discontinuities (real-time vs offline):**
+   - **#6** (corrected) — Worklet IS used, but only by `scheduleMidiNotes`. Real-time bridge uses main-thread rack. Same singleton, two writers.
+   - **#53** — `reorderYeastProcessor` does not mirror to the worklet → real-time path and offline path produce different output after reorder.
+   - **#54** — `setYeastProcessorParam` does not call `syncStoreFromRack` → store never sees param updates.
+   - **#59** — `scheduleMidiNotes` and the bridge build different `TransportInfo` shapes for the same rack.
+3. **Audio-thread allocation hazards (issues #2, #13, #15, #16, #29, #30, #36, #43, #65)** — the rack enforces "no allocation" but 6 processors violate it via string keys; 9 inline LCG sites; per-step array spreads in Arpeggiator.
+4. **Block-window and transport-seek issues (issues #3, #4, #5, #21, #22)** — step generators silently underschedule; transport metadata is fabricated.
+5. **Worklet IPC fragility (issues #7, #8, #25, #26, #27, #28, #60, #63)** — race conditions, Promise leak, rejected-promise cache, no error path, no retry, `currentFrame` reliance.
+6. **Processor correctness (issues #11, #32, #33, #39, #40, #45, #67)** — `allNotesOff` flush bug; ScaleQuantizer chained transpositions; Humanizer pre-block events; `removeProcessor` leaves hanging notes.
+7. **AGENTS.md violations (issues #1, #46, #47, #48, #49, #55, #56, #58, #66)** — missing barrel, positional-args, deep imports, namespace imports in 21 specs, codemod-generated `renderIife_NN`, `setParam` contract inconsistency, possible tsconfig hole.
+
+**Recommended single-session focus:** issues #62, #54, #53, #1 — all small fixes that close audible correctness bugs and re-enable the architectural test surface.
 
 ---
 
@@ -199,19 +225,28 @@ A correctness-first MIDI-effect rack that:
 
 ### 2. Audio-thread string-key allocations across processors
 
-**Problem:** `MidiRack` was carefully refactored to use integer keys `(channel << 7) | note` and explicit "§149.2" comments to avoid template-literal allocation per event. Seven processors ignore this and allocate a fresh `${ch}:${note}` (or `ch * 128 + note` _but as a Map<string, …>_) per Note On / Note Off. The scratch ping-pong allocations are saved by the rack, then immediately squandered by every processor in the chain.
+**Verified 2026-04-28.** Severity: high. Original audit listed 7 processors but missed `GrooveModule` and miscounted `ScaleQuantizer` (which already uses numeric keys). Actual head-of-tree state:
 
-**Representative files:**
+| Processor                                                                | Map type                       | Key construction                | Status                |
+| ------------------------------------------------------------------------ | ------------------------------ | ------------------------------- | --------------------- |
+| `Transposer.ts:17,33,40,42`                                              | `Map<string, number>`          | `` `${ch}:${note}` ``           | violates §149.2       |
+| `ChordGenerator.ts:32,79,81`                                             | `Map<string, number[]>`        | `` `${ch}:${note}` ``           | violates §149.2       |
+| `ChordMemory.ts:25,46,79`                                                | `Map<string, number[]>`        | `` `${ch}:${note}` ``           | violates §149.2       |
+| `Harmonizer.ts:37,51,75`                                                 | `Map<string, number[]>`        | `` `${ch}:${note}` ``           | violates §149.2       |
+| `GrooveModule.ts:36,55,63` **(missed in prior audit)**                   | `Map<string, number>`          | `` `${ch}:${note}` ``           | violates §149.2       |
+| `NoteFilter.ts:19,28,40`                                                 | `Set<string>`                  | `` `${ch}:${note}` ``           | violates §149.2       |
+| `Humanizer.ts:28,41,54`                                                  | `Map<number, number>`          | `ch * 128 + note`               | OK                    |
+| `ScaleQuantizer.ts:37,54,60`                                             | `Map<number, number>`          | `ch * 128 + note`               | OK                    |
 
-- `src/modules/Yeast/useCases/processors/Transposer.ts:33,40`
-- `src/modules/Yeast/useCases/processors/Humanizer.ts:41,54`
-- `src/modules/Yeast/useCases/processors/ScaleQuantizer.ts:54,60` (uses numeric `* 128` but stored in `Map<number, number>` — actually this one is fine, just 5 of the 7 use string keys)
-- `src/modules/Yeast/useCases/processors/ChordGenerator.ts:79,81`
-- `src/modules/Yeast/useCases/processors/ChordMemory.ts:46,79`
-- `src/modules/Yeast/useCases/processors/Harmonizer.ts:51,75`
-- `src/modules/Yeast/useCases/processors/NoteFilter.ts:28,40`
+**Blast radius:** 6 processors touched, dozens of `setParam`/`reset` boundaries unaffected. With a typical 4-processor chain (`Humanizer → Transposer → ChordGenerator → NoteFilter`) on a 16-note Note On burst, each processor allocates 16 template-literal strings — 64 small-string allocations per audio block versus zero for the rack itself. `MidiRack` paid the cost of "no allocation" per `MidiRack.ts:14-22, 56-61, 88-99`; the processors throw it away.
 
-**Needed:** Replace string keys with `(channel << 7) | note` numeric keys; switch `Map<string, …>` to `Map<number, …>`. Add an internal helper in `models/MidiProcessor.ts` (e.g. `noteKey(channel, note): number`) and use it everywhere. Add a lint rule or a comment-enforced convention. Cross-reference `MidiRack.ts:88-99` for the canonical pattern.
+**Repro:** Add a Transposer to a rack, play 16 notes simultaneously. Profile with `performance.measure` — string allocations dominate the per-block budget. Verifiable by replacing `Map<string, …>` with `Map<number, …>` and re-running.
+
+**Fix sketch:** Add `noteKey(channel, note): number` to `models/MidiProcessor.ts` returning `(channel << 7) | note`. Replace each `Map<string, …>` with `Map<number, …>`. Per CLAUDE.md "No automated bulk file edits" — do this manually, file by file.
+
+**Severity rationale:** High because the cost grows linearly with both polyphony and chain length. A correctness invariant ("audio-thread allocates nothing") is violated unconditionally.
+
+**Needed:** Replace string keys with `(channel << 7) | note` numeric keys per the rack's canonical pattern (`MidiRack.ts:88-99`). Switch `Map<string, …>` / `Set<string>` to `Map<number, …>` / `Set<number>`. Add a shared helper `noteKey()` in `models/MidiProcessor.ts`. After landing, audit `_transport` parameter naming — every string-key processor takes `_transport` (unused) and only Humanizer / ChordGenerator actually use it. Note: `ChordGenerator` does use `transport.sampleRate`; the others don't.
 
 ### 3. Step generators hand-roll `blockEnd` instead of receiving it
 
@@ -249,17 +284,40 @@ A correctness-first MIDI-effect rack that:
 
 **Needed:** Decouple "the rack tracks a Note On" from "the rack emits a step". Real-time MIDI input should update held-notes state without invoking step generation; the audio scheduler's own block-tick should drive step generation with the correct `blockEnd`. Today these two paths are conflated.
 
-### 6. Worklet rack is mirrored but never driven
+### 6. Worklet rack is partially driven, partially shadowed (CORRECTION OF PRIOR AUDIT)
 
-**Problem:** `YeastWorkletNode.processBlock` is implemented (`YeastWorkletNode.ts:66-76`) and the worklet processes incoming requests (`yeastWorkletProcessor.ts:60-69`), but **no consumer calls** `node.processBlock(...)`. The bridge (`processYeastMidi`) calls the **main-thread** `rack.processBlock` directly. The worklet's `MidiRack` is kept in sync via `addProcessor`/`removeProcessor`/`setParam`/`setBypass` mirrors but never runs `processBlock`.
+**Verified 2026-04-28.** Severity: high. The prior audit claimed the worklet's `processBlock` is never called. **That is wrong.**
+
+The worklet *is* called — by `src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts:248-251`:
+
+```ts
+const workletNode = await getYeastWorkletNodeAsync(ctx);
+const processed = workletNode
+    ? await workletNode.processBlock(midiEvents, blockStartSamples, blockEndSamples, yeastTransport)
+    : yeastRack.processBlock(midiEvents, blockStartSamples, blockEndSamples, yeastTransport);
+```
+
+This is the **offline / clip-bake path**: `scheduleMidiNotes` walks each MIDI clip, builds events, and runs them through Yeast (worklet preferred) before the per-track scheduler emits to synths. It is the path actually used during playback transport ticks.
+
+The bridge (`useCases/yeastSchedulingBridge/processRealtimeMidiInput.ts:38`) is a **separate path** for **real-time MIDI input** (live keyboard playthrough). It is called from `messageHandlers.ts:349`. It does *not* use the worklet — it always uses the main-thread `getYeastRack().processBlock(...)`.
+
+**Real bugs uncovered:**
+
+1. **Two consumers, two scheduling discontinuities.** When the user is *both* recording from a MIDI keyboard *and* playing back a clip with the same Yeast rack inserted, both paths run on the same `MidiRack` instance (worklet + main-thread, separately). `MidiRack.activeNotes` and `MidiRack.scheduled` get clobbered between paths because they share state. Note Ons emitted by the offline path's worklet can race against Note Offs computed on the main thread by the bridge.
+2. **Real-time path skips the worklet for no documented reason.** The bridge could equally `await getYeastWorkletNodeAsync(ctx)` and `await workletNode.processBlock(...)` — but it doesn't, presumably to avoid awaiting on the audio thread (good intent, wrong implementation: nothing in `processRealtimeMidiInput` runs on the audio thread; it's called from a Web MIDI message-port callback).
+3. **Param/bypass mirroring race remains** (issue #7).
+
+**Severity rationale:** High because two independent code paths drive the same singleton rack with different latency models. The user can stack a clip + live input through the same rack and observe inconsistent output.
 
 **Representative files:**
 
 - `src/modules/Yeast/engine/YeastWorkletNode.ts:66-76`
 - `src/modules/Yeast/services/yeastWorkletProcessor.ts:60-69`
 - `src/modules/Yeast/useCases/yeastSchedulingBridge/processRealtimeMidiInput.ts:38`
+- `src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts:248-251`
+- `src/modules/AudioEngine/repositories/webMidi/messageHandlers.ts:349`
 
-**Needed:** Decide. Either (a) wire the bridge to the worklet and remove the main-thread `rack.processBlock` call from the audio scheduler's hot path, or (b) delete the worklet path entirely (`YeastWorkletNode.ts`, `yeastWorkletProcessor.ts`, the worklet-mirror calls in every write use case). The middle ground is dead code that ships in every bundle.
+**Needed:** Decide on a single source of truth. Either (a) both paths use the worklet (move the bridge to `await getYeastWorkletNodeAsync` and tolerate the await — it's not on the audio thread); (b) both paths use the main-thread rack and the worklet path is removed; or (c) the rack instance is partitioned: one rack per path (live-input rack, playback rack), keyed by clip/track context. (c) is the architecturally clean choice but requires reworking `getYeastRack()` to return a context-keyed instance.
 
 ### 7. Worklet add-before-init does not re-sync params/bypass
 
@@ -327,49 +385,101 @@ A correctness-first MIDI-effect rack that:
 
 **Needed:** Document the upper bound: it should be derived from `(blockEnd - lastStepTime) / stepLenSamples + small_margin`. Replace magic 64 with a computed limit. Log a warning if hit (assistance for future debugging of stuck generators).
 
-### 13. Hand-rolled LCG inline in 13 processors
+### 13. Hand-rolled LCG inline in 6 processors / 9 sites (corrected count)
 
-**Problem:** `lcgRandom.ts:24-26` exports `nextLcg`, but only `Humanizer` uses it. Every other processor inlines `(state * 1103515245 + 12345) & 0x7fffffff`. The whole reason `lcgRandom.ts` exists (per its docstring) was to centralise this — the centralisation didn't happen.
+**Verified 2026-04-28.** Severity: low. The original audit said "13 processors" which is wrong. Exhaustive `grep '1103515245' src/modules/Yeast/` returns:
+
+| File                                                               | Lines                | Sites |
+| ------------------------------------------------------------------ | -------------------- | ----- |
+| `src/modules/Yeast/models/lcgRandom.ts:25`                         | (the helper itself)  | 1     |
+| `src/modules/Yeast/useCases/processors/Arpeggiator.ts`             | `:163, :387, :426`   | 3     |
+| `src/modules/Yeast/useCases/processors/Transposer.ts:28`           | `:28`                | 1     |
+| `src/modules/Yeast/useCases/processors/MarkovChain.ts:107`         | `:107`               | 1     |
+| `src/modules/Yeast/useCases/processors/VelocityProcessor.ts:75`    | `:75`                | 1     |
+| `src/modules/Yeast/useCases/processors/MutationEngine.ts:79,81`    | `:79, :81`           | 2     |
+| `src/modules/Yeast/useCases/processors/CCGenerator.ts:33`          | `:33`                | 1     |
+
+Total: **9 inline-LCG sites across 6 processors** (plus the helper). Only `Humanizer` (`lcgRandom.ts:7`) consumes the helper. `MutationEngine` re-implements `gaussian()` inline using two LCG steps (`:79-81`); `Humanizer` already extracted that into `gaussian()` at `:68-74` using the helper. The duplication is not just LCG — it's the entire Box-Muller transform copy-pasted between `Humanizer` and `MutationEngine`.
+
+**Blast radius:** Output sequences for the same seed will not change after migration if `nextLcg` returns the same bit pattern (`lcgRandom.ts:24-26` confirms it does). Migration is therefore a pure refactor with no behavioural change. `CCGenerator.ts:33` is a minor outlier — it stores the normalised float in `rngState.v` rather than the integer state; replacing requires a small adapter.
+
+**Severity rationale:** Low. No correctness bug, just maintenance debt and one place where a future fix to the LCG (e.g. switching to mulberry32) has 9 places to update.
+
+**Needed:** Replace inline LCG with `nextLcg` + `LCG_MAX`. Extract `boxMullerGaussian()` into `models/lcgRandom.ts` so `Humanizer` and `MutationEngine` share it. Mechanical edit, one file at a time per AGENTS.md "no automated bulk edits".
+
+### 14. `Arpeggiator.expandOctaves` upDown — claim disputed
+
+**Verified 2026-04-28.** Severity: low (downgraded from medium). **The original claim is wrong as a bug report.**
+
+For `octaveRange = 3, octaveDirection = 'upDown'`, the loop at `Arpeggiator.ts:343-350` produces:
+
+- ascending: `[0, 1, 2]` (output: `0, 1, 2`)
+- descending: `for (output = 1; output > 0; output--)` produces `[1]` only
+- combined: `[0, 1, 2, 1]`
+
+This is the **standard tent pattern** used by every commercial arpeggiator:
+
+| octaveRange | tent cycle      | "audit's expectation" (wrong) |
+| ----------- | --------------- | ----------------------------- |
+| 1           | `[0]`           | `[0]`                         |
+| 2           | `[0, 1]`        | `[0, 1, 0]`                   |
+| 3           | `[0, 1, 2, 1]`  | `[0, 1, 2, 1, 0]`             |
+| 4           | `[0, 1, 2, 3, 2, 1]` | `[0, 1, 2, 3, 2, 1, 0]`  |
+
+The "expectation" form would double-emit 0 at every cycle boundary (end of one cycle + start of next). The current code is correct for the tent pattern semantics that user-facing arpeggiators implement.
+
+**However**, there is a real concern: nothing in `Arpeggiator.setParam` or the panel reads this back to verify what the user expects. Without explicit UX research / docs, "what *should* upDown do" is ambiguous. Users coming from Logic / Live ES2 may expect tent-pattern; users from rack synths with `[0, 1, 2, 1, 0]` semantics will not.
 
 **Representative files:**
 
-- `src/modules/Yeast/models/lcgRandom.ts:24`
-- `src/modules/Yeast/useCases/processors/Arpeggiator.ts:163,387,426`
-- `src/modules/Yeast/useCases/processors/Transposer.ts:28`
-- `src/modules/Yeast/useCases/processors/VelocityProcessor.ts:75`
-- `src/modules/Yeast/useCases/processors/MarkovChain.ts:107`
-- `src/modules/Yeast/useCases/processors/CCGenerator.ts` (presumably)
-- `src/modules/Yeast/useCases/processors/MutationEngine.ts` (presumably)
+- `src/modules/Yeast/useCases/processors/Arpeggiator.ts:343-350` — the math
+- (no UX doc / spec)
 
-**Needed:** Replace inline LCG with `nextLcg` + `LCG_MAX` everywhere. Mechanical edit, one file at a time per AGENTS.md "no automated bulk edits".
+**Needed:** No code change required. Add a behavioural test asserting the tent-pattern sequence (`[0, 1, 2, 1]` for `octaveRange = 3`). Document the `'upDown'` semantic in code comment or use-case docstring. If the product owner confirms `[0, 1, 2, 1, 0]` semantics are required, change the descent loop to `output >= 0` *and* the ascent loop to skip `octaveRange-1` when looping back, to avoid doubling.
 
-### 14. `Arpeggiator.expandOctaves` upDown asymmetry
+### 15. Presentation: every knob/select is decorative; no parameter is read from rack state
 
-**Problem:** `Arpeggiator.ts:343-350`: descending loop `for (let output = this.octaveRange - 2; output > 0; output--)` excludes 0, so the descent never returns to the source octave. The full sequence for `octaveRange = 3` is `[0, 1, 2, 1]` not `[0, 1, 2, 1, 0]`.
+**Verified 2026-04-28.** Severity: critical (UX). Original audit identified the YeastPanel cases. Verification adds `ProcessorParams.tsx` — which contains every per-processor parameter form — and **every single value prop is a hard-coded literal**, across all 15 processor types. The full damage:
 
-**Representative files:**
+- `YeastPanel.tsx:362` Mode select `defaultValue={0}` — once the user selects, the displayed value is the local DOM state, not the processor's actual mode.
+- `YeastPanel.tsx:377` Rate `value={8}` — knob always reads "8" regardless of processor's actual rate.
+- `YeastPanel.tsx:393-403` Latch chip — `onClick` always sends `1` (no toggle); cannot turn latch off.
+- `YeastPanel.tsx:415-446` Level 2 four `KnobCol`s with `value={0.8}`, `value={0}`, `value={1}`, `value={100}` — render-time constants.
+- `YeastPanel.tsx:541, :743` `currentStep={0}` — pattern editor's "playing" indicator never animates.
+- `YeastPanel.tsx:455-470` Level 3 `arpPattern` lives in React `useState`; `Arpeggiator.setPattern()` is **never called** — the pattern editor is purely decorative.
+- `ProcessorParams.tsx:102, :109, :119, :131, :140, :151, :158, :167, :177` — all 9 `value=` for the **arpeggiator** card are literals.
+- `ProcessorParams.tsx:204, :212, :219, :231` — chord type / voicing / strum / direction all literals.
+- `ProcessorParams.tsx:252, :273, :296, :311` — scale quantizer all literals.
+- `ProcessorParams.tsx:329, :337, :344, :356, :363, :375` — harmonizer all literals.
+- `ProcessorParams.tsx:388, :398, :408, :418, :428` — note repeater all literals.
+- `ProcessorParams.tsx:446, :453, :463, :474` — velocity processor all literals.
+- `ProcessorParams.tsx:488, :495, :506, :516` — humanizer all literals.
+- `ProcessorParams.tsx:533, :543, :553, :563, :574` — note filter all literals.
+- `ProcessorParams.tsx:587, :598, :608` — transposer all literals.
+- `ProcessorParams.tsx:626, :633` — groove all literals.
+- `ProcessorParams.tsx:649, :660, :667, :673, :674, :680` — CC generator all literals.
+- `ProcessorParams.tsx:689, :694, :703, :714, :724, :734, :744` — euclidean all literals.
+- `ProcessorParams.tsx:760, :770, :780` — markov all literals.
+- `ProcessorParams.tsx:797, :807` — mutation all literals.
 
-- `src/modules/Yeast/useCases/processors/Arpeggiator.ts:333-350`
+**Compounded by issue #62 (new):** Even if these were rebuilt to read from rack state, `setYeastProcessorParam` does NOT call `syncStoreFromRack()` — the store would not re-emit. The reactive feedback loop is broken at both ends.
 
-**Needed:** Change descent condition to `>= 0` for the first descent step or restructure the loop so the upDown cycle is symmetric. Add a test for `octaveRange = 3, octaveDirection = 'upDown'` that asserts the cycle visits each octave once on the way down.
+**Repro:** Open Yeast panel; add an Arpeggiator; set rate to 16; collapse + re-expand the params card. Rate display reads "8" again. The processor's actual rate has been set to 16 inside the rack, but the UI does not know.
 
-### 15. Presentation: stale literal values driving controls
-
-**Problem:** `YeastPanel.tsx` Level 1, 2, 3, 4, 5 all wire knobs/selects with hard-coded literal `value` and `defaultValue` props instead of reading the processor's actual current parameter. Examples:
-
-- `Level1Play` Mode select uses `defaultValue={0}` (`YeastPanel.tsx:362`) — once the user picks a mode, the displayed value is whatever the user selected, not what the processor actually has. After remove + re-add, the displayed state is wrong.
-- `Level1Play` Latch (`YeastPanel.tsx:393-403`) only ever calls `setYeastProcessorParam(arp.id, 'latch', 1)` — it cannot _toggle off_ latch. The visual is a static chip; the data path is one-way.
-- `Level2Shape` `KnobCol` calls all pass literal `value={0.8}`, `value={0}`, `value={1}`, `value={100}` (`YeastPanel.tsx:417-446`). These are render-time constants, not bound to the processor state. The knob is decorative.
-- `Level3Build`, `Level4Route`, `Level5Lab` use `useState` for `arpPattern` and `expandedId`. The `arpPattern` state is local to React; `setYeastProcessorParam` is never called when the pattern changes. The `Arpeggiator.setPattern` API (`Arpeggiator.ts:241`) is unreachable from the UI.
-- `currentStep={0}` is hard-coded in both `StepPatternEditor` invocations (`YeastPanel.tsx:541`, `:743`) — the live step indicator never animates.
+**Severity rationale:** Critical because **the entire UI is misleading**. A user cannot trust any visible value. Every knob is essentially a write-only control whose display is unrelated to what's running.
 
 **Representative files:**
 
 - `src/modules/Yeast/presentations/views/YeastPanel.tsx:362-371,376-391,393-403,417-446,455,462,541,742-755`
-- `src/modules/Yeast/useCases/processors/Arpeggiator.ts:241,250` (`setPattern`, `getCurrentStep` exist but are unreachable)
-- `src/modules/Yeast/presentations/components/StepPatternEditor.tsx:26-31` (no liveStep wiring)
+- `src/modules/Yeast/presentations/components/ProcessorParams.tsx:102-815` (every `value={…}` is a literal)
+- `src/modules/Yeast/useCases/processors/Arpeggiator.ts:241,250` (`setPattern`, `getCurrentStep` are dead-from-UI)
+- `src/modules/Yeast/presentations/components/StepPatternEditor.tsx:26-31` (no `liveStep` wiring)
 
-**Needed:** Read each processor's current parameter set from the rack (need a `getProcessorParams(id)` API on `MidiRack` or a per-processor reactive store). Replace literal values with state-driven props. Wire `Latch` as a true toggle. Plumb `arpPattern` to `Arpeggiator.setPattern` (probably via a new `setYeastProcessorPattern` use case). Plumb `currentStep` from `Arpeggiator.getCurrentStep()` (likely via a `requestAnimationFrame` poll in the panel).
+**Needed:** Three pieces:
+
+1. Add a `getProcessorParams(id): Record<string, number>` API on `MidiRack` that snapshots each processor's current params. Each processor needs a `getParams()` accessor (currently absent). Alternatively, mirror params into the reactive store as part of `syncStoreFromRack`.
+2. Make `setYeastProcessorParam` call `syncStoreFromRack()` (issue #62) so writes propagate.
+3. Replace every literal `value={…}` in `ProcessorParams.tsx` and `YeastPanel.tsx` with state-derived values. Wire `Latch` as a true toggle via `state.processors[i].params.latch`. Wire `currentStep` via `requestAnimationFrame` polling `Arpeggiator.getCurrentStep()`. Plumb `arpPattern` to a new `setYeastProcessorPattern` use case that calls `Arpeggiator.setPattern()`.
 
 ### 16. Presentation: workaround `renderIife_NN` IIFE pattern
 
@@ -401,7 +511,7 @@ A correctness-first MIDI-effect rack that:
 
 **Needed:** keep monitoring; lint rule should already catch this.
 
-### 16. `transportStore.value` read per audio block
+### 19c. `transportStore.value` read per audio block (was duplicate #16)
 
 **Problem:** `processRealtimeMidiInput.ts:19` reads `transportStore.value` on every call, including every audio-block tick. Cross-module store dereference per audio frame.
 
@@ -411,7 +521,7 @@ A correctness-first MIDI-effect rack that:
 
 **Needed:** Pass a snapshot from the caller (the AudioEngine scheduler), or move the snapshot to a module-level cached value updated on `transportStore.subscribe`.
 
-### 17. Function-signature violations (positional args)
+### 19d. Function-signature violations (positional args) (was duplicate #17)
 
 **Problem:** AGENTS.md mandates "Functions with more than one parameter take a single object param". `MidiRack.processBlock` (4 positional), `processYeastMidi` (4 positional), `processRealtimeMidiInput` (7 positional), `MidiRack.reorder`, `setProcessorParam`, etc.
 
@@ -424,7 +534,7 @@ A correctness-first MIDI-effect rack that:
 
 **Needed:** Refactor each to take `<FunctionName>Input` object types defined immediately above. The MidiProcessor interface is the load-bearing contract; it propagates to all 15 processors.
 
-### 18. `inferType` fallback masks bugs
+### 19e. `inferType` fallback masks bugs (was duplicate #18)
 
 **Problem:** `yeastStore.ts:147-173` does substring matching on processor names and falls back to `'arpeggiator'` if nothing matches. The type map should be authoritative; this fallback is dead code that disguises bugs (a registration failure produces an arpeggiator ID for, say, a Mutation processor).
 
@@ -436,39 +546,68 @@ A correctness-first MIDI-effect rack that:
 
 ### 19a. **The vast majority of Yeast specs are placeholder no-ops**
 
-**Problem:** Across 27 spec files in the module, **20** are 11–16 lines of `expect(subject.X).toBeDefined()` plus `expect(typeof X === 'function' || === 'object').toBe(true)`. They prove the export _exists_ — they do not exercise behaviour. This means the module's spec suite is theatrical: it makes the test runner green without protecting any contract.
+**Verified 2026-04-28.** Severity: critical. Every 11-line spec file confirmed by `wc -l` and visual inspection. Pattern is identical:
 
-Confirmed placeholder-only specs (each exactly the "should export" pattern):
+```ts
+import { describe, it, expect } from 'vitest';
+import * as subject from '../FileName';
 
-- `useCases/__tests__/MidiRack.spec.ts` (the rack)
-- `useCases/__tests__/addYeastProcessor.spec.ts`
-- `useCases/__tests__/removeYeastProcessor.spec.ts`
-- `useCases/__tests__/reorderYeastProcessor.spec.ts`
-- `useCases/__tests__/setYeastProcessorBypass.spec.ts`
-- `useCases/__tests__/setYeastProcessorParam.spec.ts`
-- `useCases/__tests__/processorFactory.spec.ts`
-- `useCases/yeastSchedulingBridge/__tests__/processRealtimeMidiInput.spec.ts`
-- `useCases/yeastSchedulingBridge/__tests__/yeastPanic.spec.ts`
-- `useCases/processors/__tests__/CCGenerator.spec.ts`
-- `useCases/processors/__tests__/ChordMemory.spec.ts`
-- `useCases/processors/__tests__/EuclideanGenerator.spec.ts`
-- `useCases/processors/__tests__/GrooveModule.spec.ts`
-- `useCases/processors/__tests__/Harmonizer.spec.ts`
-- `useCases/processors/__tests__/MarkovChain.spec.ts`
-- `useCases/processors/__tests__/MutationEngine.spec.ts`
-- `useCases/processors/__tests__/NoteFilter.spec.ts`
-- `useCases/processors/__tests__/NoteRepeater.spec.ts`
-- `useCases/processors/__tests__/ScaleQuantizer.spec.ts`
-- `useCases/processors/__tests__/VelocityProcessor.spec.ts`
+describe('FileName', () => {
+    it('should export FileName', () => {
+        expect(subject.FileName).toBeDefined();
+        const time = typeof subject.FileName;
+        expect(time === 'function' || time === 'object').toBe(true);
+    });
+});
+```
 
-Only seven spec files (`Arpeggiator.spec.ts`, `ChordGenerator.spec.ts`, `Humanizer.spec.ts`, `Transposer.spec.ts`, `setYeastUiLevel.spec.ts`, `yeastSchedulingBridge.spec.ts`, plus the three presentation specs) appear to actually exercise the production code path. AGENTS.md "TypeScript — soundness" says: "Tests: Do not stop at 'defined' / 'truthy' / generic `toBeTypeOf('object')` — assert the actual contract." The placeholder pattern is the textbook example of what's forbidden.
+This proves only that `import * as subject from '../FileName'` succeeds and that `subject.FileName` is truthy. Note the AGENTS.md violation: **`import * as subject` is a namespace import**, which AGENTS.md "Imports" forbids. Every placeholder also inherits this violation.
 
-**Representative files:**
+Confirmed placeholder-only specs at 11 lines each (20 total):
 
-- The 20 files listed above
-- AGENTS.md "TypeScript — soundness" §
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/__tests__/MidiRack.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/__tests__/addYeastProcessor.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/__tests__/removeYeastProcessor.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/__tests__/reorderYeastProcessor.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/__tests__/setYeastProcessorBypass.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/__tests__/setYeastProcessorParam.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/__tests__/processorFactory.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/yeastSchedulingBridge/__tests__/yeastPanic.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/processors/__tests__/CCGenerator.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/processors/__tests__/ChordMemory.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/processors/__tests__/EuclideanGenerator.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/processors/__tests__/GrooveModule.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/processors/__tests__/Harmonizer.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/processors/__tests__/MarkovChain.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/processors/__tests__/MutationEngine.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/processors/__tests__/NoteFilter.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/processors/__tests__/NoteRepeater.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/processors/__tests__/ScaleQuantizer.spec.ts`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/processors/__tests__/VelocityProcessor.spec.ts`
 
-**Needed:** Replace each placeholder with at least one behavioural assertion per public method. For each processor, assert "input X produces output Y" for the canonical mode. For `MidiRack`, assert ping-pong correctness, processor ordering, and `allNotesOff` flush. For `addYeastProcessor`/etc., assert the rack mutation lands and the store is synced. This is the single biggest correctness risk in the module — the green CI is meaningless.
+One slightly-larger placeholder (16 lines) but same pattern, just two exports asserted:
+
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/yeastSchedulingBridge/__tests__/processRealtimeMidiInput.spec.ts` (16 lines, asserts `processRealtimeMidiInput` *and* `processYeastMidi` exist)
+
+That makes **21 placeholder specs**, not 20. The behavioural specs that exist (lines counts):
+
+- `Arpeggiator.spec.ts` (85) — uses *invalid* `TransportInfo` shape, see #20
+- `ChordGenerator.spec.ts` (68) — uses *invalid* `TransportInfo` shape
+- `Humanizer.spec.ts` (56) — uses *invalid* `TransportInfo` shape
+- `Transposer.spec.ts` (62) — uses *invalid* `TransportInfo` shape
+- `setYeastUiLevel.spec.ts` (21) — actually behavioural, asserts store mutation
+- `yeastSchedulingBridge.spec.ts` (65) — actually behavioural, has one test for "no processors → passthrough"
+
+Plus three presentation specs (`KeyboardSplit.spec.tsx`, `ProcessorParams.spec.tsx`, `StepPatternEditor.spec.tsx`, `YeastPanel.spec.tsx`) — not yet examined for quality.
+
+**Severity rationale:** Critical. The audit suite is theatrical for 21 of 28 source spec files. CI green is meaningless. Every audio-thread allocation, every off-by-one, every transport-seek bug, every Note Off mismatch — none are protected by tests. This is the single largest risk in the module.
+
+**Needed:** Replace each placeholder with at least one behavioural assertion per public method. Per AGENTS.md "TypeScript — soundness": "Tests: Do not stop at 'defined' / 'truthy' / generic `toBeTypeOf('object')` — assert the actual contract." Replace `import * as subject` with named imports. Sequence:
+
+1. Build a `makeTransportInfo(overrides?)` test helper in `models/__tests__/_helpers.ts` returning `satisfies TransportInfo` (fixes #20 simultaneously).
+2. For each processor, replace the placeholder with: input → output canonical fixture, edge cases (empty input, no transport.isPlaying, etc.).
+3. For `MidiRack`, assert ping-pong correctness, processor ordering, `allNotesOff` flush, and reentrance throw (after #10 fix).
+4. For each write use case, assert rack mutation lands AND store is synced (this would catch new issues #61, #62 below).
 
 ### 19b. `MidiRack.spec.ts` is a no-op
 
@@ -481,18 +620,36 @@ Only seven spec files (`Arpeggiator.spec.ts`, `ChordGenerator.spec.ts`, `Humaniz
 
 **Needed:** Replace the placeholder with proper coverage: ping-pong scratch buffer correctness, scheduled events draining within the block window, `separateOutput` future-event partition, `allNotesOff` flush behaviour with a chain of stateful processors, reorder semantics, and `processBlock` called twice in a row not corrupting state. Add a fixture-builder for `TransportInfo`.
 
-### 20. `Arpeggiator.spec.ts` uses an invalid `TransportInfo` shape
+### 20. All four "real" processor specs use an invalid `TransportInfo` shape
 
-**Problem:** `Arpeggiator.spec.ts:12-18` builds a `transport` object with `timeSignature: { numerator: 4, denominator: 4 }`. The actual `TransportInfo` type (`MidiEvent.ts:21-34`) has `timeSigNum: number` and `timeSigDen: number` — **no `timeSignature` field**. Likewise the spec is missing required fields: `barIndex`, `beatInBar`, `loopEnabled`, `loopStartPpq`, `loopEndPpq`. The test compiles only via TypeScript structural-type leniency on the missing fields — likely the file has a `TransportInfo`-typed variable that doesn't actually match the contract. If the type were ever imported via `satisfies TransportInfo` the build would fail. Also, `transport.ppqPosition = 0.6` is mutated between calls (`:32, 41`) — the rack's `processBlock` does not advance time via `ppqPosition`, it advances via `lastStepTime` and `input` timestamps. The test passes with mutated PPQ but the production scheduler does not behave this way.
+**Verified 2026-04-28.** Severity: high. Original audit flagged Arpeggiator only; I verified the same wrong shape across **all four** behavioural specs:
 
-**Representative files:**
+```ts
+transport = {
+    isPlaying: true,
+    ppqPosition: 0,
+    bpm: 120,
+    sampleRate: 44100,
+    timeSignature: { numerator: 4, denominator: 4 },  // <-- wrong; not in TransportInfo
+};
+```
 
-- `src/modules/Yeast/useCases/processors/__tests__/Arpeggiator.spec.ts:7-19,32,41`
-- `src/modules/Yeast/models/MidiEvent.ts:21-34` (canonical `TransportInfo`)
+The actual `TransportInfo` type (`MidiEvent.ts:21-34`) requires `timeSigNum`, `timeSigDen`, `barIndex`, `beatInBar`, `loopEnabled`, `loopStartPpq`, `loopEndPpq`. None of these are set. The test compiles because the `transport` variable is typed `TransportInfo` and TypeScript structural typing does not error on **missing** required properties when the *initialiser* lacks them — actually, it does, *unless* there's a type assertion or implicit any. Running `pnpm typecheck` should flag this. (If it doesn't, that's a separate bug — see also issue #66 below: tsconfig may have skipLibCheck or noImplicitAny disabled.)
 
-**Needed:** Build a `makeTransportInfo(overrides?)` test helper that returns a fully-typed `TransportInfo` (`satisfies TransportInfo`). Update the Arpeggiator spec to drive time via input event `timeSamples` (the production model), not by mutating `ppqPosition`. Audit every other processor spec for the same pattern.
+Confirmed test files using the broken shape:
 
-### 20. AGENTS.md `useCases/index.ts` does not include write use cases
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/processors/__tests__/Arpeggiator.spec.ts:12-18`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/processors/__tests__/Humanizer.spec.ts:12-18`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/processors/__tests__/Transposer.spec.ts:12-18`
+- `/Users/josecosta/dev/webdaw/src/modules/Yeast/useCases/processors/__tests__/ChordGenerator.spec.ts:12-18`
+
+Additionally, `Arpeggiator.spec.ts:32,41` mutates `transport.ppqPosition` between calls. Production code does not advance time via PPQ — it uses `input[i].timeSamples`. The test "passes" because the arp's `lastStepTimeSamples = -Infinity → first input` and `processMidi` uses `input[0].timeSamples` for `blockEnd`. Since `input2 = []` at line 33 and `input2 = []` at line 42, `now = 0` and `blockEnd = 128`. The arp emits steps that fit inside `[0, 128)` only — and the step is `0.5 * 22050 ≈ 11025 samples`, which does not fit. So the assertion at `:37` `expect(noteOns.length).toBeGreaterThanOrEqual(1)` is suspicious; it likely passes only because the input note at line 23-24 has `timeSamples: 0` and Arpeggiator passes the input through untouched at `:73-78` (wait, it doesn't — it consumes Note Ons and updates held). The first call at line 29 doesn't emit any Note On (input is consumed for `held`), so the second call at line 34 needs to emit. With `now = 0, blockEnd = 128`, no step fires. **The test should fail.** It "passes" only because the test counts both `output` arrays cumulatively (the same `output` is reused across calls — line 26-29) and `noteOns.length >= 1` is satisfied by the **input** being included in `output`... wait, the input is not pushed to output for Note Ons (`Arpeggiator.ts:73-74` falls through `addHeldNote`, no `output.push`). So either: (a) the test is silently broken and should fail; (b) something about ppqPosition mutation is being read by the arp at `:112` which compute `blockEnd = transport.ppqPosition * samplesPerBeat(transport) + 128 = 0.6 * 22050 + 128 ≈ 13358`. With `lastStepTime = -Infinity` initially, the first call seeded it to `input[0].timeSamples = 0`. The second call has `lastStepTime = 0`, `stepLen ≈ 11025`, `blockEnd = 13358`, so `0 + 11025 ≤ 13358` is true — one step emits at `stepTime = 11025`. That's where the test is implicitly relying on the wrong PPQ semantics. So the test is testing a fictional contract that production never fulfils.
+
+**Severity rationale:** High because the four "real" specs that exist are testing scenarios that bear no relationship to the real audio scheduler. They give false confidence.
+
+**Needed:** Build a `makeTransportInfo(overrides?)` test helper in `models/__tests__/_helpers.ts` that returns a fully-typed `TransportInfo` via `satisfies TransportInfo`. Update each of the four spec files to: (a) use the correct shape; (b) drive time via input event `timeSamples`, not mutated `ppqPosition`. Re-evaluate every assertion: after fixing the shape, do they still pass? If the production model is `processBlock(input, blockStart, blockEnd, transport)`, the spec should call that contract through `MidiRack.processBlock` rather than calling `processMidi` directly.
+
+### 20b. `useCases/index.ts` does not include write use cases (was duplicate #20)
 
 **Problem:** `useCases/index.ts:1-2` only re-exports `processYeastMidi`, `processRealtimeMidiInput`, `yeastPanic`. The write use cases (`addYeastProcessor`, etc.) are not re-exported. Cross-module callers (e.g. presentation views in this module — relative imports — fine) are uniform; the missing root barrel (#1) compounds the problem.
 
@@ -554,15 +711,38 @@ Only seven spec files (`Arpeggiator.spec.ts`, `ChordGenerator.spec.ts`, `Humaniz
 
 **Needed:** Either expose via `setParam` (e.g. `voiceN_time_offset_ms`) or remove the field.
 
-### 26. `ChordMemory` semantics: absolute notes vs pitch-class
+### 26. `ChordMemory` recall is broken — keyed by exact MIDI note, not pitch class
 
-**Problem:** `ChordMemory.ts:48-56`: stored chords are absolute MIDI notes, recall transposes by `event.kind.note - stored.root`. This produces inverted-octave output when the stored chord has notes below the root.
+**Verified 2026-04-28.** Severity: high (correctness). The original audit framed this as "inverted octave when stored chord has notes below root". The real bug is worse:
+
+`ChordMemory.ts:68-72` stores: `this.memory.set(this.learnRoot, { root, notes })`. The map key is the **absolute MIDI note number**.
+
+`ChordMemory.ts:44` recalls: `this.memory.get(event.kind.note)`. Lookup is by absolute MIDI note.
+
+This means a chord stored on C4 (`learnRoot = 60`) is **only recallable when the user plays MIDI note 60 again**. If the user plays C5 (note 72), `memory.get(72)` returns undefined → falls into the `else` branch at `:60-62` → input note passes through.
+
+`transposeMode` is therefore **unreachable in practice**: the `transpose` math at `:48` (`event.kind.note - stored.root`) only ever runs when `event.kind.note === stored.root` (because that's the only way `memory.get` returns non-null). Result: `transpose === 0` always. The configurable `transposeMode` parameter does nothing.
+
+**Repro:**
+
+1. Add ChordMemory; click Learn.
+2. Play C4 + E4 + G4 (a C-major triad).
+3. Click Learn again to commit.
+4. Play C5 — expected: C5+E5+G5 transposed up an octave. Actual: just C5 (passthrough).
+5. Play C4 — expected: chord recalled. Actual: chord recalled at C4 with `transpose = 0`.
+
+The product description (`ChordMemory.ts:1-6`: "Cthulhu-style one-finger chord recall") promises pitch-class semantics. The implementation does not deliver them.
+
+**Combined with issue #24:** ChordMemory is broken in both directions — the learn flow commits prematurely (first Note Off), and the recall flow only matches the exact note, not the pitch class.
+
+**Severity rationale:** High because the entire feature is non-functional. The UI in `ProcessorParams.tsx:237-263` exposes `learn`, `transpose_mode`, and `clear` controls — all of which are wired but only `clear` actually does anything useful.
 
 **Representative files:**
 
-- `src/modules/Yeast/useCases/processors/ChordMemory.ts:11-14,44-58`
+- `src/modules/Yeast/useCases/processors/ChordMemory.ts:19,44-46,68-72`
+- `src/modules/Yeast/presentations/components/ProcessorParams.tsx:237-263`
 
-**Needed:** Decide on contract: pitch-class voicing (Cthulhu-style) vs interval-only voicing. Store relative intervals, not absolute notes. Document.
+**Needed:** Switch storage from absolute note to pitch class: key `memory` by `note % 12`, and store the chord as relative intervals from the trigger note. Recall: lookup `memory.get(triggerNote % 12)` and re-emit at `triggerNote + interval[i]`. This is the standard Cthulhu / Scaler / Chordio contract. Add behavioural tests that store on C4, recall on C5 and D4, and assert correct transposition.
 
 ### 27. `EuclideanGenerator.bjorklund` has dead complexity
 
@@ -609,6 +789,431 @@ Only seven spec files (`Arpeggiator.spec.ts`, `ChordGenerator.spec.ts`, `Humaniz
 
 ---
 
+## New issues (added 2026-04-28 during adversarial re-review)
+
+### 53. `reorderYeastProcessor` does not mirror to the worklet — the worklet rack permanently desynchronises on reorder
+
+**Verified 2026-04-28.** Severity: high.
+
+`src/modules/Yeast/useCases/reorderYeastProcessor.ts` (full file, 8 lines):
+
+```ts
+import { getYeastRack, syncStoreFromRack } from '../stores/yeastStore';
+
+export function reorderYeastProcessor(fromIdx: number, toIdx: number): void {
+    const rack = getYeastRack();
+    rack.reorder(fromIdx, toIdx);
+    syncStoreFromRack();
+}
+```
+
+Compare with `addYeastProcessor.ts:11`, `removeYeastProcessor.ts:7`, `setYeastProcessorParam.ts:6`, `setYeastProcessorBypass.ts:6` — all of which call `getWorkletNodeSync()?.…` to mirror the change. `reorderYeastProcessor` does not. Worse, `YeastWorkletNode` does not even expose a `reorder` method (`engine/YeastWorkletNode.ts:28-42` exports only `processBlock`, `addProcessor`, `removeProcessor`, `setParam`, `setBypass`, `allNotesOff`, `destroy`).
+
+**Blast radius:** When the user reorders a processor in `Level3Build` / `Level4Route` / `Level5Lab`, the main-thread rack (used by the realtime bridge) reflects the new order; the worklet rack (used by `scheduleMidiNotes.ts`) keeps the old order forever. Output during clip playback is processed in the wrong order, producing different MIDI than the live-input path.
+
+**Repro:**
+
+1. Add Arpeggiator, then Humanizer to a track's Yeast rack.
+2. Play a clip — both the live input and the offline scheduler produce identical MIDI (good).
+3. Reorder so Humanizer is first.
+4. Play the same clip — live input shows new order, offline scheduler shows old order. Humanizer's timing offset is now applied **before** the arp instead of after, producing audibly different results between the two paths.
+
+**Severity rationale:** High because reorder is a primary user gesture and silently produces inconsistent behaviour. Combined with issue #6, this is a sharp footgun.
+
+**Representative files:**
+
+- `src/modules/Yeast/useCases/reorderYeastProcessor.ts:1-8` (no worklet mirror)
+- `src/modules/Yeast/engine/YeastWorkletNode.ts:28-42` (no `reorder` exposed)
+- `src/modules/Yeast/services/yeastWorkletProcessor.ts:23-71` (no `reorder` message handler)
+
+**Needed:** Add `reorder` to `YeastWorkletNodeResult`, the worklet message protocol, and the worklet processor's switch. Call `getWorkletNodeSync()?.reorder(fromIdx, toIdx)` from `reorderYeastProcessor`. Add a behavioural test asserting both rack instances produce identical output after reorder.
+
+### 54. `setYeastProcessorParam` does not call `syncStoreFromRack` — the reactive store does not see param updates
+
+**Verified 2026-04-28.** Severity: high (UX feedback loop).
+
+`src/modules/Yeast/useCases/setYeastProcessorParam.ts` (full file, 7 lines):
+
+```ts
+import { getYeastRack, getWorkletNodeSync } from '../stores/yeastStore';
+
+export function setYeastProcessorParam(id: string, name: string, value: number): void {
+    const rack = getYeastRack();
+    rack.setProcessorParam(id, name, value);
+    getWorkletNodeSync()?.setParam(id, name, value);
+}
+```
+
+Compare with siblings: `addYeastProcessor`, `removeYeastProcessor`, `reorderYeastProcessor`, `setYeastProcessorBypass` all call `syncStoreFromRack()` at the end. `setYeastProcessorParam` does not.
+
+**Why it matters:** Even after issue #15 is addressed (presentation reads from store), the store is **never updated** when params change. The current `YeastState` shape (`yeastStore.ts:23-33`) doesn't carry params at all — but if the spec adds `params: Record<string, number>` to `YeastProcessorInfo` (as #15 requires), the writes will land in the rack but never propagate back to the React state. The UI will still be stuck.
+
+**Severity rationale:** High because it's the missing half of #15. Without it, every fix to the param-display problem is incomplete.
+
+**Representative files:**
+
+- `src/modules/Yeast/useCases/setYeastProcessorParam.ts:6` (missing `syncStoreFromRack()`)
+- `src/modules/Yeast/stores/yeastStore.ts:128-145` (`syncStoreFromRack` does not yet snapshot params; needs extending)
+
+**Needed:** Add `syncStoreFromRack()` call to `setYeastProcessorParam`. Extend `YeastProcessorInfo` to carry `params: Record<string, number>` and `syncStoreFromRack` to populate it from each processor's `getParams()` (which doesn't exist yet — see #15). Also consider that high-frequency `setParam` calls (knob drag) will spam the store; throttle or coalesce.
+
+### 55. 21 spec files use `import * as subject` (namespace imports) — direct AGENTS.md violation
+
+**Verified 2026-04-28.** Severity: medium (architectural compliance).
+
+AGENTS.md "Imports" rule: "Never use namespace imports (`import * as X from '...'`). Always import named exports individually." Every placeholder spec uses `import * as subject from '../FileName'` — by design of the placeholder template that was clearly auto-generated.
+
+`grep -rn "import \* as" src/modules/Yeast/` returns 21 hits, exactly matching the placeholder list in #19a. The pattern is exclusive to the placeholders; no production code uses namespace imports.
+
+**Severity rationale:** Medium because the violation is contained to test files that need replacing anyway (#19a). However, fixing each placeholder must also remove the namespace import — the two cleanups are coupled.
+
+**Representative files:** All 21 spec files listed in #19a.
+
+**Needed:** Replace `import * as subject from '../FileName'` with `import { Thing } from '../FileName'` (named imports) when rewriting each placeholder per #19a.
+
+### 56. The placeholders look codemod-generated; "renderIife_NN" is the smoking gun across the codebase
+
+**Verified 2026-04-28.** Severity: low (code quality / process violation).
+
+`grep -rn 'renderIife' src/` returns **82 hits across the codebase**. Inside Yeast: 5 in `StepPatternEditor.tsx`, 5 in `KeyboardSplit.tsx`, 0 elsewhere in Yeast. The numbering pattern (`renderIife_18`, `_19`, `_20`, `_21`, `_22`) is sequential across the entire codebase — not just within a file — strongly suggesting an automated codemod ran across the project, generating IIFE-extracted JSX expressions with global counters. Same finding in the Workspace audit.
+
+CLAUDE.md "No automated code mutations" forbids exactly this. The 11-line placeholder specs (#19a) follow an identical generation pattern (same `import * as subject`, same `expect(typeof X === 'function' || === 'object')` boilerplate) — these are also codemod artefacts.
+
+**Blast radius:** Cannot be fixed by a single PR — the pattern is across `Workspace`, `Yeast`, and likely other modules. Needs a coordinated cleanup.
+
+**Severity rationale:** Low because the artefacts are not behavioural bugs, but the underlying process violation (someone ran a codemod) is a CLAUDE.md hard rule.
+
+**Representative files:**
+
+- Yeast: `StepPatternEditor.tsx:53,65`, `KeyboardSplit.tsx:81,90,121` (5 hits — numbered `_18` to `_22`)
+- Workspace: `NotificationToast.tsx:20`, `AutomationBottomPanel.tsx:221`, `StatusBar.tsx:75`, `PromptBar.tsx:151,170,181`, `InspectorPanel.tsx:40`, `SessionView.tsx:60,110,119,121` (and more)
+- (no spec files for the IIFEs themselves)
+
+**Needed:** Replace each `const renderIife_NN = () => { … }` with extracted typed helper functions named for what they return (e.g. `getStepBackgroundClass(step)`, `getKeyColour(held, sounding)`). Move them outside the component body where reasonable. Identify the codemod that produced them and surface a process finding to the team.
+
+### 57. `inferType` (in `yeastStore.syncStoreFromRack`) ships substring-match heuristics that produce wrong-type processors silently
+
+**Verified 2026-04-28.** Severity: medium (already noted in original audit's #18 / #19e). Adding repro depth here.
+
+`yeastStore.ts:147-173` contains an 8-branch `if/else` chain on `name.includes('Arp')`, `name.includes('Chord')`, etc. The branches are ordered such that:
+
+- `'Note Filter'` matches `name.includes('Filter')` → `'filter'` (correct)
+- `'Note Repeater'` matches `name.includes('Repeat')` → `'repeater'` (correct)
+- `'Chord Memory'` matches `name.includes('Chord')` → `'chord'` (**WRONG** — should be `'chordMemory'`)
+- `'Scale Quantizer'` matches `name.includes('Scale')` → `'scale'` (correct)
+- `'Velocity'` matches `name.includes('Veloc')` → `'velocity'` (correct)
+- `'Humanizer'` matches `name.includes('Human')` → `'humanizer'` (correct)
+- `'Transposer'` matches `name.includes('Trans')` → `'transposer'` (correct)
+- `'Markov'`, `'Mutation'`, `'Euclidean'`, `'Groove'`, `'CC Generator'`, `'Harmonizer'` do not match any branch → fall through to `'arpeggiator'` (**WRONG**)
+
+So a user's MarkovChain processor, on store re-sync via the inference path, becomes an Arpeggiator in the UI — wrong panel, wrong knob set. This branch only runs when `processorTypeMap.get(node.id)` returns undefined (`yeastStore.ts:140`); under normal flow `addYeastProcessor.ts:9` registers the type before `syncStoreFromRack` runs, so this is dead code. But it's a sharp footgun for HMR survival: `createHmrPersistentState` (`yeastStore.ts:49`) preserves `rackInstance` across hot reload, but `processorTypeMap` is **not** preserved (it's part of the same session container, but in practice the dev-time HMR may rebuild `processorTypeMap` empty while the rack still has processors).
+
+**Severity rationale:** Medium because it's only reachable in HMR or ill-defined edge cases, but when reachable it silently misclassifies.
+
+**Representative files:** `src/modules/Yeast/stores/yeastStore.ts:140-173`.
+
+**Needed:** Delete `inferType`. Replace with: if the rack has processors that aren't in `processorTypeMap`, that's a bug — log it and skip the entry. Or persist `processorTypeMap` in HMR alongside `rackInstance`.
+
+### 58. `CCGenerator.setParam` throws on unknown param; other processors silently ignore — inconsistent contract
+
+**Verified 2026-04-28.** Severity: medium (consistency).
+
+`grep "throw new Error" src/modules/Yeast/useCases/processors/*.ts`:
+
+- `CCGenerator.ts:38` throws on unknown LFO shape (in `evalShape`, runs in audio thread!)
+- `CCGenerator.ts:140` throws on unknown param name (in `setParam`)
+- `ScaleQuantizer.ts:118` throws on unknown remap mode (in `quantizeToScale`, audio-thread hot path!)
+
+All 12 other processor `setParam` switch statements silently ignore unknown names. `CCGenerator` is the outlier.
+
+**Why it matters:**
+
+1. **Inconsistent contract** — caller doesn't know whether to expect a thrown error or silent no-op.
+2. **Audio-thread `throw`** — `CCGenerator.evalShape` and `ScaleQuantizer.quantizeToScale` run inside `processMidi`. A thrown error mid-block silently kills the rest of the chain. `MidiRack.processBlock` (`MidiRack.ts:73-82`) does not wrap each `processor.processMidi` in a try/catch — so a thrown shape error aborts every subsequent processor, leaving the scratch buffers in inconsistent state and producing zero output. Per CLAUDE.md "no allocation, no mutex locks, no blocking" — a `throw` in audio code is acceptable per-se (it's not a `new` allocation in normal flow), but only because this code path is unreachable under normal `setParam` constraints. Still — the semantics differ from siblings, and a future refactor that exposes a shape-name input could trip the throw.
+3. **`ScaleQuantizer.remapMode`** is set via `setParam('remap_mode', value)` at `:148-150`, which uses a typed array `(['nearest', 'up', 'down'] as const)[Math.round(value)] ?? 'nearest'`. The fallback always returns a valid mode, so the throw at `:118` is unreachable. Dead branch in audio-thread code.
+
+**Severity rationale:** Medium. The throws are reachable under contract violations but invisible during normal use. The inconsistency is real.
+
+**Representative files:**
+
+- `src/modules/Yeast/useCases/processors/CCGenerator.ts:37-39, 139-141`
+- `src/modules/Yeast/useCases/processors/ScaleQuantizer.ts:117-119`
+
+**Needed:** Pick one contract: either (a) all `setParam` throw on unknown name (preferred for catching bugs early), or (b) all silently ignore. Document. Remove unreachable throws. For audio-thread code, prefer `console.warn` or a finding-event over `throw`.
+
+### 59. Scheduling discontinuity: `scheduleMidiNotes` builds its own `yeastTransport` payload; bridge builds another; they don't agree
+
+**Verified 2026-04-28.** Severity: high. Cross-module finding.
+
+`src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts:248-251` calls `workletNode.processBlock(midiEvents, blockStartSamples, blockEndSamples, yeastTransport)`. The `yeastTransport` value is constructed elsewhere in `scheduleMidiNotes` (out of scope, but inspectable) and passed in.
+
+`src/modules/Yeast/useCases/yeastSchedulingBridge/processRealtimeMidiInput.ts:24-36` constructs its own `TransportInfo` with `ppqPosition: 0, barIndex: 0, beatInBar: 0` (all zero — see #4) and `loopEnabled: transport.loopStart < transport.loopEnd` (the broken inference per #22).
+
+So the same processor instance receives two different `TransportInfo` shapes depending on which path drove it. Step generators (`Arpeggiator.ts:112` reads `transport.ppqPosition`; `Arpeggiator.ts:286-289` reads `barIndex`) produce different output between the two paths even on identical input. **The user's clip-playback experience and live-input experience genuinely differ**.
+
+**Severity rationale:** High — it's the same correctness class as #6, manifesting as a transport-metadata divergence rather than a mutation-mirror divergence.
+
+**Representative files:**
+
+- `src/modules/Yeast/useCases/yeastSchedulingBridge/processRealtimeMidiInput.ts:24-36`
+- `src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts:248-251`
+
+**Needed:** Define a single `buildYeastTransportInfo(input: …): TransportInfo` helper that both paths use. It should derive every field from the same source of truth. Or eliminate the bridge's snapshot and require the caller to pass a fully-formed `TransportInfo`.
+
+### 60. `yeastWorkletProcessor.ts` references `currentFrame` in `allNotesOff` despite the worklet not being in the audio graph
+
+**Verified 2026-04-28.** Severity: medium. Confirmed in original audit's #9 but let's deepen.
+
+`yeastWorkletProcessor.ts:58`: `this._rack.allNotesOff(data.nowSamples ?? currentFrame)`.
+
+`currentFrame` is the AudioWorkletGlobalScope's frame counter, only reliable when the processor is being driven by the audio graph. The node is constructed with `numberOfInputs: 0, numberOfOutputs: 0` (`YeastWorkletNode.ts:48-49`) and is never connected to anything. The worklet's `process()` method returns `true` (`yeastWorkletProcessor.ts:74-77`), which keeps it alive — but in Chrome, an unconnected node with `numberOfOutputs: 0` is treated specially: the engine still runs `process()` on every render quantum because `return true`, so `currentFrame` advances. In Safari and Firefox, behaviour is reportedly inconsistent (per MDN; not verified in this audit).
+
+For `allNotesOff`, the caller passes `nowSamples` from `getCurrentTime() * sampleRate`. The fallback `currentFrame` only fires when `nowSamples` is undefined. In the only call site (`YeastWorkletNode.ts:86: allNotesOff: (nowSamples) => node.port.postMessage({ type: 'allNotesOff', nowSamples })`), `nowSamples` is always defined by the caller. So the fallback is dead in practice but signals an unsafe assumption.
+
+**Severity rationale:** Medium because the unsafe path is unreachable under current calling conventions, but a future caller that omits `nowSamples` would hit the unreliable fallback.
+
+**Representative files:**
+
+- `src/modules/Yeast/services/yeastWorkletProcessor.ts:57-59`
+- `src/modules/Yeast/engine/YeastWorkletNode.ts:48-49, 86`
+
+**Needed:** Make `nowSamples` required in the worklet message protocol (no `?` default). Audit cross-browser worklet behaviour for unconnected zero-output nodes — if Safari/Firefox suspend it, `processBlock` await would hang. Connect to a `GainNode(0)` → `ctx.destination` to ensure scheduling.
+
+### 61. `EuclideanGenerator.bjorklund` allocates 4 unused intermediate arrays per pattern rebuild
+
+**Verified 2026-04-28.** Severity: low. Original audit's #27 confirmed.
+
+`EuclideanGenerator.ts:25-43`:
+
+```ts
+const pattern: boolean[][] = [];                         // line 25 — UNUSED
+for (let index = 0; index < steps; index++) {
+    pattern.push([index < hits]);                         // builds N×1 array
+}
+
+let level = 0;                                            // UNUSED
+const counts: number[] = [];                              // UNUSED
+const remainders: number[] = [];                          // UNUSED
+
+remainders.push(steps - hits);
+counts.push(hits);
+while (remainders[remainders.length - 1]! > 1) {          // builds full Bjorklund tables
+    const context = counts[level]!;
+    const r = remainders[level]!;
+    counts.push(Math.min(context, r));
+    remainders.push(Math.max(context, r) - Math.min(context, r));
+    level++;
+}
+```
+
+After all this, the actual pattern is computed at `:46-52` via the entirely separate Toussaint formulation. The first 18 lines are dead code that runs anyway.
+
+**Audio-thread cost:** `bjorklund` is called from `rebuildPattern()` which is called from `setParam('hits' | 'steps' | 'rotation', …)` (`EuclideanGenerator.ts:140-149`). That's main-thread (UI). However, in the worklet path, `setParam` *does* run inside the audio thread (`yeastWorkletProcessor.ts:51-53`). So the dead code allocates 4 arrays inside `AudioWorkletGlobalScope` per Euclidean param tweak. Per `MidiRack.ts:14-22, 56-61` the rack avoids per-event allocation in audio thread; this is per-`setParam` allocation.
+
+**Severity rationale:** Low because `setParam` is rate-limited by user UI (knob drag), not per-block. But it's pure dead code with no behavioural value.
+
+**Representative files:** `src/modules/Yeast/useCases/processors/EuclideanGenerator.ts:25-43`.
+
+**Needed:** Delete lines 25-43. Keep only the Toussaint formulation at 46-52.
+
+### 62. `processRealtimeMidiInput` passes blockSize as 4th arg, but `processYeastMidi`'s 4th arg is `sampleRate`
+
+**Verified 2026-04-28.** Severity: high (correctness — bug).
+
+`processRealtimeMidiInput.ts:55`: `return processYeastMidi([event], sampleTime, sampleTime + blockSize, sampleRate);`
+
+`processYeastMidi.ts:6-11`: signature is `(events, blockStartSamples, blockEndSamples, sampleRate)`.
+
+So `blockEndSamples = sampleTime + blockSize` and `sampleRate = sampleRate` — those are correct. But examine the call site `messageHandlers.ts:349-356`:
+
+```ts
+const processedEvents = deps.processRealtimeMidiInput(
+    note,
+    velocity,
+    channel,
+    true,
+    sampleTime,
+    engine.context.sampleRate    // <-- passed as 6th param
+);
+```
+
+`processRealtimeMidiInput`'s signature is `(note, velocity, channel, isNoteOn, sampleTime, sampleRate, blockSize = 128)`. Six positional args: `note, velocity, channel, isNoteOn=true, sampleTime, sampleRate`. The default `blockSize = 128` is used.
+
+OK so this part is wired correctly. But the deeper issue: the `messageHandlers.ts:349` call site only ever fires for **noteOn** (`isNoteOn = true`). I searched for callers passing `false` — only this one site. So **MIDI Note Off events from the live keyboard never traverse the Yeast rack at all**. The synth gets the raw Note Off without the Yeast chain seeing it. If the rack contains a Transposer (which maps input note → output note via `noteMap.set/get`), the Note Off never matches the original Note On's mapping; the synth gets a Note Off for the *original* note, not the *transposed* one. The transposed note plays forever (until Note On retrigger of the same note).
+
+**Repro:**
+
+1. Add Transposer to Yeast rack on a track. Set `semitones = +12`.
+2. Press C4 on MIDI keyboard. Hear C5 (transposed).
+3. Release C4. Synth receives Note Off for C4 (raw) — but it's holding C5.
+4. C5 plays forever.
+
+**Severity rationale:** High — direct correctness bug, audible to user.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/repositories/webMidi/messageHandlers.ts:349-356` (only fires for Note On)
+- `src/modules/AudioEngine/repositories/webMidi/messageHandlers.ts` (search for `processRealtimeMidiInput` — only one call site)
+- `src/modules/Yeast/useCases/yeastSchedulingBridge/processRealtimeMidiInput.ts:41-56` (the bridge accepts `isNoteOn` but no caller passes `false`)
+
+**Needed:** In `messageHandlers.ts`, also call `processRealtimeMidiInput` for Note Off (presumably in `handleNoteOff`). Audit the Note Off code path — it needs to mirror the Note On's processing through Yeast.
+
+### 63. `YeastWorkletNode.workletRegistrations` caches a rejected Promise forever
+
+**Verified 2026-04-28.** Severity: medium. Already in original audit's #28. Adding repro.
+
+`YeastWorkletNode.ts:17`: `const workletRegistrations = new WeakMap<BaseAudioContext, Promise<void>>();`
+
+`:19-26`:
+
+```ts
+async function ensureWorkletRegistered(ctx: BaseAudioContext): Promise<void> {
+    let param = workletRegistrations.get(ctx);
+    if (!param) {
+        param = ctx.audioWorklet.addModule(yeastWorkletProcessorUrl);
+        workletRegistrations.set(ctx, param);
+    }
+    return param;
+}
+```
+
+If `addModule` rejects (network blip, syntax error in the worker file, AbortSignal, browser quirk), the rejected `Promise<void>` is cached. Every subsequent call returns the same rejected promise — no retry. The `getYeastWorkletNodeAsync` at `yeastStore.ts:74-89` catches the rejection and clears `_workletNodePromise`, so retries through `getYeastWorkletNodeAsync` create new attempts — but each attempt hits the same cached rejection at `ensureWorkletRegistered`, so they all fail.
+
+**Repro:** Mock `audioWorklet.addModule` to reject once on first call. Call `getYeastWorkletNodeAsync` twice. Both fail with the same error.
+
+**Severity rationale:** Medium because most production deploys won't see addModule rejection, but if it ever happens (e.g. CSP misconfiguration, network failure during dev), the worklet path is permanently broken until full page reload.
+
+**Representative files:**
+
+- `src/modules/Yeast/engine/YeastWorkletNode.ts:17, 19-26`
+
+**Needed:** Wrap the cache logic to delete on rejection: `param.catch(() => workletRegistrations.delete(ctx))` after the `set`. Or detect rejection and clear before retry.
+
+### 64. `MarkovChain.held.indexOf` performs reference-equality scan on a number array — fine in practice but the worry is the audit's miscount
+
+**Verified 2026-04-28.** Severity: low (correctness OK, but documentation / audit accuracy issue).
+
+Original audit's #43 said: "`held.indexOf` is a linear scan plus a string-equality check". `held` is `private held: number[]` (`MarkovChain.ts:38`), so `indexOf` does numeric `===` comparison, not string equality. The original audit's claim is wrong on the string-equality part. The linear scan is correct. The allocation claim ("sort allocates internal scratch") is also disputed: `Array.prototype.sort` in V8 sorts in place and may use temporary internal scratch only for >10 elements (TimSort). For typical held-note arrays of ≤ 10, no allocation.
+
+So #43's severity is overstated. Repositioning here.
+
+**Severity rationale:** Low — performance is fine in practice; the audit's original claim was inaccurate.
+
+**Representative files:** `src/modules/Yeast/useCases/processors/MarkovChain.ts:124-126`.
+
+**Needed:** No code change. Update the audit's #43 to remove the inaccurate claim.
+
+### 65. `Arpeggiator.ts:308` allocates `[...this.held]` in audio thread on every Note On under latch
+
+**Verified 2026-04-28.** Severity: low (already self-documented).
+
+`Arpeggiator.ts:305-309`:
+
+```ts
+if (this.latchEnabled) {
+    // Audio-thread note: shallow copy of small held-notes array (typically <12 items).
+    // Low-impact allocation — pre-allocated ring buffer not warranted for this size.
+    this.latched = [...this.held];
+}
+```
+
+The comment acknowledges the allocation. Per CLAUDE.md "audio-thread code: no allocation", this is a self-documented violation. The comment justifies it as "low-impact" but the rule is unconditional. For consistency with the rest of the codebase (`MidiRack.ts` extensive allocation-free comments), this should either:
+
+- conform: pre-allocate `latched` at MAX_HELD size and copy in place
+- or be acknowledged as an exception in a docs/audit policy
+
+**Severity rationale:** Low because user-held chord size is bounded by physical hands.
+
+**Needed:** Pre-allocate `private latched: HeldNote[] = []` and replace `this.latched = [...this.held]` with an in-place copy loop (`this.latched.length = 0; for (const h of this.held) this.latched.push(h)`).
+
+### 66. Test fixtures use a non-existent `timeSignature` field; `pnpm typecheck` should fail but doesn't — investigate tsconfig
+
+**Verified 2026-04-28.** Severity: medium (process / build configuration).
+
+Per #20, four spec files build a `transport: TransportInfo` object missing required fields and adding a non-existent `timeSignature` field. TypeScript should flag this with `Property 'timeSigNum' is missing in type ...` and `Object literal may only specify known properties, and 'timeSignature' does not exist`. If `pnpm typecheck` passes, the tsconfig has either (a) the test files excluded, or (b) `strict: false` / `strictNullChecks: false`, or (c) `skipLibCheck: true` masking deeper imports.
+
+**Severity rationale:** Medium because the build pipeline isn't catching what should be obvious type errors.
+
+**Representative files:**
+
+- `tsconfig.json` (out of Yeast's scope; check)
+- `src/modules/Yeast/useCases/processors/__tests__/{Arpeggiator,Humanizer,Transposer,ChordGenerator}.spec.ts`
+
+**Needed:** Run `pnpm typecheck` on a CI-clean checkout. Confirm whether the bogus `timeSignature` field is actually a type error. If not, tsconfig has a hole that needs closing.
+
+### 67. `MidiRack.removeProcessor` calls `processor.reset()` but does not generate Note Offs for active notes from that processor
+
+**Verified 2026-04-28.** Severity: medium (correctness).
+
+`MidiRack.ts:30-36`:
+
+```ts
+removeProcessor(id: string): void {
+    const idx = this.processors.findIndex((param) => param.id === id);
+    if (idx !== -1) {
+        this.processors[idx]!.reset();
+        this.processors.splice(idx, 1);
+    }
+}
+```
+
+`processor.reset()` clears the processor's *internal* state (e.g. `Arpeggiator.activeGenerated`), but the events that processor previously emitted into the chain — and that downstream synths are now playing — get nothing. The rack's `activeNotes` Map (`:16`) tracks the **rack output's** active notes, which were caused by the removed processor. Removing the processor leaves all those notes hanging on the synth.
+
+**Repro:**
+
+1. Add Arpeggiator. Press C4. Arp emits notes.
+2. Remove the Arpeggiator while notes are sounding.
+3. Synth keeps playing the last-emitted Note On forever.
+
+**Compare with `allNotesOff`** (`:119-143`): it correctly emits Note Offs from `activeNotes` and flushes scheduled. `removeProcessor` should do the same — emit Note Offs for any active notes the rack thinks are alive — but it doesn't.
+
+**Severity rationale:** Medium because removal-during-playback is an uncommon gesture but a real one. Hanging notes are user-visible.
+
+**Representative files:**
+
+- `src/modules/Yeast/useCases/MidiRack.ts:29-36`
+
+**Needed:** On `removeProcessor`, before splicing, capture `this.activeNotes` (or a subset attributable to the processor — but we don't have that mapping today). Emit Note Offs for those notes through the remaining chain, or at minimum schedule them for the next `processBlock`. Add a behavioural test.
+
+### 68. `MidiRack.processBlock` does not validate `blockStartSamples ≤ blockEndSamples`
+
+**Verified 2026-04-28.** Severity: low (defensive).
+
+`MidiRack.ts:51-56`: signature accepts `blockStartSamples` and `blockEndSamples` as separate params, no precondition check. If a buggy caller passes `blockEnd < blockStart`, `drainRangeInto(blockStart, blockEnd, current0)` will hit the condition `event.timeSamples >= startSamples && event.timeSamples < endSamples` which is impossible to satisfy → drains nothing. Then the separator at `:107-113` partitions current events: events with `timeSamples < blockEndSamples` (including all real events with `timeSamples >= blockStartSamples > blockEndSamples`) go to scheduled, not output. Result: silent zero-output.
+
+**Severity rationale:** Low because it's defensive against a caller bug, but the failure mode is silent corruption (notes vanish into scheduled queue).
+
+**Representative files:** `src/modules/Yeast/useCases/MidiRack.ts:51-116`.
+
+**Needed:** Add a precondition: `if (blockEndSamples < blockStartSamples) { throw new Error(...) }` or `console.warn` and clamp.
+
+### 69. `setYeastUiLevel.spec.ts` is the only behavioural write-use-case spec; the others are placeholders despite carrying significant logic
+
+**Verified 2026-04-28.** Severity: medium (test gap).
+
+`setYeastUiLevel.ts` is a 9-line use case that mutates a single field. It has the only real spec among write use cases (`setYeastUiLevel.spec.ts:1-21`).
+
+By contrast:
+
+- `addYeastProcessor.ts` (13 lines) — registers type, creates processor, adds to rack, mirrors to worklet, syncs store. **Five effects.** Spec is placeholder.
+- `removeYeastProcessor.ts` (9 lines) — unregisters, removes from rack, mirrors, syncs. **Four effects.** Spec is placeholder.
+- `setYeastProcessorParam.ts` (7 lines) — mutates rack, mirrors. **Two effects.** Spec is placeholder. (Should also call `syncStoreFromRack` per #54.)
+- `setYeastProcessorBypass.ts` (8 lines) — mutates, mirrors, syncs. **Three effects.** Spec is placeholder.
+- `reorderYeastProcessor.ts` (7 lines) — mutates rack, syncs (does not mirror — see #53). **Two effects.** Spec is placeholder.
+
+Each of these is a single function with multiple side effects on three different surfaces (rack, worklet, store). They are exactly where bugs hide (e.g. #53, #54). A behavioural spec per use case would catch those bugs.
+
+**Severity rationale:** Medium — duplicates #19a but specifically calls out the write-use-case gap as the highest-leverage place to add tests.
+
+**Representative files:**
+
+- All 5 write use cases listed above
+- The corresponding placeholder spec files
+
+**Needed:** Replace each placeholder with an integration spec that mocks the worklet (`getWorkletNodeSync`) and the store, then asserts: rack mutation, worklet mirror call, store sync. The `setYeastUiLevel.spec.ts` pattern is a fine starting point.
+
+---
+
 ## Open questions
 
 - [ ] Does any cross-module caller use `'#/modules/Yeast/...'` (deep path) today? — `pnpm deps:validate` is the source of truth; run after #1 ships.
@@ -621,37 +1226,69 @@ Only seven spec files (`Arpeggiator.spec.ts`, `ChordGenerator.spec.ts`, `Humaniz
 
 ## Risks
 
-- **Audio-thread allocation amplification.** `MidiRack` paid the cost of "no allocation" while seven processors throw it away with string keys per Note On/Off. With a Humanizer + ChordGen + ScaleQuantizer chain on a piano line, Map allocations dominate the per-block budget. (#2)
-- **Step generators silently underschedule.** Real-time MIDI input through Yeast does not emit arp output (#5). Combined with `processYeastMidi` faking transport metadata (#4), the user-visible behaviour after a transport seek/loop is non-deterministic.
-- **Hanging notes.** `MidiRack.allNotesOff` (#11) leaves stray Note Offs and may miss live notes; `NoteFilter.reset()` (#37) emits Note Offs for filtered Note Ons after reset. Both classes of bug land as "stuck note" issues that are hard to reproduce.
-- **Worklet IPC reliability.** Promise leak (#8), no error path (#26), no retry (#28), no timeout — together they mean a single transient worklet error becomes a permanent stall of the worklet path. (Mitigated only because the path is dead today, #6.)
+- **Audio-thread allocation amplification.** `MidiRack` paid the cost of "no allocation" while six processors throw it away with string keys per Note On/Off. With a Humanizer + ChordGen + ScaleQuantizer chain on a piano line, Map allocations dominate the per-block budget. (#2)
+- **Hanging notes everywhere.** `messageHandlers.ts` only routes Note On through Yeast (#62) — Transposer/ChordGen/Harmonizer outputs hang on every live keyboard release. `MidiRack.allNotesOff` (#11) leaves stray Note Offs. `MidiRack.removeProcessor` does not flush active notes from the removed processor (#67). `NoteFilter.reset()` emits Note Offs for filtered Note Ons after reset. Multiple classes of "stuck note" bugs that are hard to diagnose at runtime.
+- **Real-time vs offline divergence.** The same rack instance is driven by two paths: the worklet (offline `scheduleMidiNotes`) and the main-thread (live `processRealtimeMidiInput`). Reorder doesn't mirror (#53), `TransportInfo` differs (#59), param mirroring has races (#7). Users will report "the same rack sounds different in playback vs live" — and they'll be right.
+- **Step generators silently underschedule.** `processYeastMidi` fakes transport metadata (#4), real-time path uses 128-sample window too small for any meaningful generator output (#5). User presses a key with arp loaded — silence.
+- **UI is decorative.** Every knob/select in `YeastPanel.tsx` and `ProcessorParams.tsx` is a write-only control with hard-coded display values (#15). `setYeastProcessorParam` doesn't propagate back to the store (#54). Even the planned fix won't work until both ends are repaired.
+- **Test theatre.** 21 of 28 spec files are placeholders (#19a). The 4 "real" processor specs use an invalid `TransportInfo` shape (#20). CI green proves nothing.
+- **Worklet IPC reliability.** Promise leak (#8), no error path (#26), no retry (#28), no timeout, rejected-promise cache (#63) — a single transient worklet error becomes a permanent stall.
 - **Scratch-buffer reentrance.** A future feedback-loop processor that synchronously triggers another `processYeastMidi` will silently corrupt the rack's scratch buffers (#10). No guard.
-- **Architectural drift.** Missing root barrel (#1), positional args (#17), inline LCG duplication (#13), dead `latencySamples` (#30), dead worklet (#6) are accumulating violations. Each is small; the aggregate is mounting maintenance debt.
+- **Architectural drift.** Missing root barrel (#1), positional args (#17 / #19d), inline LCG duplication (#13), dead `latencySamples` (#30), `inferType` substring matching (#19e / #57), namespace imports in 21 specs (#55), codemod artefacts (#56). Each is small; the aggregate is mounting maintenance debt.
 
 ---
 
 ## Suggested approaches
 
-- **Fix `index.ts` and write-use-case re-exports first (#1, #20).** Mechanical, unblocks the architectural-compliance audit and gets `pnpm deps:validate` running on the full surface.
-- **Decide on the worklet path (#6) before fixing the IPC bugs (#7, #8, #25, #26, #27, #28).** No point hardening dead code.
-- **Lift `blockStartSamples` and `blockEndSamples` into the `MidiProcessor.processMidi` contract (#3).** This unblocks the step-generator correctness fixes and the transport-seek scenarios. Rolls into "thread the real `TransportInfo` through" (#4).
-- **Replace string keys with `(channel << 7) | note` numeric keys across all processors (#2).** Mechanical, file-by-file, with a behavioural test per processor (a Note On followed by a matching Note Off should produce a matching pair downstream).
-- **Replace inline LCG with `nextLcg` (#13).** Mechanical sweep.
-- **Audit `MidiRack` reentrance + `separateOutput` lifetime (#10, #11).** Add an `isProcessing` guard, switch `allNotesOff` to the rack-level `activeNotes` source of truth, and document the consume-before-next contract on `processBlock`.
-- **Fix `Arpeggiator.expandOctaves` upDown cycle (#14)** with a property-based test that asserts `expandOctaves(pool, 3, 'upDown')` produces a symmetric sequence.
+- **Fix the audible correctness bugs first (#62, #26).** `messageHandlers.ts` is one extra `processRealtimeMidiInput(false)` call. ChordMemory needs pitch-class keying. Both are user-visible bugs with single-PR scope.
+- **Wire the reactive feedback loop (#54, #15).** Add `getParams()` to `MidiProcessor`, populate `params` on `YeastProcessorInfo`, make `setYeastProcessorParam` call `syncStoreFromRack`. Replace literal `value=` props in `ProcessorParams.tsx` and `YeastPanel.tsx` with state-driven values. This single thread closes the entire UI integrity gap.
+- **Mirror `reorder` to the worklet (#53).** Add `reorder` to the worklet protocol; one method addition + one IPC mirror call.
+- **Fix `index.ts` and write-use-case re-exports (#1, #20b).** Mechanical, unblocks the architectural-compliance audit.
+- **Single source of truth for `TransportInfo` (#4, #59).** Define `buildYeastTransportInfo` and use it in both `scheduleMidiNotes` and the bridge.
+- **Decide on the worklet path (#6 corrected).** Both consumers, or one consumer? Determine before fixing the IPC bugs (#7, #8, #25, #26, #27, #28, #60, #63).
+- **Lift `blockStartSamples` and `blockEndSamples` into the `MidiProcessor.processMidi` contract (#3).** Unblocks step-generator correctness.
+- **Replace string keys with `(channel << 7) | note` numeric keys across the 6 violating processors (#2).** Mechanical, file-by-file. Add behavioural tests per processor before changing.
+- **Replace inline LCG with `nextLcg` (#13)** + extract Box-Muller `gaussian()` to `lcgRandom.ts`. Mechanical sweep, 9 sites.
+- **Audit `MidiRack` reentrance + `separateOutput` lifetime (#10, #11, #67, #68).** Add reentrance guard, fix `allNotesOff` flush, fix `removeProcessor` hang, validate block-start/end ordering.
+- **Fix the spec suite (#19a, #20, #55, #69).** Build `makeTransportInfo` helper. Replace placeholder specs with behavioural assertions. Drop namespace imports.
 
 ---
 
 ## Recommendation
 
-Start with **issue #1 (root `index.ts`) + #20 (re-export write use cases)**. They are mechanical, take half a session each, and unblock a clean `pnpm deps:validate` baseline.
+The adversarial re-review changed the recommended sequence. Updated 2026-04-28:
 
-Then resolve **issue #6 (worklet path live or dead)**. This is a yes/no decision; once made, the IPC bugs (#7, #8, #25, #26, #27, #28) either get fixed properly or get deleted.
+**Session 1 — Audible correctness (highest user impact):**
 
-After those two land, the next session can pick between the **correctness pass** (issues #3, #4, #5, #11, #14, #21, #22, #23) and the **performance pass** (issues #2, #13, #15, #16, #30, #36, #43). They are independent.
+- **#62** — One-line fix in `messageHandlers.ts` to route Note Off through the rack. Stops hanging-note bugs across Transposer / ChordGen / Harmonizer.
+- **#26** — Rewrite `ChordMemory` recall to key by pitch class. Single-file change.
+- Add behavioural specs for both before the fix (TDD).
+
+**Session 2 — UI feedback loop:**
+
+- **#54** — Add `syncStoreFromRack()` call to `setYeastProcessorParam`.
+- **#15** — Replace literal `value=` props with state-derived values in `ProcessorParams.tsx` and `YeastPanel.tsx`. Requires `getParams()` on each processor (15 implementations).
+- Decide whether to ship the reactive update via store snapshot or per-processor signal.
+
+**Session 3 — Cross-path consistency:**
+
+- **#53** — Mirror `reorder` to the worklet. Add to protocol + worklet processor.
+- **#59 / #4** — Single `buildYeastTransportInfo` helper used by both paths.
+- **#6** (corrected) — decision: do both paths use the worklet, or do we partition the rack instance per-context?
+
+**Session 4 — Architectural compliance & mechanical sweeps:**
+
+- **#1, #20b** — Root `index.ts` + write-use-case re-exports.
+- **#13** — Inline LCG → `nextLcg`. 9 sites.
+- **#2** — String keys → numeric keys. 6 processors. Behavioural test per processor before edits.
+- **#19a, #20, #55** — Replace 21 placeholder specs and the 4 invalid-shape behavioural specs.
+
+**Sessions 5+ — Step-generator correctness:**
+
+- **#3, #5, #11, #21, #22, #23, #67** — block-window contract, transport metadata, `allNotesOff`/`removeProcessor` hang behaviour.
 
 ---
 
 ## Resolved
 
-_No issues resolved yet._
+_No issues resolved yet. (Audit re-verified 2026-04-28; all original open issues remain open with refined severity.)_

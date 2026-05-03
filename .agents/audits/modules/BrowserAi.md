@@ -171,10 +171,47 @@ Re-exported from `presentations/views/index.ts`.
 
 ---
 
+## Adversarial review log
+
+This audit was re-walked on 2026-04-28. Every finding below was
+re-verified at the cited file:line. Notes from this pass:
+
+- All 86 findings (#1–#86) were checked against the source. No issues
+  were resolved (the `## Resolved` section remains empty).
+- Several severity calls were sharpened — see issues #6, #11, #14,
+  #15, #19, #20, #28, #51, #56, #85, #86 below. The "feature is fake"
+  finding (#2) was confirmed: the worker still returns the
+  `UNAVAILABLE` string at `tfjsInferenceWorker.ts:16`, the registry
+  still ships DDSP entries with `status: 'ready'` at
+  `initBrowserAi.ts:91`, and the panel still labels them "✓ Cached"
+  at `ModelManagerPanel.tsx:279`.
+- New findings #87–#96 added below. Highlights: a `DDSP_INSTRUMENT_CATALOG`
+  type lies to `'status' in instrument` (#87); `KOKORO_VOCAB` is
+  exported but unused (#88); the `release-session` worker handler
+  has no try/catch (#89); the `loadOnnxSession` ArrayBuffer transfer
+  detaches caller-shared buffers (#90); `renderDiffSingerPhrase`
+  re-checks `'gpu' in navigator` ignoring the capability store (#91);
+  `selectExecutionProviders` reads `navigator.gpu` from the worker
+  but the gate is duplicated and stale (#92); `setCapabilityDetecting`
+  is exported and called but the bootstrap path never sets the
+  `detecting` state because `initBrowserAi.ts:67` calls the repo
+  directly (#93); `tfjsIdleTimer` is never cleared by `terminateAll`
+  in the path through `terminateOnnxWorker` (#94); the
+  `entries[]` filter for cancelled phrases scans linearly per cancel
+  on a list that grows monotonically (#95); the worker's
+  `release-session` does not refresh `getOrt()` before
+  `session.release()`, racing if release arrives before the first
+  `create-session` (#96).
+- The `## Findings` section below remains the original inventory —
+  not "current state". For the canonical list of issues to action,
+  see `## Open issues`.
+
+---
+
 ## Findings
 
 1. **No module root `index.ts` — every cross-module consumer reaches
-   into sub-paths.** The four external import sites
+   into sub-paths.** Re-verified 2026-04-28: `find src/modules/BrowserAi -maxdepth 1 -name index.ts` → no result. The four external import sites
    (`bootstrap.ts:34`, `StatusBar.tsx:14`, `ClipMidiAiSection.tsx:15-23`,
    `AiSection.tsx:10`) all import from `#/modules/BrowserAi/useCases`,
    `#/modules/BrowserAi/stores`, or
@@ -215,13 +252,20 @@ Re-exported from `presentations/views/index.ts`.
    silent swallow. Cheap fix: `localStorage.removeItem(STORAGE_KEY)`
    in the catch.
 
-6. **Capability cache check is racing-unsafe with `forceRefresh`.**
-   `capabilityDetector.ts:99` reads `cached` only when `!forceRefresh`,
-   but the live detection path at `:141` writes the new report _every
-   time_, including under `forceRefresh`. There is no path to
-   `setItem(STORAGE_KEY, ...)` only on success — if the live detection
-   fails (`runWebGpuBenchmark` throws inside the `if` block), the
-   `report` object still gets stored with a half-populated state.
+6. **Capability cache write happens even on `unsupported-platform`
+   and persists beyond the platform's lifetime.**
+   `capabilityDetector.ts:99,152-158` reads `cached` only when
+   `!forceRefresh`, but the live detection path always writes the new
+   report — including the `unsupported-platform` branch
+   (`:122-127`). A user who runs the app once in Tauri-on-mac, then
+   later in Chrome at the same origin (LocalStorage is per-origin,
+   not per-app), will get the cached `unsupported-platform` verdict
+   forever and the AI features will be silently disabled. There is
+   also no `try { … }` around `runWebGpuBenchmark` at `:136`: the
+   function catches internally (`:73`) and returns
+   `BENCHMARK_SLOW_THRESHOLD_MS + 1`, so a thrown adapter request
+   becomes "unavailable" (correct) — but the caching pipe writes
+   that result and we keep the bad verdict. Compounds with #4.
 
 7. **`isTauriNonWindowsPlatform` reads `navigator.platform`, which
    is deprecated and lies in modern Chromium.**
@@ -259,6 +303,27 @@ Re-exported from `presentations/views/index.ts`.
     `getTfjsWorker:89-105`. AudioAnalysis audit issue #8 documents
     the same pattern; this module copy-pastes the antipattern.
 
+    Re-verified: function is declared `async` with no `await` between
+    the null check and the assignment, but JavaScript still yields at
+    the start of an `async` function before the body runs (the
+    Promise is queued). Two synchronous callers each get scheduled in
+    microtask order; the second sees the first's assignment if and
+    only if the first's microtask runs to completion before the
+    second starts. In practice the lifecycle hosts on
+    `await getOnnxWorker()` and the rest is synchronous — the race
+    window is small but nonzero. The bigger leak is in
+    `loadOnnxSession`: it calls `getOnnxWorker()` then `sendRequest`,
+    posting `modelData` as a transfer. If two concurrent calls race
+    on worker creation, the loser's `pendingRequests` Map (on the
+    discarded `WorkerState` reference) is the **same `Map` instance**
+    (workerState is a singleton), so the messages don't strictly
+    leak — they get sent to whichever Worker won. But the loser's
+    `Worker` instance remains GC-pending with an attached
+    `onmessage` handler bound to that Map; if the GC delays, it
+    will receive responses for requests it didn't send and silently
+    no-op (no requestId match in the now-loser's view, but they
+    share a Map → confusing logs).
+
 11. **`onnxInferenceWorker.evictLru` is `await`-serialised and not
     re-entrant.** `onnxInferenceWorker.ts:83-99` walks the cache in
     an `O(n²)` `for` to find the LRU, then `await session.release()`
@@ -287,14 +352,27 @@ Re-exported from `presentations/views/index.ts`.
     release second.
 
 14. **`onnxInferenceWorker` `sizeBytes` is `modelData.byteLength`,
-    not actual GPU/heap occupancy.**
-    `onnxInferenceWorker.ts:115`: the model's _file size_ is stored,
-    not the live tensor allocation. WebGPU adds activation memory,
-    intermediate tensors, and shader programs. Real footprint can be
-    2–4× the file size. The 1 GB budget therefore overcommits. Add a
-    safety margin (e.g. budget = 384 MB instead of 1 GB) or measure
-    with `performance.measureUserAgentSpecificMemory()` where
-    available.
+    not actual GPU/heap occupancy. Worse: the recorded byteLength
+    is read AFTER the buffer was transferred, so `byteLength` is
+    `0`.**
+    `onnxInferenceWorker.ts:115`: `sizeBytes: modelData.byteLength`,
+    where `modelData` is the `ArrayBuffer` arrived from
+    `inferenceWorkerBridge.loadOnnxSession` via transfer
+    (`inferenceWorkerBridge.ts:170`). After the worker
+    `ort.InferenceSession.create(modelData, …)` consumes the buffer
+    (it copies the bytes into WASM heap or a GPU staging buffer
+    internally), most ONNX runtimes detach the buffer. Verify with
+    a console probe: log `modelData.byteLength` immediately before
+    `:115`. If ORT detaches, every entry has `sizeBytes = 0` and
+    the LRU never evicts (`totalMemoryBytes` stays at 0). If ORT
+    doesn't detach, the file size still under-counts WebGPU
+    activation memory by 2–4×. **Either way the 1 GB budget is
+    fictional.** Real footprint can be 2–4× the file size. The
+    1 GB budget therefore overcommits. Add a safety margin (e.g.
+    budget = 384 MB instead of 1 GB) or measure with
+    `performance.measureUserAgentSpecificMemory()` where available.
+    Also: re-record `byteLength` BEFORE handing `modelData` to
+    `InferenceSession.create`, in case ORT detaches the buffer.
 
 15. **Worker tensor outputs are never disposed.**
     `onnxInferenceWorker.ts:184-318`: every `await session.run(...)`
@@ -434,12 +512,21 @@ new Map<string, Float32Array>()`. With 21 voices × ~500 KB =
     elsewhere.
 
 28. **`renderKokoroTts` sends voice-id requests to HuggingFace on
-    every fresh page load.** `renderKokoroTts.ts:51` `${KOKORO_VOICES_BASE}/${voiceId}.bin`
-    is fetched into the module-level `Map`. Page reload → fetch
-    again. The model ONNX is cached in OPFS; the voice embedding
-    files (~500 KB each) are **not**. There is no OPFS write in
-    `fetchVoiceStyle`; `storageManager` has no concept of "voice".
-    A user with offline access cannot change voice without network.
+    every fresh page load — and every voice change leaks the
+    selection over the network.** `renderKokoroTts.ts:51`
+    `${KOKORO_VOICES_BASE}/${voiceId}.bin` is fetched into the
+    module-level `Map`. Page reload → fetch again. The model ONNX
+    is cached in OPFS; the voice embedding files (~500 KB each)
+    are **not**. There is no OPFS write in `fetchVoiceStyle`;
+    `storageManager` has no concept of "voice". A user with offline
+    access cannot change voice without network. **Privacy
+    secondary effect:** every voice swap emits a request to
+    `huggingface.co` with `voiceId` in the URL path. This leaks
+    voice preference (and timing) to HuggingFace and its CDN. Not
+    a leak of lyric content, but a behavioural fingerprint —
+    "user X likes the British male George voice". The audit's
+    earlier privacy claim (#82, "Only the voice id is in the URL")
+    glossed this; flagging it explicitly here.
 
 29. **`renderKokoroTts` time-stretch by re-resampling is incorrect
     for music.** `renderKokoroTts.ts:172-184`: when
@@ -953,38 +1040,165 @@ inferenceWorkerBridge.run...` and that's the only synchronisation.
     OPFS again**. Cumulative "render → error → retry" cycles
     re-pay the full session-load cost.
 
+87. **`'status' in instrument` narrowing is a lie — the catalog
+    fallback has no `status` field.**
+    `presentations/views/ModelManagerPanel.tsx:226,267`: when
+    `registryInstruments.length === 0`, `instruments` falls back to
+    `DDSP_INSTRUMENT_CATALOG`, which is typed
+    `Omit<DdspInstrument, 'status' | 'downloadProgress'>[]`
+    (`models/ddspInstrumentCatalog.ts:42`). The view then does
+    `'status' in instrument ? (instrument as { status: string }).status : undefined`
+    — but for the catalog branch, `'status'` is structurally absent
+    by design. The `as { status: string }` cast is dead. The
+    branch always emits `<DawMicroBadge tone="muted">CDN</DawMicroBadge>`
+    in catalog mode, never `✓ Cached`. AGENTS.md "TypeScript —
+    soundness" forbids `as` to silence types instead of narrowing.
+    Move DDSP entries into the registry at init (#64) and drop the
+    `in` check.
+
+88. **`KOKORO_VOCAB` is exported but never imported.**
+    `services/kokoroTokenizer.ts:21-116` exports a 95-entry vocab
+    map. `grep -rn "KOKORO_VOCAB" /src` returns only the definition
+    site. Dead bytes shipped (and a tempting target for someone to
+    "fix" by piping it into the tokenizer, which would silently
+    change behaviour).
+
+89. **Worker `release-session` handler has no try/catch.**
+    `workers/onnxInferenceWorker.ts:443-451`: `await entry.session.release()`
+    runs unguarded inside `self.onmessage`. ORT's
+    `InferenceSession.release()` can reject (WebGPU device-lost,
+    pending kernel queue); the unhandled rejection bubbles to the
+    worker's global error handler and the worker dies. The bridge
+    sees `error` events on `worker` and has no recovery — the
+    next `getOnnxWorker()` will return the dead `workerState.onnx.worker`
+    because the `initialized` flag stays `true`. Wrap in try/catch;
+    on failure, force-clear `workerState` from the main thread or
+    have the worker post an `error` response.
+
+90. **`loadOnnxSession` transfers `modelData` to the worker — caller
+    cannot reuse the buffer.** `inferenceWorkerBridge.ts:170`
+    `await sendRequest(worker, workerState.onnx, request, [modelData])`.
+    After this call returns (or even before, due to transfer happening
+    at `postMessage` time), `modelData.byteLength === 0` on the
+    main thread. `renderDiffSingerPhrase.ts:170-178` reads each
+    voicebank model from OPFS, then calls `loadOnnxSession`. Per
+    iteration, `modelData` is a fresh ArrayBuffer (`readModel`
+    returns `file.arrayBuffer()`), so this is safe today. But the
+    contract is implicit: a future caller that passes a shared
+    buffer (e.g. caching `modelData` for retry) gets a detached
+    buffer on the second use. Same risk for `loadDdspSession`.
+    Document the transfer or copy on send.
+
+91. **`renderDiffSingerPhrase` re-checks `'gpu' in navigator` and
+    ignores the capability store.** `useCases/renderDiffSingerPhrase.ts:152`:
+    `if (isTauri() && typeof navigator !== 'undefined' && !('gpu' in navigator))`
+    throws "DiffSinger browser rendering not available on this
+    platform". Three problems:
+    (a) Duplicates the gate from `capabilityDetector.ts` — two
+        sources of truth that can disagree.
+    (b) Tauri-on-macOS WKWebView lacks `navigator.gpu`, so this
+        catches the macOS case. But the capability detector's
+        `unsupported-platform` verdict (`:122-127`) caches in
+        localStorage; this code path does not consult that cache.
+    (c) Non-Tauri Chrome without WebGPU passes the check (the
+        `&&` short-circuits on `!isTauri()`); the inference then
+        falls back to `selectExecutionProviders` (`:74`) which
+        emits `console.warn('[OnnxWorker] WebGPU unavailable …')`
+        and uses WASM. The user sees a render that takes 30× longer
+        with no UI signal that they're on the slow path.
+
+92. **`selectExecutionProviders` is a worker-side check that
+    duplicates main-thread logic and uses `console.warn`.**
+    `workers/onnxInferenceWorker.ts:74-81`. The worker has its own
+    `'gpu' in navigator` check separate from
+    `capabilityDetector.ts` and `renderDiffSingerPhrase.ts`. Three
+    sources of truth. The fallback path emits a console warning that
+    the main thread cannot route to its logger (issue #81). Either
+    pass the resolved execution provider list from the bridge as
+    part of the `create-session` message, or have the worker post
+    a typed `log` response.
+
+93. **`setCapabilityDetecting` is exported but the bootstrap path
+    never calls it.** `useCases/detectCapabilities.ts:19` calls it
+    when invoked from the UI ("Refresh" button), but `initBrowserAi`
+    bypasses the use case and calls the repository directly
+    (`useCases/initBrowserAi.ts:67`). The capability store therefore
+    never enters the `detecting` phase during boot — it goes
+    `idle` → `done` directly. Any UI that subscribes during boot
+    sees `phase: 'idle'` until detection completes (typically
+    fast). Indirect: `<CapabilityReportPanel>` shows
+    "No capabilities detected" if the user opens AI Settings during
+    the ~50 ms boot window.
+
+94. **`terminateAll` does not always clear `tfjsIdleTimer` if
+    `terminateOnnxWorker` is called via `cancelRender`.**
+    `inferenceWorkerBridge.ts:263-266` `terminateAll` does call both
+    terminate functions; but `cancelRender.ts:31` only calls
+    `terminateOnnxWorker`. If the user cancels a Kokoro render while
+    a previous DDSP render is sitting on the idle timer, the
+    `tfjsIdleTimer` keeps ticking. Probably benign (the idle timer
+    only terminates an already-idle worker). But `terminateAll`'s
+    contract suggests symmetry that doesn't hold per-pipeline.
+
+95. **`renderQueueStore.entries[]` linear scan in cancelRender.**
+    `cancelRender.ts:26` `renderQueueStore.value?.entries.find(…)` is
+    O(n) over an array that grows monotonically (issue #59 — entries
+    are never removed on completion). With 50–100 historical
+    entries plus a few in-flight, every cancel walks the whole
+    array. Index by `phraseId` instead.
+
+96. **Worker `release-session` does not refresh `getOrt()` and
+    races with concurrent `create-session`.**
+    `onnxInferenceWorker.ts:443-451`: `release-session` accesses
+    `sessionCache.get(req.modelId)` directly. If a `create-session`
+    for the same `modelId` is in flight (after `getOrt()` resolved,
+    before `sessionCache.set` at `:118`), the release sees no
+    entry, no-ops, and the in-flight `getOrCreateSession` proceeds
+    to insert. The release was a request to free, but the entry
+    that lands shortly after is now permanent (no follow-up
+    release). Worker microtask scheduling makes this a real
+    concern under #85's interleaving.
+
 ---
 
 ## Priorities
 
-1. **No tests, no spec, no module barrel** (issues #1, #79) —
-   cross-module imports are deep-pathed in violation of AGENTS.md;
-   the entire module ships uncovered.
-2. **Worker concurrency / interleaving** (issue #85) — concurrent
-   `run-diffsinger-phrase` messages interleave on the worker's
-   microtask queue; sessions shared across pipelines without
-   serialisation.
+1. **`sizeBytes` is read after buffer transfer → LRU never evicts**
+   (issue #14, #90) — if ORT detaches the buffer (it does on
+   WebGPU EP), every `sessionCache` entry has `sizeBytes = 0` and
+   the 1 GB budget is never reached. The "memory budget" is
+   fictional. Capture `byteLength` before transfer or keep an
+   explicit `bytesAccounted` field.
+2. **Worker concurrency / interleaving** (issue #85, #96) —
+   concurrent `run-diffsinger-phrase` messages interleave on the
+   worker's microtask queue; sessions shared across pipelines
+   without serialisation; release races with create.
 3. **DDSP feature is fake** (issue #2) — UI promises a feature that
    the worker explicitly disables; users get errors.
 4. **Lazy-singleton races, no Promise-coalesce** (issues #10, #17,
    #27) — concurrent first-callers all start initialisation; last
    write wins; first writer's state is leaked.
-5. **`cancelRender` is a sledgehammer** (issues #8, #23, #9) —
+5. **`cancelRender` is a sledgehammer** (issues #8, #23, #9, #95) —
    per-request cancellation is undefined; `AbortController` field
-   is dead; cancelling A kills B.
-6. **Capability detection is misleading** (issues #3, #4, #6) — the
-   "benchmark" times adapter discovery; the localStorage cache has
-   no schema versioning.
+   is dead; cancelling A kills B; cancel scans an unbounded array.
+6. **Capability detection is misleading and triple-gated** (issues
+   #3, #4, #6, #91, #92) — the "benchmark" times adapter discovery;
+   the localStorage cache has no schema versioning; three places
+   re-check `'gpu' in navigator` with subtly different conclusions.
 7. **OPFS cache discipline** (issues #43, #56, #58) — root-level
    measurement; no LRU enforcement; full-tree rebuild on every
    patch.
-8. **Memory hot spots** (issues #14, #15, #49, #51) — no GPU
-   tensor disposal; budget under-counts real footprint; download
-   manager triples model bytes in heap.
-9. **AGENTS.md compliance pass** (issues #72, #73, #75–77) —
-   positional args, multi-export use cases, sub-folder barrels,
-   `as` escapes — accumulated debt.
-10. **DSP / phonemizer correctness gaps** (issues #29, #34, #38,
+8. **Memory hot spots** (issues #14, #15, #49, #51, #90) — no GPU
+   tensor disposal; budget under-counts real footprint (or fails
+   to count at all); download manager triples model bytes in
+   heap; `loadOnnxSession` detaches caller buffers implicitly.
+9. **No tests, no spec, no module barrel** (issues #1, #79) —
+   cross-module imports are deep-pathed in violation of AGENTS.md;
+   the entire module ships uncovered.
+10. **AGENTS.md compliance pass** (issues #72, #73, #75–77, #87,
+    #88) — positional args, multi-export use cases, sub-folder
+    barrels, `as` escapes, lying `'in'` narrowing, dead exports.
+11. **DSP / phonemizer correctness gaps** (issues #29, #34, #38,
     #41, #42) — silent truncation, broken envelopes, untested
     G2P rule order.
 
@@ -1475,6 +1689,148 @@ unboundedly.
 When the parent re-renders with a new `audio` prop, evict the
 old buffer.
 
+### 27. `sessionCache.sizeBytes` is read after the buffer was transferred — LRU is fictional
+
+**Problem:** `inferenceWorkerBridge.loadOnnxSession` transfers
+`modelData` to the worker (`inferenceWorkerBridge.ts:170`). Inside
+the worker, `getOrCreateSession` records
+`sizeBytes: modelData.byteLength` (`onnxInferenceWorker.ts:115`)
+**after** the transfer happened. ORT's WebGPU EP detaches the
+buffer during `InferenceSession.create`. After detachment,
+`byteLength` is `0`. Every entry's `sizeBytes` is then `0`,
+`totalMemoryBytes` stays at `0`, and `evictLru` never runs. The
+1 GB budget is never reached because the accounting is broken.
+Eight sessions × ~150 MB = 1.2 GB live in WebGPU memory with
+zero eviction.
+
+**Representative files:**
+
+- `src/modules/BrowserAi/workers/onnxInferenceWorker.ts:101-123`
+- `src/modules/BrowserAi/repositories/inferenceWorkerBridge.ts:170`
+
+**Needed:** Capture the byte length **before** handing the buffer
+to ORT:
+```
+const recordedBytes = modelData.byteLength;
+const session = await ort.InferenceSession.create(modelData, …);
+sessionCache.set(modelId, { session, modelId, sizeBytes: recordedBytes, lastUsedAt: Date.now() });
+totalMemoryBytes += recordedBytes;
+```
+Add a debug assertion that logs if `byteLength === 0` after
+`InferenceSession.create`. Also add an end-to-end test that loads
+two large sessions in sequence with a 1 GB budget and asserts
+the LRU actually fired on the second.
+
+### 28. `'status' in instrument` narrowing is type-unsound for the catalog fallback
+
+**Problem:** `presentations/views/ModelManagerPanel.tsx:226-267`
+falls back to `DDSP_INSTRUMENT_CATALOG` when the registry is empty.
+The catalog type is `Omit<DdspInstrument, 'status' | 'downloadProgress'>[]`
+(`models/ddspInstrumentCatalog.ts:42`); `'status' in instrument`
+is structurally false for every entry. The
+`(instrument as { status: string }).status` cast is dead and
+hides the design issue: DDSP UI is fed by two different shapes
+depending on registry hydration timing. After init,
+`registryInstruments.length > 0` (because `initBrowserAi`
+populates), so the catalog branch is reached only briefly during
+boot. Fragile.
+
+**Representative files:**
+
+- `src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx:226-290`
+- `src/modules/BrowserAi/models/ddspInstrumentCatalog.ts:42-91`
+
+**Needed:** Always read from `registry.ddspInstruments`. If empty,
+render a loading state. Drop the catalog fallback. Drop the
+`as { status: string }` cast — replace with proper typing on
+`registry.ddspInstruments` (already `DdspInstrument[]`, which
+has `status`).
+
+### 29. Triple-gated WebGPU detection across capability detector, render use case, and worker
+
+**Problem:** Three independent code paths each re-check WebGPU
+availability with subtly different logic and consequences:
+- `capabilityDetector.ts:57-76` (`runWebGpuBenchmark`) — times
+  `requestAdapter()`, classifies tier, caches in localStorage.
+- `renderDiffSingerPhrase.ts:152` — `if (isTauri() && !('gpu' in navigator))`,
+  throws a hard error. Does not consult the cached capability
+  store. Lets non-Tauri-no-WebGPU pass through (silent WASM
+  fallback).
+- `onnxInferenceWorker.ts:74-81` (`selectExecutionProviders`) —
+  `if ('gpu' in navigator)` returns `['webgpu', 'wasm']`. Worker
+  cannot post to the main-thread logger; emits `console.warn`
+  the user never sees.
+
+**Representative files:**
+
+- `src/modules/BrowserAi/repositories/capabilityDetector.ts:57-76,99-158`
+- `src/modules/BrowserAi/useCases/renderDiffSingerPhrase.ts:152`
+- `src/modules/BrowserAi/workers/onnxInferenceWorker.ts:74-81`
+
+**Needed:** Single source of truth: the capability store's
+`webGpuTier`. Pass the resolved execution provider list as part
+of the `create-session` worker request. Drop the duplicated
+checks. Have the use case throw early if `webGpuTier === 'unavailable'`,
+not based on a `navigator.gpu` re-probe.
+
+### 30. `release-session` worker handler races and panics
+
+**Problem:** `onnxInferenceWorker.ts:443-451` (`release-session`)
+has no try/catch around `await entry.session.release()`. ORT's
+release can reject (WebGPU device-lost, queued kernels). Unhandled
+rejection → worker dies → `workerState.onnx.initialized` stays
+`true` → next `getOnnxWorker()` returns the dead reference.
+Compounding: `release-session` does not coordinate with
+`create-session`. If a release for `modelId` arrives between the
+`getOrt` await and the `sessionCache.set` of a concurrent create,
+the release no-ops and the create succeeds — but the original
+intent (release this model) was lost.
+
+**Representative files:**
+
+- `src/modules/BrowserAi/workers/onnxInferenceWorker.ts:443-451`
+
+**Needed:** Wrap `release()` in try/catch; on failure post a typed
+`error` response. Serialise create/release on `modelId` in the
+worker (one Promise per `modelId`). Add a test that posts
+`create-session` and `release-session` interleaved and asserts
+the final cache state.
+
+### 31. `KOKORO_VOCAB` exported but unused
+
+**Problem:** `services/kokoroTokenizer.ts:21-116` exports a 95-entry
+record. `grep -rn "KOKORO_VOCAB" /src` returns only the definition.
+Dead bytes; tempting attractor for a future "refactor" that
+silently re-routes tokenization through it.
+
+**Representative files:**
+
+- `src/modules/BrowserAi/services/kokoroTokenizer.ts:21-116`
+
+**Needed:** Either route the tokenizer through it (it is unclear
+whether the present `ARPABET_TO_KOKORO_IDS` agrees with this map;
+discrepancies would be a real bug) or drop the export. Surface
+the decision in the spec.
+
+### 32. `entries[]` linear scans on every cancel and queue update
+
+**Problem:** `cancelRender.ts:26` `renderQueueStore.value?.entries.find(…)`
+scans an array that grows monotonically (issue #59). Same scan
+in `markRenderComplete` (`stores/renderQueueStore.ts:62-82`),
+`updateRenderStatus` (`:48-60`), `cancelQueuedRender` (`:96-106`).
+With 50–100 historical entries, every interaction is an O(n)
+walk plus an immutable `entries.map(…)` rebuild — every
+subscriber re-fires. Compounds with #54.
+
+**Representative files:**
+
+- `src/modules/BrowserAi/stores/renderQueueStore.ts:35-107`
+- `src/modules/BrowserAi/useCases/cancelRender.ts:26`
+
+**Needed:** Convert `entries[]` to `entries: Record<string, RenderQueueEntry>`
+keyed by `phraseId` (or `requestId`). Drop completed entries
+after a TTL. Cap retained entries at e.g. 20.
+
 ---
 
 ## Open questions
@@ -1496,11 +1852,31 @@ old buffer.
       #84)? If cross-tab visibility of "user is downloading a model"
       is acceptable, document; otherwise switch to a same-tab
       `EventTarget`.
+- [ ] Does ORT detach the `modelData` ArrayBuffer in
+      `InferenceSession.create` for WebGPU EP? The audit assumes
+      yes (issue #27); confirm with a one-line probe and adjust
+      the fix if the buffer survives. Either way, capturing
+      `byteLength` before the call is harmless and correct.
+- [ ] Is `KOKORO_VOCAB` (issue #31) the canonical vocabulary, or
+      is `ARPABET_TO_KOKORO_IDS` derived from it? If they
+      disagree, which is correct? Confirm with the Kokoro
+      `tokenizer.json` upstream.
+- [ ] Should `cancelRender` clear `tfjsIdleTimer` even when only
+      terminating the ONNX worker (issue #94)? Symmetry vs
+      surgical action.
 
 ---
 
 ## Risks
 
+- **LRU eviction is fictional** (issue #27). `sizeBytes` is
+  recorded after the buffer was transferred to ORT; on WebGPU the
+  buffer is detached so `byteLength === 0`. `totalMemoryBytes`
+  stays at 0 forever; the budget never trips. A user with three
+  DiffSinger voicebanks plus the vocoder plus Kokoro is sitting
+  on ~1.5 GB of WebGPU sessions with no cap. WebGPU OOM crash
+  is the failure mode. **This is the highest-impact finding in
+  the audit.**
 - **Concurrent renders silently corrupt each other** (issue #6).
   A user clicking "render" on two phrases at once gets undefined
   results — the worker has no serialisation. As soon as the UI
@@ -1520,6 +1896,15 @@ old buffer.
 - **Cancellation kills unrelated renders** (issue #7).
   `terminateOnnxWorker` rejects every pending request; user A
   cancels phrase 1 and inadvertently kills phrase 2.
+- **Dead worker after release error** (issue #30). `release-session`
+  has no try/catch; an ORT release rejection kills the worker
+  but leaves `workerState.onnx.initialized = true`. Subsequent
+  inference calls return the dead worker reference and time out.
+- **WebGPU gate triple-checked, three answers** (issue #29). A
+  Tauri-on-mac user with a stale localStorage cache of `supported`
+  plus a freshly-broken `navigator.gpu` will see one path say "go"
+  and another say "stop". The fallback is `console.warn` the user
+  cannot see.
 - **No tests** (issue #21). Every DSP/networking/lifecycle
   refactor lands blind. The G2P rule engine is one-of-a-kind in
   this codebase and a regression is undetectable without manual
@@ -1565,7 +1950,13 @@ old buffer.
 
 ## Recommendation
 
-Start with **issue #1 (root `index.ts`)** because it unblocks
+Start with **issue #27 (`sizeBytes = 0` after transfer)**. This is
+a single-line fix with the highest impact: capture
+`modelData.byteLength` _before_ `InferenceSession.create`. Without
+this, every other LRU-related issue (#9, #11, #14) is moot because
+the LRU never fires.
+
+Then **issue #1 (root `index.ts`)** because it unblocks
 `pnpm deps:validate` on the module and surfaces the cross-module
 contract. Land it as a single commit alongside the four consumer
 import-path updates.
@@ -1575,13 +1966,15 @@ single most user-visible problem — the model manager promises
 something the worker explicitly disables. Either land DDSP for
 real or hide it; shipping the current state is dishonest.
 
-After those two, choose between:
+After those three, choose between:
 
-- **Correctness pass** (issues #5, #6, #7, #8, #9, #11, #15) —
-  worker concurrency, lazy-singleton races, tensor disposal,
-  cancellation, eviction. The riskiest surfaces.
-- **Architecture pass** (issues #18, #19, #20) — sub-folder
-  barrels, positional args, `as` escapes. Mechanical sweeps.
+- **Correctness pass** (issues #5, #6, #7, #8, #9, #11, #15, #30,
+  #29) — worker concurrency, lazy-singleton races, tensor
+  disposal, cancellation, eviction, release races, gate
+  unification. The riskiest surfaces.
+- **Architecture pass** (issues #18, #19, #20, #28, #31) —
+  sub-folder barrels, positional args, `as` escapes, dead
+  exports, lying narrowing. Mechanical sweeps.
 
 These are independent. The correctness pass is more valuable but
 also harder; the architecture pass is mechanical and unblocks

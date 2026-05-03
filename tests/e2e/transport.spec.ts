@@ -59,10 +59,17 @@ test.describe('Transport & Engine', () => {
         await expect(pauseButton).not.toBeVisible();
 
         // Wait a moment and assert playhead stopped moving
-        await page.waitForTimeout(100);
+        // We wait slightly longer so any pending requestAnimationFrames complete
+        await page.waitForTimeout(400);
         const pausedPlayheadText = await playheadReadout.innerText();
+        
+        // Assert it's not still at the start
         expect(pausedPlayheadText).not.toEqual(initialPlayheadText);
-        expect(pausedPlayheadText).toBeDefined();
+        
+        // Check that it's actually stable (hasn't moved after another short wait)
+        await page.waitForTimeout(200);
+        const stablePlayheadText = await playheadReadout.innerText();
+        expect(stablePlayheadText).toEqual(pausedPlayheadText);
 
         // 3. Click Stop (returns to beginning)
         await stopButton.click();

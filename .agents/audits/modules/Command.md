@@ -15,6 +15,55 @@ Related spec: none on disk.
 
 ---
 
+## Verification log (2026-04-28 adversarial pass)
+
+Re-verified every numbered open issue at cited file:line on the source
+tree as of `0ef2e91d9`. Findings:
+
+- **Confirmed at source:** #1, #2, #3, #4, #5, #6, #7, #8, #9, #10, #11,
+  #13, #14, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27,
+  #28, #29, #30, #31, #32, #33, #34, #36, #37 (after consolidation).
+- **#12 (`zoomToSelection` 'F' is dead) — confirmed,** but with a
+  different mechanism than originally stated. The audit said the user
+  must press "uppercase F without shift, which is impossible." That is
+  not why it's dead — `matches()` does case-insensitive single-char
+  comparison (`handleKeydown.ts:151-155`), so binding `'F'` would match
+  `event.key === 'f'` if the modifier check passed. The actual reason
+  it's dead is that `view.zoomToFit` is bound to `['f', 'mod+shift+f']`
+  AND is listed earlier (line 317 vs 324) than `view.zoomToSelection`
+  with `['F']`. Plain `f` keypress matches `zoomToFit` first; Shift+F
+  matches nothing because every binding requires `shift === false`.
+  See updated issue #12.
+- **#37 (Shift+F dispatches both) — wrong.** Pressing Shift+F matches
+  NOTHING at all: `'f'` requires `shift=false`, `'mod+shift+f'`
+  requires `mod=true`, and `'F'` requires `shift=false`. The audit's
+  claim that "the first definition wins (`zoomToFit`)" was wrong —
+  `zoomToFit` only matches plain `f`, not `Shift+F`. The user-visible
+  effect is identical (zoomToSelection is dead), so the issue stands,
+  but the analysis was sloppy. Folded into #12.
+- **#15 (`Escape`/`Enter` overload) — confirmed but bigger.** The
+  audit notes inconsistent `preventDefault` returns. Actual call sites
+  (`handleKeydown.ts:227-249`) show `Escape`-when-clear-selection
+  returns `false` and `Escape`-when-stop-transport also returns
+  `false`. Combined with `Enter` going through the same callback,
+  pressing Enter to confirm an input may also stop transport unless the
+  outer `isInput` guard catches it.
+- **#16 (`clearClipSelection` unreachable) — confirmed.** The dead
+  alias is on line 280-291, after `transport.stopPlayback` at lines
+  83-91. The outer `for ... of definitions` returns on first match.
+- **`stores/executeAppAction.ts` is a 3-line re-export proxy** —
+  `import { executeAppAction as runExecuteAppAction } from
+  '../useCases/executeAppAction'; export const executeAppAction =
+  runExecuteAppAction;`. New issue #38 below: this is a "store" file
+  that re-exports a use case, which contradicts AGENTS.md's
+  store-vs-useCase separation entirely.
+- **No issues are resolved.** Nothing from the open list has
+  shipped a fix in the codebase. `## Resolved` stays empty.
+
+The new issues hunted in this pass are listed under #38–#54.
+
+---
+
 ## Goal
 
 A single-source-of-truth command dispatch layer:
@@ -580,15 +629,15 @@ fall through to `action.type`. The function uses
     which is impossible on a standard keyboard. The intent is
     probably `'shift+f'`.
 
-37. **`zoomToSelection` is bound to `'F'` but `'f'` is bound to
-    `view.zoomToFit`.** `shortcutStore.ts:317,324`. Combined with
-    #36, pressing Shift+F dispatches **both** `zoomToFit` and
-    `zoomToSelection` candidates: the case-insensitive match at
-    `:155` makes `'F'` and `'f'` interchangeable, and `'shift+f'`
-    is matched as `mod=false, shift=true, key='f'` — which makes
-    `zoomToSelection` (`'F'`, no shift) match too. The first
-    definition wins (`zoomToFit`). The user never gets
-    `zoomToSelection` — the shortcut is dead.
+37. **`zoomToSelection` is dead (corrected).** `shortcutStore.ts:317,324`.
+    Original analysis incorrectly claimed Shift+F matches both
+    bindings via case-insensitivity. Re-traced: `matches()` enforces
+    `hasShift === desc.shift` exact-equality (line 157), so `'f'` and
+    `'F'` (both no-shift) cannot match a Shift+F press
+    (`desc.shift = true`). Plain `f` matches `zoomToFit` first
+    because that definition is listed earlier (line 317 vs 324) and
+    the outer loop returns on first match. `zoomToSelection` never
+    fires. See updated open issue #12.
 
 38. **`mod+shift+f` is bound to `view.zoomToFit` AND `f` is also.**
     `shortcutStore.ts:317`: `defaultKeys: ['f', 'mod+shift+f']`.
@@ -1073,26 +1122,39 @@ asymmetry is unexplained.
 
 ### 12. `zoomToSelection` (`'F'`) shortcut is dead
 
-**Problem:** `shortcutStore.ts:324` binds `defaultKeys: ['F']` to
-`view.zoomToSelection` with no `shift+` modifier. The `matches()`
-function at `handleKeydown.ts:118-159` does case-insensitive char
-matching but requires modifier-equality. To produce
-`event.key === 'F'` the user must hold Shift; but `matches` requires
-`shift === false`. The combination is impossible. Earlier in
-`shortcutStore.ts:317`, `view.zoomToFit` is bound to `['f',
-'mod+shift+f']`. Pressing Shift+F matches `'f'` (via
-case-insensitive) with `shift=true` — but `view.zoomToFit`
-requires `shift=false`. Pressing Shift+F therefore matches NOTHING.
-`zoomToFit` only fires for plain `f`. `zoomToSelection` never
-fires.
+**Problem (corrected):** `shortcutStore.ts:324` binds `defaultKeys:
+['F']` to `view.zoomToSelection` with no `shift+` modifier.
+`matches()` at `handleKeydown.ts:118-159` does **case-insensitive**
+single-char matching (lines 151-155), so the binding `'F'` would in
+principle match `event.key === 'f'`. The dead-code chain is actually:
+
+- `view.zoomToFit` (`shortcutStore.ts:314-318`, bound to `['f',
+  'mod+shift+f']`) is **listed earlier** in `INITIAL_DEFINITIONS`
+  than `view.zoomToSelection` (`:320-326`).
+- The outer iteration at `handleKeydown.ts:588-606` returns on the
+  **first** match.
+- Plain `f` matches `zoomToFit` and the loop returns. `zoomToSelection`
+  is never reached for plain `f`.
+- For Shift+F (`event.key === 'F'`, `desc.shift === true`), every
+  binding requires `desc.shift === false` (`'f'` and `'F'` and
+  `'mod+shift+f'` after the modifier-equality check), so nothing
+  matches.
+
+Net effect: `zoomToSelection` never fires under any keystroke; the
+shortcut is dead. The fix is the same — `'F'` should be `'shift+f'`
+— but the audit's prior claim that "uppercase F without shift" is
+"impossible on a standard keyboard" was wrong; the actual blocker is
+ordering plus modifier-equality enforcement.
 
 **Representative files:**
 
-- `src/modules/Command/stores/shortcutStore.ts:317,324`
-- `src/modules/Command/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts:118-159`
+- `src/modules/Command/stores/shortcutStore.ts:314-326`
+- `src/modules/Command/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts:118-159,588-606`
 
 **Needed:** Change `'F'` to `'shift+f'`. Add a test that asserts
-`zoomToSelection` fires on Shift+F.
+`zoomToSelection` fires on Shift+F. Also reorder so the more-specific
+binding (`shift+f`) wins — but with the fix, the modifier-equality
+check makes ordering moot.
 
 ### 13. `setEditingTool.payload.tool` is `string` in commandQueries but literal-union in models
 
@@ -1568,6 +1630,547 @@ five.
 **Needed:** Either wrap the macro-replay in a single
 "playMacro" undo entry (callback that re-plays via `skipUndo:
 true`), OR fix #28 so redo is group-aware.
+
+### 38. `stores/executeAppAction.ts` is a 3-line re-export proxy of a use case
+
+**Problem:** `stores/executeAppAction.ts` (3 lines) does:
+
+```ts
+import { executeAppAction as runExecuteAppAction } from '../useCases/executeAppAction';
+export const executeAppAction = runExecuteAppAction;
+```
+
+It is **not** a store — it holds no state, it is a use case alias.
+Sits in `stores/` solely to satisfy some import path. Searching the
+codebase shows it is unreferenced from outside the same folder; it is
+dead code. Its existence makes the audit reader think Command has two
+parallel `executeAppAction` implementations when it has one.
+
+**Representative files:**
+
+- `src/modules/Command/stores/executeAppAction.ts:1-3`
+
+**Needed:** Delete. Verify no importer references
+`#/modules/Command/stores/executeAppAction`. Confirm typecheck passes.
+
+### 39. `models/AppAction` is imported across module boundaries
+
+**Problem:** AGENTS.md is explicit: `models/` is **strictly private**
+to the owning module. The cross-module contract is the barrel
+(`#/modules/Command/useCases`). But two non-Command modules import
+`models/AppAction` directly:
+
+- `src/modules/Workspace/presentations/hooks/usePromptExecution.ts:20`
+  — `import { type AppAction } from '#/modules/Command/models/AppAction';`
+- `src/modules/AiGeneration/handlers/generation/createGenerationHandler.ts:2`
+  — same.
+
+The `useCases/index.ts:6` barrel does export `type AppAction` from
+`commandQueries`, so these imports are gratuitously deep — they hit a
+private path when a public one is two folders away. This is also the
+exact import path that drifts from `commandQueries`'s `AppAction`
+(literal-union vs `string`, see #13). Workspace's prompt execution
+gets the safer payload types; everyone going through the barrel gets
+the loose ones — type behaviour depends on import path.
+
+**Representative files:**
+
+- `src/modules/Workspace/presentations/hooks/usePromptExecution.ts:20`
+- `src/modules/AiGeneration/handlers/generation/createGenerationHandler.ts:2`
+- `src/modules/Command/useCases/index.ts:6` (the public re-export
+  these files should be using)
+
+**Needed:** Replace both imports with
+`import { type AppAction } from '#/modules/Command/useCases'`. Add a
+dep-cruiser rule that forbids `#/modules/<X>/models/...` from
+outside `<X>/`. Consolidate per #1 so the literal-union version is
+the only one that exists.
+
+### 40. Command/useCases/commandQueries imported deep from 11+ external modules
+
+**Problem:** `commandQueries.ts` is a **non-barrel file** inside
+`useCases/`. AGENTS.md: "Cross-module imports MUST only target the
+destination module's root `index.ts`" — and the barrel-policy
+section narrows that to `useCases/`-as-barrel. Importing
+`#/modules/Command/useCases/commandQueries` from outside Command
+violates the same rule that forbids importing
+`#/modules/Command/handlers/...`. Yet the codebase does this from at
+least 11 external modules to grab `ActionHandler` and `AppAction`:
+
+- `#/utils/createHandler.ts:1-5`
+- `Collaboration/useCases/getCollaborationHandlers.ts:1`
+- `CrdtDocument/useCases/getDsoSnapshotHandlers.ts:1`
+- `MIDI/useCases/getPatternInstanceHandlers.ts:1`
+- `MIDI/useCases/getChordTrackHandlers.ts:1`
+- `MIDI/useCases/getMidiNoteTransformHandlers.ts:1`
+- `AudioAnalysis/useCases/getAnalysisHandlers.ts:1`
+- `Project/useCases/getVersionControlHandlers.ts:1`
+- `AiGeneration/useCases/getGenerationHandlers.ts:1`
+- `AiGeneration/useCases/getAiMidiHandlers.ts:1`
+- `Automation/useCases/getAutomationHandlers.ts:1`
+
+The `useCases/index.ts:6` barrel already exports the same types. Every
+one of these deep imports is gratuitous and bypasses the contract
+boundary.
+
+**Representative files:**
+
+- (the 11 files listed above)
+- `src/modules/Command/useCases/commandQueries.ts` (the deep target)
+- `src/modules/Command/useCases/index.ts:6`
+
+**Needed:** Replace every cited import with
+`from '#/modules/Command/useCases'`. Add a dep-cruiser rule
+forbidding `#/modules/<X>/useCases/<file>` from outside `<X>/` (only
+the `useCases` folder itself is the barrel). This must land
+alongside #1 to keep the literal-union types intact during
+consolidation.
+
+### 41. Command module has no root `index.ts` barrel
+
+**Problem:** `src/modules/Command/` has **no root `index.ts`**.
+AGENTS.md: "Cross-module imports MUST only target the destination
+module's root `index.ts`". External callers therefore cannot import
+from `'#/modules/Command'` — they always reach into one of the
+sub-barrels (`stores`, `useCases`, `presentations/views`). This
+contradicts the documented contract surface and means Command
+doesn't have a single import path; cross-module callers pick one of
+three. `bootstrap.ts:36-37` even imports from both `stores` and
+`useCases` for the same module.
+
+A root barrel that re-exports the legitimate cross-module surface —
+`executeAppAction`, `undo`, `redo`, `describeAction`,
+`get<Module>Handlers`, `commandPaletteOpen`-style hooks, the
+`useGlobalKeyboardShortcuts` hook, `pushUndoEntry`, `macroStore`,
+`shortcutStore`, `undoStore` — does not exist. Other modules
+(Arrangement, Workspace, MIDI) all have one.
+
+**Representative files:**
+
+- (file does not exist) `src/modules/Command/index.ts`
+- `src/app/bootstrap.ts:36-37` (imports both
+  `#/modules/Command/stores` and `#/modules/Command/useCases`)
+
+**Needed:** Add `src/modules/Command/index.ts` re-exporting from
+`useCases`, `stores`, and `presentations/views`. Migrate external
+callers onto it (mechanical search-and-replace, but per the "no
+automated bulk edits" rule do this manually). Keep the sub-barrels
+as second-tier surfaces only if dep-cruiser allows. Cross-reference
+AGENTS.md's "Cross-module — relative imports" section.
+
+### 42. `MacrosPanel.tsx` calls Command use cases directly, bypassing dispatch
+
+**Problem:**
+`src/modules/Workspace/presentations/views/Sidebar/MacrosPanel.tsx`
+imports `playMacro`, `deleteMacro`, `renameMacro` from
+`'#/modules/Command/useCases'` and invokes them directly:
+
+- `:58` — `renameMacro(editingId, editName.trim())`
+- `:168` — `onClick={() => playMacro(macro.id)}`
+- `:189` — `onClick={() => deleteMacro(macro.id)}`
+
+`playMacro` and `deleteMacro` *have* AppActions (`playMacro`,
+`deleteMacro`); the panel could go through `executeAppAction` and
+get tracing, semantic-context, action-history, and (for
+`deleteMacro`) undo support. `renameMacro` has no AppAction (#17).
+The panel has chosen the most invasive path: every macro action
+silently bypasses the entire command pipeline. AI prompt that says
+"play macro X" goes through the dispatcher and fires `recordAction`,
+`pushActionHistoryEntry`, undo recording. Click "play" in the panel
+and none of that happens.
+
+**Representative files:**
+
+- `src/modules/Workspace/presentations/views/Sidebar/MacrosPanel.tsx:21-23,58,168,189`
+- `src/modules/Command/useCases/index.ts:15-18` (the exposed surface
+  that allowed this — see #43)
+
+**Needed:** Route every macro UI action through `executeAppAction`.
+For `renameMacro`, add the missing AppAction first (#17). Drop the
+direct re-exports of `playMacro`/`deleteMacro` from the Command
+barrel — exposing them is what allowed the bypass.
+
+### 43. `useCases/index.ts` re-exports use cases that have AppActions
+
+**Problem:** Once an action has an AppAction and a handler, the
+canonical invocation path is `executeAppAction`. Re-exporting the
+underlying use case from the cross-module barrel actively encourages
+callers to skip dispatch (see #42). Current barrel exports:
+
+- `:15` `deleteMacro` — has `deleteMacro` AppAction, redundantly
+  exposed.
+- `:18` `playMacro` — has `playMacro` AppAction, redundantly exposed.
+- `:20-21` `startMacroRecording`, `stopMacroRecording` — both have
+  AppActions, both exposed (and `MacrosPanel` doesn't currently use
+  them, but the surface is wide-open).
+- `:25` `commitPitchEditCommand` — no AppAction (#16), but
+  exposing a use case across modules without a contract path is
+  exactly the leak this section is about.
+
+The handler-only contract surface should be `executeAppAction`
+plus `get<Module>Handlers`. Direct use-case exposure for things
+that already have a dispatch path is a footgun.
+
+**Representative files:**
+
+- `src/modules/Command/useCases/index.ts:15-25`
+- `src/modules/Workspace/presentations/views/Sidebar/MacrosPanel.tsx`
+  (the consumer that used the leak)
+
+**Needed:** Drop `deleteMacro`, `playMacro`, `startMacroRecording`,
+`stopMacroRecording` from the barrel. Keep `renameMacro` until #17
+is fixed (then drop it too). For `commitPitchEditCommand`, see #16.
+
+### 44. AI leader chord dispatches without `void`/`await`, swallowing rejections
+
+**Problem:** `dispatchAiChord` in `handleKeydown.ts:75-99` calls
+`executeAppAction(...)` four times **without** `void` and **without**
+`await`. `executeAppAction` is async; an unhandled promise rejection
+disappears into the void. If `generateDrumPattern`'s handler throws
+(LLM 502, model not loaded, OOM), the user gets nothing — no toast,
+no log, no recovery — and the AI leader chord state has already been
+disarmed.
+
+Compare the same file's `executeShortcutAction` at lines 209, 217,
+222 which *do* prefix with `void executeAppAction(...)`. The
+inconsistency is the bug: the linter/typecheck doesn't enforce
+`void`-or-`await` on a returned Promise.
+
+**Representative files:**
+
+- `src/modules/Command/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts:78-94`
+
+**Needed:** Add `void` (or `await` and make `dispatchAiChord` async)
+to each of the four calls. Add a TS rule
+(`@typescript-eslint/no-floating-promises`) if it isn't on. Pipe
+errors through `notifyUser` — a failed AI chord should at least
+toast.
+
+### 45. `undoStore.loadFromSession` casts through `as UndoEntry` for legacy entries
+
+**Problem:** `stores/undoStore.ts:19-21`:
+
+```ts
+function ensureKind(event: UndoEntry): UndoEntry {
+    return { ...event, kind: event.kind ?? 'action' } as UndoEntry;
+}
+```
+
+`event` is typed as `UndoEntry` (a discriminated union on `kind`),
+but the function exists because old session payloads may not have a
+`kind` field. The `as UndoEntry` is an assertion escape — the
+function presumes any `kind`-less legacy entry is `'action'`-shaped,
+but `UndoEntry`'s `'callback'` variant has runtime fields
+(`undo: () => void`, `redo: () => void`) that JSON cannot round-trip.
+Old callback entries restored from session storage will be missing
+those functions, and the cast hides it. AGENTS.md "no `as` to
+silence type errors" + the soundness rule directly.
+
+Also at line 17: `JSON.parse(raw) as UndoStoreState` — same pattern
+without runtime validation. A malformed sessionStorage payload
+(injected by another tab, corrupted by a browser update) lands in
+the store as if it were valid.
+
+**Representative files:**
+
+- `src/modules/Command/stores/undoStore.ts:17,19-21`
+
+**Needed:** Replace with a Zod schema that validates each entry,
+discards malformed ones, and logs a warning. The "default to action"
+fallback is silently lossy — drop it and require `kind` to be
+present (it has been required for ≥ N commits; legacy data is no
+longer worth supporting).
+
+### 46. `recordToTree` only fires on push, never on undo movement
+
+**Problem:** `useCases/undoTree/recordToTree.ts:9-18` is invoked from
+`commitUndoEntry` / `pushUndo` paths whenever a NEW entry is
+committed. **It is never invoked when `undo()` or `redo()` change
+the user's effective position.** The tree's `currentNodeId` thus
+points to whichever node was last *pushed*, not where the user
+currently is.
+
+After `push(A) → push(B) → push(C) → undo() → undo() → execute(D)`:
+
+- `undoStore.past` contains `[A, D]` (because `pushUndo` clears
+  `future`, `undoStore.ts:80-83`).
+- `undoTreeStore`'s `currentNodeId` was last set to `D` when `D` was
+  pushed — but the parent of `D` was set from `tree.currentNodeId`
+  *at the time of D's push*, which was still `C` because no `undo()`
+  call ever updated `currentNodeId`.
+- So in the tree, `D`'s parent is `C`, not `A`. The tree thinks the
+  user did `A → B → C → D`, but the actual reality is `A → D`.
+
+The "branching undo" feature is fundamentally broken: the tree
+doesn't track branches at all, it tracks push order. Combined with
+`switchBranch` (#5) which doesn't traverse, **the entire undo-tree
+feature is decorative**.
+
+**Representative files:**
+
+- `src/modules/Command/useCases/undoTree/recordToTree.ts:9-18`
+- `src/modules/Command/useCases/undoRedo.ts:22-74` (does not call
+  any tree update on undo/redo)
+- `src/modules/Command/models/UndoTree.ts:50-79` (`pushToTree` always
+  treats `currentNodeId` as the parent without knowing whether
+  undo/redo moved it)
+
+**Needed:** On `undo()` and `redo()`, walk `tree.currentNodeId` up
+or down through the tree as well as mutate `undoStore.past`. When a
+new entry is pushed after an undo, the tree must already be at the
+correct ancestor so `pushToTree` creates a sibling (branch). This
+is a substantial rewrite of `recordToTree` + an `undoTreeMoveTo`
+useCase. Pair with #5 and #46 in one branching-undo spec.
+
+### 47. `pushUndo` clears `future`, but undo's group loop snapshots `state.future`
+
+**Problem:** `stores/undoStore.ts:75-84` `pushUndo` always sets
+`future: []`. The `undoRedo.ts:43-46` group-undo finalizer does:
+
+```ts
+undoStore.set({ past: newPast, future: [...groupEntries, ...state.future] });
+```
+
+`state.future` here is the snapshot taken at `:23`. During the
+inverse loop (`:39-41`), each `executeUndo → executeAppAction` may
+itself dispatch further actions through `executeAppAction`, each of
+which pushes a new entry (because `skipUndo` is not threaded through;
+see #6). Each of those pushes calls `pushUndo`, which clears
+`future`. The snapshot at `:23` is therefore **stale by the time
+the finalizer runs**: any redo entries that the user had at the
+start of the undo are already gone, but the finalizer reinserts the
+empty snapshot's `state.future` (i.e., the empty post-undo future
+the user had right before this `undo()` call started — actually
+wait, `state.future` is the future *before* the inverses fired, so
+it's restored from snapshot). The bug: `state.future` is whatever
+was in `future` before the `undo()` call started (could be
+non-empty if the user had pressed Cmd+Z multiple times). The
+inverses' own pushes wipe it. The finalizer **restores** it from
+snapshot. So `future` is non-corrupted at the end — but `past`
+was clobbered mid-loop (entries appended by inverses, then truncated
+by `:43`'s `newPast`).
+
+Net effect when an inverse triggers another `executeAppAction`:
+those new entries sit in `past` mid-loop, then are silently dropped
+by the finalizer's `slice(0, index + 1)`. The user lost
+push-during-undo entries.
+
+**Representative files:**
+
+- `src/modules/Command/stores/undoStore.ts:75-84`
+- `src/modules/Command/useCases/undoRedo.ts:22-57`
+
+**Needed:** Same fix as #6: thread `skipUndo: true` into the
+inverses. Optionally make `undo()` / `redo()` re-read
+`undoStore.value` after each await rather than relying on the
+snapshot — the snapshot is stale by definition for any inverse
+that has side effects on the store.
+
+### 48. `commitPitchEditCommand` uses `console.error` and bare try/catch
+
+**Problem:**
+`useCases/pitch/commitPitchEdit.ts:117-119`:
+
+```ts
+} catch (error) {
+    console.error('Failed to commit pitch edit:', error);
+}
+```
+
+- Bypasses `#/infra/logger/appLogger`. The user-feedback memory
+  rule "code should self-explain — comments signal hacks; no
+  fallback hacks" applies: a try/catch that swallows the failure
+  to a console.error is exactly the "fix the root cause" anti-pattern.
+- AGENTS.md specifies `notifyUser` for user-actionable failures.
+  Pitch-edit commits are user-initiated; failure should toast.
+- `redoFn()` runs **inside** the try (line 113), so a partial
+  state mutation can occur before the throw. The catch logs and
+  exits, but the trackStore has already been updated to the new
+  fileId that doesn't exist on disk.
+
+Also, `commitPitchEditCommand(clipId, segments, contour)` takes
+three positional args (line 53-57) — AGENTS.md "single object
+param" violation, same family as #30.
+
+**Representative files:**
+
+- `src/modules/Command/useCases/pitch/commitPitchEdit.ts:53-119`
+
+**Needed:** Replace `console.error` with `logger.error` and
+`notifyUser`. Run `redoFn()` only after the IPC/wasm call succeeds
+(currently lines 67-83 run before the redoFn at line 113). Convert
+to single object param. Cross-reference #16 — this whole file is on
+the chopping block anyway.
+
+### 49. Command palette uses `window.prompt` for rename inputs
+
+**Problem:** Two palette commands open native browser prompts:
+
+- `models/commands/trackCommands.ts:73` —
+  `const name = window.prompt('New track name:');`
+- `models/commands/clipCommands.ts:25` —
+  `const name = window.prompt('Rename clip:', clip?.name ?? '');`
+
+`window.prompt` blocks the event loop, looks like the early-2000s
+web, has zero theming, no validation, and is disabled in some
+browser contexts (sandboxed iframes, app-mode chrome). DAW UX
+expects an inline rename or modal dialog. The audit's **palette is a
+keyboard-first UX surface** — popping a native prompt undoes the
+rationale.
+
+**Representative files:**
+
+- `src/modules/Command/models/commands/trackCommands.ts:70-79`
+- `src/modules/Command/models/commands/clipCommands.ts:20-30`
+
+**Needed:** Either (a) emit an event the dialog/inline rename
+component listens for (the panel-toggle openExportDialog /
+openPreferencesDialog pattern already exists at
+`handleKeydown.ts:313-318`), or (b) add `renameTrack` /
+`renameClip` AppActions whose handlers open the dialog and dispatch
+a follow-up action with the typed name. (a) is the cheaper
+intermediate.
+
+### 50. `macroStore` has no entry cap; localStorage write is full-array stringify
+
+**Problem:** `stores/macroStore.ts:30-39` writes `JSON.stringify(state.macros)`
+on every mutation. There is no cap on `state.macros.length` and
+no cap on individual macros' `actions[]` length. Recording one
+1,000-step macro inflates `state.macros[0].actions` to 1,000 entries
+× ~100 bytes each ≈ 100 KB. Stop recording, the panel writes 100 KB.
+Record another 1,000-step macro and the panel writes 200 KB —
+because the *entire* `macros` array is restringified for each push.
+
+`stores/undoStore.ts:6` has `MAX_UNDO_PERSIST = 100` for exactly
+this reason. `macroStore` does not.
+
+Also: each push **during recording** writes localStorage too (the
+subscriber doesn't gate on `recording`). Recording mid-flight
+pummels localStorage with N writes for N actions, each
+re-stringifying every saved macro plus the in-flight one.
+
+**Representative files:**
+
+- `src/modules/Command/stores/macroStore.ts:26-39`
+
+**Needed:** (a) Coalesce via `queueMicrotask` like `undoStore` does
+(#25). (b) Add a `MAX_MACRO_ACTIONS` cap and a `MAX_MACROS` cap.
+(c) Skip the persistence write while `state.recording === true`;
+only persist on stop / delete / rename.
+
+### 51. `undoStore.loadFromSession` defaults entries to `kind: 'action'`
+
+**Problem:** Already covered by #45; reiterating the
+forward-compat angle. Old sessionStorage payloads from versions of
+the app that lacked `kind` end up with `kind: 'action'` injected
+even if they were structurally callback entries (i.e., they had
+`undo`/`redo` fns — except those JSON-serialized as
+`undefined`-ish, so `kind: 'action'` was probably correct for
+all legacy data). **But:** the `as UndoEntry` cast never validates
+that `inverseAction` is an `AppAction`. A persisted
+`inverseAction.type` of `'someRemovedActionType'` (because the
+shipped AppAction union dropped it between releases) replays as
+`logger.error('No handler registered for action: someRemovedActionType')`
+on next undo. No graceful recovery.
+
+**Representative files:**
+
+- `src/modules/Command/stores/undoStore.ts:14-32`
+- `src/modules/Command/useCases/executeAppAction.ts:28-31`
+
+**Needed:** Validate persisted action types against the live
+`AppAction['type']` set on load. Drop entries whose type is unknown.
+Surface the count to the user ("3 entries from a previous session
+were discarded because they referenced removed actions").
+
+### 52. `editCommands.ts:75` and `trackCommands.ts:45` both display `⌘⇧D`
+
+**Problem:** Two palette entries advertise the same shortcut to the
+user. Only one (`arrangement.duplicateTrack` via `mod+shift+d`)
+actually fires. `deselect-all` (`editCommands.ts:71-79`) shows
+`⌘⇧D` but the `shortcutStore` does not bind that combo to it. So:
+
+- The Edit category palette row shows "Deselect All ⌘⇧D".
+- The Track category palette row shows "Duplicate Track ⌘⇧D".
+- Pressing Cmd+Shift+D triggers Duplicate Track.
+- Clicking "Deselect All" in the palette works (because the entry
+  has its own `() => void` action), but the displayed shortcut is
+  a lie.
+
+Cross-reference #18.
+
+**Representative files:**
+
+- `src/modules/Command/models/commands/editCommands.ts:71-79`
+- `src/modules/Command/models/commands/trackCommands.ts:40-52`
+- `src/modules/Command/stores/shortcutStore.ts:293-298`
+
+**Needed:** Same as #9 — derive `shortcut` from `shortcutStore`
+by id at render time. As an interim, drop the lying string from
+`editCommands.ts:75`.
+
+### 53. `Backspace` and `Delete` shortcut bypasses input gating
+
+**Problem:** `shortcutStore.ts:163-171` binds
+`editing.deleteSelection` to `['Delete', 'Backspace']`. The outer
+loop in `handleKeydown.ts:588-606` continues past inputs (the
+`isInput && !allowedInInput` continue at `:593-595`). `'Delete'`
+and `'Backspace'` are NOT in the `allowedInInput` allow-list (only
+`workspace.toggleCommandPalette` is), so the loop continues past
+them when in an input — **but** the panel's outer body then falls
+through to `if (isInput) return false;` (`:611-613`), preventing
+the deletion. So Backspace in an `<input>` clears the input
+character, not the clip selection. 
+
+But: `event.target.isContentEditable` (in
+`useGlobalKeyboardShortcuts.ts:10`) treats any contenteditable as
+an input. Custom canvas-based editors (PianoRoll, Elastic Editor,
+Mixer fader) that have their own focus model and intercept
+keyboard themselves are NOT contenteditable, so for them
+`isInput === false` and Backspace deletes the clip selection — even
+when the user's intent was "delete the selected note in
+PianoRoll". Cross-reference: the `keyboard.deleteSelectionShortcut`
+inside `handleKeydown.ts:455-510` deletes the *clip*, not the note.
+
+**Representative files:**
+
+- `src/modules/Command/stores/shortcutStore.ts:163-171`
+- `src/modules/Command/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts:444-510,592-595`
+- `src/modules/Command/presentations/views/keyboardShortcutsContract.ts:10-13`
+
+**Needed:** The keyboard-shortcut layer must know the active
+*context* (Arrangement vs PianoRoll vs Mixer). Either route
+keyboard events through a per-context handler (PianoRoll registers
+its own keydown listener with stopPropagation), OR thread an
+"editor context" flag into `KeyDescriptor` and have the
+`deleteSelection` callback dispatch the context-appropriate action.
+Today this is a latent regression waiting for a user to delete a
+note and lose a clip.
+
+### 54. No test catches inverse-action drop during group undo
+
+**Problem:** `__tests__/undoRedo.spec.ts:61-93` mocks
+`executeAppAction` as a no-op `vi.fn`. The mock never causes new
+entries to land in `undoStore.past`, so the `state.past` snapshot
+at `:23` matches the live store at `:43`, and `slice(0, index+1)`
+truncates to the same value the live store already had. The race
+described in #6 / #45 / #47 is **invisible** to this test by
+design.
+
+A correctly-shaped regression test would have `executeAppAction`'s
+mock simulate a CRDT subscriber appending to `undoStore.past` mid-
+inverse, then assert that those entries are not silently dropped
+when the snapshot finalizer runs.
+
+**Representative files:**
+
+- `src/modules/Command/useCases/__tests__/undoRedo.spec.ts:61-93`
+
+**Needed:** Add a test that mocks `executeAppAction` to push a new
+`UndoEntry` into `undoStore.past` on each call, then runs `undo()`
+on a 3-action group, then asserts every push survived (or, after
+the fix, that the inverses ran with `skipUndo: true` and no new
+pushes happened).
 
 ---
 

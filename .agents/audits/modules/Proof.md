@@ -128,6 +128,171 @@ signature.
 
 ## Findings
 
+### Adversarial review log (2026-04-28)
+
+**Verified against source as of HEAD.** Re-walked every cited file:line and
+confirmed/refuted each open issue. Key results:
+
+- **Issue #6 / open issue #4 (A/B bypass) — partially WRONG.** The audit
+  asserts the engine "doesn't actually have an `ab_bypass` parameter". It
+  does — `crates/daw-dsp/src/proof/chain.rs:106` matches `"ab_bypass"`
+  and toggles `self.ab_bypass`, which gates the dry/wet bypass with a
+  `ab_gain_offset` (chain.rs:175-185). So `setProofParam(deviceId,
+  'ab_bypass', 1)` *does* flip a real engine param. The remaining
+  problems (view-code mutating store, no setProofAbBypass use case,
+  `ab_bypass` not part of `syncFullPatch` so it's not restored on engine
+  init) are real. Demoted from "mis-wired contract drift" to "scope drift +
+  missing restore wiring". See updated open issue #4.
+- **Issue #4 / open issue #3 (meter rate) — PROMOTED.** Confirmed
+  `setInterval(..., 16)` in `ProofNode.ts:120` produces ~60 Hz callbacks,
+  not 30-60 Hz. Each tick allocates 6 fresh `tapPeaks` objects + dynGr
+  array + the spread instances/state map. At ~60 Hz this is ~480
+  allocations/sec per Proof instance. With one project = potentially
+  multiple Proof instances open this compounds. Severity stays high.
+- **Issue #16 / open issue #23 (tapPeaks reference) — DEMOTED.**
+  `ProofNode.ts:109-116` constructs a fresh `tapPeaks` array on every
+  poll tick, so aliasing is not currently possible. Worth keeping as a
+  contract test, not a correctness defect.
+- **Issue #19 / open issue #10 (silent no-op on missing bridge) —
+  PROMOTED.** Cross-checked `wasmDeviceRegistry.ts:495-542`. Note that
+  the **WASM placeholder** has a `pendingParams` queue (line 495-511)
+  that flushes on load — but that queue is on `nativeDspControls`, not
+  on the `bridges` map that `setProofParam` reaches. So early UI knob
+  writes that go through `setProofParam` (via `bridges.get(...)?.…`)
+  silently drop while the in-progress `createProofNode` flushes its
+  own queue from `nativeDspControls` writes. Two queues, two fates,
+  one device. New issue #58 captures this dual-queue divergence.
+- **Issue #2 / open issue #2 (persistence gap) — VERIFIED + EXTENDED.**
+  Confirmed: `TrackNode.addDevice` (`AudioEngine/engine/TrackNode.ts:401-421`)
+  calls `findWasmDescriptor(...).create(...)` for `proof` and **never
+  iterates `device.parameterValues`** to push them through the bridge.
+  The only path that does is `NativeDspDeviceStrategy.createNativeDspStrategy`
+  (`repositories/deviceStrategy/NativeDspDeviceStrategy.ts:93-95`),
+  which is on the **offline-render** path through `buildDeviceChain`.
+  So the bug surface is asymmetric: live-edit then save → reload-live
+  shows defaults, but **the offline render of the same project applies
+  the saved `parameterValues`**. So a master that *sounds correct on
+  export* shows blank knobs in the live UI. This is worse than the
+  audit captured. Updated open issue #2.
+- **New issue #58 — Two divergent param queues (`nativeDspControls` vs
+  `bridges`).**
+- **New issue #59 — `ProofNode.setParam` silently drops boolean values
+  via `Number.isFinite(value)`** (`ProofNode.ts:132`). Booleans are not
+  `isFinite` ⇒ silent drop. Combined with finding #12 (boolean →
+  number conversion is inconsistent across sections), any unconverted
+  boolean reaches the worklet, dies there.
+- **New issue #60 — `setParam` is bypass-gated at the worklet wrapper.**
+  `ProofNode.ts:132` predicates the postMessage on `!bypassed`. So
+  while `setBypass(true)` is in effect every UI param write is silently
+  swallowed by the bridge layer. The audit missed this entirely.
+- **New issue #61 — `ProofPanel.spec.tsx` mocks `useStore` with `(store,
+  defaultValue) => defaultValue` and renders `<ProofPanel />` without a
+  `deviceId`.** When the mock returns `{}` and `state` falls back to
+  `getProofState(undefined)`, the test's render goes through the entire
+  panel with `deviceId === undefined`, which then propagates to every
+  `setProofParam(undefined, …)` and `bridges.get(undefined)` call site.
+  None of the existing tests trigger those handlers, so the broken
+  state never surfaces — but a future test that clicks a chip would
+  send `'ab_bypass'` to a `bridges.get(undefined)` lookup. The spec
+  isn't just type-broken (issue #14); it teaches future writers a
+  poisoned pattern.
+- **New issue #62 — `ProofEqCurve` `peakingMag` formula treats
+  positive- and negative-gain peaking filters asymmetrically.** Lines
+  35-38: `A = 10^(gainDb/40)`, then `num = (1-w²)² + (bw·A)²` and
+  `den = (1-w²)² + (bw/A)²`. For `gainDb < 0`, `A < 1`, so the
+  numerator denominator pair flips sign-style and the resulting
+  `10·log10(num/den)` is the **inverse** of what it should be. Cuts
+  display as boosts. Combined with #28 (shelves rendered as bumps),
+  the EQ curve is misleading for **every band type with negative
+  gain** plus shelves. The audit lumped this into #28; it deserves
+  its own line.
+- **New issue #63 — `proofStore.set({})` on project reset destroys
+  every `uiLevel` selection.** `resetModuleStoresToDefault.ts:36`
+  resets to `{}`, but `uiLevel` is `ProofState`-only (not `ProofPatch`),
+  so re-loading the project rehydrates `parameterValues` (in offline
+  render only — see open issue #2) but never the UI level. The user's
+  "Lab" view becomes "Play" on every reload.
+- **New issue #64 — `ProofEqCurve` HP/LP types 3/4 fall through the
+  `band.type <= 2` guard at line 134** but the dot-render loop at
+  186-220 has **no type guard**, so a HP at 30 Hz with `enabled: true`
+  appears as a coloured dot floating at zero gain on the canvas with
+  no visible curve and no per-band fill. The drag handler at 253-273
+  then **mutates `freq` and `gain` regardless of type** — dragging a
+  HP band up the y-axis sets `gain` even though Q (not gain) is the
+  meaningful Y-axis param for HP/LP. This is a UX correctness bug
+  beyond the rendering bug in #27.
+- **New issue #65 — `getProofState` is called from a `useStore`
+  fallback path on every render that lands on missing data**
+  (`ProofPanel.tsx:174`). Each call returns
+  `{ ...DEFAULT_PROOF_STATE, patch: { ...DEFAULT_PATCH } }` — a
+  freshly-allocated object with a freshly-allocated patch. **All
+  child components see this as a different state object every
+  render**, breaking React Compiler's render bailouts. The original
+  audit's #7 noted this; what was missed is that `DEFAULT_PROOF_STATE`
+  itself contains an inner `tapPeaks` array allocated once at module
+  init via `Array.from(...)` (`proofStore.ts:61`). The spread copies
+  the reference of that *singleton* array, so two parallel `ProofPanel`
+  instances each rendering the fallback share the same tapPeaks
+  reference. That's safe today, but `tapPeaks` is then meant to be
+  mutated/written by `updateProofMeters`. If a future code path
+  mutates a tapPeaks element via the fallback path, it corrupts the
+  module-global default. Defensive cloning needed at the fallback.
+- **New issue #66 — `setProofParamWithPatch` does not handle the
+  `target`, `targetLufs`, or `name` keys.** Lines 20-69 enumerate
+  every other key but the `Mission` panel chip (`ProofPanel.tsx:219-227`)
+  fires `setProofParamWithPatch(deviceId, 'target', option.value)`
+  and `setProofParamWithPatch(deviceId, 'targetLufs', option.lufs)`.
+  The function calls `updateProofPatch(deviceId, { [key]: value })`
+  (line 13) which lands in the store, but then the if/else chain
+  has no branch for `target` or `targetLufs`, so the bridge gets
+  nothing. That's correct because the engine has no target param,
+  but it's silent — no `default` branch to assert that an unknown
+  key was a UI-only field. A typo (`'targe'`) would silently update
+  the patch with a junk field and no engine forward. Type-safe in
+  declaration (`Key extends keyof ProofPatch`) but defensive coding
+  would assert exhaustiveness.
+- **New issue #67 — `Level1Play` target buttons use deprecated chip
+  pattern duplicated from the rail.** `ProofPanel.tsx:407-423` is a
+  plain `<button>` with no `DawPluginChip` wrapper, even though the
+  rail at line 211-227 uses `DawPluginChip`. Two implementations of
+  the same UI element with different a11y/styling. Pick one.
+- **New issue #68 — `proofPresets.ts` `preset` factory drops user-
+  facing display name into the patch.** Line 14: `patch: { ...DEFAULT_PATCH,
+  ...overrides, name }` overwrites `patch.name` with the preset's
+  `name` argument (e.g. `'Streaming Master'`). `DEFAULT_PATCH.name`
+  is `'Init'`. This means the patch's `name` field is reused as both
+  a save/restore identifier and a UI display label, conflating
+  identity with presentation. `ProofPanel.tsx:193` uses
+  `preset.patch.name === patch.name` to mark the preset row active —
+  so loading a preset, then editing one knob, leaves the preset
+  marked active even though the patch has diverged. Pick a different
+  identity field (`patch.id` or hash) or drop `name` from `ProofPatch`
+  altogether and keep it on the preset.
+- **New issue #69 — `formatLufs` boundary check uses `<= -100` magic
+  literal in three places.** `ProofPanel.tsx:60, 68` and the
+  surrounding components. `-100` is the sentinel "no signal" value
+  defined in `DEFAULT_PROOF_STATE` (`proofStore.ts:52-56`); it's the
+  initial-value-meaning-nothing convention. Promote to a named
+  constant `SILENT_LUFS_SENTINEL`. Same kind of bug as #11 (the +1
+  threshold).
+- **New issue #70 — `LoudnessHistory` history is keyed solely on
+  `momentaryLufs` deps**, but the component is rendered every meter
+  tick (issue #4). The `useEffect` at `LoudnessHistory.tsx:53-182`
+  re-runs and **re-pushes a new history sample on every `momentaryLufs`
+  change** — i.e. ~60 times per second when the audio is live. The
+  comment claims "~10 fps" (line 5) but the real rate is the meter
+  rate. The 300-sample buffer therefore covers 5 seconds at 60Hz, not
+  30 seconds at 10Hz as the comment claims. **Documentation lies and
+  the time axis is silently 6× shorter than advertised.**
+- **New issue #71 — `LoudnessHistory` grid loop has dead branches.**
+  Line 89: `db === -14 || db === -24` — but the iteration is over
+  `[-6, -12, -18, -24, -36, -48]`. `-14` is never in that array;
+  `-24` is. So the `-14` branch is dead. Either the original intent
+  was a target-line sentinel that should be `targetLufs` (the dashed
+  line below already handles that) or it's a typo. Either way, dead.
+
+---
+
 1. **Module has no root `index.ts`.** Every other audited module exposes a
    curated cross-module surface via `src/modules/<Name>/index.ts`. Proof
    does not. External consumers therefore reach in through
@@ -783,33 +948,47 @@ signature.
 
 ## Priorities
 
-1. **Persistence path is broken** (issues #9, #10, #11, #32). Most knob
-   writes (every `setProofParamWithPatch`/`reorderChain`/`loadProofPatchWithAudio`
-   call site) update the patch + the engine but never call
-   `persistDeviceParam`. Project save/reload silently drops user changes.
-   This is a data-loss bug.
-2. **Render storm at meter rate** (issues #4, #7, #20, #29). Every meter
-   tick rebuilds the entire `proofStore` instances map and triggers a
-   re-render of `ProofPanel` and every section. The single largest
-   performance issue in the module.
-3. **Type-soundness escapes** (issues #8, #13, #34). `as never` and
-   `as` casts in `setProofParamWithPatch` and `Level2Shape`'s knob
-   handlers; AGENTS.md explicitly forbids them. Replacing with a typed
-   dispatch closes both the cast and the parameter-shape mismatch.
-4. **A/B bypass UI is mis-wired** (issue #6). The toggle reaches around
-   the use-case layer to mutate the store, persists `ab_bypass` through
-   `persistDeviceParam` but no consumer reads it back, and the parameter
-   isn't part of the engine's known param set.
-5. **No real test coverage** (issue #15, #56). Eight identity-only
-   tests + six "renders" tests cover essentially nothing. Bridge
+1. **Persistence path is broken AND asymmetric** (open issue #2,
+   findings #9-#11, #32). Half of UI writes never persist;
+   the half that do persist are not restored by the live runtime
+   but ARE applied by offline render. Live UI and exported audio
+   disagree after reload. Highest-impact correctness issue.
+2. **Render storm at meter rate** (open issue #3, findings #4, #7,
+   #20, #29, #41). Every meter tick rebuilds the entire `proofStore`
+   instances map and triggers a re-render of `ProofPanel` and every
+   section. `LoudnessHistory` writes its history buffer at 6× the
+   documented rate, compounding. The single largest performance
+   issue in the module.
+3. **EQ canvas correctness has three independent bugs** (open issues
+   #8, #33, #35). Shelf filters render as bumps; negative-gain
+   peaks render mirrored; HP/LP draggable dots edit `gain` (which
+   WASM ignores) with no curve drawn. Drag fires uncoalesced
+   store updates at pointer rate.
+4. **A/B bypass UI is mis-wired** (open issue #4, finding #6).
+   View code reaches around the use-case layer; `syncFullPatch`
+   doesn't restore the flag. (The audit's earlier "engine doesn't
+   recognise the param" claim was wrong — corrected in this pass.)
+5. **Two divergent param queues** (open issue #29). Bridge writes
+   between device construction and Proof bridge registration
+   silently drop while the parallel `nativeDspControls` queue
+   succeeds. Race-window bug.
+6. **Type-soundness escapes** (open issues #5, #17, #25). `as never`
+   and `as` casts in `setProofParamWithPatch` and `Level2Shape`'s
+   knob handlers; AGENTS.md explicitly forbids them. Replacing with
+   a typed dispatch closes both the cast and the parameter-shape
+   mismatch.
+7. **No real test coverage** (open issues #6, #7, #32, finding
+   #15, #56). Eight identity-only tests + six "renders" tests
+   cover nothing. `ProofPanel.spec.tsx` actively certifies the
+   broken `deviceId === undefined` state as baseline. Bridge
    forwarding, persistence, drag handling, preset loading — all
    uncovered.
-6. **Module has no root `index.ts`** (#1, #36). The cross-module
-   public surface is ad-hoc; AGENTS.md "Barrel files" mandates a
-   root barrel.
-7. **EQ canvas correctness** (issues #27, #28, #29, #30). Shelf
-   filters render as bumps; HP/LP bands have draggable dots with no
-   curve; drag fires uncoalesced store updates at pointer rate.
+8. **Worklet wrapper silently drops writes** (open issues #30, #31).
+   `Number.isFinite` filter eats booleans; `!bypassed` gate eats
+   writes during `setBypass(true)`. Defensive coding hides bugs.
+9. **Module has no root `index.ts`** (open issue #1, finding #36).
+   The cross-module public surface is ad-hoc; AGENTS.md "Barrel
+   files" mandates a root barrel.
 
 ---
 
@@ -835,15 +1014,51 @@ intended public surface (the three callable use cases already in
 `stores/`, `ProofPanel` from `presentations/views/`). Update the
 four cross-module imports to target the root.
 
-### 2. Persistence is missing for `setProofParamWithPatch` / `reorderChain` / `loadProofPatchWithAudio`
+### 2. Persistence is missing for `setProofParamWithPatch` / `reorderChain` / `loadProofPatchWithAudio` (and the live-reload path silently swallows what *is* persisted)
 
-**Problem:** `setProofParam` calls `persistDeviceParam`; the
-typed-key variants (`setProofParamWithPatch`, `reorderChain`,
-`loadProofPatchWithAudio` and the `syncFullPatch` it triggers) do
-not. Every UI write that goes through these paths is lost on project
-save/reload — the in-memory store and the engine know the new value,
-but `Track.devices[*].parameterValues` does not, and `ProofNode` does
-not read from the patch on init.
+**Problem:** Two compounding bugs.
+
+**(a) Half the writes never persist.** `setProofParam` calls
+`persistDeviceParam`; the typed-key variants
+(`setProofParamWithPatch`, `reorderChain`, `loadProofPatchWithAudio`
+and the `syncFullPatch` it triggers) do not. Every UI write that
+goes through these paths is lost on save: the in-memory store and
+the engine know the new value, but `Track.devices[*].parameterValues`
+does not.
+
+**(b) Of the writes that *are* persisted, the live runtime never
+reads them back.**
+`AudioEngine/engine/TrackNode.ts:401-421` is the live path for
+WASM Proof devices. It calls
+`findWasmDescriptor(...).create(...)` and never iterates
+`device.parameterValues` to push values through the bridge. The
+*only* path that does this is
+`AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts:93-95`,
+which is reached via `buildDeviceChain` for **offline render**.
+Net effect: a project saved through `setProofParam`-only knobs
+(`Level3Build` controls — see #32) reloads with **`Track.devices[*].parameterValues`
+intact**, the live UI shows the persisted patch *only because the
+patch lives in `proofStore` (which is reset to `{}` on load —
+issue #4 of the new findings)*. Wait — actually `proofStore` is
+reset (`resetModuleStoresToDefault.ts:36`) and never repopulated
+from `parameterValues`. So even the values that are persisted to
+disk show as defaults on the live UI, while the same project
+exported as offline render uses the saved `parameterValues`
+correctly. **The audible mix and the visible UI disagree after a
+reload.**
+
+**Representative files:**
+
+- `src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts:13-69`
+- `src/modules/Proof/useCases/proofParamBridge/reorderChain.ts:5-8`
+- `src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts:78-120`
+- `src/modules/Proof/presentations/views/ProofPanel.tsx:550, 584, 596, 769, 786`
+- `src/modules/AudioEngine/engine/TrackNode.ts:401-421` (live path
+  doesn't apply `parameterValues`)
+- `src/modules/AudioEngine/repositories/deviceStrategy/NativeDspDeviceStrategy.ts:93-95`
+  (offline path does)
+- `src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts:36`
+  (proofStore wiped on load, never rehydrated from track.devices)
 
 **Representative files:**
 
@@ -886,28 +1101,54 @@ meter rate; their canvas `useEffect`s re-execute (issue #29).
 Add a test: render `ProofPanel`, dispatch 100 meter updates, assert
 sub-component render count.
 
-### 4. A/B bypass mutates the store from view code
+### 4. A/B bypass mutates the store from view code (mis-routed, but the param IS real)
 
-**Problem:** `ProofPanel.tsx:347-358` reaches `proofStore.value`
+**Problem (corrected):** `ProofPanel.tsx:347-358` reaches `proofStore.value`
 and calls `proofStore.set(...)` directly inside an `onClick`
-handler. It also calls `setProofParam(deviceId, 'ab_bypass', ...)`
-which forwards to a parameter the engine does not recognise, and
-persists the value to a parameter map nothing reads back.
+handler. It also calls `setProofParam(deviceId, 'ab_bypass', ...)`.
+**The original audit asserted the engine does not have an `ab_bypass`
+parameter — that is wrong:** `crates/daw-dsp/src/proof/chain.rs:106`
+matches `"ab_bypass"` and toggles `self.ab_bypass`, which gates
+dry/wet bypass with auto level-matching (`ab_gain_offset`,
+chain.rs:175-185). So the engine call succeeds. What the audit
+got *right*:
+
+- View code reaches around the use-case layer to mutate the store.
+- There's no `setProofAbBypass(deviceId, value)` use case.
+- `syncFullPatch` (`loadProofPatchWithAudio.ts:78-115`) does not
+  forward the `abBypass` flag — so on engine reload the toggle is
+  lost (the WASM chain comes back up with `ab_bypass: false` from
+  `chain.rs:98`).
+- `persistDeviceParam(deviceId, 'ab_bypass', ...)` writes
+  `Track.devices[*].parameterValues.ab_bypass`, but
+  `TrackNode.addDevice` for WASM devices doesn't push
+  `parameterValues` through the bridge (verified at
+  `AudioEngine/engine/TrackNode.ts:401-421`). So the field is
+  persisted to the project file and consumed only by the offline
+  render path (`NativeDspDeviceStrategy.createNativeDspStrategy:93-95`).
+  Live reload doesn't see it.
 
 **Representative files:**
 
 - `src/modules/Proof/presentations/views/ProofPanel.tsx:346-369`
 - `src/modules/Proof/stores/proofStore.ts` (no `setProofAbBypass`)
-- `src/modules/AudioEngine/engine/ProofNode.ts:18-30` (no `ab_bypass`
-  in the meter contract; check the param API)
+- `src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts:78-115`
+  (syncFullPatch doesn't include `ab_bypass`)
+- `crates/daw-dsp/src/proof/chain.rs:106, 175-185` (real engine param)
+- `src/modules/AudioEngine/engine/TrackNode.ts:401-421` (live path
+  drops `parameterValues` for WASM devices)
 
-**Needed:** Decide what A/B bypass means.
-- If it's a UI-only toggle (the "compare" mute on the Proof channel
-  strip) — add `setProofAbBypass(deviceId, value)` use case that
-  updates the store and routes through the bridge's `setBypass`
-  method, not `setParam`. Drop the `persistDeviceParam` call.
-- If it's an engine-level dry/wet — define the parameter formally,
-  read it on engine init, and document the contract.
+**Needed:**
+
+- Add a `setProofAbBypass({ deviceId, value })` use case that
+  (a) updates `proofStore` via a dedicated mutator, (b) forwards to
+  `bridges.get(deviceId)?.setParam('ab_bypass', value ? 1 : 0)`, and
+  (c) calls `persistDeviceParam(deviceId, 'ab_bypass', value ? 1 : 0)`.
+- Remove the direct `proofStore.set(...)` call from `ProofPanel.tsx:357`.
+- Add `bridge.setParam('ab_bypass', state.abBypass ? 1 : 0)` to
+  `syncFullPatch` so the engine restores the flag on reload (or
+  treat A/B as ephemeral and don't persist it — pick one).
+- Either way, fix the live-reload `parameterValues` gap (open issue #2).
 
 ### 5. `setProofParamWithPatch` uses `as` / `as never` to dispatch on key
 
@@ -1365,126 +1606,592 @@ verifying its type matches Proof's).
 `proof.target.broadcast`, etc.) and translate via `t()`. Project
 memory notes `react-i18next` is the chosen i18n library.
 
+### 29. Two divergent param queues: `nativeDspControls` vs `bridges`
+
+**Problem:** `wasmDeviceRegistry.ts:495-511` registers a
+`nativeDspControls.setParam` that pushes into a local
+`pendingParams: Array<[string, number]>` while `createProofNode`
+is loading; on resolve it flushes that queue at line 509. **A
+separate** `bridges` map (Proof's, in `helpers.ts:7`) is registered
+*at line 518* — only after the queue flush. The result: any
+parameter write that reaches `nativeDspControls.setParam` between
+device construction and bridge registration is queued and applied
+correctly. But UI knob writes go through
+`setProofParam` → `bridges.get(deviceId)?.setParam(...)`, which
+returns `undefined` for that interval and silently drops. Two queues,
+two fates.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/engine/wasmDeviceRegistry.ts:495-511, 518-522`
+- `src/modules/Proof/useCases/proofParamBridge/helpers.ts:7`
+- `src/modules/Proof/useCases/proofParamBridge/setProofParam.ts:5-8`
+
+**Needed:** Either (a) `registerProofDevice` flushes a Proof-side
+`pendingParams` map alongside (mirroring the WASM registry), or
+(b) `setProofParam` falls back to the `nativeDspControls` queue
+exposed via the device registry while waiting. Or, simpler: drop
+the dual queues and have `setProofParam` write directly to
+`nativeDspControls.setParam` via a lookup, eliminating the second
+map entirely.
+
+### 30. `ProofNode.setParam` silently drops boolean values via `Number.isFinite`
+
+**Problem:** `ProofNode.ts:132`:
+```ts
+setParam(name: string, value: number) {
+    if (!bypassed && Number.isFinite(value)) {
+        node.port.postMessage({ type: 'param', name, value });
+    }
+}
+```
+`Number.isFinite(true)` is `false`. Any boolean that arrives
+unconverted at the bridge gets dropped silently. Combined with
+finding #12 (booleans handled inconsistently across sections —
+`ProofExciterSection` and `ProofDynSection` have explicit `typeof
+value === 'boolean'` guards but the toggles in section files do
+ad-hoc `? 1 : 0` conversion at every call site), a future regression
+in a single section would leak booleans straight through to the
+worklet wrapper, which says nothing. No log, no warn.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/engine/ProofNode.ts:131-135`
+- `src/modules/Proof/presentations/components/ProofDynSection.tsx:41-49`
+- `src/modules/Proof/presentations/components/ProofExciterSection.tsx:25-32`
+
+**Needed:** Either tighten the type at the bridge (`setParam(name:
+string, value: number)` with a runtime assertion that throws or
+warns on non-finite/non-number) or add a `setBoolParam(name, value)`
+overload at the engine boundary that handles the conversion in one
+place.
+
+### 31. `ProofNode.setParam` is bypass-gated; UI writes vanish under `setBypass(true)`
+
+**Problem:** `ProofNode.ts:132`: `if (!bypassed && Number.isFinite(value))`.
+While `setBypass(true)` is in effect, every parameter write is
+silently swallowed at the wrapper. A user toggling bypass to
+audition the unprocessed signal, then nudging a knob, then toggling
+bypass off, **sees the patch back at its pre-bypass value** — the
+nudges are lost. `wasmDeviceRegistry.ts:531-538` exposes `setBypass`
+on the controller, but no Proof use case calls it (the A/B bypass
+goes through `setParam('ab_bypass', ...)`). Today this is dormant;
+once a future caller wires it up, the behaviour is silently broken.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/engine/ProofNode.ts:131-139`
+
+**Needed:** Drop the `!bypassed` gate from `setParam` — the engine
+itself can check `bypassed` inside the worklet's `process()`. The
+wrapper's job is transport, not policy. Or, document the contract
+loudly so a future caller doesn't expect knob writes to land while
+bypassed.
+
+### 32. `ProofPanel.spec.tsx` mock teaches a poisoned pattern
+
+**Problem:** `ProofPanel.spec.tsx:6-8` mocks `useStore` with
+`(store, defaultValue) => defaultValue`. The four `render(<ProofPanel />)`
+calls pass no `deviceId`, so the component runs with
+`deviceId === undefined`. `state` falls back to
+`getProofState(undefined)`, the panel renders, and the chip
+handlers never fire — so the broken contract is invisible. A
+future test that fires a click would call `setProofParam(undefined,
+'ab_bypass', 1)` and `bridges.get(undefined)`, both returning
+`undefined`, both silent. The spec doesn't just under-cover —
+it *certifies* the broken state as the testing baseline.
+
+**Representative files:**
+
+- `src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx:6-8, 16-32`
+
+**Needed:** Replace the mock with a real `proofStore.set(...)`
+seed in `beforeEach`. Pass `deviceId="test-1"`. Register a mock
+bridge in `beforeEach`. Assert behaviours, not "renders without
+crashing".
+
+### 33. `ProofEqCurve.peakingMag` mis-renders both shelves AND negative-gain peaks
+
+**Problem:** `ProofEqCurve.tsx:27-39`:
+```ts
+const A = 10 ** (gainDb / 40);
+const num = (1 - w2) ** 2 + (bw * A) ** 2;
+const den = (1 - w2) ** 2 + (bw / A) ** 2;
+return 10 * Math.log10(num / den);
+```
+For `gainDb < 0`, `A < 1` so `bw·A < bw/A` ⇒ `num < den` ⇒
+`log10(num/den) < 0`. The signed magnitude IS reported — but the
+formula is the **standard peaking-EQ magnitude** which only fits
+peak filters (type 0). For low-shelf and high-shelf (types 1, 2),
+the response asymptotes to `gainDb` at one extreme and `0 dB` at
+the other; the formula renders a symmetric bell instead. **A
+6 dB low-shelf at 80 Hz displays as a peak centred on 80 Hz with
+zero response below 40 Hz** — the opposite of an actual low-shelf.
+The audit's #28 correctly flagged the shelf mis-render but missed
+that even the peaking case displays incorrectly for negative-gain
+cuts because the formula's symmetry assumption breaks down on the
+inverse-A side. (The cut ends up displayed mirrored.)
+
+**Representative files:**
+
+- `src/modules/Proof/presentations/components/ProofEqCurve.tsx:27-39, 134-141`
+
+**Needed:** Replace the hand-rolled magnitude with the Web Audio
+API's `BiquadFilterNode.getFrequencyResponse(...)` against a
+transient `OfflineAudioContext` node (or a math-correct biquad
+magnitude per type — RBJ cookbook formulas exist). Add a snapshot
+test per band type & sign combination.
+
+### 34. `proofStore.set({})` on project reset destroys UI level
+
+**Problem:** `Project/.../resetModuleStoresToDefault.ts:36`
+sets `proofStore.set({})`. `uiLevel` is on `ProofState`, not
+`ProofPatch`, so even if patch persistence worked (it doesn't —
+issue #2), the user's selected desk depth (`Play`/`Shape`/`Build`/
+`Route`/`Lab`) reverts to the default `1` on every project reload.
+Same for `abBypass`.
+
+**Representative files:**
+
+- `src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts:36`
+- `src/modules/Proof/stores/proofStore.ts:32, 46` (uiLevel,
+  abBypass live on ProofState only)
+
+**Needed:** Decide whether `uiLevel`/`abBypass` are session-scoped
+(then this is correct) or project-scoped (then they need a
+persistence target — Track.devices[*].uiState or a Proof-side
+saved subset). Document the decision.
+
+### 35. `ProofEqCurve` HP/LP bands have no curve, no Q axis on drag, but do drag freq/gain
+
+**Problem:** `ProofEqCurve.tsx:128-141` skips bands with `band.type
+> 2` from the curve summation, so HP/LP types render no filled
+band, no glow, no combined-curve contribution. But the dot loop
+(line 186-220) has no type guard — the dot is drawn at
+`(band.freq, band.gain)`. For HP/LP, `gain` is **meaningless**
+(filter has unity passband and -∞ stopband; Q sets the resonance
+peak height). Drag handler (line 253-273) writes `freq` and
+`gain` regardless of band type. So a HP at 30 Hz, dragged up the
+y-axis, sets its `gain` to 12 dB — which Rust EQ silently ignores
+(the WASM HP/LP code path uses `freq` and `q` only,
+`crates/daw-dsp/src/proof/eq.rs:64-65`) — and the dot moves
+visually but the audio doesn't change.
+
+**Representative files:**
+
+- `src/modules/Proof/presentations/components/ProofEqCurve.tsx:128-141, 186-220, 253-273`
+- `crates/daw-dsp/src/proof/eq.rs:60-65`
+
+**Needed:** Either (a) implement the correct HP/LP magnitude curves
+and let the dot represent (`freq`, `q`), with the y-axis switching
+between gain-axis (peak/shelf) and Q-axis (HP/LP) per band; or
+(b) hide the dots for HP/LP types and provide a separate Q knob
+in `ProofEqSection`.
+
+### 36. `getProofState` fallback shares `tapPeaks` reference with the module-level default
+
+**Problem:** `proofStore.ts:70-72` returns
+`{ ...DEFAULT_PROOF_STATE, patch: { ...DEFAULT_PATCH } }` — a
+shallow spread. `DEFAULT_PROOF_STATE.tapPeaks` is a singleton
+`Array.from(...)` allocated at module init (line 61). Every
+fallback-state instance reads the **same** `tapPeaks` reference
+as every other fallback-state instance, **and** as `DEFAULT_PROOF_STATE`
+itself. Today nothing mutates an array element via the fallback
+state, so this is dormant. A future code path that does (e.g.
+animation interpolation, or a "snapshot the meters for later
+comparison" feature) would corrupt the module-global default and
+poison every subsequent `getProofState` call.
+
+**Representative files:**
+
+- `src/modules/Proof/stores/proofStore.ts:49-72`
+
+**Needed:** Deep-clone the fallback:
+`{ ...DEFAULT_PROOF_STATE, patch: { ...DEFAULT_PATCH }, tapPeaks:
+DEFAULT_PROOF_STATE.tapPeaks.map((p) => ({ ...p })), dynGr:
+[...DEFAULT_PROOF_STATE.dynGr] }`. Or, freeze
+`DEFAULT_PROOF_STATE` deeply with `Object.freeze` on all reachable
+arrays/objects so any future mutation throws in dev.
+
+### 37. `setProofParamWithPatch` accepts `target`/`targetLufs`/`name` keys silently
+
+**Problem:** `setProofParamWithPatch.ts:13` does
+`updateProofPatch(deviceId, { [key]: value })` for *any* key that
+extends `keyof ProofPatch`, then dispatches on key in a long
+if/else chain (lines 20-69). `target`, `targetLufs`, `name` are
+valid `keyof ProofPatch` values, so the patch update lands, but
+no else-if branch handles them ⇒ the bridge gets nothing. Today
+that's correct (the engine doesn't have these params), but
+there's no `default:` case to assert UI-only keys, no exhaustive
+union check, no comment. A typo in a future caller (`'targe'`)
+would either fail at compile time (good) or, if the caller widens
+the key type with an `as`, silently update a junk patch field.
+
+**Representative files:**
+
+- `src/modules/Proof/useCases/proofParamBridge/setProofParamWithPatch.ts:13-69`
+
+**Needed:** After the if/else chain, add a `// fallthrough` comment
+for known UI-only keys (`name`, `target`, `targetLufs`) and a
+`default:` arm that asserts the key is one of those, throwing in
+dev. Or, split the function: one for engine params (typed via a
+discriminated dispatch table — issue #5), one for UI-only patch
+fields.
+
+### 38. `Level1Play` target buttons use plain `<button>` instead of `DawPluginChip`
+
+**Problem:** `ProofPanel.tsx:407-423` is a styled `<button>` with
+a hand-rolled active class. The same conceptual element (target
+selector) is implemented as `DawPluginChip` in the rail at line
+214-227. Two implementations means two a11y stories, two style
+sources of truth.
+
+**Representative files:**
+
+- `src/modules/Proof/presentations/views/ProofPanel.tsx:211-227, 407-423`
+
+**Needed:** Replace the hand-rolled button with `DawPluginChip` in
+`Level1Play`. Match the rail's pattern.
+
+### 39. `proof preset.patch.name` overwrites `DEFAULT_PATCH.name` and conflates identity with display
+
+**Problem:** `proofPresets.ts:13-15`:
+```ts
+function preset(id, name, category, overrides): ProofPreset {
+    return { id, name, category, patch: { ...DEFAULT_PATCH, ...overrides, name } };
+}
+```
+The trailing `name` overwrites `patch.name` with the preset's
+display name. `ProofPanel.tsx:193` uses
+`preset.patch.name === patch.name` to mark the preset row active.
+After a user loads "Streaming Master" then nudges a knob, the
+patch is no longer the streaming preset — but `patch.name` is
+still `'Streaming Master'`, so the row stays active. Active-state
+logic is broken whenever the patch diverges from the preset.
+
+**Representative files:**
+
+- `src/modules/Proof/useCases/proofPresets.ts:13-15`
+- `src/modules/Proof/presentations/views/ProofPanel.tsx:193`
+
+**Needed:** Either (a) drop `name` from `ProofPatch` and put it on
+`ProofPreset` only, or (b) introduce a `presetId: string | null`
+field on `ProofPatch` that is set when loading and cleared on the
+first patch mutation. (b) preserves the active-state UX correctly.
+
+### 40. `formatLufs`/`-100 LUFS` sentinel duplicated; magic literal everywhere
+
+**Problem:** `ProofPanel.tsx:60` (`if (v <= -100)`), line 68 (same
+for dB), and at least three other comparison sites (`453, 809, 911`)
+use the literal `-100` to mean "no signal". `DEFAULT_PROOF_STATE`
+seeds the field with `-100` (`proofStore.ts:52-56`). Same magic
+literal scattered across UI code.
+
+**Representative files:**
+
+- `src/modules/Proof/presentations/views/ProofPanel.tsx:60, 68,
+  453, 809, 910-911`
+- `src/modules/Proof/stores/proofStore.ts:52-56`
+
+**Needed:** Define `LUFS_SENTINEL_NO_SIGNAL = -100 as const` in
+`models/ProofPatch.ts` (or a `models/proofMeterConstants.ts`).
+Use everywhere. Add a helper `isLufsSignal(v: number): boolean`
+that returns `v > LUFS_SENTINEL_NO_SIGNAL`.
+
+### 41. `LoudnessHistory` advertises 10 fps but actually pushes at meter rate (~60 Hz)
+
+**Problem:** `LoudnessHistory.tsx:5, 22` claim the component
+updates at "~10fps" with a "300-sample / 30-second" buffer. The
+`useEffect` at line 53-182 deps on `momentaryLufs` — which the
+parent passes from `state.outputLufs`, mutated at every meter
+tick (~60 Hz, see issue #4). So a sample lands every ~16 ms and
+the 300-sample buffer covers **5 seconds**, not 30. The time axis
+on the graph is therefore 6× shorter than the documentation
+implies. Even worse: the component does its own re-render-driven
+history-write at meter rate, compounding issue #4's render storm.
+
+**Representative files:**
+
+- `src/modules/Proof/presentations/components/LoudnessHistory.tsx:5, 22, 53-58, 182`
+
+**Needed:** Throttle history writes via rAF to ~10 fps inside
+`useEffect`. Or, accept ~60 Hz and bump `HISTORY_LENGTH` to 1800
+to cover 30 s. Either way, fix the comment.
+
+### 42. `LoudnessHistory` grid has dead `db === -14` branch
+
+**Problem:** `LoudnessHistory.tsx:89`:
+```ts
+ctx.strokeStyle = db === -14 || db === -24 ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.035)';
+```
+The iteration at line 87 is `[-6, -12, -18, -24, -36, -48]`. `-14`
+is never produced, so the branch is dead. `-24` *is* produced,
+making the highlight inconsistent (only `-24` is highlighted, not
+`-14`). Either intent was to highlight the streaming target line
+(`targetLufs = -14`), in which case the dashed line at line 96-116
+already does that and this branch is redundant — or it's a typo.
+
+**Representative files:**
+
+- `src/modules/Proof/presentations/components/LoudnessHistory.tsx:87-93`
+
+**Needed:** Remove the dead `-14` branch. Decide whether the
+`targetLufs` should drive a per-frame grid highlight (then thread
+it through) or whether the dashed line at 96-116 is sufficient
+(probably is).
+
+### 43. `useProofAnalyser` hook sample rate dependency lies about stability
+
+**Problem:** `useProofAnalyser.ts:99-103` returns `sampleRate:
+getAudioSampleRate()` — a function call evaluated on every hook
+invocation. The hook is invoked on every parent render (Level5Lab,
+which re-renders at meter rate via #4). Each call returns the same
+number in practice, but a consumer using `sampleRate` in a
+`useEffect` deps array would technically be safe — except the
+returned object is freshly constructed each call, so any consumer
+that diffs **the whole object** would see infinite changes. The
+audit's #18 noted the symptom; the deeper issue is that the hook
+violates "stable reference for stable data" by allocating a new
+object literal on every render.
+
+**Representative files:**
+
+- `src/modules/Proof/presentations/hooks/useProofAnalyser.ts:98-103`
+
+**Needed:** Cache the stable parts (`sampleRate`, `fftSize`) in a
+ref or just accept the React Compiler will memoize. But removing
+the function call in the return path makes the contract honest:
+move `getAudioSampleRate()` into the `useEffect` body and store
+it in state.
+
 ---
 
 ## Open questions
 
-- [ ] Is the audio-side `ab_bypass` parameter intentional — i.e., is
-      there a WASM param the engine recognises by that name, and the
-      `setProofParam` call succeeds in flipping bypass at the engine
-      end? If so, rename the parameter to follow the existing
-      convention (`*_bypass` already covers per-module bypass) and
-      document.
-- [ ] Is the `ProofNode.setBypass` API (`AudioEngine/engine/ProofNode.ts:35`)
-      currently wired to anything in Proof, or is it dead?
-      `wasmDeviceRegistry.ts:531-538` exposes it on the controller;
-      no Proof use case calls it.
-- [ ] What is the source-of-truth for project save? Does
-      `Project/.../resetModuleStoresToDefault.ts` reset the store
-      and *then* a separate hydration step reads the saved patch
-      from `Track.devices[*].parameterValues` and pushes it back?
-      If so, confirming the round-trip is what should determine
-      whether issue #2 (persistence) is a real bug or a
-      misunderstanding of the load order.
+- [x] **(answered)** Is the audio-side `ab_bypass` parameter
+      intentional? **Yes** — `crates/daw-dsp/src/proof/chain.rs:106`
+      handles it as a real engine param; `chain.rs:175-185` is the
+      gain-matched dry/wet bypass. The audit's earlier "engine
+      doesn't recognise it" claim was wrong; see updated open
+      issue #4. The remaining problem is that `syncFullPatch`
+      doesn't restore it on engine init, and that
+      `Track.devices[*].parameterValues.ab_bypass` is persisted
+      but the live-reload path never reads it (issue #2).
+- [x] **(answered)** Is `ProofNode.setBypass` wired? It's called
+      by `wasmDeviceRegistry.ts:531` (exposed on the controller)
+      and the offline `NativeDspDeviceStrategy.setBypass`. **No
+      Proof use case calls it directly.** A/B bypass routes through
+      `setParam('ab_bypass', ...)` instead. The two bypass
+      mechanisms are different: `setBypass` is process-bypass
+      (the worklet's `process()` short-circuits, no metering, no
+      latency reporting); `ab_bypass` is dry/wet at the chain head
+      with full metering on the dry signal. Document the
+      distinction.
+- [x] **(answered)** Source-of-truth for project save?
+      `Project/.../resetModuleStoresToDefault.ts:36` resets
+      `proofStore.set({})` and **never repopulates** the patch
+      from saved data. `Track.devices[*].parameterValues` is the
+      persistence target, but the live runtime
+      (`AudioEngine/engine/TrackNode.ts:401-421`) doesn't push
+      `parameterValues` through the WASM bridge. Only the offline
+      render path (`NativeDspDeviceStrategy.createNativeDspStrategy:93-95`)
+      does. Confirms issue #2 as a real bug — and adds the
+      asymmetric live/offline aspect.
 - [ ] Is there a designated React Compiler escape valve for
       meter-rate updates, or should the meter store be split (issue
       #3)?
-- [ ] Are the EQ filter type integers (`0..4`) part of the WASM
-      contract or a Proof-side convention? If WASM defines them,
-      issue #17 (use string-literal types) needs a translator at
-      the bridge boundary.
+- [x] **(answered)** Are the EQ filter type integers (`0..4`)
+      part of the WASM contract? **Yes** — `crates/daw-dsp/src/proof/eq.rs:145-153`
+      decodes the integer with a hard-coded switch (`0=>Peak,
+      1=>LowShelf, 2=>HighShelf, 3=>HighPass, 4=>LowPass`).
+      Issue #17's recommendation stands: define string-literal
+      types in TS, add a `eqBandTypeToWasm()` translator at the
+      bridge boundary.
+- [ ] Should `uiLevel` and `abBypass` be persisted to the project
+      file? See issue #34. Today they are session-scoped by accident
+      (no persistence exists for them).
+- [ ] Should `setProofParamWithPatch` reject UI-only keys
+      (`name`, `target`, `targetLufs`) at the type level rather
+      than silently no-op for them in the dispatch chain? See
+      issue #37.
 
 ---
 
 ## Risks
 
-- **Data loss on project save/reload (issue #2).** Most user knob
-  twists in `Level2Shape`, `Level4Route`, and the preset rail
-  silently disappear. A user spends an hour dialling a master, hits
-  save, reopens the project, and the patch is back to default. There
-  is no telemetry or test that would flag this — the in-memory
-  store and the engine *do* see the writes; only the persisted
-  layer is missing. Highest-impact correctness issue.
-- **Performance death spiral at meter rate (issue #3).** Every meter
-  callback rebuilds the entire instances map and forces five canvas
-  redraws + section re-renders. On low-end hardware or with multiple
-  Proof instances on a project, the UI thread saturates, audio
-  glitches because the message-port queue backs up, and the user
-  blames "the audio engine".
+- **Data loss on project save/reload (issue #2) — and a confusing
+  asymmetry between live and offline render.** Half of UI knob
+  twists never persist (issue #2a). Of the writes that *are*
+  persisted (`Level3Build` knobs via `setProofParam`), the live
+  runtime drops them on reload but the offline render *applies*
+  them. Net user experience: a project mastered to perfection
+  exports correctly but reloads in the editor showing default
+  knob positions. This breaks the contract "what I see is what I
+  hear". Highest-impact correctness issue, and arguably worse than
+  pure data loss because the engineer believes the master is gone
+  when it's actually just hidden.
+- **A/B bypass restores incorrectly (open issue #4).** Engine
+  has `ab_bypass` as a real param. `syncFullPatch` doesn't
+  restore it. Reload defaults to dry, no warning. Mild correctness
+  bug compounded by issue #2's asymmetry.
+- **Two divergent param queues (issue #29).** Bridge writes between
+  device construction and Proof bridge registration silently drop
+  while the parallel `nativeDspControls` queue catches and flushes
+  successfully. Race-window-only, but reproducible: open Proof,
+  twist a knob in the first ~50 ms, see the UI move and the audio
+  not.
+- **Worklet-level boolean drop & bypass-gated writes (issues #30, #31).**
+  Two layers below the bridge silently swallow writes under
+  specific conditions. If a future caller uses `setBypass(true)`
+  for an A/B comparison, every knob nudge during the comparison
+  vanishes.
+- **Performance death spiral at meter rate (issue #3, compounded
+  by #41).** Every meter callback rebuilds the entire instances
+  map and forces five canvas redraws + section re-renders; the
+  `LoudnessHistory` component pushes a sample on every tick,
+  inflating its history-write rate 6× past the documented value.
+  On low-end hardware or with multiple Proof instances on a
+  project, the UI thread saturates, audio glitches because the
+  message-port queue backs up, and the user blames "the audio
+  engine".
+- **EQ canvas shows wrong filter shapes (issues #8 / #33 / #35).**
+  Shelves render as bumps. Negative-gain peaks render mirror-image.
+  HP/LP types render no curve but a draggable dot whose y-axis
+  edits a meaningless field (`gain`) that the engine ignores.
+  Three independent correctness bugs in the same component.
 - **Type-system erosion (issues #5, #17, #25).** `as never` and
   string-typed enums normalise the pattern; future contributors
   copy it and the module accumulates blind casts. AGENTS.md exists
   to prevent this; left unaddressed it sets a precedent.
-- **Test theatre (issues #6, #7).** Fifteen spec files create the
-  appearance of coverage and trip no flags in CI. A regression in
-  preset loading, drag handling, or persistence will ship without
-  any test failing. The first hint will be a user report.
+- **Test theatre (issues #6, #7, #32).** Fifteen spec files create
+  the appearance of coverage and trip no flags in CI.
+  `ProofPanel.spec.tsx` actively certifies a broken contract
+  (`deviceId === undefined` working) as the testing baseline. A
+  regression in preset loading, drag handling, or persistence will
+  ship without any test failing. The first hint will be a user
+  report.
 - **Accessibility blocker (issue #18).** A keyboard-only user
   cannot operate the EQ canvas, cannot hear the chain-reorder
   swap, cannot perceive a clip warning. For an audio-engineering
   tool this is plausibly an audience exclusion (visually impaired
   audio engineers exist; mastering happens by ear).
-- **Architectural drift (issues #1, #4, #19).** Lack of root barrel,
-  view code mutating the store, sub-path cross-module imports —
+- **Architectural drift (issues #1, #4, #19, #38).** Lack of root
+  barrel, view code mutating the store, sub-path cross-module
+  imports, parallel UI implementations of the same control — all
   individually small, collectively normalising deviation.
+- **Module-default mutation hazard (issue #36).** `getProofState`
+  fallback shares a module-singleton `tapPeaks` reference. Today
+  benign; one future code path that mutates an element and the
+  module-global default is poisoned for every instance.
 
 ---
 
 ## Suggested approaches
 
-- **Land persistence first (issue #2).** Either every bridge use
-  case calls `persistDeviceParam` per-write, or ProofNode reads the
-  patch on init from `Track.devices[*].parameterValues`. The first
-  is mechanical (a few lines per use case) and matches the existing
-  `setProofParam` pattern; the second is cleaner long-term but
-  requires AudioEngine changes. Pick (a) for the bug fix, then plan
-  (b) as a follow-up.
-- **Split the store and add selectors (issue #3).** A
+- **Land persistence first (issue #2). The fix is now two-sided.**
+  - **Patch-side:** every bridge use case
+    (`setProofParamWithPatch`, `reorderChain`,
+    `loadProofPatchWithAudio` and the `syncFullPatch` it calls)
+    forwards each parameter write to `persistDeviceParam`. Mirrors
+    the existing `setProofParam` pattern. Mechanical.
+  - **Engine-side:** `TrackNode.addDevice` for WASM devices must
+    push `device.parameterValues` through the bridge after
+    `registerProofDevice` resolves. Either inline (mirror
+    `NativeDspDeviceStrategy.createNativeDspStrategy:93-95`) or
+    via a generic post-load hook on the `WasmDeviceDescriptor`
+    contract. Without this, the live-reload path stays broken
+    even after the patch-side fix.
+  - **Or, leapfrog both:** persist the entire `ProofPatch` JSON
+    to a new `Track.devices[*].patchJson?: string` field. Engine
+    init reads it, calls `loadProofPatchWithAudio`. One write per
+    save, deterministic round-trip, no per-param loss. Larger
+    refactor; cleanest contract.
+- **Split the store and add selectors (issue #3, #41).** A
   `proofMetersStore` keyed by deviceId that takes only meter writes
   is a small surface. `ProofPanel`'s outer shell subscribes to the
   patch store; only the meter-displaying components subscribe to
   the meter store. `useProofAnalyser` already isolates a high-rate
-  visualisation cleanly — same pattern for meters.
+  visualisation cleanly — same pattern for meters. While here,
+  fix `LoudnessHistory`'s rate mismatch.
 - **Replace `setProofParamWithPatch` with a typed dispatch (issue
-  #5).** A record `<Key, (bridge, patch[Key]) => void>` indexed by
-  patch key. Each entry is type-safe by construction. Removes every
-  `as` in the file and the `as never` in `ProofPanel`'s callers.
+  #5, with the corrected #37 in mind).** A record
+  `<Key, (bridge, patch[Key]) => void>` indexed by patch key,
+  excluding UI-only keys. Each entry is type-safe by construction.
+  Removes every `as` in the file and the `as never` in
+  `ProofPanel`'s callers. Adds an exhaustive check that catches
+  UI-only-key call sites at compile time.
+- **Unify the param queues (issue #29).** Either delete the
+  Proof-side `bridges` map and have all use cases reach
+  `nativeDspControls.setParam` via the `wasmDeviceRegistry`
+  surface (single queue, single fate); or replicate the
+  `pendingParams` flush in `registerProofDevice` so Proof has its
+  own pre-registration queue.
 - **Convert the identity-only specs to behavioural specs (issue
-  #6).** Mock `bridges` (or expose a `__test__resetBridges()` helper
-  from `helpers.ts`), register a mock bridge, exercise the API,
-  assert calls. This is the single most valuable change for
-  long-term correctness.
+  #6, #32).** Mock `bridges` (or expose a `__test__resetBridges()`
+  helper from `helpers.ts`), register a mock bridge, exercise the
+  API, assert calls. The `ProofPanel.spec.tsx` rewrite must pass
+  a real `deviceId` and seed the store. This is the single most
+  valuable change for long-term correctness.
 - **Add a root `index.ts` (issue #1).** Three lines re-exporting
   the existing curated surface. Update three external import sites.
+- **EQ canvas: replace `peakingMag` wholesale (issues #8, #33,
+  #35).** Use `BiquadFilterNode.getFrequencyResponse(...)` against
+  a transient `OfflineAudioContext`, one per active band, summed.
+  Handle HP/LP correctly. Resolve the gain-vs-Q axis question for
+  HP/LP in the same pass.
+- **A/B bypass (issue #4).** Add `setProofAbBypass({ deviceId,
+  value })` use case. Drop the direct store mutation from
+  `ProofPanel.tsx:357`. Add `ab_bypass` to `syncFullPatch`'s
+  forwarded param list (or treat as ephemeral, drop the
+  `persistDeviceParam` call — pick one explicitly).
 - **Group i18n / a11y / magic-number cleanups (issues #11, #12,
-  #18, #28).** A single "polish pass" PR can land them together.
-- **EQ canvas correctness (issue #8) is independent.** Tackle it
-  separately; uses the Web Audio response API.
+  #18, #28, #40, #67).** A single "polish pass" PR can land them
+  together.
+- **Worklet wrapper hygiene (issues #30, #31).** Drop the
+  `!bypassed` gate from `ProofNode.setParam`; let the worklet's
+  `process()` handle bypass policy. Add a runtime warn when a
+  non-finite/non-number value reaches `setParam` so booleans
+  surface loudly instead of silently disappearing.
 
 ---
 
 ## Recommendation
 
-Start with **issue #2 (persistence)**. It is the only correctness
-bug with user-visible data loss. The fix is per-use-case: forward
-each parameter write to `persistDeviceParam` exactly as
-`setProofParam` already does. Add a behavioural test for the round-
-trip (set knob → save store → reset → hydrate → assert patch
-restored).
+Start with **open issue #2 (persistence) — the two-sided version**.
+The audit's earlier "just call `persistDeviceParam` everywhere"
+recipe was incomplete: the live-reload path also has to push
+`Track.devices[*].parameterValues` through the bridge in
+`TrackNode.addDevice`. Without that, even fixing the write side
+leaves a project where the live UI shows defaults and the
+exported audio uses the saved values. Add a behavioural test:
+set knob → save → reset stores → hydrate from `parameterValues`
+→ assert patch restored AND engine got the writes.
 
-In parallel, **issue #6 (test theatre)**. Without behavioural tests
-the persistence fix has no safety net, and fixes #3, #5, and #8 will
-each ship without coverage. The bridge mock pattern from issue #6
-unlocks every other test.
+In parallel, **issues #6 / #32 (test theatre)**. Without
+behavioural tests the persistence fix has no safety net, and
+fixes #3, #5, #8, and #29 will each ship without coverage. The
+bridge mock pattern from issue #6 unlocks every other test. Fix
+the `ProofPanel.spec.tsx` deviceId-undefined regression here —
+otherwise the test file teaches future writers a poisoned
+pattern.
 
-Then **issue #3 (meter-rate render storm)** because it's the
-performance ceiling on the module — and once tests exist (issue
-#6), splitting the store is mechanical.
+Then **issue #3 (meter-rate render storm)**, with #41
+(`LoudnessHistory` rate) as a co-fix because it shares the
+mechanism.
 
-Issues #5, #8, #18 are independent follow-ups.
+Then **#4 (A/B bypass restoration)** and **#29 (param queue
+unification)** — small, contained, eliminate two of the three
+silent-drop surfaces.
+
+EQ canvas correctness (#8 / #33 / #35) is independent and large —
+schedule as its own task. Same for accessibility (#18).
 
 ---
 
 ## Resolved
 
-_No issues resolved yet._
+_No issues resolved yet. The 2026-04-28 adversarial review pass
+corrected open issue #4's "engine doesn't recognise `ab_bypass`"
+claim (the engine does), but did not close the issue — the
+mis-routed view-code mutation and the missing `syncFullPatch`
+restoration remain._

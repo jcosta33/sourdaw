@@ -277,16 +277,29 @@ partial fixtures.
    silently fall back to the pattern-match path. The same regex
    shape is repeated in `generateMidiVariations.ts:131`.
 
-10. **`parseMidiResponse` accepts `velocity = 0` after clamping.**
-    `useCases/llmMidiGeneration.ts:166` clamps to `Math.max(min,
-    Math.max(value, max))` with `min = 1, max = 127` — looks
-    reasonable, but the predecessor filter at `:158-163` accepts
-    `typeof velocity === 'number'` so `NaN` passes the filter and
-    `Math.round(NaN)` returns `NaN`; `Math.min(127, Math.max(1,
-    NaN))` returns `NaN`. A NaN velocity downstream produces silent
-    notes or — depending on how the engine handles it — drops the
-    note entirely. The same is true for `pitch`, `start_beat`,
-    `duration_beats`.
+10. **`parseMidiResponse` lets NaN propagate through clamping.**
+    `useCases/llmMidiGeneration.ts:175-177` defines `clamp(value, min,
+    max) → Math.min(max, Math.max(min, value))`. The predecessor
+    filter at `:158-163` accepts `typeof velocity === 'number'` —
+    which is `true` for `NaN`. `Math.round(NaN) → NaN`,
+    `Math.max(1, NaN) → NaN`, `Math.min(127, NaN) → NaN`. (The
+    audit previously cited a non-existent formula
+    `Math.max(min, Math.max(value, max))`; the code is correct
+    `min/max` order — what's broken is that NaN is fixed-point
+    under `Math.max`/`Math.min`, not the order of arguments.) NaN
+    pitches and start_beats slip through to `MidiGenerationNote`
+    consumers downstream. `handleGenerateMidiPrompt.ts:78-83`
+    forwards them to `batchAddMidiNotes` without re-checking. A
+    NaN start_beat will fail any sort comparator
+    (`a.startBeat - b.startBeat = NaN`); a NaN pitch indexed into
+    a piano-roll bucket gives `undefined`. **`handleAddNotes` and
+    `handleVariationMidi` don't have this bug** — both call
+    `Math.max(min, Math.min(max, Math.round(...)))` which is also
+    NaN-fixed-point, but their *upstream* (`llmGenerateNotes`
+    in `llmNoteHelpers.ts:54-60`) returns `addNotesCall.arguments.notes
+    as Array<...>` with no validation at all, so NaN can land via a
+    different code path. Three independent validation surfaces, none
+    of them reject NaN.
 
 11. **`generateMidiVariations` validator doesn't check ranges.**
     `useCases/generateMidiVariations.ts:31-44` `isVariationNoteArray`
@@ -365,17 +378,24 @@ string[]`, not `'all' | 'vocals' | 'drums' | 'bass' | 'other'`.
     return 0 for out-of-range indexes; they don't return undefined),
     same anti-pattern as `AudioAnalysis/repositories/browserStemSeparation.ts`.
 
-20. **`handleAiDenoiseClip` browser-path expansion ratio formula is
-    arbitrary.** `useCases/actions/handleAiDenoiseClip.ts:46-51`:
+20. **`handleAiDenoiseClip` browser-path expansion ratio formula
+    has a discontinuity at threshold.**
+    `useCases/actions/handleAiDenoiseClip.ts:46-51`:
     `output[index] = state * (ratio * (1 - strength) + (1 - ratio) *
-0.05)` where `ratio = abs / threshold`. At `strength = 1` and
-    `abs = 0` the multiplier is `0.05` (95% reduction); at `abs =
-threshold` it is `(1 - 0)*(1-1) + 0*0.05 = 0` (full silence!).
-    That is not how a downward expander works — it should pass
-    signal **above** threshold and attenuate **below**. The current
-    formula attenuates more aggressively as the signal approaches
-    threshold from below, then jumps to passthrough on the next
-    sample. Audible discontinuities are inevitable.
+0.05)` where `ratio = abs / threshold`. At `abs = 0`, multiplier
+    is `0.05`. At `abs = threshold` (just below), multiplier is
+    `1 * (1 - strength) + 0 * 0.05 = 1 - strength`. At
+    `abs > threshold`, the `else` branch passes through unmodified
+    (multiplier 1). With `strength = 0.7`: the curve runs `0.05 →
+0.30` from silence to threshold, then **jumps** to `1.0` at
+    threshold-crossing. That step from 0.30 to 1.0 is a 10 dB
+    discontinuity, audible as a buzz on every threshold-crossing
+    sample. With `strength = 1.0` the discontinuity is from 0 to
+    1 (∞ dB). (Audit previously claimed "full silence at threshold"
+    — only true when `strength = 1`. The discontinuity is the real
+    bug.) A correct downward expander must be C¹-continuous at
+    threshold; the standard form is `gain = ratio^k` for some
+    user-controlled `k > 1` (with `k = 1` reducing to a simple gate).
 
 21. **`handleCompleteMidi` "backward" direction shifts notes
     incorrectly when `minBeat = 0`.** `handlers/aiMidi/handleCompleteMidi.ts:40-45`
@@ -615,16 +635,34 @@ Error(...)`** (`useCases/generateDrumPattern/algorithm.ts:452`)
     masks future enum additions: a new `ChordVoicing` would silently
     return `[]` instead of failing the type-check.
 
-43. **`generateMelody` pickNextNote `arpeggiated` modulo on
-    negative results.** `useCases/generateMelody/algorithm.ts:188-196`:
-    `if (next < 0) { next = len + (next % len); }`. When `next =
--1` and `len = 5`, `next % len` is `-1` (JavaScript modulo
-    preserves sign), so `next = 5 + (-1) = 4`. OK. When `next =
--6` and `len = 5`, `next % len` is `-1`, so `next = 5 + (-1) =
-4`. The intent looks like "wrap to the top of the array", and it
-    does — but the math is opaque. `((next % len) + len) % len` is
-    the canonical positive-modulo idiom and is used elsewhere in
-    the codebase.
+43. **`generateMelody` `pickNextNote` arpeggiated wrap is
+    off-by-one at exact `-len`.**
+    `useCases/generateMelody/algorithm.ts:189-195`:
+    ```
+    let next = currentIndex + step;
+    if (next >= len) { next = next % len; }
+    if (next < 0)   { next = len + (next % len); }
+    return next;
+    ```
+    When `next = -5` and `len = 5`: `next % len = -0` (JS preserves
+    sign of the dividend, but `-0 === 0`), so `next = 5 + 0 = 5`,
+    then returned as the array index. `scaleNotes[5]` is `undefined`
+    on a length-5 array, but the call site at
+    `algorithm.ts:271-272` does `const pitch = scaleNotes[currentScaleIndex]!;`
+    — non-null assertion — so the build-time type system silently
+    coerces `undefined` to `number`, and downstream `note.pitch =
+undefined` propagates to `batchAddMidiNotes`. Reproducer: pick
+    a 7-step scale (`len = 7`), arpeggiated style, very long run with
+    repeated `step = -7` outcomes. The canonical positive-modulo
+    idiom `((next % len) + len) % len` avoids both the boundary case
+    and the opacity. (Audit previously called this "opaque math",
+    not a bug — it is a bug.) The mirror branch `next >= len`
+    has the same structure but lands on the `[0, len)` invariant
+    correctly because `next % len` is in `[0, len)` for positive
+    `next`. The assignment `currentScaleIndex = pickNextNote(...)`
+    at `:271` then **persists** the bad index for subsequent calls
+    in the same melody — a single bad wrap can corrupt the rest
+    of the run.
 
 44. **`handleStemSeparationPreview` does not create clips for the
     new buffers.** `useCases/actions/handleStemSeparationPreview.ts:29-31`

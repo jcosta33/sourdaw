@@ -28,6 +28,7 @@ import { FmSection } from '../components/FmSection';
 import { GranularSection } from '../components/GranularSection';
 import { KarplusSection } from '../components/KarplusSection';
 import { LayerStack } from '../components/LayerStack';
+import { MacroMatrixEditor } from '../components/MacroMatrixEditor';
 import { LfoSection } from '../components/LfoSection';
 import { MacroStrip } from '../components/MacroStrip';
 import { ModulationSection } from '../components/ModulationSection';
@@ -494,6 +495,14 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
         loadFermenterPatchWithAudio(deviceId, applyFermenterMacroMapping({ patch, index, value }));
     }
 
+    function setMacroMappings(index: number, macroMappings: FermenterPatch['macroMappings']): void {
+        const value = patch.macros[index] ?? 0.5;
+        loadFermenterPatchWithAudio(
+            deviceId,
+            applyFermenterMacroMapping({ patch: { ...patch, macroMappings }, index, value })
+        );
+    }
+
     function loadPreset(presetId: string): void {
         const loadedPatch = loadPresetPatch(presetId, userPatches);
         if (!loadedPatch) {
@@ -719,6 +728,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                                 />
                             </div>
                             <MacroStrip compact values={patch.macros} onChange={setMacro} />
+                            <MacroMatrixEditor mappings={patch.macroMappings} onChange={setMacroMappings} />
                         </div>
 
                         {uiLevel >= 3 ? (

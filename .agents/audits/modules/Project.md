@@ -39,6 +39,18 @@ testing gaps.
 
 Related spec: none on disk.
 
+**Latest pass (2026-04-28).** Adversarial re-verification of every numbered
+issue at the cited file:line, plus a fresh hunt for missed findings.
+Everything that survived verification was sharpened with root cause, blast
+radius, and severity reasoning. Many "pending file read" issues were either
+upgraded to concrete findings or folded into already-tracked issues. The
+single biggest behavior change uncovered this pass: **`autoSaveVersion` is
+dead code with no timer wiring** anywhere in the repo (only tests reference
+it). That re-frames issues #12 and #17 — the "auto-save every 5 minutes"
+risk does not actually exist because the timer never starts, but the
+default `autoSaveInterval: 5` is a settings ghost the UI may read and
+display.
+
 ---
 
 ## Goal
@@ -619,11 +631,33 @@ calls `readNamedProjectJson(key)` (localStorage only) and parses it as
    generation failure** (issues #19, #22) — 32-bit IDs across
    thousands of notes; failed `OfflineAudioContext.render` is
    silenced.
-7. **AGENTS.md type-soundness violations** (issues #4, #20, #29,
-   #32, #33, #34) — `as` escapes, divergent type shapes for
-   "the same" `ProjectClip`.
+7. **AGENTS.md type-soundness and rendering-rule violations**
+   (issues #4, #20, #29, #32, #33, #34, new #62, new #63) — `as`
+   escapes, divergent type shapes for "the same" `ProjectClip`,
+   `as unknown as` in `ExportDialog.tsx`, `&&` rendering in
+   `TemplateChooser.tsx:102`.
 8. **Recent projects entries leak and break with renames**
    (issues #26, #31).
+9. **Auto-save version timer is dead code** (new #60) —
+   `autoSaveVersion()` is exported but never wired to a timer.
+   The "auto-save every N minutes" UX advertised by
+   `versionControlStore` does not exist. Either delete the
+   feature or wire the timer; do not ship the illusion.
+10. **Duplicated Tauri bridge with stale `__TAURI__` marker**
+    (new #64) — `nativeProjectFiles/helpers.ts` defines its own
+    `tauriInvoke` and `Window.__TAURI__` global augmentation. The
+    canonical `#/utils/tauriBridge` uses `__TAURI_INTERNALS__`
+    (the Tauri v2 marker). The legacy marker is gone in v2 — any
+    call that flows through `nativeProjectFiles` will silently
+    return "Tauri not available" in modern builds.
+11. **Stub handler files create dead source code** (issue #49) —
+    four files in `handlers/project/` and
+    `useCases/getProjectHandlers.ts` are comment-only stubs.
+12. **NebulaDrift demo references a buffer that is never created**
+    (new #61) — `tGrainHaze.freezeState.frozenBufferId =
+    'demo-grain-haze-frozen'` resolves to nothing in the cache;
+    every export from this demo emits a "missing audio file"
+    toast and exports a clip that will play silence.
 
 ---
 
@@ -636,6 +670,26 @@ and the JSON file path (`exportProjectFile`,
 `applyImportedProjectData`) read the same module stores but use
 different shapes, different normalisers, and different field sets.
 A field added on one path is silently dropped on the other.
+
+**Verified 2026-04-28.** Severity: critical. `saveProject.ts:15`
+calls `persistCrdtProject()` and exits without ever consulting
+`ProjectData`; `exportProjectFile.ts:81-138` builds a `ProjectData`
+literal from scratch by reading every store. `loadProject.ts:34`
+calls `projectCrdtToStores()` (out of scope) and ignores
+`ProjectData` entirely; `applyImportedProjectData.ts:20-66` builds
+its own hydration from `ProjectData`. Of the nine stores
+`exportProjectFile` reads (track, transport, automation, midi,
+arrangement, tempoMap, timeSignatureMap, marker, takeLane,
+adjustmentLayer, sidechain), the import helper only writes back
+**four** (track, automation, marker, adjustmentLayer). The drift
+between paths is therefore ~55% of the schema's surface and grows
+every time a new store is added because `applyImportedProjectData`
+has no compile-time forcing function.
+
+**Blast radius.** Every `.sourdaw` round-trip silently corrupts
+project state. Every CRDT-only feature is invisible to import/export.
+A future schema migration cannot be tested round-trip because there
+is no canonical mapper to migrate.
 
 **Representative files:**
 
@@ -651,7 +705,10 @@ path and the JSON path drive through. Both paths must read and
 write through the same mapper, with the same field coverage and
 the same normalisation. A diff test (`exportProjectFile` of state
 S, `applyImportedProjectData(out)`, re-export, deep-equal to first
-output) prevents future drift.
+output) prevents future drift. The contract should be enforced at
+compile time — e.g. an exhaustive `Record<keyof ProjectData,
+(state) => …>` mapper that fails to type-check when a field is
+added.
 
 ### 2. `ProjectData.version` has no migration chain
 

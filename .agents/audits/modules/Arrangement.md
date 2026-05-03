@@ -1,5 +1,11 @@
 # Arrangement module audit
 
+> **Last adversarial verification pass: 2026-04-28.** All open issues
+> in this audit have been re-checked against the current source tree.
+> New issues #32–#51 added; issue #76 removed (false positive on
+> verification — see `## Resolved`). Cross-module-import count revised
+> upward from 346 to 582 (across 362 files).
+
 ## Scope
 
 This audit covers `src/modules/Arrangement/` in full — timeline rendering
@@ -138,9 +144,12 @@ A correctness-first arrangement surface for the DAW:
 `#/modules/Arrangement/stores`, `#/modules/Arrangement/useCases`,
 `#/modules/Arrangement/events`, and even `#/modules/Arrangement/models/Track`,
 `#/modules/Arrangement/useCases/freezeBounce/initStalenessDetection`,
-`#/modules/Arrangement/useCases/createTrack`. There are 346 cross-module
-imports targeting `#/modules/Arrangement/...` from elsewhere in the repo
-(grep count).
+`#/modules/Arrangement/useCases/createTrack`. **Re-verified 2026-04-28:
+582 cross-module import lines across 362 files** (`grep -rE
+"modules/Arrangement" src --include="*.ts" --include="*.tsx" | grep -v
+"src/modules/Arrangement/"`). The audit previously reported 346; the
+true number is ~70% higher and growing. Architectural debt is
+accelerating, not idle.
 
 **Two Web Audio renderers + one WGSL renderer.** `TimelineSurface` mounts
 a single canvas and a `ResizeObserver`, then calls `initTimelineRenderer`
@@ -1064,35 +1073,24 @@ construct `MouseEvent`s and canvas refs.
 
 ## Priorities
 
-1. **No root `index.ts` + 346 deep cross-module imports** (issue #1, #2,
-   #3, #4) — wholesale contract failure that blocks any safe refactor.
-2. **`removeClip` orphans state across stores** (issue #33) plus
-   **`warpStates` is a bare Map** (#32) — clip deletion leaves
-   gainEnvelope, warp, and ghost-clip records pointing at non-existent
-   clips. Memory + correctness leak.
-3. **Drag listener leaks across 5+ components** (issues #17, #52, #61,
-   #93) — every drag-style component leaks `mousemove`/`mouseup`
-   listeners on `window`/`document` if unmounted mid-drag.
-4. **Auto-scroll fights manual scroll** (issue #9) and the duplicate
-   gesture-listener registration (#7) — Safari pinch zooms 2× the
-   intended delta; auto-scroll resets every transport tick.
-5. **`moveClip` silently drops clips on bad target track** (issue #27)
-   and **`addClip` lacks invariants** (#26) — silent data loss in the
-   most-used use case in this module.
-6. **Canvas2D culls nothing horizontally + per-frame allocations**
-   (#6, #39, #41) — frame budget collapses past ~500 clips on the
-   default backend.
-7. **`buildTimelineRenderModel` rebuilds on irrelevant transport
-   changes + invoked from React render path** (#11, #13) — cache
-   churn that flows into all three renderers.
-8. **`Math.min/max(...notes.map)` in canvas2d clip drawing + hit test**
-   (#23) — stack overflow on long MIDI clips. WebGPU already worked
-   around it; the sibling code paths still spread.
-9. **`BeatRulerBar` paints during render and re-registers rAF every
-   render** (#14, #15, #16) — biggest React anti-pattern in the
-   module.
-10. **Multi-function-per-file violations** (#29) — pervasive
-    AGENTS.md non-compliance.
+(Re-ordered 2026-04-28 to surface the highest-impact correctness bugs ahead of the architectural cleanups.)
+
+1. **`duplicateClipCore` loses every per-clip property except name + audioBufferId** (issue #33-new) — every Cmd+D / Alt-drag / "duplicate to next bar" silently strips fades, gain envelope, mute, lock, color, custom audio offset, loop config, stretch, warp. Highest-impact data-loss bug in the module.
+2. **`moveClip` silently drops clips on bad target track + `addClip`/`updateTrack` silent no-ops** (issues #9, #26, #27, plus repository-level #43) — silent data loss / silent no-op pervasive across the canonical write path.
+3. **Marquee selection box uses wrong height table** (issue #32-new) — `TimelineSurface` uses `TRACK_HEIGHT_VALUES.normal=64` while real tracks default to `track.height=80` and are user-resizable; the marquee never matches the actual layout.
+4. **No root `index.ts` + 582 deep cross-module imports across 362 files** (issues #1, #2, #3, #4, #50) — wholesale contract failure that blocks any safe refactor; ~70% larger surface than the audit's earlier 346 measurement.
+5. **`removeClip` orphans state across stores** (issue #33) plus **`warpStates` is a bare Map** (#32) — clip deletion leaves gainEnvelope, warp, and ghost-clip records pointing at non-existent clips. Memory + correctness leak. **Compounds with #1 above** — every duplicate also doesn't *clone* gainEnvelope/warpStates, so duplication and deletion both leave inconsistent stores.
+6. **Drag listener leaks across 5+ components** (issues #17, #52, #61, #93) — every drag-style component leaks `mousemove`/`mouseup` listeners on `window`/`document` if unmounted mid-drag.
+7. **Auto-scroll fights manual scroll + duplicate gesture-listener registration** (issues #6, #7, #9-original) — Safari pinch zooms 2× the intended delta; auto-scroll resets every transport tick.
+8. **Canvas2D culls nothing horizontally + per-frame allocations** (#4, #6-orig, #39, #41) — frame budget collapses past ~500 clips on the default backend.
+9. **`buildTimelineRenderModel` rebuilds on irrelevant transport changes + invoked from React render path** (#11, #13, #51-new) — cache churn that flows into all three renderers; MasterGain slider drag invalidates render cache 60×/s.
+10. **`useTimelineFileDrop` JSON.parse + `as` assertion + silent catch** (issue #35-new) — type-unsafe boundary, swallowed errors, NaN clip durations on malformed payloads.
+11. **`Math.min/max(...notes.map)` in canvas2d clip drawing + hit test** (#23) — stack overflow on long MIDI clips. WebGPU already worked around it; the sibling code paths still spread.
+12. **`BeatRulerBar` paints during render and re-registers rAF every render** (#14, #15, #16) — biggest React anti-pattern in the module.
+13. **`MiniMasterSpectrum` rAF runs continuously regardless of selection + no DPR** (issue #40-new + #62/#63 originals).
+14. **32-bit ID truncation across 33 call sites** (issue #23 re-scoped) — birthday collisions plausible in long AI-generation sessions.
+15. **`TrackHeader` input-monitoring button has divergent `toggle` semantics** (issue #44-new) — keyboard toggle skips `auto`, button cycles `auto→on→off`; users have two non-equivalent paths to the same control.
+16. **Multi-function-per-file violations** (#29) — pervasive AGENTS.md non-compliance.
 
 ---
 
@@ -1100,12 +1098,15 @@ construct `MouseEvent`s and canvas refs.
 
 ### 1. No root `index.ts`; cross-module imports go to deep paths
 
-**Problem:** `src/modules/Arrangement/` has no `index.ts`. 346 cross-
-module imports across the repo target subpaths
-(`#/modules/Arrangement/stores`, `#/modules/Arrangement/useCases`,
-`#/modules/Arrangement/events`, `#/modules/Arrangement/models/Track`,
+**Problem:** `src/modules/Arrangement/` has no `index.ts`. **582
+cross-module import lines across 362 files** (re-verified 2026-04-28)
+target subpaths (`#/modules/Arrangement/stores`,
+`#/modules/Arrangement/useCases`, `#/modules/Arrangement/events`,
+`#/modules/Arrangement/models/Track`,
 `#/modules/Arrangement/repositories/...`). AGENTS.md mandates a single
 root `index.ts` as the cross-module surface and forbids deep imports.
+Severity is **higher** than originally reported — the deep-import
+count is ~70% above the 346 baseline cited in earlier audit drafts.
 
 **Representative files:**
 
@@ -1290,6 +1291,24 @@ validation — a non-existent track silently makes `updateTrack` a no-op
 but the function still returns the constructed Clip object as if it
 succeeded.
 
+**Re-verified 2026-04-28:** `addClip` now takes a single object param
+(AGENTS.md compliant) — the positional-arg subset of this issue is
+resolved for `addClip`. But the invariant gaps remain: no `endBeat >
+startBeat` check, no `startBeat >= 0` check, no track-existence check.
+`moveClip` is still positional (`clipId, targetTrackId, startBeat,
+originalStartBeat?`) and still silently drops on bad target. The
+silent drop is amplified by `handleAddClip` and `handleMoveClip`
+(`handlers/clip/handleAddClip.ts:7`, `handleMoveClip.ts:6-8`)
+discarding the return value: even when `addClip` returns `null`, the
+command bus reports success.
+
+**Blast radius:** `updateTrack` itself silently no-ops on bad
+trackId (`repositories/track/updateTrack.ts:10-13`) — every caller
+that mutates by trackId has the same swallow-on-stale-id behavior.
+`mapAllTracks` is benign because it iterates all tracks, but
+`updateTrack` is the canonical write path and ~30 use cases dispatch
+through it.
+
 **Representative files:**
 
 - `src/modules/Arrangement/useCases/clip/moveClip.ts:34-38`
@@ -1459,17 +1478,18 @@ named constants.
 
 **Problem:** AGENTS.md hard rule violated.
 
-**Representative files:**
+**Re-verified 2026-04-28** by `grep -rEn " && [<(\"]"`:
 
-- `src/modules/Arrangement/presentations/views/ArrangementBar.tsx:361,364`
-- `src/modules/Arrangement/presentations/views/MarkerLane.tsx:251,256`
-- `src/modules/Arrangement/presentations/views/TrackHeader.tsx:156`
-- `src/modules/Arrangement/presentations/views/TrackListView.tsx:353`
-- `src/modules/Arrangement/presentations/views/TakeLanesView.tsx:370`
-- `src/modules/Arrangement/presentations/views/MidiLearnButton.tsx:82`
+- `src/modules/Arrangement/presentations/views/ArrangementBar.tsx:361,364` — `{contextMenu.kind === 'empty' && (` and `'section' && (`
+- `src/modules/Arrangement/presentations/views/MarkerLane.tsx:251,256` — `{contextMenu.kind === 'empty' && (` and `'marker' && (`
+- `src/modules/Arrangement/presentations/views/TrackHeader.tsx:156` — `{isStale && (`
+- `src/modules/Arrangement/presentations/views/TrackListView.tsx:353` — `{templates.length > 0 && (` (inside `AddTrackMenu`)
 
-**Needed:** Replace each `cond && <X />` with `cond ? <X /> : null`.
-Mechanical refactor.
+The `MidiLearnButton.tsx:82` case is `existingMapping && !isLearningThis ? ... : 'M'` — a ternary with `&&` *inside the condition*, not a render-presence guard. Not a violation; remove from list.
+
+The `TakeLanesView.tsx:370` case is `{activeCompRegions.length > 0 && laneWidthPx > 0 ? (...) : null}` — a ternary with `&&` in the condition. Not a violation; remove from list.
+
+**Needed:** Replace each remaining `cond && <X />` with `cond ? <X /> : null`. Mechanical refactor.
 
 ### 20. Multi-function-per-file violations across stores and useCases
 
@@ -1525,24 +1545,56 @@ a single object param". Module-wide pattern across 20+ functions:
 `trimClipStart`, `trimClipEnd`, `beginClipDrag`, `snapToGridOrClips`,
 `hitTestClip`, etc.
 
+**Re-verified 2026-04-28:** `addClip` was migrated to a single
+object param (`useCases/clip/addClip.ts:6-15`). All others above are
+still positional.
+
 **Representative files:** see issue #28 list above.
 
 **Needed:** Refactor each multi-arg function to a single
 `<FunctionName>Input` object param. Mostly mechanical.
 
-### 23. `getNextClipId` 32-bit collision risk
+### 23. 32-bit ID truncation pervasive across the module
 
 **Problem:** `repositories/clipIdCounter.ts:9`
 `crypto.randomUUID().slice(0, 8)` — 32 bits of entropy. Birthday
 collision at ~65k clip creations.
 
+**Re-verified 2026-04-28:** This is **not localised** to
+`clipIdCounter.ts`. **33 separate call sites** within
+`src/modules/Arrangement/` use `.slice(0, 8)` to truncate UUIDs
+(`grep -rEn "\.slice\(0, 8\)" src/modules/Arrangement | wc -l → 33`):
+
+- Models: `Track.ts:167,176,178`, `Marker.ts:18,27`, `WarpMarker.ts:28`,
+  `TakeLane.ts:26,37`, `ScratchPadSection.ts:27`
+- Use cases: `trackTemplate.ts:25,56`, `duplicateTrack.ts:16,20,22,38,47,56,106`,
+  `vcaFader/createVCAGroup.ts:10`, plus more
+- Repositories: `clipIdCounter.ts:9`
+
+`getNextGroupId` / `getNextTakeSetId` / `getNextRegionId`
+(`stores/groupComping.ts:45-53`) correctly use **full UUIDs**, so the
+pattern is mixed within the module. Within a single project session
+this matters: clip dup loops (AI generation, ripple operations,
+"duplicate to next bar" hammered) routinely create thousands of
+clips and dozens of devices/notes/CCs/PBs in a single user session.
+
 **Representative files:**
 
 - `src/modules/Arrangement/repositories/clipIdCounter.ts:9`
+- `src/modules/Arrangement/models/Track.ts:167,176,178`
+- `src/modules/Arrangement/models/Marker.ts:18,27`
+- `src/modules/Arrangement/models/WarpMarker.ts:28`
+- `src/modules/Arrangement/models/TakeLane.ts:26,37`
+- `src/modules/Arrangement/models/ScratchPadSection.ts:27`
+- `src/modules/Arrangement/useCases/trackTemplate.ts:25,56`
+- `src/modules/Arrangement/useCases/duplicateTrack.ts:16,20,22,38,47,56,106`
+- `src/modules/Arrangement/useCases/vcaFader/createVCAGroup.ts:10`
 
-**Needed:** Use full UUID (`crypto.randomUUID()`) or a longer slice
-(`slice(0, 12)` for 48 bits). Same change across other id
-generators (`getNextGroupId`, etc.) where IDs may live a long time.
+**Needed:** Strip the `.slice(0, 8)` everywhere. Use full UUIDs
+unconditionally — the 28 wasted bytes per ID are not worth a
+session-corrupting collision. A repo-wide grep for `\.slice\(0, 8\)`
+should return zero hits in `src/modules/Arrangement/` after this is
+done.
 
 ### 24. `previewDirtyFlag` and `activeRecordingRef` lack invariants/subscriptions
 
@@ -1675,6 +1727,535 @@ shared constants.
 with names like `CULL_SLACK_PX`, `MAX_WAVEFORM_BINS`,
 `MAX_NOTES_PER_CLIP`. Document each.
 
+### 32. Marquee selection box uses `TRACK_HEIGHT_VALUES.normal=64` while real tracks default to `track.height=80` and are user-resizable
+
+**Problem:** `TimelineSurface.tsx:91-117` builds the marquee selection
+overlay by accumulating `TRACK_HEIGHT_VALUES.normal` (64 px) per
+track. But:
+
+- `models/Track.ts:198` initialises `height: 80` for new tracks.
+- `useCases/toggleTrackState/setTrackHeight.ts:3-5` lets the user resize tracks freely between 30 and 300 px.
+- `buildTimelineRenderModel.ts:162` and the canvas renderer both render with `track.height`, not `TRACK_HEIGHT_VALUES`.
+
+So **the marquee box never matches the actual layout**. With default
+tracks (80 px), the marquee top/bottom are offset by 16 px per track
+above the start row (and growing). With user-resized tracks, the
+offset is unbounded. The audit's earlier #46 underestimated this —
+the bug isn't "uniform vs variable", it's that the overlay reads a
+*completely different* height table than the renderer.
+
+**Representative files:**
+
+- `src/modules/Arrangement/presentations/views/TimelineSurface.tsx:91-117`
+- `src/modules/Arrangement/models/Track.ts:198` (default `height: 80`)
+- `src/modules/Workspace/useCases/workspaceQueries/helpers.ts` (`TRACK_HEIGHT_VALUES = { compact: 40, normal: 64, large: 96 }`)
+- `src/modules/Arrangement/useCases/buildTimelineRenderModel.ts:162` (`baseHeight = ... track.height`)
+
+**Needed:** Use the same height computation as the renderer. Either
+(a) read `track.height` from the same `currentTrackStore.tracks`
+already in the IIFE, or (b) call `buildTimelineRenderModel` once
+(it's already cached) and use `model.tracks[i].height`. Folder
+tracks must use 26 px (matching the render-model rule).
+
+### 33. `duplicateClipCore` loses every per-clip property except name and audioBufferId
+
+**Problem:** `useCases/clip/duplicateClipCore.ts:9-39` calls
+`addClip({ trackId, startBeat, endBeat: startBeat + duration, name:
+'… (copy)', type: clip.type, audioBufferId: clip.audioBufferId })`.
+The new clip is **a default clip with the original's name and audio
+buffer**. Every other field is silently dropped:
+
+- `gain`, `fadeInBeats`, `fadeOutBeats`, `color`, `muted`, `locked`
+- `loopEnabled`, `loopLength`, `audioOffsetBeats`, `midiOffsetBeats`
+- `stretchRatio`, `assetHash`, `parentClipId`, `isLinkedInstance`
+- `gainEnvelopeStore` entry (not duplicated; original's envelope ignored)
+- `warpStates` entry for the source clip (not duplicated)
+
+`duplicateClipAutomation` and `duplicateClipNotes` are explicitly
+called for automation and MIDI — but the rest is lost. A user who
+duplicates a faded, muted, loop-enabled audio clip with a custom
+gain envelope gets back a vanilla clip pointing at the same buffer.
+
+**Representative files:**
+
+- `src/modules/Arrangement/useCases/clip/duplicateClipCore.ts:9-39`
+- `src/modules/Arrangement/useCases/clip/addClip.ts` (the 9-field input is too narrow to carry a full clip)
+- All callers via `duplicateClip` (context menu, Cmd+D), `duplicateClipToNextBar`, and Alt+drag duplicate in `useTimelineInteractions.ts:692,717`
+
+**Needed:** `addClip` should accept a full `Clip` shape (or a new
+`duplicateClipFull(sourceClipId, computeStartBeat)` use case should
+clone the entire clip — including gainEnvelope and warpStates — into
+the new id). Add a regression test asserting that
+`duplicateClipCore` of a clip with `fadeInBeats=2, gain=1.5,
+loopEnabled=true, loopLength=4` yields a copy with all four fields
+intact.
+
+### 34. `addClip` and `moveClip` handlers discard return values
+
+**Problem:** `addClip` returns `Clip | null` and `moveClip` is `void`,
+but their command-bus handlers do not surface failure to the
+caller:
+
+- `handlers/clip/handleAddClip.ts:7` calls `addClip(alpha.payload)` and discards the result.
+- `handlers/clip/handleMoveClip.ts:6-8` calls `moveClip(...)` (which is `void`) — no failure path.
+
+So even if `addClip` were updated to return `Result<Clip,
+{reason}>` (per issue #9 `Needed`), the existing handler infrastructure
+would still report "command applied" to the user. Fixing #9 must
+update the handlers in the same change set.
+
+**Representative files:**
+
+- `src/modules/Arrangement/handlers/clip/handleAddClip.ts:5-12`
+- `src/modules/Arrangement/handlers/clip/handleMoveClip.ts:5-12`
+
+**Needed:** When #9's `Result` migration lands, `createHandler`'s
+`execute` must propagate the failure into the command-bus return,
+so the user sees a toast on bad target track. Same for any other
+silent-no-op use case (issue #79).
+
+### 35. `useTimelineFileDrop` does `JSON.parse` of attacker-supplied payloads with `as` assertions and silent catch
+
+**Problem:** `presentations/hooks/useTimelineFileDrop.ts:49-82`:
+
+```
+const aiRenderData = event.dataTransfer.getData('application/x-sourdaw-ai-render');
+if (aiRenderData) {
+    try {
+        const render = JSON.parse(aiRenderData) as {
+            name: string;
+            bufferId: string;
+            durationSeconds: number;
+        };
+        ...
+        addClip({ ..., audioBufferId: render.bufferId, ... });
+    } catch {
+        /* ignored */
+    }
+}
+```
+
+Same pattern at lines 88-94 for `application/x-sourdaw-sample`.
+
+Two AGENTS.md violations:
+
+1. `JSON.parse(...) as { ... }` — type assertion on external
+   payload with no runtime validation. AGENTS.md "TypeScript —
+   soundness" forbids this: "runtime validation at I/O boundaries
+   (e.g. Zod)". Drag-and-drop dataTransfer is a textbook I/O
+   boundary.
+2. `catch { /* ignored */ }` — silent error swallow with a
+   self-contradicting comment. User feedback memory: "comments
+   signal hacks; rewrite code to be self-evident" + "fix root
+   causes; never wrap errors in try/catch or defensive branches".
+
+**Risk:** A non-conforming payload (e.g. partial AI render with
+missing `bufferId`) silently fails the drop with no user feedback.
+A malformed `durationSeconds: "not a number"` flows directly into
+`Math.ceil((render.durationSeconds / 60) * model.tempo)` and
+produces `NaN` or a garbage clip duration.
+
+**Representative files:**
+
+- `src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts:49-82,84-…`
+
+**Needed:** Define Zod schemas for `aiRenderData` and `sampleData`
+in a `transformers/` file, parse with `.safeParse`, route validation
+failures through `notifyUser` (already imported here). Drop the
+`try/catch` — the only paths that throw are the JSON parser and the
+schema validator, and both should produce a user-visible error.
+
+### 36. `RULER_HEIGHT` is duplicated in two places, both `= 0`
+
+**Problem:** `presentations/helpers/timelineMouse.ts:11` and
+`useCases/timelineInteractions/hitTestClip/helpers.ts:1` both
+export `const RULER_HEIGHT = 0`. The two files are independent;
+changing one would silently leave the other at 0 and produce a
+mouse-Y / hit-test-Y mismatch. This is a half-removed magic
+constant — the original ruler height was non-zero, the constant
+was zeroed in place but not deleted.
+
+**Representative files:**
+
+- `src/modules/Arrangement/presentations/helpers/timelineMouse.ts:11`
+- `src/modules/Arrangement/useCases/timelineInteractions/hitTestClip/helpers.ts:1`
+
+**Needed:** Delete both. Update the few subtraction call sites
+(`getContentY = (canvasY, scrollY) => canvasY - RULER_HEIGHT +
+scrollY`) to drop the term. If the ruler height is ever non-zero
+again (re-introduced as a `BeatRulerBar` overlay on the canvas),
+the value lives in `BeatRulerBar.tsx` already and can be imported.
+
+### 37. `TimelineSurface.useEffect`s coordinate poorly: 5 effects all keyed on `[]` race for cleanup order
+
+**Problem:** `TimelineSurface.tsx` mounts five separate `useEffect`s
+keyed on `[]`:
+
+- L119-208 — workspace event subscriptions
+- L210-221 — auto-scroll-on-play subscriber
+- L223-257 — gesture listeners (duplicate of `useTimelineGestures`, see #6)
+- L259-371 — render loop + ResizeObserver + 8 store subscriptions
+- (implicit via `useTimelineInteractions(canvasRef)` at L57 — internal `useTimelineFileDrop` + `useTimelineGestures` effects)
+
+Cleanup order on unmount is the reverse of mount order. The render
+loop effect's cleanup unsubscribes 8 stores; the auto-scroll effect's
+cleanup unsubscribes `transportStore` separately. Both touch
+`transportStore.subscribe` independently and the order of unsubscribe
+matters for any subscriber that's mid-flight when the unmount lands.
+
+If a transport mutation fires between `setAutoScroll(true)`
+(auto-scroll effect line 217) and the render loop's `markDirty`
+subscription (line 274), the dirty flag is set on a render that
+won't run because cleanup has already disposed the renderer. Race.
+
+**Representative files:**
+
+- `src/modules/Arrangement/presentations/views/TimelineSurface.tsx:119-371`
+
+**Needed:** Consolidate the 5 effects into one (the render loop
+already subscribes to all 8 stores; folding auto-scroll + gestures
++ event subscriptions into the same effect ensures a single
+unmount-order point). Or, at minimum, hoist the
+`transportStore.subscribe` for auto-scroll into the render loop
+effect's `markDirty` flow with a transition-detector closure (see
+issue #6 (a)).
+
+### 38. `TimelineSurface.markDirty` subscription unsubscribes 8 stores manually — fragile reordering
+
+**Problem:** Lines 274-281 and 362-369 are mirror-image lists. Any
+new store added to the render loop must be added in two places (the
+subscribe and the cleanup). A change to one half without the other
+silently leaks subscriptions or stops invalidating on a store.
+There is no `Array.from(...).forEach(unsub => unsub())` pattern.
+
+**Representative files:**
+
+- `src/modules/Arrangement/presentations/views/TimelineSurface.tsx:274-281,362-369`
+
+**Needed:** Build the unsubscribe list once: `const unsubs = [
+transportStore, timelineViewStore, ...].map(s => s.subscribe(markDirty))`,
+then `for (const u of unsubs) u()` in cleanup. Same pattern is
+already in use at lines 198-206 of the same file.
+
+### 39. `TimelineMinimap.containerRef.current!` non-null assertion in mousedown can be stale
+
+**Problem:** `TimelineMinimap.tsx:192` does `const rect =
+containerRef.current!.getBoundingClientRect();` inside
+`handleMouseDown`. The bang is "earned" by the calling React
+synthetic event, where the element exists. But the stored `rect` is
+captured *once at mousedown* and used inside the `handleMouseMove`
+closure (line 218) — even though `containerRef` is not stable
+(component can re-render and re-mount). If the user starts dragging
+the minimap while a panel resize re-mounts the chrome, the captured
+rect is from the old mount; the move closure computes from a stale
+geometry.
+
+Same pattern at line 226: `const moveX = moveEvent.clientX - rect.left`
+uses the captured rect, not a fresh `getBoundingClientRect()`.
+
+**Representative files:**
+
+- `src/modules/Arrangement/presentations/views/TimelineMinimap.tsx:192,218,226`
+
+**Needed:** Re-read `containerRef.current?.getBoundingClientRect()`
+inside `handleMouseMove`, with a guard. Or, use Pointer Events with
+`setPointerCapture` so the minimap survives DOM remounts mid-drag.
+
+### 40. `MiniMasterSpectrum` rAF runs continuously regardless of selection state; canvas hardcoded `width=180 height=80`
+
+**Problem:** `presentations/views/MiniMasterSpectrum.tsx:59-78` —
+`requestAnimationFrame(draw)` re-schedules itself every frame
+unconditionally. The effect deps are `[isSelected]`, so when
+`isSelected` changes, the effect re-runs (cancelling the rAF and
+starting a new one) — but on every frame in between, the rAF runs
+even when the master spectrum is invisible / not selected. Always-on
+60 Hz cost.
+
+Worse, the `<canvas width={180} height={80}>` JSX (line 108) sets
+the *backing-store size* directly; the effect reads
+`canvas.height/width` at lines 49-50 (returns 180/80). On a 2× DPR
+display the `<canvas>` is rendered at 180×80 backing pixels stretched
+to 90×40 CSS by the surrounding `w-full h-full` classes — half
+resolution, blurry. **No DPR scaling at all.** The bar count is
+based on `bufferLength`, not on canvas width — so on a wider
+container the bars are clipped at index 90/2=45 instead of using
+the available space.
+
+The audit's earlier #62/#63 noticed both, but the always-on rAF cost
+even when the master is unselected adds another vector.
+
+**Representative files:**
+
+- `src/modules/Arrangement/presentations/views/MiniMasterSpectrum.tsx:16-110`
+
+**Needed:** Gate the rAF on `isSelected` (or use
+`document.visibilityState` to pause when the page is hidden).
+Resize the canvas backing store to `containerWidth * dpr × 80 *
+dpr` and apply `ctx.scale(dpr, dpr)`. Re-trigger the effect on
+analyser change (subscribe to `audioEngineReady` flag). Use
+`animationScheduler` instead of bare rAF.
+
+### 41. Many ID generators truncate to 8 hex digits; collision risk amplified across long sessions
+
+(See expanded #23 above — listed here to surface the breadth.)
+
+### 42. `clipDrawing.ts` MIDI-note loop cap is 100 in canvas2d but 300 in WebGPU; fidelity diverges by backend
+
+**Problem:** `clipDrawing.ts:411` — `while (loopOffset < clipDuration && iterations < 100)`.
+The WebGPU equivalent (`createWebGpuRenderer.ts:331`) caps at
+`MAX_NOTES_PER_CLIP = 300`. A clip with 200 notes shows 200 in
+WebGPU and 100 in canvas2d. Same model, different visuals depending
+on which backend the user's GPU happened to enable. This is the
+"correctness-first" goal violated by inconsistency.
+
+**Representative files:**
+
+- `src/modules/Arrangement/presentations/renderers/clipDrawing.ts:411`
+- `src/modules/Arrangement/presentations/renderers/createWebGpuRenderer.ts:331`
+
+**Needed:** Hoist the cap into a shared `presentations/helpers/timelineConstants.ts`
+constant `MAX_NOTES_PER_CLIP_RENDER`; both backends import.
+
+### 43. `getTrackState` returns a strict subset of `TrackStoreState`, losing `ghostClips` field
+
+**Problem:** `repositories/track/getTrackState.ts:4-12` exports a
+`TrackState = { tracks, selectedTrackId }` and a function returning
+`TrackState | null`. But the actual store shape (`stores/trackStore.ts:23-28`)
+is `TrackStoreState = { tracks, selectedTrackId, ghostClips? }`.
+
+Use cases that read via `getTrackState()` cannot see `ghostClips` —
+even though those clips are part of the canonical truth. The
+canonical reader is `trackStore.value` directly, used by
+`buildTimelineRenderModel.ts:117` and many use cases. So we have
+*two* canonical reads with *different* type contracts: one truncates
+`ghostClips`, the other doesn't. Use cases that go through the
+repository (and that's the AGENTS.md rule —
+"repositories/" is the I/O surface, useCases consume them) get the
+truncated view; use cases that bypass and `import { trackStore }`
+directly see the full state. Inconsistent.
+
+**Representative files:**
+
+- `src/modules/Arrangement/repositories/track/getTrackState.ts:4-12`
+- `src/modules/Arrangement/stores/trackStore.ts:23-28`
+- All useCases that import `getTrackState` and need ghost clips
+
+**Needed:** `getTrackState` returns `TrackStoreState | null`, not a
+custom subset. Or, if `ghostClips` is intentionally hidden from
+the read API, document why and forbid the direct `trackStore.value`
+import outside `buildTimelineRenderModel`.
+
+### 44. `TrackHeader.LatchButton` "active" state contradicts the button label for `auto` input monitoring
+
+**Problem:** `TrackHeader.tsx:240-252` sets
+`active={track.inputMonitoring === 'on'}`, while the displayed
+letter is `INPUT_MONITORING_LABEL[track.inputMonitoring][0]` (`A`
+for auto, `O` for on, `O` for off).
+
+- `auto` → label `A`, latch `inactive` (gray).
+- `on` → label `O`, latch `active` (highlighted).
+- `off` → label `O`, latch `inactive` (gray).
+
+Two states (`on` and `off`) share the same letter `O`; they're
+distinguishable only by the latch active/inactive state. A user
+toggling between off and on sees the same letter both times — the
+state transition is conveyed only through the highlight. Worse,
+`auto` (the *default*, the "smart" mode) shows as inactive. Visual
+confusion + accessibility issue (a screen reader on `aria-label`
+includes the verbose label, but the letter alone is uninformative).
+
+Separately, `toggleInputMonitoring` (`useCases/toggleTrackState/toggleInputMonitoring.ts:11`)
+cycles `on ↔ off`, **skipping `auto`**. Meanwhile `TrackHeader`
+uses `INPUT_MONITORING_CYCLE` (`auto → on → off → auto`). Two
+divergent definitions of "toggle" — a keybind that calls
+`toggleInputMonitoring` produces different behaviour from the
+button.
+
+**Representative files:**
+
+- `src/modules/Arrangement/presentations/views/TrackHeader.tsx:49-53,240-252`
+- `src/modules/Arrangement/useCases/toggleTrackState/toggleInputMonitoring.ts:6-12`
+
+**Needed:** One definition of "toggle". Consolidate `INPUT_MONITORING_CYCLE`
+into the use case. Use distinct letters/icons (`A`, `I`, `M` —
+auto/input/mute) or distinct latch colors (mint=auto, cyan=on,
+gray=off) so the state is visually unambiguous without depending on
+the highlight.
+
+### 45. `MarkerLane.dragRef.current` is written but only read as a presence flag
+
+**Problem:** `MarkerLane.tsx:88-92` writes `dragRef.current = {
+markerId, startClientX, originalBeat }`; lines 116, 183 only ever
+check `if (dragRef.current)` — never reading the fields. The closure
+tracks marker movement via the local `lastBeat` variable in
+`handleMarkerDragStartStable`. The full `DragState` ref is dead
+state.
+
+This is benign today, but signals confused intent. Harder
+consequence: a sibling `ArrangementBar` has the same `dragRef`
+pattern (`ArrangementBar.tsx:119-125`) where the fields *are* read
+during `handleSectionMouseDown` — so a developer copying from one
+to the other will hit confusion.
+
+**Representative files:**
+
+- `src/modules/Arrangement/presentations/views/MarkerLane.tsx:33-37,88-92,116,183`
+
+**Needed:** Replace `dragRef` with a boolean ref `const
+isDraggingRef = useRef(false)` if only the presence check is used.
+
+### 46. `TimelineMinimap.useLayoutEffect` reads `containerWidth` from React state but writes via `setContainerWidth` — first paint shows zero-width minimap
+
+**Problem:** `TimelineMinimap.tsx:147` initialises
+`containerWidth` after the ResizeObserver effect runs, via
+`setContainerWidth(container.getBoundingClientRect().width)`. The
+draw effect (line 37-131) depends on `[tracks, pixelsPerBeat,
+scrollX, containerWidth]`. On first render, `containerWidth = 0`
+(initial state), so the canvas is drawn with `rect.width = 0` →
+empty minimap. Only after the layout effect runs and triggers a
+re-render does the second draw populate it.
+
+This is a 1-frame visual glitch. Acceptable but unprofessional.
+Same pattern more visible in `TakeLanesView.handleStripMount`
+(issue #68): the layout reads after mount but doesn't update on
+resize.
+
+**Representative files:**
+
+- `src/modules/Arrangement/presentations/views/TimelineMinimap.tsx:37-150`
+
+**Needed:** Read `containerRef.current?.getBoundingClientRect()`
+inside the draw effect (already done at line 44), and ignore the
+`containerWidth` state — drop the `useState` and the `useLayoutEffect`
+that maintains it. The ResizeObserver alone is enough to invalidate
+on size change (set the state inside the observer to force the draw
+effect to re-run).
+
+### 47. `previewDirtyFlag` set to `true` *and* the render loop is unmounted between flag-set and read → next mount runs a stale draw
+
+**Problem:** `useTimelineInteractions.handleMouseUp` at line 681-682
+clears `clipDragPreviewRef.current = null` and sets
+`previewDirtyFlag.value = true`. The render loop reads + clears the
+flag on its next tick (`TimelineSurface.tsx:308-311`). If the
+component unmounts between the two events (e.g. user holds a
+keyboard shortcut to switch workspace mode in the same tick as a
+mouseup), the flag stays `true` until the next mount — which then
+runs a frame for a drag that ended in a previous component
+lifetime. Visually benign (the new mount immediately rebuilds the
+model from real stores), but the "dirty-flag-as-shared-mutable-
+global" pattern doesn't survive React unmount/mount lifecycle.
+
+**Representative files:**
+
+- `src/modules/Arrangement/stores/clipDragPreviewRef.ts:37`
+- `src/modules/Arrangement/presentations/views/TimelineSurface.tsx:308-311`
+- `src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts:681-682`
+
+**Needed:** Reset `previewDirtyFlag.value = false` on
+`TimelineSurface` mount (or convert to a real store with a
+subscribe). Same for `activeRecordingRef.current = []` if no
+recording is in flight at mount.
+
+### 48. Issue #76's claim about shared `Map` reference is incorrect; remove
+
+**Problem:** Earlier issue #76 claimed
+`useTimelineInteractions.handleMouseUp`'s redo closure iterates a
+live, shared `preview.positions` Map that a *new* drag can
+overwrite. **Re-verified 2026-04-28: this is wrong.** Line 242
+constructs `clipDragPreviewRef.current = { positions: new
+Map(originals), originals }` — a *new* `Map` object. The captured
+`preview` const in the redo closure retains a reference to the
+original (now-detached) Map, not the new one. There is no aliasing
+bug.
+
+**Representative files:**
+
+- `src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts:242,716-719`
+
+**Needed:** Remove issue #76 from the audit (resolved-on-verification
+— it was never a real bug). The line numbers and the iteration
+shape are still worth a code comment to prevent future regressions
+("`preview` is captured by closure; new drags create a new map ref
+and do not alias").
+
+### 49. Drag listeners in MarkerLane and AdjustmentLayerStrip don't use the existing `useContextMenuDismiss` hook (issue #93's mitigation already exists, just unused)
+
+**Problem:** `useContextMenuDismiss` (`src/utils/UI/useContextMenuDismiss.ts:6`)
+exists and is consumed by `TrackContextMenu`, `ClipContextMenu`,
+`TimelineEmptyMenu`, `ArrangementBar` for menu-dismiss-on-outside-
+click. `MarkerLane.tsx:62-73` and
+`AdjustmentLayerStrip.tsx:105-129` re-implement the same
+window-mousedown subscription pattern inline, and neither survives
+component unmount mid-menu-open (the audit's earlier #93 ranges
+apply only here, not to the views that already use the shared hook).
+
+**Representative files:**
+
+- `src/modules/Arrangement/presentations/views/MarkerLane.tsx:62-73`
+- `src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx:105-129`
+- `src/utils/UI/useContextMenuDismiss.ts:6`
+
+**Needed:** Migrate the two laggard views to `useContextMenuDismiss`.
+Mechanical and removes a class of leak.
+
+### 50. Cross-module imports of `Track`/`Clip`/`Device` etc. via `stores/index.ts` block model isolation — **cascading change risk**
+
+**Problem:** `stores/index.ts:25,32-38,44,47` re-exports model types
+(`Track`, `Device`, `Clip`, `AdjustmentLayer`, `AdjustmentRegion`,
+`GrooveTemplate`, `GainEnvelopePoint`, …). AGENTS.md "Model
+isolation": models are *strictly private*. A grep across the repo
+confirms downstream modules (`GrandBoule`, `Toaster`, `Workspace`,
+`Collaboration`, etc.) consume `Track` and `Clip` directly. Any
+shape change to `Track` / `Clip` cascades — multiple modules break
+at compile time, blocking even small refactors of an internal field.
+
+**Re-verified 2026-04-28:** sample query
+`grep -rEn "from '#/modules/Arrangement/(stores|models)" src
+| grep -v "src/modules/Arrangement"` returns dozens of hits
+including direct imports of `models/Track`. The model surface is
+fully leaked.
+
+**Representative files:**
+
+- `src/modules/Arrangement/stores/index.ts:25,32-38,44,47`
+- `src/modules/Arrangement/stores/trackStore.ts:8-19` (re-exports model types)
+- Cross-module consumers: `GrandBoule/useCases/resolveGrandBouleEngine.ts:1-2`, `Toaster/useCases/createDrumTrackStack.ts:15`, etc.
+
+**Needed:** This is an extension of #2 with a tighter measurement.
+Each downstream consumer must define a local "view type" containing
+only the fields it uses. Migration is large but mechanical.
+
+### 51. `transportStore` field cardinality drives `buildTimelineRenderModel` cache invalidations on every transport mutation including `masterGain` and `playheadPosition` writes
+
+**Problem:** Defining issue #11 with a tighter measurement.
+`TransportState` has 22+ fields (per `BeatRulerBar.tsx:41-63`):
+isPlaying, isRecording, isLooping, overdub, metronome,
+metronomeVolume, tempo, tsNum, tsDenom, playheadPosition, loopStart,
+loopEnd, scheduleGrainMs, punchInEnabled, punchInBeat, punchOutBeat,
+countInEnabled, countInBars, preRollEnabled, preRollBars,
+masterGain, ... etc.
+
+`buildTimelineRenderModel` reads `transportState !==
+renderCache.transport` (line 132) → a single `masterGain` slider
+twiddle invalidates the render model. Only `tempo`,
+`timeSignatureNumerator`, `timeSignatureDenominator` (and indirectly
+`isLooping`, `loopStart`, `loopEnd` via the canvas renderer's
+`drawLoopRegion`) actually feed the model.
+
+Also: if any path writes `transportStore.value.playheadPosition`
+(rather than the `playheadPositionRef.current` ref), the cache
+invalidates 60×/s during playback. Worth grepping.
+
+**Representative files:**
+
+- `src/modules/Arrangement/useCases/buildTimelineRenderModel.ts:117-141`
+- `src/modules/Transport/stores/transportStore.ts` (field shape)
+
+**Needed:** Replace the `renderCache.transport` reference comparison
+with a tuple of only the relevant fields:
+`renderCache.transportRelevant = { tempo, tsNum, tsDenom,
+isLooping, loopStart, loopEnd, isRecording }`. Compare each.
+
 ---
 
 ## Open questions
@@ -1705,9 +2286,23 @@ with names like `CULL_SLACK_PX`, `MAX_WAVEFORM_BINS`,
 
 ## Risks
 
+- **Silent data corruption on every Cmd+D / Alt-drag / Duplicate**
+  (issue #33-new). Every duplicated clip silently loses fades, gain
+  envelope, mute, lock, color, audio offset, loop config, stretch,
+  warp, asset hash. Users see "duplicate" produce a different clip.
+  This is the **single highest-impact bug** identified in this audit.
 - **Silent data loss on `moveClip` to bad track** (issue #9). AI
   agents that compute target tracks based on stale state will silently
   delete user clips. No telemetry, no toast, no recovery.
+- **Silent no-ops on `updateTrack` with stale id** (the same pattern
+  manifests across every "set X on track Y" use case). Cmd-handler
+  layer reports success regardless.
+- **Marquee selection box never matches actual track layout** (#32-new).
+  Users selecting clips via marquee see the box cover one set of
+  tracks while the selection-set captures a different set.
+- **JSON.parse + `as` assertion + silent catch on drag-and-drop**
+  (#35-new). Malformed AI-render or sample payload produces NaN clip
+  durations or no-op drops with no user feedback.
 - **Memory leaks on long sessions** (issues #8, #32). Every clip
   delete leaks a `gainEnvelopeStore` record + a `warpStates` entry +
   potentially clipboard / drag preview / recording entries. Over
@@ -1771,21 +2366,33 @@ with names like `CULL_SLACK_PX`, `MAX_WAVEFORM_BINS`,
 
 ## Recommendation
 
-Start with **issue #9** (`moveClip` silent data loss) and **issue #8**
-(`removeClip` orphans). They are localised to two files plus tests and
-have direct user impact. Land them as one PR with a property-based
-regression test ("any sequence of add/move/remove leaves no orphans
-and never silently drops clips").
+Start with **issue #33-new** (`duplicateClipCore` data loss). One
+file plus a regression test. Direct user impact — every Cmd+D loses
+data today. Cheapest win in the audit.
 
-Then **issue #7** (drag listener leaks) — extract `useGlobalDrag` and
-migrate the five components. Mechanical and unblocks downstream
-audio-thread invariants by removing a class of memory leak.
+Then **issue #9 + #34-new** (`moveClip` silent drop, `addClip`
+silent no-op, handler discards return value) and **issue #8**
+(`removeClip` orphans). Localised to ~5 files plus tests; land them
+as one PR with a property-based regression test ("any sequence of
+add/move/remove/duplicate leaves no orphans, never silently drops
+clips, and propagates failures to the command bus").
+
+Then **issue #32-new** (marquee height mismatch) — a 5-line fix in
+`TimelineSurface.tsx` that resolves a long-standing visual bug.
+
+Then **issue #7** (drag listener leaks) — extract `useGlobalDrag`
+and migrate the five components. Mechanical; removes a class of
+leak.
 
 Then **issue #1** (root `index.ts` + deep import migration) —
-mechanical, large surface area, but should land before any further
-contract-affecting refactor. After this, the rest of the audit's
-issues can land in any order: each is local and independently
-verifiable.
+mechanical, large surface area (582 imports), but should land before
+any further contract-affecting refactor. After this, the rest of
+the audit's issues can land in any order: each is local and
+independently verifiable.
+
+Then **issue #35-new** (file-drop type safety): introduce Zod
+schemas for `aiRenderData` and `sampleData`, wire failures through
+`notifyUser`, drop the silent catch.
 
 Finally **issue #6** (auto-scroll + duplicate gesture) — small but
 high-visibility UX win; ideal for a stand-alone PR after the safety
@@ -1795,4 +2402,21 @@ nets above are in place.
 
 ## Resolved
 
-_No issues resolved yet._
+- **Partial: `addClip` positional args.** `useCases/clip/addClip.ts:6-15`
+  now accepts a single object param. The remaining issues with `addClip`
+  (no invariants, no `Result` return, handler discards return value)
+  are tracked under #9 and #34. (Re-verified 2026-04-28.)
+- **Partial: `getNext*Id` (groupComping).** `stores/groupComping.ts:45-53`
+  uses full `crypto.randomUUID()`. The 32-bit-truncation pattern still
+  applies to **33 other call sites** within the module — see issue
+  #23 (re-scoped).
+- **`useContextMenuDismiss` exists and is partially adopted.**
+  `TrackContextMenu`, `ClipContextMenu`, `TimelineEmptyMenu`, and
+  `ArrangementBar` use the shared hook for outside-click dismiss.
+  `MarkerLane` and `AdjustmentLayerStrip` still re-implement the
+  pattern inline — see issue #49.
+- **Issue #76 incorrect on verification.** The "live Map ref shared
+  between dragging session and redo closure" claim is not a real
+  bug — `clipDragPreviewRef.current = { positions: new Map(originals),
+  originals }` creates a fresh Map per drag. Removed and re-archived
+  here for posterity. See issue #48.

@@ -1,5 +1,15 @@
 # AudioEngine module audit
 
+> **Adversarial review pass (2026-04-28).** Every numbered open issue was
+> re-verified against the cited file:line; corrections applied where the
+> original auditor was inaccurate (issues #5 mono vs stereo, #9 conflated
+> two distinct meter paths, #29 handshake mechanism). New findings #63–#76
+> added by the reviewer; new open issues #41–#55 follow them. Hidden bugs
+> upgraded to P1 where the audit had buried them. The original audit
+> downplayed several "broken silently" cases (Knead tuning-table, missing
+> root barrel, MIDI PDC absent in offline render); those are now in
+> Priorities.
+
 ## Scope
 
 This audit covers `src/modules/AudioEngine/` in full — every file under
@@ -251,11 +261,16 @@ form `expect(subject.fn).toBeDefined()` with no behavioural coverage (e.g.
    appends raw PCM as samples are drained. On `stopWorker`
    (`recordingWorker.ts:101-122`), it re-opens with `keepExistingData:
 true` and writes a 44-byte WAV header at `position: 0`. **Position-0
-   writes overwrite, they don't insert** — the first 11 PCM samples
-   (44 / 4 bytes per Float32) are silently destroyed. At 48 kHz that's
-   0.23 ms of dropped audio at the start of every recording, plus a click
-   from the discontinuity. The fix is to reserve 44 bytes of header
-   placeholder at the START of the file before draining begins.
+   writes overwrite, they don't insert.** The recording is **mono
+   Float32** per the WAV header (`setUint16(22, 1, …)` line 113), so
+   44 bytes / 4 bytes-per-sample = **11 samples destroyed** — at 48 kHz
+   that's ~0.23 ms of dropped audio at the start of every recording,
+   plus a click from the discontinuity. (The audit originally framed
+   this as 11 PCM samples — confirmed; the original auditor was right
+   on the math.) Fix: reserve 44 bytes of header placeholder at the
+   START of the file before draining begins, OR write zero PCM bytes
+   for the first 44 bytes and patch in place — both shift the data
+   region without destroying any samples.
 
 6. **Recording-pipeline `Int32` overflow at ≈ 12 hours.**
    `services/recordingProcessor.ts:65` increments `writeHead` via
@@ -303,10 +318,9 @@ localReadHead`; once `currentWrite` is negative and `localReadHead` is
    transiently produce a wrong song-time-seconds at every transport
    change.
 
-9. **`getMasterPeakLevel` / `getTrackPeakLevel` race on the SAB-backed
-   meter buffer.** `repositories/createWebAudioEngine.ts:236-238` and
-   `engine/TrackNode.ts:175-177` read `meterBuffer[0]` then immediately
-   write `meterBuffer[0] = 0` to "consume" the peak. The audio-thread
+9. **`getTrackPeakLevel` race on the SAB-backed meter buffer (per-track
+   only).** `engine/TrackNode.ts:175-177` reads `meterBuffer[0]` then
+   immediately writes `meterBuffer[0] = 0`. The audio-thread
    `MeteringWorkletProcessor.process` (`services/meteringProcessor.ts:51-53`)
    does the symmetric peak-aggregating
    `if (peak > this._sab[0]) this._sab[0] = peak;`. There are **no
@@ -318,6 +332,13 @@ localReadHead`; once `currentWrite` is negative and `localReadHead` is
    strip — `MeteringWorkletProcessor` accepts `channels: number` but
    writes only `_sab[0]`, so stereo content collapses to a single peak
    regardless of which channel was loudest.
+
+   **Note**: the original audit listed `getMasterPeakLevel`
+   (`createWebAudioEngine.ts:236-238`) here too. That was wrong — the
+   master peak path is structurally **unwired** (no master meter
+   worklet, `masterMeterBuffer` is a non-shared Float32Array allocated
+   from `frequencyBinCount`); see new finding #63. The race description
+   above applies only to the per-track meter SAB.
 
 10. **`AudioWorkletNode.port.postMessage` is used as the steady-state
     parameter-update path for every WASM device.** `Bacteria/Fermenter/
@@ -841,36 +862,247 @@ from useCases/`. Same pattern recurs. The root
     is O(N) on a Map-keyed structure. A `Set<AudioScheduledSourceNode>`
     is O(1).
 
+63. **The "master peak" path is not SAB-backed at all and silently
+    returns 0 after the first read.** `repositories/createWebAudioEngine.ts:62`
+    sets `this.masterMeterBuffer = new Float32Array(this.masterAnalyser.frequencyBinCount)`
+    — a non-shared `Float32Array` allocated against the AnalyserNode's
+    `frequencyBinCount` (128 floats). `getMasterPeakLevel()` (line 236)
+    reads `masterMeterBuffer[0]` and writes 0 — **but nothing ever
+    populates this buffer.** The class declares `masterMeterNode:
+    AudioWorkletNode | NoopMeterNode` (line 29) but the live (non-fallback)
+    constructor never instantiates a `metering-processor` for the master,
+    never calls `getFloatTimeDomainData(this.masterAnalyser)`, never wires
+    a worklet to write into `masterMeterBuffer`. The first call returns
+    whatever `Float32Array` was initialized with (zeros) and writes 0;
+    every subsequent call returns 0. Audit issue #9 conflated this with
+    the per-track meter SAB; the master-meter case is **strictly worse**
+    — the meter is structurally unwired, not racy. UI display shows a
+    flat master meter at all times unless `setupNoopContext` ran, which
+    sets `masterMeterBuffer = new Float32Array(1)` (line 91) and is also
+    never written.
+
+64. **PDC compensation is applied to audio clips but NOT to MIDI events
+    in offline render.** `useCases/offlineRender/scheduleTrackClips.ts:268-272`
+    schedules MIDI note times as `beatToSeconds(noteAbsStart, …)` — no
+    `+ compensationDelay`. In contrast, audio clip iteration (line
+    358-359) does add `compensationDelay`. So a project with a MIDI
+    track on a low-latency synth and an audio clip on a high-latency
+    plugin renders them with **inconsistent** compensation: the audio
+    is delayed (correct) but the MIDI synth's notes fire on the
+    uncompensated grid. Hard correctness bug for any mixed-content
+    project that happens to land near zero latency on its MIDI tracks
+    and significant latency elsewhere.
+
+65. **Latency reporting is only wired for 4 of 12 plugins.** Only
+    Bacteria, Gluten, Grinder, and Proof descriptors call
+    `reportLatency` (`engine/wasmDeviceRegistry.ts:327, 370, 376, 437,
+    446, 507, 513`). Knead, ProofChamber, Levain, Toaster, Fermenter,
+    Faust, Scoring, GrandBoule descriptors **do not call `reportLatency`
+    even once**. Every one of these has measurable latency:
+    - **GrandBoule** renders `TARGET_AHEAD = BLOCK_SIZE * 6 = 768
+      samples ≈ 16 ms` of look-ahead in the engine worker
+      (`workers/grandBouleEngineWorker.ts:34`) → reported as zero.
+    - **ProofChamber** is a reverb (predelay parameter is exposed,
+      `engine/AdjustmentBusNode.ts:43`) → reported as zero.
+    - **Knead** is a pitch shifter (overlap-add buffer = block latency)
+      → reported as zero.
+    - **Toaster** has a `lookahead` concept (transient shaper) → zero.
+    `getMaxTrackLatency()` therefore under-estimates whenever any of
+    these plugins sit on the longest path; the offline scheduler then
+    delays low-latency tracks by less than required, producing audible
+    misalignment that the UI claims is compensated.
+
+66. **`AudioEngine` module has no root `index.ts`.** `find -maxdepth 1
+    -name "index.ts"` returns nothing. AGENTS.md "Contract Boundaries":
+    "Cross-module imports MUST only target the destination module's
+    root `index.ts`". External consumers reach into
+    `#/modules/AudioEngine/useCases`, `#/modules/AudioEngine/events`,
+    `#/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip`
+    (the last is a deep import in test code), bypassing the (missing)
+    barrel entirely. Compound violation: every consumer module silently
+    depends on the internal directory layout of AudioEngine.
+    Representative external imports:
+    - `app/bootstrap.ts:27`: `from '#/modules/AudioEngine/useCases'`
+    - `modules/Toaster/useCases/__tests__/triggerPad.spec.ts:5`:
+      `from '#/modules/AudioEngine/useCases'`
+    - `modules/Toaster/useCases/__tests__/createDrumTrackStack.spec.ts:7`:
+      `from '#/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip'`
+      (deep import).
+
+67. **`wasmBinaryCache` is module-level Map that survives HMR.**
+    `engine/workletInitShared.ts:60`: `const wasmBinaryCache =
+    new Map<string, Promise<ArrayBuffer>>()`. Survives HMR because it's
+    not wrapped in `createHmrPersistentState`. The `WeakMap` for worklet
+    registrations (line 32) self-cleans when the AudioContext is GC'd,
+    but the WASM cache holds onto the bytes indefinitely. Coupled with
+    GrandBoule's separate `cachedGrandBouleWasm: ArrayBuffer | null`
+    (`engine/GrandBouleNode.ts:32`), every HMR doubles the cached WASM
+    footprint (~3-10 MB per build). Long dev sessions accumulate
+    100+ MB of orphaned WASM bytes.
+
+68. **`recordingProcessor.ts` does per-sample modulo on the audio
+    thread.** `services/recordingProcessor.ts:62-64`:
+    `for (let index = 0; index < input.length; index++) {
+    this._ring[(head + index) % ringSize] = input[index] ?? 0; }`.
+    `% ringSize` is a 32-bit integer modulo per sample × 128 samples =
+    128 modulo ops per render quantum, plus the `?? 0` branch. The
+    correct pattern is to compute `firstChunk = min(input.length,
+    ringSize - (head % ringSize))` once, then two `subarray + .set`
+    copies. Same allocation-free, but ~30× faster than per-sample.
+
+69. **Knead's `tuning-table` parameter is silently dropped — the worklet
+    only handles `shift_semitones`.** `services/kneadProcessor.ts:53-56`:
+    `if (msg.type === 'param' && this._instance !== null && this._ready)
+    { if (msg.name === 'shift_semitones') { this._instance.set_shift_semitones(
+    msg.value); } }`. Any other param name (including `tuning-table`)
+    silently falls through. **`TrackNode.registerTuningTable`
+    (`engine/TrackNode.ts:138`) actively calls
+    `dn.kneadControls.setParam('tuning-table', frequencies as any)`** —
+    so `registerTuningTable` for Knead-equipped tracks is a no-op. The
+    `as any` (audit issue #37) hides that the value type is wrong AND
+    that the param name is unhandled. End-to-end: tuning tables are
+    never applied to Knead's pitch shift.
+
+70. **Knead's `process()` allocates a closure per block via
+    `activeClip.blobs.find(...)` and does prototype-chain iteration.**
+    `services/kneadProcessor.ts:106` does `for (const clipId in
+    this._clips)` — same prototype-walk concern as Grinder (audit
+    issue #19). Line 119-121: `blob = activeClip.blobs.find((b) =>
+    clipTimeSeconds >= b.startTime && clipTimeSeconds <= b.endTime)`
+    — `Array.prototype.find` allocates a closure scope per call;
+    runs every block when `isPlaying`. At 48 kHz/128 quantum that's
+    ~375 closure allocations per second per Knead-equipped track.
+
+71. **AdjustmentLayerRuntime.reset() bypasses the fade-out grace
+    timer and disposes buses immediately.** `engine/AdjustmentLayerRuntime.ts:210-225`:
+    `reset` iterates live buses, calls `clearTimeout(disposalTimer)`
+    if any, and immediately calls `live.bus.dispose()` — skipping the
+    `FADE_OUT_GRACE_MS = 300` grace path used in `applyTick` (lines
+    195-200). The bus's `wetGain` / `dryGain` are still at the
+    last applied values when `dispose()` runs. Audible discontinuity
+    on every project switch / reset / adjustment-layer purge.
+
+72. **OPFS recording temp file leaks when the worker is terminated
+    mid-flush.** `repositories/audioRecorder/recording.ts:240-247`:
+    `terminateWorker(session)` is called from `decodeAndDeliver`
+    AFTER `ctx.decodeAudioData` succeeds. The wav buffer reaches main
+    via `postMessage({type:'wav', buffer}, [arrayBuffer])` (worker
+    line 128); the worker's `try { …removeEntry(tmpName) }` in the
+    SAME `stopWorker` chain (line 130-136) runs AFTER the postMessage.
+    If main calls `terminateWorker` between the `postMessage` and the
+    `removeEntry`, the temp file `rec-tmp-<timestamp>.pcm` survives in
+    OPFS forever. Same risk if `recordingWorker.onerror` fires — the
+    cleanup branch does not invoke OPFS file removal.
+
+73. **`acquireSharedMediaStream` lacks Promise coalescing — concurrent
+    callers each await the same `getUserMedia` but increment `usageCount`
+    for the same physical stream.** `repositories/audioRecorder/recording.ts:62-68`.
+    First caller starts `getUserMedia`, second caller arrives during the
+    first's `await` — the second sees `sharedStreamState.stream === null`
+    and starts a SECOND `getUserMedia`. Both eventually resolve; both
+    `usageCount++`. Result: count = 2 with two competing streams (one is
+    discarded by the assignment `sharedStreamState.stream = await
+    getUserMedia(…)` — the second one wins). The first tracks are now
+    orphaned. Worse: on release, count goes 2→1→0 and the WINNER stops
+    on the second release, but the LOSER's tracks were never `.stop()`ed
+    — mic activity light stays on. Fix: cache the in-flight Promise
+    itself (line 64), so concurrent callers `await` the same Promise.
+
+74. **`recordingProcessor` lacks any `init`-completion ack — the
+    worklet has no observable "ready" state, so the start-flow has a
+    hidden race.** `services/recordingProcessor.ts:30-37`. The `init`
+    handler runs synchronously to set `_writeHead` / `_ring`, but the
+    handler runs on the audio thread and may queue behind a long
+    `process()` call. Main thread sends `init` then `start` to the
+    worklet (`recording.ts:148, 175`). If the audio thread is busy, the
+    worklet processes `start` BEFORE `init`, sets `_active = true` while
+    `_ring` is null, and `process()` early-returns (line 52-54). First
+    audio is silently dropped until the next `port.onmessage` cycle. The
+    audit's issue #29 framed this as a worker-vs-worklet race; the
+    actual race is **inside** the worklet's own message ordering. Add a
+    `port.postMessage({type:'ready'})` in the `init` branch and gate
+    the main-thread `start` on it.
+
+75. **`Atomics.add(this._writeHead, 0, input.length)` is a relaxed
+    atomic on a value that the consumer reads with relaxed
+    `Atomics.load`.** `services/recordingProcessor.ts:65`. Without a
+    release-acquire pair, the consumer (`workers/recordingWorker.ts:52`)
+    reading `currentWrite = Atomics.load(writeHead, 0)` and then doing
+    bare `ring[(localReadHead + index) % ringSize]` (line 62) can read
+    ring values written **before** the producer completed the `for`
+    loop that wrote them. The audit's issue #3 framed this as fence
+    absence; the recording case is identical to GrandBoule's but with
+    a smaller blast radius (the OPFS drain is delayed and tolerates
+    occasional zero samples in a wraparound window).
+
+76. **`KneadNode` has no `destroy()` exported and no SAB slot to release.**
+    `engine/KneadNode.ts:60-72` returns `{workletNode, setParam,
+    setBypass, updateState, ready}` — no `destroy`. The descriptor
+    in `wasmDeviceRegistry.ts:766-787` provides a destroy via
+    closure that disconnects + closes the port. But unlike the other
+    nodes, Knead does not allocate a telemetry slot and does not
+    need to release one. The asymmetry creates a foot-gun: a future
+    refactor that adds telemetry to Knead must remember to wire
+    destroy in BOTH places. Symptom of a missing pattern, not a leak.
+
 ---
 
 ## Priorities
 
-1. **SAB races without atomic fences across the GrandBoule ring,
+> Re-prioritised after adversarial review. Hidden P1s promoted from the
+> Findings section: #63 (master peak unwired), #64 (PDC missing on
+> MIDI), #65 (latency reporting missing on 8/12 plugins), #69 (Knead
+> tuning-table is a no-op).
+
+1. **The "master peak" path is structurally unwired and silently
+   returns 0** (finding #63 / open issue #41). Adversarial finding —
+   the audit originally lumped this with the per-track meter race.
+   Master meter UI is dead.
+2. **Knead's `tuning-table` parameter is silently dropped — alternative
+   tunings do not apply on Knead-equipped tracks** (finding #69 /
+   open issue #44). End-to-end correctness bug for any project using
+   custom temperaments with Knead.
+3. **PDC compensation is NOT applied to MIDI events in the offline
+   render — only to audio clips** (finding #64 / open issue #42). DAW
+   correctness bug; the offline render mis-aligns MIDI vs audio
+   whenever any track has non-zero plugin latency.
+4. **8 of 12 plugins fail to report any latency** (finding #65 /
+   open issue #43). GrandBoule (16 ms look-ahead), ProofChamber
+   (predelay), Knead (block-latency), Toaster, Levain, Fermenter,
+   Faust, Scoring all report zero, so PDC silently mis-aligns them.
+5. **SAB races without atomic fences across the GrandBoule ring,
    recording ring, telemetry slots, and meter peaks** (issues #3, #4,
-   #9). The race window is small but the consequence is silent audio
-   corruption — torn ring reads, lost peaks, transient torn telemetry.
-2. **The recording WAV header overwrites the first 44 bytes of every
+   #9, finding #75). The race window is small but the consequence is
+   silent audio corruption — torn ring reads, lost peaks, transient
+   torn telemetry.
+6. **The recording WAV header overwrites the first 44 bytes of every
    recording** (issue #5). Easy fix, audible click on every take.
-3. **Knead's right channel collapses to mono** (issue #17). Visible in
-   any stereo-content workflow that uses pitch editing.
-4. **Module-level `audioEngine` singleton allocates an AudioContext at
+7. **Knead's right channel collapses to mono** (issue #17). Visible
+   in any stereo-content workflow that uses pitch editing.
+8. **Module-level `audioEngine` singleton allocates an AudioContext at
    import time** (issue #7). Affects every test, every dev reload, and
    produces a "user gesture required" warning on first load.
-5. **PDC has no live-playback delay path** (issue #13) and missing
+9. **PDC has no live-playback delay path** (issue #13) and missing
    input-controller latency (issue #14). DAW-grade incorrectness.
-6. **`Float32Array(memory, ptr, frames)` allocations in every
-   AudioWorklet `process()`** (issue #1). Twelve plugins × 2-4 allocs
-   × 375 quanta/sec = thousands of typed-array headers per second.
-7. **`setBypass` is a JS-side flag that doesn't bypass the device**
-   (issue #11). User-visible incorrect behaviour with no audio change.
-8. **`recordingProcessor` Int32 writeHead overflows at ~12 hours**
-   (issue #6). Long sessions silently lose data without a warning.
-9. **`stopAllScheduled` floods 128 noteOff messages per Fermenter
-   per stop** (issue #12). CPU spike + back-pressure on every transport
-   stop.
-10. **AdjustmentBus reverb-Size param maps to wet/dry mix** (issue #41).
-    Audible misbehaviour on every Reverb adjustment.
-11. **Test tautologies — ~32 % of specs assert only "function is
+10. **`Float32Array(memory, ptr, frames)` allocations in every
+    AudioWorklet `process()`** (issue #1). Twelve plugins × 2-4 allocs
+    × 375 quanta/sec = thousands of typed-array headers per second.
+11. **`setBypass` is a JS-side flag that doesn't bypass the device**
+    (issue #11). User-visible incorrect behaviour with no audio change.
+12. **AudioEngine module has no root `index.ts`; cross-module imports
+    bypass the (missing) barrel** (finding #66 / open issue #46).
+    AGENTS.md violation that will block any future deps:validate
+    tightening.
+13. **`recordingProcessor` Int32 writeHead overflows at ~12 hours**
+    (issue #6). Long sessions silently lose data without a warning.
+14. **`stopAllScheduled` floods 128 noteOff messages per Fermenter
+    per stop** (issue #12). CPU spike + back-pressure on every
+    transport stop.
+15. **AdjustmentBus reverb-Size param maps to wet/dry mix** (issue
+    #41). Audible misbehaviour on every Reverb adjustment.
+16. **AdjustmentLayerRuntime.reset() bypasses fade-out grace** (finding
+    #71 / open issue #47). Click on every project switch.
+17. **Test tautologies — ~32 % of specs assert only "function is
     defined"** (issue #44). The behaviour-side coverage is much smaller
     than the file count suggests.
 
@@ -1614,6 +1846,354 @@ the Tauri serde wire but should be transformed at the boundary.
 transform in the Tauri invocation wrapper (or annotate the Rust
 struct with `#[serde(rename = "numPeers")]`).
 
+### 41. Master peak meter is structurally unwired and silently returns 0
+
+**Problem:** `repositories/createWebAudioEngine.ts:62` allocates
+`masterMeterBuffer = new Float32Array(this.masterAnalyser.frequencyBinCount)`
+— a non-shared Float32Array sized to the Analyser's `frequencyBinCount`
+(128). `getMasterPeakLevel()` (line 236) reads `masterMeterBuffer[0]`,
+zeroes it, and returns the value — but **nothing populates this buffer**.
+The class declares `masterMeterNode: AudioWorkletNode | NoopMeterNode`
+(line 29) but the live (non-fallback) constructor never instantiates a
+metering-processor for the master, never wires up a worklet, and never
+calls `getFloatTimeDomainData(this.masterAnalyser, this.masterMeterBuffer)`.
+The `setupNoopContext` branch (lines 81-92) creates a NoopMeterNode but
+also writes nothing to `masterMeterBuffer`. End result: the master
+peak meter UI shows zero forever.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/repositories/createWebAudioEngine.ts:29,62,85-92,232-238`
+
+**Needed:** Either (a) instantiate a real `metering-processor`
+AudioWorkletNode for the master path the same way `TrackNode` does
+(line 62-67 of TrackNode.ts), with a 4-byte SAB and an init
+postMessage; (b) replace the Float32Array allocation with a call into
+`masterAnalyser.getFloatTimeDomainData(buffer)` per `getMasterPeakLevel`
+call (slow but works). The current half-state where the buffer
+exists but no producer feeds it is the worst of both worlds.
+
+### 42. PDC is applied to audio clips but NOT to MIDI events in offline render
+
+**Problem:** `useCases/offlineRender/scheduleTrackClips.ts:268-272`
+schedules MIDI note times via `beatToSeconds(noteAbsStart, …)` with
+no `+ compensationDelay`. Audio clip iteration adds compensation at
+line 358-359. So a project with a MIDI track on a low-latency synth
+and an audio clip on a high-latency plugin renders them with
+**inconsistent** compensation: audio clips are delayed (correct)
+but MIDI synth notes fire on the uncompensated grid. The offline
+render UI claims sample-accurate latency compensation; the rendered
+WAV proves otherwise.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts:268-272,358-359`
+
+**Needed:** Apply `compensationDelay` symmetrically to both branches.
+For MIDI events that drive an `instrumentControls` worklet, push the
+`workletEvents.push({time: startTime + compensationDelay, …})` so
+the suspend points are aligned. For Faust / drum kit / synth
+schedules that pass through `scheduleNoteOffline`, add
+`compensationDelay` to the start time the same way the audio path
+does.
+
+### 43. 8 of 12 plugins fail to report any latency
+
+**Problem:** `engine/wasmDeviceRegistry.ts` only wires `reportLatency`
+into Bacteria, Gluten, Grinder, and Proof descriptors (lines 327, 370,
+376, 437, 446, 507, 513). The remaining 8 plugin descriptors —
+Knead, ProofChamber, Levain, Toaster, Fermenter, Faust, Scoring,
+GrandBoule — do not call `reportLatency` even once. Each has
+non-zero latency:
+- GrandBoule renders `BLOCK_SIZE * 6 = 768 samples ≈ 16 ms` ahead
+  in `workers/grandBouleEngineWorker.ts:34`.
+- ProofChamber exposes a Pre-Delay parameter
+  (`engine/AdjustmentBusNode.ts:43`).
+- Knead's pitch-shift uses block-size overlap-add (≥ 128 samples).
+- Toaster has transient-shaper lookahead.
+`getMaxTrackLatency()` therefore under-estimates whenever any of
+these plugins sits on the longest path; the offline scheduler
+delays low-latency tracks by less than required, producing
+silent misalignment.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/engine/wasmDeviceRegistry.ts:265-298, 130-188, 70-125, 553-590, 592-666, 668-734, 736-797`
+
+**Needed:** Each WASM plugin should expose `get_latency_samples()` (the
+Rust pattern is already used in Bacteria, Gluten, Grinder, Proof).
+The descriptor reads it from the worklet's `ready` reply and
+forwards `reportLatency(deviceId, latency / sampleRate * 1000)`.
+For GrandBoule, the engine worker's `TARGET_AHEAD` is the latency
+floor — report it on `init` ack.
+
+### 44. Knead's `tuning-table` parameter is silently dropped
+
+**Problem:** `services/kneadProcessor.ts:53-56` only handles `param`
+messages where `name === 'shift_semitones'`. Any other param name
+silently falls through. **`engine/TrackNode.ts:138` calls
+`dn.kneadControls.setParam('tuning-table', frequencies as any)`** —
+that call is a no-op for Knead-equipped tracks. The `as any`
+suppression makes the type system silent on the bug.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/services/kneadProcessor.ts:46-65`
+- `src/modules/AudioEngine/engine/TrackNode.ts:135-144`
+
+**Needed:** Either (a) extend the worklet's `param` handler to forward
+arbitrary names to `inst.set_param(name, value)` like every other
+plugin, or (b) split tuning-table into a dedicated `tuning-table`
+message type that the worklet forwards to `inst.set_tuning_table`
+(if Rust exposes it). Drop the `as any`.
+
+### 45. Knead's `process()` allocates a closure per block via `Array.find`
+
+**Problem:** `services/kneadProcessor.ts:106` uses `for (const clipId
+in this._clips)` (prototype-walking — same concern as audit #19),
+and lines 119-121 use `activeClip.blobs.find((b) => …)`. `Array.prototype.find`
+allocates a new closure scope each call. With `isPlaying` true the
+hot path runs every render quantum (~375 Hz at 48 kHz / 128 frames
+= 375 closures/sec/track).
+
+**Representative files:**
+
+- `src/modules/AudioEngine/services/kneadProcessor.ts:104-128`
+
+**Needed:** Replace `for…in` with `Object.keys(this._clips)` cached
+once on `update-state`. Replace `find` with a manual indexed loop
+(no closure). Consider precomputing a sorted array of `(startBeat,
+endBeat, blobs)` tuples so the active-clip lookup becomes a
+binary search.
+
+### 46. AudioEngine has no root `index.ts`; cross-module imports bypass the contract
+
+**Problem:** `find src/modules/AudioEngine -maxdepth 1 -name "index.ts"`
+returns nothing. AGENTS.md "Contract Boundaries": cross-module
+imports MUST only target the destination module's root `index.ts`.
+External consumers reach into `#/modules/AudioEngine/useCases`,
+`#/modules/AudioEngine/events`, and even deep paths like
+`#/modules/AudioEngine/useCases/deviceControls/addDeviceToStrip`
+(deep import in tests).
+
+**Representative files:**
+
+- (missing) `src/modules/AudioEngine/index.ts`
+- `app/bootstrap.ts:27`
+- `modules/Toaster/useCases/__tests__/createDrumTrackStack.spec.ts:7`
+- `modules/Toaster/useCases/__tests__/triggerPad.spec.ts:5`
+- `modules/Grinder/useCases/grinderParamBridge/grinderParamBridgeDependencies.ts:2`
+- `modules/GrandBoule/useCases/createGrandBouleTrack.ts:12`
+
+**Needed:** Add `src/modules/AudioEngine/index.ts` that re-exports
+the documented external surface (useCases values, events types,
+stores). Tighten `pnpm deps:validate` to ban deep imports of
+`#/modules/AudioEngine/...` paths. Migrate the 100+ external
+import sites in batches.
+
+### 47. AdjustmentLayerRuntime.reset() bypasses fade-out grace
+
+**Problem:** `engine/AdjustmentLayerRuntime.ts:210-225` clears any
+pending `disposalTimer` and immediately calls `live.bus.dispose()` —
+skipping the `FADE_OUT_GRACE_MS = 300 ms` fade-out used in
+`applyTick` (line 197). The bus's `wetGain` / `dryGain` are still
+at last-applied values when `dispose()` runs, so the audio path
+gets cut hard. Audible click on every project switch / reset /
+adjustment-layer purge.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/engine/AdjustmentLayerRuntime.ts:140-150,210-225`
+
+**Needed:** In `reset`, ramp `wet/dryGain.gain.setTargetAtTime(0, …)`
+first, then schedule the dispose batch with the same FADE_OUT_GRACE_MS
+delay. Or accept that reset is destructive and emit a transient
+crossfade gain at the master path.
+
+### 48. `wasmBinaryCache` is module-level Map that survives HMR
+
+**Problem:** `engine/workletInitShared.ts:60`: `const wasmBinaryCache =
+new Map<string, Promise<ArrayBuffer>>()`. Not wrapped in
+`createHmrPersistentState`. Survives HMR, holding onto WASM bytes
+indefinitely. Coupled with GrandBoule's separate
+`cachedGrandBouleWasm: ArrayBuffer | null` (`engine/GrandBouleNode.ts:32`),
+each HMR doubles the cached WASM footprint. Long dev sessions
+accumulate 100+ MB of orphaned WASM bytes.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/engine/workletInitShared.ts:32, 60`
+- `src/modules/AudioEngine/engine/GrandBouleNode.ts:32-44`
+
+**Needed:** Wrap `wasmBinaryCache` and `cachedGrandBouleWasm` in
+`createHmrPersistentState` (the recording module's pattern at
+`repositories/audioRecorder/recording.ts:47`). Or accept the
+trade-off and add a debug-only `clearWasmCache()` invoked on
+HMR — but persistence is the right default.
+
+### 49. Recording-processor `(head + index) % ringSize` per-sample modulo
+
+**Problem:** `services/recordingProcessor.ts:62-64` does
+`for (let index = 0; index < input.length; index++) {
+this._ring[(head + index) % ringSize] = input[index] ?? 0; }` —
+128 modulo ops per render quantum, plus 128 nullish-coalesce
+branches. The correct allocation-free pattern is to precompute the
+wrap-point and issue two `subarray + .set` writes covering the
+linear and wrapped chunks.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/services/recordingProcessor.ts:51-66`
+
+**Needed:** ```
+const offset = head % ringSize;
+const firstChunk = Math.min(input.length, ringSize - offset);
+this._ring.set(input.subarray(0, firstChunk), offset);
+const second = input.length - firstChunk;
+if (second > 0) { this._ring.set(input.subarray(firstChunk), 0); }
+```
+Then `Atomics.add(this._writeHead, 0, input.length)`. Same
+correctness, ~30× faster.
+
+### 50. OPFS recording temp file leaks when worker terminated mid-flush
+
+**Problem:** `repositories/audioRecorder/recording.ts:240-247`:
+`terminateWorker(session)` is called from `decodeAndDeliver` AFTER
+`ctx.decodeAudioData` succeeds. The wav buffer is delivered to
+main via `self.postMessage({type:'wav', buffer}, [arrayBuffer])`
+(`workers/recordingWorker.ts:128`), and the temp file is removed
+in the same `stopWorker` chain (lines 130-136), AFTER the post.
+If main calls `terminateWorker` between the postMessage and the
+removeEntry, the temp file `rec-tmp-<timestamp>.pcm` survives
+in OPFS forever. Same risk via `recordingWorker.onerror` — the
+cleanup branch does not invoke OPFS file removal.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/repositories/audioRecorder/recording.ts:181-203, 240-247`
+- `src/modules/AudioEngine/workers/recordingWorker.ts:124-138`
+
+**Needed:** Move OPFS cleanup BEFORE the `postMessage('wav')` so
+the temp file is gone before any race window opens. Add a
+periodic OPFS sweep on app startup that removes
+`rec-tmp-*.pcm` files older than 1 hour (defensive against
+existing leaks).
+
+### 51. `acquireSharedMediaStream` lacks Promise coalescing
+
+**Problem:** `repositories/audioRecorder/recording.ts:62-68`. First
+caller starts `getUserMedia`; second arrives during the first's
+`await`, sees `sharedStreamState.stream === null`, and starts
+a SECOND `getUserMedia`. Both eventually resolve. `usageCount++`
+twice. Result: count = 2, but two physical streams; the
+`sharedStreamState.stream = await getUserMedia()` overwrites the
+first; the first stream's tracks are orphaned (mic light stays
+on). On release, count goes 2→1→0 and the WINNER is stopped on
+the second release; the LOSER is never `.stop()`ed.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/repositories/audioRecorder/recording.ts:54-80`
+
+**Needed:** Cache the in-flight Promise itself. Pseudo:
+```
+if (!sharedStreamState.streamPromise) {
+  sharedStreamState.streamPromise = navigator.mediaDevices
+    .getUserMedia(…).then(s => { sharedStreamState.stream = s; return s; });
+}
+const stream = await sharedStreamState.streamPromise;
+sharedStreamState.usageCount++;
+```
+
+### 52. `recordingProcessor` lacks an `init`-completion ack — start race
+
+**Problem:** `services/recordingProcessor.ts:30-37`. The `init` handler
+runs synchronously to set `_writeHead` / `_ring`, but it runs on the
+audio thread and may queue behind a long `process()` call. Main
+sends `init` then `start` to the worklet
+(`recording.ts:148, 175`). If the audio thread is busy, the worklet
+processes `start` BEFORE `init`: `_active = true` while `_ring`
+is null, and `process()` early-returns (line 52-54). First audio
+is silently dropped until the next `port.onmessage` cycle. The
+audit's issue #29 framed this as a worker-vs-worklet race; the
+actual race is **inside** the worklet's own message ordering.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/services/recordingProcessor.ts:30-37`
+- `src/modules/AudioEngine/repositories/audioRecorder/recording.ts:148, 173-186`
+
+**Needed:** In the worklet's `init` handler, post
+`this.port.postMessage({type:'ready-init'})` after assignments.
+On the main thread, await both worker `ready` AND worklet
+`ready-init` before sending `start`.
+
+### 53. SAB ring writes on `recordingProcessor` lack a release fence (cf. #3)
+
+**Problem:** `services/recordingProcessor.ts:60-65` does `Atomics.load`
+of `_writeHead`, bare ring writes, then `Atomics.add(_writeHead, 0,
+input.length)`. The consumer
+(`workers/recordingWorker.ts:52`) reads `currentWrite` via `Atomics.load`
+and then bare-reads `ring[(localReadHead + index) % ringSize]`. The
+non-atomic typed-array writes and reads can be re-ordered around
+the `Atomics.{load,add}` pair. The OPFS drain runs 50 ms behind so
+the race window is mostly papered over, but a wraparound at exactly
+the moment the producer writes new samples could deliver stale data.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/services/recordingProcessor.ts:60-66`
+- `src/modules/AudioEngine/workers/recordingWorker.ts:47-67`
+
+**Needed:** Same pattern as audit issue #3 — generation counter on the
+ring, or `Atomics.exchange` on a sentinel that orders the bare
+writes/reads.
+
+### 54. `Grinder.setBypass` posts a `param` message that triggers a useless latency-changed broadcast
+
+**Problem:** `engine/GrinderNode.ts:128-130` posts
+`{type:'param', name:'bypass', value: 1|0}`. The worklet handler at
+`services/grinderProcessor.ts:247-254` does
+`oldLatency = inst.get_latency_samples(); inst.set_param('bypass',
+value); newLatency = inst.get_latency_samples()`; if they differ, it
+posts `latency-changed`. Bypass should not change latency, but the
+comparison runs anyway. Each bypass toggle costs two WASM calls plus
+an unconditional postMessage round-trip — bypass-as-passthrough on
+this code path is more expensive than running the DSP.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/engine/GrinderNode.ts:128-130`
+- `src/modules/AudioEngine/services/grinderProcessor.ts:247-262`
+
+**Needed:** Add a dedicated `bypass` message type in the worklet
+that short-circuits the latency comparison; or have the WASM
+`bypass` param always return the same latency (a known constant)
+so the comparison always reports unchanged.
+
+### 55. Bacteria/Grinder telemetry uses `requestAnimationFrame` — stops in background tabs
+
+**Problem:** `engine/BacteriaNode.ts:122,124` and
+`engine/GrinderNode.ts:153,155` both use `requestAnimationFrame` for
+the SAB poll loop. `requestAnimationFrame` callbacks pause when the
+tab is backgrounded. Telemetry stops; on re-foreground, the meters
+resume from whatever value the SAB held — which may be stale by
+seconds. Plus: a project being rendered offline while the tab is
+backgrounded sees no telemetry-driven `reportLatency` updates from
+Bacteria/Grinder, breaking PDC for that render.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/engine/BacteriaNode.ts:101-125`
+- `src/modules/AudioEngine/engine/GrinderNode.ts:131-156`
+
+**Needed:** Replace the rAF poll with `setInterval(…, 16)` (the
+pattern Proof and Gluten already use). Or, for backgrounded
+correctness, gate the latency-reporting callback on a
+non-rAF channel (e.g., the worklet posts `latency-changed`
+directly, which is already the case for Grinder/Bacteria —
+verify the rAF path is not the only `reportLatency` source).
+
 ---
 
 ## Open questions
@@ -1636,17 +2216,44 @@ struct with `#[serde(rename = "numPeers")]`).
       issue) becomes user-visible.
 - [ ] `transportSAB` is read by which worklets specifically? Knead is
       the documented consumer; are other plugins (Bacteria's Lorenz LFO?)
-      reading transport beat without atomic discipline?
+      reading transport beat without atomic discipline? **Adversarial
+      review answer:** only Knead reads `transportSAB`; verified by
+      `grep -rn "transportSAB\|transport_view\|view\["
+      src/modules/AudioEngine/services/`. Other plugins receive
+      transport via discrete messages or do not need it. Open question
+      can be closed.
 
 ---
 
 ## Risks
 
-- **Silent audio corruption.** Issues #3, #4, #9 — SAB races without
-  fences are infrequent enough to escape casual testing but produce
-  occasional clicks, lost peaks, and wrong telemetry readings under load.
-  In a DAW context, "occasional" means "every time the user pushes the
-  CPU near the limit", which is exactly when they need correctness.
+- **Silent audio corruption.** Issues #3, #4, #9, #53 — SAB races
+  without fences are infrequent enough to escape casual testing but
+  produce occasional clicks, lost peaks, and wrong telemetry readings
+  under load. In a DAW context, "occasional" means "every time the
+  user pushes the CPU near the limit", which is exactly when they
+  need correctness.
+- **Master peak meter is a lie.** Open issue #41 / finding #63 —
+  the master meter UI never shows signal because nothing populates
+  the buffer the read function reads. Users mixing through the
+  master fader cannot see clipping. This is a hidden P1 the audit
+  originally hid inside #9.
+- **Offline render mis-aligns MIDI vs audio.** Open issue #42 /
+  finding #64 — every project rendered to disk has a different
+  alignment than its live playback (in opposite directions: live has
+  no PDC at all per issue #13; offline has PDC for audio but not
+  MIDI). The DAW's "what you hear" promise is broken in both
+  directions.
+- **PDC is built on incomplete latency reporting.** Open issue #43 /
+  finding #65 — only 4 of 12 plugins call `reportLatency`. The PDC
+  system computes `getMaxTrackLatency()` from a value that is wrong
+  for two-thirds of the plugin catalogue. Even fixing the live-PDC
+  gap (issue #13) won't help unless Knead, ProofChamber, GrandBoule,
+  Levain, Toaster, Fermenter, Faust, and Scoring start reporting.
+- **Knead silently ignores tuning tables.** Open issue #44 / finding
+  #69 — `registerTuningTable` is a no-op for Knead-equipped tracks
+  because the worklet only handles `shift_semitones`. Microtonal /
+  alt-tuning workflows do not work on Knead.
 - **Recordings start with a click on every take.** Issue #5 — the WAV
   header overwrites the first 44 bytes of audio. Audible discontinuity
   on every recorded take, attributable to a 5-line worker bug.
@@ -1690,17 +2297,36 @@ struct with `#[serde(rename = "numPeers")]`).
 
 ## Suggested approaches
 
-- **Land the Knead mono bug, the WAV header bug, and the Fermenter /
-  Toaster all-notes-off batching first** (issues #14, #5, #13). They
-  are mechanical, audible, and 1-2 line fixes. Each closes a known
-  quality gap with no architectural cost.
+- **Wire the master peak meter — no architecture, just instantiate
+  the worklet** (open issue #41). One AudioWorkletNode, one 4-byte
+  SAB, one init message. Restores a UI signal that's currently dead.
+- **Land the Knead mono bug, the WAV header bug, the Knead
+  tuning-table no-op, and the Fermenter / Toaster all-notes-off
+  batching first** (issues #14, #5, #44, #13). They are mechanical,
+  audible, and 1-2 line fixes. Each closes a known quality gap with
+  no architectural cost.
+- **Apply PDC compensation symmetrically to MIDI and audio in the
+  offline render** (open issue #42). 1-line fix at
+  `scheduleTrackClips.ts:268-272` adds `+ compensationDelay` to the
+  MIDI path; the rendered output instantly aligns with what the UI
+  promises.
+- **Wire latency reporting for the 8 silent plugins** (open issue
+  #43). Each plugin descriptor needs `reportLatency(deviceId, …)` on
+  ready. For Rust-backed plugins, expose `get_latency_samples()`. For
+  GrandBoule, the `TARGET_AHEAD` constant in the engine worker is the
+  fixed floor.
 - **Add atomic discipline (generation counters) to the telemetry SAB
   and the meter SAB next** (issues #4, #9). The pattern is reusable
   across plugins; once the helper is in place, applying it to every
   worklet is mechanical.
 - **Ring-buffer fences for the GrandBoule and Recording rings**
-  (issue #3). The simplest correct fix is to use `Atomics.exchange` on
-  a sentinel value that the consumer treats as a release fence.
+  (issues #3, #53). The simplest correct fix is to use
+  `Atomics.exchange` on a sentinel value that the consumer treats as
+  a release fence.
+- **Add an AudioEngine root `index.ts`** (open issue #46) and
+  tighten `pnpm deps:validate` to ban `#/modules/AudioEngine/...`
+  deep imports. Without the root barrel, every other AGENTS.md
+  contract rule is unenforceable for this module.
 - **PDC live-playback delay** (issue #10) and input-controller
   latency (issue #11). The DelayNode insertion is straightforward; the
   controller-latency calibration UX is a feature spec.
@@ -1726,27 +2352,55 @@ struct with `#[serde(rename = "numPeers")]`).
 
 ## Recommendation
 
-Start with **issue #5 (recording WAV header overwrite)** and **issue
-#14 (Knead mono collapse)**. Both are 1-line fixes with audible bugs;
-they restore correctness for a feature users rely on every session.
-Land each as a standalone commit, ideally with a regression test that
-asserts the first sample of a recorded buffer is non-zero (for #5)
-and that left ≠ right channel for stereo input (for #14).
+> Adversarially-revised recommendation. The original recommendation
+> still stands as a starting point but fails to surface the master
+> meter / Knead tuning-table / MIDI-PDC bugs that the audit's old
+> Findings section under-weighted.
 
-Then take **issue #4 (telemetry SAB atomic discipline)**. The
-generation-counter pattern is the foundation for fixing #3, #8, and #9;
-the helper code is reusable across every worklet. Land the helper +
-one plugin (Proof has the most telemetry fields — biggest payoff), then
-sweep the rest.
+Start with the four 1-line fixes in this order:
 
-After those three land, the next session can decide between the
-"correctness pass" (issues #3, #8, #9, #10, #11, #12, #13, #15) — all
-audio-thread / latency-correctness items — and the
-"architecture / testing pass" (issues #7, #20, #22, #25, #26, #27,
-#35). The two passes are independent.
+1. **Open issue #41 (master peak meter unwired)** — instantiate a
+   `metering-processor` for the master path, wire it the same way
+   `TrackNode` does. Restores a UI signal users rely on for clipping
+   detection.
+2. **Issue #14 (Knead mono collapse)** — fetch right output pointer
+   in `kneadProcessor.ts` and write to `out1` separately.
+3. **Issue #5 (recording WAV header overwrite)** — reserve 44 bytes
+   of header placeholder before draining starts.
+4. **Open issue #42 (offline-render MIDI PDC missing)** — add
+   `+ compensationDelay` to the MIDI scheduling path. 1-line fix.
+
+Each is a standalone commit with a regression test. The first two are
+visible-from-the-UI bugs; the third is an audible click; the fourth
+is a measurable timing offset between MIDI and audio in any rendered
+WAV.
+
+Then take **open issue #44 (Knead tuning-table no-op)** because it is
+adjacent to #14's WASM file and a coherent "fix Knead end-to-end"
+commit.
+
+After that, the next session can decide between the "correctness
+pass" (issues #3, #4, #8, #9, #10, #11, #12, #13, #43, #53) — all
+audio-thread / latency-correctness items — and the "architecture /
+testing pass" (issues #7, #20, #22, #25, #26, #27, #35, #46). The
+two passes are independent.
 
 ---
 
 ## Resolved
 
 _No issues resolved yet._
+
+**Adversarial review notes (not resolutions):**
+
+- Issue #5 mono vs stereo: confirmed mono Float32 (per WAV header at
+  `recordingWorker.ts:113`), 11 samples destroyed, ~0.23 ms at 48 kHz.
+  Audit math was correct; severity stands.
+- Issue #9 "master peak race": **partially incorrect**. The master
+  meter path is structurally unwired — see new finding #63 / open
+  issue #41. The race only applies to per-track meters.
+- Issue #29 "Recording start race": **partially incorrect**. The race
+  is inside the worklet's own message ordering, not between worker
+  and worklet. See new open issue #52.
+- Open question on `transportSAB` consumers: **closed** —
+  Knead is the only reader; verified by grep.

@@ -42,8 +42,7 @@ A correctness-first analysis surface for the DAW:
 
 ## Relevant code paths
 
-- `src/modules/AudioAnalysis/index.ts` (root barrel)
-- `src/modules/AudioAnalysis/useCases/index.ts` (cross-module surface)
+- `src/modules/AudioAnalysis/useCases/index.ts` (cross-module surface — there is **no** root `index.ts`; the original audit was incorrect on this point)
 - `src/modules/AudioAnalysis/useCases/keyDetection.ts`
 - `src/modules/AudioAnalysis/useCases/tempoDetection.ts`
 - `src/modules/AudioAnalysis/useCases/audioToMidi.ts`
@@ -102,10 +101,23 @@ module-level singleton `ortSession`.
 
 **Services.** `mixAnalysisHelpers.ts` is the only `services/` resident:
 pure helpers (`readLevels`, `readFrequencyBalance`, `detectIssues`,
-`generateSuggestions`, `linearToDb`).
+`generateSuggestions`). `linearToDb` is defined inside but kept
+private (the original audit incorrectly called it exported). The file
+exports four runtime functions plus six types — multiple-export
+violation, see new issue #37.
 
 **Tests.** Every public file has at least one spec. Specs lean on
-`vi.mock(...)` heavily; many use `as any` to construct partial fixtures.
+`vi.mock(...)` heavily; many use `as any` to construct partial
+fixtures. Six specs are smoke-only "the export exists" tests (new
+#39). Five specs mock the wrong barrel level, exercising no
+production code (#2, #25, new #40).
+
+**Cross-cutting truth (added 2026-04-28).** `MixAnalysis.peakDb` /
+`rmsDb` from the track-config `analyzeMix` is in linear-gain units, not
+dBFS, despite the contract (new #34). The master analyser used by the
+live `analyzeMix` is configured at `fftSize = 256`, which makes the
+sub/bass/lowMid frequency bands collapse to a single bin at 48 kHz
+(new #35).
 
 ---
 
@@ -410,21 +422,46 @@ minIntervalSec: number)` takes three positional parameters; per
 
 ## Priorities
 
-1. **Test mocks pointing at the wrong module path** (issue #2 / #25) —
-   four test files exercise no production code; the real implementations
-   are silently uncovered.
-2. **`handleAutoFixMix` race + arithmetic errors** (issue #7) — the
-   handler can emit nonsensical gains and presents a stale "refreshed"
-   analysis as if it reflected the fix.
-3. **Two competing `analyzeMix` implementations and a synthetic
-   `compareToReference`** (issues #1, #6) — the comparison feature is
-   misleading-by-construction.
-4. **Bug: `handleAudioToMidi` drops payload fields** (issue #3) — silent
-   data loss across the action contract.
-5. **`keyDetection.ts` Goertzel loop is mis-structured** (issue #4) —
-   chroma reflects only one window, scaled.
-6. **Hot-loop allocation and per-segment array allocs** (issues #10,
-   #14, #5) — wasted DSP work and concurrency hazards.
+(Adversarial-review pass — `2026-04-28`. P-bands assigned after re-reading every cited file.)
+
+1. **P0 — Track-config `analyzeMix` confuses linear gain with dB**
+   (new issue #34). `referenceMixComparison/analyzeMix/analyzeMix.ts:62-65`
+   reads `track.gain` (a linear value with default `0.8`, clamped 0–2 in
+   the audio graph) and writes `rmsDb = avgGain - 6` and
+   `peakDb = avgGain - 1` directly into a `MixAnalysis` whose contract
+   is dBFS. Every downstream comparison (`compareToReference`,
+   `compareMixes`) reads these as dB. Magnitudes off by 18+ dB.
+2. **P0 — Master `AnalyserNode.fftSize = 256` makes `analyzeMix.frequencyBalance` near-useless**
+   (new issue #35). `mixAnalysisHelpers.readFrequencyBalance` runs over
+   128 bins (`createWebAudioEngine.ts:57`). At 48 kHz that's ≈187 Hz
+   per bin — the entire `sub` (20–60 Hz) and most of `bass` (60–250 Hz)
+   collapse into bin 1. The "muddy" / "harsh" detection in
+   `detectIssues` therefore fires off unrelated cells.
+3. **P0 — Test mocks pointing at the wrong module path** (issues #2 /
+   #25) — four key tests exercise zero production DSP and have been
+   silently green. Verified: every spec confirmed, no mitigating
+   `vi.mock('#/modules/AudioEngine/stores')` exists in any of them.
+4. **P1 — `handleAutoFixMix` race + arithmetic errors** (issue #7) —
+   the handler can emit nonsensical gains _and_ presents a stale
+   "refreshed" analysis as if it reflected the fix. Verified line-by-line
+   below; the master-bus formula has a different sign-failure mode than
+   the per-track one.
+5. **P1 — `compareToReference` is synthetic-vs-synthetic** (issues #1,
+   #6) — the comparison feature is misleading-by-construction. With
+   #34 it is _additionally_ wrong, not just synthetic.
+6. **P1 — `handleAudioToMidi` drops payload fields** (issue #3) —
+   silent data loss across the action contract.
+7. **P2 — DSP correctness slate** (issues #4, #5, #11, #12, new #36) —
+   key-detection magic constants, tempo histogram triple-counting, onset
+   off-by-one, autocorrelation octave bias, and the duplicate
+   `estimatePitch` re-implementation that pitchy already supersedes.
+8. **P2 — Hot-loop allocation and racing-unsafe singletons** (issues
+   #8, #10, #9). Ranked below correctness because the OOM hazard
+   requires concurrent stem-separation invocations the current UI
+   doesn't drive — but the cost of a fix is small.
+9. **P3 — Architectural / AGENTS.md drift** (issues #14, #15, #16,
+   #17, #18, #23, new #37–#40). Not behavioural, but normalising the
+   violations costs nothing if done with the correctness pass.
 
 ---
 
@@ -439,16 +476,34 @@ the second under an alias; the first keeps the canonical name. Imports
 within the module that pull both end up needing `as` renames, and the
 two functions are not interchangeable.
 
+**Verified 2026-04-28:** Still present.
+- `useCases/analyzeMix.ts:40` exports `analyzeMix(): Promise<AnalyzeMixOutput>` — async, reads `getMasterAnalyser` / `getTrackStrip`.
+- `useCases/referenceMixComparison/analyzeMix/analyzeMix.ts:53` exports `analyzeMix(): MixAnalysis` — sync, reads `trackStore.value`, makes up frequency profile from track-kind ratios.
+- `useCases/index.ts:13` exports the live one as `analyzeMix`; `:30` exports the synthetic one as `analyzeMixFromTrackLayout`.
+
+**Root cause:** The track-config estimator was added in lieu of a real
+audio-buffer analysis path for `compareToReference`. Naming the
+function `analyzeMix` propagates the lie that it analyses anything.
+
+**Blast radius:**
+- `compareMixes.ts:118` calls the synthetic one (and inherits issue #34's unit bug).
+- `AiRuntime/useCases/musicMentor/generateLessons.ts:9-25` imports `analyzeMixFromTrackLayout`, aliases it back to `analyzeMix`, and treats `lufs`, `crestFactor`, `dynamicRange` as real signal — they are constants of `gain - 6`.
+- Internal collision: any file in the module that imports both will need an `as` rename — confirmed in `compareMixes.ts:9` (relative import is fine but adds confusion).
+
 **Representative files:**
 
-- `src/modules/AudioAnalysis/useCases/analyzeMix.ts:45`
+- `src/modules/AudioAnalysis/useCases/analyzeMix.ts:40`
 - `src/modules/AudioAnalysis/useCases/referenceMixComparison/analyzeMix/analyzeMix.ts:53`
 - `src/modules/AudioAnalysis/useCases/index.ts:13,30`
+- `src/modules/AiRuntime/useCases/musicMentor/generateLessons.ts:9,15`
 
-**Needed:** Rename one (e.g. the track-config estimator becomes
-`estimateMixFromTracks`) and keep the live-analyser version as the
-single `analyzeMix`. Update `compareMixes.compareToReference` to use the
-real one (or a dedicated reference-track analyser — see #6).
+**Needed:** Rename the track-config estimator to something honest
+(`estimateMixFromTrackLayout`, `synthesiseMixFingerprint`). Keep the
+live-analyser one as the single `analyzeMix`. Update
+`compareToReference` either to consume the live one (after #34/#35 fix
+the unit bug and the FFT size) or to take a real reference-track
+buffer (see #6). Audit `generateLessons` — the music-mentor
+pipeline is producing pedagogy from constants right now.
 
 ### 2. Test mocks target `#/modules/AudioEngine/useCases` instead of `…/stores`
 
@@ -459,6 +514,31 @@ applied; production code falls through to the real
 `audioBufferCache.get(...)` which returns null for the test's missing
 ids. Tests pass but cover nothing.
 
+**Verified 2026-04-28:** Still present in all four files.
+- `keyDetection.ts:1` imports `from '#/modules/AudioEngine/stores'`. `keyDetection.spec.ts:8` mocks `#/modules/AudioEngine/useCases`.
+- `tempoDetection.ts:1` / `tempoDetection.spec.ts:3` — same mismatch.
+- `pitchDetection.ts:13` / `pitchDetection.spec.ts:3` — same mismatch.
+- `audioFeatures.ts:13` / `audioFeatures.spec.ts:3` — same mismatch.
+- `audioBufferCache` is **only** exported from `#/modules/AudioEngine/stores` (`AudioEngine/stores/index.ts:5`). It is not re-exported from `useCases`. So the mocks are inert.
+
+**Root cause:** Four specs were created or refactored against a
+different barrel layout (or copy-pasted from an older one); nothing in
+CI catches the silent inertness because `audioBufferCache.get('present')`
+returns `undefined` either way for the test fixtures.
+
+**Blast radius:**
+- Issues #4, #5, #11, #12, #25, #36 sit underneath these tests. Any DSP refactor will land green.
+- `audioToMidi.spec.ts:20` mocks the **correct** path — it is a counter-example that proves the right mock works. Use it as the template.
+
+**Reproduction:** Add `console.log('mocked')` inside the test's mock
+factory and run `pnpm vitest keyDetection`. The log never fires.
+
+**Fix sketch:** One-line change per file:
+`vi.mock('#/modules/AudioEngine/useCases', …)` →
+`vi.mock('#/modules/AudioEngine/stores', …)`. Then add a positive-path
+test per file (synthesised sine wave / impulse train / chord) — without
+that the mock-fix only proves the code _runs_, not that it is correct.
+
 **Representative files:**
 
 - `src/modules/AudioAnalysis/useCases/__tests__/keyDetection.spec.ts:8`
@@ -467,10 +547,8 @@ ids. Tests pass but cover nothing.
 - `src/modules/AudioAnalysis/useCases/__tests__/audioFeatures.spec.ts:3`
 
 **Needed:** Fix the mock paths to `#/modules/AudioEngine/stores` and
-add at least one positive-path test per file (a stub buffer with
-predictable content — e.g. a sine wave — and assertions on the returned
-detections). The "buffer missing → null" tests are not enough to catch
-DSP regressions.
+add at least one positive-path test per file. The "buffer missing →
+null" tests are not enough to catch DSP regressions.
 
 ### 3. `handleAudioToMidi` drops payload fields
 
@@ -481,62 +559,119 @@ handler does not forward the latter two; the action contract advertises
 caller passing a typo lands silently in `'rhythm'`. There is also no way
 to set `targetPitch` from the command bus.
 
+**Verified 2026-04-28:** Confirmed both ends.
+- `Command/models/AppAction.ts:259` and `Command/useCases/commandQueries.ts:256`: `{ clipId; trackId?; sensitivity?; mode? }` — no `targetPitch`, no `minInterval`.
+- `useCases/audioToMidi.ts:6-13`: `AudioToMidiOptions` types accept all four.
+- `handleAudioToMidi.ts:14-21` forwards exactly four fields and runs `mode` through a permissive `normalizeAudioToMidiMode` (`:5-11`) that silently coerces anything ≠ `'pitched'` to `'rhythm'`.
+
+**Root cause:** The action contract was widened to `mode: string`
+without tightening it back to a discriminated union when the use-case
+side knew the valid values. The two extra params were added to the use
+case for direct callers (none currently exist outside the handler) and
+never propagated to the contract.
+
+**Blast radius:** Currently inert because no caller passes these
+fields. But:
+- The `AppAction` shape is the AI tool surface — agents constructing actions can pass `mode: 'pitched'` and the rest will silently default. They cannot pass `targetPitch`, so pitched conversions all land on MIDI 36 (C2 — kick drum range). For melodic content this is wrong silently.
+- `Command/models/commands/aiCommands.ts:160` dispatches with only `clipId`. So the AI lesson path uses defaults exclusively — confirms the fields are dead-on-arrival.
+
+**Fix sketch:**
+- Tighten `AppAction` payload `mode` to `'rhythm' | 'pitched'` (drop `normalizeAudioToMidiMode`).
+- Add `targetPitch?: number` and `minInterval?: number` to the payload **or** delete them from `AudioToMidiOptions` (only one direct caller — the handler).
+
 **Representative files:**
 
 - `src/modules/AudioAnalysis/handlers/analysis/handleAudioToMidi.ts:14`
 - `src/modules/AudioAnalysis/useCases/audioToMidi.ts:160`
 - `src/modules/Command/useCases/commandQueries.ts:256`
+- `src/modules/Command/models/AppAction.ts:259`
 
-**Needed:** Either expand the `AppAction` payload to include
-`targetPitch?` / `minInterval?` and forward them, or document that they
-are not user-configurable and remove them from the use-case signature.
-Tighten `mode` to `'rhythm' | 'pitched'` and drop the
-`normalizeAudioToMidiMode` helper.
+**Needed:** Per fix sketch above. Add a test in `handleAudioToMidi.spec.ts`
+that asserts `mode: 'gibberish'` reaches the use case as a typed error
+(once the union tightens), not a silent coercion.
 
 ### 4. `keyDetection.ts` key-confidence calibration is under-specified
 
-**Problem:** The outer frame loop advances correctly with `frame +
-index`, but the implementation is still non-windowed (rectangular =
+**Problem:** The implementation is non-windowed (rectangular =
 spectral leakage), sums magnitudes across six octaves without per-bin
-normalisation, uses `Math.abs` over a quantity that should already be
-non-negative, and derives confidence from a magic constant.
+normalisation, uses `Math.abs` over a quantity that for real input is
+already non-negative, and derives confidence from a magic constant.
+
+**Verified 2026-04-28:** Source unchanged.
+- `keyDetection.ts:22` — outer `for (frame; frame + fftSize < data.length; frame += hopSize)`. Bounds: inner loop `index < fftSize`, so `frame + index < frame + fftSize < data.length`. **The previous audit's claim of an out-of-bounds inner read is wrong.** Withdrawn from the "Needed" — the `?? 0` is dead defensive code, not a bug fix.
+- `keyDetection.ts:33` — `let s0: number,` is declared without initialiser but is always assigned at `:38` before `:43` reads `s1`/`s2` only. `s0` is only used inside the loop and is overwritten before any read. **TS-strict noise; not a runtime bug.** Also withdrawn.
+- `keyDetection.ts:43` — Goertzel "power" formula `s1*s1 + s2*s2 - coeff*s1*s2` matches the textbook squared-magnitude form for `coeff = 2*cos(w)`. For real-valued time-domain input this is non-negative; `Math.abs` is a paranoia coat that masks any future regression. **Cosmetic, not a bug.** Demote to a code-smell.
+- `keyDetection.ts:82` — `confidence = Math.min(1, bestCorr / 30)`. Magic constant. Krumhansl-Schmuckler correlation magnitudes scale with `Σ chroma_i * profile_i`; with the chroma normalised to max=1 (`:54`) and the profile sum ≈ 41 (major) / 42 (minor), a perfect template fit gives `bestCorr ≈ 41`, so the cap of 30 saturates at ~73% match. **Real calibration bug.**
+- Real bugs that remain: rectangular window (spectral leakage); raw magnitudes summed across octaves (no octave normalisation, low octaves dominate); `confidence` magic number.
+
+**Root cause:** Implementation written from a textbook chroma sketch
+without a calibration pass. The audit's previous "Goertzel inner
+overshoots" claim was a false-positive — the inner loop runs `index <
+fftSize` and the outer guard is `frame + fftSize < data.length`.
+
+**Blast radius:** `handleDetectKey` is wired to a `notifyUser` toast,
+so the visible symptom is "C major at 95% confidence" for clearly
+non-C audio. No other module depends on the confidence number.
+
+**Related sites:** `audioFeatures.ts` already extracts `chroma` from
+Meyda — the same data the Goertzel pass is hand-rolling. There are
+two chroma paths in this module today (Goertzel here, Meyda there).
+
+**Fix sketch:**
+- Apply a Hann window inside the inner loop (precompute once outside).
+- Normalise per-octave: divide each octave's contribution by its bin width before summing across octaves.
+- Replace `bestCorr / 30` with `bestCorr / Σ profile`. Even better, use Pearson correlation against the profile (zero-centred, unit-variance) — the canonical Krumhansl-Schmuckler form.
+- Or: replace the entire Goertzel pass with `Meyda.extract(['chroma'], …)`.
 
 **Representative files:**
 
-- `src/modules/AudioAnalysis/useCases/keyDetection.ts:22-46`
+- `src/modules/AudioAnalysis/useCases/keyDetection.ts:22-46,82`
 
-**Needed:** Either fix the Goertzel loop to read
-`data[frame + index]` (already does at `:38` — but the outer loop uses
-`frame + fftSize < data.length` while the inner loop overshoots into
-`frame + index` past `data.length`; the `?? 0` quietly absorbs the
-out-of-bounds read), apply a Hann window, drop the `Math.abs`, and
-calibrate `confidence`. Or replace with `pitchy`'s chroma /
-`Meyda.chroma` (already in the dependency tree) and a single
-Krumhansl-Schmuckler correlation step. Add a positive-path test that
-detects C major from a synthesised C-E-G chord.
+**Needed:** Per fix sketch. Add a positive-path test that detects C
+major from a synthesised C-E-G chord (depends on issue #2 fix).
 
 ### 5. `tempoDetection.ts` slice-per-frame and triple-counted histogram
 
-**Problem:** A `slice(...).reduce(...)` is allocated per frame (issue
-#5). The histogram weighting at `:54-62` adds the _same_ interval to
-the bin, half-bin, and double-bin; if a track's true tempo lands in
-between bins, the half/double bins receive 50% weight that biases the
-histogram peak toward whichever harmonic resolves cleanest. The
-"normalize to 60–200 BPM" doubling at `:81-86` is naive: an actual
-160 BPM track with strong 80 BPM half-time evidence gets reported as
-160 (correct), but a 50 BPM ballad with strong 100 BPM doubles can
-flip-flop.
+**Problem:** A `slice(...).reduce(...)` is allocated per frame. The
+histogram weighting adds the _same_ interval to the bin, half-bin, and
+double-bin; if a track's true tempo lands between bins, the
+half/double bins receive 50% weight that biases the histogram peak
+toward whichever harmonic resolves cleanest. The "normalize to 60–200
+BPM" doubling is naive: a 50 BPM ballad with strong 100 BPM doubles
+can flip-flop.
+
+**Verified 2026-04-28:** Source unchanged.
+- `tempoDetection.ts:30` — `energies.slice(Math.max(0, index - 10), index).reduce(...)` per frame.
+- `tempoDetection.ts:54-62` — triple-counts `binMs`, `binMs/2`, `binMs*2` with `0.5` weight on the harmonics.
+- `tempoDetection.ts:80-86` — `while normalizedBpm < 60 multiply by 2; while > 200 divide by 2` — non-deterministic for in-between values.
+
+**Root cause:** The detector was written without distinguishing
+"unbiased histogram of inter-onset intervals" from "tempo posterior
+under harmonic priors". They are different operators; the code mixes
+them and the priors are baked into the histogram values rather than
+applied at decision time.
+
+**Blast radius:**
+- `handleDetectTempo` runs this on a per-clip basis. False tempo lands as a `notifyUser` toast — not corrupting, but eroding trust.
+- Allocations: at 5 minute clip × 100 frames/sec = 30 000 sub-array allocs per detection; trivially fixed with a moving sum.
+
+**Related sites:** `Transport/useCases/detectProjectTempo` is invoked
+as a fallback in `handleDetectTempo.ts:23`. If both heuristics
+disagree, `handleDetectTempo` always prefers the buffer-based
+detection (`:14-21`) — no cross-validation.
+
+**Fix sketch:**
+- Replace `slice + reduce` with a running-sum window: `running -= energies[i - 10]; running += energies[i];` and divide by `min(i, 10)`.
+- Drop the half/double weighting from the histogram. Apply harmonic priors at the _peak-picking_ stage: pick all top-3 candidates, then pick whichever yields the highest local autocorrelation against the original onset train.
+- Replace `> 2 × moving average` with a percentile threshold (e.g. 75th of the moving window).
 
 **Representative files:**
 
 - `src/modules/AudioAnalysis/useCases/tempoDetection.ts:14-89`
 
-**Needed:** Replace `slice + reduce` with a moving-window sum
-(`runningSum -= energies[i-10]; runningSum += energies[i];`). Drop the
-half/double weighting or replace with a proper tempogram-style
-autocorrelation. Use a percentile threshold (e.g. 75th) instead of `>
-2× moving average`. Add tests that detect 120 BPM from a click-track
-fixture and check the histogram normalisation.
+**Needed:** Per fix sketch. Add tests that detect 120 BPM from a
+click-track fixture (depends on issue #2's mock-path fix) and verify
+the histogram normalisation.
 
 ### 6. `compareToReference` is synthetic-vs-synthetic
 
@@ -560,48 +695,105 @@ audio analysis happened.
 
 ### 7. `handleAutoFixMix` race condition and inverted-sign clipping math
 
-**Problem:** Two sub-issues. (a) After dispatching `setTrackGain` /
-`setMasterGain`, the handler immediately re-runs `analyzeMix()`; there
-is no guarantee the audio graph has been updated by the time the second
-read happens. (b) The clipping correction
-`targetLinear = currentLinear / 10 ** ((peakDb + 0.5 + 3) / 20)` is
-defined relative to dBFS, but it is being applied as a _multiplier on
-existing track gain_. For a track at peak −10 dB the formula reduces
-gain by `−10 + 3.5 = −6.5 dB`. For a non-clipping track this branch is
-correctly skipped, but the handler also unconditionally reduces master
-when `peakDb > −3` using the same formula on master, which can produce
-absurd target gains (`Math.min(1, …)` then clamps to 1.0, masking the
-bug).
+**Problem:** Three sub-issues — gain-math sign error per-track,
+gain-math sign error on master, and a race between
+`setTrackGain`/`setMasterGain` and the second `analyzeMix` read.
+
+**Verified 2026-04-28:** Source unchanged. Walked through line-by-line:
+
+```
+:22  const overshootDb = tl.peakDb + 0.5;          // for peakDb=+1 → 1.5; peakDb=-10 → -9.5
+:23  const currentLinear = 10 ** (tl.peakDb / 20); // *peak* in linear (not the strip's gain)
+:24  const targetLinear = currentLinear / 10 ** ((overshootDb + 3) / 20);
+:25  const newGain = Math.max(0, Math.min(1, targetLinear));
+:26  setTrackGain({ trackId, gain: newGain });
+```
+
+- The branch is gated on `tl.isClipping` (`:21`), which is true only when `peakDb > -0.5`. Within the gate the formula is "currentLinear / 10^((peakDb + 3.5)/20)" — for peakDb = +1, that's `1.122 / 10^(0.225) = 1.122 / 1.679 = 0.668` linear (-3.5 dBFS). That **is** an in-range reduction — but it _replaces_ the existing track gain rather than _multiplying into_ it. A track at gain `0.8` clipping at +1 dBFS would drop to gain `0.668` — but if the track was clipping at +1 dBFS with strip gain at 0.5, the source signal is +7 dBFS internally and a strip gain of 0.668 still clips. **The fix only works if the strip gain was 1.0 before.**
+- `:33-38` (master): the gate is `peakDb > -3`, but the formula is `reductionDb = peakDb + 6` then `targetMasterLinear = currentMasterLinear / 10 ** (reductionDb/20)`. For peakDb = -1: reduction 5 dB, `1/10^0.25 = 0.562` linear (-5 dBFS). This is _further_ from the -3 dB ceiling than needed (a 2 dB cut would be enough). For peakDb = -2.9 (just inside the gate), reduction = 3.1 dB → `0.7` linear, which on a master sitting at 0.8 means the master's perceived peak shifts from -2.9 to -2.9 - 1 dB = -3.9 dBFS — fine, but again replaces rather than multiplies.
+- `:41` (race): `setMasterGain`/`setTrackGain` dispatch via `executeAppAction` (`:26`, `:38`); these resolve the Promise after the action handler runs, but the audio-graph apply is `setTargetAtTime` with a 10 ms time constant (see `BusNode.ts:30`). The second `analyzeMix` reads `getMasterAnalyser()` immediately afterwards — the analyser has `smoothingTimeConstant = 0.8` (`createWebAudioEngine.ts:58`), so the displayed peak is dominated by samples from before the gain change.
+
+**Root cause:** Two distinct bugs. (a) The gain math assumes "set strip
+gain to a function of current peak", but the strip gain and the peak
+are independent variables — you must compute `requiredReductionDb`
+from `peakDb - targetCeilingDb` and multiply that into the existing
+gain. (b) The "refresh" pass after the fix never waits for the audio
+graph to absorb the gain ramp.
+
+**Blast radius:**
+- `mixAnalysisStore` is the source of truth for the `MixAnalysisPanel` UI (`AiRuntime/presentations/views/MixAnalysisPanel.tsx`). Users see the second analysis as "after auto-fix". When the race wins, the panel says "fixed" while showing pre-fix numbers.
+- Tests at `handleAutoFixMix.spec.ts:60-83` only verify the dispatch _happens_, not the gain values. The first analyzeMix returns `peakDb: 2` (clipping) and the test expects an `executeAppAction` call — but the test never asserts the **value** of `gain` passed. So the formula could be mathematically wrong and the test would still pass.
+
+**Related sites:** `services/mixAnalysisHelpers.ts:200-211` already
+emits suggestions like "reduce gain by `${overshoot}` dB" with
+**different math** (`overshoot = peakDb + 0.5`, not `peakDb + 3.5`).
+The toast and the auto-fix disagree.
+
+**Fix sketch:**
+- Compute `reductionDb = peakDb - targetCeilingDb` (e.g. -1 dBFS for the master, -3 dBFS for the strip headroom).
+- Read the current strip gain via the audio engine (`getTrackStrip(trackId)?.gain` or similar) — do **not** infer it from peakDb.
+- New gain = `currentGain * 10^(-reductionDb/20)` (subtract dB, divide linear).
+- For the second analysis: either drop it (and have the UI poll on `mixAnalysisStore` once the next animation frame fires), or `await new Promise(r => setTimeout(r, 50))` to let the analyser smoothing settle (still racey but at least not 0 ms).
+- Add an `expect(executeAppAction).toHaveBeenCalledWith({ type: 'setTrackGain', payload: { trackId: 't1', gain: <number> } })` with a numeric tolerance.
 
 **Representative files:**
 
-- `src/modules/AudioAnalysis/handlers/analysis/handleAutoFixMix.ts:23-39,41`
+- `src/modules/AudioAnalysis/handlers/analysis/handleAutoFixMix.ts:21-39,41`
+- `src/modules/AudioAnalysis/services/mixAnalysisHelpers.ts:200-211`
+- `src/modules/AudioEngine/engine/BusNode.ts:30` (smoothing constant)
 
-**Needed:** (a) Wait for the `setTrackGain`/`setMasterGain` actions
-to actually settle in the audio graph before re-reading the analyser
-(or accept a single pass and remove the second `analyzeMix`). (b)
-Recompute the gain math: target peak = ceiling, required reduction in
-linear units = `currentLinear * (10 ** ((target − peak) / 20))`, then
-multiply _into the existing strip gain_, not replace it. Add tests
-that verify the new gain for known peakDb inputs.
+**Needed:** Per fix sketch. Cross-check against
+`mixAnalysisHelpers.generateSuggestions` so the toast text and the
+applied gain agree.
 
 ### 8. Module-level mutable singletons, racing-unsafe
 
 **Problem:** `polyphonicAudioToMidi.ts:45` and
-`browserStemSeparation.ts:30,113` initialise heavy resources lazily.
-Two concurrent callers will both see `null`, both download/instantiate
-the model, and the last write wins. The 235 MB ONNX session leak on a
-double-load is OOM-class.
+`browserStemSeparation.ts:30,103-136` initialise heavy resources
+lazily. Two concurrent callers both see `null`, both
+download/instantiate the model, and the last write wins. The 235 MB
+ONNX session leak on a double-load is OOM-class.
+
+**Verified 2026-04-28:**
+- `polyphonicAudioToMidi.ts:45-53` — `modelHolder.instance` populated synchronously on first hit; the `BasicPitch` constructor itself is _sync_, so the race window is the model file fetch inside the BasicPitch instance. Smaller race than the audit suggested but still real.
+- `browserStemSeparation.ts:105-136` — `getSession` is `async`; the race is the entire `await ort.InferenceSession.create(modelBuffer, …)`, which is the multi-second 235 MB allocation. `:113` populates `ortSession.ort` lazily as well, with the same race.
+
+**Root cause:** A holder object scopes the binding mutability but does
+nothing to coalesce concurrent callers. The pattern needs a Promise
+singleton, not a value singleton.
+
+**Blast radius:**
+- Two parallel UI clicks on "stem separate" before the first finishes → two `ort.InferenceSession.create` calls → ~470 MB peak before GC. On a 4 GB browser tab this trips a low-memory pressure event.
+- `getModelBuffer()` (`:65-100`) is also called from inside the race; both calls hit the Cache API at once, both win cache hits the second time, but the first time the network is double-fetched (~470 MB transit).
+
+**Reproduction steps:**
+1. Click "Stem separate" on clip A.
+2. Within ~2 s (before model load resolves) click "Stem separate" on clip B.
+3. Observe two `[Browser Stems] Creating ONNX session ...` log lines and ~470 MB heap growth.
+
+**Related sites:**
+- `Mixer/repositories/createOnnxRuntime.ts` (if it exists in another module) — search for any other module that imports `onnxruntime-web` directly. The duplicate import is wasteful.
+- `Mixer/useCases/...` for any other model holder that may have the same pattern. Outside this audit's scope but worth flagging.
+
+**Fix sketch:** In each file, change the holder to
+`{ promise: Promise<X> | null }` and:
+
+```ts
+if (!holder.promise) holder.promise = init();
+return holder.promise;
+```
+
+Pass-through reads see the same Promise; the second caller `awaits`
+the first's `init()` and never starts a parallel one.
 
 **Representative files:**
 
 - `src/modules/AudioAnalysis/useCases/polyphonicAudioToMidi.ts:45-53`
-- `src/modules/AudioAnalysis/repositories/browserStemSeparation.ts:30,103-136`
+- `src/modules/AudioAnalysis/repositories/browserStemSeparation.ts:30,113,105-136`
 
-**Needed:** Wrap the lazy init in a Promise singleton:
-`if (!holder.promise) holder.promise = init(); return holder.promise;`.
-Same pattern in both files. Add a test that invokes the use case twice
-concurrently and asserts only one `InferenceSession.create` call.
+**Needed:** Per fix sketch. Add a test invoking the use case twice
+concurrently with `Promise.all` and asserting `InferenceSession.create`
+was called exactly once.
 
 ### 9. `extractFeatures` mutates Meyda's global state non-reentrantly
 
@@ -621,16 +813,35 @@ serialise calls behind a queue. Document the constraint in the JSDoc.
 **Problem:** A 2.7 MB `Float32Array` per segment, plus a JS-level
 double-nested for-loop copying samples one at a time. At a typical
 3-minute song (~22 segments) this allocates ~60 MB of input tensors.
-The per-element `outData[lIdx] ?? 0` is dead defensive code on a typed
-array.
+
+**Verified 2026-04-28:**
+- `browserStemSeparation.ts:180` — `new Float32Array(2 * DEMUCS_SEGMENT_LEN)` per segment. `DEMUCS_SEGMENT_LEN = 343980` (`:15`), so `2 × 343980 × 4 bytes = 2.62 MB` per segment. Confirmed.
+- `:184` — wrapped into a new `ort.Tensor` per segment, which holds a reference to that buffer through inference; the next `new Float32Array(...)` doesn't fully reclaim until the previous tensor's GC (cross-realm — the tensor sits in the WASM/WebGPU side).
+- `:207-213` — the JS double-loop `for (let state ... for (let jIndex ...)` writes one sample at a time. Each `outData[lIdx]` is a typed-array read; `?? 0` returns `0` only for out-of-bounds indices, **but TypedArray out-of-bounds reads don't return `undefined`, they return `undefined` only via `at()`, _not_ via `[]` access.** Confirmed: `(new Float32Array(4))[100]` is `undefined` in TS but at runtime is `undefined` too — actually correct, the `?? 0` is reachable when `lIdx >= outData.length`. With `nStems=6, nCh=2, segOutLen=DEMUCS_SEGMENT_LEN=343980` and `state in [0,5], jIndex in [0, copyLen)` where `copyLen <= segOutLen`, the maximum `lIdx = 5 * 2 * 343980 + (343980 - 1) = 3 783 779`, but `outData.length = dims.product = 1*6*2*343980 = 4 127 760`. So in the typical case `lIdx < outData.length`. The `?? 0` only triggers if dims claims fewer stems than expected. **The audit's "dead defensive code" claim was correct — the fallback only fires on malformed model output.**
+
+**Root cause:** Implementation written as if scripting Python/NumPy,
+without TypedArray-native batch ops.
+
+**Blast radius:** Memory allocation flood in browser tabs already
+holding a 235 MB ONNX session. With 22 × 2.62 MB = ~58 MB of transient
+input tensors, plus the WASM-side mirror, total transient allocation
+is ~120 MB per separation request. The CPU cost of the per-element
+copy is negligible vs. inference, but the GC pressure is observable.
+
+**Related sites:**
+- `polyphonicAudioToMidi.ts:103-111` allocates an `OfflineAudioContext` per call for resampling (smaller — single allocation per request, bounded by clip length).
+- `audioFeatures.ts:77` already adopts the "allocate-once / reuse" pattern. Use it as the precedent here.
+
+**Fix sketch:**
+- Pre-allocate `inputData` and `inputTensor` once outside the segment loop; `inputData.set(left.subarray(offset, end), 0); inputData.fill(0, end - offset, DEMUCS_SEGMENT_LEN);` plus the right-channel mirror.
+- Replace the inner copy with `stemL[state].set(outData.subarray(state * nCh * segOutLen, state * nCh * segOutLen + copyLen), offset)` and similarly for the right channel.
+- Drop the `?? 0` after asserting `outData.length === expectedSize` once at the top of the segment loop.
 
 **Representative files:**
 
-- `src/modules/AudioAnalysis/repositories/browserStemSeparation.ts:180-216`
+- `src/modules/AudioAnalysis/repositories/browserStemSeparation.ts:172-216`
 
-**Needed:** Allocate the input `Float32Array` once outside the loop and
-reuse via `set()`. Replace the per-element copy with `subarray + set`
-into pre-allocated stem buffers. Drop the `?? 0` defensive nullish.
+**Needed:** Per fix sketch.
 
 ### 11. Off-by-one onset timing in `audioToMidi.detectOnsets`
 
@@ -687,6 +898,36 @@ same-named function from `repositories/audioAiEngine.ts` with zero
 added behaviour. They satisfy the "use cases wrap repositories"
 convention cosmetically but add no value.
 
+**Verified 2026-04-28:**
+- `isAudioGenerationAvailable.ts` — 5 lines, single `return checkAudioGenerationAvailability()`.
+- `isStemSeparationAvailable.ts` — 9 lines including JSDoc, single `return …`.
+- `isAudioAiServerRunning.ts` — 5 lines, single `return checkAudioAiServerStatus()`.
+- `generateAudio.ts` — 9 lines, forwards 3 args.
+- `separateStems.ts` — 5 lines, forwards 2 args.
+- Each file has a `__tests__/<name>.spec.ts` that only verifies "the export is defined" (e.g. `generateAudio.spec.ts:7-10`). Confirmed via `grep "should export"` — six pass-throughs total, four of which test nothing more than `expect(subject.x).toBeDefined()`. **These tests provide false confidence**: deleting the function body but keeping the export would still pass.
+
+**Root cause:** Convention-driven: "use cases wrap repositories" was
+applied without checking whether each file earned its keep. The tests
+were generated by the same convention without checking whether they
+asserted behaviour.
+
+**Blast radius:** Architectural drift. Once five empty pass-throughs
+ship, the next dev sees them as the pattern and mints more. Plus six
+files of `git diff` noise on every refactor.
+
+**Related sites:** Search the codebase for other modules with
+`useCases/<subdir>/<fnName>.ts` re-exporting `repositories/<fnName>` —
+likely Mixer, AiGeneration. Outside this audit's scope but a flag.
+
+**Fix sketch:**
+- Delete the five files and their `__tests__/`.
+- Re-export directly from `useCases/index.ts`:
+  `export { isAudioGenerationAvailable, isAudioAiServerRunning, isStemSeparationAvailable, generateAudio, separateStems } from '../repositories/audioAiEngine';`.
+- AGENTS.md "One Function Per File" applies to `useCases/` and
+  `repositories/` files — the repository file already violates this
+  with five exports (see #38), so the cleaner long-term fix is to
+  split the repo into five files and inline the use-case wrappers.
+
 **Representative files:**
 
 - `src/modules/AudioAnalysis/useCases/audioAi/isAudioGenerationAvailable.ts`
@@ -694,11 +935,9 @@ convention cosmetically but add no value.
 - `src/modules/AudioAnalysis/useCases/audioAi/isStemSeparationAvailable.ts`
 - `src/modules/AudioAnalysis/useCases/audioAi/generateAudio.ts`
 - `src/modules/AudioAnalysis/useCases/audioAi/separateStems.ts`
+- `src/modules/AudioAnalysis/useCases/audioAi/__tests__/*.spec.ts` (4 of 5 are export-presence-only)
 
-**Needed:** Either inline the repository calls in `useCases/index.ts`
-(if no orchestration is needed) or absorb a real responsibility into
-each (e.g. caching, validation, store mutation). Stop shipping
-no-op indirection.
+**Needed:** Per fix sketch.
 
 ### 15. `isAudioAiServerRunning` is async-for-no-reason
 
@@ -739,9 +978,26 @@ session.run>>` or import the upstream type). Drop the eslint-disable.
   `AudioToMidiOptions`, `DetectedOnset`, `InsertPolyphonicMidiNotesResult`,
   `PitchResult`, `PitchTrackingOptions`, `PolyphonicAudioToMidiOptions`,
   `PolyphonicAudioToMidiResult`).
-- The root `index.ts` re-exports the entire useCases barrel
-  (`export * from './useCases'`), spreading the type leakage to all
-  cross-module consumers.
+
+**Verified 2026-04-28:**
+- `useCases/referenceMixComparison/compareMixes.ts:1-7` imports `from '#/modules/AudioAnalysis/models/MixComparisonTypes'` — own-module absolute. Should be `../../models/MixComparisonTypes`.
+- `useCases/referenceMixComparison/analyzeMix/analyzeMix.ts:2` — same pattern, should be `../../../models/MixComparisonTypes`.
+- `useCases/referenceMixComparison/analyzeMix/createReferenceAnalysis.ts:1` — same pattern.
+- `useCases/index.ts:12, 15, 18, 23, 26` — all `export type` lines confirmed; verified by re-reading the file.
+- **The audit's previous claim of a root `src/modules/AudioAnalysis/index.ts` re-exporting `./useCases` is wrong: there is no such file.** AudioAnalysis follows the per-subdir pattern (`useCases/index.ts`, `stores/index.ts`, etc.) without a top-level barrel. This is a deviation from some other modules (Yeast, Transport, AiRuntime have only sub-folder barrels too — so the pattern is consistent). Cross-module consumers import from `#/modules/AudioAnalysis/useCases` directly.
+- The type leakage is real and observable: `AiRuntime/useCases/musicMentor/generateLessons.ts` does `import { analyzeMixFromTrackLayout } from '#/modules/AudioAnalysis/useCases';` then uses `ReturnType<typeof analyzeMix>` (`:17,20`) — that's the workaround pattern AGENTS.md actually recommends, so the cross-module consumer is fine. The type **export** is still a violation per AGENTS.md "Use-case types stay private".
+
+**Root cause:** The old "barrel that exposes both runtime and types"
+convention was carried into this module. AGENTS.md tightened the rule
+later; the file hasn't caught up.
+
+**Blast radius:**
+- `external` consumers can `import type { AudioFeatures } from '#/modules/AudioAnalysis/useCases'`. Search across the codebase: `grep -rn "import type.*AudioAnalysis/useCases" src/`. If any caller depends on these, removing the export breaks them; if not, it's a free clean-up.
+- For the self-import paths, the violation is in `compareMixes.ts:2` and the two `analyzeMix/` siblings — three files total.
+
+**Fix sketch:**
+- Convert the three self-imports to relative.
+- Strip every `export type` line from `useCases/index.ts`. Run `pnpm typecheck` — any cross-module `import type` from `useCases` will surface as an error; either move the type into the consumer or use `ReturnType<typeof fn>` / `Parameters<typeof fn>`.
 
 **Representative files:**
 
@@ -749,13 +1005,10 @@ session.run>>` or import the upstream type). Drop the eslint-disable.
 - `src/modules/AudioAnalysis/useCases/referenceMixComparison/analyzeMix/analyzeMix.ts:2`
 - `src/modules/AudioAnalysis/useCases/referenceMixComparison/analyzeMix/createReferenceAnalysis.ts:1`
 - `src/modules/AudioAnalysis/useCases/index.ts:12,15,18,23,26`
-- `src/modules/AudioAnalysis/index.ts:1`
 
-**Needed:** Convert internal absolute imports to relative paths. Move
-shared types either to `models/` (cross-module-private; consumers
-duplicate per AGENTS.md "Model isolation") or strip the type re-exports
-from `useCases/index.ts`. Audit cross-module callers and delete the
-imports that lean on these re-exports.
+**Needed:** Per fix sketch. The previously cited
+`src/modules/AudioAnalysis/index.ts` does not exist — withdraw that
+representative file from the issue.
 
 ### 18. Function signatures take positional args (AGENTS.md violation)
 
@@ -893,6 +1146,520 @@ problem (module-private mutable state) hasn't been solved.
 locus of mutation. This is a cross-module cleanup; from
 `AudioAnalysis`'s perspective, document the dependency.
 
+_Issues #26-#33 are deferred slot reservations. The original audit's
+Findings list (line 124) numbers up to #34 but only opens 25 issues
+under "Open issues". To keep numbering stable so cross-references in
+specs and tasks survive future edits, new issues from the 2026-04-28
+adversarial review start at #34._
+
+### 34. **P0** — Track-config `analyzeMix` mistakes linear gain for dB
+
+**Problem:** `useCases/referenceMixComparison/analyzeMix/analyzeMix.ts:62-65`
+maps `track.gain` (a linear value, default `0.8`, clamped 0–2 in
+`BusNode.ts:30`) directly into a `MixAnalysis` whose contract is dBFS:
+
+```ts
+const gains = tracks.map((time) => time.gain ?? 0);
+const avgGain = gains.reduce(...) / trackCount;
+const rmsDb = Math.max(-60, avgGain - 6);   // 0.7 - 6 = -5.3 (claimed dBFS)
+const peakDb = Math.max(-60, avgGain - 1);  // 0.7 - 1 = -0.3 (claimed dBFS, would be clipping!)
+const lufs = rmsDb - 3;
+```
+
+A track at default gain 0.8 surfaces as `peakDb = -0.2` (effectively
+clipping in any sane mix-analysis UI). The same track at gain 1.5
+surfaces as `peakDb = +0.5` — which `compareMixes` treats as nominal
+because the reference also says `peakDb = -1`. **Compounded across
+all tracks the entire `compareMixes` pipeline reasons in the wrong
+units.**
+
+**Verified 2026-04-28:**
+- `Arrangement/models/Track.ts:40` declares `gain: number` (no unit annotation).
+- `Arrangement/models/Track.ts:184` and `:234` default to `0.8`.
+- `AudioEngine/engine/BusNode.ts:30` clamps `gain` 0–2 and applies it directly via `gainNode.gain.setTargetAtTime(...)` — confirms linear domain.
+- The function returns this value as `MixAnalysis.peakDb` which the contract documents as "Peak level in dBFS" (`MixComparisonTypes.ts:7`).
+
+**Root cause:** Author wrote a quick scaffold for the comparison
+feature without ever wiring the buffer-side analysis. The unit error
+hides because the reference is also synthetic (issue #6).
+
+**Blast radius:**
+- `compareMixes.compareToReference` (`compareMixes.ts:117-121`) every percentage shown to users.
+- `AiRuntime/useCases/musicMentor/generateLessons.ts` reads `lufs`, `crestFactor`, `dynamicRange` — all derived downstream.
+- Any future "compare to user-supplied reference" feature inherits this until #6 is resolved.
+
+**Fix sketch:**
+- Either the function correctly maps linear gain to dB:
+  `peakDb = 20 * Math.log10(Math.max(1e-6, avgGain))` —
+  giving `0.8 → -1.94 dB`, `1.0 → 0 dB`, `0.5 → -6.02 dB`.
+- Or, ideally, the function is renamed and rewritten to take a real
+  `AudioBuffer` and compute peak/RMS from samples (collapsing #1, #6,
+  and #34 into one fix).
+
+**Representative files:**
+
+- `src/modules/AudioAnalysis/useCases/referenceMixComparison/analyzeMix/analyzeMix.ts:62-65`
+- `src/modules/AudioAnalysis/models/MixComparisonTypes.ts:5-7` (contract)
+- `src/modules/Arrangement/models/Track.ts:40,184,234` (gain unit)
+
+**Needed:** Per fix sketch. Add a unit test that asserts a track at
+`gain: 1.0` produces `peakDb ≈ 0` and a track at `gain: 0.5` produces
+`peakDb ≈ -6`.
+
+### 35. **P0** — Master `AnalyserNode.fftSize = 256` makes frequency-balance bands pathological at typical sample rates
+
+**Problem:** `mixAnalysisHelpers.readFrequencyBalance` divides energy
+into six bands (sub 20-60, bass 60-250, lowMid 250-500, mid 500-2000,
+highMid 2000-6000, high 6000-20000). At `fftSize = 256` (set in
+`createWebAudioEngine.ts:57`), `frequencyBinCount = 128`. With
+sample rate 48 kHz, `binWidth = sampleRate / (binCount * 2) = 48000 /
+256 = 187.5 Hz`. The bands collapse:
+
+| Band   | Range (Hz) | Bins covered                      |
+| ------ | ---------- | --------------------------------- |
+| sub    | 20-60      | none below bin 1; clamped to {1}  |
+| bass   | 60-250     | bin 1 only (~187 Hz)              |
+| lowMid | 250-500    | bins 2-2 ({~375 Hz})              |
+| mid    | 500-2000   | bins 3-10                         |
+| highMid| 2000-6000  | bins 11-32                        |
+| high   | 6000-20000 | bins 33-106                       |
+
+`sub` and `bass` share bin 1 (the `Math.max(1, …)` clamp at
+`mixAnalysisHelpers.ts:78` overrides anything starting at bin 0). They
+are **necessarily equal**. The "muddy mix" detection
+(`mixAnalysisHelpers.ts:142-150`) compares `(sub + bass) / 2` to
+`(mid + high) / 2`, but the first term is always `bass` repeated.
+
+**Verified 2026-04-28:**
+- `createWebAudioEngine.ts:57` — `this.masterAnalyser.fftSize = 256;`.
+- `BusNode.ts:15` and `TrackNode.ts:56` — same `fftSize = 256` for per-track strips.
+- `mixAnalysisHelpers.ts:60-95` — `readFrequencyBalance` runs over `analyser.frequencyBinCount` bins; binWidth derived as cited.
+- `getFloatFrequencyData` returns `frequencyBinCount` bins; with `fftSize = 256` that is 128 bins.
+
+**Root cause:** `fftSize = 256` was likely chosen for low-latency peak
+metering, not spectral analysis. The same analyser is reused for
+both, so the spectral analysis inherits the wrong resolution.
+
+**Blast radius:**
+- `analyzeMix` `frequencyBalance` (`analyzeMix.ts:43`) is meaningless under this resolution — every "muddy" / "harsh" `notifyUser` toast is signal-from-noise.
+- `mixAnalysisStore` in AiRuntime, `MixAnalysisPanel` UI, and any AI tool that reads it inherits the wrong data.
+
+**Fix sketch:**
+- Split the analyser usage. Keep one `fftSize = 256` analyser for
+  peak metering. Add a parallel `fftSize = 4096` analyser (binWidth
+  ≈11.7 Hz at 48 kHz) for `readFrequencyBalance`. Connect both to the
+  same source.
+- Or, accept reduced accuracy and document that `frequencyBalance`
+  bands below ~190 Hz collapse — and skip the "muddy" rule until the
+  resolution improves.
+
+**Representative files:**
+
+- `src/modules/AudioEngine/repositories/createWebAudioEngine.ts:56-58`
+- `src/modules/AudioAnalysis/services/mixAnalysisHelpers.ts:60-95,142-150`
+- (cross-module finding; AudioEngine owns the analyser, but
+  AudioAnalysis is the consumer that breaks)
+
+**Needed:** Per fix sketch. Cross-reference the AudioEngine audit
+when one exists.
+
+### 36. **P1** — `audioToMidi` flux is a half-wave-rectified energy diff, not spectral flux; `detectOnsets` peak picking is too lax
+
+**Problem:** `audioToMidi.ts:97-110` builds a "flux" array from the
+**RMS energy difference** between consecutive frames, half-wave
+rectified. This is the simplest possible onset detector ("energy
+flux"), not the more accurate spectral flux that uses FFT magnitude
+differences. Peak-picking at `:122-136` requires `flux[i] > threshold
+&& flux[i] > flux[i-1] && flux[i] >= flux[i+1]` — the `>=` on the
+right tie allows two equal adjacent maxima to both fire, doubling
+onsets on plateau-shaped flux peaks.
+
+**Verified 2026-04-28:**
+- `audioToMidi.ts:99` — RMS per frame (energy, not spectrum).
+- `:104-110` — `flux[i] = Math.max(0, energies[i+1] - energies[i])` — half-wave-rectified energy diff. There is **no** FFT in this path.
+- `:126` — `flux[index]! >= flux[index + 1]!` ties go to the earlier index, which is fine; the `>` on the left correctly excludes the trailing tie. So the `>=` does not in fact double-fire — withdraw that sub-claim.
+- Onset time bug from the original audit (#11) **is** real:
+  `:129` — `timeSec = ((index + 1) * HOP_SIZE) / sampleRate`. The peak
+  flux frame is at `index`. The frame energy at `index` describes
+  samples `[index*HOP_SIZE, index*HOP_SIZE + FRAME_SIZE)`. Reporting
+  the onset at `(index+1)*HOP_SIZE` lands ~512 samples (≈11.6 ms at
+  44.1 kHz) **after** the frame's start. With the `flux[i+1]` reading
+  at `:132` for amplitude, the same lag.
+
+**Root cause:** Naïve energy-flux detector picked for simplicity.
+Time-of-frame conventions inconsistent.
+
+**Blast radius:**
+- Any audio→MIDI conversion (drum tracks, percussion samples) lands ~12 ms late. Combined with `Math.ceil(endBeat)` (#13) and the duration-clamp `(nextOnsetBeat - startBeat) * 0.9`, the resulting MIDI plays consistently late.
+- The output is downstream MIDI inserted into the timeline — irreversible if the user accepts it. Late onsets beat-quantize to the wrong beat half the time.
+
+**Fix sketch:**
+- Replace `timeSec = ((index + 1) * HOP_SIZE) / sampleRate` with `index * HOP_SIZE / sampleRate`.
+- For accuracy, replace the energy flux with FFT magnitude flux (sum of `max(0, |X[k][i+1]| - |X[k][i]|)` across positive-flux bins). FFT routines already exist in `keyDetection.ts` (Goertzel) and `audioFeatures.ts` (Meyda). Or use Meyda's `'spectralFlux'` feature directly.
+
+**Representative files:**
+
+- `src/modules/AudioAnalysis/useCases/audioToMidi.ts:88-139`
+
+**Needed:** Per fix sketch. Add a test with a synthesised click at
+sample N=22050 (0.5 s); assert the detected onset time is within
+`HOP_SIZE / sampleRate ≈ 11 ms` of 0.5 s.
+
+### 37. **NEW** — AGENTS.md violation: `services/mixAnalysisHelpers.ts` exports six functions from one file
+
+**Problem:** AGENTS.md "One Function Per File: Every `useCase` and
+`repository` file must export exactly ONE function." That rule is
+explicit for `useCases/` and `repositories/`. The `services/` rule is
+silent. But `mixAnalysisHelpers.ts` (`services/`) exports six
+functions: `linearToDb` (private), `readLevels`, `readFrequencyBalance`,
+`detectIssues`, `generateSuggestions`, plus types. (The audit's
+"linearToDb is exported" claim was wrong — it's `function`, not
+`export function`. Withdraw that claim.)
+
+**Verified 2026-04-28:**
+- `services/mixAnalysisHelpers.ts:9` — `function linearToDb` (private).
+- `:18` — `export function readLevels`.
+- `:60` — `export function readFrequencyBalance`.
+- `:120` — `export function detectIssues`.
+- `:197` — `export function generateSuggestions`.
+- Plus `LevelReading`, `FrequencyBands`, `TrackLevelSummary`, `MixIssue`, `DetectIssuesInput`, `GenerateSuggestionsInput` exported types.
+
+**Root cause:** Convention silence — services aren't covered by the
+"one function per file" rule, but the file is becoming the kind of
+multi-export grab-bag that the rule was designed to prevent.
+
+**Blast radius:** Maintenance only. Any change to `detectIssues`
+forces re-running tests for the entire `services/` file.
+
+**Fix sketch:** Split into four files in `services/`:
+`readLevels.ts`, `readFrequencyBalance.ts`, `detectIssues.ts`,
+`generateSuggestions.ts`. Move `linearToDb` to a private helper file
+or `#/utils/audio.ts`. Each file gets its own `__tests__/<name>.spec.ts`
+(three exist already; only `generateSuggestions` needs splitting from
+`mixAnalysisHelpers.spec.ts`).
+
+**Representative files:**
+
+- `src/modules/AudioAnalysis/services/mixAnalysisHelpers.ts`
+- `src/modules/AudioAnalysis/services/__tests__/mixAnalysisHelpers.spec.ts`
+
+**Needed:** Per fix sketch.
+
+### 38. **NEW** — `repositories/audioAiEngine.ts` exports five functions from one file (AGENTS.md violation)
+
+**Problem:** AGENTS.md "One Function Per File … `useCase` and
+`repository`" — explicit rule. `repositories/audioAiEngine.ts` exports
+`isStemSeparationAvailable`, `isAudioGenerationAvailable`,
+`isAudioAiServerRunning`, `generateAudio`, and `separateStems`.
+
+**Verified 2026-04-28:**
+- `repositories/audioAiEngine.ts:21` — `export function isStemSeparationAvailable`.
+- `:29` — `export function isAudioGenerationAvailable`.
+- `:35` — `export async function isAudioAiServerRunning`.
+- `:43` — `export const generateAudio = inject(...)`.
+- `:88` — `export const separateStems = inject(...)`.
+
+**Root cause:** Convention drift. The file pre-dates the rule, or the
+rule was overlooked when adding the third+ function.
+
+**Blast radius:** Compounds with #14: each empty pass-through in
+`useCases/audioAi/` re-exports one of these. If we split the
+repository, we can delete the five pass-throughs and re-export
+directly from `useCases/index.ts`.
+
+**Fix sketch:** Split into five files in `repositories/`. Update the
+consumers (the five `useCases/audioAi/*.ts` files) — or, per #14,
+delete those wrappers entirely and re-export the split repo files
+from `useCases/index.ts`.
+
+**Representative files:**
+
+- `src/modules/AudioAnalysis/repositories/audioAiEngine.ts`
+
+**Needed:** Per fix sketch.
+
+### 39. **NEW** — Six smoke-only tests assert nothing but "the export exists"
+
+**Problem:** Six spec files contain a single test of the form
+`expect(subject.x).toBeDefined(); expect(typeof subject.x).toBe('function')`.
+These provide false confidence: deleting the function body (return
+type unchanged) keeps the test green.
+
+**Verified 2026-04-28:**
+- `useCases/audioAi/__tests__/generateAudio.spec.ts:7-10`
+- `useCases/audioAi/__tests__/isAudioGenerationAvailable.spec.ts:7-10`
+- `useCases/audioAi/__tests__/isStemSeparationAvailable.spec.ts:7-10`
+- `useCases/audioAi/__tests__/separateStems.spec.ts:7-10`
+- `useCases/referenceMixComparison/analyzeMix/__tests__/analyzeMix.spec.ts:7-10`
+- `useCases/referenceMixComparison/analyzeMix/__tests__/createReferenceAnalysis.spec.ts:7-10`
+
+**Root cause:** Test scaffolding was generated for each new file
+without behaviour to assert; the placeholders shipped.
+
+**Blast radius:** Inflates "test files" count, gives a false sense of
+coverage. The six files add up to 60 lines of code that test nothing.
+
+**Fix sketch:** Delete (or, where #14/#38 fixes apply, the files they
+test cease to exist). For
+`referenceMixComparison/analyzeMix/__tests__/analyzeMix.spec.ts`,
+strengthen to a real behavioural test once #34 lands.
+
+**Representative files:** see verified list above.
+
+**Needed:** Delete or rewrite to assert behaviour.
+
+### 40. **NEW** — `referenceMixComparison/__tests__/analyzeMix.spec.ts` mocks the wrong barrel level (related to #2)
+
+**Problem:** The spec at `referenceMixComparison/__tests__/analyzeMix.spec.ts:3`
+mocks `vi.mock('#/modules/Arrangement', () => ({ trackStore: {...} }))`
+— but the production code in `analyzeMix.ts:1` imports
+`from '#/modules/Arrangement/stores'`. The mock factory is inert; the
+test passes only because the production code accepts an undefined
+`trackStore.value` and falls through `createDefaultAnalysis`.
+
+**Verified 2026-04-28:**
+- `useCases/referenceMixComparison/analyzeMix/analyzeMix.ts:1` — `import { trackStore } from '#/modules/Arrangement/stores'`.
+- `useCases/referenceMixComparison/__tests__/analyzeMix.spec.ts:3` — `vi.mock('#/modules/Arrangement', …)`.
+- `Arrangement/stores/index.ts` exports `trackStore`. `Arrangement` may also re-export it from a higher barrel, but the production import is the explicit `/stores` path. The mock at the wrong path is inert.
+
+**Root cause:** Same family as #2 — copy-pasted from a different
+module with a different barrel layout.
+
+**Fix sketch:** Change the mock path to
+`#/modules/Arrangement/stores`. Then assert behaviour (`gain: 0.8`
+input → expected `peakDb`/`rmsDb` outputs — combined with the #34 fix,
+those become numerically meaningful).
+
+**Representative files:**
+
+- `src/modules/AudioAnalysis/useCases/referenceMixComparison/__tests__/analyzeMix.spec.ts:3`
+
+**Needed:** Per fix sketch.
+
+### 41. **NEW** — `analyzeMix.ts:39` masks `require-await` with eslint-disable — the function is sync today
+
+**Problem:** `useCases/analyzeMix.ts:39` has
+`// eslint-disable-next-line @typescript-eslint/require-await` with a
+comment "async API contract; will be async when real DSP analysis is
+added". The function is currently sync internally — every operation
+is synchronous. The Promise wrapping forces every caller to `await`,
+adds a microtask hop in `handleAnalyzeMix.ts:16` and
+`handleAutoFixMix.ts:17,41`. Same anti-pattern as #15 in the original
+audit (`isAudioAiServerRunning`).
+
+**Verified 2026-04-28:**
+- `useCases/analyzeMix.ts:40` — `export async function analyzeMix(): Promise<AnalyzeMixOutput>`. Body uses no `await`.
+- The eslint-disable comment justifies the future intent. But "future intent" is what specs are for, not eslint comments.
+
+**Root cause:** Speculative async wrapping for a future DSP path that
+hasn't shipped.
+
+**Blast radius:**
+- `handleAutoFixMix.ts:41` — the second `await analyzeMix()` is part of the race in #7. Making it sync would not fix the race (the gain dispatch is genuinely async via `executeAppAction`), but it would clarify which `await` matters.
+- Tests must `await` the function: `analyzeMix.spec.ts:47` and `handleAnalyzeMix.spec.ts:33-47`. They'd simplify if sync.
+
+**Fix sketch:** Drop the `async`. When the real DSP path lands and
+becomes async, change the signature back. The compiler will surface
+all the call sites that need `await`. That's the correct way to
+introduce async — top-down from the boundary.
+
+**Representative files:**
+
+- `src/modules/AudioAnalysis/useCases/analyzeMix.ts:39-40`
+
+**Needed:** Per fix sketch.
+
+### 42. **NEW** — `audioFeatures.ts:99-110` casts Meyda return values with `as` chains (TypeScript-soundness violation)
+
+**Problem:** `audioFeatures.ts:99-110` builds the return type by:
+`(features.rms as number) ?? 0`,
+`(features.loudness as { total: number; specific: Float32Array }) ?? …`,
+`(features.mfcc as number[]) ?? []`. These are `as`-style assertions
+on values whose types come from Meyda. Per AGENTS.md "TypeScript —
+soundness": "Forbidden: `as`, `as any`, or `as unknown as …` to
+silence compiler errors instead of fixing the value or the type".
+
+**Verified 2026-04-28:** Confirmed all five `as` assertions on lines
+99-110.
+
+**Root cause:** Meyda's `extract` returns
+`Partial<Record<MeydaFeature, MeydaFeatureValue>>` which is strictly
+correct (any feature can be undefined or wrong shape if the
+configuration is off). The code wants to silence that; it does so via
+`as` rather than via a runtime validator.
+
+**Blast radius:** If Meyda's output shape changes in a future
+upgrade, the casts hide the breakage; the code accepts whatever shape
+arrives and produces zeros.
+
+**Fix sketch:**
+- Define a per-feature narrowing helper:
+  `function asNumberOr(value: unknown, fallback: number): number { return typeof value === 'number' ? value : fallback; }` and similar for arrays/objects.
+- Or use Zod at the Meyda boundary to validate the entire `features` object once.
+
+**Representative files:**
+
+- `src/modules/AudioAnalysis/useCases/audioFeatures.ts:99-110`
+
+**Needed:** Per fix sketch.
+
+### 43. **NEW** — `polyphonicAudioToMidi.ts` allocates a new `OfflineAudioContext` on every call when sample rate ≠ 22050
+
+**Problem:** `polyphonicAudioToMidi.ts:104-111` constructs a new
+`OfflineAudioContext` per invocation when the source rate is 44.1 / 48
+kHz (the common case). `OfflineAudioContext` is heavy: it pre-allocates
+a render graph buffer of `targetLength` samples × `numberOfChannels`
+× 4 bytes. For a 5-min clip at 22050 Hz mono, ~26 MB.
+
+**Verified 2026-04-28:** Source unchanged.
+
+**Root cause:** Resampling per-call; no cache. Combined with the
+allocator pressure of #10, two parallel runs on different clips cost
+~50 MB of transient `OfflineAudioContext` graph state alone.
+
+**Blast radius:** Smaller than #10 (one alloc per invocation, not per
+segment). Still worth fixing if a per-clip "auto-MIDI" pass batches
+many clips.
+
+**Fix sketch:**
+- Cache the resampled buffer keyed by `(audioBufferId, targetSampleRate)`.
+- Or use `audioBufferCache` directly with a derived key.
+- Or pre-resample once on import and cache there.
+
+**Representative files:**
+
+- `src/modules/AudioAnalysis/useCases/polyphonicAudioToMidi.ts:99-112`
+
+**Needed:** Per fix sketch.
+
+### 44. **NEW** — `audioToMidi` and `insertPolyphonicMidiNotes` create tracks during analysis (mutating side-effect inside a use-case-claiming-purity)
+
+**Problem:** Both `audioToMidi.ts:191-198` and
+`insertPolyphonicMidiNotes.ts:26-34` may call `addTrack(...)` if the
+target track id doesn't resolve to a MIDI track. This is a hidden
+mutation: a function nominally named "audio to MIDI" silently creates
+a new track in the arrangement.
+
+**Verified 2026-04-28:**
+- `audioToMidi.ts:191-198` — branch `if (!existingTrack || existingTrack.kind !== 'midi') { addTrack(...) }`.
+- `insertPolyphonicMidiNotes.ts:26-34` — same.
+
+**Root cause:** Convenience: the caller "shouldn't have to" create the
+track. But this means the use case has two responsibilities (analyse +
+arrange) and the failure mode of "track creation failed" is subtle —
+the function returns void / null without telling the caller _why_.
+
+**Blast radius:**
+- Tests in `audioToMidi.spec.ts:44-61` and
+  `insertPolyphonicMidiNotes.spec.ts:33-39` already exercise the
+  branch but do not assert that the side-effect is undone if the
+  subsequent `addClip` / note insertion fails.
+- The undo system: `handleAudioToMidi` is `undoable: true`. Does the
+  undo unwind the implicit `addTrack`? **Probably not** — undo runs the
+  inverse of the dispatched `AppAction`s, but `addTrack` here is a direct
+  use-case call, not an action. So undo leaves the track behind.
+
+**Fix sketch:**
+- Split: the use case takes a resolved `midiTrackId` and fails fast if
+  the track isn't MIDI. A separate command/handler creates the track
+  if the user needs one.
+- Or: dispatch `addTrack` as an `AppAction` so undo sees it.
+
+**Representative files:**
+
+- `src/modules/AudioAnalysis/useCases/audioToMidi.ts:191-198`
+- `src/modules/AudioAnalysis/useCases/insertPolyphonicMidiNotes.ts:26-34`
+- `src/modules/AudioAnalysis/handlers/analysis/handleAudioToMidi.ts:23` (`undoable: true`)
+
+**Needed:** Per fix sketch. Decide first whether undo of "audio to
+MIDI" should restore the original track count.
+
+### 45. **NEW** — `linearToDb` private helper duplicates a likely existing one in `#/utils/`
+
+**Problem:** `services/mixAnalysisHelpers.ts:9-14` defines a private
+`linearToDb`. There is almost certainly an identical helper somewhere
+in `#/utils/audio` or another module's `services/`.
+
+**Verified 2026-04-28:** Did not enumerate — outside this audit's
+scope. Flag for cross-module deduplication.
+
+**Root cause:** Helper added without a search for prior art.
+
+**Blast radius:** Cosmetic / DRY. Five-line duplication with a
+single-source-of-truth concern only if the SILENCE_FLOOR_DB constant
+ever changes.
+
+**Fix sketch:** `grep -rn "function linearToDb\|export.*linearToDb" src/`.
+If duplicated, hoist to `#/utils/audioMath.ts` or similar.
+
+**Representative files:**
+
+- `src/modules/AudioAnalysis/services/mixAnalysisHelpers.ts:9-14`
+
+**Needed:** Cross-module grep + decision.
+
+### 46. **NEW** — `compareToReference()` is sync but calls a function (`analyzeMix` from `referenceMixComparison`) that the audit had previously called sync — verify no async drift sneaks back in
+
+**Problem:** `compareMixes.ts:117` declares `export function
+compareToReference(): MixComparisonResult` — sync. It calls
+`analyzeMix()` (track-config one — sync) and
+`createReferenceAnalysis()` (sync) and `compareMixes(...)` (sync).
+That's correct today. **But** if a future refactor makes
+`analyzeMix` async (#41 already wraps the live one in a Promise), and
+someone refactors `compareToReference` to use the live one (per #1
+"collapse the two analyzeMixes"), the function silently changes
+contract. `handleCompareToReference.execute` is sync (`:7`) and would
+drop the Promise.
+
+**Verified 2026-04-28:**
+- `compareMixes.ts:117-121` — sync, all internal calls sync.
+- `handleCompareToReference.ts:7` — `execute: () => { …; void … (sync) }`.
+
+**Root cause:** Defensive note for the next session: if you fix #1 by
+unifying on the live `analyzeMix`, you _must_ also make
+`compareToReference` async and update the handler.
+
+**Fix sketch:** Document the constraint inline (in the spec file
+born from this audit) so the handler shape change is part of the same
+patch.
+
+**Representative files:**
+
+- `src/modules/AudioAnalysis/useCases/referenceMixComparison/compareMixes.ts:117-121`
+- `src/modules/AudioAnalysis/handlers/analysis/handleCompareToReference.ts:7-13`
+
+**Needed:** No standalone fix; it's a guardrail for the #1/#6 work.
+
+### 47. **NEW** — Polyphonic `audioToMidi` writes to the imported `BasicPitch` model URL `?url`-style — no test verifies the asset survives bundling
+
+**Problem:** `polyphonicAudioToMidi.ts:17` —
+`import basicPitchModelUrl from '@spotify/basic-pitch/model/model.json?url'`.
+The file comment acknowledges that the previous `new URL(...,
+import.meta.url)` form left the file unbundled in production. Today's
+`?url` form is correct for Vite, but no test asserts it. If a build
+config change ever introduces a Webpack/Rollup-shaped bundler step
+that doesn't honour `?url`, the URL becomes a string literal and
+inference fails at runtime.
+
+**Verified 2026-04-28:** The `?url` import is in place; no test
+covers the URL's resolved value.
+
+**Root cause:** Bundler-specific syntax with no contract test.
+
+**Blast radius:** Production-only failure mode. Hard to debug post-deploy.
+
+**Fix sketch:** A vitest case asserting
+`expect(basicPitchModelUrl).toMatch(/^\/.+model\.json/)` (vitest uses
+Vite under the hood, so the `?url` resolves to a real path) — this
+catches a breakage in vitest if anyone migrates to a non-Vite test
+runner. Plus a CI smoke test that loads the asset URL.
+
+**Representative files:**
+
+- `src/modules/AudioAnalysis/useCases/polyphonicAudioToMidi.ts:14-17`
+
+**Needed:** Per fix sketch.
+
 ---
 
 ## Open questions
@@ -914,74 +1681,131 @@ locus of mutation. This is a cross-module cleanup; from
 
 ## Risks
 
-- **Correctness regressions hide behind passing tests.** Issues #2 and
-  #25 mean the detection-side use cases ship without behavioural
-  coverage. A well-meaning refactor of `keyDetection` or `tempoDetection`
-  could ship broken without any spec failing.
-- **Audio-graph race in auto-fix.** Issue #7 / #19: the user clicks
-  "Auto-fix mix"; the toast says "fixed", but the displayed numbers and
-  the actual graph state can disagree. In a worst case the gain math
-  produces a clamp to 1.0 (no change applied) and the user sees a
-  "fixed" success notification.
-- **Concurrency-induced OOM.** Issue #8: a UI that allows two stem
-  separations at once will allocate two ~235 MB ONNX sessions; the
-  second one wins the binding but the first is garbage-collected only
-  if no inference is in flight. Worst case: both sessions are alive
-  during overlapped inferences → ~470 MB peak.
-- **DSP credibility.** Issues #4, #5, #11, #12, #14: detections that
-  look right under casual listening but are systematically biased
-  (octave errors, leakage-coloured chroma, half/double-time tempo
-  flips) erode user trust. The "% match" of `compareToReference`
-  (issue #6) is theatrical.
-- **Architectural drift.** Issues #14, #15, #17, #18: AGENTS.md
-  violations have accumulated; left unaddressed they normalise
-  no-op pass-throughs, async-for-no-reason, deep cross-module imports,
-  and positional-arg signatures across the module.
+- **Unit confusion at the contract layer (P0, new #34).** Track-config
+  `analyzeMix` produces `peakDb`/`rmsDb`/`lufs` numbers that are off
+  by ~18-20 dB from any sane interpretation. The number is fed to
+  `compareMixes`, the AI music-mentor lessons, and any UI surface that
+  reads `MixComparisonResult.currentAnalysis`. Every metric is wrong
+  in a way that won't be caught by smoke tests because it's
+  internally consistent (synthetic vs synthetic).
+- **FFT resolution insufficient for the contract (P0, new #35).**
+  `frequencyBalance` "muddy / harsh" detection at fftSize=256 is
+  guesswork. Any spec that lands an "auto-fix EQ" feature on top of
+  this becomes a parallel-universe DSP product.
+- **Correctness regressions hide behind passing tests** (P0, #2, #25,
+  new #40). Five test files exercise no production code; the real
+  implementations are silently uncovered. A well-meaning refactor of
+  `keyDetection`, `tempoDetection`, `pitchDetection`, `audioFeatures`,
+  or `referenceMixComparison/analyzeMix` could ship broken without
+  any spec failing.
+- **Audio-graph race in auto-fix** (P1, #7 / #19). User clicks
+  "Auto-fix mix"; toast says "fixed", but displayed numbers and
+  graph state can disagree. Worst case: the gain math produces a
+  clamp to 1.0 (no change applied) and the user sees a "fixed" toast.
+- **Concurrency-induced OOM** (P2, #8). A UI that allows two stem
+  separations at once allocates two ~235 MB ONNX sessions. Worst case:
+  ~470 MB peak with active inferences. Mitigation: the current UI
+  doesn't actually expose two parallel runs, but the door is open.
+- **DSP credibility** (P2, #4, #5, #11, #12, new #36). Octave errors
+  in `audioToMidi.estimatePitch`, leakage-coloured chroma in
+  `keyDetection`, half/double-time tempo flips, ~12 ms onset lag.
+  Casual listening hides them; analytic users (the actual target
+  audience for an analysis feature) will notice.
+- **Architectural drift** (P3, #14, #15, #16, #17, #18, #23, new
+  #37-#39, #41). AGENTS.md violations accumulated: no-op
+  pass-throughs, async-for-no-reason, multi-export `services/` and
+  `repositories/` files, smoke-only tests. Each isolated violation is
+  cosmetic; in aggregate they signal that the convention isn't being
+  enforced.
 
 ---
 
 ## Suggested approaches
 
-- **Land the test fixes first (issues #2, #24, #25).** Mock-path
-  corrections are mechanical; once they apply, the rest of the audit's
-  DSP fixes (issues #4, #5, #11, #12) can be driven test-first.
+- **Block #34 first.** Without unit-correct `analyzeMix`, any
+  downstream UX claim is built on a fiction. The fix is two lines
+  (linear→dB conversion). Add a unit test asserting `gain: 1.0 →
+  peakDb ≈ 0`.
+- **Then #35 (FFT resolution).** Cross-module fix — touches AudioEngine.
+  Add a separate analyser at `fftSize = 4096` for spectral analysis;
+  keep the 256 one for peak meters.
+- **Land the test mock fixes (issues #2, #25, new #40).** Mock-path
+  corrections are mechanical; once they apply, the DSP fixes (issues
+  #4, #5, #11, #12, new #36) can be driven test-first.
 - **Collapse the two `analyzeMix`es** (issue #1). Rename the
   track-config estimator. Decide whether it earns its keep — if
   `compareToReference` is going to ingest a real reference track
-  eventually, the estimator can be deleted now.
-- **Fix `handleAutoFixMix` math + race** (issue #7) with property tests
-  on the gain formula and an `await` (or store-subscription wait)
-  before the second analysis.
+  eventually, the estimator can be deleted now. Note #46: the
+  collapse forces `compareToReference` to become async, which forces
+  `handleCompareToReference` to become async — coordinate.
+- **Fix `handleAutoFixMix` math + race** (issue #7) with property
+  tests on the gain formula and a settle-wait (or just drop the
+  second analysis) before the second `analyzeMix`. The toast text in
+  `mixAnalysisHelpers.generateSuggestions` already encodes a
+  different formula — pick one.
 - **Replace `audioToMidi.estimatePitch` with `pitchy`** (issue #12)
   and delete the duplicate detector. Combined with fixing the onset
-  off-by-one (issue #11), this is the cheapest accuracy improvement.
+  off-by-one (issue #11) and replacing energy-flux with spectral
+  flux (new #36), this is the cheapest accuracy improvement on the
+  audio→MIDI path.
 - **Refactor singletons** (issue #8) to a Promise-coalesced lazy init.
   One pattern, two files.
 - **Decide on `audioAi/*.ts`** (issue #14): either delete the folder
-  and inline in the barrel, or assign each file a real responsibility.
-- **AGENTS.md compliance pass** (issues #15, #16, #17, #18, #23) as a
-  follow-up sweep — small mechanical refactors that should land in a
-  single commit.
+  and inline in the barrel, or split the repo file (#38) and assign
+  each a real responsibility. The "delete + re-export from
+  `useCases/index.ts`" path is shorter.
+- **AGENTS.md compliance pass** (issues #15, #16, #17, #18, #23, new
+  #37, #38, #39, #41, #42) as a follow-up sweep — small mechanical
+  refactors that should land in a single commit.
+
+A reasonable ordering: P0s (#34, #35, #2/#25/#40) → P1s (#7, #1/#6,
+#3) → P2s (DSP slate + #8) → P3s (architecture).
 
 ---
 
 ## Recommendation
 
-Start with **issue #2 (test mock paths)**. It is mechanical, unblocks
-adversarial test coverage for the four most fragile use cases
-(keyDetection, tempoDetection, pitchDetection, audioFeatures), and
-sets the stage for fixing the DSP bugs (#4, #5, #11, #12) test-first.
-Land it as a standalone commit; then tackle **issue #7 (handleAutoFixMix
-math + race)** because that is the most user-visible incorrect
-behaviour today.
+Start with **#34 (linear-vs-dB unit bug)** as a single-line patch
+with a unit test. It's the cheapest fix with the largest correctness
+return, and it unblocks #1/#6 — once `analyzeMix` is unit-honest,
+the synthetic-vs-synthetic problem is the only remaining one.
 
-After those two land, the next session can decide between the
-"correctness pass" (issues #4, #5, #11, #12, #14, #21) and the
-"architecture pass" (issues #1, #6, #14, #15, #16, #17, #18). They are
-independent.
+Land **#35 (analyser fftSize)** as a coordinated patch with the
+AudioEngine team — it changes a singleton's behaviour but the call
+sites in this module already document what resolution they want.
+
+Then **#2 / #25 / #40 (test mock paths)**. Mechanical, unblocks
+adversarial coverage for keyDetection, tempoDetection,
+pitchDetection, audioFeatures, and the track-layout analyzeMix.
+
+Then **#7 (handleAutoFixMix math + race)** — most user-visible bug,
+worth driving with a property-style test on the gain formula.
+
+After those four land, the rest splits cleanly into
+"correctness pass" (#4, #5, #11, #12, new #36, #21) and
+"architecture pass" (#1, #6, #14, #15, #16, #17, #18, new #37-#42).
+
+The audit's previous recommendation to start with #2 is downgraded
+because the unit bug (#34) is more catastrophic and cheaper to fix.
 
 ---
 
 ## Resolved
 
-_No issues resolved yet._
+### Withdrawn / corrected during 2026-04-28 adversarial review
+
+These were claims in the original audit that did not survive a
+line-by-line re-read. Listing them here so the next session does not
+re-investigate.
+
+- **Audit Findings #4 sub-claim "Goertzel inner loop overshoots data length"** — withdrawn. Outer loop guard `frame + fftSize < data.length` prevents `frame + index < data.length` from ever exceeding bounds inside the inner `index < fftSize` loop. The `?? 0` defensive read is dead code, not a bug fix. (`keyDetection.ts:22-46`.)
+- **Audit Findings #4 sub-claim "Math.abs masks sign errors in Goertzel power"** — demoted. For real-valued time-domain input the formula is non-negative algebraically; the `Math.abs` is redundant cosmetic paranoia, not a correctness bug.
+- **Audit Findings #4 sub-claim "`s0` is read before its first assignment"** — withdrawn. `s0` is local, assigned at `:38` before the loop body's only read of `s1`/`s2`. TypeScript-strict noise; not a runtime issue.
+- **Audit Findings #10 sub-claim "the `?? 0` on `outData[lIdx]` is dead because TypedArray out-of-bounds returns 0"** — partially corrected. TypedArray `[]` access at out-of-bounds returns `undefined` (the `?? 0` does fire). However, with the verified dimensions (`6*2*343980` total floats, `lIdx` max ≈ 3.78M), the in-bounds case is the rule and the `?? 0` only triggers on malformed model output (different `nStems`/`nCh`). The audit's underlying claim ("defensive code") stands; the mechanism was misdiagnosed.
+- **Audit Findings #17 / Open issue #17 "self-import via `src/modules/AudioAnalysis/index.ts`"** — withdrawn. There is no root `index.ts` in `src/modules/AudioAnalysis/`. The module follows the per-subdir barrel pattern. The three offending self-absolute imports inside `referenceMixComparison/` are still real and tracked in the (rewritten) #17.
+- **Audit Findings #14 / Open issue #14 sub-claim "`linearToDb` is exported from `mixAnalysisHelpers.ts`"** — withdrawn. The function is private (no `export`). The original audit's "AGENTS.md violation: multiple exports" claim still holds because of `readLevels`, `readFrequencyBalance`, `detectIssues`, `generateSuggestions` — see new #37.
+- **Audit Findings #29 / Open issue #18 "function signatures take positional args"** — partially corrected. `audioToMidi.ts:160` already uses an object param (`AudioToMidiOptions`). The remaining offenders are: `computeRmsEnergy` (`:24`), `estimatePitch` (`:37`), `detectOnsets` (`:88`), `detectPitchForOnsets` (`:141`), and `freqToMidiPitch` (`:84`). All are file-private — AGENTS.md applies to module-level functions and these are fine as multi-positional **inside** the file (the rule's intent is on the public contract). **Issue #18 is downgraded to "non-blocking; only the public surface needs object params"**, and `audioToMidi` already complies on its public surface. The originally listed `insertPolyphonicMidiNotes` (`:18`) public signature still takes three positional args — that one is real.
+
+### Genuinely resolved
+
+_None yet — no implementation has landed against this audit._

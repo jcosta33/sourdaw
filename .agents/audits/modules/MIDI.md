@@ -743,48 +743,95 @@ module's public contract is `useCases/` + `stores/` + `events/` +
 
 ## Priorities
 
-1. **MIDI import data loss (#1, #2, #4, #30)** — the import path is
-   monophonic-channel-zero-only. Any user MIDI file with channels,
-   CCs, pitch-bend, or overlapping same-pitch notes silently loses
-   data on import.
-2. **MIDI export channel pinned to 0 (#4, #3)** — exports are not
-   round-trippable; multi-channel files cannot be opened, edited,
-   and re-exported. Combined with #1, the entire I/O contract is
-   broken for non-trivial files.
-3. **Stuck-note risk in step recording (#9)** — missing note-off
-   keeps a pitch in `activeNotes` indefinitely; the cursor never
-   advances; no recovery.
-4. **Note id collision (#47)** — 32-bit-truncated UUIDs collide at
-   ~65k unique notes per project. Collisions are silent corruption
-   in selection, undo, MIDI Learn.
-5. **`humanizeNotes` seed dropped by handler (#55, #56)** — undo/redo
-   produces non-deterministic output; the seed parameter is dead
-   code at the action contract level.
-6. **`migrateAbsoluteMidiNotes` migrates on every load (#46)** — no
-   version flag; user-named clips named "drums" / "copy" can be
-   shifted on every page load until `clip.startBeat == 0`.
-7. **Pattern-instance id regeneration (#25)** — every parent edit
-   invalidates every child note id; selection / undo / per-id memos
-   break silently.
-8. **`MidiLearn` channel/CC fan-out and value-range mismatch (#7,
-   #51, #52)** — duplicate mappings fire all targets; track-pan
-   `[-50, 50]` is a third convention; gain is linear, not dB.
-9. **Quantization swing instability (#13)** — "is offbeat" depends
-   on rounding, so `quantizeNotes` with `gridSize = 0.25` and
-   `gridSize = 0.5` produce different swing for the same notes.
-10. **`startBeat < 0` not consistently clamped (#3, #12)** — humanize,
-    quantize, retrograde, scale-velocities and friends can drift
-    notes off the timeline.
-11. **`workers/controller-scripting.worker.ts` runs unsandboxed user
-    code (#11)** — feature is fine for personal use but is silently
-    a remote code execution vector if scripts are ever shared.
-12. **No module root `index.ts`; type leakage from `useCases/index.ts`
-    and model imports across boundaries (#33, #34, #36)** — AGENTS.md
-    architectural violations that have hardened with time.
+> **Note (2026-04-28):** Findings vs Open issues numbering diverges.
+> The numbers in this Priorities list reference **Open issues**
+> 1–50, not the Findings list. Updated after the adversarial review.
+
+1. **CC/note coordinate-frame contradiction (Open issue #16)** —
+   notes are clip-relative (post-migration); the
+   `shiftMidiNotesAfterBeat` docstring claims everything is
+   absolute. Either notes are wrong or the function is wrong; either
+   way, arrangement-level shifts silently corrupt MIDI data. Triage
+   as **Critical** before any other fix.
+2. **MIDI import data loss (#1, #2)** — CCs, pitch-bend, channel,
+   poly pressure, program change all silently dropped on import. Any
+   non-trivial file is degraded.
+3. **MIDI export channel pinned to 0 (#4)** — multi-channel
+   round-trip is impossible; CC channel _is_ written, but note
+   channel is not. Asymmetric I/O.
+4. **Note id collision (#6)** — 32-bit truncated UUIDs collide at
+   ~65k notes; silent corruption in selection, undo, MIDI Learn,
+   pattern-instance propagation.
+5. **`moveMidiNote` and `resizeMidiNote` skip clamping (#38)** — the
+   CRUD layer doesn't enforce `MidiNote` invariants; combined with
+   the transforms (#12), there is no chokepoint at all.
+6. **`setNoteVelocity` allows velocity 0 (#34)** — silent corruption
+   because vel-0 noteOn ≡ noteOff in MIDI wire spec. Inconsistent
+   with every other velocity site in the module.
+7. **`duplicateClipNotes` drops expression data (#35)** — duplicating
+   a clip with MPE expression silently deletes per-note pitch-bend,
+   pressure, slide, probability.
+8. **`humanizeNotes` seed dropped at handler (#7, #49)** — undo/redo
+   produces non-deterministic output despite the function returning
+   a seed. The action contract is missing two payload fields.
+9. **Stuck-note risk in step recording (#5)** — missing note-off
+   keeps a pitch wedged; the cursor never advances. Toggle-off
+   recovers (because state is nulled, see #36) but during active
+   recording there's no escape.
+10. **Pattern-instance id regeneration on every parent edit (#9)** —
+    every push generates fresh child ids; selection state, undo,
+    MIDI Learn references all break silently.
+11. **Pattern-instance write-then-append race (#40)** — orphan notes
+    written before the clip exists in `trackStore`; if the
+    target-track check fails, notes leak forever.
+12. **`migrateAbsoluteMidiNotes` regex heuristic with no schema
+    version (#8, #39)** — migration trigger is fragile; CC/pitch-bend
+    not migrated.
+13. **MIDI Learn fan-out and value-range chaos (#10)** — duplicate
+    mappings fire all targets; trackPan uses a third convention
+    (`[-50, 50]`); trackGain is linear, not log-dB.
+14. **Quantization swing instability (#11)** — "is offbeat" depends
+    on rounding direction; same note swings differently at different
+    grid sizes.
+15. **`startBeat < 0` not consistently clamped (#12)** — humanize,
+    quantize, retrograde can drift notes off the timeline. Combined
+    with #38, no chokepoint exists.
+16. **`quantizeNoteLengths` silently elongates short notes (#19)** —
+    a 1/64 note at 1/4 grid becomes a quarter note. Destructive,
+    no warning, no strength.
+17. **`stampChord` skips out-of-range tones silently (#21)** — high
+    root + 9th chord = single-note "chord". User confusion.
+18. **`controller-scripting.worker.ts` runs unsandboxed user code
+    (#17)** — fine for personal use; high-severity if scripts are
+    ever shared.
+19. **`addPitchBend` / `addMidiCC` accept unbounded inputs (#37)** —
+    out-of-range values reach the store; export then truncates,
+    wrapping around bit-stuck.
+20. **Architecture pass (#18, #23, #24, #25, #28, #50)** — no module
+    root `index.ts`; type leakage; positional parameters; `as`
+    casts; misplaced use cases under `stores/`; inconsistent worker
+    naming.
+21. **Round-trip test missing (#29)** — single test catches #1, #2,
+    #3, #4 simultaneously. Land first.
+22. **`addPitchBend` / `addMidiCC` duplicate events (#22, #37)** —
+    no de-duplication on `(beat, channel, controller)`; rapid
+    hardware sweeps explode the store.
+23. **Note-on/off ordering at zero-tick adjacency (#3)** — stable
+    sort + insertion order; tied boundaries non-deterministic.
+24. **Chord-track localStorage synchronous, non-CRDT (#13, #45)** —
+    blocks main thread on every drag; not part of project document;
+    module-init side effect.
+25. **Lower-priority issues (#14, #15, #20, #26, #27, #30, #31, #32,
+    #33, #41–48, #50)** — see issue text for severity.
 
 ---
 
 ## Open issues
+
+> **Adversarial review pass — 2026-04-28.** Each numbered issue below has been
+> re-verified at cited file:line. Verification notes appear under
+> `**Verified:**` for each issue. New issues (#33+) are appended at the end of
+> this section.
 
 ### 1. MIDI import drops everything except notes
 
@@ -808,6 +855,17 @@ bytes the spec defines. Update `importMidiFile`'s caller path
 `pitchBendByClipId`. Add a round-trip test (export a fixture, import
 it back, assert CC/pb events match).
 
+**Verified (2026-04-28):** `midiImportWorker.ts:155-179` — the worker
+reads `data1` and `data2` for every status byte, but only
+`eventType === 0x90` (with `data2 > 0`) and `eventType === 0x80` (or
+`0x90` with vel 0) emit notes. CC (`0xB0`), pitch-bend (`0xE0`), poly
+pressure (`0xA0`), program change (`0xC0`), channel pressure (`0xD0`)
+bytes are consumed but never converted. Severity: **High** — the
+export side _does_ write CC bytes (`exportMidiFile.ts:57-62`), so
+round-trip is guaranteed-asymmetric: a user opens a file, sees their
+CCs missing, drags the clip back to disk, the .mid still has no CCs.
+The asymmetry makes this worse than mere "missing feature".
+
 ### 2. Same-pitch overlapping notes are lost on import
 
 **Problem:** `activeNotes: Map<number, …>` keyed by pitch
@@ -827,6 +885,17 @@ release.
 where `noteOn(60)`-`noteOn(60)`-`noteOff(60)`-`noteOff(60)` releases
 the first attack first).
 
+**Verified (2026-04-28):** `midiImportWorker.ts:111` —
+`activeNotes = new Map<number, { tick: number; velocity: number }>()`
+keyed by pitch. Line 164: `activeNotes.set(data1, …)` overwrites any
+existing entry without preserving the prior start tick. There is no
+"already active?" branch and no queue. Severity: **High**. Edge case
+worth noting: if a noteOn comes in for an already-active pitch and
+the new vel is **0** (i.e. some MIDI dialects use vel-0 noteOn as
+noteOff), the import path falls into the `eventType === 0x90 &&
+data2 === 0` branch at line 165 and closes the prior note correctly.
+But two real `noteOn` events with non-zero velocity still drop one.
+
 ### 3. Note-on/note-off ordering at zero-tick adjacency
 
 **Problem:** `exportMidiFile.buildTrackEvents.events.sort((a, b) =>
@@ -844,6 +913,25 @@ synth voice releases before the next allocation.
 `1` for CC, `2` for note-on, `3` for everything else) and sort by
 `(tick, kind)`. Add a test with two adjacent same-pitch notes that
 asserts the export ordering.
+
+**Verified (2026-04-28):** `exportMidiFile.ts:64` —
+`events.sort((alpha, b) => alpha.tick - b.tick)`. Confirmed: pure
+tick-only sort. Notably, `Array.prototype.sort` in V8/SpiderMonkey is
+**stable** since ES2019, so insertion order is preserved at equal
+ticks. But insertion order in `buildTrackEvents` is "all noteOn
+events for a note before its noteOff" (lines 53-54 push start then
+end, but if A.endTick === B.startTick, the iteration order in
+`for (const note of notes)` produces noteOn(A), noteOff(A), noteOn(B),
+noteOff(B) sequentially — so the noteOn(A) at tick 0 comes before
+noteOff(A) at tick T (good), but noteOff(A) at T comes before
+noteOn(B) at T because A is iterated first. This is **lucky** for the
+common case (A→B sequential) but breaks if note B is _earlier_ in the
+notes array than A, where the same notes produce noteOn(B), noteOff(B),
+noteOn(A), noteOff(A) — and at tick T, noteOn(B) precedes noteOff(A).
+Confirmed undefined behaviour. Severity: **Medium** (intermittent on
+real files, dependent on store insertion order which is not
+guaranteed across CRDT replays — see #5/#22). Add the kind-based tie
+break.
 
 ### 4. `MidiNote` has no channel; export is pinned to 0
 
@@ -865,6 +953,17 @@ in import, OR `0x0f` into status bytes on export. Migrate existing
 project state (assume channel 0). Coordinate with the audio engine
 which currently routes _all_ MIDI to a single channel per device.
 
+**Verified (2026-04-28):** `models/MidiNote.ts:1-11` confirms no
+`channel` field on `MidiNote`. `exportMidiFile.ts:53-54` writes
+`{ data: [0x90, pitch, vel] }` and `{ data: [0x80, pitch, 0] }` —
+status bytes pinned. CC export at `exportMidiFile.ts:61` _does_ OR
+the channel into the status byte (`0xb0 | ((cc.channel ?? 0) & 0x0f)`),
+demonstrating awareness of channel, but notes are inconsistent.
+Severity: **High**. Note: `MidiCC` and `MidiPitchBend` in
+`models/MidiNote.ts:13-26` _do_ carry `channel: number`, so the model
+inconsistency is internal too — three event types in the same file
+have heterogenous channel handling.
+
 ### 5. Stuck-note hazard in step recording
 
 **Problem:** A missing `noteOff` (device drops a packet, or the user
@@ -883,6 +982,22 @@ timeout, no panic-clear key, no "release all on toggle".
 longer than the threshold. Surface "all notes off" as a step-rec
 action.
 
+**Verified (2026-04-28):** `stepRecordNoteOff.ts:14` —
+`if (state.advanceOnNoteOff && nextActive.size === 0 && state.activeNotes.size > 0)`.
+Trace: A pressed (size=1), B pressed (size=2). B-off arrives:
+`nextActive = {A}` (size 1), guard fails, cursor doesn't advance.
+A's noteOff is dropped (device disconnect, packet loss): A stays in
+`activeNotes` forever. `toggleStepRecording.ts:24` calls
+`stepRecordStore.set(null)` — this _does_ wipe `activeNotes` because
+the entire state is null. So toggle-off recovers, but a stuck note
+during an active session still freezes the cursor. **The audit is
+correct, with one nuance: toggle-off does clear the set (because the
+state is nulled), so the recovery path is "toggle off, toggle on" —
+but during active recording the user has no way out without
+toggling.** Severity: **High** for live recording UX. Worse:
+`toggleStepRecording.ts:24` setting `null` triggers the type
+inconsistency — see new issue #36 below.
+
 ### 6. Note id collision via 32-bit UUID slice
 
 **Problem:** `crypto.randomUUID().slice(0, 8)` truncates to 32 bits.
@@ -900,6 +1015,20 @@ MIDI Learn id-keyed lookups, per-id React memos.
 **Needed:** Use the full UUID, or a monotonic counter scoped to the
 project (`midiStore.nextNoteId++`). Migrate existing projects via a
 versioned migration (already a pattern in the module).
+
+**Verified (2026-04-28):** `models/MidiNote.ts:36, 47, 58` — all three
+factories (`createMidiNote`, `createMidiCC`, `createMidiPitchBend`)
+truncate via `crypto.randomUUID().slice(0, 8)`. 8 hex chars = 32 bits.
+Birthday-paradox 50% collision at √(2³²) ≈ 65 536. Sites confirmed:
+`patternInstance/createPatternInstance.ts:54` (`note-inst-…slice(0, 8)`),
+`patternInstance/propagateParentChanges.ts:43` (same), `arpeggiator.ts:95`
+(`arp-${clipId}-${stepIndex}` — actually deterministic and **bug-free**
+on collisions but introduces a different problem: arpeggiate twice on
+the same clip at the same step produces _the same id_, breaking
+selection state). `chordTrackStore`/`addChordEvent` also use slice(0, 8)
+(`models/ChordEvent.ts:21`). Severity: **High** for projects with >10k
+notes; **Critical** for generative content. The migration is
+straightforward (extend on first read).
 
 ### 7. `humanizeNotes` seed dropped at the handler
 
@@ -920,6 +1049,19 @@ contract.
 deterministically. (c) Add a test that asserts redo produces the same
 note positions as the first execute.
 
+**Verified (2026-04-28):** `humanizeNotes.ts:10-23` returns `usedSeed`.
+`handleHumanizeNotes.ts:7`:
+`humanizeNotes(action.payload.clipId, action.payload.amount)`.
+Confirmed: only `clipId` and `amount` (treated as both timing and
+velocity). The returned seed is dropped on the floor; the
+`velocityAmount` parameter is silently aliased to `timingAmount` via
+`vAmount = velocityAmount ?? timingAmount` at line 11. Both undo and
+redo will call `humanizeNotes` with no seed → fresh `generateSeed()`
+each time → different output every replay. Severity: **High** —
+violates undo determinism, which is a core invariant. Worse, the
+function's docstring claims "Returns the seed used, so callers can
+store it for replay" but no caller stores it.
+
 ### 8. `migrateAbsoluteMidiNotes` runs on every load with no version flag
 
 **Problem:** The migration heuristic `/melody|chords|drums|copy/i`
@@ -935,6 +1077,26 @@ its `startBeat` reaches 0.
 **Needed:** Add a `schemaVersion` field to `MidiStoreState`. Run the
 migration once when `schemaVersion < 1`, then bump to 1. Drop the
 clip-name regex; the version flag is the trigger.
+
+**Verified (2026-04-28):** `migrateAbsoluteMidiNotes.ts:32` —
+`/melody|chords|drums|copy/i`. `MidiStoreState` (`stores/midiStore.ts:8-12`)
+has no `schemaVersion`. The migration's idempotency check is
+`clip.startBeat === 0` (line 22 — skips clips at beat 0) AND
+`minStart >= clip.startBeat` (line 34 — only migrates if all notes
+are after the clip start). After one migration, `minStart` is reduced
+by `clip.startBeat`, and on the next load `minStart < clip.startBeat`
+(unless `clip.startBeat` itself changed), so subsequent migrations
+typically no-op for that clip. **Re-evaluating audit's claim:** "A
+clip named 'Drums Copy' is migrated repeatedly until its `startBeat`
+reaches 0" — this is **wrong**. After migration, `clip.startBeat`
+stays the same; `minStart` is now < `clip.startBeat`, so the next run
+skips. The bug is **a clip importing fresh between sessions**:
+import a "drums" clip with notes at absolute coords, the migration
+fires; export the project; reload from CRDT in another tab where the
+migration runs first, then notes get shifted twice if the import path
+runs after. Severity: **Medium** — the trigger condition is narrower
+than the audit claims, but a `schemaVersion` flag is still the right
+fix. Update the audit text.
 
 ### 9. Pattern-instance child note ids regenerate on every parent edit
 
@@ -952,6 +1114,12 @@ edit.
 existing child note ids when they map to the same parent note.
 Diff parent → child so notes deleted upstream stop emitting child
 notes.
+
+**Verified (2026-04-28):** `propagateParentChanges.ts:39-46` —
+`id: \`note-inst-${crypto.randomUUID().slice(0, 8)}\``. Confirmed:
+ids are minted fresh on every push. Bonus: this also _doubles down_ on
+issue #6 — child clips get their own slice(0,8) ids, narrowing the
+collision space _within a single parent edit_. Severity: **High**.
 
 ### 10. MIDI Learn `(channel, cc)` collision and value-range chaos
 
@@ -978,6 +1146,18 @@ the codebase convention. (c) Add a `scale: 'linear' | 'log' |
 Pull `min`/`max` from the actual device parameter contract for
 `deviceParam`.
 
+**Verified (2026-04-28):** `completeMidiLearn.ts:6-11` —
+`VALUE_RANGES` confirmed: `trackGain { 0, 1 }`, `trackPan { -50, 50 }`,
+`deviceParam { 0, 1 }`, `fermenterGlobalParam { 0, 1 }`.
+`completeMidiLearn.ts:24-45` finds **first** matching `(channel, cc)`
+via `findIndex`, replaces it. If two pre-existing entries share the
+same `(channel, cc)`, the second one survives intact alongside the
+new mapping. `handleMidiMessage.ts:5-7` is `min + (raw / 127) * (max
+- min)` — pure linear, no log/exp option, no 14-bit (MSB+LSB) CC
+support. Severity: **High** for trackGain (audible quality issue —
+linear gain feels jumpy at the bottom of the fader); **Medium** for
+the rest.
+
 ### 11. Quantization swing depends on grid-size rounding
 
 **Problem:** `stepIndex = Math.round(node.startBeat / gridSize)` then
@@ -998,6 +1178,22 @@ targets. The grid index modulo `(beatsPerBar / gridSize / 2)` is the
 correct test. Add a test that asserts the same note swings
 identically at multiple grid sizes when its position is on the
 shared subdivision.
+
+**Verified (2026-04-28):** `quantizeNotes.ts:6-13` — confirmed
+`stepIndex = Math.round(node.startBeat / gridSize); isOffbeat =
+stepIndex % 2 !== 0`. The `% 2` decision is "is the nearest grid line
+odd-indexed" — not "is the note on a musical offbeat". Cross-grid
+reproduction: `gridSize=0.25, startBeat=0.4` → `round(1.6)=2` → even
+(on-beat). `gridSize=0.5, startBeat=0.4` → `round(0.8)=1` → odd
+(offbeat). Same note, different swing direction. Severity: **High**
+for any feature that quantizes _then_ re-quantizes. Worse:
+`stepIndex` is computed before strength is applied, so even at
+`strength=0` the swing offset is added in full
+(`newStartBeat = node.startBeat + (targetStartBeat - node.startBeat)
+* strength`) — wait, swing IS applied at full strength because it's
+inside `targetStartBeat`. So `strength=0` sets `newStartBeat =
+node.startBeat`, OK. But `strength=0.5` adds half the swing too.
+Strength interpolation is correct.
 
 ### 12. `startBeat < 0` is not clamped consistently
 
@@ -1022,6 +1218,26 @@ that runs at the end of every transform and asserts `0 <= startBeat`,
 `0.0625 <= duration`, `0 <= pitch <= 127`, `1 <= velocity <= 127`,
 optional fields in their own ranges.
 
+**Verified (2026-04-28):** Confirmed in:
+- `humanizeNotes.ts:18` — no `Math.max(0, …)`.
+- `quantizeNotes.ts:13-16` — `targetStartBeat = stepIndex * gridSize
+  + swingOffset` can be negative if `stepIndex` is 0 and swing is
+  irrelevant; but with notes near beat 0 and negative swing values
+  (the function accepts swing < 0 implicitly), result is negative.
+- `retrogradeNotes.ts:24` — `startBeat: minStart + totalLength -
+  (node.startBeat - minStart) - node.duration`. If a note's `duration
+  > totalLength` (a single long-tail note), result is negative.
+- `moveMidiNote.ts:5` — **NEW**: no clamp at all on either pitch or
+  startBeat; the caller is trusted. The piano roll's drag handler
+  could send pitch=-3 or startBeat=-2 and `moveMidiNote` writes them
+  unchanged. See new issue #38 below.
+- `resizeMidiNote.ts:9-12` — clamps `duration` to `>= 0.0625`, but
+  does **not** clamp `startBeat >= 0`. New finding (#38).
+- `splitMidiNotesAtBeat.ts` — never moves startBeat below the
+  original; safe.
+- `legatoNotes`/`joinNotes` — safe (durations only).
+Severity: **Medium** module-wide — silent invariant violation.
+
 ### 13. Chord-track `localStorage` persistence is synchronous and non-CRDT
 
 **Problem:** `chordTrackStore.subscribe(() =>
@@ -1040,6 +1256,16 @@ or (b) leave it in the project state directly (chord-track is
 project-scoped data, not user-preferences). Throttle/debounce if
 localStorage is the right answer.
 
+**Verified (2026-04-28):** `chordTrackStore.ts:24-34` — confirmed.
+`loadFromStorage` runs at module-evaluate time (line 25), populating
+the store synchronously before any other code runs. The subscriber
+at lines 29-34 fires on every mutation, blocking on
+`JSON.stringify(state)` and `localStorage.setItem`. No throttle, no
+debounce, no cross-tab sync (no `storage` event listener). Worse:
+because the load is at module-init, late-initialized AppLogger is
+unavailable (the catch silently swallows errors). Severity: **High**
+— in a real session, every chord drag is one main-thread block.
+
 ### 14. `arpeggiate` destroys source notes; uses `Math.random` (no seed)
 
 **Problem:** `arpeggiate` overwrites `notesByClipId[clipId]` with
@@ -1055,6 +1281,19 @@ undo→redo produces a different shuffle.
 `'merge'` (or write to a new clip); document destruction. (b) Use
 `createSeededRandom`; thread the seed to the action payload as in
 issue #7.
+
+**Verified (2026-04-28):** `arpeggiator.ts:64` —
+`Math.floor(Math.random() * (index + 1))`. Confirmed unsalted RNG.
+`arpeggiator.ts:104-110` — `notesByClipId[clipId] = newNotes`
+unconditionally replaces. **Additional finding:** `arpeggiator.ts:95`
+mints ids as `arp-${clipId}-${stepIndex}` — **deterministic across
+calls**. If the user invokes arpeggiate twice on the same clip, the
+second run produces ids that collide with the first run's ids
+(though the first set is replaced, so the collision is "previous-
+state" only — UNDO history holds notes with ids that the next run
+will mint identically, which on undo→redo→undo gives unstable id
+graphs). The mix of "deterministic ids for this generator" and
+"randomUUID elsewhere" is itself a hidden footgun. Severity: **Medium**.
 
 ### 15. `MidiNote` model factory does not validate inputs
 
@@ -1072,6 +1311,19 @@ The model factory should be the boundary.
 100]`. Drop the per-call-site clamping in `addMidiNote`,
 `batchAddMidiNotes`, `duplicateClipNotes`. Add a `MIN_NOTE_DURATION_BEATS`
 constant in `models/`.
+
+**Verified (2026-04-28):** `models/MidiNote.ts:28-43`,
+`createMidiCC.ts` lines 45-53, `createMidiPitchBend` 55-62 — none of
+the three factories clamp. Callers that clamp:
+`addMidiNote.ts:17-20`, `batchAddMidiNotes.ts:32-35`,
+`duplicateClipNotes.ts:16-18`. Callers that **do not** clamp: every
+transform via `updateNotesForClip` (humanize/quantize/retrograde/
+invert/transpose/scaleVelocities/legato/join), `stampChord.ts:30`,
+`splitMidiNotesAtBeat.ts:58`, `splitNoteAtBeat.ts:37`,
+`createPatternInstance.ts:52`. `setNoteVelocity.ts:5` clamps to
+`[0, 127]` but every other site uses `[1, 127]` — see new issue #34
+below. Severity: **High** for vel=0 inconsistency (vel-0 noteOn ≡
+noteOff in MIDI wire spec).
 
 ### 16. CC/pitch-bend `beat` semantics ambiguous (relative vs absolute)
 
@@ -1091,6 +1343,22 @@ flow, MIDI import) for the coordinate they're using. Document the
 contract on `MidiCC` / `MidiPitchBend` (`/** beat is clip-relative,
 matches MidiNote.startBeat */`). Add a migration if any CC was
 written absolute.
+
+**Verified (2026-04-28):** `shiftMidiNotesAfterBeat.ts:11-19` — the
+docstring now reads "Notes and CC/pitch-bend events are stored with
+**absolute beat positions**". This **contradicts** the post-migration
+clip-relative invariant for notes (every other use case treats
+`note.startBeat` as clip-relative — `addMidiNote.ts:19`, the piano-roll
+view, etc.). Either the docstring is wrong, or notes are written
+relative everywhere except in this file's mental model. Worse: the
+function applies the same `>= atBeat` check to notes, CC, and pb
+without any reference-frame translation. If notes are clip-relative,
+`note.startBeat >= atBeat` is meaningless — atBeat is timeline-
+absolute (per the docstring of issue #16). The bug hides behind the
+docstring's incorrect claim that everything is absolute. Severity:
+**Critical** — fundamental coordinate-system bug that produces
+silent data corruption when arrangement-level shifts are applied to
+clips with notes at relative coordinates.
 
 ### 17. `controller-scripting.worker.ts` runs untrusted user code
 
@@ -1112,6 +1380,16 @@ device IDs. (d) Document the threat model — if scripts are
 **personal-use only** and never shared, the current implementation is
 fine; if scripts are shared (J2's intent per the comment), a real
 sandbox (QuickJS in WASM, or Realms-shim) is needed.
+
+**Verified (2026-04-28):** `controller-scripting.worker.ts:30-32` —
+confirmed `new Function('DAW', code)` with no rate limit, timeout,
+or sandbox. The `DAW` shim exposes `setParam` and `sendMidi` —
+`sendMidi` accepts arbitrary `bytes: number[]`, including system
+real-time bytes (0xFA-0xFC, start/continue/stop) which can desync
+hardware connected to the user's setup. The eslint-disable comment
+acknowledges the "not a full secure sandbox" caveat. Severity:
+**High** if scripts ever propagate via project files; **Low** as a
+local-only tool.
 
 ### 18. No module root `index.ts`; type leakage and model isolation
 
@@ -1137,6 +1415,14 @@ fn>`. (c) Audit cross-module callers for `import type { MidiNote }`
 and replace with locally-defined view types (per `models/TrackViewTypes.ts`
 pattern already in use).
 
+**Verified (2026-04-28):** `ls src/modules/MIDI/index.ts` → MISSING.
+`useCases/index.ts:6` exports `type ArpPattern, ArpRate`; `:103`
+exports `type MidiLearnDependencies`. `stores/index.ts:5,10,13,16`
+re-exports state/learning types. **AudioAnalysis** and **Arrangement**
+modules _do_ have root `index.ts` files (verified via
+`grep -l "modules/.*index.ts"`). Severity: **Medium** — architectural
+drift, but no functional bug.
+
 ### 19. Quantize length & no-strength: silently elongates short notes
 
 **Problem:** `quantizeNoteLengths(clipId, gridSize)` does
@@ -1153,6 +1439,14 @@ parameter. The handler dispatches with no warning.
 duration) like `quantizeNotes`. Drop the `Math.max(gridSize, …)`
 floor — let durations round naturally; clamp at
 `MIN_NOTE_DURATION_BEATS` (1/64) instead.
+
+**Verified (2026-04-28):** `quantizeNoteLengths.ts:7` —
+`Math.max(gridSize, Math.round(node.duration / gridSize) * gridSize)`.
+Confirmed: a 1/64 note (duration 0.0625) at gridSize 1.0 (quarter)
+becomes `Math.max(1.0, Math.round(0.0625) * 1.0) = Math.max(1.0, 0)
+= 1.0`. The note expands 16x, silently. `handleQuantizeNoteLengths`
+forwards a single `gridSize` payload. Severity: **High** — destructive
+without warning.
 
 ### 20. `legatoNotes` cross-pitch fallback is musically wrong
 
@@ -1171,6 +1465,18 @@ test with a 4-voice chord progression that asserts each voice
 extends only to its own next chord-tone occurrence or the next
 chord's same-voice onset.
 
+**Verified (2026-04-28):** `legatoNotes.ts:42-52` — confirmed: when
+no same-pitch successor exists, the function searches for the next
+**selected** note on any pitch. Worse than the audit claims: the
+fallback only considers selected notes, so a single unselected note
+in between is ignored. A 4-voice chord at beat 0 (selected) followed
+by a single unselected lead note at beat 0.5 followed by a 4-voice
+chord at beat 1 (selected) — every voice in the first chord extends
+to **beat 1** (next selected), passing right through the unselected
+note at 0.5. Severity: **Medium** — the operation is musically
+surprising; documenting the behaviour in the UI tooltip is the
+minimum.
+
 ### 21. `stampChord` skips out-of-range chord tones
 
 **Problem:** A chord stamped with a high root (`125`) at type `'9'`
@@ -1184,6 +1490,15 @@ user gets a single note where they expected a chord.
 **Needed:** Detect the out-of-range condition and either (a) shift
 the chord down an octave to fit, or (b) refuse with a notification.
 Silent dropping is the worst option.
+
+**Verified (2026-04-28):** `stampChord.ts:27-32` — confirmed.
+`pitch >= 0 && pitch <= 127` is the only filter; out-of-range tones
+are silently skipped with no warning, no octave shift. For
+`rootPitch=125, chordType='9'` (intervals `[0,4,7,10,14]`), only
+pitch 125 (root) passes; the user gets a single-note "9th chord".
+Severity: **High** UX. Bonus: `stampChord.ts:30` passes `velocity`
+straight to `createMidiNote` with no clamp — caller could pass 200
+and the model factory writes it. See issue #15.
 
 ### 22. `addMidiCC` allows duplicate `(beat, channel, controller)` events
 
@@ -1200,6 +1515,15 @@ de-duplicate; the use case does not check.
 controller)` if one exists, or (b) accept duplicates as a feature
 but document the playback-order semantics.
 
+**Verified (2026-04-28):** `addMidiCC.ts:5-23` — no de-duplication.
+`addPitchBend.ts:5-23` — same; `addPitchBend` does NOT clamp the
+`value` to `[-8192, 8191]` (whereas `movePitchBend.ts:24` and
+`setNotePitchBend.ts:19` do clamp). New finding (#37 below):
+`addPitchBend` accepts unbounded values; `addMidiCC` accepts
+unclamped `value` and `controller`. Severity: **Medium**. The
+duplicate-event problem also affects pitch-bend: rapid hardware
+controller sweeps generate hundreds of events at the same beat.
+
 ### 23. Function signatures take positional parameters (AGENTS.md)
 
 **Problem:** ~20 functions in this module take positional parameters
@@ -1213,6 +1537,13 @@ multi-param functions.
 public surface (`createMidiNote`, `addMidiNote`, `addMidiCC`,
 `stampChord`, `quantizeNotes`, `humanizeNotes`,
 `createPatternInstance`).
+
+**Verified (2026-04-28):** Listing of positional functions confirmed
+across the module. Note: `shiftMidiNotesAfterBeat.ts:21` _does_ take
+a single object, so the architecture is in transition; mixed style
+adds churn for callers. Severity: **Medium** — AGENTS.md violation,
+but the most painful failures are in user-facing entry points
+(`stampChord` 6 positionals, `humanizeNotes` 4 positionals).
 
 ### 24. Type assertions in `handleAddChordEvent` and `importHardwareMappings`
 
@@ -1232,6 +1563,16 @@ forbids both.
 import-hardware-mappings cast chain with Zod (`ControllerMapping`
 schema → `parsed.success`). Surface failures via `notifyUser`.
 
+**Verified (2026-04-28):** `handleAddChordEvent.ts:11` —
+`(alpha.payload.quality as ChordType)` after `Set.has()`. Confirmed.
+`portableMappings.ts:37-48` — five repeated
+`(entry as Record<string, unknown>).field as <type>` casts. AGENTS.md
+"TypeScript — soundness" forbids both. Worse:
+`portableMappings.ts:54-56` swallows JSON errors with
+`console.error` — the user has no signal that import failed.
+Severity: **High** for sound-typing violations (AGENTS.md hard
+rule); **Medium** for the silent failure path.
+
 ### 25. Async-for-no-reason in pattern-instance handlers
 
 **Problem:** Both `handleCreatePatternInstance` and
@@ -1249,6 +1590,12 @@ sync use cases run inside a sync wrapper that returns
 `Promise.resolve()`; or change the handler interface to accept
 sync. Either way, drop the eslint-disable.
 
+**Verified (2026-04-28):** Both files at `:6-9` use the disable
+comment. `createHandler<'createPatternInstance'>` and `<'detachPatternInstance'>` — the
+generic dispatcher must accept the async signature, but a sync use
+case wrapped in async pollutes call sites. Severity: **Low** —
+minor, but indicates the handler interface is misshapen.
+
 ### 26. Duplicate `MidiLearnButton` views
 
 **Problem:** Two files exist:
@@ -1264,6 +1611,12 @@ the same MIDI store and use cases.
 **Needed:** Pick one (the MIDI module is the natural owner). Update
 `Arrangement` to import from `#/modules/MIDI`. Delete the duplicate
 **only with explicit instruction** (per CLAUDE.md hard rule).
+
+**Verified (2026-04-28):** `find … -name "MidiLearnButton.tsx"` →
+both files exist:
+- `src/modules/Arrangement/presentations/views/MidiLearnButton.tsx`
+- `src/modules/MIDI/presentations/views/MidiLearnButton.tsx`
+Severity: **Medium** — duplicate UI, two sources of truth.
 
 ### 27. Duplicate chord-type definitions
 
@@ -1287,6 +1640,16 @@ is the wrong dependency direction.
 `./ChordTypes`. Delete the duplicates **only with explicit
 instruction**.
 
+**Verified (2026-04-28):** Read-confirmed: `models/ChordTypes.ts:6-24`
+and `useCases/chordStamps/helpers.ts:1-21` are byte-identical (same
+chord intervals, same key order). `models/ChordEvent.ts:1` imports
+`type ChordType` from `useCases/chordStamps/helpers.ts` — model
+depending on use case, **wrong direction** per AGENTS.md.
+`useCases/chordStamps/CHORD_TYPE_KEYS.ts:5` is also duplicated in
+`models/ChordTypes.ts:28`. Three sources for the same data.
+Severity: **High** for the inverted dependency
+(model → use case); **Medium** for the duplication.
+
 ### 28. `duplicateClipNotes` lives in `stores/`, not `useCases/`
 
 **Problem:** `stores/duplicateClipNotes.ts` is a use case (read
@@ -1302,6 +1665,15 @@ boundaries, not operations.
 **Needed:** Move to `useCases/midiNoteCrud/duplicateClipNotes.ts`
 and re-export from `useCases/index.ts`. Update callers (the
 external import path will change). **Only with explicit instruction.**
+
+**Verified (2026-04-28):** `stores/duplicateClipNotes.ts:5-31` —
+this file reads from `midiStore`, transforms, writes back. Pure use
+case. Listed in `stores/index.ts:9`. Bonus finding: the
+implementation **drops** the original notes' `probability`,
+`pressure`, `slide`, `pitchBend` (it only forwards `pitch`,
+`startBeat`, `duration`, `velocity` to `createMidiNote`). Duplicating
+a clip with expression data loses every expressive parameter. New
+issue #35 below.
 
 ### 29. No round-trip test for MIDI import/export
 
@@ -1325,6 +1697,14 @@ note pairing, channel preservation, and ordering invariants.
    duration, velocity)` and every CC/pb survives.
 This single test catches issues #1, #2, #3, #4 simultaneously.
 
+**Verified (2026-04-28):** `find … -name "*.spec.ts"` shows 83 test
+files; `grep "roundTrip\|round-trip"` → empty. Confirmed.
+`parseMidiFile` is not exported from the worker file (lines 80, 188)
+— the only callable is `self.onmessage`. Adding the round-trip test
+also requires either exporting `parseMidiFile` or constructing a
+worker harness in tests. Severity: **High** — a single round-trip
+fixture catches the entire I/O class of bugs.
+
 ### 30. CC `addMidiCC` returns the constructed CC; the rest of the API does not
 
 **Problem:** `addMidiCC` and `addPitchBend` return the new event;
@@ -1345,6 +1725,12 @@ transforms; return the created note(s) for `add*` use cases; return a
 `{ undo: () => void }` from anything that needs custom undo (groove,
 strum). Document.
 
+**Verified (2026-04-28):** Spot-checked: `addMidiNote` returns
+`MidiNote` (line 33), `setNoteVelocity` returns void, `arpeggiate`
+returns void, `humanizeNotes` returns `number` (the seed),
+`stampChord` returns `MidiNote[]`, `removeMidiNote` returns void.
+Severity: **Low** — API smell, not a bug per se.
+
 ### 31. `getChordAtBeat` linear scan in a hot path
 
 **Problem:** Iterates the full sorted events array end-to-start.
@@ -1358,6 +1744,12 @@ Called per-frame from the chord-track-aware playback layer.
 sorted events invariant maintained by `addChordEvent` and
 `moveChordEvent`, this is O(log N) per query.
 
+**Verified (2026-04-28):** `getChordAtBeat.ts:12-18` — confirmed
+end-to-start linear scan. `addChordEvent.ts:12` sorts after insert
+(`.sort((a, b) => a.beat - b.beat)`), so the invariant is
+maintained. Severity: **Low** for typical chord-track sizes (<100
+events); **Medium** if used per audio block in playback path.
+
 ### 32. `controller-scripting.worker` console.log per script run
 
 **Problem:** `console.log('Running controller script...')` runs every
@@ -1368,6 +1760,413 @@ time the script executes (potentially every MIDI message).
 - `src/modules/MIDI/workers/controller-scripting.worker.ts:17`
 
 **Needed:** Drop the log or gate behind a debug flag.
+
+**Verified (2026-04-28):** `controller-scripting.worker.ts:17` —
+confirmed `console.log('Running controller script...')`. Severity:
+**Low**.
+
+---
+
+## New issues (added in 2026-04-28 adversarial review)
+
+### 33. `readMidiFile` has no parse timeout (worker hang → forever-pending promise)
+
+**Problem:** `readMidiFile` (`importMidiFile.ts:20-51`) creates a
+promise that resolves only when the worker posts `'parsed'` or
+`'error'`. If the worker is in an infinite loop (malformed file
+where `readVarLen` never sees the high bit clear, see audit point
+about `readVarLen` bound checks at `midiImportWorker.ts:57-65`), the
+promise never resolves. Callers `await` indefinitely; the user sees
+a spinner that never completes.
+
+**Representative files:**
+
+- `src/modules/MIDI/useCases/importMidiFile.ts:20-51`
+- `src/modules/MIDI/workers/midiImportWorker.ts:57-65`
+
+**Needed:** Add `setTimeout(() => { worker.terminate(); reject(...) },
+10_000)` (or similar) to bound the parse. Better: bound-check
+`readVarLen` against `buffer.byteLength` at the worker level so
+malformed files fail fast with a meaningful message.
+
+### 34. `setNoteVelocity` clamps to `[0, 127]`; rest of module clamps to `[1, 127]`
+
+**Problem:** `setNoteVelocity.ts:5` writes
+`Math.max(0, Math.min(127, velocity))`. Every other site
+(`addMidiNote.ts:18`, `batchAddMidiNotes.ts:33`,
+`exportMidiFile.ts:50`, `humanizeNotes.ts:19`) uses
+`Math.max(1, …)`. MIDI's wire spec treats velocity 0 in a noteOn as
+**noteOff** — silent corruption.
+
+A user setting velocity to 0 via the velocity edit lane gets a note
+that the synth interprets as a release. The piano-roll renders the
+note (it's stored), but the audio engine emits noteOff and the note
+plays inaudibly.
+
+**Representative files:**
+
+- `src/modules/MIDI/useCases/midiNoteCrud/setNoteVelocity.ts:5`
+
+**Needed:** Change to `Math.max(1, Math.min(127, velocity))`. Add a
+test that asserts velocity-edit-to-0 produces velocity=1.
+
+### 35. `duplicateClipNotes` drops expression data (`probability`, `pressure`, `slide`, `pitchBend`)
+
+**Problem:** `stores/duplicateClipNotes.ts:15-19` calls
+`createMidiNote(safePitch, note.startBeat, safeDuration, safeVelocity)`
+— forwards only the four positional core fields. The optional
+`probability`, `pressure`, `slide`, `pitchBend` fields on the source
+note are silently dropped on duplicate.
+
+A user duplicating a clip with MPE expression or per-note pitch-bend
+loses every expressive parameter.
+
+**Representative files:**
+
+- `src/modules/MIDI/stores/duplicateClipNotes.ts:15-19`
+
+**Needed:** Spread the source note: `{ ...createMidiNote(...),
+probability: note.probability, pressure: note.pressure, slide:
+note.slide, pitchBend: note.pitchBend }`. Add a test that asserts
+expression data round-trips on duplication.
+
+### 36. `stepRecordStore.set(null)` violates the typed contract
+
+**Problem:** `toggleStepRecording.ts:24` calls
+`stepRecordStore.set(null)`. The store is typed as
+`createStore<StepRecordState>` (`stepRecordStore.ts:27`), and
+`Store.set` accepts `T | null`, but every other consumer assumes a
+non-null state. `stepRecordNoteOn.ts:5`, `stepRecordNoteOff.ts:4`,
+`stepRecordNavigation.ts:7,20,32,66` all guard with
+`if (!state || !state.active)` — the null check is mandatory at
+every read site, where a single `defaultStepRecordState` reset would
+remove the special case.
+
+This is also why issue #5's "step-recording cursor wedge" is
+recoverable via toggle-off: the entire state is wiped to null, not
+preserved.
+
+**Representative files:**
+
+- `src/modules/MIDI/useCases/stepRecording/toggleStepRecording.ts:24`
+- `src/modules/MIDI/stores/stepRecordStore.ts:15-25`
+
+**Needed:** Replace `stepRecordStore.set(null)` with
+`stepRecordStore.set(defaultStepRecordState)` and tighten consumers
+to read `state.active` (already exists). Removes one branch from
+every consumer.
+
+### 37. `addPitchBend` and `addMidiCC` accept unbounded inputs
+
+**Problem:**
+- `addPitchBend.ts:11` forwards `value` straight to
+  `createMidiPitchBend`, no `[-8192, 8191]` clamp. Compare with
+  `movePitchBend.ts:24` which clamps explicitly.
+- `addMidiCC.ts:11` forwards `value` and `controller` to
+  `createMidiCC`, no `[0, 127]` clamp. Compare with
+  `moveMidiCC.ts:20` which clamps `value` (but neither function
+  clamps `controller` to `[0, 127]`).
+
+A hardware controller with a glitched 14-bit pitch wheel can write
+`value=42_000` to the store. Export then truncates the value into a
+14-bit field, producing a wrap-around or bit-stuck.
+
+**Representative files:**
+
+- `src/modules/MIDI/useCases/midiEvent/addPitchBend.ts:11`
+- `src/modules/MIDI/useCases/midiEvent/addMidiCC.ts:11`
+- `src/modules/MIDI/useCases/midiEvent/moveMidiCC.ts:20`
+- `src/modules/MIDI/models/MidiNote.ts:45-62`
+
+**Needed:** Clamp at the model factory. `createMidiPitchBend` clamps
+to `[-8192, 8191]`; `createMidiCC` clamps `value` and `controller`
+to `[0, 127]`, `channel` to `[0, 15]`. Drop the per-call-site
+clamping from the move functions.
+
+### 38. `moveMidiNote` and `resizeMidiNote` skip clamping entirely
+
+**Problem:**
+- `moveMidiNote.ts:5` writes
+  `{ ...node, pitch: newPitch, startBeat: newStartBeat }` — no clamp
+  on either parameter. The piano-roll drag handler is the only
+  defence; if it's bypassed (a programmatic action, a misbehaving
+  view component, or a test fixture), `pitch=200` or
+  `startBeat=-5` are committed verbatim.
+- `resizeMidiNote.ts:9-12` clamps `duration` to `>= 0.0625`, but
+  does NOT clamp `startBeat >= 0`. Resize-by-left-edge can drag the
+  start past beat 0.
+
+This is the symmetric counterpart to issue #12 (transforms don't
+clamp): the **CRUD** layer doesn't either. Combined: there is no
+single chokepoint that enforces `MidiNote` invariants.
+
+**Representative files:**
+
+- `src/modules/MIDI/useCases/midiNoteCrud/moveMidiNote.ts:3-7`
+- `src/modules/MIDI/useCases/midiNoteCrud/resizeMidiNote.ts:3-16`
+
+**Needed:** Add the clamp at the model factory (issue #15) and at
+the CRUD entry points; or refactor so every CRUD function
+constructs a fresh note via `createMidiNote` (which will then clamp
+universally).
+
+### 39. `migrateAbsoluteMidiNotes` does not migrate CC or pitch-bend events
+
+**Problem:** The migration converts notes from absolute to relative
+coordinates (`migrateAbsoluteMidiNotes.ts:38-41`). It does **not**
+touch `ccByClipId` or `pitchBendByClipId`. If older project files
+ever wrote CC/pb at absolute coordinates (the audit's #16 leaves
+this open), those events are now in a different coordinate frame
+than the notes in the same clip.
+
+**Representative files:**
+
+- `src/modules/MIDI/useCases/midiNoteCrud/migrateAbsoluteMidiNotes.ts:38-41`
+
+**Needed:** Audit the project's CRDT history to determine whether
+CC/pb were ever stored absolute. If yes, extend the migration. If
+no, document the contract as "always clip-relative" and add a
+schema-version flag (issue #8) to prove no further migration is
+needed.
+
+### 40. Pattern instance write-then-append race
+
+**Problem:** `createPatternInstance.ts:49-64`:
+1. `setNotesForClip(instanceId, clonedNotes)` — writes notes for a
+   clip that does not yet exist in `trackStore`.
+2. `if (!state.tracks.some(...)) return null;` — guard returns AFTER
+   the note write; the orphan notes stay in `notesByClipId`.
+3. `appendClipToTrack(targetTrackId, instance);` — finally inserts
+   the clip.
+
+Subscribers to `midiStore` between steps 1 and 3 see a clip-id with
+notes but no clip. Failing the targetTrackId check at step 2 leaks
+notes to the orphan id forever (no cleanup).
+
+**Representative files:**
+
+- `src/modules/MIDI/useCases/patternInstance/createPatternInstance.ts:49-64`
+
+**Needed:** Reorder: validate `targetTrackId` first, append the clip
+first, then write notes. Or batch both writes inside a single
+projection-bridge transaction.
+
+### 41. `arpeggiator` mints deterministic ids that collide on re-run
+
+**Problem:** `arpeggiator.ts:95` —
+`id: \`arp-${clipId}-${stepIndex}\``. The id is deterministic in
+`(clipId, stepIndex)`. If the user invokes arpeggiate again with
+**any** different parameters but the same `clipId`, the new ids are
+exactly the same as the old ids — and because step 1 in
+`arpeggiator.ts:104-110` replaces the entire clip's notes, the new
+ids replace the old.
+
+This is OK for the current "replace" semantic but interacts poorly
+with undo: after redo of the second arpeggiate, the undo stack holds
+notes whose ids the next "redo" will re-mint identically. Selection
+state keyed on these ids becomes ambiguous.
+
+**Representative files:**
+
+- `src/modules/MIDI/useCases/arpeggiator.ts:89-101`
+
+**Needed:** Use `crypto.randomUUID()` (full, not sliced — see #6).
+Each invocation gets fresh ids. Combined with #14 ("merge vs
+replace"), the destructive semantic disappears.
+
+### 42. `joinNotes` adjacency tolerance is too tight (0.001 beats)
+
+**Problem:** `joinNotes.ts:40-41` —
+`Math.abs(sorted[j].startBeat + sorted[j].duration -
+sorted[j+1].startBeat) < 0.001`. After `quantizeNotes` with
+`strength < 1`, the residual offset can exceed 0.001 even when notes
+are visually adjacent. After `humanizeNotes`, the residual is
+guaranteed to exceed 0.001 (timing offsets are drawn from a uniform
+distribution scaled by `timingAmount * 0.25` — typical value 0.05
+beats).
+
+The user selects a "humanized" run of notes, presses join, and
+nothing happens. Silent no-op.
+
+**Representative files:**
+
+- `src/modules/MIDI/useCases/midiNoteTransforms/joinNotes.ts:40-41`
+
+**Needed:** Use a beat-grid-aware tolerance: e.g.,
+`Math.abs(...) < gridSize / 2` where `gridSize` is the user's current
+grid (read from `transportStore` or passed in). Or detect "visually
+adjacent" by looking at piano-roll geometry rather than raw beats.
+
+### 43. `legatoNotes` re-evaluates targets without using sorted indices
+
+**Problem:** `legatoNotes.ts:18-60` — for each selected note, scans
+the entire `notes` array twice (same-pitch successor, then any-pitch
+successor). For a clip with N notes and S selected, the operation is
+O(N × S). With 1000 notes and 200 selected, that's 200_000 scans on
+a single user action.
+
+**Representative files:**
+
+- `src/modules/MIDI/useCases/midiNoteTransforms/legatoNotes.ts:18-60`
+
+**Needed:** Pre-sort once by `(pitch, startBeat)`, then for each
+selected note look up the next same-pitch note via binary search.
+O((N + S) log N).
+
+### 44. `getMidiLearnDependencies()` is module-mutable global state
+
+**Problem:** `useCases/midiLearn/midiLearnDependencies.ts` (read in
+`handleMidiMessage.ts:20`) is a module-level mutable singleton set
+via `setMidiLearnDependencies` (re-exported in
+`useCases/index.ts:102`). Any caller of `setMidiLearnDependencies`
+swaps the deps in-place; all subsequent MIDI messages route through
+the new deps.
+
+A test suite that calls `setMidiLearnDependencies(testStubs)` and
+forgets to restore the original deps in `afterEach` will leak stubs
+into other tests. Same risk for hot-module reload during dev.
+
+**Representative files:**
+
+- `src/modules/MIDI/useCases/midiLearn/midiLearnDependencies.ts`
+- `src/modules/MIDI/useCases/midiLearn/handleMidiMessage.ts:20`
+
+**Needed:** Inject deps via `inject({ deps: getMidiLearnDeps })`
+pattern (already used in `completeMidiLearn.ts:13`), or make the
+deps argument explicit on every call. Mutable globals are a
+test-isolation hazard.
+
+### 45. `chordTrackStore` `loadFromStorage` runs at module-evaluate time
+
+**Problem:** `chordTrackStore.ts:25` —
+`initialData: loadFromStorage()`. The `loadFromStorage` call
+executes the moment the module is imported. Side effects:
+- Browser localStorage read happens before the rest of the app
+  initializes; if `window` is unavailable (SSR, worker context,
+  test JSDOM with `localStorage` mocked late), the catch silently
+  returns `defaultChordTrackState` and the user's stored chord
+  track is **silently lost**.
+- The catch swallows JSON parse errors with no logging, so a corrupt
+  `sourdaw_chord_track` key never surfaces.
+- Module-init side effects break tree-shaking and test setup.
+
+**Representative files:**
+
+- `src/modules/MIDI/stores/chordTrackStore.ts:12-26`
+
+**Needed:** Defer `loadFromStorage` to a hydrate function called
+after `appInitializer` runs. Surface load failures via the logger.
+
+### 46. `propagateParentChanges` ignores child clip's `overrides.notes` flag without re-checking after edit
+
+**Problem:** `propagateParentChanges.ts:36-38` skips child clips
+where `clip.overrides?.notes` is truthy. But `overrides.notes` is a
+boolean-like flag, not a list of overridden note ids. If the user
+edits **a single note** on the child clip, then `overrides.notes`
+becomes truthy and ALL parent edits are now ignored on this child —
+even for notes the user never touched.
+
+The audit doesn't cover this granularity bug.
+
+**Representative files:**
+
+- `src/modules/MIDI/useCases/patternInstance/propagateParentChanges.ts:36-38`
+- `src/modules/MIDI/models/TrackViewTypes.ts` (Clip.overrides shape)
+
+**Needed:** Track per-note overrides:
+`overrides.notes: Set<string>` of overridden note ids. On
+propagation, propagate every parent note **except** those whose ids
+appear in the child's override set. Add a "reset overrides" action.
+
+### 47. MIDI Learn lacks a "panic" / "all-mappings-cleared" recovery
+
+**Problem:** No use case clears all MIDI Learn mappings at once. If
+a user accidentally binds 50 CCs to a runaway hardware controller,
+the only recovery is to remove each mapping individually (no UI
+verified by audit). The store has `mappings: MidiMapping[]` but no
+`clearAllMappings` use case.
+
+**Representative files:**
+
+- `src/modules/MIDI/useCases/midiLearn/` (no `clearAllMappings.ts`)
+- `src/modules/MIDI/stores/midiLearnStore.ts:5-16`
+
+**Needed:** Add `clearAllMappings()` use case and a UI command
+binding. Severity: **Low** (UX), but cheap to add.
+
+### 48. `formatChordName` does not handle negative `event.root` values gracefully
+
+**Problem:** `models/ChordEvent.ts:14` —
+`ROOT_NAMES[event.root % 12] ?? 'C'`. JS `%` is not modulo: `-1 % 12
+=== -1`, so `ROOT_NAMES[-1]` is `undefined`, falls back to `'C'`.
+But `-13 % 12 === -1` too, same fallback. The function silently
+returns `'C'` for any negative root. `createChordEvent.ts:23` does
+`root: root % 12` (same JS-modulo bug), so a caller passing
+`root=-3` for a Bb gets `root: -3` in the store; subsequent
+`formatChordName` returns `'C'`.
+
+`handleAddChordEvent.ts:13` does `Math.max(0, Math.min(11, …))` —
+clamps. So this is only reachable from direct
+`addChordEvent` calls bypassing the handler.
+
+**Representative files:**
+
+- `src/modules/MIDI/models/ChordEvent.ts:14, 19-26`
+- `src/modules/MIDI/useCases/chordTrack/addChordEvent.ts:5-16`
+
+**Needed:** Use `((root % 12) + 12) % 12` (the standard JS modulo
+fix) in `createChordEvent`. Same in `formatChordName`.
+
+### 49. `humanizeNotes` ignores `velocityAmount` when called via the handler
+
+**Problem:** Already mentioned indirectly in audit #7. Confirming as
+its own issue:
+- `humanizeNotes.ts:11` —
+  `const vAmount = velocityAmount ?? timingAmount`. When
+  `velocityAmount` is `undefined`, the function silently aliases
+  velocity to timing.
+- `handleHumanizeNotes.ts:7` calls
+  `humanizeNotes(action.payload.clipId, action.payload.amount)` —
+  passes only timing.
+
+So the action payload has no way to specify velocity humanization
+independently. The action contract is missing the `velocityAmount`
+field.
+
+**Representative files:**
+
+- `src/modules/MIDI/useCases/midiNoteTransforms/humanizeNotes.ts:11`
+- `src/modules/MIDI/handlers/noteTransform/handleHumanizeNotes.ts:7`
+- The `humanizeNotes` AppAction payload type (likely
+  `src/modules/Command/...` — out of audit scope).
+
+**Needed:** Extend the AppAction payload with `velocityAmount?:
+number` and `seed?: number`. Update the handler to forward both.
+Combined with #7's fix.
+
+### 50. Worker file extension `.worker.ts` vs `.ts` inconsistency
+
+**Problem:** Two worker files in the module:
+- `workers/midiImportWorker.ts` (no `.worker` suffix, but is a
+  worker — referenced via `new URL('../workers/midiImportWorker.ts',
+  import.meta.url)` in `importMidiFile.ts:24`).
+- `workers/controller-scripting.worker.ts` (uses `.worker.ts`).
+
+Vite/Rollup conventions and the worker plugin sometimes treat
+`.worker.ts` specially (auto-bundling as a worker). Inconsistent
+naming risks build-tool surprises and confuses humans about
+"is this a worker?".
+
+**Representative files:**
+
+- `src/modules/MIDI/workers/midiImportWorker.ts`
+- `src/modules/MIDI/workers/controller-scripting.worker.ts`
+
+**Needed:** Pick one convention. If `.worker.ts` is the project
+standard (the controller-scripting file uses it), rename
+`midiImportWorker.ts` → `midiImport.worker.ts` and update the URL
+reference. If `WorkerName.ts` is the convention, rename the other.
+Severity: **Low** — naming consistency only.
 
 ---
 
@@ -1393,6 +2192,23 @@ time the script executes (potentially every MIDI message).
 
 ## Risks
 
+- **Coordinate-frame contradiction (NEW, see #16).** The
+  `shiftMidiNotesAfterBeat` docstring claims absolute beats; the
+  rest of the module treats notes as clip-relative. An arrangement-
+  level operation that inserts time silently rebases notes against
+  the wrong frame. Today this is a latent bug; the moment a user
+  hits "insert beats at playhead" on a project with multiple clips
+  on the right of the playhead, MIDI desyncs.
+- **No invariant chokepoint for `MidiNote`.** Issue #38 (CRUD
+  doesn't clamp) plus issue #12 (transforms don't clamp) plus issue
+  #15 (model factory doesn't clamp) means there is **no point** in
+  the module where note invariants are guaranteed. Every code path
+  is on the honour system.
+- **Velocity 0 silently disables notes (NEW, #34).**
+  `setNoteVelocity` clamps to `[0, 127]`; vel-0 noteOn is noteOff
+  on the wire. The piano-roll renders the note (it's stored), but
+  it never sounds. User-visible "ghost note" — the note appears in
+  the editor but does not play.
 - **MIDI I/O credibility loss.** If a user can't open their old DAW
   files in the app and re-save without losing channels, CCs, and
   controller automation, the MIDI module is shippable for note-
@@ -1401,22 +2217,42 @@ time the script executes (potentially every MIDI message).
   project hits ~50% birthday collision. Selection state, undo
   history, and pattern-instance propagation all key on these ids.
   Bugs surface days later as "this note jumped pitch on undo".
+  Plus arpeggiator's deterministic ids (NEW finding under #14)
+  collide on re-run.
+- **Pattern-instance write-then-append race (NEW, #40).** Notes
+  written for a clip-id before the clip exists; subscribers see
+  orphan state. If the target-track validation fails, the orphan
+  notes never get cleaned up.
 - **Stuck notes in step recording.** A dropped note-off freezes the
-  cursor. There is no recovery. Users reset the project.
-- **Migration runs forever.** Clips named with the magic regex are
-  shifted on every project load until `startBeat == 0`. A user who
-  imported their library yesterday opens it today and finds half
-  their clips at beat 0.
+  cursor. There is no recovery during active recording (only
+  toggle-off recovers, by nulling the entire state).
+- **Pattern-instance over-protection.** The `overrides.notes`
+  flag is boolean; one user-edit flip blocks all parent
+  propagation forever (NEW, #46).
+- **Expression data dropped on duplicate (NEW, #35).** MPE
+  pitch-bend, pressure, slide, probability all wiped when a clip is
+  duplicated. Silent feature loss.
+- **Module-init side effects (NEW, #45).** `chordTrackStore`
+  reads localStorage at module-evaluate time; SSR / late-mock test
+  setups silently lose user data.
+- **Migration heuristic.** Clips matching `/melody|chords|drums|copy/i`
+  trigger migration; user-named "drums copy" matches by accident.
+  No schema-version flag. (Audit's "runs forever" claim is
+  overstated — see #8 verification — but the underlying lack of a
+  version flag remains.)
 - **Pattern-instance regression.** The id-regenerate-on-propagate
   bug means every parent edit invalidates every child note's
   identity. Users typing notes on a parent see their selection on
   the child clear silently.
-- **MIDI Learn fan-out.** Two mappings on the same CC fire both
-  targets. The user thinks they replaced the binding; they doubled
-  it.
+- **MIDI Learn fan-out and gain non-linearity.** Two mappings on
+  the same CC fire both targets; track-gain is a linear map (not
+  log-dB) so the bottom of the fader is unusable.
 - **Quantization semantics drift.** Same notes, same swing
   parameter, different grid size → different musical result.
   "Quantize" is supposed to be predictable.
+- **Test isolation hazard (NEW, #44).** `setMidiLearnDependencies`
+  is a module-mutable global. A test that swaps deps and forgets to
+  restore them leaks stubs into other tests. Same risk for HMR.
 - **Architectural drift.** No root `index.ts`; types leaking from
   `useCases/index.ts`; models imported across boundaries; positional-
   parameter functions; `as` escapes. Unaddressed, these normalise
@@ -1460,23 +2296,64 @@ time the script executes (potentially every MIDI message).
 
 ## Recommendation
 
-Start with **issue #29 (MIDI round-trip test)** because it
-empirically demonstrates issues #1, #2, #3, #4 with a failing
-fixture, and unblocks the I/O fixes test-first.
+**Updated 2026-04-28 after adversarial review.**
 
-Land the **id-collision fix (issue #6)** in parallel — it is a
-mechanical change with high silent-corruption risk, and any fix to
-issue #29 (`MidiNote.channel`) will ride alongside a schema-version
-migration that can include the id widening.
+**Step 0: settle the coordinate-frame contradiction (issue #16).**
+Before any other fix, determine whether `MidiNote.startBeat` is
+clip-relative (the migration suggests yes) or absolute (the
+`shiftMidiNotesAfterBeat` docstring claims yes). Fix the docstring
+or fix the function; the current state silently corrupts data on
+arrangement-level shifts. This blocks every other I/O fix.
 
-Then pick **issue #5 (step-recording stuck-note hazard)** — the
-smallest fix with the highest user-visible impact, and a natural
-property test (`stepRecordNoteOn × N → toggleStepRecording → assert
-activeNotes.size === 0`).
+**Step 1: round-trip test (issue #29).** Empirically demonstrates
+issues #1, #2, #3, #4 with a failing fixture, and unblocks the I/O
+fixes test-first. Export `parseMidiFile` from the worker for test
+access (or build a worker harness).
 
-After those three land, the architecture pass (#18, #23, #24, #25,
-#26, #27) is a single mechanical sweep that should land in one
-commit.
+**Step 2: clamping chokepoint at the model factory (issues #15,
+#34, #37, #38, plus #12).** Clamp at `createMidiNote`,
+`createMidiCC`, `createMidiPitchBend` — the **single** point that
+enforces invariants. Drop per-call-site clamping. Fix
+`setNoteVelocity` to use `[1, 127]`. Add clamp to `moveMidiNote`
+and `resizeMidiNote`. After this, transform-layer drift becomes
+self-correcting on next CRUD touch.
+
+**Step 3: id collision fix (issue #6).** Mechanical change with
+high silent-corruption risk. Use full UUIDs or a
+project-scoped monotonic counter. Migrate existing 8-char ids on
+load (versioned migration — combine with step 4).
+
+**Step 4: schema version + migration cleanup (issues #8, #39).**
+Add `schemaVersion` field to `MidiStoreState`. Drop the regex
+heuristic in `migrateAbsoluteMidiNotes`. Audit CC/pitch-bend for
+historical absolute coordinates and migrate if needed. Document the
+contract.
+
+**Step 5: stuck-note panic clear (issue #5).** Smallest fix with
+highest user-visible impact. On toggle-off, on session start, clear
+`activeNotes`. Add a 5s watchdog. Add a "panic / all notes off"
+action.
+
+**Step 6: humanize seed plumbing (issues #7, #49).** Extend the
+`humanizeNotes` AppAction payload with `velocityAmount` and
+`seed`. Update the handler to forward both. Add a redo-determinism
+test.
+
+**Step 7: pattern instance correctness (issues #9, #40, #46).**
+Stable child ids; reorder write-then-append in
+`createPatternInstance`; per-note overrides instead of boolean
+flag.
+
+**Step 8: architecture sweep (issues #18, #23, #24, #25, #26, #27,
+#28, #50).** Single mechanical pass. Create
+`src/modules/MIDI/index.ts`. Drop type re-exports. Replace `as`
+casts with type guards. Convert positional functions to object
+parameters. Move `duplicateClipNotes` from `stores/` to
+`useCases/midiNoteCrud/`. Consolidate `MidiLearnButton` and
+`ChordTypes` duplicates. Standardise worker file naming.
+
+After these steps, the remaining issues (#10, #11, #13, #19, #21,
+#22, #41-48) are independent and can be tackled in priority order.
 
 ---
 

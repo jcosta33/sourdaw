@@ -231,17 +231,51 @@ have a non-trivial test.
 
 ## Findings
 
-1. **Project save/load loses every per-device GrandBoule setting except
-   the `'default'` shim's.** The deprecated singleton
-   `grandBouleStore = createGrandBouleStore('default')` is the only
-   GrandBoule store referenced by `Project/useCases/projectPersistence/
-helpers/resetModuleStoresToDefault.ts:40`. Real per-device stores
-   (created by `createGrandBouleStore(deviceId)` from the panel and the
-   AudioEngine MIDI handler) are *not* reset, *not* serialized, *not*
-   deserialized. Loading a project leaves yesterday's pedal positions,
-   MIDI calibration, morph state, per-note overrides, and temperament
-   live on the new project's GrandBoule devices. This is correctness-
-   class data corruption disguised as state.
+### Adversarial review log (2026-04-28)
+
+Re-verified every numbered issue against `src/modules/GrandBoule/` as of HEAD `0ef2e91d9`.
+
+**Verified (cited code unchanged):** #1, #2, #3, #4, #5, #6 (with caveat — see below), #7, #8, #9, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #31, #32, #33, #34, #35.
+
+**Promoted in severity:**
+
+- Issue #1 was framed as "loses per-device". Verification shows `saveProject.ts` and `loadProject.ts` contain **no** GrandBoule references at all (`grep -n grandBoule src/modules/Project/useCases/projectPersistence/saveProject/* loadProject.ts` returns empty). Even the `'default'` singleton is **not serialised to disk** — `resetModuleStoresToDefault` is only invoked on _new project_ creation, not on load. The singleton thus carries values forward across every project load until explicit `New Project`. Severity stays at the top of priorities; the description is rewritten below.
+- Issue #5 (disconnected-engine theatre) compounds with #20 (calibration not plumbed). Together they create a completely deceptive UX where 21 of 22 user-visible knobs/buttons silently no-op.
+
+**Demoted in severity:**
+
+- Issue #6 (morph reset stomps state) **only fires when `morph.enabled === true`**. The default state has `enabled: false`, and `setGrandBouleMorphPosition.ts:86-97` early-returns without storewriting when `morph.enabled === false`. So it stomps only enabled-morph users on engine flip. Still a real bug, demoted from priority #5 to mid-tier.
+- Issue #10 count: audit lists "27 placeholder specs". Verification: `grep -rln 'should export\|should load the module\|should be defined' src/modules/GrandBoule` returns **29 files**. The audit's grep used only the literal `should export`, missing three `'should load the module'` placeholders in `midiEventSubscribers/__tests__/`. Number corrected to 29 below.
+
+**Demoted/corrected:**
+
+- Issue #15 (`PianoModel3D` per-frame copy): the inline `for (let i = 0; i < vertexCount; i += 1)` JS→Float32Array copy is real, but is preceded by a `length === 0` truncation and capacity-based reuse. The hot-path is two integer compares and a typed-array store. This is not a meaningful CPU drain at NUM_KEYS=88 — issue is still valid (could be `set()` bulk copy) but the impact rating in Risks overstates it.
+
+**New issues added:** #51, #52, #53, #54, #55, #56, #57, #58, #59, #60.
+
+**Resolved:** none — no GrandBoule fixes have landed since the audit was written.
+
+---
+
+1. **Project save/load loses every GrandBoule setting (per-device AND
+   singleton) — no GrandBoule state is serialised at all.** Verified by
+   `grep -rn 'grandBoule\|GrandBoule' src/modules/Project/useCases/projectPersistence`:
+   the only hit is `helpers/resetModuleStoresToDefault.ts:7,40`. Both
+   `saveProject/saveProject.ts` and `loadProject.ts` contain **zero**
+   GrandBoule references — the store is never written to disk and never
+   read back. The reset helper is only invoked on _new project_
+   creation; project _load_ does not touch GrandBoule at all. Effect:
+   the deprecated singleton (`'default'` device) carries yesterday's
+   pedals, calibration, morph, per-note overrides, and temperament
+   forward across every project load until the user clicks New Project.
+   Per-device stores (the panel and AudioEngine MIDI handler use
+   `createGrandBouleStore(deviceId)`) are also never serialised — and
+   even the `Map<deviceId, Store>` in `grandBouleStore.ts:71` survives
+   in module memory across project loads. **`perNoteOverrides: Map`**
+   (declared at `grandBouleStore.ts:39,60`) cannot round-trip through
+   plain `JSON.stringify` — it serialises to `{}` — so even adding the
+   store to `saveProject.ts` would silently drop every per-note
+   override unless a custom replacer/reviver is added.
 
 2. **Two `applyVelocityCurve` implementations, one mutated for cycle-
    avoidance.** `stores/applyVelocityCurve.ts:10` and
@@ -293,17 +327,23 @@ helpers/resetModuleStoresToDefault.ts:40`. Real per-device stores
    active preset but the WASM engine is silent or playing the previous
    sound. 14 of the 16 `set*` use cases share this bug.
 
-6. **Morph position reset on engine ready stomps user state.**
-   `GrandBoulePanel.tsx:193-198` calls
-   `setGrandBouleMorphPosition({ engine, store, morphPosition: 0 })` on
-   every `engineReady → true` transition.
-   `setGrandBouleMorphPosition.ts:108` then writes
-   `morph.morphPosition = 0` into the store. HMR, audio engine restart,
-   suspend/resume, project switch — any of these flip `engineReady` and
-   silently destroy the user's morph position. The
-   `eslint-disable sourdaw/no-useeffect-derived-state` comment claims
-   this is a side-effect, not state derivation; it *is* a state
-   derivation that happens to also touch the engine.
+6. **Morph position reset on engine ready stomps user state — _when
+   morph is enabled_.** `GrandBoulePanel.tsx:193-198` calls
+   `setGrandBouleMorphPosition({ engine, store, morphPosition: 0 })`
+   on every `engineReady → true` transition.
+   `setGrandBouleMorphPosition.ts:86-97` early-returns _without store
+   writeback_ when `morph.enabled === false` (the default). Only when
+   the user has switched morph on does line 108 write
+   `morph.morphPosition = 0` into the store. So the bug surfaces only
+   for users who use the morph engine — but for them, every HMR /
+   audio engine restart / suspend / resume silently destroys their
+   morph position. The `eslint-disable sourdaw/no-useeffect-derived-state`
+   comment claims this is a side-effect, not state derivation; it
+   _is_ a state derivation that happens to also touch the engine. **Fix
+   sketch:** read `store.value?.morph.morphPosition ?? 0` instead of a
+   hard-coded `0`, and add a regression test mounting with
+   `morph.enabled=true, morph.morphPosition=0.6`, flipping
+   `engineReady`, asserting `0.6` is preserved.
 
 7. **`setGrandBouleTemperament` API divergence.** Unlike every other
    `set*` use case in the module (which takes
@@ -332,7 +372,13 @@ helpers/resetModuleStoresToDefault.ts:40`. Real per-device stores
    `as any` / `as unknown` / `as never` to supply partial fixtures.
    AGENTS.md "TypeScript — soundness" forbids these escapes.
 
-10. **27 of the unit specs are "should export" placeholders.** Files:
+10. **29 of the unit specs are "should export"/"should load the
+    module" placeholders.** Audit's original count was 27; verification
+    by `grep -rln 'should export\|should load the module\|should be
+defined' src/modules/GrandBoule` returned 29 — the audit's grep used
+    only the literal `should export`, missing three `'should load the
+    module'` placeholders in `useCases/midiEventSubscribers/__tests__/`.
+    Files:
     - `useCases/__tests__/setGrandBouleSustain.spec.ts`
     - `useCases/__tests__/setGrandBouleUnaCorda.spec.ts`
     - `useCases/__tests__/loadGrandBouleAttackClip.spec.ts`
@@ -364,7 +410,8 @@ helpers/resetModuleStoresToDefault.ts:40`. Real per-device stores
     - `useCases/midiEventSubscribers/__tests__/onMidiNoteOff.spec.ts`
 
     Each contains a single assertion of the form
-    `expect(subject.foo).toBeDefined()`. These run, pass, and prove
+    `expect(subject.foo).toBeDefined()` or
+    `expect(subject).toBeDefined()`. These run, pass, and prove
     nothing about behaviour. Coupled with the `vi.mock(...)` patterns
     used in `grandBoule.spec.ts`, all of the velocity-shaping,
     clamping, store-mutation, and engine-dispatch logic above is
@@ -709,38 +756,219 @@ then back to 0-1`. `applyVelocityCurve` already returns 0..1, the
     that is never updated will always show `0`. Either remove the
     field or wire the engine to push it.
 
+51. **`engineReady: boolean` field on the store is dead — never
+    written, never read by any use case, and the panel reads
+    `engine.isReady()` directly instead.** `grandBouleStore.ts:45,63`
+    declares the field and seeds `false`; verified by
+    `grep -rn engineReady src/modules/GrandBoule`: every reference is
+    either the type declaration, the default initialiser, a test
+    fixture (`__tests__/helpers.spec.ts:29`,
+    `loadGrandBoulePreset.spec.ts:68`), or `GrandBoulePanel.tsx:191`
+    using a _local_ `const engineReady = engine.isReady()` — not the
+    store field. The field exists only to placate the
+    project-persistence shape (which does not save the store anyway,
+    see #1). Remove from `GrandBouleState`, `createDefaultGrandBouleState`,
+    and the test fixtures, OR wire AudioEngine to push readiness
+    transitions through this field so the `useEffect` at
+    `GrandBoulePanel.tsx:193-198` can subscribe to it instead of
+    polling via `engine.isReady()` every render.
+
+52. **`PianoKeyboard.tsx` is dead code.** Verified by
+    `grep -rn 'PianoKeyboard' src` — the only consumer is the
+    component's own spec at
+    `presentations/components/__tests__/PianoKeyboard.spec.tsx`. The
+    panel uses `PianoModel3D` exclusively
+    (`GrandBoulePanel.tsx:445-454`). The component carries
+    issues #31 (hard-coded velocity 0.8), #32 (no keyboard nav, no
+    note-name labels), and the placeholder spec — all in code that
+    ships in the bundle but is never rendered. Either delete
+    `PianoKeyboard.tsx` and `PianoKeyboard.spec.tsx`, or use it in
+    place of `PianoModel3D` for the lower-resource path. (Per the
+    safety rules: do not delete files without explicit instruction —
+    surface this to the user.)
+
+53. **`resolveGrandBouleEngine` violates AGENTS.md "Use-case types
+    stay private".** `useCases/resolveGrandBouleEngine.ts:20` declares
+    `export type ResolvedGrandBouleEngine = GrandBouleEngineHandle`
+    and `GrandBoulePanel.tsx:29` does
+    `import { type ResolvedGrandBouleEngine } from
+'../../useCases/resolveGrandBouleEngine'`. AGENTS.md is explicit:
+    "Do not `export type` from `useCases/` for other modules". Even
+    though both files are inside the GrandBoule module, the rule
+    applies to any cross-module surface — and the type alias is not
+    needed at all (it is byte-identical to `GrandBouleEngineHandle`,
+    which lives in `repositories/` and is freely usable from the panel
+    via `ReturnType<typeof resolveGrandBouleEngine>`). Drop the
+    re-alias and the export.
+
+54. **`createGrandBouleTrack` mutates the freshly-created `Track`
+    after `createTrack` returns it.** `createGrandBouleTrack.ts:21-31`:
+    `const track = createTrack(...); track.devices = [...]; appendTrack(track)`.
+    `createTrack` is the canonical use case for building a track; if
+    its contract is "returns a complete track", the mutation here
+    bypasses it. If the contract is "returns a track without devices",
+    every other module that uses `createTrack` is racing with the same
+    pattern. Either `createTrack` should accept a `devices` parameter,
+    or `createGrandBouleTrack` should call `appendTrack` first and
+    then a separate `addDeviceToTrack` use case (which does not exist).
+    The current pattern: write to a returned object's mutable field
+    before pushing to the store, then call `addDeviceToStrip` against
+    a strip that was implicitly created by `appendTrack(track)` —
+    relies on `appendTrack` running synchronously and on
+    `ensureTrackStrip` being idempotent, neither of which is asserted
+    locally. **Fix sketch:** either (a) add a `devices` parameter to
+    `createTrack`, or (b) decouple — emit `track.created` first, let
+    a subscriber wire `addDeviceToStrip`. Surface the unsafe mutation
+    pattern at `Arrangement` review.
+
+55. **`createGrandBouleTrack` does not check `addDeviceToStrip`'s
+    success and emits `track.added` regardless.**
+    `createGrandBouleTrack.ts:33-37`: `appendTrack(track);
+addDeviceToStrip(track.id, deviceId, 'grand-boule'); void
+eventBus.emit('track.added', ...)`. If `addDeviceToStrip` throws or
+    silently fails (no audio context, WASM not loaded), the track
+    exists but the engine strip does not. The function emits
+    `track.added` and returns the track id; downstream subscribers
+    (Arrangement view, automation lane creators) will assume the track
+    is fully wired. **Fix sketch:** wrap `addDeviceToStrip` in a
+    `Result`/`neverthrow`, on failure roll back the `appendTrack` (or
+    surface a `notifyUser` toast and remove the track), and only emit
+    `track.added` on success.
+
+56. **`triggerGrandBouleNote` velocity round-trip is lossy and the
+    code reads as if the author already knew it.**
+    `triggerGrandBouleNote.ts:30`:
+    `applyVelocityCurve(input.velocity * 127, calibration)` where
+    `input.velocity` is documented as "Normalised velocity in 0.0 .. 1.0".
+    `applyVelocityCurve` does
+    `Math.max(0, Math.min(1, rawVelocity / 127))` — i.e. it expects
+    0..127 and divides by 127 internally. Multiplying the 0..1 input
+    by 127 only to have the curve divide by 127 is a no-op _per se_
+    but it loses precision: a fractional velocity like `0.5031`
+    becomes `63.8937` then back to `0.50310...` with float drift, and
+    a velocity at the endpoints (`1.0`) traverses `127.0 → 1.0` with
+    no harm but `0.99` → `125.73` → `0.9899...`. More importantly,
+    the comment at line 29 is a textbook "feedback_code_should_self_explain"
+    violation (see issue #23) — the author knew it was odd enough to
+    explain. **Fix:** make `applyVelocityCurve` overload-take a 0..1
+    input directly (or rename current as `applyVelocityCurveFromMidi`)
+    and pass `input.velocity` straight through. Eliminate the round-
+    trip.
+
+57. **`MidiCalibrationPanel.VelocityHistogram` resizes and re-DPR-
+    scales the canvas on _every note-on_, and on every reset, and on
+    every render-driven prop change.**
+    `MidiCalibrationPanel.tsx:75-129`: the resize block (read
+    `getBoundingClientRect`, set `canvas.width/height *= dpr`,
+    `ctx.scale(dpr, dpr)`) lives inside the same `useEffect([samples])`
+    that draws bars. Setting `canvas.width = ...` _clears_ the canvas
+    and resets the transform — that is fine because the draw follows
+    immediately, but `ctx.scale(dpr, dpr)` is _additive_; on each
+    note-on the existing transform is multiplied by `dpr` again. With
+    `devicePixelRatio = 2` the cumulative transform after 4 note-ons
+    is 16× — which silently passes because `canvas.width = ...` _on
+    that same render_ resets it. The fragility: if a future patch
+    adds an early-return that skips the `canvas.width` assignment,
+    the `ctx.scale(dpr, dpr)` still runs and the cumulative transform
+    leaks. The bug is latent. **Fix sketch:** split the resize
+    (driven by `ResizeObserver` on the container) from the draw
+    (driven by `[samples]` change), and never compound `ctx.scale`.
+    Cross-references issues #16 and #19.
+
+58. **`setGrandBouleTemperament`'s use of `resolveGrandBouleEngine({
+deviceId })` (no `tracks` argument) hits `getAllTracks()`
+    synchronously, on the audio-thread side of every dispatch.**
+    `setGrandBouleTemperament.ts:31` →
+    `resolveGrandBouleEngine.ts:23`:
+    `const tracks = input.tracks ?? getAllTracks()`. `getAllTracks`
+    reads from the live `trackStore` — a synchronous `store.value`
+    read, fine in non-RT context but called from a panel button
+    click. The actual cost is the inner `tracks.find(...)` and
+    `ensureTrackStrip(track.id)` per call. Combined with #7 (API
+    divergence) this means: the user clicks "Werckmeister III", the
+    panel _re-resolves the engine_, scanning every track in the
+    project, then pushes one number to the engine. With 50 tracks
+    that is a 50-element scan plus a `ensureTrackStrip` allocation
+    per click. §52.1 was added for the per-render path, but
+    `setGrandBouleTemperament` undoes that design. **Fix:** consume
+    `input.engine` from the panel like all 15 siblings (issue #7's
+    fix incidentally resolves this).
+
+59. **Pedal CC `value` from external MIDI is a bare `number` (0..1
+    for sustain), but the AudioEngine emits `value: number | boolean`
+    on `midi.pedalCc`** (`messageHandlers.ts:570-589` for sustain
+    sends `value: value / 127` as a `number` in 0..1; sostenuto/una
+    corda send `value: value >= 64` as a `boolean`). The `WorkspaceEvents.ts`
+    type `MidiPedalCcPayload = { ... value: number | boolean }` is a
+    raw union, not a discriminated one. The panel and the AudioEngine
+    handler implicitly _agree_ on which CC carries which type, but
+    the type system does not enforce it. A future change to send
+    sostenuto as `number` (half-pedal) — or a typo in the AudioEngine
+    that swaps numeric and boolean payloads — passes typecheck. The
+    `as number` / `as boolean` casts at `GrandBoulePanel.tsx:174,176,178`
+    are the smoke. (Issue #8 surfaced the casts; this finding makes
+    explicit that the cause is in the cross-module event contract.)
+
+60. **`onMidiNoteOff` does not carry velocity, but `triggerGrandBouleNote`
+    and the panel rely on it for the visual highlight only — release
+    velocity is silently dropped.** `Workspace/events/WorkspaceEvents.ts:48`:
+    `MidiNoteOffPayload = { deviceId?: string; midiNote: number }` —
+    no velocity. The panel's `setActiveNotes` map carries the
+    note-on velocity until a `noteOff` arrives; release velocity is
+    never observed. For an instrument plugin spec that emphasises
+    physical-modelling fidelity, dropping release velocity is a real
+    expressive miss. The Web MIDI API _does_ expose release velocity
+    on note-off messages. **Fix sketch:** extend the payload, plumb
+    through `messageHandlers.ts:noteOff` path, and forward to
+    `engine.noteOff({ midiNote, releaseVelocity })`. Engine handle
+    needs a release-velocity field added to `noteOff`'s input.
+
 ---
 
 ## Priorities
 
-1. **Project save/load destroys per-device GrandBoule state** (issue
-   #1) — every loaded project silently inherits yesterday's pedals,
-   calibration, morph, per-note overrides, and temperament. This is
-   the single most user-visible correctness bug.
-2. **Two divergent `applyVelocityCurve` implementations + two
+1. **No GrandBoule state is serialised by `saveProject` / `loadProject`
+   at all** (issue #1) — verified by grep. Every loaded project
+   inherits yesterday's pedals, calibration, morph, per-note
+   overrides, and temperament from the in-memory singleton. Per-device
+   stores survive the project switch entirely. This is correctness-
+   class data corruption disguised as state, and it is the single
+   most user-visible bug.
+2. **`loadGrandBoulePreset` and 14 other `set*` use cases lie on a
+   disconnected engine** (issue #5) — UI shows success, WASM is
+   silent. This compounds with issue #20 (calibration not plumbed to
+   engine) so 21 of 22 user-visible knobs/buttons silently no-op
+   when the engine is not ready.
+3. **Two divergent `applyVelocityCurve` implementations + two
    divergent velocity-curve fields** (issues #2, #3) — preset and
    calibration knobs do not affect the same playback paths.
-3. **Pedal CC handler in panel writes the store inline, skipping the
+4. **Pedal CC handler in panel writes the store inline, skipping the
    `set*` use cases** (issue #4) — visual UI moves but engine pedals
    may not, except via the AudioEngine's parallel handler.
-4. **`loadGrandBoulePreset` and 13 other `set*` use cases lie on a
-   disconnected engine** (issue #5) — UI shows success, WASM is
-   silent.
-5. **`setGrandBouleMorphPosition({ ... morphPosition: 0 })` on engine
-   ready stomps the user's morph state** (issue #6) — HMR and
-   suspend/resume reset the panel.
-6. **`setGrandBouleTemperament` API divergence** (issue #7) — bug-
-   masking helper that rebuilds an engine handle every call, breaking
-   the §52.1 memoisation everywhere.
-7. **Tests are placeholder export-checks** (issue #10) — a refactor
-   of `triggerGrandBouleNote` / `setGrandBouleMorphPosition` /
-   `loadGrandBoulePreset` could ship broken without any failure.
-8. **MIDI calibration values never reach the engine** (issue #22) —
+5. **`setGrandBouleTemperament` API divergence** (issue #7, deepened
+   by #58) — bug-masking helper that rebuilds an engine handle every
+   call, scanning the entire track list, breaking the §52.1
+   memoisation everywhere.
+6. **Tests are placeholder export-checks** (issue #10, count
+   corrected to 29) — a refactor of `triggerGrandBouleNote` /
+   `setGrandBouleMorphPosition` / `loadGrandBoulePreset` could ship
+   broken without any failure.
+7. **MIDI calibration values never reach the engine** (issue #20) —
    the calibration UI is decorative for the WASM side.
+8. **`PianoKeyboard.tsx` is dead code** (new issue #52) — a 100-line
+   component that ships in the bundle, has its own placeholder spec,
+   and is never rendered.
 9. **`SpectralWaterfall.spec.tsx` typecheck/test mismatch** (issue
    #11) — passing `fftFrame` where the prop is `analyser`. Either
    the test is silently lying or the typecheck is suppressed.
-10. **`as never` / `as any` / `as unknown` escapes in tests** (issue
+10. **`engineReady` field on the store is dead** (new issue #51) —
+    declared and defaulted but never written or read by use cases.
+    The panel uses `engine.isReady()` directly. The field exists
+    only because it would be in the persistence shape if the store
+    were ever persisted (which it isn't — see #1).
+11. **Morph reset stomps user state when morph is enabled** (issue
+    #6, demoted from #5 to here based on `morph.enabled` gating).
+12. **`as never` / `as any` / `as unknown` escapes in tests** (issue
     #9) — AGENTS.md "TypeScript — soundness" forbids these.
 
 ---
@@ -1417,6 +1645,168 @@ unifying the two fields.)
 field write to the unified setting, or (b) is deleted in favour of
 `setVelocityCurveExponent`.
 
+### 38. `engineReady: boolean` on the store is dead
+
+**Problem:** `grandBouleStore.ts:45,63` declares and seeds the field;
+no use case writes it; the panel reads `engine.isReady()` directly
+(`GrandBoulePanel.tsx:191`). The field is referenced only in tests as
+a fixture. It serves no purpose today.
+
+**Representative files:**
+
+- `src/modules/GrandBoule/stores/grandBouleStore.ts:45,63`
+- `src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx:191`
+
+**Needed:** Either drop it from `GrandBouleState` (and from
+`createDefaultGrandBouleState`, `loadGrandBoulePreset.spec.ts:68`,
+`helpers.spec.ts:29`), OR wire AudioEngine to push readiness state
+through it so the `engineReady` `useEffect` at line 193 subscribes
+to a store value rather than calling `engine.isReady()` per render.
+
+### 39. `PianoKeyboard.tsx` is dead code
+
+**Problem:** Verified by `grep -rn 'PianoKeyboard' src` — the only
+consumer is the component's own placeholder spec. The panel uses
+`PianoModel3D` exclusively. The component still ships in the bundle
+and inherits issues #31 and #32 in dead code. Confusing for the next
+session reading the audit.
+
+**Representative files:**
+
+- `src/modules/GrandBoule/presentations/components/PianoKeyboard.tsx`
+- `src/modules/GrandBoule/presentations/components/__tests__/PianoKeyboard.spec.tsx`
+
+**Needed:** Surface to the user — propose either deleting the file
+(per safety rules, requires explicit instruction naming the file)
+or replacing `PianoModel3D` with it for a low-resource fallback path.
+Do not silently delete.
+
+### 40. `resolveGrandBouleEngine` exports a use-case type
+
+**Problem:** `useCases/resolveGrandBouleEngine.ts:20`:
+`export type ResolvedGrandBouleEngine = GrandBouleEngineHandle`. The
+panel imports it via `import { type ResolvedGrandBouleEngine }` at
+`GrandBoulePanel.tsx:29`. AGENTS.md is explicit: "Do not `export type`
+from `useCases/`". The alias is also semantically empty.
+
+**Representative files:**
+
+- `src/modules/GrandBoule/useCases/resolveGrandBouleEngine.ts:20`
+- `src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx:29,129`
+
+**Needed:** Drop the `export type ResolvedGrandBouleEngine` alias.
+At the panel callsite, either inline the type via
+`ReturnType<typeof resolveGrandBouleEngine>` or import
+`GrandBouleEngineHandle` directly from `repositories/`.
+
+### 41. `createGrandBouleTrack` mutates a freshly-created track and
+ignores `addDeviceToStrip` failure
+
+**Problem:** `createGrandBouleTrack.ts:21-37`: writes
+`track.devices = [...]` after `createTrack` returns the track, then
+`appendTrack(track)`, then `addDeviceToStrip` (return value
+discarded), then emits `track.added` regardless of strip success. If
+`addDeviceToStrip` fails (no audio context, WASM not loaded), the
+track exists in the store but the strip does not — the panel
+renders forever against a disconnected handle (intersects #5).
+
+**Representative files:**
+
+- `src/modules/GrandBoule/useCases/createGrandBouleTrack.ts:21-37`
+- `src/modules/Arrangement/useCases/createTrack.ts`
+- `src/modules/AudioEngine/useCases/addDeviceToStrip` (cross-module)
+
+**Needed:** Either (a) extend `createTrack` to take a `devices`
+parameter so `createGrandBouleTrack` does not mutate the returned
+object, or (b) return `Result<string, Error>` and on
+`addDeviceToStrip` failure roll back via a `removeTrack` use case.
+Surface a `notifyUser` toast on failure, do not emit `track.added`
+on failure.
+
+### 42. `triggerGrandBouleNote` velocity round-trip drifts and the
+comment confesses the smell
+
+**Problem:** `triggerGrandBouleNote.ts:30`:
+`applyVelocityCurve(input.velocity * 127, calibration)` —
+`input.velocity` is documented as 0..1 and `applyVelocityCurve`
+divides its first arg by 127. Round-tripping a 0..1 value through
+`* 127` then `/ 127` is a precision-losing no-op, AND the comment
+at line 29 ("Map normalized velocity back to 0-127 ... then back
+to 0-1") signals the author already knew it was odd. `feedback_code_should_self_explain`.
+
+**Representative files:**
+
+- `src/modules/GrandBoule/useCases/triggerGrandBouleNote.ts:29-30`
+- `src/modules/GrandBoule/stores/applyVelocityCurve.ts:10-15`
+- `src/modules/GrandBoule/useCases/calibrateGrandBouleMidi/applyVelocityCurve.ts:11-15`
+
+**Needed:** Add a 0..1 overload to `applyVelocityCurve` (rename the
+0..127 form to `applyVelocityCurveFromMidi`), and pass
+`input.velocity` straight through. Drop the inflate/deflate.
+
+### 43. `MidiCalibrationPanel` `ctx.scale(dpr, dpr)` cumulates if
+`canvas.width` assignment is ever skipped
+
+**Problem:** `MidiCalibrationPanel.tsx:75-129`: resize and DPR-
+scale live in the same effect as the bar draw. `canvas.width = ...`
+clears the transform; `ctx.scale(dpr, dpr)` is additive. Today the
+sequence is correct because the assignment always runs, but the
+flow is fragile — a future early-return that skips the assignment
+will leave `ctx.scale` cumulating across notes.
+
+**Representative files:**
+
+- `src/modules/GrandBoule/presentations/components/MidiCalibrationPanel.tsx:75-129`
+
+**Needed:** Split resize from draw. Resize via `ResizeObserver` on
+the container (initial+on-resize only). Draw via `useEffect([samples])`,
+beginning with `ctx.setTransform(dpr, 0, 0, dpr, 0, 0)` (idempotent
+absolute set instead of additive scale). Cross-references issues
+#16 and #57.
+
+### 44. `MidiPedalCcPayload` is a non-discriminated union, AudioEngine
+and panel agree by convention
+
+**Problem:** `WorkspaceEvents.ts:51`:
+`MidiPedalCcPayload = { ... value: number | boolean }`. Cross-module
+contract is "CC64 → number, CC66/67 → boolean", but the type does
+not encode it. The panel casts via `value as number` /
+`value as boolean` (issue #8); the AudioEngine emits the typed
+values directly without TypeScript noticing if the agreement broke.
+
+**Representative files:**
+
+- `src/modules/Workspace/events/WorkspaceEvents.ts:51`
+- `src/modules/AudioEngine/repositories/webMidi/messageHandlers.ts:570-589`
+- `src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx:174,176,178`
+
+**Needed:** Tighten to a discriminated union, e.g.
+`{ deviceId?: string; cc: 64; value: number } |
+ { deviceId?: string; cc: 66 | 67; value: boolean }`. Update both
+emitters and the panel handler. Drop the casts. (This is the same
+fix as the `Needed` for issue #8, surfaced separately so the spec
+session sees the cross-module locus.)
+
+### 45. `MidiNoteOffPayload` carries no release velocity
+
+**Problem:** `WorkspaceEvents.ts:48`:
+`MidiNoteOffPayload = { deviceId?: string; midiNote: number }`.
+Web MIDI exposes release velocity on note-off; the engine's
+`noteOff` input is `{ midiNote }` only. For a physical-modelling
+piano this drops a real expressive dimension.
+
+**Representative files:**
+
+- `src/modules/Workspace/events/WorkspaceEvents.ts:48`
+- `src/modules/GrandBoule/repositories/grandBouleEngineHandle.ts:20`
+- `src/modules/AudioEngine/repositories/webMidi/messageHandlers.ts` (note-off path)
+
+**Needed:** Extend `MidiNoteOffPayload` with a `releaseVelocity?: number`
+(optional for back-compat). Plumb through the AudioEngine note-off
+path. Add `releaseVelocity?: number` to
+`GrandBouleEngineHandle.noteOff`'s input. Forward in
+`releaseGrandBouleNote`.
+
 ---
 
 ## Open questions
@@ -1449,40 +1839,69 @@ field write to the unified setting, or (b) is deleted in favour of
 
 ## Risks
 
-- **Data corruption across project loads.** Issue #1: every
-  GrandBoule device on a freshly loaded project inherits the
-  previous project's pedals, calibration, morph state, per-note
-  overrides, and temperament. The deprecated singleton is a
-  half-correct workaround that resets one device.
+- **Data corruption across project loads.** Issue #1: GrandBoule
+  state is _never_ serialised by `saveProject` or `loadProject`
+  (verified by grep — both files contain zero GrandBoule references).
+  The in-memory singleton's values carry forward across every project
+  switch until the user clicks "New Project". Per-device stores
+  survive too. The `Map<deviceId, Store>` in `grandBouleStore.ts:71`
+  outlives every project lifecycle event.
+- **Even if persistence is wired, `Map<number, GrandBoulePerNoteValues>`
+  cannot round-trip through plain JSON.** New observation in #1: the
+  store carries `perNoteOverrides: GrandBoulePerNoteMap` (a `Map`).
+  `JSON.stringify(new Map())` returns `'{}'`. Adding the store to
+  `saveProject.ts` without a custom replacer/reviver silently drops
+  every per-note override.
 - **Two-track velocity shaping.** Issues #2, #3, #20: presets and
   calibration knobs do not affect the same playback paths. A
   carefully calibrated controller still plays presets through a
   different curve than the on-screen keyboard does.
-- **Disconnected-engine theatre.** Issue #5: the user clicks
-  "preset", "morph", "panic", "load attack clip"; the UI says
-  success; the WASM is silent. Combined with no progress feedback
-  or toast (no `notifyUser` anywhere in this module), the user has
-  no signal.
-- **State stomp on engine restart.** Issue #6: HMR / suspend /
-  resume / project switch resets the user's morph position and any
-  parameter dispatched as part of that flow.
+- **Disconnected-engine theatre.** Issue #5 + #20 + #58: the user
+  clicks "preset", "morph", "temperament", "calibration",
+  "per-note", "panic", "load attack clip"; the UI says success;
+  the WASM is silent. 21 of 22 user-visible knobs/buttons silently
+  no-op when `engine.isReady() === false`. No `notifyUser` is
+  emitted anywhere in this module.
+- **`createGrandBouleTrack` ignores `addDeviceToStrip` failure.**
+  New issue #55 / open issue #41: a track exists in the store but
+  the strip does not; the panel renders against a disconnected
+  handle forever. Combined with #5, the user gets a fully
+  decorative GrandBoule panel.
+- **State stomp on engine restart (when morph is enabled).**
+  Issue #6 (demoted): HMR / suspend / resume / project switch
+  resets the user's morph position when they have the morph
+  engine on. Default morph state is disabled, limiting blast
+  radius.
 - **Pedal CC half-coverage.** Issue #4: the in-panel CC handler
   updates the visual UI but skips the engine dispatch for half-
-  pedal sustain.
+  pedal sustain. The cross-module event payload (`MidiPedalCcPayload`)
+  is a non-discriminated `number | boolean` union (issue #59 / open
+  issue #44), so even after fixing the panel handler, the type
+  system will not catch a future emitter swap.
 - **Test coverage is theatre.** Issue #10: a refactor of
   `triggerGrandBouleNote` that breaks the velocity-shaping math
-  could ship without any spec failing. Of 17 use-case files, only
-  ~3 have non-trivial tests.
+  could ship without any spec failing. 29 placeholder specs (count
+  corrected from 27); of 17 use-case files only ~3 have non-trivial
+  tests.
+- **Dead state and dead components.** Issues #50, #51, #52: the
+  store carries an `engineReady` field that is never written and an
+  `activeVoices` field that is never updated; `PianoKeyboard.tsx`
+  is shipped but never rendered. The audit's own count of "27 uncov-
+  ered specs" was off by 2 because nobody had run the grep.
 - **Visualisers eat CPU on collapsed panels.** Issue #30: three
   rAF loops continue rendering when the user has the GrandBoule
   panel hidden. Combined with `SpectralWaterfall` redrawing the
-  full ImageData every frame (#18), this is a 144 Hz / 22 528-
-  pixel-write CPU drain.
-- **Architectural drift.** Issues #2, #22, #27, #34, #35:
-  duplicated curve, empty events folder, no-op pass-through use
-  cases, surface mixing live and deprecated APIs, useCases barrel
-  exposing only 2 of 17 — left unaddressed they normalise the
-  pattern across the module.
+  full ImageData every frame (#18) and `MidiCalibrationPanel`
+  resizing the histogram canvas per-note-on (#16, #57), this is a
+  144 Hz / 22 528-pixel-write CPU drain — every render also leaks
+  a `ctx.scale` accumulation if the resize-clear assumption ever
+  breaks.
+- **Architectural drift.** Issues #2, #22, #27, #34, #35, #51, #52,
+  #53: duplicated curve, empty events folder, no-op pass-through
+  use cases, surface mixing live and deprecated APIs, useCases
+  barrel exposing only 2 of 17, dead store fields, dead components,
+  use-case `export type` violation. Left unaddressed they normalise
+  the pattern across the module.
 
 ---
 
@@ -1516,27 +1935,57 @@ field write to the unified setting, or (b) is deleted in favour of
   JS-only scope.
 - **Refactor `setGrandBouleTemperament`** (issue #7) to match its
   siblings.
-- **AGENTS.md compliance pass** (issues #2, #8, #9, #22, #27, #34, #35)
-  as a follow-up sweep — small mechanical refactors that should
-  land in a single commit each.
+- **AGENTS.md compliance pass** (issues #2, #8, #9, #22, #27, #34,
+  #35, #51, #52, #53) as a follow-up sweep — small mechanical
+  refactors that should land in a single commit each. Includes
+  dropping the `export type ResolvedGrandBouleEngine`, removing the
+  dead `engineReady` field, and surfacing the dead `PianoKeyboard.tsx`
+  for explicit decision (delete vs. wire).
+- **Tighten the `MidiPedalCcPayload` discriminated union** (issues
+  #8, #59) at `Workspace/events/WorkspaceEvents.ts`. Drop the
+  `as number` / `as boolean` casts in the panel _and_ in the
+  AudioEngine's `messageHandlers.ts:570-589`. This is a
+  cross-module change but mechanical.
+- **Repair `createGrandBouleTrack`'s implicit-mutation pattern**
+  (new #54/#55, open issue #41). Either extend `createTrack` to
+  accept devices, or wrap `addDeviceToStrip` failure into a Result
+  and roll back the track on failure. Do not emit `track.added`
+  unless the strip exists.
 
 ---
 
 ## Recommendation
 
-Start with **issue #1 (per-device state lost on project load)**. It
-is correctness-class data corruption; every other fix sits on top of
-it. Land it as a standalone commit with project-save/load round-trip
-tests in `Project/useCases/projectPersistence/__tests__/`.
+Start with **issue #1 (no GrandBoule state survives project save/
+load)**. It is correctness-class data corruption — verified by grep
+that `saveProject.ts` and `loadProject.ts` have no GrandBoule
+references at all. Every other fix sits on top of it. Land it as a
+standalone commit with project-save/load round-trip tests in
+`Project/useCases/projectPersistence/__tests__/`. The fix needs to
+account for `Map`-typed `perNoteOverrides` (custom replacer/reviver
+or convert the field to a plain `Record`).
 
 Then tackle **issue #5 (disconnected-engine theatre)**, because
 without `engine.isReady()` gates the panel's success indicators are
-lying to users — including in the test of issue #1.
+lying to users — including in the test of issue #1. Promote the
+fix to also cover #20 (calibration engine plumb) and #58
+(setGrandBouleTemperament's unmemoised path) since they share the
+same root: 21 of 22 controls bypass readiness checks today.
 
-After those two land, the next session can pick between the
-"correctness pass" (issues #2, #3, #4, #6, #7, #20, #25) and the
-"test-coverage pass" (issues #9, #10, #11, #12). They are
-independent.
+After those two land, the next session can pick between:
+
+- **Correctness pass:** issues #2, #3, #4, #6 (with `morph.enabled`
+  caveat), #7 (collapses #58), #20, #25, #41 (createGrandBouleTrack
+  rollback), #42 (velocity round-trip), #44 (pedal CC discriminated
+  union).
+- **Test-coverage pass:** issues #9, #10 (29 placeholders), #11,
+  #12.
+- **Mechanical AGENTS.md sweep:** issues #38 (dead `engineReady`
+  field), #39 (dead `PianoKeyboard.tsx`, surface to user), #40
+  (drop `export type ResolvedGrandBouleEngine`), #43 (split
+  resize/draw effects in `MidiCalibrationPanel`).
+
+They are independent.
 
 ---
 

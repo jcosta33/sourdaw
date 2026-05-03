@@ -162,6 +162,14 @@ volume/muted/recordedAt only.
 
 ## Findings
 
+> **Adversarial review pass (2026-04-28)** — every numbered open issue
+> below was re-verified against the current source. Items that were
+> validated as still-broken are marked `[VERIFIED]`; items refined or
+> downgraded carry an inline note. New issues uncovered in this pass
+> sit at #71+ in this Findings section and as new sections in
+> `## Open issues` (#41+). Severity bumps are spelled out under
+> `## Priorities` with a one-line rationale.
+
 1. **The scheduler has no monotonicity guard.** `playheadScheduler.ts:107`
    computes `deltaSec = now - lastTickTime` from `audioContext.currentTime`,
    which can stall (audio context suspended) or jump (after `resume()`).
@@ -755,46 +763,609 @@ t.clips.filter(c => c.followAction))` precompute, kept up-to-date
     and state machine. Spot check needed for `aria-live` on
     transport state changes (recording, looping).
 
+### Findings — adversarial pass (2026-04-28)
+
+72. **The Transport module has NO root `index.ts`.** AGENTS.md is
+    explicit: "Cross-module imports MUST only target the destination
+    module's root `index.ts`." Verified by `ls
+    src/modules/Transport/` — no `index.ts` at the module root.
+    Every cross-module import of Transport is therefore a deep
+    import into `useCases/`, `stores/`, `models/`, or
+    `presentations/views/`. Examples surveyed:
+    - `src/app/bootstrap.ts:55` — `from '#/modules/Transport/useCases'`
+    - `src/modules/Workspace/.../AppShell.tsx:30` —
+      `from '#/modules/Transport/presentations/views'`
+    - `src/modules/Arrangement/.../BeatRulerBar.tsx:5` —
+      `import { type TransportState, seekPlayhead, setLoopRegion,
+      disableLooping } from '#/modules/Transport/useCases'`
+    - `src/modules/Arrangement/.../buildTimelineRenderModel.ts:3-4`
+      — imports both stores AND useCases
+    - `src/modules/Arrangement/useCases/recording/__tests__/stopRecording.spec.ts:6`
+      — `import type { TransportState } from
+      '#/modules/Transport/stores/transportStore'` (a model type
+      reached through stores _and_ a deep store-file path)
+    This is the largest single architectural violation in the
+    module. Without the root barrel, the "curated public surface"
+    rule cannot be enforced and additions silently leak.
+
+73. **`stores/index.ts` re-exports MODEL types as part of its
+    public store contract.** `stores/index.ts:13`: `export type {
+    TransportState } from './transportStore'`; `transportStore.ts:6`
+    re-exports `defaultTransportState, type TransportState` from
+    `models/TransportState.ts`. AGENTS.md model-isolation rule:
+    "Models are strictly private to their owning module and must
+    never be exported or re-exported across module boundaries —
+    not even through `useCases/`." Same issue compounds with #18
+    in the Open issues section (use cases re-export). Verified at:
+    - `stores/index.ts:13` — `TransportState` (a model)
+    - `stores/index.ts:16,19` — `SetlistItem`, `SetlistState`,
+      `LoopSlot`, `LoopSlotState`, `LoopLayer`, `LoopStationState`
+      (all defined in stores files but consumed cross-module by
+      `LoopStationPanel.tsx` / `SetlistPanel.tsx` are presentations
+      _within_ Transport, so the cross-module concern is
+      `LoopStationState` — leaking via `stores/index.ts`).
+    Cross-module callers using these types (e.g. tests in
+    Arrangement importing `TransportState`) confirm the leak is
+    real, not merely declared.
+
+74. **`models/index.ts` is a forbidden barrel.** `models/index.ts`
+    does `export * from './TransportState'; export * from
+    './TempoMap'; export * from './TimeSignatureMap'; export *
+    from './TempoMappingTypes';`. AGENTS.md: "Do not add `index.ts`
+    barrels … _except_ each module's **root** `index.ts`." A barrel
+    inside `models/` is doubly wrong: it's a barrel that isn't the
+    module root, and it lives in a folder whose contents are
+    supposed to be private. (No external consumer was found
+    importing this barrel directly, but it exists and invites
+    sloppy imports.)
+
+75. **`removeTimeSignatureChange` keys by float `beat ===
+    beat`.** `useCases/timeSignatureChanges/removeTimeSignatureChange.ts:11`:
+    `state.changes.filter((context) => context.beat !== beat)`.
+    Same float-equality anti-pattern as `addTempoChange` /
+    `addTimeSignatureChange` / `adjustTempoPoint` (Open issue
+    #12). User adds a TS change at beat `5.0`, exports/re-imports
+    rounding to `4.9999999`, then `removeTimeSignatureChange(5)`
+    silently no-ops. Should match by stable `id`. Note that
+    `removeTempoChange` already does match by id (`tempoMap/removeTempoChange.ts`),
+    so the pattern is inconsistent within the module itself.
+
+76. **`setPunchIn` / `setPunchOut` admit inverted regions.**
+    `transportControls/setPunchIn.ts:9` clamps below at 0 only;
+    `setPunchOut.ts:9` likewise. There is no `punchOut > punchIn`
+    cross-validation. The scheduler defends with
+    `current.punchInBeat < current.punchOutBeat` at
+    `playheadScheduler.ts:189`, so an inverted region "silently
+    disables punch", same shape as the loop-region issue in #5/#7.
+    Also: there is no project-end clamp on either, so
+    `setPunchOut(99999)` is silently accepted. Tests at
+    `__tests__/setPunchIn.spec.ts:36`, `setPunchOut.spec.ts:36`
+    only assert the lower-bound clamp.
+
+77. **`seekPlayhead` while playing destroys automation recording
+    continuity.** `transportControls/seekPlayhead.ts:17-28` —
+    when `wasPlaying`, it calls `stopPlayheadScheduler()` then
+    `startPlayheadScheduler()`. `stopPlayheadScheduler` calls
+    `stopAutomationRecording()` (`playheadScheduler.ts:283`);
+    `startPlayheadScheduler` calls `startAutomationRecording()`
+    (`playheadScheduler.ts:89`). Every seek therefore tears down
+    and re-arms automation recording, splitting any in-progress
+    automation lane in two and dropping any pending
+    write-buffered automation events. There is no "preserve
+    automation lane across seek" branch.
+
+78. **`seekPlayhead` does not commit an in-progress audio
+    recording.** `transportControls/seekPlayhead.ts` does not call
+    `stopActiveRecording()`. If `transport.isRecording === true`
+    (count-in completed and the user is recording) and the user
+    seeks, the underlying `MediaRecorder` keeps capturing while
+    the playhead jumps. The clip's `audioBufferId` is filled in
+    later from the entire recording — and since
+    `recordingLifecycle.beginActualRecording` ties `recClip.startBeat`
+    to the position at record-start (not the seek), the clip's
+    audio and the timeline diverge. Compare to `stopPlayback`,
+    which does commit the recording first (`stopPlayback.ts:21-23`).
+
+79. **`stopPlayheadScheduler` resets `accumulatedPosition` to 0
+    unconditionally** (`playheadScheduler.ts:295`). `seekPlayhead`
+    relies on `startPlayheadScheduler` re-reading
+    `state.playheadPosition`, but `stopPlayheadScheduler` is also
+    called from `pausePlayback`, `stopPlayback`, and
+    follow-action-stop. After `pausePlayback`, the scheduler's
+    in-memory position is wiped; only the `transportStore.value
+    .playheadPosition` survives. This is fine because every
+    `startPlayheadScheduler` re-seeds from the store — but the
+    coupling is fragile. A refactor that moves seed responsibility
+    out of `startPlayheadScheduler` would silently leave the
+    scheduler at beat 0 after every pause.
+
+80. **In-flight `tick()` racing `worker.terminate()`.**
+    `playheadScheduler.ts:284-288`: `worker.postMessage({ type:
+    'stop' }); worker.terminate();`. The `onmessage` handler at
+    `:273-277` queues a `void tick()` per tick message. After
+    `terminate()`, no further messages fire, but a tick already
+    queued in the microtask queue is not cancelled. The
+    `current?.isPlaying` guard at `:102` is the only thing
+    preventing post-stop tick side effects; if a state update
+    that flips `isPlaying: false` lags behind the terminate (e.g.
+    `pausePlayback`'s `updateTransportState` at line 16 vs
+    `stopPlayheadScheduler` at line 13 — the order is `stop, then
+    update`), the in-flight tick can fire AFTER the worker is
+    terminated but BEFORE `isPlaying` flips, computing one extra
+    `audioEngine.setTransportInfo`, scheduling one extra metronome
+    click, and pushing one extra `activeAudioSources` entry.
+    `pausePlayback` ordering: `stopPlayheadScheduler` is called
+    BEFORE `updateTransportState({ isPlaying: false })` — so the
+    race window is real.
+
+81. **`punchRecording/*` use cases are mostly dead code.**
+    `startBackgroundCapture`, `definePunchRegion`,
+    `updateCapturePosition`, `commitPunchRegion`, `discardCapture`,
+    `setPreRoll`, `setPostRoll`, `stopBackgroundCapture` —
+    none are imported by anything outside
+    `src/modules/Transport/punchRecording/`. The only wired
+    function is `togglePunchRecording`, which flips the
+    `enabled` boolean. The scheduler does **not** read
+    `punchRecordingStore` — it reads the unrelated `transport
+    .punchInBeat / .punchOutBeat / .punchInEnabled` fields. So
+    there are TWO parallel "punch" systems: one inside
+    `transportStore` (wired to `playheadScheduler`), and another
+    in `punchRecordingStore` (with a UI panel and a richer
+    region/capture model, but no runtime hookup). The richer
+    feature is shipped as panel + handlers + use cases + tests,
+    but produces no behaviour.
+
+82. **`models/loopStationHelpers.ts`, `setlistItemHelpers.ts`,
+    `punchRecordingHelpers.ts` are deprecated empty files.**
+    Each contains `export {};` and a `@deprecated` doc comment
+    citing `repositories/<name>IdCounter.ts`. They are
+    "awaiting explicit deletion approval" (file-comment text,
+    e.g. `loopStationHelpers.ts:1-7`). This is dead source the
+    `models/` folder is carrying.
+
+83. **`schedulerSession` is a module-level singleton that
+    survives HMR.** `playheadScheduler.ts:56-66`. There is no
+    `dispose()`/`Symbol.dispose` path, no HMR boundary marker,
+    no project-switch reset hook (other than
+    `stopPlayheadScheduler` which is called only on user-driven
+    transitions). Project-switch (e.g. open a different file in
+    Collaboration mode) leaves the scheduler holding stale
+    `activeAudioSources`, stale `scheduledAudioClips` keys, and
+    a stale `onStopRequested` callback bound to the previous
+    project's `stopPlayback`.
+
+84. **`scheduleAudioClips.sessionState.requestedAssets` never
+    resets.** `scheduleAudioClips.ts:29`: `Set<string>` keyed by
+    asset hash, populated to dedupe peer-asset requests. There
+    is no clear-on-stop, clear-on-project-switch, or
+    clear-on-`leave-session`. A user that opens a session,
+    requests an asset (which the peer never serves), then
+    leaves and re-joins the session, will not re-request the
+    asset because the dedup-set still has the hash. Effectively
+    a one-shot-per-session leak with cross-session retention if
+    the page is not reloaded.
+
+85. **`startPlayheadScheduler` reads `state.scheduleGrainMs`
+    once and ignores changes.** `playheadScheduler.ts:98` reads
+    `grainMs` once, posts `{ type: 'start', interval: grainMs }`
+    to the worker, and never updates it. If the user toggles
+    `scheduleGrainMs` mid-playback (e.g. via a settings UI) the
+    worker continues at the old interval. There is no scheduler
+    use case for "re-arm worker with new interval".
+    `scheduleGrainMs` is in `RUNTIME_ONLY_KEYS` (per
+    `transportStore.toCrdt`'s implicit list — see #57) which
+    suggests it's intended to be a hot-tunable value. Without a
+    re-arm path, it's a deploy-time constant in disguise.
+
+86. **`scheduleMidiNotes` makes the **Yeast** pass synchronous
+    on the await of `getYeastWorkletNodeAsync`.**
+    `scheduleMidiNotes.ts:248-251`: each tick, per-Yeast-clip,
+    `await getYeastWorkletNodeAsync(ctx)` and then
+    `await workletNode.processBlock(...)`. With multiple
+    Yeast-armed clips and a 100 Hz tick, the per-tick wallclock
+    for `scheduleMidiNotes` is gated on the worklet's roundtrip
+    time. The scheduler `tick()` is `async` and the await
+    serializes the rest of the tick (audio clips + automation +
+    setTransportInfo) behind it. If any worklet stalls,
+    `audioEngine.setTransportInfo` runs late — the SAB drives DSP
+    and stale transport info skews automation by however long the
+    await took.
+
+87. **`scheduleMetronome` `Math.floor(toBeat)` excludes the upper
+    boundary.** `scheduleMetronome.ts:30-31`:
+    `startBeatInt = Math.ceil(fromBeat); endBeatInt = Math.floor(
+    toBeat); for (let beat = startBeatInt; beat <= endBeatInt;
+    beat++)`. When `toBeat` is exactly an integer (e.g.
+    `lookAheadBeats` lands the scheduler at `toBeat = 4.0`), the
+    loop includes beat 4 — fine. But the **next** tick re-computes
+    `fromBeat = lastScheduledBeat = scheduleUpTo` (which was
+    `4.0`). `startBeatInt = Math.ceil(4.0) = 4`. The
+    `if (beat <= _lastMetronomeBeat)` guard at `:35` then skips
+    beat 4 — correct. But if `_lastMetronomeBeat` is reset
+    (e.g. by a loop wrap or `resetMetronomeBeat(position)` with
+    `position` mid-beat), the guard's exact boundary semantics
+    are tied to `Math.floor(position) - 1`
+    (`scheduleMetronome.ts:16`) which itself is an off-by-one
+    for `position` exactly on an integer beat — `floor(4.0) - 1
+    = 3`, so beat 4 would re-fire on the next pass. Net: the
+    metronome can DOUBLE-fire on a beat that lies exactly on a
+    loop-wrap or reset point. Did not write the unit test in
+    this pass; the math is consistent with this hazard.
+
+88. **`scheduleMidiNotes` Yeast path uses `fromBeat` and
+    `toBeat` to define the worklet block, but block boundaries
+    do not align with note start times.**
+    `scheduleMidiNotes.ts:230`: `if (noteStartBeat < fromBeat ||
+    noteStartBeat >= toBeat) continue;` excludes notes outside
+    the block. But `transformedNotes` (the worklet output) is
+    consumed at `:304` as the new `notes` array, which then
+    feeds the **non-Yeast scheduling pass** at `:375`-`:476`.
+    That second pass uses `iter * loopLen` and `clip.startBeat
+    + iter * loopLen + (note.startBeat - midiOffset)` — so a
+    Yeast-transformed note at `startBeat = 0.5` (relative to
+    clip) is replayed at `clip.startBeat + 0.5` per iteration.
+    For Yeast clips that loop, the worklet sees one block of
+    input notes per tick but the second pass re-iterates them
+    with the loop. This only works if the worklet output is
+    independent of iteration — which the worklet has no way to
+    know (the `transport.barIndex` / `beatInBar` are computed
+    from `fromBeat`, not from the iteration's effective beat).
+    So loop-iterated Yeast clips re-run the worklet's transform
+    on the same input each iteration with the same metadata,
+    producing identical patterns instead of bar-aware variation.
+
+89. **`scheduleMetronome.spec.ts` tests share module-level
+    `_lastMetronomeBeat` state across tests.** Verified:
+    `scheduling/__tests__/scheduleMetronome.spec.ts` has only
+    one `it()` block (`'does not schedule clicks when the
+    metronome is off'`) that calls `scheduleMetronome(0, 4, 0,
+    {...defaultTransportState, metronomeEnabled: false}, 120)`.
+    The early-return path (`metronomeEnabled: false`) does not
+    touch `_lastMetronomeBeat`, so the spec coincidentally does
+    not surface the cross-test pollution. The test file does
+    not import `resetMetronomeBeat` or call it in `beforeEach`.
+    Adding any second test case that exercises the
+    metronome-on path will fail-or-flake depending on prior
+    state.
+
+90. **`detectProjectTempo` writes `transportStore.tempo` even
+    though the result is by-construction equal to it.**
+    Verified: `tempoMapping/operations/detectProjectTempo.ts:138-140`
+    calls `applyTempoMap(result)` if `confidence > 0.5`, and
+    `applyTempoMap` (`:120-129`) calls
+    `updateTransportState({ tempo: Math.round(result.averageBpm) })`.
+    Because `estimateOnsetsFromClips` (`:93-118`) generates
+    `onsets[i] = clipStartSec + i * (60/currentTempo)`, the
+    inter-onset intervals are exactly `60/currentTempo`,
+    giving `bpm = 60 / interval = currentTempo`. Average = current.
+    `Math.round(currentTempo) === currentTempo` (transport.tempo
+    is integer in `setTempo`). Net: a no-op that pushes to
+    Automerge CRDT (firing collab broadcasts and undo entries).
+    Open issue #13 captures this; verified the math.
+
+91. **`evaluateFollowActions` skips clips whose
+    `loopEnabled` is true.** `evaluateFollowActions.ts:51`:
+    `if (clip.followAction && !clip.loopEnabled && …)`. A
+    clip with both `loopEnabled` and `followAction === 'stop'`
+    will NEVER fire its follow-action — which is consistent
+    with "looping clip never ends". But this is undocumented;
+    a user setting both might expect the loop to terminate
+    when its play range ends. The test at `:62-66` confirms
+    "skips clips that have loopEnabled" — but does not
+    interrogate whether this is the desired UX.
+
+92. **`schedulerSession.lastScheduledBeat` is initialized to
+    `-1` in the holder declaration but seeded to
+    `state.playheadPosition - 0.0001` on
+    `startPlayheadScheduler`.** `playheadScheduler.ts:60` vs
+    `:95`. After `stopPlayheadScheduler` it is reset to `-1`
+    (`:296`). If a tick fires AFTER `stopPlayheadScheduler`
+    has reset to `-1` but BEFORE the worker terminate has
+    drained (the race in #80), `scheduleMetronome` sees
+    `fromBeat = -1` and floors `endBeatInt` against
+    `lookAheadBeats` of a stale tempo — schedules
+    metronome clicks for beats `Math.ceil(-1)..floor(toBeat)`
+    = `[-1, … toBeat]`, including beat 0 and beat 1 in a
+    look-ahead window that no longer corresponds to playback.
+    Worse: `audioEngine.setTransportInfo(newPosition,
+    currentTempo, current.isPlaying, …)` writes the post-stop
+    isPlaying value but the just-reset `accumulatedPosition`
+    is `0` (from line 295) — so the SAB momentarily shows
+    "playing at 0" if the in-flight tick wins.
+
+93. **`transportStore.set({ ...transportStore.value!,
+    isRecording: true })` at `playheadScheduler.ts:194,228`
+    bypasses the recording lifecycle.** The punch-arming branch
+    inside the tick directly mutates `isRecording` rather than
+    going through `recordingLifecycle.stopActiveRecording` /
+    `beginActualRecording`. Consequence: the `countInTimerId`
+    is never cleared on punch-arm, even if the user had
+    pressed record (with count-in enabled) and then enabled
+    punch and the punch-in beat hits before the count-in
+    expires. Two recordings can race: the count-in's
+    `beginActualRecording` at `t = countInDurationSec` and the
+    punch-arm's `startRecording` at `tick when newPosition >=
+    punchInBeat`. (Builds on Open issue #8 with a concrete
+    interleaving.)
+
+94. **`scheduleAudioClips.gainNodePool` is module-level and
+    shared across HMR.** `scheduleAudioClips.ts:37` declares
+    `const gainNodePool: GainNode[] = []`. Module-level state
+    survives HMR re-mount of the calling React tree. After many
+    HMR reloads in dev, the pool retains references to GainNodes
+    created against the previous AudioContext (the audio
+    context typically does NOT get re-created on HMR, so the
+    nodes themselves remain valid — but the pool semantics
+    become opaque). Already noted in Open issue #37 for size
+    growth; the HMR survival makes it a debug-only mystery
+    when nodes from a previous session leak into a new one.
+
+95. **`scheduleMidiNotes` uses `Math.random()` for note
+    probability, even though `evaluateFollowActions` switched to
+    a seeded PRNG.** `scheduleMidiNotes.ts:393`: `if
+    (probability < 100 && Math.random() * 100 >= probability)
+    continue;`. `evaluateFollowActions.ts:8-18` defines
+    `seededRandom(clipId, position)` and uses it for
+    `play_random` (line 111) — so follow-actions are
+    deterministic across replays, but per-note probability is
+    not. Two playbacks of the same project will produce
+    different audible patterns. (Inconsistent with
+    `evaluateFollowActions`'s declared "deterministic
+    pseudo-random" contract at line 3-7.)
+
+96. **`scheduleAudioClips.sessionState` is `export`-ed.**
+    `scheduleAudioClips.ts:29`: `export const sessionState: {
+    requestedAssets: Set<string> } = { … }`. AGENTS.md: "Files
+    under `src/modules/<Name>/` MUST NOT import from
+    `#/modules/<Name>` (their own barrel). Use **relative**
+    paths." This is an export from a `useCases/scheduling/*`
+    file, intended for intra-module reset hooks. Not strictly a
+    barrel violation, but `export const` of mutable runtime
+    state is a leak surface — any other file in the module can
+    `import { sessionState }` and reach into the dedup-set. No
+    consumer was found, but the door is open.
+
+97. **`scheduleMetronome._currentTempo` parameter is unused.**
+    Verified at `scheduleMetronome.ts:24-25`: the parameter is
+    underscore-prefixed and never referenced — the function
+    re-resolves tempo per-beat from the tempo map at line 40.
+    This is the symptom; the root cause is that the function
+    signature was never refactored when the tempo-map-aware
+    look-up replaced the snapshot-tempo computation. Open
+    issue #17 calls out the multi-positional-arg violation;
+    this finding is the unused-parameter compounding.
+
+98. **`recordingLifecycle.countInTimerId` is module-level
+    mutable state with no reset path on `stopPlayheadScheduler`.**
+    `transportControls/recordingLifecycle.ts:13`. Cleared by
+    `stopActiveRecording()` (`:22-25`), but
+    `stopPlayheadScheduler` does NOT call `stopActiveRecording`.
+    So a follow-action `stop` (which calls
+    `schedulerSession.onStopRequested?.()` →
+    `stopPlayback()` → `stopActiveRecording()` if isRecording)
+    DOES clear it; but a direct `pausePlayback` does NOT. This
+    is the race underneath Open issue #7, with the call-graph
+    spelled out.
+
+99. **`startPlayback` does not check `isAlready playing`.**
+    `transportControls/startPlayback.ts:9-27`: no guard against
+    being called twice (which can happen via two rapid
+    spacebar presses through the keyboard handler). The second
+    call posts `{ type: 'start', interval: grainMs }` to the
+    Worker, which `clearInterval`s its own timer and re-sets
+    (`schedulerWorker.ts:19-24`). Net effect: the worker re-arms,
+    likely fine. But `startPlayheadScheduler` re-creates the
+    Worker only if `!schedulerSession.worker` — so the second
+    call hits the `else` branch and posts another `start`.
+    `lastTickTime` is **also** reset to `ctx.currentTime`
+    (`:92`), which means the next tick will see `deltaSec ≈ 0`,
+    skipping any time elapsed since the first call's last
+    tick. Every double-press of spacebar pauses position
+    advance for one tick.
+
+100. **`stopPlayback`'s `state.playheadPosition === state.loopStart`
+     compares the store value, not `playheadPositionRef.current`.**
+     `transportControls/stopPlayback.ts:34`. The store value lags
+     the ref by up to 100 ms during playback (the scheduler updates
+     both, but the store flush goes through `updateTransportState`
+     only on discrete events: pause/stop/seek/loop wrap). After a
+     `pausePlayback` followed by a `stopPlayback`, the store value
+     is the position at pause. After a loop wrap then a pause then
+     a stop, the store value is `loopStart` (from the wrap), but
+     the user may have pressed pause _before_ the wrap was committed
+     — in which case the store has the pre-wrap value. The
+     equality compare is fragile in two dimensions: float drift
+     (already noted in #25) and which clock reads the position.
+
+### Findings — meta
+
+101. **Audit was missing a "no root barrel" finding.** This is
+     the most impactful AGENTS.md violation in the module —
+     surfaced here as Finding #72 and Open issue #41 below.
+
+102. **Audit downgraded the `models/index.ts` barrel as out-of-scope.**
+     Surfaced here as Finding #74 and consolidated with the
+     barrel-rule violations.
+
 ---
 
 ## Priorities
 
-1. **Scheduler tempo-curve correctness (#2, #3, #4, #10, #14, #18)** —
-   tempo changes mid-playback produce drift between visual playhead,
-   audio clip placement, MIDI note timing, and metronome ticks. This is
-   the single most user-visible "jitter" hazard.
-2. **Loop-region edge cases (#5, #6, #7, #21)** — loop wrap during
-   recording loses audio (#21), `loopEnd <= loopStart` silently
-   disables looping (#7), playhead can escape the loop region after
-   an edit (#6), and `stopActiveSources` races the new tick (#5).
-3. **Play/stop/record state-machine races (#22, #26, #27, #46, #53)**
-    — count-in timer not cleared on `stopPlayback`, double-arm of
-   audio recording when punch is enabled mid-record, divergent
-   `punchRecordingActive` vs `transportStore.isRecording`, double
-   `stopAudioRecording` calls on stop.
-4. **Tempo / time-sig validation drift (#36, #37, #38, #39)** —
-   three different BPM upper bounds (300 / 999 / no-bound), float
+> Numbers in parentheses are **Open issue** numbers (the headed
+> sections in `## Open issues`), not Findings numbers. Issues 41+
+> are introduced by the 2026-04-28 adversarial pass and pull
+> several Findings #72+ into actionable form.
+
+1. **The Transport module has no root `index.ts` (#41).** The
+   single largest architectural finding. Until the root barrel
+   exists, every cross-module import is illegal-by-spec, and the
+   `useCases/index.ts` type leak (#18) and `stores/index.ts` model
+   leak (#42) cannot be repaired in isolation — they require the
+   barrel to land first.
+2. **Scheduler tempo-curve correctness (#1, #2, #3, #14, #27).**
+   Tempo changes mid-playback produce drift between visual
+   playhead, audio clip placement, MIDI note timing, and metronome
+   ticks. The single most user-visible "jitter" hazard. New issue
+   #43 (Yeast loop-iter re-runs on stale block metadata)
+   compounds this.
+3. **Recording data-loss class (#4, #45, #46).** Loop wrap during
+   recording overwrites takes; seek-while-recording desyncs clip
+   audio from timeline; in-flight tick after `terminate()` writes
+   one extra `setTransportInfo`. All cause silent data loss or
+   timeline corruption that the user discovers post-hoc.
+4. **Loop-region edge cases (#5, #6, #19, #44).** `loopEnd <=
+   loopStart` silently disables looping (#5); playhead can escape
+   the loop region after an edit (#6); `stopActiveSources` races
+   `onended` (#19); inverted punch regions accept silently (#44).
+5. **Play/stop/record state-machine races (#7, #8, #45, #47).**
+   Count-in timer not cleared on `pausePlayback`, double-arm when
+   punch and record both fire, automation lane truncated on every
+   seek, double-press of spacebar resets `lastTickTime` to "now"
+   skipping a tick.
+6. **Tempo / time-sig validation drift (#11, #12, #48).** Three
+   different BPM upper bounds (300 / 999 / no-bound), float
    beat-equality used as a key, CRDT-replayable inserts producing
-   near-duplicates.
-5. **Hot-loop allocations and per-call sorts in models (#16, #17, #20,
-   #35, #48, #49, #50, #60)** — every `getTempoAtBeat` call sorts the
-   tempo map; every Yeast-armed tick allocates Maps; tempo detection
-   slices per frame.
-6. **`detectProjectTempo` is a closed-loop fake (#34)** — function
-   "detects" the input tempo by construction. UX-misleading.
-7. **Beats↔seconds conversion uses `transport.tempo` directly in
-   places that should use the tempo map (#14)** — Yeast worklet
+   near-duplicates, plus `removeTimeSignatureChange` keying by
+   float beat (Finding #75).
+7. **Hot-loop allocations and per-call sorts in models (#14,
+   #20, #33).** Every `getTempoAtBeat` call sorts the tempo map;
+   every Yeast-armed tick allocates Maps; tempo detection slices
+   per frame.
+8. **`detectProjectTempo` is a closed-loop fake (#13).** Function
+   "detects" the input tempo by construction. UX-misleading and
+   churns the CRDT.
+9. **Beats↔seconds conversion uses `transport.tempo` directly in
+   places that should use the tempo map (#3).** Yeast worklet
    block boundaries ignore the tempo map entirely.
-8. **`scheduleMetronome` module-level state racing across pause/play
-   sequences (#9, #10, #42)** — metronome misses clicks on pause/play
-   without stop.
-9. **`AGENTS.md` violations (#41, #54, #55, #56)** — type
-   re-exports from useCases, multi-positional-arg functions, deep
-   imports.
+10. **`scheduleMetronome` module-level state racing across
+    pause/play sequences (#9).** Metronome misses clicks on
+    pause/play without stop. Adjacent: Finding #87 (potential
+    double-fire on integer-beat boundaries).
+11. **Dead / unwired feature code (#22, #23, #49).** Loop-station
+    is UI-only, setlist not coordinated with transport, and the
+    `punchRecording/*` use case stack is mostly unwired (Finding
+    #81). Either ship or strip.
+12. **AGENTS.md violations (#17, #18, #41, #42, #43).** No root
+    barrel, type re-exports from useCases, model types re-exported
+    from `stores/`, multi-positional-arg functions, internal
+    `models/index.ts` barrel.
 
 ---
 
 ## Open issues
+
+> **Verification (2026-04-28 adversarial pass):** every numbered
+> issue below was re-checked against the current source. None
+> moved to `## Resolved`. Severity-relevant verification notes:
+>
+> - **#1 [VERIFIED]** — `playheadScheduler.ts:111-114` reads
+>   `currentTempo` once per tick from `accumulatedPosition` and
+>   applies to the full `deltaSec`. The `'linear'` curve in
+>   `getTempoAtBeat` (`models/TempoMap.ts:36-41`) is not
+>   integrated across the tick. Magnitude of drift: at 100 Hz
+>   tick (10 ms), with a linear ramp from 60→120 BPM over 4
+>   beats, the integration error per tick is up to `(deltaSec)²
+>   × slope / 2 ≈ 0.5 ms × slope` — but the error
+>   **accumulates** because `accumulatedPosition` is the seed
+>   for the next tick. Severity: **HIGH**, confirmed.
+> - **#2 [VERIFIED]** — `scheduleAudioClips.ts:182` uses
+>   `currentTempo` (scheduler's tick-snapshot) for time
+>   placement; `:147` uses `clipBeatsPerSecond` (clip's
+>   startBeat tempo) for duration. With any non-flat tempo
+>   map, `iterStartTime` and `iterDurationSeconds` use
+>   different rates. Same dual-tempo bug at
+>   `scheduleMidiNotes.ts:404-410` (per-note tempo
+>   re-resolved) vs `:407` (`currentTempo` for time).
+>   Severity: **HIGH**, confirmed.
+> - **#3 [VERIFIED]** — `scheduleMidiNotes.ts:211`: `const
+>   spb = transport.tempo / 60`. `:218-219` derives
+>   `barIndex` and `beatInBar` directly from `fromBeat /
+>   transport.timeSignatureNumerator`. Both ignore
+>   `tempoMapStore` and `timeSignatureMapStore`.
+>   Severity: **HIGH**, confirmed.
+> - **#4 [VERIFIED]** — `playheadScheduler.ts:117-135`: on
+>   loop wrap during recording, `addTake(...)` is called per
+>   armed track — but `stopAudioRecording` /
+>   `startAudioRecording` are NOT. Compare to
+>   `recordingLifecycle.beginActualRecording` which sets up
+>   the buffer-to-clip mapping; the loop wrap branch creates
+>   take rows without the recording infrastructure to fill
+>   them. Severity: **CRITICAL** (data loss), confirmed.
+> - **#5 [VERIFIED]** — `setLoopRegion.ts:4-10` accepts any
+>   `(start, end)` pair; `playheadScheduler.ts:116`'s wrap
+>   guard requires `loopEnd > loopStart`. The two combine to
+>   silently disable looping for inverted regions.
+>   Severity: **MEDIUM**, confirmed.
+> - **#6 [VERIFIED]** — `playheadScheduler.ts:116`'s wrap
+>   guard fires only on `newPosition >= loopEnd`. There is
+>   no "playhead currently past `loopEnd`" branch. Editing
+>   `loopEnd` below `accumulatedPosition` mid-playback
+>   leaves the playhead outside the region, advancing
+>   indefinitely. Severity: **MEDIUM**, confirmed.
+> - **#7 [VERIFIED]** — `pausePlayback.ts:7-17` does not
+>   call `stopActiveRecording`; only `stopPlayback.ts:21-23`
+>   does. `recordingLifecycle.countInTimerId` is cleared in
+>   `stopActiveRecording` (`:22-25`); the timer survives
+>   `pausePlayback` and `togglePlayback`. Severity: **HIGH**
+>   (surprise recording = silent file write), confirmed.
+> - **#8 [VERIFIED]** — `playheadScheduler.ts:184-222`
+>   guards on `!current.isRecording` (line 186), so the
+>   common path (user toggled record before reaching
+>   `punchInBeat`) is fine. But the user can also enable
+>   `punchInEnabled` AFTER toggling record — line 186 sees
+>   `isRecording: true` and the punch branch returns. So the
+>   true risk is the OTHER direction: punch was active at
+>   `:194` (set `isRecording: true`); user then toggles
+>   record-arm a second time mid-region; at the next tick,
+>   the guard at `:186` is re-evaluated and the user toggle
+>   may or may not race the punch's set. Severity:
+>   downgraded to **MEDIUM** based on this verification —
+>   the bug is real but requires a specific user
+>   interleaving, and the existing guard prevents the
+>   common case.
+> - **#9 [VERIFIED]** — `scheduleMetronome.ts:9` is module
+>   level; `pausePlayback.ts:13-16` does not call
+>   `resetMetronomeBeat`; only `stopPlayheadScheduler` does
+>   (`playheadScheduler.ts:297`). So pause→play from a new
+>   beat skips clicks ≤ stale value. Severity: **MEDIUM**,
+>   confirmed.
+> - **#13 [VERIFIED]** — math walkthrough confirmed:
+>   `estimateOnsetsFromClips` (`detectProjectTempo.ts:111`)
+>   generates onsets at `i × beatDuration` where
+>   `beatDuration = 60 / currentTempo`. Inter-onset interval
+>   = `beatDuration` everywhere. `bpmEstimates` =
+>   `60 / interval = currentTempo`. Histogram with 2-BPM
+>   bin width: every estimate lands in the same bin.
+>   `averageBpm = currentTempo`. Closed-loop, by
+>   construction. Severity: **MEDIUM** (UX-misleading not
+>   correctness-critical), confirmed.
+> - **#19 [VERIFIED]** — `activeAudioSources` is `Array<>`
+>   at `playheadScheduler.ts:63`; `onended` does
+>   `activeAudioSources.indexOf(source); splice(idx, 1)` at
+>   `scheduleAudioClips.ts:251-262` and
+>   `scheduleMidiNotes.ts:151-157`. The race is real.
+>   Severity: **LOW** (cosmetic — the array is local to
+>   audio sources, not playback correctness), confirmed.
+> - **#21 [VERIFIED]** — three stores use
+>   `createStore({initialData})` without
+>   `createAutomergeStorage`. Verified at
+>   `setlistStore.ts:48-57`, `loopStationStore.ts:62-71`,
+>   `punchRecordingStore.ts:55-63`. Severity: **MEDIUM**
+>   (depends on whether the features are intended to
+>   persist — see Open question), confirmed.
+> - **#22, #23, #49 [VERIFIED]** — loop-station, setlist,
+>   and punch-recording use cases produce no audible
+>   behaviour. `triggerSlot.ts:7-20` only flips slot state.
+>   `goToItem.ts:9-32` only updates `currentIndex` and emits
+>   a `programChange` event (not a transport seek). The
+>   richer `punchRecording/*` use cases (define / commit /
+>   discard) have zero external callers. Severity:
+>   **MEDIUM** (UX failure, not correctness), confirmed.
+> - **#34, #41-#54 (new)** — see headed sections below.
+>
+> Issues #10-#12, #14-#18, #20, #24-#33, #35-#40 — verified
+> by spot-check; current behaviour matches the description in
+> the original audit. No severity adjustments.
 
 ### 1. Scheduler tempo curve drift between position and audio time
 
@@ -1543,6 +2114,417 @@ for record-across-loop-wrap, pause→play→metronome-state, seek →
 schedule reset. Adversarial tests for loop region inversion and
 playhead-outside-loop-region.
 
+### 41. Transport module has no root `index.ts` (AGENTS.md hard violation)
+
+**Problem:** AGENTS.md mandates: "Cross-module imports MUST only
+target the destination module's root `index.ts`." Verified by
+listing `src/modules/Transport/` — there is no `index.ts` at the
+module root. External consumers (Workspace, Arrangement, AiRuntime,
+Command, Toaster, Collaboration, Project, …) reach into Transport
+via `#/modules/Transport/useCases`, `#/modules/Transport/stores`,
+`#/modules/Transport/models/TransportState`, and
+`#/modules/Transport/presentations/views`. Each of those is a
+deep import bypassing the (missing) barrel.
+
+Concrete examples:
+
+- `src/app/bootstrap.ts:55` — `from '#/modules/Transport/useCases'`
+- `src/modules/Workspace/.../AppShell.tsx:30` —
+  `from '#/modules/Transport/presentations/views'`
+- `src/modules/Arrangement/.../BeatRulerBar.tsx:5` —
+  `import { type TransportState, seekPlayhead, … } from
+  '#/modules/Transport/useCases'` (type leak _and_ missing
+  barrel)
+- `src/modules/Arrangement/useCases/recording/__tests__/stopRecording.spec.ts:6`
+  — `import type { TransportState } from
+  '#/modules/Transport/stores/transportStore'` (deep file path,
+  not even the `stores/index.ts` barrel)
+
+**Representative files:**
+
+- `src/modules/Transport/` (no `index.ts` at root)
+- `src/modules/Transport/stores/index.ts` (re-exports types
+  that should not cross module boundaries)
+- `src/modules/Transport/useCases/index.ts:69` (re-exports model
+  types — already in #18)
+
+**Needed:** Create `src/modules/Transport/index.ts` re-exporting
+the curated public surface from `useCases/`, `events/` (none
+yet), `stores/` (only stores _values_, not `TransportState` type
+— see #42), and `presentations/views/`. Migrate all cross-module
+imports to use the root barrel. Remove `models/index.ts`
+(Finding #74). After landing, `pnpm deps:validate` must pass
+zero violations.
+
+### 42. `stores/index.ts` re-exports `TransportState` (a model)
+
+**Problem:** AGENTS.md model-isolation rule: "Models are strictly
+private to their owning module and must never be exported or
+re-exported across module boundaries — not even through
+`useCases/`." `stores/index.ts:13` re-exports
+`TransportState` from `./transportStore`, which itself re-exports
+from `models/TransportState.ts`. Same issue compounds with
+Open issue #18 for `useCases/index.ts:69`. The store-defined
+types (`SetlistItem`, `LoopSlot`, `LoopStationState`, etc.) at
+lines 16-19 _are_ in stores/, but they are domain shapes — and
+they cross module boundaries via the same barrel.
+
+**Representative files:**
+
+- `src/modules/Transport/stores/index.ts:13`
+- `src/modules/Transport/stores/transportStore.ts:6` (re-exports
+  `defaultTransportState, type TransportState` from models)
+
+**Needed:** Drop the type re-export. Move the runtime constant
+`defaultTransportState` to a non-barrel re-export site (or have
+external consumers compute it from `getTransportState()`).
+External callers needing the shape should use
+`ReturnType<typeof getTransportState>` or define a local
+projection.
+
+### 43. `models/index.ts` is a forbidden barrel
+
+**Problem:** `models/index.ts` re-exports from `TransportState`,
+`TempoMap`, `TimeSignatureMap`, `TempoMappingTypes` via
+`export * from './…'`. AGENTS.md: "Do not add `index.ts`
+barrels … _except_ each module's **root** `index.ts`." This is a
+non-root barrel inside a folder whose contents are explicitly
+private. No cross-module consumer was found importing
+`#/modules/Transport/models` directly, but the barrel exists
+and invites future violations.
+
+**Representative files:**
+
+- `src/modules/Transport/models/index.ts`
+
+**Needed:** Delete the barrel (after confirming no consumer
+imports it). Intra-module callers use relative imports per
+AGENTS.md "Same module — relative imports".
+
+### 44. `setPunchIn` / `setPunchOut` admit inverted regions and have no project-end clamp
+
+**Problem:** `transportControls/setPunchIn.ts:9` clamps `Math.max(
+0, beat)` only. Same in `setPunchOut.ts:9`. There is no
+`punchOut > punchIn` cross-validation; the scheduler defends
+with `current.punchInBeat < current.punchOutBeat` at
+`playheadScheduler.ts:189`, so an inverted region "silently
+disables punch", same shape as Open issue #5/#6 for loop. Plus
+no project-end clamp — `setPunchOut(99999)` is silently
+accepted.
+
+**Representative files:**
+
+- `src/modules/Transport/useCases/transportControls/setPunchIn.ts`
+- `src/modules/Transport/useCases/transportControls/setPunchOut.ts`
+
+**Needed:** Add a `validatePunchRegion(in, out, projectEnd)` use
+case (parallel to the loop-region one in Open issue #10) that
+rejects inverted regions and clamps to project end. Wire to both
+setters.
+
+### 45. `seekPlayhead` while playing destroys automation recording continuity and does not commit recording
+
+**Problem:** Two coupled bugs in
+`transportControls/seekPlayhead.ts:17-28`. When `wasPlaying`:
+
+1. `stopPlayheadScheduler()` calls `stopAutomationRecording()`
+   (`playheadScheduler.ts:283`); `startPlayheadScheduler()` then
+   calls `startAutomationRecording()` (`:89`). Every seek tears
+   down and re-arms automation recording, splitting any
+   in-progress automation lane and dropping any pending
+   write-buffered events.
+2. The audio recording branch is NOT committed. If
+   `transport.isRecording === true` and the user seeks, the
+   `MediaRecorder` keeps capturing while the playhead jumps —
+   the resulting clip's audio buffer covers wallclock time, but
+   `recClip.startBeat` was set when `beginActualRecording` ran
+   (pre-seek). Audio and timeline diverge silently.
+
+`stopPlayback` does commit recording first
+(`stopPlayback.ts:21-23`); `seekPlayhead` doesn't.
+
+**Representative files:**
+
+- `src/modules/Transport/useCases/transportControls/seekPlayhead.ts:8-29`
+- `src/modules/Transport/useCases/transportControls/recordingLifecycle.ts`
+- `src/modules/Transport/useCases/playheadScheduler.ts:282-303`
+
+**Needed:**
+
+- Commit any in-progress audio recording before the seek (route
+  through `stopActiveRecording` if `isRecording`).
+- Either preserve automation recording across seek (track the
+  active lane in a holder that is not torn down by
+  `stopPlayheadScheduler`), or stop+commit the lane and emit a
+  user-visible "automation lane split" notification so the user
+  knows to merge it.
+- Add a test: seek-while-recording → expect (a) recording
+  committed before seek, (b) automation lane committed at seek
+  position.
+
+### 46. In-flight `tick()` race window after `worker.terminate()`
+
+**Problem:**
+`stopPlayheadScheduler` calls `worker.postMessage({ type:
+'stop' }); worker.terminate();` (`playheadScheduler.ts:284-288`).
+`onmessage` queues `void tick()` per tick message. After
+`terminate()`, no further messages fire, but a tick already
+queued in the microtask queue is not cancelled. The
+`current?.isPlaying` guard at `:102` prevents most damage, but
+in `pausePlayback` (`pausePlayback.ts:13-16`) the order is
+`stopPlayheadScheduler()` THEN `updateTransportState({
+isPlaying: false })`. A tick that resolves between those calls
+sees `isPlaying: true` (still — store hasn't been updated) and
+runs the full body: `setTransportInfo`, schedules a metronome
+click, pushes onto the freshly-emptied `activeAudioSources`.
+Worse, `accumulatedPosition` was reset to 0 in
+`stopPlayheadScheduler` (`:295`), so `setTransportInfo` writes a
+"playing at beat 0 with current tempo" SAB record while the UI
+shows the pause position.
+
+**Representative files:**
+
+- `src/modules/Transport/useCases/playheadScheduler.ts:282-303`
+- `src/modules/Transport/useCases/transportControls/pausePlayback.ts:13-16`
+- `src/modules/Transport/useCases/transportControls/stopPlayback.ts:25-39`
+
+**Needed:** Either (a) flip `isPlaying: false` BEFORE
+`stopPlayheadScheduler`, so the in-flight tick sees the false
+guard and returns immediately; or (b) add a session-id /
+generation counter to `schedulerSession` so a stale tick is
+ignored by checking against the current generation; or (c) gate
+the in-flight tick on a `schedulerSession.worker !== null` check
+in addition to the `isPlaying` check.
+
+### 47. `startPlayback` double-call resets `lastTickTime` to "now", skipping a tick
+
+**Problem:** `transportControls/startPlayback.ts:9-27` does not
+guard against being called twice. Two rapid spacebar presses go
+through the keyboard-handler chain to `togglePlayback`, which
+calls `startPlayback` if `!isPlaying`. The first call flips
+`isPlaying: true`. If the second call still sees the pre-update
+snapshot of `getTransportState()` (which it can, depending on
+how `updateTransportState` is observed in the call chain), it
+calls `startPlayback` again. Even if it sees the update, an
+external caller could invoke `startPlayback()` directly while
+already playing.
+
+`startPlayheadScheduler` re-creates the Worker only if
+`!schedulerSession.worker` — so the second call hits the `else`
+path and posts another `start` to the same worker. Crucially:
+
+- `schedulerSession.lastTickTime = ctx.currentTime`
+  (`playheadScheduler.ts:92`) — overwritten on every call.
+- `schedulerSession.accumulatedPosition = state.playheadPosition`
+  (`:93`) — overwritten on every call.
+
+Net effect: every double-call re-snaps the scheduler clock to
+"now", causing one missed tick advance (the next tick will see
+`deltaSec ≈ 0`).
+
+**Representative files:**
+
+- `src/modules/Transport/useCases/transportControls/startPlayback.ts`
+- `src/modules/Transport/useCases/playheadScheduler.ts:83-99`
+
+**Needed:** Add an `isPlaying` guard at the top of
+`startPlayback` (return early if already playing), and an
+"already-running scheduler" guard at the top of
+`startPlayheadScheduler` (return early if
+`schedulerSession.worker` is non-null).
+
+### 48. `removeTimeSignatureChange` keys by float `beat ===` instead of `id`
+
+**Problem:** Verified at
+`useCases/timeSignatureChanges/removeTimeSignatureChange.ts:11`:
+`state.changes.filter((context) => context.beat !== beat)`.
+Same float-equality anti-pattern as Open issue #12. Compare to
+`removeTempoChange` which keys by `id` — the pattern is
+inconsistent within the module itself.
+
+**Representative files:**
+
+- `src/modules/Transport/useCases/timeSignatureChanges/removeTimeSignatureChange.ts:3-13`
+- `src/modules/Transport/useCases/tempoMap/removeTempoChange.ts` (correct id-based)
+
+**Needed:** Refactor `removeTimeSignatureChange(id: string)` to
+match by id. Update the callers (find via
+`getTimeSignatureChanges` to get the id, then remove). Update
+the spec at
+`__tests__/timeSignatureChanges.spec.ts:59-68`.
+
+### 49. `punchRecording/*` use cases are mostly dead code (parallel feature)
+
+**Problem:** Verified by grep: only `togglePunchRecording` is
+imported externally. The use cases
+`startBackgroundCapture`, `definePunchRegion`,
+`updateCapturePosition`, `commitPunchRegion`, `discardCapture`,
+`setPreRoll`, `setPostRoll`, `stopBackgroundCapture` are not
+imported anywhere outside their own folder + tests. The
+scheduler reads `transport.punchInBeat / .punchOutBeat /
+.punchInEnabled` — fields on `transportStore`, NOT on
+`punchRecordingStore`. So:
+
+- The richer punch-recording feature (background captures,
+  regions, pre/post-roll, crossfade) lives in
+  `punchRecordingStore` with use cases, handlers, and a UI
+  panel — but no scheduler integration, no audio pipeline.
+- The simpler punch-in/out feature lives in `transportStore`
+  fields and IS scheduler-integrated (`playheadScheduler.ts:184-229`).
+
+This is the same shape as Open issue #22 (loop-station UI-only)
+and #23 (setlist not coordinated). Three "shipped" features,
+zero of them actually work end-to-end, all visible to the user.
+
+**Representative files:**
+
+- `src/modules/Transport/useCases/punchRecording/*.ts` (all
+  unwired except `togglePunchRecording`)
+- `src/modules/Transport/stores/punchRecordingStore.ts`
+- `src/modules/Transport/presentations/views/PunchRecordingControls.tsx`
+- `src/modules/Transport/useCases/playheadScheduler.ts:184-229`
+  (uses `transport.punch*` not `punchRecordingStore`)
+
+**Needed:** Decide: ship or strip. If the richer feature is
+intended, wire `playheadScheduler` to read from
+`punchRecordingStore` and route the punch-arming branch
+through `definePunchRegion` / `commitPunchRegion`. If not,
+remove the unwired use cases and panels and keep only
+`togglePunchRecording`. Either way, add a test that validates
+the store/use case stack actually drives recording (or remove
+those tests).
+
+### 50. `scheduleMidiNotes` per-note probability uses non-deterministic `Math.random()`
+
+**Problem:** Verified at `scheduleMidiNotes.ts:393`: `if
+(probability < 100 && Math.random() * 100 >= probability)
+continue;`. `evaluateFollowActions.ts:8-18` already defines a
+`seededRandom(clipId, position)` and uses it for `play_random`
+follow-actions (`:111`). Per-note probability gates pattern
+audibility — using `Math.random()` here means two playbacks of
+the same project produce different audible patterns.
+Inconsistent with `evaluateFollowActions`'s declared
+"deterministic pseudo-random" contract (`:3-7`).
+
+**Representative files:**
+
+- `src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts:392-395`
+- `src/modules/Transport/useCases/evaluateFollowActions.ts:8-18`
+
+**Needed:** Replace `Math.random()` with
+`seededRandom(clip.id, noteStartBeat)` (or extract the helper
+to `services/seededRandom.ts` for reuse). Add a test:
+"two playbacks of a probability-gated note produce identical
+trigger sets".
+
+### 51. `startPlayheadScheduler` reads `scheduleGrainMs` once and ignores changes
+
+**Problem:** `playheadScheduler.ts:98`: `const grainMs =
+state.scheduleGrainMs`. Captured at start; never re-read.
+`scheduleGrainMs` is in the runtime-only set
+(`transportStore.toCrdt` does not persist it — see Open issue
+#35). If a settings UI lets the user toggle this, the worker
+keeps the stale interval until the next `stopPlayheadScheduler`
++ `startPlayheadScheduler` cycle (typically only on stop or
+seek-while-playing).
+
+**Representative files:**
+
+- `src/modules/Transport/useCases/playheadScheduler.ts:98,279`
+- `src/modules/Transport/workers/schedulerWorker.ts`
+
+**Needed:** Either (a) subscribe to
+`transportStore.scheduleGrainMs` in `startPlayheadScheduler` and
+re-post `{ type: 'start', interval: grainMs }` to the worker on
+change; or (b) document the constraint that `scheduleGrainMs`
+takes effect only on next play/seek and surface that in the
+settings UI.
+
+### 52. `scheduleMidiNotes` Yeast loop-iter re-runs worklet output with stale block metadata
+
+**Problem:** When a Yeast-armed clip has `loopEnabled`, the
+worklet runs once per tick over the block `[fromBeat, toBeat)`
+and produces `transformedNotes`. The non-Yeast scheduling pass
+(`scheduleMidiNotes.ts:375-476`) then iterates the
+`transformedNotes` with `for (let iter = 0; iter < maxIterations;
+iter++)` and replays them at `clip.startBeat + iter * loopLen +
+note.startBeat`. The worklet does NOT know about iteration —
+its `transport.barIndex / .beatInBar` (set at `:218-219`) come
+from `fromBeat` of the current block. So iter > 0 plays the
+worklet output at wrong absolute positions for any
+bar-aware Yeast processor (e.g. Euclidean rhythms keyed to bar
+position).
+
+**Representative files:**
+
+- `src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts:207-306`
+- `src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts:375-476`
+
+**Needed:** Either (a) run the Yeast worklet once per iteration
+with iter-correct `transport.barIndex / .ppqPosition` (kills
+performance for many iterations); or (b) document Yeast as
+"loop-iteration-agnostic" and disable `loopEnabled` for Yeast
+clips at the model level; or (c) cache worklet output by
+`(clipId, fromBeat % loopLen, toBeat % loopLen)` and replay
+across iters when the input notes are themselves periodic.
+
+### 53. `scheduleMetronome` integer-beat boundary can double-fire on reset
+
+**Problem:** `scheduleMetronome.ts:30-31`: `startBeatInt =
+Math.ceil(fromBeat); endBeatInt = Math.floor(toBeat); for (let
+beat = startBeatInt; beat <= endBeatInt; beat++)` — inclusive
+upper. The `<=` includes `endBeatInt`. The next tick's
+`fromBeat = scheduleUpTo` (which is `toBeat`); `Math.ceil(
+toBeat)` = same integer, but the `if (beat <=
+_lastMetronomeBeat) continue` guard at `:35` filters duplicates.
+However, `resetMetronomeBeat(position)` sets `_lastMetronomeBeat
+= Math.floor(position) - 1` (`:16`). For `position` exactly on
+an integer beat (e.g. loop wrap to `loopStart = 4.0`),
+`_lastMetronomeBeat = 3`. Beat 4 then fires. But the previous
+tick's `endBeatInt` was `Math.floor(toBeat)` and the previous
+tick may already have fired beat 4 (if `toBeat >= 4.0`).
+Result: beat 4 fires twice — once on the previous tick (forward
+look-ahead) and once after the wrap reset.
+
+**Representative files:**
+
+- `src/modules/Transport/useCases/scheduling/scheduleMetronome.ts:9-52`
+- `src/modules/Transport/useCases/playheadScheduler.ts:139-140`
+
+**Needed:** Either (a) on loop wrap, set `_lastMetronomeBeat =
+Math.floor(loopEnd)` so beats already fired in the look-ahead
+window are not re-fired; or (b) track scheduled metronome
+clicks by `(beat, audioContextTime)` tuple and dedupe on
+audio-clock instead of integer-beat. Add a property test:
+"loop wrapping at an integer beat does not double-fire the
+metronome".
+
+### 54. `schedulerSession` survives HMR with no dispose path
+
+**Problem:** `playheadScheduler.ts:56-66` is a module-level
+holder. On HMR, the module re-evaluates and re-creates
+`schedulerSession` — but the previous Worker, GainNodes from
+`scheduleAudioClips.gainNodePool`, `activeAudioSources`, and
+`scheduledAudioClips` keys live on in the previous module
+instance. Without an `import.meta.hot` dispose handler, those
+references leak.
+
+For users this is a dev-only concern (production has no HMR),
+but it makes scheduler bugs harder to reproduce: a "ghost
+metronome" or "phantom audio source" after HMR is invisibly
+sourced from the previous module instance.
+
+**Representative files:**
+
+- `src/modules/Transport/useCases/playheadScheduler.ts:56-66`
+- `src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts:29-37`
+
+**Needed:** Add `import.meta.hot?.dispose(() => {
+stopPlayheadScheduler(); gainNodePool.length = 0;
+sessionState.requestedAssets.clear(); })` at module scope. Or
+move the holders into a true singleton service that exposes a
+`dispose()`.
+
 ---
 
 ## Open questions
@@ -1562,44 +2544,90 @@ playhead-outside-loop-region.
       detection, or is it a placeholder? (Affects #13.)
 - [ ] What is the maximum tempo the audio engine actually supports
       stably? (300, 400, 999?) — drives #11.
+- [ ] Is the `punchRecording/*` use case stack
+      (`startBackgroundCapture`, `definePunchRegion`, etc.)
+      supposed to replace the simpler `transport.punchInBeat /
+      .punchOutBeat` field-based system, or is one of them
+      intended to be removed? (Affects #49.)
+- [ ] Should automation recording survive a seek-while-recording?
+      Or is splitting / committing the lane the desired UX?
+      (Affects #45.)
+- [ ] Is two-phase `Math.random()` vs seeded-PRNG split between
+      `evaluateFollowActions.play_random` and
+      `scheduleMidiNotes.probability` intentional? (Affects #50.)
+- [ ] When a Yeast-armed clip has `loopEnabled`, should each
+      iteration get its own worklet pass with iter-correct
+      transport metadata, or is "run once, replay across iters"
+      acceptable for the current Yeast processor set? (Affects
+      #52.)
+- [ ] Is `scheduleGrainMs` a deploy-time constant or a runtime
+      tunable? Today it's read once at scheduler start.
+      (Affects #51.)
 
 ---
 
 ## Risks
 
-- **Audible drift during tempo curves.** Issues #1, #2, #3, #14:
-  the scheduler uses one tempo to advance position, another tempo
-  to schedule each event. With any non-flat tempo map, audio clips,
-  MIDI notes, and metronome ticks drift relative to the visual
-  playhead. For a "DAW with tempo automation", this is core
-  correctness.
+- **Audible drift during tempo curves.** Issues #1, #2, #3, #14,
+  #52: the scheduler uses one tempo to advance position, another
+  tempo to schedule each event. With any non-flat tempo map,
+  audio clips, MIDI notes, and metronome ticks drift relative to
+  the visual playhead. For a "DAW with tempo automation", this is
+  core correctness. Yeast-armed loops compound (#52).
 - **Loss of recorded audio across loop wraps.** Issue #4:
   multi-take loop recording silently overwrites takes; the user
   hits stop and finds N-1 of their N takes empty. Catastrophic
   data loss if the user relied on it.
+- **Loss of recording state on seek.** Issue #45:
+  seek-while-recording does not commit the in-progress recording;
+  audio buffer covers wallclock time but `recClip.startBeat` is
+  pinned to the original start. The clip plays back in the wrong
+  timeline position with no warning. Same risk class as #4.
 - **Surprise recording on count-in.** Issue #7: user pauses or
   toggles play during a count-in and records start anyway when the
   timer fires. UX failure with side-effects (silent file write).
 - **Punch double-arm.** Issue #8: enabling punch mid-record
   produces two concurrent `MediaRecorder` calls per track, with
   undefined audio engine behaviour on the second invocation.
-- **Loop escape after region edit.** Issues #5, #6, #10: editing
-  loop-end below the playhead can let playback escape the loop;
-  inverted regions silently disable looping; seek to beyond project
-  end runs forever.
+- **Race-window on stop/pause.** Issue #46: in-flight `tick()`
+  fires after `worker.terminate()` and before `isPlaying`
+  flips, writing one extra `setTransportInfo` (with stale
+  position 0) and pushing a stale `activeAudioSources` entry.
+  Audible: occasional click on stop, occasional metronome tick
+  one beat after stop.
+- **Loop escape after region edit.** Issues #5, #6, #10, #44:
+  editing loop-end below the playhead can let playback escape the
+  loop; inverted regions silently disable looping (loop _and_
+  punch); seek to beyond project end runs forever. Punch has the
+  same shape (#44).
 - **DAW-as-interpreter UX failures.** Issue #13:
   `detectProjectTempo` returns the input tempo; user sees
   "we detected 120 BPM" because they had it set to 120.
   Issue #22: loop-station is a state-machine theater with no audio.
   Issue #23: setlist is a list with no playback hookup.
-- **Architectural drift.** Issues #17, #18, #29: positional-arg
-  signatures in hot scheduling functions, type re-exports through
-  use case barrels, are the kinds of violations that normalise
-  and spread.
+  Issue #49: `punchRecording/*` is a 9-file richer feature
+  shipped with UI, handlers, and tests, none of which produce
+  any audible result.
+- **Architectural drift.** Issues #17, #18, #29, **#41, #42,
+  #43**: positional-arg signatures in hot scheduling functions,
+  type re-exports through use case barrels, **no module root
+  barrel at all**, model types leaking via `stores/index.ts`,
+  and a forbidden non-root barrel in `models/`. The missing
+  root barrel is the most consequential — it makes the
+  curated public surface unenforceable.
+- **Determinism leak.** Issue #50: per-note probability uses
+  `Math.random()` while follow-actions use a seeded PRNG. Same
+  project produces audibly different patterns across replays —
+  contradicts the project's own deterministic-replay invariant
+  (e.g. for test snapshots, collaboration replay).
 - **Hot-loop GC.** Issue #14: per-tick allocations on the
   scheduling thread are GC pressure on the **same** thread that
   drives `audioEngine.setTransportInfo` and the
   schedule-ahead window. A large GC pause = audible click.
+- **HMR ghost state.** Issue #54: `schedulerSession`,
+  `gainNodePool`, `sessionState.requestedAssets` survive HMR
+  with no dispose path. Dev-only, but it makes scheduler bugs
+  silently impossible to reproduce after a hot reload.
 
 ---
 
@@ -1647,34 +2675,84 @@ Array<>` with `Set<>`; `delete()` is O(1) and not index-based.
   functions; drop the `export type` from `useCases/index.ts`;
   document/clean the use-case → models indirection in
   `transportQueries/helpers.ts`. Addresses #17, #18, #29.
+- **Module root barrel.** Create
+  `src/modules/Transport/index.ts` curating the cross-module
+  public surface. Migrate ~30+ deep imports across 12+ modules.
+  Drop type re-exports from `stores/index.ts` and
+  `useCases/index.ts`. Delete `models/index.ts`. Run `pnpm
+  deps:validate` until zero violations. Addresses #41, #42,
+  #43, and consolidates #18, #29.
+- **Generation-counter scheduler session.** Replace the
+  module-level `schedulerSession` with a holder that includes a
+  `generation: number`. `stopPlayheadScheduler` increments the
+  generation; `tick()` captures the generation at entry and
+  bails if the captured value differs from the current. Closes
+  the in-flight tick race (#46) and is a precondition for HMR
+  dispose (#54).
+- **Recording-aware seek.** Wrap `seekPlayhead` to commit any
+  in-progress recording (`stopActiveRecording`) before the seek,
+  and either preserve or split the automation lane explicitly
+  with a user-visible notification. Addresses #45.
+- **Single seeded RNG.** Extract `seededRandom(seed1, seed2)` to
+  `services/seededRandom.ts` and use it everywhere
+  (`evaluateFollowActions.play_random`,
+  `scheduleMidiNotes.probability`). Addresses #50.
 - **Tests.** Property test for tempo-curve advance; integration
-  test for record-across-wrap and pause-then-resume metronome;
-  adversarial test for inverted loop and out-of-range seek.
+  test for record-across-wrap, seek-while-recording, and
+  pause-then-resume metronome; adversarial tests for inverted
+  loop / inverted punch / out-of-range seek; double-press
+  spacebar test for `startPlayback`.
 
 ---
 
 ## Recommendation
 
-Start with **issue #1 + #2 (single beat→time helper)** — fixing
-the scheduler's tempo-curve drift is the single highest-value
-correctness change in the module, and the helper unifies four
-other issues (#3, #10, #14, #27). Land it as a standalone PR with
-a property test that asserts integrated beats == direct integration
-of the tempo map.
+Start with **issue #41 (no root `index.ts`)** — this is a hard
+AGENTS.md violation, and every cross-module import surveyed is
+illegal-by-spec until it lands. Create
+`src/modules/Transport/index.ts` re-exporting the curated public
+surface from `useCases/`, `stores/` (values only), and
+`presentations/views/`. Migrate cross-module call sites (rough
+count: ~30+ deep imports across 12+ modules). Run `pnpm
+deps:validate` until zero violations. While you're there, drop
+the model-type re-exports from `useCases/index.ts:69` (issue
+#18) and `stores/index.ts:13` (issue #42), and delete
+`models/index.ts` (issue #43).
 
-Next, **issue #4 (loop wrap during recording loses audio)** —
-catastrophic data-loss class; needs the loop-wrap branch to stop
+Then **issue #1 + #2 (single beat→time helper)** — fixing the
+scheduler's tempo-curve drift is the single highest-value
+correctness change in the module, and the helper unifies five
+other issues (#3, #10, #14, #27, #52). Land it as a standalone
+PR with a property test that asserts integrated beats == direct
+integration of the tempo map.
+
+Next, **the recording data-loss class — issues #4 + #45 + #46**
+as a single PR. (a) `#4`: loop-wrap during recording must stop
 and restart per-track recording, not just create a take row.
+(b) `#45`: `seekPlayhead` must commit any in-progress recording
+before the seek and either preserve or commit-and-split the
+automation lane. (c) `#46`: in-flight `tick()` after
+`worker.terminate()` must be neutralised — flip `isPlaying:
+false` BEFORE `stopPlayheadScheduler`, or add a generation
+counter. These three share recovery test infrastructure.
 
-Then **issues #7, #8, #46 (state machine sequencing)** as a single
-"transport phase" PR — extract a typed phase union, make
-count-in / punch / record transitions explicit, and remove the
-shadow `punchRecordingActive` boolean. This closes the sneaky
-"surprise recording" and "double-arm" failure modes.
+Then **issues #7, #8, #47 (state machine sequencing)** as a
+single "transport phase" PR — extract a typed phase union,
+make count-in / punch / record transitions explicit, remove
+the shadow `punchRecordingActive` boolean, and add the
+"already-playing" guard in `startPlayback`. Closes the sneaky
+"surprise recording", "double-arm", and "double-press resets
+tick clock" failure modes.
 
-After those land, choose between the **correctness pass** (#5, #6,
-#9, #10, #11, #12, #15, #19) and the **architecture pass** (#14,
-#16, #17, #18, #20, #29). They are independent.
+After those land, choose between the **correctness pass** (#5,
+#6, #9, #10, #11, #12, #15, #19, #44, #48, #50, #53) and the
+**architecture pass** (#14, #16, #17, #18, #20, #29, #42, #43,
+#54). They are independent.
+
+The **dead-feature decision** (#22, #23, #49) is orthogonal to
+all of the above and should be made by the user, not the agent
+— the audit's job is to surface that three "shipped" features
+do not function.
 
 ---
 

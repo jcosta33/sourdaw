@@ -206,6 +206,94 @@ any` and partial fixtures.
 
 ## Findings
 
+### Adversarial review log (2026-04-28)
+
+This pass re-walked the entire `src/modules/Plugin/` tree with the prior audit
+closed; verified every cited file:line; demoted issues that read scary but
+cannot fire; promoted issues that compound; added new numbered findings for
+hazards the prior pass missed.
+
+- **Verified and confirmed (kept):** #1 (lifecycle no-ops), #2 (silent IPC
+  swallow), #3 (per-block buffer reuse), #4 (per-block alloc), #5 (no
+  noisy unload), #6 (no load coalesce), #7 (cross-format unload split),
+  #8 (preset import only checks 2 of 21 fields + `as` cast), #9 (unversioned
+  export), #10 (`Date.now()` ID collision), #11 (silent corrupt-presets
+  swallow), #13 (`as SpaceType`/`as ProofChamberAlgorithm` proliferation),
+  #15 (vanilla WAM unity-gain pass-through — verified at
+  `loadWAMPlugin.ts:59`), #16 (overwrite-without-warn registry +
+  first-match dispatch), #18 (string-matched retry strings), #20 (parallel
+  `Promise.all` against single LibFaust), #22 (`as unknown as` in
+  `initWAMEnvironment`), #23 (triple-cast destroy probe), #24
+  (`getActiveInstances` clones every call), #25 (registry `.values()`
+  spread per call), #26 (raw Map mutation cross-file), #27 (no AppAction
+  for load/unload/openGui/closeGui/processAudio), #29 (no scan
+  cancellation/coalesce), #30 (scan-merge inconsistency between
+  `startPluginScan` wholesale-overwrite and `scanCustomPaths` merge-by-id),
+  #31 (`ScannedPlugin` redeclared in store + repo), #34
+  (`pluginQueries.ts` two-line barrel-in-a-barrel), #35 (Push is
+  store-only with zero hardware I/O), #36 (Push pad O(64) full-array
+  rebuild per single-pad event), #37 (encoder clamp leaks), #40
+  (`SCALES.major!` non-null assertion), #41 (chord generator allocations
+  in `process`), #42 (selectSpace dispatches 18+ AppActions per click),
+  #43 (boolean → number 0/1 ad-hoc), #44 (`DecayEqOverlay` ships `mult`
+  field, not `value`), #45 + #46 (synthetic spectrograms labelled
+  "Live"), #49 (per-block IPC on supposed audio path), #53 (no DSP
+  source validation), #54 (browser-mode aliased return), #56 (no scan
+  progress / aria-live), #59 (no format-isolation boundary), #60 (HMR-
+  unsafe module singletons), #61 (positional-arg violations), #66
+  (no overwrite tests), #68 (`PARAM_MAP: Record<string, string>`).
+
+- **Demoted/corrected:**
+  - #12 — partially **incorrect**: the audit claims `infinite-hold`
+    sets `decay: 0.999` and `freeze: true`. Verified at `helpers.ts:159-163`
+    the preset spreads `SPACE_PRESETS.infinite` (which sets
+    `decay: 0.999, freeze: true` per `ProofChamberState.ts:76`) but does
+    **not** explicitly add either; the redundancy claim is moot because
+    the presets share the same values via spread. The `?? {}` fallback
+    after `SPACE_PRESETS.spring` is genuine dead code (verified — `spring`
+    is defined at `ProofChamberState.ts:77-85`). Issue narrowed to the
+    dead-code half only.
+  - #33 — **partially incorrect**. Audit asserts `proModulationEffects.ts`
+    has top-of-file `registerFaustDSP(...)` side effects "same as
+    `builtinDSP.ts`". Verified: BOTH files wrap their `registerFaustDSP`
+    calls inside an exported function (`registerProModulationEffects` /
+    `registerBuiltinFaustDSP`). Neither has top-level side effects; both
+    are called explicitly from `AudioEngine/initializeAudioEngine.ts`
+    and `Workspace/useAppInitialization.ts`. The "two contradictory
+    mental models" claim is false. Demoted: only `compilerEngine.ts:305`
+    (`registerPluginLoader('faust.', ...)` at module init) is a real
+    side-effect. Reframed as #38 only.
+  - #32 — **partially incorrect**. Audit cites a Plugin "root barrel"
+    re-exporting types. Verified: there is **no** `src/modules/Plugin/index.ts`
+    file. The only barrel is `useCases/index.ts`, which does export 4 types
+    (`FaustModule`, `FaustParamDescriptor`, `WAMDescriptor`, `WAMInstance`,
+    `ScannedPlugin`). Type leakage exists, but the cross-module-via-root
+    framing is wrong. **Promoted** to a different problem: the absence of
+    `src/modules/Plugin/index.ts` itself is an AGENTS.md "module surface"
+    violation — see new finding #69.
+  - #58 — **incorrect**. Audit says "Module barrel re-exports
+    `presentations/views/ProofChamberPanel`". There is no module barrel
+    re-exporting it. Cross-module consumers must reach into the views
+    folder directly (e.g. `#/modules/Plugin/presentations/views/...`),
+    which is a separate (and more serious) AGENTS.md violation —
+    promoted into #69.
+
+- **Promoted (severity raised):**
+  - #15 — kept severity "user-visible bug" but raised compound impact
+    via #69 (the Plugin module has no public root barrel, so consumers
+    can't even discover the surface).
+  - #21 — `attemptCreateNode`'s control flow (verified at
+    `compilerEngine.ts:243-281`): only one of the two retry strategies
+    fires on a given error. The `else if` branch cannot rescue an
+    "already registered" error that doesn't exit the first try, so a
+    transient failure of the **second** invoke loses telemetry. Raised
+    to a separate concrete finding (#70).
+
+- **New findings added (this pass):** #69, #70, #71, #72, #73, #74,
+  #75, #76, #77, #78, #79, #80, #81, #82.
+
+---
+
 1. **Five `pluginLifecycle/*.ts` use cases are no-op pass-throughs.** Each
    re-exports a same-named function from `repositories/pluginBridge/*.ts`
    with no orchestration, validation, or error mapping. These exist to
@@ -865,39 +953,239 @@ any` and partial fixtures.
     `Record<keyof ProofChamberEngineState, string>` to force
     exhaustiveness.
 
+69. **No `src/modules/Plugin/index.ts` root barrel exists at all.**
+    Verified: `ls src/modules/Plugin/index.*` returns no match. Cross-
+    module consumers (`Arrangement/useCases/device/addExternalDevice.ts:2`,
+    `Arrangement/useCases/device/removeDevice.ts:2`,
+    `AudioEngine/useCases/initializeAudioEngine.ts:1`,
+    `Workspace/useAppInitialization.ts:16`) import directly from
+    `#/modules/Plugin/useCases`, side-stepping the AGENTS.md "module
+    public surface" contract. Worse: `presentations/views/ProofChamberPanel`
+    has no public re-export — any consumer wanting to render the panel
+    must reach into `#/modules/Plugin/presentations/views/...`, which
+    is what AGENTS.md "no deep imports" forbids. The module is not
+    self-contained at the import level.
+    - Compounds: revoking the leaked use-case types (current finding
+      #34) cannot be done cleanly without first establishing the root
+      barrel.
+
+70. **`executeAppAction(action: AppAction, ...)` loses its discriminated-
+    union type at the call site because `inject()` widens to `any[]`.**
+    `infra/di/inject.ts:22`: `type InjectableCallable = (...args: any[])
+    => any;`. The eventual returned `executeAppAction` is callable with
+    any object, including the `payload: { deviceId, paramId, mult }`
+    shape from `ProofChamberPanel.tsx:389`. Verified: `pnpm typecheck`
+    passes with **zero errors** even though `mult` is not a valid
+    `setDeviceParameter` payload field. This is a **module-wide**
+    soundness loss: every dispatch site in the codebase loses the
+    discriminated-union check. The `mult` typo in finding #44 is just
+    one symptom; any caller can ship a malformed payload that compiles.
+    - Blast radius: every call to `executeAppAction(...)` across the
+      codebase. Not just Plugin.
+    - Fix sketch: re-type `executeAppAction` as
+      `(action: AppAction, options?: ExecuteOptions) => Promise<void>`
+      via an explicit re-declaration after the `inject(...)` wrapping,
+      or change `inject` to preserve generics.
+
+71. **`addExternalDevice.ts:18` reuses `Date.now()` for plugin
+    `instanceId` — same collision risk as user presets but worse.**
+    Two devices created in the same millisecond produce the same
+    `instanceId` (`${pluginId}-${Date.now()}`). This id is what the
+    Rust host uses to track the plugin instance; collisions corrupt
+    the host's instance map. The `void loadPlugin(pluginId, instanceId)`
+    on line 33 is fire-and-forget — the device is added to the track
+    store before the IPC even resolves, and there is no rollback if
+    the load fails (e.g. plugin path missing, format unsupported).
+    Cross-module impact: this failure is invisible to the Plugin
+    module's own audit but is owned by the Plugin module's contract.
+    - Fix sketch: `instanceId = \`${pluginId}-${crypto.randomUUID().slice(0, 8)}\``
+      (matches `addExternalDevice.ts:9` `nextDeviceIdStr`). Await
+      `loadPlugin(...)` and roll back the device on rejection.
+
+72. **`removeDevice.ts:18` `void unloadPlugin(externalInstanceId)` is
+    fire-and-forget too.** If `unloadPlugin` rejects (e.g. native
+    plugin crashed during teardown), the device is removed from the
+    track store but the Rust host still tracks the instance —
+    permanent leak per failed unload. No retry, no notification, no
+    "force unload" recovery path.
+
+73. **`importPresetJson` cannot reject `mix=NaN`/`Infinity`/negative.**
+    `repositories/proofChamberPresets/importPresetJson.ts:6`:
+    `typeof parsed.mix === 'number' && typeof parsed.decay === 'number'`
+    accepts `NaN`, `Infinity`, `-Infinity`, and arbitrary out-of-range
+    values like `mix: 1e6` or `decay: -0.5`. Spread into `DEFAULT_PARAMS`
+    without clamping; downstream Rust engine multiplies by these and
+    blows up the audio path. **Stricter than #5** — even if a future
+    engineer "fixes" #5 by adding `typeof === 'number'` checks for the
+    other 19 fields, the unboundedness remains.
+
+74. **`importPresetJson` accepts `algorithm: 'fdn-32'` (not in the
+    union).** Lines 5-7 spread the parsed object into `DEFAULT_PARAMS`,
+    then return as `ProofChamberEngineState`. The type system trusts
+    the cast; the Rust engine sees `algorithm = 'fdn-32'` which is not
+    a key of `ALGORITHM_MAP` (`ProofChamberState.ts:53`).
+    `ALGORITHM_MAP['fdn-32']` returns `undefined` → `setDeviceParameter`
+    AppAction sends `value: undefined` to the host. Subsequent IPC
+    serialisation either drops the field or sends `null` — undefined
+    behaviour either way.
+
+75. **`getUserPresets` does not validate that parsed JSON is an
+    array.** `helpers.ts:203-213`:
+    `JSON.parse(raw) as ProofChamberPreset[]`. If localStorage holds
+    `'{"foo":"bar"}'` (an object, not an array), `getUserPresets()`
+    returns the object cast as an array; subsequent `.filter(...)`,
+    `.push(...)`, `.map(...)` calls fail with TypeError. The two
+    callers (`saveUserPreset.ts:6`, `deleteUserPreset.ts:4`) both
+    iterate the result. Any non-array localStorage value crashes both.
+    - The cast is also an AGENTS.md soundness violation (an `as` from
+      `unknown` to `ProofChamberPreset[]`).
+
+76. **`registerWAMPlugin` silently overwrites duplicate descriptors.**
+    `useCases/wamPluginHost/hostOperations/registerWAMPlugin.ts:6`:
+    `registry.set(descriptor.id, descriptor)`. Calling
+    `registerBuiltinPlugins` twice (e.g. across HMR reloads, or due to
+    accidental double-init) overwrites without warning. Verified by
+    `useCases/wamPluginHost/__tests__/builtinDescriptors.spec.ts:13` —
+    the test uses `registry.clear()` in `beforeEach` to work around
+    this. Production has no equivalent guard.
+
+77. **`unloadWAMPlugin` does not unregister from the loader registry
+    or clean up Faust's `compilationPromises` cache.** When a WAM
+    instance backed by a Faust loader is unloaded, the Faust generator
+    in `compilerEngine.ts:modules.get(...)` stays compiled. Re-loading
+    the same plugin reuses the cached generator — fine for performance,
+    but if the plugin was unloaded due to a compile error, the
+    `compiled: true` flag survives. Re-load attempts skip the
+    recompile (line 152: `if (mod.compiled && mod.generator) return
+    true`) and immediately try to create a node from a possibly-stale
+    generator.
+
+78. **`compilerEngine.compileFaustDSP` race: `compilationPromises.delete`
+    inside `finally` after `compilationPromises.set` outside.**
+    `compilerEngine.ts:188-194`: the IIFE creates the promise, sets it
+    in `compilationPromises`, then on completion deletes itself. But
+    line 193 `compilationPromises.set(moduleId, promise)` happens
+    AFTER the IIFE has already started running (line 162-191). If the
+    IIFE finishes synchronously (impossible for async) or the await
+    chain resolves microtask-fast before `set` is called (also
+    impossible due to event-loop ordering), the `finally` would delete
+    a key that doesn't exist yet. **In practice this is safe** because
+    the inner `await getCompiler()` always yields. **Demoted: cosmetic
+    ordering smell, not a real bug.** Mention only because it reads
+    racy and a future refactor could expose the latent issue.
+
+79. **`compilerEngine.compileFaustDSP` returns the cached promise even
+    after it resolves — but if it resolved with `false`, the failure
+    is permanent.** Line 158: `return existingPromise`. After the
+    promise resolves, `compilationPromises.delete(moduleId)` runs in
+    the `finally`, so this branch is only hit during compilation. But
+    on a `false` result (compile error), the promise rejects, the
+    error is logged, the cache deletes — but `mod.compiled` stays
+    `false`. Subsequent compile retries pass through the registry but
+    cannot distinguish "first-time" from "previous-failure". The
+    `attemptCreateNode` retry logic (#21) only applies to node
+    creation, not compilation. A user editing DSP code in a future
+    UI cannot retry a compile because the failure is silently
+    repeatable but undistinguishable.
+
+80. **`createFaustNode`'s `contextCreateLock` chain leaks the
+    rejected lock.** `compilerEngine.ts:222-228`: when
+    `attemptCreateNode` rejects, the chain stores `self.catch(() => {})`
+    (line 226-227) so the next caller's lock awaits a resolved no-op.
+    But `previous = contextCreateLock.get(context) ?? Promise.resolve()`
+    (line 222) — if the previous lock was set with the
+    error-swallowing wrapper, it resolves; if it was never set, it's
+    `Promise.resolve()`. **However**, the chain accumulates: every
+    failed `createFaustNode` adds a new entry to the chain via
+    `contextCreateLock.set(context, self.catch(() => {}))`, so the
+    chain depth grows monotonically until the AudioContext is GC'd.
+    For long-running sessions with many compile/create cycles, this
+    is unbounded promise-chain memory.
+
+81. **`processAudioIPC` may never be called from anywhere in the
+    codebase.** Verified via
+    `grep -rn "processAudioIPC\|audio_ipc" src --include='*.ts'`:
+    zero hits outside the Plugin module's own files. The use case is
+    exported from `useCases/index.ts:25` but no consumer ever calls
+    it. Combined with finding #49 (audio worklet cannot call
+    `tauriInvoke`), this is **dead code on a critical path** — the
+    audit's prior worry that "the main thread does per-block plugin
+    processing" cannot be true today because nothing calls it. But
+    the export pretends it works. **Promote: even more surprising than
+    silent pass-through — the entire native plugin processing
+    pipeline is a stub.**
+
+82. **`pluginScanStore` `redeclares ScannedPlugin` AND
+    `useCases/pluginScan/queries.ts:1` re-imports the **store's**
+    version of the type, which it then re-exports as a use-case
+    type via line 32 of `useCases/index.ts`.** So the path is
+    `repository (private) → store (re-declared) → useCase
+    (re-export) → useCases barrel (public)`. This means the
+    cross-module surface is the **store's** redeclaration, not the
+    repository's source-of-truth. If the repo updates its
+    `ScannedPlugin` (e.g. adds a `cpu_load` field), the store and
+    the public surface stay stale silently. This compounds finding
+    #31.
+
 ---
 
 ## Priorities
 
-1. **`processAudioIPC` is on a real-time path with per-block
-   allocation, IPC round-trip, and silent failure** (issues #2, #3,
-   #4, #49, #54). This is the most user-visible audio-thread hazard
-   in the module.
-2. **Preset import has no schema validation, no version, and no
-   migration** (issues #8, #9, #10, #11, #50, #51). Every saved
-   preset is one model-shape change away from being silently broken.
-3. **Vanilla pass-through for built-in WAM descriptors masquerading
+1. **`executeAppAction` loses its discriminated-union type module-
+   wide because `inject()` widens to `any[]`** (issue #70). This is
+   the highest-priority issue because it silently disables
+   compile-time payload checking for **every** AppAction dispatch
+   site in the codebase, not just Plugin. The `mult` typo (#44) is
+   a symptom; the real bug is upstream.
+2. **`processAudioIPC` is on a real-time path with per-block
+   allocation, IPC round-trip, and silent failure — and may have
+   zero callers anywhere in the codebase** (issues #2, #3, #4, #49,
+   #54, #81). This is the most user-visible audio-thread hazard in
+   the module if it ever lights up; today it's labelled-as-working
+   dead code.
+3. **`addExternalDevice` reuses `Date.now()` for `instanceId` and
+   fire-and-forgets `loadPlugin`** (issue #71). Cross-module: this
+   is the **only** path through which native plugins are added to
+   tracks. Two devices added in the same millisecond corrupt the
+   Rust host's instance map. Fire-and-forget loads silently fail.
+4. **Preset import has no schema validation, no version, no
+   migration, and accepts NaN/Infinity/unknown enums** (issues #8,
+   #9, #10, #11, #50, #51, #73, #74, #75). Every saved preset is
+   one model-shape change away from silently breaking, and any
+   adversarial `mix: NaN` poisons the engine.
+5. **Vanilla pass-through for built-in WAM descriptors masquerading
    as real plugins** (issue #15). Adding "Compressor" to a track
    gives the user unity gain with the label "Compressor" — visible
    silent breakage.
-4. **No load/unload race coalescing across formats** (issues #5,
-   #6, #7). Two parallel loads of the same instanceId leak
-   resources; cross-format unload has no shared abstraction.
-5. **`importPresetJson` `as ProofChamberEngineState` cast bypasses
-   the type system** (issues #8, #13). Any malformed preset typed-in
-   poisons the engine state.
-6. **Push integration is store-only with no hardware I/O** (issue
+6. **No load/unload race coalescing across formats; fire-and-forget
+   unloads leak Rust host instances** (issues #5, #6, #7, #71, #72,
+   #76, #77). Two parallel loads of the same instanceId leak
+   resources; cross-format unload has no shared abstraction; failed
+   unloads are silent leaks.
+7. **`importPresetJson` `as ProofChamberEngineState` cast bypasses
+   the type system; `getUserPresets` `as ProofChamberPreset[]` is
+   another** (issues #8, #13, #75). Any malformed preset typed-in
+   poisons the engine state; non-array localStorage crashes both
+   save/delete callers.
+8. **Push integration is store-only with no hardware I/O** (issue
    #35). The user-facing feature labelled "Push controller" does
    nothing.
-7. **Synthetic `ReverbSpectrogram` and `SpectrogramView` labelled
+9. **Synthetic `ReverbSpectrogram` and `SpectrogramView` labelled
    "Live"** (issues #45, #46). Misleading-by-construction UX.
-8. **AGENTS.md violations: `as unknown as` escapes, type re-exports
-   from `useCases/`, positional-arg signatures** (issues #8, #22,
-   #23, #32, #40, #42, #61).
-9. **Five `pluginLifecycle/*.ts` no-op pass-throughs** (issue #1).
-   Same anti-pattern flagged in AudioAnalysis #14.
-10. **No `AppAction`-based plugin lifecycle command surface** (issue
+10. **No `src/modules/Plugin/index.ts` root barrel — module is not
+    self-contained at the import level** (issue #69). Cross-module
+    consumers reach into `useCases/` and `presentations/views/`
+    directly.
+11. **AGENTS.md violations: `as unknown as` escapes, type re-exports
+    from `useCases/`, positional-arg signatures** (issues #8, #22,
+    #23, #32, #40, #42, #61, #70, #75).
+12. **Five `pluginLifecycle/*.ts` no-op pass-throughs** (issue #1).
+    Same anti-pattern flagged in AudioAnalysis #14.
+13. **No `AppAction`-based plugin lifecycle command surface** (issue
     #27). All non-scan plugin commands bypass the command bus.
+14. **`compileFaustDSP` permanent-failure cache + unbounded
+    `contextCreateLock` chain** (issues #79, #80). Long-running
+    sessions accumulate promise-chain memory.
 
 ---
 
@@ -1517,13 +1805,262 @@ clamp on every store mutation, not only on the use case.
 `Record<keyof ProofChamberEngineState, string>`. Compiler then
 forces exhaustive map of every engine field.
 
-### 38. `compilerEngine` registers a global Faust loader at module init via side effect
+### 38. No `src/modules/Plugin/index.ts` root barrel
+
+**Problem:** Verified by `ls` — no `index.ts` at the Plugin module
+root. Cross-module consumers (`Arrangement/.../addExternalDevice.ts:2`,
+`AudioEngine/.../initializeAudioEngine.ts:1`) reach into
+`#/modules/Plugin/useCases` directly. `presentations/views/ProofChamberPanel`
+has no public re-export at all — any consumer rendering it must use a
+deep import (`#/modules/Plugin/presentations/views/...`), violating
+AGENTS.md "module public surface".
+
+**Representative files:**
+
+- `src/modules/Plugin/` (missing `index.ts`)
+- `src/modules/Arrangement/useCases/device/addExternalDevice.ts:2`
+- `src/modules/Arrangement/useCases/device/removeDevice.ts:2`
+- `src/modules/AudioEngine/useCases/initializeAudioEngine.ts:1`
+- `src/modules/Workspace/presentations/hooks/useAppInitialization.ts:16`
+
+**Needed:** Add `src/modules/Plugin/index.ts` re-exporting the public
+surface (selected items from `useCases/`, `stores/`, the
+`ProofChamberPanel` view). Update consumers to import from
+`#/modules/Plugin`. Add an ESLint rule against deep imports below the
+module root.
+
+### 39. `executeAppAction` loses its discriminated-union type because `inject()` widens to `any[]`
+
+**Problem:** `infra/di/inject.ts:22` defines
+`InjectableCallable = (...args: any[]) => any`. When `executeAppAction`
+is wrapped via `inject({ logger })(...)` in
+`Command/useCases/executeAppAction.ts:21`, the callable's parameter
+types are erased. Verified by `pnpm typecheck`: the
+`{ deviceId, paramId, mult }` payload at
+`ProofChamberPanel.tsx:389` (which is missing the required `value:
+number` field per `Command/models/AppAction.ts:109`) compiles with
+**zero errors**. This is a module-wide soundness loss — every
+AppAction dispatch site in the codebase loses compile-time payload
+checking. The `mult` typo (#44) is a symptom; the type-erasure is the
+disease.
+
+**Representative files:**
+
+- `src/infra/di/inject.ts:22`
+- `src/modules/Command/useCases/executeAppAction.ts:21-23`
+- `src/modules/Plugin/presentations/views/ProofChamberPanel.tsx:389`
+  (one of many likely-affected sites)
+
+**Needed:** Either (a) re-declare `executeAppAction` after the
+`inject(...)` call with an explicit
+`(action: AppAction, options?: ExecuteOptions) => Promise<void>`
+signature, or (b) make `inject` generic-preserving so the wrapped
+function's parameter types survive. Add a regression test that
+asserts `executeAppAction({ type: 'setDeviceParameter', payload: {
+deviceId, paramId, mult: 1 } })` is a TypeScript error.
+
+### 40. `addExternalDevice.ts` uses `Date.now()` for `instanceId` and fire-and-forgets `loadPlugin`
+
+**Problem:** `Arrangement/useCases/device/addExternalDevice.ts:18`:
+`instanceId = \`${pluginId}-${String(Date.now())}\``. Two devices
+added in the same millisecond produce the same `instanceId` — the
+Rust host's instance map keys collide. Line 33: `void loadPlugin(...)`
+is fire-and-forget; rejection is silent. The device is added to the
+track store before the IPC even resolves; failed loads leave a "ghost
+device" referencing a non-existent host instance.
+
+**Representative files:**
+
+- `src/modules/Arrangement/useCases/device/addExternalDevice.ts:18,33`
+
+**Needed:** (a) Use `crypto.randomUUID().slice(0, 8)` for the
+instanceId suffix (same pattern as `nextDeviceIdStr` in line 9).
+(b) Await `loadPlugin(...)` and roll back the device on rejection,
+with `notifyUser` to surface the failure. (c) If async-await is
+infeasible at the call site, attach a `.then/.catch` that removes
+the device on failure.
+
+### 41. `removeDevice.ts` fire-and-forget `unloadPlugin`
+
+**Problem:** `Arrangement/useCases/device/removeDevice.ts:18`:
+`void unloadPlugin(externalInstanceId)`. If unload rejects (native
+plugin crashes during teardown, IPC stalls), the JS-side device is
+removed but the Rust host still tracks the instance — a permanent
+leak per failed unload. No retry, no notification, no force-unload.
+
+**Representative files:**
+
+- `src/modules/Arrangement/useCases/device/removeDevice.ts:18`
+
+**Needed:** Await unload, surface errors via `notifyUser`. On
+repeated failure, log to the audit trail and offer a "force
+unload" path that drops the host's reference unconditionally.
+
+### 42. `importPresetJson` accepts NaN/Infinity and unknown enums
+
+**Problem:** `repositories/proofChamberPresets/importPresetJson.ts:6`
+checks `typeof parsed.mix === 'number'` — which is true for `NaN`,
+`Infinity`, `-Infinity`. Spread into `DEFAULT_PARAMS`; the engine
+multiplies by these and produces NaN audio output. Similarly
+`algorithm: 'fdn-32'` is accepted (not in the union); the
+`ALGORITHM_MAP` lookup returns `undefined`; the AppAction sends
+`value: undefined`.
+
+**Representative files:**
+
+- `src/modules/Plugin/repositories/proofChamberPresets/importPresetJson.ts:5-7`
+- `src/modules/Plugin/models/ProofChamberState.ts:53-58`
+
+**Needed:** Add `Number.isFinite(parsed.mix)` and clamp to `[0, 1]`.
+Validate enum membership against `ProofChamberAlgorithm` and
+`SpaceType` literal unions (Zod schema or hand-rolled guards). See
+also #5 for the umbrella schema-validation issue.
+
+### 43. `getUserPresets` does not validate that parsed JSON is an array
+
+**Problem:** `helpers.ts:207`:
+`return JSON.parse(raw) as ProofChamberPreset[]`. If localStorage
+holds an object (e.g. user manually wrote `{}` to the key), the
+return value is an object cast as an array. Subsequent `.filter(...)`,
+`.push(...)`, `.map(...)` calls in `saveUserPreset.ts:6`,
+`deleteUserPreset.ts:4` crash with TypeError.
+
+**Representative files:**
+
+- `src/modules/Plugin/repositories/proofChamberPresets/helpers.ts:203-213`
+- `src/modules/Plugin/repositories/proofChamberPresets/saveUserPreset.ts:6`
+- `src/modules/Plugin/repositories/proofChamberPresets/deleteUserPreset.ts:4`
+
+**Needed:** Validate `Array.isArray(parsed)` before the cast; fall
+back to `[]` and `notifyUser` on shape mismatch (same recovery path
+as #16).
+
+### 44. `registerWAMPlugin` silently overwrites duplicate descriptors
+
+**Problem:** `useCases/wamPluginHost/hostOperations/registerWAMPlugin.ts:6`:
+`registry.set(descriptor.id, descriptor)`. Calling
+`registerBuiltinPlugins` twice (HMR, double-init) silently replaces
+the previous descriptor. The test at
+`useCases/wamPluginHost/__tests__/builtinDescriptors.spec.ts:8` uses
+`registry.clear()` in `beforeEach` to mask this.
+
+**Representative files:**
+
+- `src/modules/Plugin/useCases/wamPluginHost/hostOperations/registerWAMPlugin.ts:5-7`
+- `src/modules/Plugin/useCases/wamPluginHost/__tests__/builtinDescriptors.spec.ts:7-9`
+
+**Needed:** `if (registry.has(descriptor.id)) { logger.warn(...); }`
+or throw on duplicate. Add a HMR-safe path that clears the registry
+on `import.meta.hot.accept`.
+
+### 45. `unloadWAMPlugin` does not unregister Faust loader cache or reset `mod.compiled`
+
+**Problem:** `unloadWAMPlugin.ts` clears the `instances` map but
+does not touch `compilerEngine.modules` or `compilationPromises`.
+A Faust-backed plugin that was unloaded due to a compile error
+keeps `mod.compiled = true` from its successful prior compile (or
+keeps `mod.compiled = false` from its prior failure). Re-loading
+short-circuits the recompile (`compilerEngine.ts:152`) and reuses a
+possibly-stale generator.
+
+**Representative files:**
+
+- `src/modules/Plugin/useCases/wamPluginHost/hostOperations/unloadWAMPlugin.ts:3-19`
+- `src/modules/Plugin/useCases/faustEngine/compilerEngine.ts:146-195`
+
+**Needed:** Add an `invalidateFaustModule(moduleId)` use case that
+resets `mod.compiled = false`, drops `mod.generator`, and removes
+the `compilationPromises` entry. Call from `unloadWAMPlugin` for
+Faust-backed instances.
+
+### 46. `compileFaustDSP` cannot retry a failed compilation
+
+**Problem:** `compilerEngine.ts:146-195`. If `generator.compile`
+returns `null` or throws, the cache entry is deleted in `finally`,
+but `mod.compiled` stays `false` and `mod.generator` stays `null`.
+Subsequent `compileFaustDSP(moduleId)` calls re-enter the IIFE and
+recompile from scratch — but if the failure was transient (e.g. a
+web-worker hiccup), there's no telemetry to distinguish "first
+attempt" from "permanent failure". For DSP-editing UX, this matters.
+
+**Representative files:**
+
+- `src/modules/Plugin/useCases/faustEngine/compilerEngine.ts:146-195`
+
+**Needed:** Track per-module failure count; surface
+`compileFaustDSP.lastError(moduleId)` to the UI; expose a
+`forceRecompile(moduleId)` that clears any cached error state.
+
+### 47. `createFaustNode`'s `contextCreateLock` chain grows unboundedly
+
+**Problem:** `compilerEngine.ts:222-228`: every `createFaustNode`
+call extends the per-context promise chain via
+`contextCreateLock.set(context, self.catch(() => {}))`. The chain
+depth grows with every call; `WeakMap` only releases the chain when
+the AudioContext is GC'd. For long-running sessions with many
+compile/load cycles (live-coding workflows, automation testing),
+this is unbounded promise-chain memory.
+
+**Representative files:**
+
+- `src/modules/Plugin/useCases/faustEngine/compilerEngine.ts:211-229`
+
+**Needed:** Replace the chain with a dedicated `Promise<void>`
+queue per context that resolves to `Promise.resolve()` after each
+operation, breaking the chain. Or use a mutex pattern (an
+ongoing-promise field that gets reset to `null` after settling).
+
+### 48. `processAudioIPC` is exported but has zero callers anywhere
+
+**Problem:** Verified by
+`grep -rn "processAudioIPC\|audio_ipc" src --include='*.ts'`: zero
+hits outside the Plugin module's own files. The use case is exported
+from `useCases/index.ts:25` but no consumer ever calls it.
+
+**Representative files:**
+
+- `src/modules/Plugin/repositories/pluginBridge/processAudioIPC.ts` (entire file)
+- `src/modules/Plugin/useCases/pluginLifecycle/processAudioIPC.ts` (entire file)
+- `src/modules/Plugin/useCases/index.ts:25`
+
+**Needed:** Either wire it into the audio engine (which would
+require the SAB ring-buffer plumbing per #4), or delete it and the
+matching Rust handler. Today it pretends to be a working surface.
+
+### 49. `pluginScanStore` re-exports `ScannedPlugin` as the public type, not the repository's source-of-truth
+
+**Problem:** `pluginScanStore.ts:8-20` redeclares the type;
+`useCases/pluginScan/queries.ts:1` imports it from the store and
+re-exports it via `useCases/index.ts:32`. The repository
+(`pluginBridge/types.ts:5-17`) has the canonical IPC DTO. Public
+consumers see the **store's** type, not the repository's. Schema
+changes to the repository (the source of truth) silently desync the
+store and the public type.
+
+**Representative files:**
+
+- `src/modules/Plugin/repositories/pluginBridge/types.ts:5-17`
+- `src/modules/Plugin/stores/pluginScanStore.ts:8-20`
+- `src/modules/Plugin/useCases/pluginScan/queries.ts:1-4`
+- `src/modules/Plugin/useCases/index.ts:31-32`
+
+**Needed:** Either (a) the store imports the repo type directly
+(coupling allowed within the module), or (b) the store holds a
+distinct `PluginScanRecord` domain type with an explicit
+DTO→domain mapper, and the use-case re-exports the domain type.
+Don't both redeclare and re-export — pick one.
+
+### 50. `compilerEngine` registers a global Faust loader at module init via side effect
 
 **Problem:** `compilerEngine.ts:305-313` calls
-`registerPluginLoader('faust.', …)` at module-load time. This
-ties Faust availability to import order. If a consumer imports
-`compilerEngine` lazily (after the WAM host has already tried to
-load a `faust.*` plugin), the load fails with "no loader".
+`registerPluginLoader('faust.', …)` at module-load time. Verified:
+this is the **only** module-init side effect in the Plugin module
+(unlike the audit's earlier claim about `proModulationEffects.ts`
+and `builtinDSP.ts`, which both wrap their registrations in exported
+functions). This still ties Faust availability to import order: if
+a consumer imports `compilerEngine` lazily (after the WAM host has
+already tried to load a `faust.*` plugin), the load fails with
+"no loader".
 
 **Representative files:**
 
@@ -1534,35 +2071,38 @@ load a `faust.*` plugin), the load fails with "no loader".
 module bootstrap (alongside `registerBuiltinFaustDSP`,
 `registerBuiltinPlugins`). Document the expected boot order.
 
-### 39. `WAMDescriptor.sdkVersion` is hardcoded `'2.0'` with no negotiation
+### 51. `WAMDescriptor.sdkVersion` is hardcoded `'2.0'` with no negotiation
 
 **Problem:** Every descriptor in `builtinDescriptors.ts` and the
-Faust-derived descriptors in `compilerEngine.ts:131-135` set
+Faust-derived descriptors in `compilerEngine.ts:127-135` set
 `sdkVersion: '2.0'`. There is no version negotiation logic. Loading a
 "WAM 2.1" plugin would fail or coerce silently.
 
 **Representative files:**
 
 - `src/modules/Plugin/useCases/wamPluginHost/builtinDescriptors.ts:11,21,…`
-- `src/modules/Plugin/useCases/faustEngine/compilerEngine.ts:131-135`
+- `src/modules/Plugin/useCases/faustEngine/compilerEngine.ts:127-135`
 
 **Needed:** Either implement actual SDK-version handshake (the WAM 2.0
 spec defines one) or document that this field is decorative until WAM
 becomes real (issue #6).
 
-### 40. Tests use `as any` and partial fixtures (sample)
+### 52. Tests use `as any` and partial fixtures (sample)
 
 **Problem:** Spec files cast partial fixtures and use `as any` to
 satisfy types, breaking AGENTS.md "Tests assert the actual contract".
+Verified at `processAudioIPC.spec.ts` — the only assertion is that
+the function exports a value of type "function or object", which is
+not a contract test.
 
 **Representative files:**
 
 - `src/modules/Plugin/useCases/pluginLifecycle/__tests__/processAudioIPC.spec.ts`
-  (no error-path coverage; spec just verifies forwarding)
+  (only verifies the export is a function/object — no behaviour)
 - `src/modules/Plugin/repositories/proofChamberPresets/__tests__/importPresetJson.spec.ts:8,17,21`
-  (only happy path with two-field JSON)
+  (only happy path with two-field JSON; no NaN/Infinity/enum tests)
 - `src/modules/Plugin/repositories/proofChamberPresets/__tests__/helpers.spec.ts:9-19`
-  (asserts uniqueness only, no per-preset value validation)
+  (asserts uniqueness + categories only, no per-preset value validation)
 
 **Needed:** Build typed fixtures (full `ProofChamberEngineState`,
 typed `ScanResult`, typed `PluginInstance`). Add error-path tests
@@ -1573,10 +2113,10 @@ matching each `try/catch` branch. Replace `as any` with
 
 ## Open questions
 
-- [ ] Where exactly does `processAudioIPC` run — main thread or audio
-      worklet? The comment says "AudioWorklet to Rust" but `tauriInvoke`
-      is not callable from a worklet. Resolve before deciding the
-      audio-thread allocation/IPC fix.
+- [x] Where exactly does `processAudioIPC` run — main thread or audio
+      worklet? **Answer (2026-04-28):** Neither. Verified: zero
+      callers anywhere in the codebase. The use case is dead exported
+      surface today (issue #48 / finding #81).
 - [ ] Are the 13 vanilla WAM descriptors (Compressor, EQ, etc.) meant
       to be real plugins eventually, or are they UI-only stubs awaiting
       Faust/Tauri DSP wiring? Affects whether issue #6 is a bug or a
@@ -1588,57 +2128,120 @@ matching each `try/catch` branch. Replace `as any` with
 - [ ] Are `MIDI_EFFECT_FACTORIES` consumed by any UI (presumably a
       MIDI track's "add effect" menu)? If so, where? If not, what is
       the integration plan?
-- [ ] What is the canonical `setDeviceParameter` payload shape? The
+- [x] What is the canonical `setDeviceParameter` payload shape? The
       panel uses `{ deviceId, paramId, value }` and (in the Decay-EQ
-      branch) `{ deviceId, paramId, mult }`. Is this a single action
-      with two payloads, two actions, or a typo?
+      branch) `{ deviceId, paramId, mult }`. **Answer (2026-04-28):**
+      The action contract requires `value: number`
+      (`Command/models/AppAction.ts:109`). The `mult` payload is a
+      typo / unmodelled variant — but `executeAppAction` doesn't
+      type-check the payload (issue #70 / finding #39 in Open issues).
+      Both findings need to be fixed.
+- [ ] What is the recovery path when `loadPlugin` rejects in
+      `addExternalDevice`? Currently fire-and-forget — no rollback,
+      no notification. Spec needs to define the contract.
+- [ ] Should `unloadWAMPlugin` invalidate the Faust generator/loader
+      cache? If a Faust DSP recompiles between sessions, stale
+      generators are reused on reload (#77 / Open issue #45).
+- [ ] Does `inject()` widening to `any[]` break type-safety only
+      for `executeAppAction`, or for every dispatcher in the
+      codebase? The blast radius of issue #70 / finding #39 needs
+      a separate sweep.
 
 ---
 
 ## Risks
 
+- **Module-wide AppAction type-erasure (NEW).** Issue #70 / Open
+  issue #39. `inject()` widens parameter types to `any[]`, so every
+  `executeAppAction({ type: ..., payload: ... })` call site loses
+  compile-time payload checking. This is **not Plugin-specific** —
+  the entire codebase's command-bus discipline is a mirage. The
+  `mult` typo (#44) is one symptom; there are presumably many more
+  silent payload bugs across the other modules' UI code.
 - **Audio-thread glitches.** Issue #4 (per-block IPC + per-block
-  alloc) is a real-time deadline violation. Users will hear
-  glitches/dropouts whenever Tauri IPC stalls (every GC, every Rust
-  handler that holds a Tokio task).
+  alloc) is a real-time deadline violation **if** the function is
+  ever called. Today (#48 / #81) it has no callers, so the risk is
+  latent — but the moment a future session wires a track to a
+  native plugin, the per-block IPC pattern lights up.
 - **Silent feature stubs.** Issues #6, #15 (vanilla WAM
   pass-throughs), #22, #23 (fake spectrograms), #24 (Push), #28
-  (MIDI effects). The `Plugin` module ships a **labelled** feature
-  surface that does not match its **implemented** surface. Users
-  drag "Compressor" onto a track, see a panel, and hear no
-  compression — with no error.
-- **Preset corruption.** Issues #5, #14, #15, #16. Any non-trivial
-  schema evolution silently breaks every saved preset; corrupted
-  localStorage silently loses every saved preset; two presets in the
-  same millisecond share an id.
-- **Resource leaks on lifecycle errors.** Issue #7. Two parallel
-  loads leak audio nodes; failed unloads leave instance ids
-  un-reusable; cross-format unloads have no shared abstraction.
+  (MIDI effects), #48 (`processAudioIPC` dead export). The
+  `Plugin` module ships a **labelled** feature surface that does
+  not match its **implemented** surface. Users drag "Compressor"
+  onto a track, see a panel, and hear no compression — with no
+  error. Native plugin processing pretends to work but has no
+  caller.
+- **Cross-module instance-id collision (NEW).** Issue #71 / #40 —
+  `addExternalDevice` reuses `Date.now()` for `instanceId`. Two
+  devices added in the same millisecond corrupt the Rust host's
+  instance map. Only one path through which native plugins are
+  added; high blast radius.
+- **Resource leaks on lifecycle errors.** Issues #7, #71, #72,
+  #76, #77. Two parallel loads leak audio nodes; failed unloads
+  leave instance ids un-reusable; fire-and-forget loads/unloads
+  silently corrupt; Faust generator cache survives unload and goes
+  stale on reload.
+- **Preset corruption.** Issues #5, #14, #15, #16, #73, #74, #75.
+  Any non-trivial schema evolution silently breaks every saved
+  preset; corrupted localStorage silently loses every saved
+  preset; two presets in the same millisecond share an id;
+  `mix: NaN` injects garbage into the engine; non-array
+  localStorage crashes save/delete.
+- **Module surface invisibility (NEW).** Issue #69 / #38. No
+  `src/modules/Plugin/index.ts` — consumers must guess the public
+  surface by browsing `useCases/` and `presentations/views/`. New
+  contributors will deep-import. Renaming or moving any file inside
+  `useCases/` breaks consumers without warning.
 - **AGENTS.md violations accumulating.** Issues #9, #10, #14, #17,
-  #29, #34, #35. Type-assertion escapes (8+ instances), positional
-  args (17 functions), use-case type leakage (4 types). Left
-  unaddressed they normalise the workarounds and make a future
-  full-typing pass painful.
+  #29, #34, #35, #38, #39, #43. Type-assertion escapes (10+
+  instances), positional args (17 functions), use-case type
+  leakage (5 types), missing root barrel, type-erasure via
+  `inject`. Left unaddressed they normalise the workarounds and
+  make a future full-typing pass painful.
 - **DSP / accuracy credibility.** Same theme as AudioAnalysis: the
   module hosts a `ReverbSpectrogram` and a `SpectrogramView` that
   **simulate** their outputs while UI labels them "Live". Users
   notice; trust erodes.
+- **Promise-chain memory leak (NEW).** Issue #80 / Open issue #47.
+  `contextCreateLock` chain depth grows unboundedly per
+  AudioContext. For long sessions with many compile/load cycles,
+  unbounded promise-chain memory.
 
 ---
 
 ## Suggested approaches
 
-- **Land issue #5 (preset schema validation) first.** Add Zod schema +
+- **Fix the `executeAppAction` type-erasure first (issue #39).** This
+  is a one-line change at the call site
+  (`Command/useCases/executeAppAction.ts:21`) — re-declare the
+  exported function with the strict `(action: AppAction, options?:
+  ExecuteOptions) => Promise<void>` signature. Then re-run
+  `pnpm typecheck` and **expect a flood of new errors** across
+  every dispatcher in the codebase. Triage them in a follow-up
+  sweep. The Plugin module's `mult` typo (#44) will be flagged by
+  this; do not fix that one without first landing the upstream
+  type-erasure fix or the symptom will recur.
+- **Land issue #5 (preset schema validation) next.** Add Zod schema +
   `schemaVersion: 1` to `exportPresetJson`; rewrite `importPresetJson`
-  to validate, migrate, and clamp. Drop the
-  `as ProofChamberEngineState` cast. Tests come for free.
+  to validate, migrate, clamp, and reject NaN/Infinity/unknown enums
+  (#42). Drop the `as ProofChamberEngineState` cast. Add `Array.isArray`
+  guard to `getUserPresets` (#43). Tests come for free.
+- **Fix the cross-module `addExternalDevice`/`removeDevice` lifecycle
+  bugs (issues #40, #41).** Replace `Date.now()` instanceId with
+  `crypto.randomUUID()`; await the IPC; roll back on rejection;
+  surface failures via `notifyUser`. This is the **only** path
+  through which native plugins are added today.
 - **Replace `processAudioIPC`'s per-block IPC** (issues #2, #3, #4,
   #30) with a shared-buffer ring on a Rust audio thread. If that is
-  beyond scope today, gate the use case behind a "not yet
-  implemented" notification — the silent pass-through is worse than
-  an explicit failure.
+  beyond scope today, **delete the use case** (#48) — it has zero
+  callers; the silent dead-export is worse than absence.
 - **Promise-coalesce all lifecycle paths** (issue #7). One pattern, two
-  files (Tauri load + WAM load). Add a single `tearDownDevice`.
+  files (Tauri load + WAM load). Add a single `tearDownDevice`. Make
+  unloads idempotent (handle "already gone" without throwing).
+- **Add `src/modules/Plugin/index.ts` root barrel** (issue #38). Pick
+  the public surface; re-export from `useCases/`, `stores/`,
+  `presentations/views/ProofChamberPanel`. Update consumers. Add an
+  ESLint rule against deep imports below the module root.
 - **Decide WAM strategy** (issue #6). Either implement the 13 vanilla
   descriptors (each a Faust DSP probably) or drop them from the
   builtin list. Surface "Coming soon — passes audio through" if the
@@ -1646,9 +2249,9 @@ matching each `try/catch` branch. Replace `as any` with
 - **Fix the fake spectrograms** (issues #22, #23). Wire an
   `AnalyserNode` from the chamber output; rename or delete the
   not-mocking branch of `SpectrogramView`.
-- **AGENTS.md compliance pass** (issues #9, #10, #29, #34, #35) as a
-  follow-up sweep — small mechanical refactors that should land as a
-  single commit per issue.
+- **AGENTS.md compliance pass** (issues #9, #10, #29, #34, #35, #38,
+  #43) as a follow-up sweep — small mechanical refactors that should
+  land as a single commit per issue.
 - **Decide the Push strategy** (issue #24). Either implement WebMIDI +
   SysEx for Push 2/3, or rename the folder to `pushSimulation/` and
   add a `Coming soon` chip on the UI.
@@ -1656,24 +2259,48 @@ matching each `try/catch` branch. Replace `as any` with
   through the audio engine's MIDI path or delete the seven factories.
 - **Tighten `pluginLoaderRegistry`** (issue #27). Longest-prefix match,
   overwrite warning, unregister fn.
-- **Replace WAM/Faust/loader-registry raw `Map`s with `Store<…>`** (issues
-  #8, #26).
+- **Tighten `registerWAMPlugin`** (issue #44). Warn on duplicate
+  registrations; clear on HMR.
+- **Replace WAM/Faust/loader-registry raw `Map`s with `Store<…>`**
+  (issues #8, #26). Add an explicit `invalidateFaustModule(moduleId)`
+  use case (issue #45) and fix the unbounded `contextCreateLock`
+  chain (issue #47).
+- **Tighten `pluginScanStore`/`ScannedPlugin` redeclaration**
+  (issue #49). Either the store imports the repo type directly or it
+  holds a distinct domain type with an explicit DTO→domain mapper.
 
 ---
 
 ## Recommendation
 
-Start with **issue #5 (preset schema + migration)**. The work is
-mechanical, has a clear "good" target (Zod-validated, versioned), and
-the test surface is small. Land as a standalone commit; follow with
-**issue #6 (vanilla WAM pass-through)** because the user-visible
+**Start with issue #39 (`executeAppAction` type-erasure via `inject()`).**
+This is the highest-priority finding — it silently disables compile-
+time payload checking for **every** AppAction dispatch site in the
+codebase, not just Plugin. Fix is one line at
+`Command/useCases/executeAppAction.ts:21`. Run `pnpm typecheck` after
+the fix and expect a flood of new errors (including the `mult` typo
+at `ProofChamberPanel.tsx:389`). Triage them as a follow-up sweep.
+
+**Then land issue #5 + #42 (preset schema validation + reject
+NaN/unknown enums).** The work is mechanical, has a clear "good"
+target (Zod-validated, versioned, finite-clamped, enum-checked), and
+the test surface is small.
+
+**Then land issues #40 + #41 (cross-module `addExternalDevice` /
+`removeDevice` lifecycle bugs).** Replace `Date.now()` instanceId
+with `crypto.randomUUID()`. Await the IPC. Surface failures.
+
+**Then land issue #6 (vanilla WAM pass-through).** The user-visible
 "Compressor as unity gain" bug is the most embarrassing item in this
 audit.
 
-After those two land, the next session can split between the
-"correctness pass" (issues #2, #3, #4, #7, #30) and the "AGENTS.md
+**Then land issue #38 (root barrel).** Module surface is invisible
+without it.
+
+After those land, the next session can split between the "correctness
+pass" (issues #2, #3, #4, #7, #30, #45, #47, #48) and the "AGENTS.md
 compliance + dead code" pass (issues #1, #9, #10, #24, #28, #29, #34,
-#35). They are independent.
+#35, #43, #44, #49). They are independent.
 
 ---
 
