@@ -174,7 +174,44 @@ export type FermenterPatch = {
 
     // Macros (musical labels)
     macros: [number, number, number, number, number, number, number, number];
+    macroMappings?: FermenterMacroMapping[];
 };
+
+export type FermenterMacroCurve = 'linear' | 'exponential';
+
+export type FermenterMacroTarget = {
+    target: keyof FermenterPatch;
+    center: number;
+    depth: number;
+    min: number;
+    max: number;
+    curve: FermenterMacroCurve;
+};
+
+export type FermenterMacroMapping = {
+    targets: FermenterMacroTarget[];
+};
+
+export const DEFAULT_MACRO_MAPPINGS: FermenterMacroMapping[] = [
+    { targets: [{ target: 'filterCutoff', center: 6_090, depth: 5_910, min: 180, max: 12_000, curve: 'exponential' }] },
+    { targets: [{ target: 'lfoFilterAmount', center: 0, depth: 1, min: -1, max: 1, curve: 'linear' }] },
+    { targets: [{ target: 'stereoWidth', center: 1.15, depth: 0.7, min: 0.45, max: 1.85, curve: 'linear' }] },
+    {
+        targets: [
+            { target: 'distDrive', center: 4, depth: 4, min: 0, max: 8, curve: 'linear' },
+            { target: 'distMix', center: 0.275, depth: 0.275, min: 0, max: 0.55, curve: 'linear' },
+        ],
+    },
+    { targets: [{ target: 'reverbMix', center: 0.35, depth: 0.35, min: 0, max: 0.7, curve: 'linear' }] },
+    {
+        targets: [
+            { target: 'compMix', center: 0.325, depth: 0.325, min: 0, max: 0.65, curve: 'linear' },
+            { target: 'compThreshold', center: -20, depth: -12, min: -32, max: -8, curve: 'linear' },
+        ],
+    },
+    { targets: [{ target: 'warpAmount', center: 0.5, depth: 0.5, min: 0, max: 1, curve: 'linear' }] },
+    { targets: [{ target: 'chaosAmount', center: 0.5, depth: 0.5, min: 0, max: 1, curve: 'linear' }] },
+];
 
 export const DEFAULT_PATCH: FermenterPatch = {
     version: 1,
@@ -316,6 +353,7 @@ export const DEFAULT_PATCH: FermenterPatch = {
     masterGain: 1.0,
 
     macros: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+    macroMappings: DEFAULT_MACRO_MAPPINGS,
 };
 
 /** Parameter metadata for UI rendering */

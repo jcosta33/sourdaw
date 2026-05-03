@@ -89,12 +89,13 @@ same-block note events at different offsets.
    releases the note across active layers. Rust regressions cover two-layer
    triggering, mute/solo filtering, and stacked note release.
 
-4. **Macros now have default performance mappings, but no assignable macro matrix.**
-   `setMacro` maps the eight macro labels to concrete patch parameters and
-   sends the updated patch through `loadFermenterPatchWithAudio`, so the
-   right-rail macro rig and XY pad can affect audio and persistence. Fermenter
-   still lacks user-assignable macro targets, depths, curves, and per-preset
-   macro routing.
+4. **Macros now use a patch-owned assignment matrix, but no editor UI.**
+   `setMacro` applies per-patch `macroMappings` with target, bipolar depth,
+   bounds, and curve data before sending the updated patch through
+   `loadFermenterPatchWithAudio`. Defaults preserve the previous eight macro
+   behaviors, legacy patches fall back to those defaults, and tests cover
+   user-defined mappings. Fermenter still lacks a UI for authoring those
+   mappings.
 
 5. **Transform interpolation now keeps discrete selectors discrete.**
    `lerpPatch` interpolates continuous numeric fields, but selector fields such
@@ -138,7 +139,7 @@ same-block note events at different offsets.
 
 1. Expand Fermenter-specific Rust DSP tests for parameter-derived audible
    behavior.
-2. Expand macro handling from default mappings into a real assignable macro matrix.
+2. Add a user-facing editor for the patch-owned macro matrix.
 3. Specify and implement true spectral-domain morph modes from the existing
    research.
 
@@ -207,25 +208,27 @@ rules. `note_off()` releases the note across active layers. Rust tests assert
 two-layer triggering, muted/solo filtering, and note release across stacked
 voices.
 
-### 4. Macro rig and XY pad use fixed mappings only
+### 4. Macro rig and XY pad lack a macro-matrix editor
 
-**Status:** Partially resolved by `15bb9a393`.
+**Status:** Patch model and use-case routing resolved by the macro matrix
+checkpoint; editor UI remains open.
 
-**Problem:** Macros now map to concrete patch parameters and use
-`loadFermenterPatchWithAudio`, so they can affect audio and persistence.
-However, the mapping is fixed in code. There is still no user-facing macro
-matrix for assigning targets, setting depth/curves, or storing per-preset macro
-routing.
+**Problem:** Macros now route through patch-owned `macroMappings`, so mappings
+can persist per patch and describe targets, bipolar depth, bounds, and
+linear/exponential curves. Defaults preserve the prior eight performance
+mappings, and legacy patches without `macroMappings` fall back safely. The
+remaining gap is presentation-layer authoring: users still cannot choose
+targets or edit depths/curves from the Fermenter UI.
 
 **Representative files:**
 
 - `src/modules/Fermenter/presentations/views/FermenterPanel.tsx:493`
-- `src/modules/Fermenter/useCases/applyFermenterMacroMapping.ts:14`
+- `src/modules/Fermenter/models/FermenterPatch.ts:178`
+- `src/modules/Fermenter/useCases/applyFermenterMacroMapping.ts:18`
 - `src/modules/Fermenter/useCases/__tests__/applyFermenterMacroMapping.spec.ts:6`
 
-**Needed:** Add a macro assignment model (`macro -> targets + bipolar depth +
-curve`) and persist it per patch. Tests should assert both the default mappings
-and user-defined mappings update the intended parameters.
+**Needed:** Add a macro assignment editor that mutates `macroMappings`, validates
+target ranges, and persists the mapping with user patches.
 
 ### 5. Transform pad interpolates discrete selectors as fractional values
 
@@ -350,8 +353,8 @@ engine with sample/block timing. Document which path is for UI vs playback.
   several flagship controls are currently silent, approximated, or untested.
 - **Preset trust risk:** Factory/user presets now use a tested TS bridge mapping,
   but Rust still silently ignores unknown parameter names.
-- **Performance-control risk:** Macros and XY controls now have default audio
-  mappings, but users cannot assign targets, depth, or curves like a flagship
+- **Performance-control risk:** Macros and XY controls now have a patch-owned
+  mapping model, but users cannot edit targets, depth, or curves like a flagship
   synth macro system.
 - **Timing risk:** Basic and dense note-on offsets are now honored, but complex
   note-off musical timing still needs broader regressions.
@@ -363,8 +366,9 @@ engine with sample/block timing. Document which path is for UI vs playback.
 
 1. **Add DSP regression tests before sonic retuning.** Use simple note renders
    and energy/spectral assertions. Do not tune by UI snapshots.
-2. **Expand macros after the fixed-mapping slice.** Default mappings now exist;
-   the next step is a patch-owned macro matrix with target depth and curves.
+2. **Expose the macro matrix in UI.** Patch-owned mappings now exist; the next
+   step is an assignment editor with target selection, depth, bounds, and curve
+   controls.
 3. **Treat true spectral morphing as a separate spec.** The current time-domain
    warp can stay useful, but Vital/Zebra/Pigments-style claims need an actual
    spectral/harmonic implementation and tests.
@@ -376,6 +380,11 @@ engine with sample/block timing. Document which path is for UI vs playback.
 - **Silent macro rig:** The panel now applies fixed macro mappings through
   `loadFermenterPatchWithAudio`, with use-case tests proving mapped parameter
   changes. Remaining macro-matrix work is tracked in Open Issue 4.
+- **Patch-owned macro matrix:** Fermenter patches can now carry `macroMappings`
+  with targets, bipolar depth, bounds, and curve data. Defaults preserve the
+  prior eight macro behaviors, legacy patches fall back safely, and tests cover
+  user-defined mapping behavior. Remaining work is a presentation editor for
+  authoring those mappings.
 - **TS bridge parameter mapping:** Fermenter now declares DSP parameter IDs,
   maps param and patch updates before sending them to AudioEngine, keeps
   persisted patches in the TS patch shape, and tests every public

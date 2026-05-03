@@ -1,4 +1,9 @@
-import { type FermenterPatch } from '../models/FermenterPatch';
+import {
+    DEFAULT_MACRO_MAPPINGS,
+    type FermenterMacroMapping,
+    type FermenterMacroTarget,
+    type FermenterPatch,
+} from '../models/FermenterPatch';
 
 type ApplyFermenterMacroMappingInput = {
     patch: FermenterPatch;
@@ -10,7 +15,31 @@ type ApplyFermenterMacroMappingOutput = FermenterPatch;
 
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
 
-const scale = ({ value, min, max }: { value: number; min: number; max: number }): number => min + value * (max - min);
+function clamp({ value, min, max }: { value: number; min: number; max: number }): number {
+    return Math.min(max, Math.max(min, value));
+}
+
+function shapedBipolarValue({ value, target }: { value: number; target: FermenterMacroTarget }): number {
+    const bipolar = value * 2 - 1;
+    let shaped = bipolar;
+    if (target.curve === 'exponential') {
+        shaped = Math.sign(bipolar) * Math.abs(bipolar) * Math.abs(bipolar);
+    }
+
+    return clamp({ value: target.center + shaped * target.depth, min: target.min, max: target.max });
+}
+
+function getMacroMapping({ patch, index }: { patch: FermenterPatch; index: number }): FermenterMacroMapping {
+    return patch.macroMappings?.[index] ?? DEFAULT_MACRO_MAPPINGS[index] ?? { targets: [] };
+}
+
+function applyMacroTarget({ patch, value, target }: { patch: FermenterPatch; value: number; target: FermenterMacroTarget }): void {
+    if (typeof patch[target.target] !== 'number') {
+        return;
+    }
+
+    (patch as Record<keyof FermenterPatch, unknown>)[target.target] = shapedBipolarValue({ value, target });
+}
 
 export function applyFermenterMacroMapping(input: ApplyFermenterMacroMappingInput): ApplyFermenterMacroMappingOutput {
     const value = clamp01(input.value);
@@ -21,41 +50,15 @@ export function applyFermenterMacroMapping(input: ApplyFermenterMacroMappingInpu
     }
 
     macros[input.index] = value;
-    const next_patch: FermenterPatch = { ...input.patch, macros };
+    const next_patch: FermenterPatch = {
+        ...input.patch,
+        macros,
+        macroMappings: [...(input.patch.macroMappings ?? DEFAULT_MACRO_MAPPINGS)],
+    };
+    const mapping = getMacroMapping({ patch: next_patch, index: input.index });
 
-    if (input.index === 0) {
-        next_patch.filterCutoff = scale({ value, min: 180, max: 12_000 });
-        return next_patch;
-    }
-    if (input.index === 1) {
-        next_patch.lfoFilterAmount = scale({ value, min: -1, max: 1 });
-        return next_patch;
-    }
-    if (input.index === 2) {
-        next_patch.stereoWidth = scale({ value, min: 0.45, max: 1.85 });
-        return next_patch;
-    }
-    if (input.index === 3) {
-        next_patch.distDrive = scale({ value, min: 0, max: 8 });
-        next_patch.distMix = scale({ value, min: 0, max: 0.55 });
-        return next_patch;
-    }
-    if (input.index === 4) {
-        next_patch.reverbMix = scale({ value, min: 0, max: 0.7 });
-        return next_patch;
-    }
-    if (input.index === 5) {
-        next_patch.compMix = scale({ value, min: 0, max: 0.65 });
-        next_patch.compThreshold = scale({ value, min: -8, max: -32 });
-        return next_patch;
-    }
-    if (input.index === 6) {
-        next_patch.warpAmount = value;
-        return next_patch;
-    }
-    if (input.index === 7) {
-        next_patch.chaosAmount = value;
-        return next_patch;
+    for (const target of mapping.targets) {
+        applyMacroTarget({ patch: next_patch, value, target });
     }
 
     return next_patch;
