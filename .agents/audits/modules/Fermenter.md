@@ -62,10 +62,11 @@ objects and renders one selected engine per active voice.
 
 Tests exist heavily on the TS presentation/use-case side. Rust now has a small
 Fermenter-specific regression base: `cargo test -p daw-dsp fermenter::` runs
-eleven tests covering mapped layer params, mapped global params, finite non-silent
-note rendering, MIDI note-on offsets, playable layer-stack behavior, all
-advertised engines producing output, unison stereo spread, and multiple
-same-block note events at different offsets.
+fifteen tests covering mapped layer params, mapped global params, finite
+non-silent note rendering, MIDI note-on offsets, playable layer-stack behavior,
+all advertised engines producing output, unison stereo spread, multiple
+same-block note events at different offsets, additive/granular/sampler
+parameter-derived output changes, and a distortion output delta.
 
 ## Findings
 
@@ -117,12 +118,14 @@ same-block note events at different offsets.
    modes such as vocoding, harmonic stretch, smear, spectral filtering, phase
    disperse, and spectral-time skew.
 
-8. **Rust Fermenter has only initial targeted regression tests.** The command
-   `cargo test -p daw-dsp fermenter::` now runs eleven tests for mapped params,
-   basic note rendering, note-on offsets, layer triggering, all advertised
-   engines producing output, unison stereo spread, and multiple same-block
-   note-on offsets. This is no longer zero coverage, but it is still far below
-   the release gate requiring integration tests for every part / section.
+8. **Rust Fermenter has targeted DSP behavior regressions, but not full release-gate coverage.**
+   The command `cargo test -p daw-dsp fermenter::` now runs fifteen tests for
+   mapped params, basic note rendering, note-on offsets, layer triggering, all
+   advertised engines producing output, unison stereo spread, multiple same-block
+   note-on offsets, additive/granular/sampler parameter-derived output changes,
+   and distortion output differences. This is no longer zero coverage, but it
+   is still far below the release gate requiring integration tests for every
+   part / section.
 
 9. **Several DSP internals expose dead or incomplete implementation clues.**
    Rust warnings identify `FdnReverb.sample_rate`, `Granular::Grain.position`,
@@ -137,9 +140,7 @@ same-block note events at different offsets.
 
 ## Priorities
 
-1. Expand Fermenter-specific Rust DSP tests for parameter-derived audible
-   behavior.
-2. Specify and implement true spectral-domain morph modes from the existing
+1. Specify and implement true spectral-domain morph modes from the existing
    research.
 
 ## Open Issues
@@ -291,17 +292,18 @@ snapshots. The current time-domain warp can remain as its own feature.
 
 ### 8. DSP has only starter Fermenter-targeted tests
 
-**Status:** Partially resolved by `474e514cc`; narrowed again by the engine and
-unison DSP regression checkpoint.
+**Status:** Partially resolved by `474e514cc`; narrowed by the engine/unison
+checkpoint and by the parameter-audibility checkpoint.
 
-**Problem:** `cargo test -p daw-dsp fermenter::` now runs eleven tests, covering
+**Problem:** `cargo test -p daw-dsp fermenter::` now runs fifteen tests, covering
 mapped layer parameter IDs, mapped master/global IDs, finite non-silent note
 rendering, note-on offsets, layer-stack triggering, all advertised engines
-producing output, unison stereo spread, and multiple same-block note events at
-different offsets. The TS tests still mostly verify component rendering and
-use-case paths. There are still no Rust tests for macro-derived sonic behavior,
-per-effect output differences, or engine-specific parameter changes having
-audible effect.
+producing output, unison stereo spread, multiple same-block note events at
+different offsets, additive/granular/sampler parameter-derived output changes,
+and a distortion output delta. The TS tests still mostly verify component
+rendering and use-case paths. Remaining DSP gaps include macro-derived sonic
+behavior, broader per-effect output differences, note-off timing edge cases,
+and deeper per-engine parameter coverage.
 
 **Representative files:**
 
@@ -310,8 +312,9 @@ audible effect.
 
 **Needed:** Add Rust tests for:
 
-- macro mapping once implemented
-- sample/granular/additive parameters having audible effect
+- macro-derived sonic behavior
+- broader per-effect output differences
+- deeper engine-specific parameter coverage beyond additive/granular/sampler
 
 ### 9. Rust warning hotspots suggest incomplete granular/sampler/reverb behavior
 
@@ -354,9 +357,10 @@ engine with sample/block timing. Document which path is for UI vs playback.
   but Rust still silently ignores unknown parameter names.
 - **Timing risk:** Basic and dense note-on offsets are now honored, but complex
   note-off musical timing still needs broader regressions.
-- **Regression risk:** Starter Rust DSP tests now exist, but engine-specific
-  parameter behavior and complex timing can still regress while all TS tests
-  stay green.
+- **Regression risk:** Targeted Rust DSP tests now cover starter behavior and
+  several parameter-derived output changes, but macro-derived sonic behavior,
+  broader effects, and complex timing can still regress while all TS tests stay
+  green.
 
 ## Suggested Approaches
 
@@ -386,10 +390,15 @@ engine with sample/block timing. Document which path is for UI vs playback.
   persisted patches in the TS patch shape, and tests every public
   `FERMENTER_PARAMS` ID against the declared DSP contract.
 - **Initial Rust DSP regressions:** `cargo test -p daw-dsp fermenter::` now runs
-  eleven Fermenter-targeted tests covering mapped layer params, mapped global
+  fifteen Fermenter-targeted tests covering mapped layer params, mapped global
   params, finite non-silent note rendering, note-on offsets, playable layer
-  stack behavior, all advertised engines producing output, and unison stereo
-  spread. Remaining DSP coverage is tracked in Open Issue 8.
+  stack behavior, all advertised engines producing output, unison stereo
+  spread, additive/granular/sampler parameter-derived output changes, and a
+  distortion output delta. Remaining DSP coverage is tracked in Open Issue 8.
+- **Pre-note additive and sampler parameter propagation:** Layer state now stores
+  additive parameter values and pushes additive plus sampler settings into a
+  newly allocated voice before `note_on` / sampler trigger, so pre-note patch
+  changes affect the rendered note.
 - **Dense same-block MIDI note-on timing:** A Rust regression now sends two
   note-on events in one block at different offsets and asserts silence before
   the first offset, output in both post-event regions, and two active voices by

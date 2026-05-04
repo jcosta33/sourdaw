@@ -581,6 +581,15 @@ mod tests {
             .sum::<f32>()
     }
 
+    fn sample_difference(left_a: &[f32], right_a: &[f32], left_b: &[f32], right_b: &[f32]) -> f32 {
+        left_a
+            .iter()
+            .zip(left_b.iter())
+            .chain(right_a.iter().zip(right_b.iter()))
+            .map(|(a, b)| (a - b).abs())
+            .sum::<f32>()
+    }
+
     fn stereo_difference_energy(left: &[f32], right: &[f32]) -> f32 {
         left.iter()
             .zip(right.iter())
@@ -600,6 +609,26 @@ mod tests {
         }];
 
         synth.set_param("engine", engine as f32);
+        synth.process_block(&mut left, &mut right, &events);
+
+        (left, right)
+    }
+
+    fn render_note_for_engine_with_params(engine: u8, params: &[(&str, f32)]) -> ([f32; 512], [f32; 512]) {
+        let mut synth = MasterSynth::new(48_000.0, 8);
+        let mut left = [0.0; 512];
+        let mut right = [0.0; 512];
+        let events = [MidiEvent {
+            kind: 1,
+            note: 60,
+            velocity: 100,
+            offset: 0,
+        }];
+
+        synth.set_param("engine", engine as f32);
+        for (name, value) in params {
+            synth.set_param(name, *value);
+        }
         synth.process_block(&mut left, &mut right, &events);
 
         (left, right)
@@ -709,6 +738,69 @@ mod tests {
 
         assert!(block_energy(&left, &right) > 0.001);
         assert!(stereo_difference_energy(&left, &right) > 0.001);
+    }
+
+    #[test]
+    fn additive_params_change_rendered_output() {
+        let (simple_left, simple_right) =
+            render_note_for_engine_with_params(5, &[("additive_partials", 1.0), ("additive_tilt", -6.0)]);
+        let (rich_left, rich_right) = render_note_for_engine_with_params(
+            5,
+            &[
+                ("additive_partials", 64.0),
+                ("additive_tilt", 6.0),
+                ("additive_odd", 0.75),
+                ("additive_inharm", 0.04),
+            ],
+        );
+
+        assert!(block_energy(&simple_left, &simple_right) > 0.001);
+        assert!(block_energy(&rich_left, &rich_right) > 0.001);
+        assert!(sample_difference(&simple_left, &simple_right, &rich_left, &rich_right) > 0.01);
+    }
+
+    #[test]
+    fn granular_params_change_rendered_output() {
+        let (sparse_left, sparse_right) = render_note_for_engine_with_params(
+            4,
+            &[("grain_density", 1.0), ("grain_size", 20.0), ("grain_pan_spread", 0.0)],
+        );
+        let (dense_left, dense_right) = render_note_for_engine_with_params(
+            4,
+            &[
+                ("grain_density", 100.0),
+                ("grain_size", 250.0),
+                ("grain_pitch_var", 12.0),
+                ("grain_pan_spread", 1.0),
+            ],
+        );
+
+        assert!(block_energy(&sparse_left, &sparse_right) > 0.001);
+        assert!(block_energy(&dense_left, &dense_right) > 0.001);
+        assert!(sample_difference(&sparse_left, &sparse_right, &dense_left, &dense_right) > 0.01);
+    }
+
+    #[test]
+    fn sampler_start_changes_rendered_output() {
+        let (early_left, early_right) =
+            render_note_for_engine_with_params(6, &[("sampler_start", 0.0), ("sampler_end", 1.0)]);
+        let (late_left, late_right) =
+            render_note_for_engine_with_params(6, &[("sampler_start", 0.25), ("sampler_end", 1.0)]);
+
+        assert!(block_energy(&early_left, &early_right) > 0.001);
+        assert!(block_energy(&late_left, &late_right) > 0.001);
+        assert!(sample_difference(&early_left, &early_right, &late_left, &late_right) > 0.01);
+    }
+
+    #[test]
+    fn global_effect_params_change_rendered_output() {
+        let (dry_left, dry_right) = render_note_for_engine_with_params(0, &[("dist_mix", 0.0)]);
+        let (driven_left, driven_right) =
+            render_note_for_engine_with_params(0, &[("dist_drive", 10.0), ("dist_mix", 1.0)]);
+
+        assert!(block_energy(&dry_left, &dry_right) > 0.001);
+        assert!(block_energy(&driven_left, &driven_right) > 0.001);
+        assert!(sample_difference(&dry_left, &dry_right, &driven_left, &driven_right) > 0.01);
     }
 
     #[test]
