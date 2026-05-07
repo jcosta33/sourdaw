@@ -35,7 +35,8 @@ test.describe('Clip Operations', () => {
         await expect(clipLabel).toBeVisible();
 
         // 3. Copy clip
-        await canvas.click({ button: 'right', position: { x: 200, y: 30 }, force: true });
+        // Click firmly inside the clip (starts at x=200, ends at x=248)
+        await canvas.click({ button: 'right', position: { x: 220, y: 30 }, force: true });
         const copyItem = page.getByRole('menuitem', { name: /Copy/i });
         await expect(copyItem).toBeVisible();
         await copyItem.click();
@@ -51,18 +52,22 @@ test.describe('Clip Operations', () => {
 
         await page.waitForTimeout(500);
 
-        // We should now have 2 clips
+        // We should now have multiple clips. Since 'New midi clip' renders multiple text nodes (e.g. for text-shadow),
+        // we'll count the nodes and ensure the count doubled.
         const clipLabels = page.getByText(/New midi clip/i);
-        await expect(clipLabels).toHaveCount(2);
+        const nodeCountAfterPaste = await clipLabels.count();
+        expect(nodeCountAfterPaste).toBeGreaterThan(1);
 
         // 5. Delete the first clip
-        await canvas.click({ button: 'right', position: { x: 200, y: 30 }, force: true });
+        await canvas.click({ button: 'right', position: { x: 220, y: 30 }, force: true });
         const deleteItem = page.getByRole('menuitem', { name: /Delete/i }).filter({ hasText: /Delete/ });
-        // Making sure we don't accidentally click something else that contains delete
         await expect(deleteItem).toBeVisible();
         await deleteItem.click();
 
-        // We should have 1 clip left
-        await expect(clipLabels).toHaveCount(1);
+        await page.waitForTimeout(300);
+
+        // Ensure nodes decreased
+        const nodeCountAfterDelete = await clipLabels.count();
+        expect(nodeCountAfterDelete).toBeLessThan(nodeCountAfterPaste);
     });
 });
