@@ -81,6 +81,7 @@ import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
 import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
 import { preferencesStore } from '../../stores/preferencesStore';
+import { alphaNoticeStore } from '../../stores/alphaNoticeStore';
 import { defaultPreferences } from '../../models/Preferences';
 import { MobileGate } from '../components/MobileGate';
 
@@ -99,8 +100,6 @@ const BranchManagerDialogLazy = lazy(() =>
 type AppShellProps = {
     children: ReactNode;
 };
-
-const ALPHA_NOTICE_KEY = 'sourdaw-alpha-notice-dismissed';
 
 export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const workspaceState = useWorkspaceState();
@@ -144,9 +143,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         );
     const aiState = useStore(aiStore, { tasks: [], isPanelOpen: false });
     const aiPanelOpen = aiState.isPanelOpen;
+    const alphaDismissed = useStore(alphaNoticeStore) ?? false;
+    const showAlphaNotice = project.initialized && !alphaDismissed;
     const [exportOpen, setExportOpen] = useState(false);
     const [prefsOpen, setPrefsOpen] = useState(false);
-    const [showAlphaNotice, setShowAlphaNotice] = useState(false);
     const [bottomTab, setBottomTab] = useState<
         | 'editor'
         | 'mixer'
@@ -193,19 +193,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         onOpenPreferences: () => setPrefsOpen(true),
     });
 
-    // Show alpha notice when project initializes — localStorage is the
-    // source of truth, so HMR can't cause the notice to re-appear.
-    useEffect(() => {
-        if (project.initialized && localStorage.getItem(ALPHA_NOTICE_KEY) !== 'true') {
-            setShowAlphaNotice(true);
-        }
-    }, [project.initialized]);
-
     useEffect(() => {
         if (!project.initialized) {
             return;
         }
-        if (showAlphaNotice) {
+        if (!alphaDismissed) {
             return;
         }
         if (isOnboardingCompleted()) {
@@ -234,7 +226,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return () => {
             unsubscribe();
         };
-    }, [project.initialized, showAlphaNotice]);
+    }, [project.initialized, alphaDismissed]);
 
     // Auto-switch bottom tab when clip selected
     useEffect(() => {
@@ -796,9 +788,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     open={showAlphaNotice}
                     onOpenChange={(open) => {
                         if (!open) {
-                            localStorage.setItem(ALPHA_NOTICE_KEY, 'true');
+                            alphaNoticeStore.set(true);
                         }
-                        setShowAlphaNotice(open);
                     }}
                 />
 
