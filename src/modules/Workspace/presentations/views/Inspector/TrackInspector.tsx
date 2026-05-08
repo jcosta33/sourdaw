@@ -6,7 +6,6 @@ import { MasterVisualizationsSection } from './MasterVisualizationsSection';
 import { SendsEditor } from './SendsEditor';
 import { SignalFlowSection } from './SignalFlowSection';
 import { TakesSection } from './TakesSection';
-import { TrackAiSection } from './TrackAiSection';
 import { TrackAlternativesSection } from './TrackAlternativesSection';
 import { TrackAutomationSection } from './TrackAutomationSection';
 import { TrackClipsSection } from './TrackClipsSection';
@@ -38,7 +37,6 @@ export const TrackInspector = ({
             <TrackHeaderSection track={track} />
             <TrackAlternativesSection track={track} />
             <TrackLevelSection track={track} />
-            <TrackAiSection track={track} />
             <TrackMidiFxSection track={track} />
             <TrackDevicesSection track={track} onSelectDevice={onSelectDevice} />
             <TrackAutomationSection track={track} />

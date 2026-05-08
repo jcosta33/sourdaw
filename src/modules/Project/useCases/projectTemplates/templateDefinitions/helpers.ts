@@ -1,5 +1,4 @@
 import { demo5_NebulaDrift } from '../../demoProjects/nebulaDrift/createNebulaDriftDemo';
-import { demo1_TheCompleteMix } from '../../demoProjects/resonance/createResonanceDemo';
 import { newProject } from '../../projectPersistence/newProject';
 import { createAmbientTemplate } from '../templateFiles/ambient';
 import { createCinematicTemplate } from '../templateFiles/cinematic';
@@ -103,14 +102,6 @@ export const templates: ProjectTemplate[] = [
             '60 BPM C Lydian, 128 beats. Three Fermenter drones, Levain + FM shimmer pads, DX bell / Grand Boule piano / Crumbs granular melodic layer, tape-hiss texture, 8-second Cathedral reverb + tape delay + spring sends.',
         category: 'music',
         create: () => createAmbientTemplate(),
-    },
-    {
-        id: 'demo-complete',
-        name: 'Resonance',
-        description:
-            'A fully arranged 5-minute ambient/IDM production in D minor with 28 tracks, automation, markers, and detailed MIDI patterns.',
-        category: 'demo',
-        create: () => demo1_TheCompleteMix(),
     },
     {
         id: 'demo-nebula-drift',

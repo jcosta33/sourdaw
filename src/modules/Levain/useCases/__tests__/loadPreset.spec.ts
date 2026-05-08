@@ -14,6 +14,16 @@ const { mockLevainStore } = vi.hoisted(() => ({
 
 vi.mock('../../stores/levainStore', () => ({
     levainStore: mockLevainStore,
+    defaultLevainState: {
+        patch: { articulations: [], currentArticulation: 'long' },
+        uiLevel: 1,
+        engineReady: false,
+        sampleLoadProgress: null,
+        activeVoices: 0,
+        peakL: 0,
+        peakR: 0,
+        currentArticulationDisplay: 'Long',
+    },
 }));
 
 vi.mock('../levainParamBridge/loadSamplesForInstrument', () => ({
@@ -48,13 +58,15 @@ describe('loadInstrument', () => {
         expect(setLevainParamWithAudio).toHaveBeenCalledWith(DEVICE_ID, 'legato', expect.anything());
     });
 
-    it('skips patch updates when the store is empty', () => {
+    it('seeds the store from defaults when the device entry is missing', () => {
         mockLevainStore.value = null;
 
         loadInstrument(DEVICE_ID, 'violin-1');
 
-        expect(mockLevainStore.set).not.toHaveBeenCalled();
-        // Sample load is still triggered
+        // The patch must reach the store even when no prior entry existed —
+        // the previous early-return left the patch unapplied and silenced
+        // freshly-added Levain devices.
+        expect(mockLevainStore.set).toHaveBeenCalled();
         expect(loadSamplesForInstrument).toHaveBeenCalledWith(DEVICE_ID, 'violin-1');
     });
 });

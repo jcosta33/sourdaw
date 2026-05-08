@@ -71,6 +71,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
     matches: isFermenterDevice,
     create({ context, deviceId, deviceType, onLoaded }) {
         const pendingParams: Array<[string, number | number[]]> = [];
+        let pendingPatch: Record<string, unknown> | null = null;
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.fermenterControls = {
             ready: false,
@@ -78,6 +79,9 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
             noteOff: () => {},
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
+            },
+            setPatch: (patch) => {
+                pendingPatch = patch;
             },
             setBypass: () => {},
             destroy: () => {},
@@ -87,6 +91,9 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                 await result.ready;
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
+                }
+                if (pendingPatch) {
+                    result.setPatch(pendingPatch);
                 }
                 result.onTelemetry((data) => {
                     setFermenterTelemetry(deviceId, data.peakL, data.peakR, data.scopeBuffer);
@@ -102,6 +109,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                         noteOn: result.noteOn,
                         noteOff: result.noteOff,
                         setParam: result.setParam,
+                        setPatch: result.setPatch,
                         setBypass: result.setBypass,
                         destroy: result.destroy,
                     },
@@ -110,6 +118,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                         noteOn: result.noteOn,
                         noteOff: result.noteOff,
                         setParam: result.setParam,
+                        setPatch: result.setPatch,
                         setBypass: result.setBypass,
                         destroy: result.destroy,
                     },

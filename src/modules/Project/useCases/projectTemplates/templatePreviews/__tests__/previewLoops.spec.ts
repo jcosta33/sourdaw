@@ -12,7 +12,6 @@ const EXPECTED_TEMPLATE_IDS = [
     'podcast',
     'singer-songwriter',
     'ambient',
-    'demo-complete',
     'demo-nebula-drift',
 ] as const;
 

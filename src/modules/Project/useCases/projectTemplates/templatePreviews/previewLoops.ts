@@ -257,30 +257,6 @@ const ambient: TemplatePreview = {
     ],
 };
 
-const resonance: TemplatePreview = {
-    templateId: 'demo-complete',
-    bpm: 85,
-    bars: 2,
-    events: [
-        { beat: 0, duration: 4, pitch: 38, velocity: 85, voice: 'bass' },
-        { beat: 4, duration: 4, pitch: 43, velocity: 85, voice: 'bass' },
-        { beat: 0, duration: 4, pitch: 62, velocity: 70, voice: 'chord' },
-        { beat: 0, duration: 4, pitch: 65, velocity: 70, voice: 'chord' },
-        { beat: 0, duration: 4, pitch: 69, velocity: 70, voice: 'chord' },
-        { beat: 0, duration: 4, pitch: 72, velocity: 65, voice: 'chord' },
-        { beat: 4, duration: 4, pitch: 67, velocity: 70, voice: 'chord' },
-        { beat: 4, duration: 4, pitch: 70, velocity: 70, voice: 'chord' },
-        { beat: 4, duration: 4, pitch: 74, velocity: 70, voice: 'chord' },
-        { beat: 4, duration: 4, pitch: 77, velocity: 65, voice: 'chord' },
-        { beat: 1, duration: 0.5, pitch: 74, velocity: 85, voice: 'pluck' },
-        { beat: 2, duration: 0.5, pitch: 77, velocity: 80, voice: 'pluck' },
-        { beat: 3, duration: 0.5, pitch: 81, velocity: 85, voice: 'pluck' },
-        { beat: 5, duration: 0.5, pitch: 79, velocity: 85, voice: 'pluck' },
-        { beat: 6, duration: 0.5, pitch: 82, velocity: 80, voice: 'pluck' },
-        { beat: 7, duration: 0.5, pitch: 86, velocity: 90, voice: 'pluck' },
-    ],
-};
-
 const nebulaDrift: TemplatePreview = {
     templateId: 'demo-nebula-drift',
     bpm: 95,
@@ -316,7 +292,6 @@ export const previewLoops: Record<string, TemplatePreview> = {
     podcast,
     'singer-songwriter': singerSongwriter,
     ambient,
-    'demo-complete': resonance,
     'demo-nebula-drift': nebulaDrift,
 };
 

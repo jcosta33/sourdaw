@@ -17,4 +17,15 @@ describe('mapFermenterPatchToDspPatch', () => {
         expect('name' in patch).toBe(false);
         expect('macros' in patch).toBe(false);
     });
+
+    it('expands the macros array into macro0..macro7 keys', () => {
+        const macros = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8] as const;
+        const patch = mapFermenterPatchToDspPatch({
+            patch: { ...DEFAULT_PATCH, macros: [...macros] },
+        });
+
+        for (const [index, value] of macros.entries()) {
+            expect(patch[`macro${index}`]).toBe(value);
+        }
+    });
 });

@@ -3,7 +3,7 @@ import { type Track, type persistDeviceParam } from '#/modules/Arrangement/store
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
 import { type LevainPatch } from '../../models/LevainPatch';
-import { levainStore, setLevainParam, setMacro } from '../../stores/levainStore';
+import { defaultLevainState, levainStore, setLevainParam, setMacro } from '../../stores/levainStore';
 import { type autoLoadLevainSamples } from '../autoLoadSamples';
 
 export type LevainDevice = {
@@ -68,19 +68,26 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         activeDevices.set(deviceId, device);
         if (port) {
             activePorts.set(deviceId, port);
-            const state = levainStore.value?.[deviceId];
-            if (state?.patch) {
-                loadSamplesForInstrument(deviceId, state.patch.instrumentId);
-                queueParam(deviceId, 'master_gain', state.patch.masterGain);
-                queueParam(deviceId, 'legato_enabled', state.patch.legato.enabled ? 1 : 0);
-                queueParam(deviceId, 'humanize_amount', state.patch.humanize.amount);
-                queueParam(deviceId, 'vibrato_depth', state.patch.expression.vibratoDepthMax);
+            // Seed a default store entry on first registration so newly-added
+            // devices get their default instrument's samples loaded — without
+            // this the worklet has no zones and produces silence until the
+            // user opens the panel and changes presets.
+            const instances = levainStore.value ?? {};
+            const state = instances[deviceId] ?? defaultLevainState;
+            if (!instances[deviceId]) {
+                levainStore.set({ ...instances, [deviceId]: state });
+            }
 
-                for (const [i, m] of state.patch.micPositions.entries()) {
-                    queueParam(deviceId, `mic_${i}_volume`, m.volume);
-                    queueParam(deviceId, `mic_${i}_pan`, m.pan);
-                    queueParam(deviceId, `mic_${i}_enabled`, m.enabled ? 1 : 0);
-                }
+            loadSamplesForInstrument(deviceId, state.patch.instrumentId);
+            queueParam(deviceId, 'master_gain', state.patch.masterGain);
+            queueParam(deviceId, 'legato_enabled', state.patch.legato.enabled ? 1 : 0);
+            queueParam(deviceId, 'humanize_amount', state.patch.humanize.amount);
+            queueParam(deviceId, 'vibrato_depth', state.patch.expression.vibratoDepthMax);
+
+            for (const [i, m] of state.patch.micPositions.entries()) {
+                queueParam(deviceId, `mic_${i}_volume`, m.volume);
+                queueParam(deviceId, `mic_${i}_pan`, m.pan);
+                queueParam(deviceId, `mic_${i}_enabled`, m.enabled ? 1 : 0);
             }
         }
     }

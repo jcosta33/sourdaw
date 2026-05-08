@@ -4,7 +4,7 @@
  */
 
 import { type LevainPatch, createDefaultPatch, type InstrumentId } from '../models/LevainPatch';
-import { levainStore } from '../stores/levainStore';
+import { defaultLevainState, levainStore } from '../stores/levainStore';
 
 import { loadSamplesForInstrument } from './levainParamBridge/loadSamplesForInstrument';
 import { setLevainParamWithAudio } from './levainParamBridge/setLevainParamWithAudio';
@@ -21,16 +21,14 @@ export function loadInstrument(deviceId: string, instrumentId: InstrumentId): vo
 
 /**
  * Apply a complete patch to the store and forward all params to the engine.
+ * If the device isn't in the store yet (e.g. registration hasn't seeded it
+ * because the worklet is still loading), create the entry from defaults so
+ * the user's preset choice still takes effect once the engine catches up.
  */
 function applyPatch(deviceId: string, patch: LevainPatch): void {
-    const instances = levainStore.value;
-    if (!instances) return;
-    const state = instances[deviceId];
-    if (!state) {
-        return;
-    }
+    const instances = levainStore.value ?? {};
+    const state = instances[deviceId] ?? defaultLevainState;
 
-    // Update the entire patch in the store.
     levainStore.set({
         ...instances,
         [deviceId]: {
