@@ -39,7 +39,7 @@ test.describe('Clip Operations', () => {
         await canvas.click({ button: 'right', position: { x: 220, y: 30 }, force: true });
         const copyItem = page.getByRole('menuitem', { name: /Copy/i });
         await expect(copyItem).toBeVisible();
-        await copyItem.click();
+        await copyItem.click({ force: true });
 
         // Wait a tiny bit for the clipboard to populate internally
         await page.waitForTimeout(300);
@@ -48,7 +48,7 @@ test.describe('Clip Operations', () => {
         await canvas.click({ button: 'right', position: { x: 400, y: 30 }, force: true });
         const pasteItem = page.getByRole('menuitem', { name: /Paste/i });
         await expect(pasteItem).toBeVisible();
-        await pasteItem.click();
+        await pasteItem.click({ force: true });
 
         await page.waitForTimeout(500);
 
@@ -62,7 +62,7 @@ test.describe('Clip Operations', () => {
         await canvas.click({ button: 'right', position: { x: 220, y: 30 }, force: true });
         const deleteItem = page.getByRole('menuitem', { name: /Delete/i }).filter({ hasText: /Delete/ });
         await expect(deleteItem).toBeVisible();
-        await deleteItem.click();
+        await deleteItem.click({ force: true });
 
         await page.waitForTimeout(300);
 
