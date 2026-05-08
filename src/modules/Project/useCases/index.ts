@@ -8,7 +8,6 @@ export { pickFiles } from './fileDialog';
 export { createFromTemplate } from './projectTemplates/templateDefinitions/createFromTemplate';
 export { getTemplates } from './projectTemplates/templateDefinitions/getTemplates';
 export { previewLoops, getPreviewLoop } from './projectTemplates/templatePreviews/previewLoops';
-export { templatePreviewPlayer } from './projectTemplates/templatePreviews/TemplatePreviewPlayer';
 
 export { exportProjectFile } from './projectPersistence/fileIO/exportProjectFile';
 export { pickAndImportProjectFile } from './projectPersistence/fileIO/pickAndImportProjectFile';

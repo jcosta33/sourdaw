@@ -28,8 +28,6 @@ import {
     getRecentProjects,
     loadRecentProject,
     pickAndImportDawProject,
-    previewLoops,
-    templatePreviewPlayer,
 } from '#/modules/Project/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -207,7 +205,6 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         getRecentProjects().slice(0, RECENT_PROJECTS_LIMIT)
     );
     const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
-    const hoverDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
     const allTemplates: LaunchTemplate[] = getTemplates().map((template) => ({
         id: template.id,
@@ -229,29 +226,6 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         }, 2200);
         return () => clearInterval(intervalRef.current);
     }, [view]);
-
-    useEffect(() => {
-        return () => {
-            clearTimeout(hoverDebounceRef.current);
-            templatePreviewPlayer.stop();
-        };
-    }, []);
-
-    const handleTemplateHoverEnter = (templateId: string): void => {
-        clearTimeout(hoverDebounceRef.current);
-        const preview = previewLoops[templateId];
-        if (!preview) {
-            return;
-        }
-        hoverDebounceRef.current = setTimeout(() => {
-            templatePreviewPlayer.play(preview);
-        }, 150);
-    };
-
-    const handleTemplateHoverLeave = (): void => {
-        clearTimeout(hoverDebounceRef.current);
-        templatePreviewPlayer.stop();
-    };
 
     // ── Actions ──
 
@@ -557,10 +531,6 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                         key={template.id}
                                         type="button"
                                         onClick={() => handleTemplateSelect(template)}
-                                        onMouseEnter={() => handleTemplateHoverEnter(template.id)}
-                                        onMouseLeave={handleTemplateHoverLeave}
-                                        onFocus={() => handleTemplateHoverEnter(template.id)}
-                                        onBlur={handleTemplateHoverLeave}
                                         className={`group flex items-start gap-3 p-4 rounded-xl border transition-all duration-150 cursor-pointer text-left hover:shadow-[0_4px_16px_rgba(0,0,0,0.4)] hover:brightness-110 ${colors.border} bg-white/[0.03] hover:bg-white/[0.06] backdrop-blur-sm`}
                                     >
                                         <div

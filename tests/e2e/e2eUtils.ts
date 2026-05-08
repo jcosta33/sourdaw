@@ -2,9 +2,9 @@ import { type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
 /**
- * Common setup for E2E tests: bypasses the onboarding tour, audio resume overlays,
- * and alpha notices via local storage, then navigates to the root URL and ensures
- * basic DOM loading is complete.
+ * Common setup for E2E tests: bypasses the onboarding tour and alpha notice
+ * via local storage, then navigates to the root URL and ensures basic DOM
+ * loading is complete.
  */
 export async function setupWorkspace(page: Page): Promise<void> {
     page.on('console', msg => console.log(`[Browser Console] ${msg.text()}`));
@@ -18,7 +18,6 @@ export async function setupWorkspace(page: Page): Promise<void> {
     await page.addInitScript(({ alphaDismissed }) => {
         window.localStorage.clear();
         window.localStorage.setItem('wd:onboarding-completed', '1');
-        window.localStorage.setItem('wd:audio-resume-dismissed', '1');
         window.localStorage.setItem('sourdaw-alpha-notice-dismissed', alphaDismissed);
     }, { alphaDismissed });
 

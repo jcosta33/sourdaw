@@ -44,7 +44,6 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { isOnboardingCompleted } from '../../useCases/onboarding/isOnboardingCompleted';
 import { startOnboardingTour } from '../../useCases/onboarding/startOnboardingTour';
 
-import { AudioResumeOverlay } from './AudioResumeOverlay';
 import { AutomationBottomPanel } from './AutomationBottomPanel';
 import { InspectorPanel } from './InspectorPanel';
 import { OnboardingTour } from './OnboardingTour';
@@ -798,8 +797,6 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
                 {/* Launch screen overlay — shown for new users, fades out when project initializes */}
                 {showLaunch ? <LaunchScreen exiting={launchExiting} /> : null}
-
-                <AudioResumeOverlay />
 
                 <OnboardingTour />
             </div>
