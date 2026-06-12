@@ -23,10 +23,15 @@ vi.mock('#/modules/Plugin/stores/pluginScanStore', () => ({
     },
 }));
 
-vi.mock('#/modules/Plugin/useCases', () => ({
+vi.mock('#/modules/Plugin/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Plugin/useCases')>()),
     startPluginScan: vi.fn(),
-    loadExternalPlugin: vi.fn(),
-    createTrackForPlugin: vi.fn(() => ({ id: 'track1' })),
+}));
+
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+    addTrack: vi.fn(() => ({ id: 'track1', name: 'Plugin', kind: 'midi' })),
+    addExternalDevice: vi.fn(),
 }));
 
 vi.mock('#/utils/platformCapabilities', () => ({
@@ -42,7 +47,8 @@ vi.mock('#/components/ui/tooltip', () => ({
 }));
 
 const { useStore } = await import('#/infra/store/useStore');
-const { startPluginScan, loadExternalPlugin } = await import('#/modules/Plugin/useCases');
+const { startPluginScan } = await import('#/modules/Plugin/useCases');
+const { addExternalDevice } = await import('#/modules/Arrangement/useCases');
 const { getPlatformCapabilities } = await import('#/utils/platformCapabilities');
 
 const mockPlugins = [
@@ -159,7 +165,7 @@ describe('PluginBrowser', () => {
         expect(formatBadges.length).toBeGreaterThan(0);
     });
 
-    it('should call loadExternalPlugin when plugin is clicked', () => {
+    it('should call addExternalDevice when plugin is clicked', () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             scannedPlugins: mockPlugins,
             isScanning: false,
@@ -168,6 +174,6 @@ describe('PluginBrowser', () => {
         render(<PluginBrowser selectedTrackId="track1" searchQuery="" />);
         const plugin = screen.getByText('Test VST');
         fireEvent.click(plugin.closest('[role="button"]') || plugin);
-        expect(loadExternalPlugin).toHaveBeenCalled();
+        expect(addExternalDevice).toHaveBeenCalled();
     });
 });

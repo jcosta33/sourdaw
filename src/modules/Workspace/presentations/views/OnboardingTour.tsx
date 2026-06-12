@@ -279,10 +279,7 @@ export const OnboardingTour = (): ReactElement | null => {
                 </div>
                 <div className="px-4 py-3">
                     <h2 className="text-sm font-semibold text-white/90">{step.title}</h2>
-                    <p
-                        aria-live="polite"
-                        className="mt-1.5 text-xs leading-relaxed text-white/70"
-                    >
+                    <p aria-live="polite" className="mt-1.5 text-xs leading-relaxed text-white/70">
                         {step.description}
                     </p>
                 </div>

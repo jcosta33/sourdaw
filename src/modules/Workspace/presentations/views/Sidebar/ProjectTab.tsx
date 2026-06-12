@@ -4,7 +4,8 @@ import { FileUp } from 'lucide-react';
 
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
-import { projectStore, importSclFile } from '#/modules/Project';
+import { projectStore } from '#/modules/Project/stores';
+import { importSclFile } from '#/modules/Project/useCases';
 
 import { ChoiceCard } from '../../components/Inspector/ChoiceCard';
 import { SectionHeader } from '../Inspector/SectionHeader';

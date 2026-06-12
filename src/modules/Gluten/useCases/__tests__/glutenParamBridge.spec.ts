@@ -2,22 +2,24 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 
-const { mockUpdateDeviceParam, mockPersistDeviceParam, mockGetAllTracks } = vi.hoisted(() => ({
+const { mockUpdateDeviceParam, mockPersistDeviceParam, mockTrackStoreValue } = vi.hoisted(() => ({
     mockUpdateDeviceParam: vi.fn(),
     mockPersistDeviceParam: vi.fn(),
-    mockGetAllTracks: vi.fn(),
+    mockTrackStoreValue: { value: null as unknown },
 }));
 
 vi.mock('#/modules/AudioEngine/useCases/deviceControls/updateDeviceParam', () => ({
     updateDeviceParam: mockUpdateDeviceParam,
 }));
 
-vi.mock('#/modules/Arrangement/useCases/device/setDeviceParameter/persistDeviceParam', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    trackStore: {
+        get value() {
+            return mockTrackStoreValue.value;
+        },
+    },
     persistDeviceParam: mockPersistDeviceParam,
-}));
-
-vi.mock('#/modules/Arrangement/useCases/getAllTracks', () => ({
-    getAllTracks: mockGetAllTracks,
 }));
 
 vi.mock('#/utils/DOM/createRafBatcher', () => ({
@@ -45,7 +47,7 @@ describe('glutenParamBridge', () => {
     });
 
     it('setGlutenParamWithAudio forwards numeric params to engine + persistence via rAF flush', () => {
-        mockGetAllTracks.mockReturnValue([{ id: 't1', devices: [{ id: 'd1' }] } as never]);
+        mockTrackStoreValue.value = { tracks: [{ id: 't1', devices: [{ id: 'd1' }] }] };
 
         setGlutenParamWithAudio('d1', 'threshold', -12);
 
@@ -54,7 +56,7 @@ describe('glutenParamBridge', () => {
     });
 
     it('setGlutenParamWithAudio noops when device cannot be found', () => {
-        mockGetAllTracks.mockReturnValue([]);
+        mockTrackStoreValue.value = { tracks: [] };
 
         setGlutenParamWithAudio('missing', 'threshold', -12);
 
@@ -62,12 +64,12 @@ describe('glutenParamBridge', () => {
     });
 
     it('loadGlutenPatchWithAudio is callable without throwing on valid device', () => {
-        mockGetAllTracks.mockReturnValue([{ id: 't1', devices: [{ id: 'd1' }] } as never]);
+        mockTrackStoreValue.value = { tracks: [{ id: 't1', devices: [{ id: 'd1' }] }] };
         expect(() => loadGlutenPatchWithAudio('d1', DEFAULT_PATCH)).not.toThrow();
     });
 
     it('loadGlutenPatchWithAudio noops when device cannot be found', () => {
-        mockGetAllTracks.mockReturnValue([]);
+        mockTrackStoreValue.value = { tracks: [] };
         expect(() => loadGlutenPatchWithAudio('missing', DEFAULT_PATCH)).not.toThrow();
         expect(mockUpdateDeviceParam).not.toHaveBeenCalled();
     });

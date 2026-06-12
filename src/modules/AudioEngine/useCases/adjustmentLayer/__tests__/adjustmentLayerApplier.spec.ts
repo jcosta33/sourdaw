@@ -10,11 +10,9 @@ function makeGainPanApplierMock(): TrackGainPanApplier & {
     const calls: Array<{ op: string; trackId: string; layerId: string; value?: number }> = [];
     return {
         calls,
-        setGainOverride: (trackId, layerId, value) =>
-            calls.push({ op: 'setGain', trackId, layerId, value }),
+        setGainOverride: (trackId, layerId, value) => calls.push({ op: 'setGain', trackId, layerId, value }),
         clearGainOverride: (trackId, layerId) => calls.push({ op: 'clearGain', trackId, layerId }),
-        setPanOverride: (trackId, layerId, value) =>
-            calls.push({ op: 'setPan', trackId, layerId, value }),
+        setPanOverride: (trackId, layerId, value) => calls.push({ op: 'setPan', trackId, layerId, value }),
         clearPanOverride: (trackId, layerId) => calls.push({ op: 'clearPan', trackId, layerId }),
     };
 }

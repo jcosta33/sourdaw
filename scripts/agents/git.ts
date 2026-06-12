@@ -244,7 +244,7 @@ export function worktreeSync(worktreePath, baseBranch) {
     const result = spawnSync('git', ['rebase', baseBranch], {
         cwd: worktreePath,
         stdio: 'inherit',
-        encoding: 'utf8'
+        encoding: 'utf8',
     });
     return result.status === 0;
 }

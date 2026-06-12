@@ -63,11 +63,26 @@ module.exports = {
         // --------------------------------------------------------------------
         // Circular dependencies
         // --------------------------------------------------------------------
-        // Prevents circular dependencies in the static import graph. Cycles
-        // mediated by `await import(...)` (dynamic import) are intentionally
-        // excluded — dynamic import is the canonical break for unavoidable
-        // mutual references (e.g. `Command/handlers/macro/handlePlayMacro` ↔
-        // `executeAppAction`). See `.agents/audits/circular-dependencies.md`.
+        // Reports any cycle in the dependency graph, including cycles where one
+        // or more edges use `await import(...)`. Dynamic import is NOT a free
+        // escape hatch — it changes the static graph shape but the two modules
+        // are still bidirectionally coupled at runtime, and `await import()` in
+        // a hot path (e.g. audio scheduling) adds real promise/chunk overhead.
+        //
+        // The `dependencyTypesNot: ['dynamic-import']` filter below only
+        // suppresses the reported edge when the *direct* from→to edge is dynamic
+        // (it does not exclude the cycle if any other edge is static). That
+        // matches the de-facto behaviour this project has been validating
+        // against — cycles surface so each instance gets architectural scrutiny.
+        //
+        // Genuine table-driven dispatcher recursion (`executeAppAction` ↔
+        // handlers) is the only case where `await import()` is structurally
+        // unavoidable. For every other cycle, prefer a real fix: extract shared
+        // logic into a third file, flip an ownership edge, or emit a
+        // signal/event instead of calling back. See
+        // `.agents/audits/circular-dependencies.md` and
+        // `.agents/skills/architecture-violations/SKILL.md` §4.2 (fake
+        // compliance).
         {
             name: 'no-circular',
             // NOTE: severity is `warn` (not `error`) because enabling this rule surfaces
@@ -79,7 +94,10 @@ module.exports = {
             comment:
                 'Circular dependencies cause non-deterministic module-load order ' +
                 '(Vite HMR / Vitest hoisting) and can break inject() runtime resolution. ' +
-                'If a cycle is unavoidable, break it via `await import(...)` and the rule will allow it. ' +
+                '`await import(...)` is NOT a free break — the cycle still exists at runtime, ' +
+                'and using dynamic import purely to silence this rule is fake compliance. ' +
+                'Prefer extracting shared logic into a third file, flipping an ownership edge, ' +
+                'or emitting a signal instead of a call-back. ' +
                 'Currently `warn` pending the barrel-cycle cleanup tracked in the circular-dependencies audit.',
             from: {},
             to: {
@@ -98,7 +116,7 @@ module.exports = {
                 'Cross-module imports must target a contract-folder barrel: ' +
                 '<module>/useCases/index.ts, <module>/stores/index.ts, ' +
                 '<module>/events/index.ts, or <module>/presentations/views/index.ts. ' +
-                'During migration, the old <module>/index.ts root-barrel form is also accepted. ' +
+                '' +
                 'Direct imports into models/, repositories/, handlers/, or any non-barrel path are forbidden. ' +
                 'See .agents/specs/contract-folder-barrels.md for the target state.',
             from: {
@@ -177,7 +195,8 @@ module.exports = {
             to: {
                 path: '^src/modules/',
                 pathNot: '^$1$2', // target path must NOT start with the same module root
-                dependencyTypes: ['local'], // only catch relative imports
+                dependencyTypes: ['local'], // dependency-cruiser marks both relative and tsconfig-alias imports as local
+                dependencyTypesNot: ['aliased', 'aliased-tsconfig', 'aliased-tsconfig-paths'],
             },
         },
 
@@ -188,7 +207,10 @@ module.exports = {
                 'Internal module files must not import from their own module barrels (index.ts). ' +
                 'Import implementation files directly using relative paths.',
             from: {
-                path: MODULE_ROOT,
+                // Legacy module-root barrels remain allowed during migration.
+                // This rule targets non-root files (including contract-folder barrels)
+                // importing another index.ts inside the same module.
+                path: '^' + MODULE_ROOT.slice(1),
             },
             to: {
                 path: '^$1$2/.*/index\\.ts$',
@@ -202,7 +224,7 @@ module.exports = {
                 'Files inside a module must not import from their own module root index.ts or contract-folder barrels. ' +
                 'Use relative paths to the implementation files.',
             from: {
-                path: '^' + MODULE_ROOT.slice(1) + '(?!index\\.ts)',
+                path: '^' + MODULE_ROOT.slice(1),
             },
             to: {
                 path: '^$1$2/(index\\.ts|(useCases|events|stores|presentations/views)/index\\.ts)$',

@@ -1,6 +1,6 @@
 import { type ReactElement } from 'react';
 
-import { getPreviewLoop } from '#/modules/Project';
+import { getPreviewLoop } from '#/modules/Project/useCases';
 
 type TemplatePreviewThumbProps = {
     templateId: string;
@@ -115,16 +115,6 @@ const PALETTES: Record<string, TemplatePalette> = {
         voices: {
             pad: 'rgba(20, 184, 166, 0.7)',
             pluck: 'rgba(153, 246, 228, 0.95)',
-        },
-    },
-    'demo-complete': {
-        background: 'rgba(168, 85, 247, 0.06)',
-        grid: 'rgba(168, 85, 247, 0.18)',
-        accent: 'rgba(216, 180, 254, 0.95)',
-        voices: {
-            bass: 'rgba(147, 51, 234, 0.95)',
-            chord: 'rgba(168, 85, 247, 0.6)',
-            pluck: 'rgba(216, 180, 254, 0.95)',
         },
     },
     'demo-nebula-drift': {

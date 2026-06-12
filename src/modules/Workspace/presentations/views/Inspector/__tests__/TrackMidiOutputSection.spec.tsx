@@ -6,15 +6,10 @@ import { TrackMidiOutputSection } from '../TrackMidiOutputSection';
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
-const mockSetMidiOutput = vi.fn();
-const mockClearMidiOutput = vi.fn();
+const mockUpdateTrack = vi.fn();
 
-vi.mock('#/modules/MIDI/useCases/midiRouting/clearMidiOutput', () => ({
-    clearMidiOutput: (...args: unknown[]) => mockClearMidiOutput(...args),
-}));
-
-vi.mock('#/modules/MIDI/useCases/midiRouting/setMidiOutput', () => ({
-    setMidiOutput: (...args: unknown[]) => mockSetMidiOutput(...args),
+vi.mock('#/modules/Arrangement/useCases/updateTrack', () => ({
+    updateTrack: (...args: unknown[]) => mockUpdateTrack(...args),
 }));
 
 const mockToggleChordTrackFollow = vi.fn();
@@ -119,19 +114,23 @@ describe('TrackMidiOutputSection', () => {
         expect(optionTexts).not.toContain('Test Track');
     });
 
-    it('should call setMidiOutput when destination is selected', () => {
+    it('should call updateTrack with the new destination when selected', () => {
         render(<TrackMidiOutputSection track={mockTrack} allTracks={mockAllTracks} />);
         const select = screen.getByTestId('select');
         fireEvent.change(select, { target: { value: 'track-2' } });
-        expect(mockSetMidiOutput).toHaveBeenCalledWith('track-1', 'track-2');
+        expect(mockUpdateTrack).toHaveBeenCalledWith('track-1', expect.any(Function));
+        const updater = mockUpdateTrack.mock.calls[0][1] as (t: Track) => Track;
+        expect(updater(mockTrack).midiOutputTrackId).toBe('track-2');
     });
 
-    it('should call clearMidiOutput when "No MIDI routing" is selected', () => {
+    it('should call updateTrack with null when "No MIDI routing" is selected', () => {
         const trackWithOutput = { ...mockTrack, midiOutputTrackId: 'track-2' };
         render(<TrackMidiOutputSection track={trackWithOutput} allTracks={mockAllTracks} />);
         const select = screen.getByTestId('select');
         fireEvent.change(select, { target: { value: '' } });
-        expect(mockClearMidiOutput).toHaveBeenCalledWith('track-1');
+        expect(mockUpdateTrack).toHaveBeenCalledWith('track-1', expect.any(Function));
+        const updater = mockUpdateTrack.mock.calls[0][1] as (t: Track) => Track;
+        expect(updater(trackWithOutput).midiOutputTrackId).toBe(null);
     });
 
     it('should render follow chord track checkbox', () => {

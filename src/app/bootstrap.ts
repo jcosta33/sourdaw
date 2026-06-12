@@ -1,17 +1,59 @@
 // registerDependencies MUST be the first import — it populates the DI Container
 // before any downstream module (like toasterSubscriber → toasterStore) resolves
 // Logger/EventBus at module scope.
+import { getGenerationHandlers, getAiMidiHandlers } from '#/modules/AiGeneration/useCases';
+import { getAiOrganizationHandlers } from '#/modules/AiRuntime/useCases';
+import { persistDeviceParam } from '#/modules/Arrangement/stores';
 import {
     getAllTracks,
-    persistDeviceParam,
+    getPluginById,
     persistDevicePatch,
     cleanupUnusedFreezeFiles,
+    setTrackGain as setTrackGainArrangement,
+    setTrackPan as setTrackPanArrangement,
+    setDeviceParameter,
+    getArrangementHandlers,
 } from '#/modules/Arrangement/useCases';
 import { initStalenessDetection } from '#/modules/Arrangement/useCases/freezeBounce/initStalenessDetection';
-import { updateDeviceParam, updateDevicePatch } from '#/modules/AudioEngine/useCases';
+import { getAnalysisHandlers } from '#/modules/AudioAnalysis/useCases';
+import {
+    updateDeviceParam,
+    updateDevicePatch,
+    setTrackGain as engineSetTrackGain,
+    setTrackPan as engineSetTrackPan,
+    getAudioContext,
+    getCompensationDelay,
+    getFinalFeatureHandlers,
+} from '#/modules/AudioEngine/useCases';
+import {
+    getAutomationHandlers,
+    recordAutomationValue,
+    setAutomationRecordingDependencies,
+    setModulationDependencies,
+} from '#/modules/Automation/useCases';
 import { initBrowserAi } from '#/modules/BrowserAi/useCases';
+import { getCollaborationHandlers } from '#/modules/Collaboration/useCases';
+import { registerHandlerMap } from '#/modules/Command/stores';
+import { getMacroHandlers, getUndoTreeHandlers } from '#/modules/Command/useCases';
+import { getDsoSnapshotHandlers } from '#/modules/CrdtDocument/useCases';
 import { setFermenterDependencies } from '#/modules/Fermenter/useCases/fermenterDependencies';
+import { setFermenterMappedParam } from '#/modules/Fermenter/useCases';
+import {
+    getChordTrackHandlers,
+    getMidiNoteTransformHandlers,
+    getPatternInstanceHandlers,
+    setMidiLearnDependencies,
+} from '#/modules/MIDI/useCases';
+import { getPluginHostHandlers } from '#/modules/Plugin/useCases';
+import { getSongStructureHandlers, getVersionControlHandlers } from '#/modules/Project/useCases';
 import { initToasterSubscribers } from '#/modules/Toaster/useCases';
+import {
+    getTransportHandlers,
+    getTransportState,
+    setStopPlaybackCallback,
+    stopPlayback,
+} from '#/modules/Transport/useCases';
+import { getWorkspaceHandlers, getScratchPadHandlers } from '#/modules/Workspace/useCases';
 import { logCapabilities } from '#/utils/capabilities';
 
 import { eventBus, logger } from './registerDependencies';
@@ -30,6 +72,59 @@ setFermenterDependencies({
     updateDeviceParam,
     updateDevicePatch,
 });
+
+setStopPlaybackCallback(stopPlayback);
+
+setAutomationRecordingDependencies({
+    getAudioContext,
+    getCompensationDelay,
+});
+
+setModulationDependencies({
+    updateDeviceParam,
+    getPluginParamRange: (deviceType, paramId) => {
+        const descriptor = getPluginById(deviceType);
+        const paramDef = descriptor?.parameters.find((param) => param.id === paramId);
+        if (!paramDef) {
+            return null;
+        }
+        return { min: paramDef.minValue, max: paramDef.maxValue, defaultValue: paramDef.defaultValue };
+    },
+});
+
+setMidiLearnDependencies({
+    setTrackGainArrangement,
+    setTrackPanArrangement,
+    setDeviceParameter,
+    engineSetTrackGain,
+    engineSetTrackPan,
+    setFermenterMappedParam,
+    recordAutomationValue,
+    getTransportIsPlaying: () => getTransportState()?.isPlaying ?? false,
+    getTransportPlayheadPosition: () => getTransportState()?.playheadPosition ?? 0,
+    getAllTracks,
+});
+
+registerHandlerMap(getArrangementHandlers());
+registerHandlerMap(getTransportHandlers());
+registerHandlerMap(getWorkspaceHandlers());
+registerHandlerMap(getAutomationHandlers());
+registerHandlerMap(getGenerationHandlers());
+registerHandlerMap(getAnalysisHandlers());
+registerHandlerMap(getCollaborationHandlers());
+registerHandlerMap(getPluginHostHandlers());
+registerHandlerMap(getAiMidiHandlers());
+registerHandlerMap(getAiOrganizationHandlers());
+registerHandlerMap(getChordTrackHandlers());
+registerHandlerMap(getMidiNoteTransformHandlers());
+registerHandlerMap(getScratchPadHandlers());
+registerHandlerMap(getPatternInstanceHandlers());
+registerHandlerMap(getMacroHandlers());
+registerHandlerMap(getUndoTreeHandlers());
+registerHandlerMap(getSongStructureHandlers());
+registerHandlerMap(getVersionControlHandlers());
+registerHandlerMap(getFinalFeatureHandlers());
+registerHandlerMap(getDsoSnapshotHandlers());
 
 initToasterSubscribers();
 initStalenessDetection();

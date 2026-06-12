@@ -12,10 +12,10 @@ import { DEFAULT_PATCH, type FermenterPatch, ENGINE_NAMES } from '../../models/F
 import {
     fermenterStore,
     getFermenterState,
-    loadFermenterPatch,
     setFermenterUiLevel,
     type FermenterState,
 } from '../../stores/fermenterStore';
+import { applyFermenterMacroMapping } from '../../useCases/applyFermenterMacroMapping';
 import { loadFermenterPatchWithAudio } from '../../useCases/fermenterParamBridge/loadFermenterPatchWithAudio';
 import { setFermenterParamWithAudio } from '../../useCases/fermenterParamBridge/setFermenterParamWithAudio';
 import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries/helpers';
@@ -28,6 +28,7 @@ import { FmSection } from '../components/FmSection';
 import { GranularSection } from '../components/GranularSection';
 import { KarplusSection } from '../components/KarplusSection';
 import { LayerStack } from '../components/LayerStack';
+import { MacroMatrixEditor } from '../components/MacroMatrixEditor';
 import { LfoSection } from '../components/LfoSection';
 import { MacroStrip } from '../components/MacroStrip';
 import { ModulationSection } from '../components/ModulationSection';
@@ -491,9 +492,15 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     }
 
     function setMacro(index: number, value: number): void {
-        const macros = [...patch.macros] as FermenterPatch['macros'];
-        macros[index] = value;
-        loadFermenterPatch(deviceId, { ...patch, macros });
+        loadFermenterPatchWithAudio(deviceId, applyFermenterMacroMapping({ patch, index, value }));
+    }
+
+    function setMacroMappings(index: number, macroMappings: FermenterPatch['macroMappings']): void {
+        const value = patch.macros[index] ?? 0.5;
+        loadFermenterPatchWithAudio(
+            deviceId,
+            applyFermenterMacroMapping({ patch: { ...patch, macroMappings }, index, value })
+        );
     }
 
     function loadPreset(presetId: string): void {
@@ -721,6 +728,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                                 />
                             </div>
                             <MacroStrip compact values={patch.macros} onChange={setMacro} />
+                            <MacroMatrixEditor mappings={patch.macroMappings} onChange={setMacroMappings} />
                         </div>
 
                         {uiLevel >= 3 ? (

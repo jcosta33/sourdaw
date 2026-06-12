@@ -17,7 +17,7 @@ function run() {
 
     const { positional } = parseArgs(process.argv.slice(2));
     const epicFile = positional[0];
-    
+
     if (!epicFile) {
         console.log(red('Usage: agents:epic <path/to/epic.md>'));
         console.log(dim('The markdown file should contain a markdown list of tasks.'));
@@ -56,7 +56,7 @@ function run() {
     tasks.forEach((task, i) => {
         const taskSlug = `${epicSlug}-task-${i + 1}`;
         const taskPath = join(tasksDir, `${taskSlug}.md`);
-        
+
         const template = `# ${task}
 
 ## Metadata

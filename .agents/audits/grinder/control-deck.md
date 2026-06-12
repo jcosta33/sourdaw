@@ -33,11 +33,19 @@ Grinder should behave like a trustworthy guitar-amp product: controls stay visua
 - Grinder is implemented as a real stage-based chain. The DSP runs input conditioning, noise gate, pre pedals, triode preamp, tone stack, power amp, transformer, cabinet convolution, speaker model, optional post pedals, neural blend, and output limiting in `crates/daw-dsp/src/grinder/engine.rs`.
 - The Control Deck changes shape by `uiSection`. `drive` now renders both the front-end chain-order strip and the four pedal cards, `neural` renders Engine Mode / Capture Role / Model Browser, and `lab` includes an explicit gate enable toggle plus advanced amp controls in `src/modules/Grinder/presentations/views/GrinderPanel.tsx`.
 - The Cab section now exposes a direct `Room` control in the control deck, and the cabinet DSP uses `mic1Distance`, `mic2Distance`, and `roomAmount` to produce audibly different output in `src/modules/Grinder/presentations/views/GrinderPanel.tsx` and `crates/daw-dsp/src/grinder/cabinet.rs`.
-- The Neural hero area now renders signal-path/status information instead of a second duplicated Engine Mode card deck, but model-library selection still only updates patch metadata in `src/modules/Grinder/presentations/views/GrinderPanel.tsx` and `src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts`.
+- The Neural hero area renders signal-path/status information instead of a second duplicated Engine Mode card deck, and built-in model-library selection now loads distinct neural profiles through the bridge into `crates/daw-dsp/src/grinder/neural.rs`.
 - Preset browsing is derived directly from `GRINDER_PRESETS`, whose categories now include `Metal` alongside `Clean`, `Crunch`, `High Gain`, `Lead`, `Pedal`, and `Performance` in `src/modules/Grinder/useCases/grinderPresets.ts`.
 - Patch-to-audio synchronization is still selective, but it now includes explicit supported pedal-order params through `syncGrinderPatchToAudio()` plus snapshot-triggered patch resync in `src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts`, `moveGrinderPedalInChainWithAudio.ts`, and `recallGrinderSnapshotWithAudio.ts`.
 - Snapshots are now real recallable rig scenes. Grinder store keeps a hidden stable `basePatch`, the Browser rail exposes snapshot buttons when a patch contains them, and recalling a snapshot updates both `activeSnapshot` and the live audio path in `src/modules/Grinder/stores/grinderStore.ts` and `src/modules/Grinder/presentations/views/GrinderPanel.tsx`.
-- Several visible or stored concepts remain metadata-only or partially wired. `neuralModelId`, `neuralModelName`, and `neuralModelFamily` are stored in the patch and updated by the Model Browser, but they still do not reach Rust DSP as distinct model-loading behavior.
+- Distortion and fuzz are materially more controlled than before. Their pedal cores now use input conditioning plus a bounded 2x-oversampled nonlinear stage, moderate settings stay within tested loudness bounds, and fuzz settles near silence instead of emitting a residual signal bed on silence input in `crates/daw-dsp/src/grinder/pedals.rs`.
+- The later amp path is incrementally more honest than before. High-gain preamp/power-amp sample-rate guardrails now exist, `powerAmpBias` in `crates/daw-dsp/src/grinder/power_amp.rs` now changes crossover width, asymmetry, and effective headroom enough to be audible, and phase 10 adds bounded internal 2x substep updates in both `triode.rs` and `power_amp.rs` so the later stages are less brittle under hard drive.
+- Later-stage expert controls are less entangled than before. `gridConduction` now changes grid-current intensity and immediate attack loading, `couplingCapCharge` remains the blocking/recovery-memory control, and `rectifierType` now survives the normal patch sync order instead of being mostly erased once `sagRecovery` is applied afterward.
+- Amp-family labels are more truthful than they were before. The preamp path now separates Rectifier-style low-mid body and denser sustain from Lead JCM-style bite, and the power-amp path keeps 6L6 and EL84 families measurably distinct under the same driven-burst material.
+- Input conditioning is now more honest than before. `inputMode` no longer dies in the bridge-to-DSP handoff: `instrument`, `line`, and `reamp` now produce bounded but measurable front-end differences in level and attack shape inside `crates/daw-dsp/src/grinder/input.rs`.
+- Extreme-gain release behavior is more disciplined than before. The preamp now has an explicit decay-shape regression, and the power amp now applies bounded recovery-dependent edge damping so a hard-burst tail stops hanging onto as much brittle high-frequency edge after the initial attack in `crates/daw-dsp/src/grinder/triode.rs` and `crates/daw-dsp/src/grinder/power_amp.rs`.
+- Built-in neural model selection is now materially real. `neuralModelId` maps to a `neuralModelSlot` bridge param, and the Rust neural engine now loads distinct built-in profiles that produce measurably different output for the same stimulus.
+- Imported Neural library entries now behave more like real reusable assets. Grinder retains the original imported NAM filename and payload text, the Neural modal exposes export/remove actions for reusable imports, and deleting a reusable library entry no longer hides the currently selected patch-embedded imported voice from the UI in `src/modules/Grinder/presentations/views/GrinderPanel.tsx`, `src/modules/Grinder/presentations/components/ImportedNeuralLibraryCard.tsx`, and the related Neural library repositories/use cases.
+- Several visible or stored concepts remain partially wired. Neural built-ins, documented NAM imports, raw-source retention/export/remove, fixed-chain routing/cabinet presets, amp-family labels, and `inputMode` are now materially real, but fuller external-neural runtime fidelity and some extreme-gain polish still lag behind what the product implies.
 
 ## Findings
 
@@ -46,38 +54,45 @@ Grinder should behave like a trustworthy guitar-amp product: controls stay visua
 - Phase 3 closed two more workflow-truth gaps: supported pre-pedal order is now audible and user-visible instead of decorative array metadata, and stored snapshots now recall against a stable base rig instead of sitting dead in the patch model.
 - Overdrive is materially more usable than before. A new DSP regression test now proves moderate settings stay in a sane loudness range relative to bypass instead of jumping to roughly `6.2x` bypass loudness as the old implementation did.
 - The gate now behaves more like a real high-gain gate once enabled. It closes to a much deeper floor and snaps shut decisively after the hold/release logic has decided the note is gone, though the default init patch still keeps the gate disabled.
-- The Neural tab is more honest than before, but not yet fully honest. The duplicated Mode guide is gone, yet the model browser is still metadata-first because no real model-loading path exists in the DSP bridge.
+- The Neural tab is more honest than before. The duplicated Mode guide is gone, and the built-in model browser now swaps distinct neural profiles in the live DSP path.
+- Phase 8 closes the next major Neural honesty gap. The modal can now import documented NAM `.nam` files, persist reusable imported captures locally, and send the selected imported profile into the live DSP path as a structured custom profile instead of stopping at built-in slots.
 - Snapshots and supported chain order are no longer fake fields. The remaining fake/decorative areas are now concentrated in Neural/Cab/routing and in broader tone completeness, not in the just-implemented live-rig basics.
 - Cabinet spatial controls are materially more honest than before. `mic1Distance`, `mic2Distance`, and `roomAmount` now change the rendered cabinet output via direct-level/top-end shaping plus lightweight room reflections, though this is still a bounded realism pass rather than a full room/capture system.
-- Targeted coverage is materially better than before. DSP tests now cover overdrive loudness sanity, gate closure depth, supported pedal order, and cabinet distance/room audibility, while UI/preset tests cover Neural non-duplication, metal taxonomy, snapshot UI, chain order, and the new room control. Real Neural model loading still lacks regression coverage.
+- Phase 9 closes the next Control Deck contract gap. `cabType` now selects IR-only vs parametric-speaker-only vs combined cabinet rendering, `cabIrId` now selects a real built-in cabinet voice, and `routingMode` now selects bounded fixed-chain routing presets that audibly differ in the live engine.
+- Phase 5 removed the most obvious front-end high-gain breakage. Distortion no longer jumps to roughly `7.5x` bypass loudness at moderate settings, fuzz no longer jumps to roughly `13.7x`, and fuzz no longer produces a steady non-zero output on silence in the pedal unit tests.
+- Phase 6 found that the clearest later-stage miss was not sample-rate stability but control truth: the new failing test showed `powerAmpBias` changing the response by only about `0.00079` on average before the fix, which is effectively decorative.
+- Phase 10 closes two more later-stage truth gaps. The new failing tests showed `gridConduction` changing hard-attack clamping by exactly `0` before the fix and `rectifierType` collapsing to the same sag envelope under normal patch-sync ordering (`tube_sag=0.99852294`, `solid_sag=0.99852294`).
+- After the phase 10 retune, Grinder now has explicit regression coverage for hard-attack grid-conduction behavior, coupling-cap recovery behavior, and rectifier burst-sag differentiation in addition to the earlier later-stage bias and sample-rate tests.
+- Phase 11 closes the next named-amp honesty gap. The new regressions now prove Rectifier-style preamp settings retain more palm-muted body and a lower peak-to-sustain ratio than Lead JCM, while the power-amp regressions keep 6L6 and EL84 families from collapsing into near-interchangeable responses.
+- Phase 12 closes the last obvious patch-contract lie in the front end. The new failing tests showed `instrument`, `line`, and `reamp` all producing identical conditioner metrics before the fix, and the conditioner now applies bounded mode-specific calibration and edge/body shaping so those source modes diverge audibly without pretending to be a full pickup/cable simulator.
+- Phase 13 closes the next later-stage harshness gap without flattening the whole rig. Grinder now has explicit decay-shape regressions for both the preamp and the power amp, and the power stage uses recovery-dependent edge damping plus low-component hold so a hard-burst tail stops staying as edge-heavy as the earlier sustain window.
+- Phase 14 closes the next Neural management gap. Imported captures now retain original NAM source text plus filename metadata, reusable imports can be exported or removed directly from the Neural modal, and selected patch-embedded imports still remain visible after a reusable library entry is removed.
+- Phase 7 removed the most obvious remaining Neural honesty gap. Built-in library entries now sync a real `neuralModelSlot`, different built-in profiles produce different DSP output, and the Neural panel copy no longer claims the browser is metadata-only.
+- Imported Neural selections are now project-portable instead of depending on hidden local state. The selected imported profile is embedded into the patch and also persisted in a reusable local library, which avoids wrong-sound playback when the modal library has not hydrated yet.
+- Targeted coverage is materially better than before. DSP tests now cover overdrive/distortion/fuzz loudness sanity, fuzz silence behavior, gate closure depth, supported pedal order, cabinet distance/room audibility, cabinet voice selection, cabinet mode selection, routing preset audibility, later-stage sample-rate stability, power-amp bias audibility, built-in neural model distinctness, and imported neural profile distinctness, while UI/preset tests cover Neural non-duplication, built-in/imported Neural honesty, metal taxonomy, snapshot UI, chain order, room control, and the new cab voice/mode/routing selectors.
 
 ## Priorities
 
-1. `I-06` Audit the remaining nonlinear drive stages beyond overdrive, especially distortion/fuzz and later amp stages, for artifact-prone behavior.
-2. `I-04` Remove the remaining fake or decorative Neural/routing controls, or wire them to real DSP behavior.
-3. `I-07` Reduce the patch/model contract to what is actually real today.
+1. `I-05` Extend external Neural delivery beyond the current NAM-first compact-profile runtime into fuller model/runtime coverage.
+2. `I-06` Keep tightening later-stage extreme-gain voicing now that decay behavior is better controlled.
+3. `I-08` Decide whether `inputMode` should stay patch/preset-only or gain an explicit UI affordance later.
 
 ## Open issues
 
-1. **The broader drive stack is still artifact-prone beyond the overdrive fix.**
-   Problem: overdrive has been recalibrated, but distortion, fuzz, preamp, and power-amp nonlinearities still run directly at the sample rate with no visible oversampling or anti-alias stage in these paths. Under high-gain settings the product can still drift into fizzy, brittle behavior even though the most explosive overdrive loudness bug is now gone.
-   Representative files: `crates/daw-dsp/src/grinder/pedals.rs`, `crates/daw-dsp/src/grinder/triode.rs`, `crates/daw-dsp/src/grinder/power_amp.rs`.
-   Needed: audit and retune the remaining nonlinear stages around reference amp/pedal behavior and decide whether an anti-alias strategy is required for Grinder to be credible as a guitar amp.
+1. **The later amp stages can still use more extreme-gain refinement even after the family-label pass.**
+   Problem: phase 13 improves decay smoothness after a hard attack, but the highest-drive edge cases can still get fizzy or overly generic compared with a strong specialist amp plugin, especially once palm-muted density and sustained feel matter more than simple edge-vs-body release behavior.
+   Representative files: `crates/daw-dsp/src/grinder/triode.rs`, `crates/daw-dsp/src/grinder/power_amp.rs`.
+   Needed: keep growing later-stage regressions around palm-muted density, fizz control, and high-gain decay behavior without turning the model into a giant circuit-solver rewrite.
 
-2. **The Neural tab is no longer duplicated, but the model browser is still mostly decorative.**
-   Problem: the hero-side Mode guide duplication is fixed, but model selection still only changes patch metadata plus placement. `neuralModelId`, `neuralModelName`, and `neuralModelFamily` are not part of the audio-sync path, and the Rust neural engine still has no model-loading API in this flow. The UI is less misleading than before, but the browser still does not load distinct capture content.
-   Representative files: `src/modules/Grinder/presentations/views/GrinderPanel.tsx`, `src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts`, `crates/daw-dsp/src/grinder/neural.rs`.
-   Needed: either add a real model-loading path or downgrade/remove the browser interaction so it no longer behaves like a full model selector.
+2. **The external Neural path is now real, but it is still a bounded compact-profile implementation rather than full third-party runtime parity.**
+   Problem: phases 8 and 14 now deliver documented NAM import, reusable local library state, patch-portable imported profiles, raw-source retention, and export/remove management, but Grinder still derives and runs a compact internal profile rather than loading the original external model architecture at full fidelity. There is still no AIDA-X import and no fuller runtime-comparison story against established Neural capture products.
+   Representative files: `src/modules/Grinder/services/parseGrinderNamFile.ts`, `src/modules/Grinder/repositories/neuralLibraryPersistence/persistGrinderNeuralLibrary.ts`, `crates/daw-dsp/src/grinder/neural.rs`.
+   Needed: decide whether the next Neural phase should pursue higher-fidelity NAM runtime behavior, broader format support, or side-by-side comparison/management tools for imported captures.
 
-3. **Routing-style controls and broader cabinet contracts are still incomplete.**
-   Problem: phase 4 made mic distances and room amount real, but `routingMode` still reaches the bridge without any routing implementation in `engine.rs`, and `cabType` / `cabIrId` still imply cabinet-selection behaviors that this path does not complete. The cabinet UI is more honest now, but the patch contract still advertises more cabinet/routing flexibility than the current engine supports.
-   Representative files: `src/modules/Grinder/useCases/grinderParamBridge/syncGrinderPatchToAudio.ts`, `crates/daw-dsp/src/grinder/engine.rs`, `src/modules/Grinder/models/GrinderPatch.ts`.
-   Needed: remove or disable placeholder routing/cabinet contract features until they are real, or complete the DSP/bridge behavior they imply.
-
-4. **Some patch concepts are still stale or fake at the data-model layer.**
-   Problem: `inputMode` is passed from the engine to `InputConditioner`, but `InputConditioner::set_param()` ignores it. `neuralModelId/name/family`, `cabType`, `cabIrId`, and `routingMode` still make the patch shape look more complete than the current audible implementation really is. Phase 3 removed `snapshots` and `activeSnapshot` from this bucket by making them real recall features.
-   Representative files: `src/modules/Grinder/models/GrinderPatch.ts`, `crates/daw-dsp/src/grinder/engine.rs`, `crates/daw-dsp/src/grinder/input.rs`.
-   Needed: reduce the contract to what is real today or explicitly mark placeholder fields/features so future work does not keep shipping decorative controls.
+3. **`inputMode` is now real but still mostly a hidden contract.**
+   Problem: the patch and bridge now honor `instrument` / `line` / `reamp`, but Grinder still does not expose that choice prominently in the UI, so the new realism is easier to benefit from through presets or direct patch editing than through obvious control-surface discovery.
+   Representative files: `src/modules/Grinder/models/GrinderPatch.ts`, `src/modules/Grinder/presentations/views/GrinderPanel.tsx`.
+   Needed: decide later whether the product wants an explicit input-mode affordance or whether preset-level authorship is enough.
 
 ## Open questions
 
@@ -87,21 +102,23 @@ Grinder should behave like a trustworthy guitar-amp product: controls stay visua
 
 ## Risks
 
-- The remaining high-gain stack can still sound fizzy or artifact-prone even after the overdrive fix, which keeps the core "is this a credible amp?" question open.
-- The cabinet controls are more trustworthy now, but users may still infer richer routing/cabinet-model behavior than actually exists if the remaining placeholder fields stay exposed.
-- Weak coverage still exists around real Neural model loading and broader gain-stage behavior, so regressions can still slip through outside the narrowed areas already fixed.
+- The remaining later amp stages can still sound fizzy or artifact-prone at extreme settings even after the front-end pedal fixes and phases 10 through 13, which keeps the core "is this a credible amp?" question open.
+- Phase 13 reduces one obvious harsh-tail behavior, but it still does not guarantee that all highest-gain sustained notes or palm-muted passages feel dense and finished enough against specialist guitar products.
+- The new routing presets are honest within the fixed chain, but they are still bounded presets rather than arbitrary user-authored split/merge routing.
+- The external Neural path is now covered, but the compact imported-profile derivation can still collapse too much source-model nuance if later comparison listening shows imports feeling overly interchangeable.
+- Retaining raw imported payloads improves management and future-proofing, but it also increases IndexedDB usage for imported captures.
+- Broader gain-stage coverage is still weaker than the newer Neural/cabinet regressions, so sonic regressions can still slip through in later amp-stage work.
 
 ## Suggested approaches
 
-- Fix the state contract first: UI state must tell the truth about whether pedals and gate are active.
-- Decide which Grinder features are real today versus aspirational, then either wire them end-to-end or remove/disable them from the UI.
-- Revoice the gain structure using reference amp/pedal targets and add anti-alias strategy before spending time on cosmetic preset shuffling.
-- Rebuild the Neural page around what the engine can actually do today; add real model loading later under a separate spec if needed.
-- Add expert-oriented regression tests: pedal enable semantics, gate attenuation behavior, cabinet distance/room audibility, and preset-category expectations.
+- Revisit external Neural fidelity next: the management layer is now real, so the remaining high-leverage work is runtime fidelity, broader format support, and comparison tooling.
+- Continue tightening extreme later-stage voicing with targeted regressions around palm-muted density and sustained feel now that decay-shape guardrails exist.
+- Keep expanding expert-oriented regression tests: pedal enable semantics, gate attenuation behavior, cabinet distance/room audibility, neural model loading, and later gain-stage behavior.
+- Decide later whether `inputMode` deserves a dedicated control-surface affordance or should stay a preset-authored behavior.
 
 ## Recommendation
 
-Phase 4 removed the loudest cabinet-honesty gap. The next move should be `I-06`: retune the remaining distortion/fuzz/high-gain nonlinear path so Grinder sounds more like a credible guitar amp and less like a brittle artifact machine.
+Phase 14 closes the most obvious Neural-library-management gap, so the next move should stay on `I-05`: extend external-Neural fidelity beyond the current compact runtime while keeping the new library-management and later-stage decay regressions intact.
 
 ## Resolved
 
@@ -114,3 +131,13 @@ Phase 4 removed the loudest cabinet-honesty gap. The next move should be `I-06`:
 - ~~Supported front-end pedal order existed only as patch-array metadata while the DSP path stayed hardcoded.~~ — resolved in `main` on `2026-04-24` by surfacing chain order in the Drive deck, syncing explicit order params through the bridge, and rebuilding supported pedal execution order in the Rust engine.
 - ~~`snapshots` and `activeSnapshot` were stored in the patch model but not usable as real rig scenes.~~ — resolved in `main` on `2026-04-24` by introducing `basePatch`-backed snapshot recall in Grinder state plus Browser-rail snapshot controls that resync the live audio patch.
 - ~~Cab mic distance and room controls were stored/synced but ignored by the cabinet DSP.~~ — resolved in `main` on `2026-04-24` by adding audibly real distance shaping plus lightweight room reflections in `CabinetConvolver`, exposing a direct `Room` control in the cab deck, and covering both behaviors with regression tests.
+- ~~Moderate distortion and fuzz settings produced runaway loudness, and fuzz emitted non-zero output on silence.~~ — resolved in `main` on `2026-04-24` by restructuring both pedals around conditioned, bounded 2x-oversampled nonlinear cores with output compensation and by adding regressions for distortion loudness, fuzz loudness, and fuzz silence behavior.
+- ~~`powerAmpBias` barely changed the live power-stage response and behaved like a decorative expert control.~~ — resolved in `main` on `2026-04-24` by rebuilding the bias effect around crossover width, asymmetry, and effective headroom and by adding a regression that proves hot vs cold bias now changes the response audibly.
+- ~~The Neural model browser only changed metadata and did not load distinct DSP voices.~~ — resolved in `main` on `2026-04-25` by bridging `neuralModelId` into a real `neuralModelSlot`, loading distinct built-in profiles inside `NeuralCapture`, and covering both bridge sync and DSP distinctness with regressions.
+- ~~The Neural modal stopped at built-in voices and could not import or persist external captures.~~ — resolved in `main` on `2026-04-26` by importing documented NAM `.nam` files into a reusable local library, embedding selected imported profiles into the patch, and applying them through structured worklet-to-Rust custom-profile sync.
+- ~~`routingMode`, `cabType`, and `cabIrId` existed in the patch contract without changing the live cabinet/routing path.~~ — resolved in `main` on `2026-04-26` by syncing cabinet mode and built-in cab voice selection through the bridge, exposing those controls in the Cab UI, and implementing bounded routing presets plus cabinet mode/voice selection inside `GrinderEngine`.
+- ~~`gridConduction` did not behave like a real independent later-stage control, and `rectifierType` lost most of its identity once normal sag params were synced afterward.~~ — resolved in `main` on `2026-04-27` by separating grid-current intensity from coupling-cap recovery behavior in `TriodeStage`, adding bounded internal 2x substep updates to the later amp stages, and deriving rectifier sag behavior from persistent base sag settings so tube / solid-state / variac modes now diverge under burst load.
+- ~~Rectifier / Lead JCM and 6L6 / EL84 labels were too close to the same underlying later-stage voice.~~ — resolved in `main` on `2026-04-27` by adding family-ordering regressions and retuning `Preamp` voicing/compression so Rectifier retains more palm-muted body and denser sustain than Lead JCM while the power-amp family separation remains measurable under the same driven-burst material.
+- ~~`inputMode` existed in the patch contract without changing the live conditioner path.~~ — resolved in `main` on `2026-04-27` by adding input-mode distinctness regressions and implementing bounded mode-specific conditioning inside `InputConditioner` so `instrument`, `line`, and `reamp` now diverge audibly under the same bright burst stimulus.
+- ~~Extreme-gain later-stage decay stayed too edge-heavy after the initial attack.~~ — resolved in `main` on `2026-04-27` by adding explicit preamp/power-amp decay-shape regressions and retuning `PowerAmp` recovery behavior around bounded release-dependent edge damping instead of a blunt static low-pass.
+- ~~Imported Neural captures were one-way library entries with no raw-source retention or reusable export/remove management.~~ — resolved in `main` on `2026-04-27` by preserving original NAM filename/payload data on imported library entries, adding Neural modal export/remove actions, and keeping selected patch-embedded imported voices visible even after a reusable library entry is removed.

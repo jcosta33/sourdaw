@@ -34,7 +34,7 @@ describe('setTrackGainPan helpers', () => {
 
     describe('maybeRecordAutomation', () => {
         const deps = {
-            getTransportState: vi.fn(),
+            getTransportValue: vi.fn(),
             getTrackById: vi.fn(),
             recordAutomationValue: vi.fn(),
         };
@@ -42,13 +42,13 @@ describe('setTrackGainPan helpers', () => {
         beforeEach(() => vi.clearAllMocks());
 
         it('bails if not playing', () => {
-            deps.getTransportState.mockReturnValue({ isPlaying: false });
+            deps.getTransportValue.mockReturnValue({ isPlaying: false });
             maybeRecordAutomation(deps, 't1', 'gain', 0.5);
             expect(deps.recordAutomationValue).not.toHaveBeenCalled();
         });
 
         it('records if playing and track is in a recording mode', () => {
-            deps.getTransportState.mockReturnValue({ isPlaying: true, playheadPosition: 4 });
+            deps.getTransportValue.mockReturnValue({ isPlaying: true, playheadPosition: 4 });
             deps.getTrackById.mockReturnValue({ id: 't1', automationMode: 'touch' });
 
             maybeRecordAutomation(deps, 't1', 'gain', 0.9);
@@ -57,7 +57,7 @@ describe('setTrackGainPan helpers', () => {
         });
 
         it('bails if track automation mode is read', () => {
-            deps.getTransportState.mockReturnValue({ isPlaying: true });
+            deps.getTransportValue.mockReturnValue({ isPlaying: true });
             deps.getTrackById.mockReturnValue({ id: 't1', automationMode: 'read' });
 
             maybeRecordAutomation(deps, 't1', 'gain', 0.9);

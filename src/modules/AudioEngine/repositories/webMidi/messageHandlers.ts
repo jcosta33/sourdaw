@@ -8,9 +8,8 @@
 import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { getTrackStoreState, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
-import { createGrandBouleStore } from '#/modules/GrandBoule/stores';
-import { applyVelocityCurve } from '#/modules/GrandBoule/useCases';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
+import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
 import {
     completeMidiLearn,
     createMidiNote,
@@ -21,9 +20,14 @@ import {
     stepRecordNoteOn,
     stepRecordNoteOff,
 } from '#/modules/MIDI/useCases';
-import { getDrumKitDefByIndex, scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
-import { playheadPositionRef } from '#/modules/Transport/stores';
-import { getTransportStoreValue } from '#/modules/Transport/useCases';
+import {
+    getDrumKitDefByIndex,
+    getSynthParamsFromDevices,
+    scheduleDrumKitNote,
+    scheduleKitNote,
+    scheduleNote,
+} from '#/modules/Synth/useCases';
+import { playheadPositionRef, transportStore } from '#/modules/Transport/stores';
 import { processRealtimeMidiInput } from '#/modules/Yeast/useCases';
 
 import { getDrumKitByIndex } from '../../models/factoryDrumKits';
@@ -40,6 +44,19 @@ import { getCompensationDelay } from '../../useCases/latencyCompensation/compens
 import { audioEngine } from '../createWebAudioEngine';
 
 import { activeNotes, channelToNote, getMpeEnabled, getTargetTrackId } from './state';
+
+function getTrackStoreState(): TrackStoreState | null {
+    return trackStore.value;
+}
+
+function getTransportStoreValue() {
+    return transportStore.value;
+}
+
+function getSynthParamsForTrack(trackId: string): ReturnType<typeof getSynthParamsFromDevices> {
+    const track = trackStore.value?.tracks.find((t) => t.id === trackId);
+    return getSynthParamsFromDevices(track?.devices ?? []);
+}
 
 const midiMessageHandlerDependencies = {
     getCompensationDelay,
@@ -329,7 +346,14 @@ export const handleNoteOn = inject({
             const hasYeast = instrumentTrack?.devices.some((data) => data.type === 'yeast');
             if (hasYeast) {
                 const sampleTime = Math.round(now * engine.context.sampleRate);
-                const processedEvents = deps.processRealtimeMidiInput(note, velocity, channel, true, sampleTime);
+                const processedEvents = deps.processRealtimeMidiInput(
+                    note,
+                    velocity,
+                    channel,
+                    true,
+                    sampleTime,
+                    engine.context.sampleRate
+                );
                 for (const evt of processedEvents) {
                     if (evt.kind.type === 'noteOn') {
                         const evtNote = evt.kind.note;

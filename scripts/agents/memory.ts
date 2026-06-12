@@ -20,12 +20,12 @@ function getMemoryDir(repoRoot) {
 export function writeMemory(repoRoot, topic, content) {
     const memDir = getMemoryDir(repoRoot);
     const file = join(memDir, `${topic}.md`);
-    
+
     let existing = '';
     if (existsSync(file)) {
         existing = readFileSync(file, 'utf8') + '\n\n';
     }
-    
+
     const stamped = `## Entry (${new Date().toISOString()})\n${content}\n`;
     writeFileSync(file, existing + stamped, 'utf8');
     return file;
@@ -36,14 +36,16 @@ export function writeMemory(repoRoot, topic, content) {
  */
 export function readMemory(repoRoot, topic) {
     const memDir = getMemoryDir(repoRoot);
-    
+
     if (!topic) {
         if (!existsSync(memDir)) return [];
-        return readdirSync(memDir).filter(f => f.endsWith('.md')).map(f => f.replace('.md', ''));
+        return readdirSync(memDir)
+            .filter((f) => f.endsWith('.md'))
+            .map((f) => f.replace('.md', ''));
     }
 
     const file = join(memDir, `${topic}.md`);
     if (!existsSync(file)) return null;
-    
+
     return readFileSync(file, 'utf8');
 }

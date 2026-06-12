@@ -98,9 +98,6 @@ export { getActiveModelId } from '../../repositories/webLlm/engineLifecycle';
 // ─── Cross-module re-exports ───────────────────────────────────────────────────
 
 export { streamCloudChatCompletion } from '../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
-export { readLevels } from '../../repositories/mixAnalysis/readLevels';
-export { readFrequencyBalance } from '../../repositories/mixAnalysis/readFrequencyBalance';
-export { detectIssues, generateSuggestions } from '../../transformers/mixAnalysisTransformers';
 export { generateWebLlmCompletion } from '../../repositories/webLlm/engineLifecycle';
 export { generateNativeCompletion } from '../../repositories/nativeEngine/completions';
 export { isNativeEngineReady } from '../../repositories/nativeEngine/lifecycle';

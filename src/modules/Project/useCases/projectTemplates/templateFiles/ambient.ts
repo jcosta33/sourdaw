@@ -27,11 +27,19 @@ export async function createAmbientTemplate(): Promise<void> {
 
     const cathedralReverb = createBus({
         name: 'Cathedral Reverb',
-        devices: [{ type: 'builtin-reverb', name: 'Cathedral', params: { 'rev-size': 0.98, 'rev-decay': 8, 'rev-damping': 0.15, 'rev-predelay': 40, 'rev-mix': 1 } }],
+        devices: [
+            {
+                type: 'builtin-reverb',
+                name: 'Cathedral',
+                params: { 'rev-size': 0.98, 'rev-decay': 8, 'rev-damping': 0.15, 'rev-predelay': 40, 'rev-mix': 1 },
+            },
+        ],
     });
     const ambientTapeDelay = createBus({
         name: 'Tape Delay',
-        devices: [{ type: 'faust-tape-delay', name: 'Tape Delay', params: { delay: 0.75, feedback: 0.55, dry_wet: 1 } }],
+        devices: [
+            { type: 'faust-tape-delay', name: 'Tape Delay', params: { delay: 0.75, feedback: 0.55, dry_wet: 1 } },
+        ],
     });
     const springReverb = createBus({
         name: 'Spring Reverb',
@@ -111,10 +119,18 @@ export async function createAmbientTemplate(): Promise<void> {
     const tapeHiss = createAudioTrack({ name: 'Tape Hiss', parentId: textureFolder.id });
 
     addDeviceChain(subDrone, [
-        { type: 'builtin-filter', name: 'LP', params: { 'filter-cutoff': 400, 'filter-resonance': 1, 'filter-type': 0 } },
+        {
+            type: 'builtin-filter',
+            name: 'LP',
+            params: { 'filter-cutoff': 400, 'filter-resonance': 1, 'filter-type': 0 },
+        },
     ]);
     addDeviceChain(midDrone, [
-        { type: 'builtin-stereo-widener', name: 'Widener', params: { 'width-amount': 1.5, 'width-mid': 0, 'width-side': 2.5, 'width-mono-bass': 150 } },
+        {
+            type: 'builtin-stereo-widener',
+            name: 'Widener',
+            params: { 'width-amount': 1.5, 'width-mid': 0, 'width-side': 2.5, 'width-mono-bass': 150 },
+        },
     ]);
 
     const dronesVca = createVca({ name: 'Drones VCA', members: [subDrone, midDrone, airDrone] });
@@ -148,11 +164,22 @@ export async function createAmbientTemplate(): Promise<void> {
 
     const tracks = [
         masterTrack,
-        cathedralReverb, ambientTapeDelay, springReverb,
-        dronesFolder, subDrone, midDrone, airDrone,
-        padsFolder, warmPad, shimmerPad,
-        melodicFolder, bell, ambientPiano, granular,
-        textureFolder, tapeHiss,
+        cathedralReverb,
+        ambientTapeDelay,
+        springReverb,
+        dronesFolder,
+        subDrone,
+        midDrone,
+        airDrone,
+        padsFolder,
+        warmPad,
+        shimmerPad,
+        melodicFolder,
+        bell,
+        ambientPiano,
+        granular,
+        textureFolder,
+        tapeHiss,
     ];
 
     await finalizeTemplate({

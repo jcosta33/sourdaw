@@ -3,7 +3,7 @@ import { type MouseEvent, type DragEvent, useRef, useState } from 'react';
 import { removeAutomationPoint, batchAddAutomationPoints } from '#/modules/Automation/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { broadcastPresence } from '#/modules/Collaboration/useCases';
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { pushUndoEntry } from '#/modules/Command/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { moveMidiNote } from '#/modules/MIDI/useCases';
 import { toggleLoop, getTransportState, setLoopRegion } from '#/modules/Transport/useCases';
@@ -16,7 +16,6 @@ import {
     selectClip,
     setWorkspaceMode,
     setMarqueeSelection,
-    getWorkspaceState,
 } from '#/modules/Workspace/useCases';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
@@ -538,7 +537,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             const state1 = Math.min(startBeat, endBeat);
             const length = Math.max(1, Math.max(startBeat, endBeat) - state1);
 
-            const rippleEnabled = getWorkspaceState()?.rippleEditing ?? false;
+            const rippleEnabled = workspaceStore.value?.rippleEditing ?? false;
             if (rippleEnabled) {
                 // Ripple insert: compute plan BEFORE adding the clip so it doesn't include the new clip
                 const ripplePlan = planRippleInsert({
@@ -721,7 +720,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         );
                     }
                 } else if (dragMode === 'move') {
-                    const rippleEnabled = getWorkspaceState()?.rippleEditing ?? false;
+                    const rippleEnabled = workspaceStore.value?.rippleEditing ?? false;
                     let usedRipple = false;
                     let ripplePlan: ReturnType<typeof planRippleMove> = null;
 

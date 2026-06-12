@@ -289,7 +289,11 @@ export const SetlistPanel = (): ReactElement => {
                                             isCurrent ? 'text-accent-cyan font-semibold' : 'text-muted-foreground'
                                         )}
                                     >
-                                        {isCurrent ? <Play className="mx-auto size-2.5" aria-hidden="true" /> : index + 1}
+                                        {isCurrent ? (
+                                            <Play className="mx-auto size-2.5" aria-hidden="true" />
+                                        ) : (
+                                            index + 1
+                                        )}
                                     </span>
 
                                     <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -350,9 +354,7 @@ export const SetlistPanel = (): ReactElement => {
                                                 CI
                                             </button>
                                         </TooltipTrigger>
-                                        <TooltipContent>
-                                            Count-in / auto-stop before this item
-                                        </TooltipContent>
+                                        <TooltipContent>Count-in / auto-stop before this item</TooltipContent>
                                     </Tooltip>
 
                                     <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">

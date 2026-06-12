@@ -115,11 +115,7 @@ export type EnvelopeSpec = {
     curve?: 'linear' | 'exp';
 };
 
-export function renderEnvelope(
-    durationSec: number,
-    env: EnvelopeSpec,
-    sampleRate: number = SAMPLE_RATE
-): MonoBuffer {
+export function renderEnvelope(durationSec: number, env: EnvelopeSpec, sampleRate: number = SAMPLE_RATE): MonoBuffer {
     const len = Math.max(1, Math.ceil(durationSec * sampleRate));
     const out = new Float32Array(len);
     const a = Math.max(0, env.attack ?? 0);
@@ -253,7 +249,13 @@ export function renderNoise(durationSec: number, sampleRate: number = SAMPLE_RAT
 
 type BiquadCoeffs = { b0: number; b1: number; b2: number; a1: number; a2: number };
 
-function biquadCoeffs(type: 'lowpass' | 'highpass' | 'bandpass' | 'peaking' | 'lowshelf' | 'highshelf', freq: number, q: number, gainDb: number, sampleRate: number): BiquadCoeffs {
+function biquadCoeffs(
+    type: 'lowpass' | 'highpass' | 'bandpass' | 'peaking' | 'lowshelf' | 'highshelf',
+    freq: number,
+    q: number,
+    gainDb: number,
+    sampleRate: number
+): BiquadCoeffs {
     const w0 = (TWO_PI * freq) / sampleRate;
     const cosw = Math.cos(w0);
     const sinw = Math.sin(w0);
@@ -388,7 +390,13 @@ export function bitcrush(buf: MonoBuffer, bits: number, sampleRateReduction = 1)
     }
 }
 
-export function feedbackDelay(buf: MonoBuffer, delaySec: number, feedback: number, wetMix: number, sampleRate: number = SAMPLE_RATE): void {
+export function feedbackDelay(
+    buf: MonoBuffer,
+    delaySec: number,
+    feedback: number,
+    wetMix: number,
+    sampleRate: number = SAMPLE_RATE
+): void {
     const delaySamples = Math.max(1, Math.floor(delaySec * sampleRate));
     const line = new Float32Array(delaySamples);
     let writeIdx = 0;

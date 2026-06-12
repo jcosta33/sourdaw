@@ -1,17 +1,15 @@
 import { handleAddClip } from './handleAddClip';
 import { handleArpeggiate } from './handleArpeggiate';
-import { handleAudioToMidi } from './handleAudioToMidi';
 import { handleBounceSelection } from './handleBounceSelection';
 import { handleConsolidateSelection } from './handleConsolidateSelection';
 import { handleCopyClip } from './handleCopyClip';
 import { handleCrossfadeClips } from './handleCrossfadeClips';
 import { handleCutClip } from './handleCutClip';
 import { handleDeleteTime } from './handleDeleteTime';
-import { handleDetectKey } from './handleDetectKey';
-import { handleDetectTempo } from './handleDetectTempo';
 import { handleDuplicateClip } from './handleDuplicateClip';
 import { handleDuplicateClipToNextBar } from './handleDuplicateClipToNextBar';
 import { handleDuplicateTimeRange } from './handleDuplicateTimeRange';
+import { handleExportMidi } from './handleExportMidi';
 import { handleGlueClips } from './handleGlueClips';
 import { handleInsertTime } from './handleInsertTime';
 import { handleLockClip } from './handleLockClip';
@@ -60,12 +58,10 @@ export const clipHandlers = {
     consolidateSelection: handleConsolidateSelection,
     bounceSelection: handleBounceSelection,
     muteClip: handleMuteClip,
-    audioToMidi: handleAudioToMidi,
     deleteTime: handleDeleteTime,
     insertTime: handleInsertTime,
     duplicateTimeRange: handleDuplicateTimeRange,
+    exportMidi: handleExportMidi,
     stripSilence: handleStripSilence,
-    detectTempo: handleDetectTempo,
-    detectKey: handleDetectKey,
     arpeggiate: handleArpeggiate,
 };

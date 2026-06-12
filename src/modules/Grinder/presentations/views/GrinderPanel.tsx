@@ -1,4 +1,4 @@
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useEffect, useState } from 'react';
 
 import { Cpu, Radio, Search, Sparkles, Waves } from 'lucide-react';
 
@@ -11,8 +11,12 @@ import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
 import { useStore } from '#/infra/store/useStore';
 
 import {
+    GRINDER_CAB_LIBRARY,
+    GRINDER_NEURAL_LIBRARY,
     type GrinderAmpModel,
+    type GrinderCabType,
     type GrinderEngineMode,
+    type GrinderImportedNeuralModel,
     type GrinderPatch,
     type GrinderPedal,
     type GrinderPedalType,
@@ -21,19 +25,28 @@ import {
     type GrinderUiSection,
     getGrinderSupportedChainOrder,
 } from '../../models/GrinderPatch';
+import { ImportedNeuralLibraryCard } from '../components/ImportedNeuralLibraryCard';
 import {
     grinderStore,
     getGrinderState,
     replaceGrinderPatchLocally,
     type GrinderState,
 } from '../../stores/grinderStore';
+import {
+    DEFAULT_GRINDER_NEURAL_LIBRARY_STATE,
+    grinderNeuralLibraryStore,
+} from '../../stores/grinderNeuralLibraryStore';
 import { grinderTelemetryStore, getGrinderTelemetry, type GrinderTelemetry } from '../../stores/grinderTelemetryStore';
+import { importGrinderNeuralModels } from '../../useCases/importGrinderNeuralModels';
+import { exportGrinderNeuralModel } from '../../useCases/exportGrinderNeuralModel';
 import { loadGrinderPatchWithAudio } from '../../useCases/grinderParamBridge/loadGrinderPatchWithAudio';
 import { moveGrinderPedalInChainWithAudio } from '../../useCases/grinderParamBridge/moveGrinderPedalInChainWithAudio';
 import { recallGrinderSnapshotWithAudio } from '../../useCases/grinderParamBridge/recallGrinderSnapshotWithAudio';
 import { setGrinderMicParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderMicParamWithAudio';
 import { setGrinderParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderParamWithAudio';
 import { setGrinderPedalParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderPedalParamWithAudio';
+import { removeGrinderNeuralModel } from '../../useCases/removeGrinderNeuralModel';
+import { restoreGrinderNeuralLibrary } from '../../useCases/restoreGrinderNeuralLibrary';
 import { GRINDER_PRESETS } from '../../useCases/grinderPresets';
 
 const SECTION_TABS: ReadonlyArray<{ id: GrinderUiSection; label: string; icon: typeof Sparkles }> = [
@@ -111,29 +124,21 @@ const AMP_MODELS: ReadonlyArray<{
 
 const POWER_TUBES: readonly GrinderPowerTubeType[] = ['6l6', 'el34', 'el84'];
 const RECTIFIERS: readonly GrinderRectifierType[] = ['tube', 'solid-state', 'variac'];
-const NEURAL_LIBRARY = [
-    {
-        id: 'factory-amp-a',
-        name: 'Factory Amp A',
-        family: 'NAM-compatible',
-        placement: 'amp-capture',
-        description: 'Focused head capture with a tight midrange and a smooth top.',
-    },
-    {
-        id: 'factory-rig-b',
-        name: 'Factory Rig B',
-        family: 'A1-ready',
-        placement: 'rig-capture',
-        description: 'Full rig snapshot when you want the whole baked loaf at once.',
-    },
-    {
-        id: 'vintage-stack-c',
-        name: 'Vintage Stack C',
-        family: 'NAM-compatible',
-        placement: 'amp-capture',
-        description: 'Wider low mids with a softer edge on pick attack.',
-    },
-] as const;
+const CAB_MODES: ReadonlyArray<{ id: GrinderCabType; label: string; description: string }> = [
+    { id: 'ir', label: 'IR', description: 'Cabinet IR only' },
+    { id: 'parametric', label: 'Parametric', description: 'Speaker model only' },
+    { id: 'both', label: 'Both', description: 'IR and speaker shaping' },
+];
+const ROUTING_PRESETS: ReadonlyArray<{
+    id: GrinderPatch['routingMode'];
+    label: string;
+    description: string;
+}> = [
+    { id: 'serial', label: 'Serial', description: 'Single straight cab lane.' },
+    { id: 'parallel', label: 'Parallel', description: 'Blend the selected cab lane with a parallel contrast lane.' },
+    { id: 'wet-dry-wet', label: 'Wet/Dry/Wet', description: 'Keep a dry core under the cabinet lanes.' },
+    { id: 'dual-amp', label: 'Dual Amp', description: 'Run a contrasting second derived amp lane.' },
+];
 
 function get_engine_mode_label(engine_mode: GrinderEngineMode): string {
     return ENGINE_MODES.find((mode) => mode.id === engine_mode)?.label ?? 'Circuit';
@@ -156,6 +161,18 @@ function get_neural_path_status(patch: GrinderPatch): string {
     return patch.neuralPlacement === 'amp-capture'
         ? `Circuit amp and capture are blended at ${Math.round(patch.neuralMix * 100)}%.`
         : 'Circuit amp feeds the rig chain while the capture provides the full rig voice.';
+}
+
+function get_cab_voice_label(cab_ir_id: string): string {
+    return GRINDER_CAB_LIBRARY.find((cabinet) => cabinet.id === cab_ir_id)?.label ?? '4x12 Tight';
+}
+
+function get_cab_mode_label(cab_type: GrinderCabType): string {
+    return CAB_MODES.find((mode) => mode.id === cab_type)?.label ?? 'Both';
+}
+
+function get_routing_preset_label(routing_mode: GrinderPatch['routingMode']): string {
+    return ROUTING_PRESETS.find((mode) => mode.id === routing_mode)?.label ?? 'Serial';
 }
 
 type SupportedPedalControl = {
@@ -616,6 +633,9 @@ function CabStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatch }
                 <div className="rounded-[20px] border border-white/8 bg-black/30 p-3">
                     <div className="text-[10px] uppercase tracking-[0.2em] text-white/45">Readout</div>
                     <div className="mt-2 space-y-1.5 font-mono text-[12px] text-white/70">
+                        <div>voice {get_cab_voice_label(patch.cabIrId)}</div>
+                        <div>mode {get_cab_mode_label(patch.cabType)}</div>
+                        <div>route {get_routing_preset_label(patch.routingMode)}</div>
                         <div>mic-x {patch.mic1.positionX.toFixed(2)}</div>
                         <div>mic-y {patch.mic1.positionY.toFixed(2)}</div>
                         <div>damp {patch.cabDamping.toFixed(2)}</div>
@@ -697,8 +717,7 @@ function NeuralStage({ deviceId, patch }: { deviceId: string; patch: GrinderPatc
                         <div className="mt-1 text-xs leading-5 text-white/60">{get_neural_path_status(patch)}</div>
                     </div>
                     <div className="rounded-[16px] border border-dashed border-[var(--color-accent-cyan)]/25 bg-[var(--color-accent-cyan)]/6 px-3 py-2.5 text-xs leading-5 text-white/62">
-                        Library entries label the active capture voice in this build. They do not swap a separate DSP
-                        asset yet.
+                        Selecting a library voice now swaps the active built-in capture profile in the live DSP path.
                     </div>
                 </div>
             </div>
@@ -1012,7 +1031,9 @@ function DriveDeck({ deviceId, patch }: { deviceId: string; patch: GrinderPatch 
                                             caps={false}
                                             disabled={index === 0}
                                             aria-label={`Move ${control.label} left`}
-                                            onClick={() => moveGrinderPedalInChainWithAudio(deviceId, false, pedal_type, 'left')}
+                                            onClick={() =>
+                                                moveGrinderPedalInChainWithAudio(deviceId, false, pedal_type, 'left')
+                                            }
                                         >
                                             Left
                                         </DawPluginChip>
@@ -1111,11 +1132,74 @@ function ControlDeck({
     patch: GrinderPatch;
     replacePatch: (next: GrinderPatch) => void;
 }): ReactElement {
+    const neural_library_state =
+        useStore(grinderNeuralLibraryStore, DEFAULT_GRINDER_NEURAL_LIBRARY_STATE) ??
+        DEFAULT_GRINDER_NEURAL_LIBRARY_STATE;
+    const imported_neural_entries = neural_library_state.entries ?? [];
+    const visible_imported_entries =
+        patch.neuralModelSource === 'imported' &&
+        patch.neuralModelProfile &&
+        patch.neuralModelName &&
+        !imported_neural_entries.some((entry) => entry.id === patch.neuralModelId)
+            ? [
+                  {
+                      id: patch.neuralModelId,
+                      source: 'imported' as const,
+                      name: patch.neuralModelName,
+                      family: patch.neuralModelFamily,
+                      placement: patch.neuralPlacement,
+                      description: 'Selected in this patch',
+                      importedAt: 0,
+                      sourceFileName: null,
+                      sourceFileText: null,
+                      profile: patch.neuralModelProfile,
+                  },
+                  ...imported_neural_entries,
+              ]
+            : imported_neural_entries;
+    const [is_importing_models, set_is_importing_models] = useState(false);
     let engineModeText = 'Hybrid loaded';
     if (patch.engineMode === 'circuit') {
         engineModeText = 'Circuit first';
     } else if (patch.engineMode === 'capture') {
         engineModeText = 'Capture loaded';
+    }
+
+    useEffect(() => {
+        if (neural_library_state.hydrated || neural_library_state.loading) {
+            return;
+        }
+        void restoreGrinderNeuralLibrary();
+    }, [neural_library_state.hydrated, neural_library_state.loading]);
+
+    function selectImportedNeuralModel(entry: GrinderImportedNeuralModel): void {
+        replacePatch({
+            ...patch,
+            neuralModelId: entry.id,
+            neuralModelName: entry.name,
+            neuralModelFamily: entry.family,
+            neuralModelSource: 'imported',
+            neuralModelProfile: entry.profile,
+            neuralPlacement: entry.placement,
+            neuralTier: entry.profile.preferredTier,
+        });
+    }
+
+    async function importNeuralModels(): Promise<void> {
+        set_is_importing_models(true);
+        try {
+            const imported_entries = await importGrinderNeuralModels();
+            const first_entry = imported_entries[0];
+            if (first_entry) {
+                selectImportedNeuralModel(first_entry);
+            }
+        } finally {
+            set_is_importing_models(false);
+        }
+    }
+
+    async function removeImportedNeuralModel(entry: GrinderImportedNeuralModel): Promise<void> {
+        await removeGrinderNeuralModel({ model_id: entry.id });
     }
 
     if (patch.uiSection === 'amp') {
@@ -1348,6 +1432,66 @@ function ControlDeck({
                         </DawPluginToggle>
                     </div>
                 </div>
+                <div className="grinder-window flex min-w-[280px] flex-col gap-3 px-3 py-3">
+                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
+                        Cab voice
+                    </div>
+                    <div className="grid gap-2">
+                        {GRINDER_CAB_LIBRARY.map((cabinet) => (
+                            <DawPluginChip
+                                key={cabinet.id}
+                                active={patch.cabIrId === cabinet.id}
+                                tone="cyan"
+                                size="sm"
+                                shape="soft"
+                                className="justify-start py-2 text-left text-[11px]"
+                                onClick={() => replacePatch({ ...patch, cabIrId: cabinet.id })}
+                            >
+                                {cabinet.label}
+                            </DawPluginChip>
+                        ))}
+                    </div>
+                </div>
+                <div className="grinder-window flex min-w-[260px] flex-col gap-3 px-3 py-3">
+                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
+                        Cab mode
+                    </div>
+                    <div className="grid gap-2">
+                        {CAB_MODES.map((mode) => (
+                            <DawPluginChip
+                                key={mode.id}
+                                active={patch.cabType === mode.id}
+                                tone="amber"
+                                size="sm"
+                                shape="soft"
+                                className="justify-start py-2 text-left text-[11px]"
+                                onClick={() => replacePatch({ ...patch, cabType: mode.id })}
+                            >
+                                {mode.label}
+                            </DawPluginChip>
+                        ))}
+                    </div>
+                </div>
+                <div className="grinder-window flex min-w-[280px] flex-col gap-3 px-3 py-3">
+                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-peach)]">
+                        Routing preset
+                    </div>
+                    <div className="grid gap-2">
+                        {ROUTING_PRESETS.map((preset) => (
+                            <DawPluginChip
+                                key={preset.id}
+                                active={patch.routingMode === preset.id}
+                                tone="peach"
+                                size="sm"
+                                shape="soft"
+                                className="justify-start py-2 text-left text-[11px]"
+                                onClick={() => replacePatch({ ...patch, routingMode: preset.id })}
+                            >
+                                {preset.label}
+                            </DawPluginChip>
+                        ))}
+                    </div>
+                </div>
             </div>
         );
     }
@@ -1437,10 +1581,10 @@ function ControlDeck({
                 </div>
                 <div className="grinder-window flex min-w-[320px] flex-1 flex-col gap-3 px-3 py-3">
                     <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-amber)]">
-                        Model Browser
+                        Factory Voices
                     </div>
                     <div className="grid gap-2">
-                        {NEURAL_LIBRARY.map((model) => {
+                        {GRINDER_NEURAL_LIBRARY.map((model) => {
                             const selected = patch.neuralModelId === model.id;
                             return (
                                 <button
@@ -1457,7 +1601,10 @@ function ControlDeck({
                                             neuralModelId: model.id,
                                             neuralModelName: model.name,
                                             neuralModelFamily: model.family,
+                                            neuralModelSource: 'builtin',
+                                            neuralModelProfile: null,
                                             neuralPlacement: model.placement as GrinderPatch['neuralPlacement'],
+                                            neuralTier: 'standard',
                                         })
                                     }
                                 >
@@ -1473,6 +1620,46 @@ function ControlDeck({
                         })}
                     </div>
                 </div>
+                <div className="grinder-window flex min-w-[320px] flex-1 flex-col gap-3 px-3 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
+                            Imported captures
+                        </div>
+                        <button
+                            type="button"
+                            className="rounded-[14px] border border-[var(--color-accent-cyan)]/30 bg-[var(--color-accent-cyan)]/10 px-3 py-1 text-[11px] font-medium text-[var(--color-accent-cyan)]"
+                            onClick={() => void importNeuralModels()}
+                        >
+                            {is_importing_models ? 'Importing…' : 'Import NAM'}
+                        </button>
+                    </div>
+                    {neural_library_state.error ? (
+                        <div className="rounded-[14px] border border-red-400/30 bg-red-400/8 px-3 py-2 text-xs text-red-200">
+                            {neural_library_state.error}
+                        </div>
+                    ) : null}
+                    {visible_imported_entries.length === 0 ? (
+                        <div className="rounded-[16px] border border-white/8 bg-black/20 px-4 py-4 text-sm text-white/44">
+                            Import one or more documented `.nam` captures to build a reusable Neural library.
+                        </div>
+                    ) : (
+                        <div className="grid gap-2">
+                            {visible_imported_entries.map((entry) => {
+                                const selected = patch.neuralModelId === entry.id;
+                                return (
+                                    <ImportedNeuralLibraryCard
+                                        key={entry.id}
+                                        entry={entry}
+                                        selected={selected}
+                                        on_select={selectImportedNeuralModel}
+                                        on_export={exportGrinderNeuralModel}
+                                        on_remove={(value) => void removeImportedNeuralModel(value)}
+                                    />
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
             </div>
         );
     }
@@ -1481,9 +1668,7 @@ function ControlDeck({
         return (
             <div className="flex flex-wrap gap-3">
                 <div className="grinder-window flex min-w-[220px] flex-col gap-3 px-3 py-3">
-                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">
-                        Gate
-                    </div>
+                    <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-accent-cyan)]">Gate</div>
                     <DawPluginToggle
                         pressed={patch.gateEnabled}
                         tone="cyan"

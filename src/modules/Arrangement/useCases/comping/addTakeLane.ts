@@ -1,4 +1,4 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { pushUndoEntry } from '#/modules/Command/stores';
 
 import { createTakeLane } from '../../models/TakeLane';
 import { takeLaneStore, type TakeLaneStoreState } from '../../stores/takeLaneStore';

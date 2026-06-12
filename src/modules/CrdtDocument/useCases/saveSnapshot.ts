@@ -12,3 +12,13 @@ import { type DocumentBundle } from './crdtDocumentTypes';
 export function saveSnapshot(): DocumentBundle {
     return automergeRepository.saveAll();
 }
+
+/**
+ * Execute a mutating function and capture binary snapshots only for the
+ * documents that were dirtied during its execution.
+ */
+export async function transactSnapshot(
+    fn: () => Promise<void>
+): Promise<{ before: DocumentBundle; after: DocumentBundle }> {
+    return automergeRepository.transactSnapshot(fn);
+}

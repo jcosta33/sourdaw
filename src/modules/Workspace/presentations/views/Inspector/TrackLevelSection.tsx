@@ -1,10 +1,10 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, useState } from 'react';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Slider } from '#/components/ui/slider';
-import { MidiLearnButton } from '#/modules/Arrangement/presentations/views';
 import { setTrackGain, setTrackPan } from '#/modules/Arrangement/useCases';
+import { MidiLearnButton } from '#/modules/MIDI/presentations/views';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { ControlHeader } from '../../components/Inspector/ControlHeader';
@@ -15,8 +15,14 @@ type TrackLevelSectionProps = {
 };
 
 export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactElement => {
+    const [localGain, setLocalGain] = useState<number | null>(null);
+    const [localPan, setLocalPan] = useState<number | null>(null);
+
+    const activeGain = localGain !== null ? localGain : track.gain;
+    const activePan = localPan !== null ? localPan : track.pan;
+
     const renderIife_20 = () => {
-        const param = track.pan;
+        const param = activePan;
         if (param === 0) {
             return 'C';
         }
@@ -39,7 +45,7 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                             value={
                                 <div className="flex items-center gap-1.5">
                                     <span className="text-[10px] font-mono text-muted-foreground">
-                                        {(track.gain * 100).toFixed(0)}%
+                                        {(activeGain * 100).toFixed(0)}%
                                     </span>
                                     <MidiLearnButton targetType="trackGain" trackId={track.id} />
                                 </div>
@@ -48,10 +54,17 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                         />
                         <div className="w-full px-1 flex items-center justify-center">
                             <Slider
-                                value={[track.gain * 100]}
+                                value={[activeGain * 100]}
                                 onValueChange={([value]) => {
                                     if (value !== undefined) {
-                                        setTrackGain(track.id, value / 100);
+                                        setLocalGain(value / 100);
+                                        setTrackGain(track.id, value / 100, true);
+                                    }
+                                }}
+                                onValueCommit={([value]) => {
+                                    if (value !== undefined) {
+                                        setLocalGain(null);
+                                        setTrackGain(track.id, value / 100, false);
                                     }
                                 }}
                                 max={100}
@@ -73,9 +86,15 @@ export const TrackLevelSection = ({ track }: TrackLevelSectionProps): ReactEleme
                         </div>
                         <div className="shrink-0 flex items-center justify-center">
                             <RotaryKnob
-                                value={track.pan}
-                                onChange={(value) => {
-                                    setTrackPan(track.id, value);
+                                value={activePan}
+                                onChange={(value, isTransient) => {
+                                    if (isTransient) {
+                                        setLocalPan(value);
+                                        setTrackPan(track.id, value, true);
+                                    } else {
+                                        setLocalPan(null);
+                                        setTrackPan(track.id, value, false);
+                                    }
                                 }}
                                 min={-50}
                                 max={50}

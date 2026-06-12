@@ -47,6 +47,7 @@ export {
 } from '#/modules/Automation/useCases';
 export { detectKey, detectTempo } from '#/modules/AudioAnalysis/useCases';
 export { decodeAudioFile } from '#/modules/AudioEngine/useCases';
-export { executeAppAction, pushUndoEntry } from '#/modules/Command/useCases';
+export { pushUndoEntry } from '#/modules/Command/stores';
+export { executeAppAction } from '#/modules/Command/useCases';
 export { setLoopRegion } from '#/modules/Transport/useCases';
 export { setWorkspaceMode } from '#/modules/Workspace/useCases';

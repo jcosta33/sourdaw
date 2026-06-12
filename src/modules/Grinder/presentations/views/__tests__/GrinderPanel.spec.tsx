@@ -1,14 +1,29 @@
 import { render, screen, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_PATCH } from '../../../models/GrinderPatch';
+import { grinderNeuralLibraryStore } from '../../../stores/grinderNeuralLibraryStore';
 import { grinderStore } from '../../../stores/grinderStore';
 import { GrinderPanel } from '../GrinderPanel';
+
+vi.mock('../../../useCases/importGrinderNeuralModels', () => ({
+    importGrinderNeuralModels: vi.fn(async () => []),
+}));
+
+vi.mock('../../../useCases/restoreGrinderNeuralLibrary', () => ({
+    restoreGrinderNeuralLibrary: vi.fn(async () => undefined),
+}));
 
 describe('GrinderPanel', () => {
     const device_id = 'test-device';
 
     beforeEach(() => {
+        grinderNeuralLibraryStore.set({
+            hydrated: true,
+            loading: false,
+            error: null,
+            entries: [],
+        });
         grinderStore.set({
             [device_id]: {
                 patch: {
@@ -67,7 +82,78 @@ describe('GrinderPanel', () => {
 
         expect(screen.queryByText('Mode guide')).not.toBeInTheDocument();
         expect(screen.getByText('Signal path')).toBeInTheDocument();
-        expect(screen.getByText(/library entries label the active capture voice/i)).toBeInTheDocument();
+        expect(
+            screen.getByText(/selecting a library voice now swaps the active built-in capture profile/i)
+        ).toBeInTheDocument();
+    });
+
+    it('should render the imported captures section in the Neural browser', () => {
+        grinderNeuralLibraryStore.set({
+            hydrated: true,
+            loading: false,
+            error: null,
+            entries: [],
+        });
+        grinderStore.set({
+            [device_id]: {
+                patch: {
+                    ...DEFAULT_PATCH,
+                    uiSection: 'neural',
+                    engineMode: 'capture',
+                    neuralEnabled: true,
+                },
+            },
+        });
+
+        render(<GrinderPanel deviceId={device_id} />);
+
+        expect(screen.getByText('Imported captures')).toBeInTheDocument();
+    });
+
+    it('should keep a patch-only imported fallback visible when the reusable library entry is gone', () => {
+        grinderStore.set({
+            [device_id]: {
+                patch: {
+                    ...DEFAULT_PATCH,
+                    uiSection: 'neural',
+                    engineMode: 'capture',
+                    neuralEnabled: true,
+                    neuralModelId: 'imported-tight-rhythm',
+                    neuralModelName: 'Tight Rhythm',
+                    neuralModelFamily: 'NAM import',
+                    neuralModelSource: 'imported',
+                    neuralPlacement: 'amp-capture',
+                    neuralModelProfile: {
+                        derivedFrom: 'nam',
+                        sourceArchitecture: 'WaveNet',
+                        sourceSampleRate: 48_000,
+                        sourceWeightCount: 12,
+                        preferredTier: 'standard',
+                        inputDrive: 1.18,
+                        asymmetry: 0.04,
+                        outputTrim: 0.9,
+                        contourMix: 0.22,
+                        recurrentBias: 0.02,
+                        convWeights: [
+                            [0.1, 0.7, 0.2],
+                            [0.09, 0.68, 0.23],
+                            [0.12, 0.66, 0.2],
+                            [0.11, 0.67, 0.19],
+                            [0.08, 0.72, 0.16],
+                            [0.07, 0.74, 0.15],
+                            [0.13, 0.64, 0.19],
+                            [0.1, 0.69, 0.18],
+                            [0.09, 0.7, 0.17],
+                            [0.11, 0.68, 0.17],
+                        ],
+                    },
+                },
+            },
+        });
+
+        render(<GrinderPanel deviceId={device_id} />);
+
+        expect(screen.getByText('Selected in this patch')).toBeInTheDocument();
     });
 
     it('should expose the current front-end pedal chain order in the drive section', () => {
@@ -114,6 +200,29 @@ describe('GrinderPanel', () => {
         render(<GrinderPanel deviceId={device_id} />);
 
         expect(screen.getByText('Room')).toBeInTheDocument();
+    });
+
+    it('should expose cabinet voice, cabinet mode, and routing preset controls in the cab section', () => {
+        grinderStore.set({
+            [device_id]: {
+                patch: {
+                    ...DEFAULT_PATCH,
+                    uiSection: 'cab',
+                    cabType: 'parametric',
+                    cabIrId: '2x12-open',
+                    routingMode: 'parallel',
+                },
+            },
+        });
+
+        render(<GrinderPanel deviceId={device_id} />);
+
+        expect(screen.getByText('Cab voice')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '2x12 Open' })).toBeInTheDocument();
+        expect(screen.getByText('Cab mode')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Parametric' })).toBeInTheDocument();
+        expect(screen.getByText('Routing preset')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Parallel' })).toBeInTheDocument();
     });
 
     it('should show snapshot recall controls when the patch contains stored snapshots', () => {

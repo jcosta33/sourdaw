@@ -42,7 +42,14 @@ function renderPluckPerc(): Float32Array {
     const dur = 0.25;
     const out = createMono(dur);
     const body = renderFmOscillator(dur, 400, 800, (t) => 3 * Math.exp(-t * 20));
-    const env = renderEnvelope(dur, { attack: 0.001, decay: 0.05, sustainLevel: 0.2, sustain: 0, release: 0.2, curve: 'exp' });
+    const env = renderEnvelope(dur, {
+        attack: 0.001,
+        decay: 0.05,
+        sustainLevel: 0.2,
+        sustain: 0,
+        release: 0.2,
+        curve: 'exp',
+    });
     applyEnvelope(body, env);
     mixMono(out, body, 0.9);
     biquad(out, { type: 'bandpass', freq: 800, q: 0.8 });
@@ -54,7 +61,14 @@ function renderChirp(): Float32Array {
     const dur = 0.2;
     // Upward pitch sweep — birdlike chirp.
     const body = renderSine(dur, (t) => 1200 + 3000 * t);
-    const env = renderEnvelope(dur, { attack: 0.005, decay: 0.05, sustainLevel: 0.3, sustain: 0, release: 0.15, curve: 'exp' });
+    const env = renderEnvelope(dur, {
+        attack: 0.005,
+        decay: 0.05,
+        sustainLevel: 0.3,
+        sustain: 0,
+        release: 0.15,
+        curve: 'exp',
+    });
     applyEnvelope(body, env);
     normalize(body, 0.8);
     return body;

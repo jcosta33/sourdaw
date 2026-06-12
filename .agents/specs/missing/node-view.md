@@ -9,17 +9,19 @@ The user toggles Node View (from the View menu or `Cmd+G`). The currently-select
 The data layer is complete, with one caveat: the stored graph is **an independent editable surface** — it is not derived live from track device state, and the audit cannot find any code that applies node-view edits back to the track.
 
 What exists:
+
 - `src/modules/Plugin/stores/nodeView.ts` — `ProcessingNodeType` (10 types: `input | output | effect | instrument | mixer | splitter | merger | send | return | sidechain`), `ProcessingNode` (geometry + bypass + color), `NodeConnection` (from/to with indexed ports), `NodeViewState` (nodes + connections + viewport + `visible`), `NODE_COLORS`.
 - `src/modules/Plugin/useCases/nodeView/`:
-  - `buildFromDeviceChain` — given a `trackId` + `[{id,name}]`, writes a straight-line graph (Input → devices → Output) into `nodeViewStore`.
-  - `addNode`, `removeNode`, `moveNode`, `toggleBypass` — node-level ops.
-  - `connectNodes`, `disconnectNodes` — edge-level ops (dedup, no self-loops).
-  - `setViewport` — pan / zoom.
-  - `toggleNodeView` — flips `visible`.
+    - `buildFromDeviceChain` — given a `trackId` + `[{id,name}]`, writes a straight-line graph (Input → devices → Output) into `nodeViewStore`.
+    - `addNode`, `removeNode`, `moveNode`, `toggleBypass` — node-level ops.
+    - `connectNodes`, `disconnectNodes` — edge-level ops (dedup, no self-loops).
+    - `setViewport` — pan / zoom.
+    - `toggleNodeView` — flips `visible`.
 - `src/modules/Command/models/AppAction.ts:371` — `{ type: 'toggleNodeView'; payload?: undefined }`.
 - `miscCommands.ts:213-219` — Command Palette entry `toggle-node-view`.
 
 What is missing:
+
 - No renderer — no React component, no SVG/Canvas, no drag/drop.
 - No back-application — editing the graph does not change `Track.devices` ordering, does not add sends, does not change bypass in the Track model. The graph is orphan state.
 - No device connection semantics beyond the trivial chain. `Track.sends: Send[]` exists but there is no mapping to `send`/`return` node types in node-view.
@@ -31,6 +33,7 @@ What is missing:
 ### Rendering: React Flow
 
 Evaluated options:
+
 - **React Flow** (MIT, ~12 KB gz core + ~30 KB plugins) — purpose-built, handles drag, edge rendering, mini-map, viewport, pan/zoom out of the box. Integrates with our existing state model if we pass node/edge arrays and let its controlled `onNodesChange`/`onEdgesChange` write back to `nodeViewStore`.
 - **Custom Canvas renderer** — flexible, but requires implementing viewport math, drag, hit-testing, bezier edges, mini-map. Several weeks of work.
 - **SVG + plain React** — doable but drags with many nodes (>50) become laggy without virtualisation.
@@ -47,34 +50,35 @@ The nodeView store is a **reflection**, not a copy. The rule:
 
 Reconcile on write: every node-view use-case that would change the chain (`connectNodes`, `disconnectNodes`, `moveNode` in some cases, `removeNode`, `toggleBypass`) also dispatches a corresponding `Track` AppAction:
 
-| Node-view op                      | Translates to                              |
-|-----------------------------------|--------------------------------------------|
-| `moveNode` (reorder)              | `{ type: 'reorderDevice', ... }`           |
-| `removeNode` (device node)        | `{ type: 'removeDevice', payload: { trackId, deviceId } }` |
-| `toggleBypass` (device)           | `{ type: 'toggleDeviceBypass', ... }`      |
-| `connectNodes` with `fromNode.type === 'send'` → `toNode.type === 'return'` (a bus return) | `{ type: 'addSend', ... }` |
-| `disconnectNodes` of a send→return edge | `{ type: 'removeSend', ... }` |
-| `addNode` (effect) | opens the device browser to pick the concrete type, then `{ type: 'addDevice', ... }` |
+| Node-view op                                                                               | Translates to                                                                         |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `moveNode` (reorder)                                                                       | `{ type: 'reorderDevice', ... }`                                                      |
+| `removeNode` (device node)                                                                 | `{ type: 'removeDevice', payload: { trackId, deviceId } }`                            |
+| `toggleBypass` (device)                                                                    | `{ type: 'toggleDeviceBypass', ... }`                                                 |
+| `connectNodes` with `fromNode.type === 'send'` → `toNode.type === 'return'` (a bus return) | `{ type: 'addSend', ... }`                                                            |
+| `disconnectNodes` of a send→return edge                                                    | `{ type: 'removeSend', ... }`                                                         |
+| `addNode` (effect)                                                                         | opens the device browser to pick the concrete type, then `{ type: 'addDevice', ... }` |
 
 Sync from track → nodeView: when a track's devices/sends change while the view is open, the view subscribes to `trackStore` and runs a **preserving reconcile**:
+
 - Nodes keep their `(x, y)` positions if their `deviceId` is unchanged.
 - New devices are appended to the right with auto-layout.
 - Removed devices' nodes and incident edges are dropped.
 
 ### Node types — semantic mapping
 
-| Node type     | Represents                                           | Ports in/out |
-|---------------|------------------------------------------------------|--------------|
-| `input`       | Track's pre-device input (MIDI or audio)             | 0 / 1        |
-| `output`      | Track's post-chain signal before fader               | 1 / 0        |
-| `effect`      | A `Device` in `track.devices`                        | 1 / 1        |
-| `instrument`  | A `Device` that is a generator (builtin-synth, SFZ)  | 0 / 1        |
-| `mixer`       | Sum node                                             | N / 1        |
-| `splitter`    | Split into parallel paths                            | 1 / N        |
-| `merger`      | Sum of multiple paths                                | N / 1        |
-| `send`        | A `Send` on the track                                | 1 / 1        |
-| `return`      | A bus track's input (cross-track)                    | 1 / 1        |
-| `sidechain`   | External input to a sidechain-aware device           | 0 / 1 (logical) |
+| Node type    | Represents                                          | Ports in/out    |
+| ------------ | --------------------------------------------------- | --------------- |
+| `input`      | Track's pre-device input (MIDI or audio)            | 0 / 1           |
+| `output`     | Track's post-chain signal before fader              | 1 / 0           |
+| `effect`     | A `Device` in `track.devices`                       | 1 / 1           |
+| `instrument` | A `Device` that is a generator (builtin-synth, SFZ) | 0 / 1           |
+| `mixer`      | Sum node                                            | N / 1           |
+| `splitter`   | Split into parallel paths                           | 1 / N           |
+| `merger`     | Sum of multiple paths                               | N / 1           |
+| `send`       | A `Send` on the track                               | 1 / 1           |
+| `return`     | A bus track's input (cross-track)                   | 1 / 1           |
+| `sidechain`  | External input to a sidechain-aware device          | 0 / 1 (logical) |
 
 ### Visual layout
 
@@ -125,11 +129,11 @@ export function getConnectionsForNode(id: string): { incoming: NodeConnection[];
 - **Toolbar** (top-right of canvas) — `Re-Layout`, `Zoom In/Out/Fit`, `Close`.
 - **Node chrome** — rounded rect, colour from `NODE_COLORS[type]`, label centered, input ports on the left, output ports on the right, bypass indicator (small stripe) when bypassed.
 - **Interactions**:
-  - Drag a node → updates `(x, y)` via `moveNode`.
-  - Drag from an output port to an input port → creates a connection. If valid, dispatches `connectNodes` (→ `applyNodeOpToTrack` if crossing `send`/`return`).
-  - Right-click a node → context menu: Bypass, Delete, Rename, "Open Parameter Panel" (for effects/instruments).
-  - Right-click canvas → context menu: "Add Effect…" (opens device browser), "Add Send", "Re-Layout".
-  - Shift-click an edge to delete.
+    - Drag a node → updates `(x, y)` via `moveNode`.
+    - Drag from an output port to an input port → creates a connection. If valid, dispatches `connectNodes` (→ `applyNodeOpToTrack` if crossing `send`/`return`).
+    - Right-click a node → context menu: Bypass, Delete, Rename, "Open Parameter Panel" (for effects/instruments).
+    - Right-click canvas → context menu: "Add Effect…" (opens device browser), "Add Send", "Re-Layout".
+    - Shift-click an edge to delete.
 - **Mini-map** — React Flow built-in, bottom-right.
 - **Graph error states** — invalid cycles, disconnected nodes, send to non-existent return are surfaced with a red outline and a toast.
 
@@ -147,14 +151,17 @@ Decision: **B, with an extension field for non-device nodes.**
 type ProjectData = {
     // ...
     nodeView?: {
-        trackLayouts: Record<string /* trackId */, {
-            nodePositions: Record<string /* nodeId | deviceId */, { x: number; y: number }>;
-            viewport: { panX: number; panY: number; zoom: number };
-            /** Nodes not backed by a Device — user-added mixers, splitters, mergers */
-            extraNodes: ProcessingNode[];
-            /** Edges specifically created in the graph (sends are not here — those live in Track.sends) */
-            extraEdges: NodeConnection[];
-        }>;
+        trackLayouts: Record<
+            string /* trackId */,
+            {
+                nodePositions: Record<string /* nodeId | deviceId */, { x: number; y: number }>;
+                viewport: { panX: number; panY: number; zoom: number };
+                /** Nodes not backed by a Device — user-added mixers, splitters, mergers */
+                extraNodes: ProcessingNode[];
+                /** Edges specifically created in the graph (sends are not here — those live in Track.sends) */
+                extraEdges: NodeConnection[];
+            }
+        >;
     };
 };
 ```
@@ -187,18 +194,21 @@ Hydration: load layouts; topology is rebuilt on `openNodeViewForTrack`. Migratio
 ## Milestones
 
 ### M1 — Use-case completion (one session)
+
 - `relayoutGraph`, `reconcileFromTrack`, `applyNodeOpToTrack` use-cases.
 - Cycle detection in `connectNodes`.
 - 9 AppActions + handlers in `Plugin/handlers/`.
 - Unit tests covering each.
 
 ### M2 — Renderer with React Flow (one session)
+
 - `NodeViewCanvas`, `NodeComponent`, `EdgeComponent`.
 - Lazy-load `reactflow`.
 - Initial read-only view: open for selected track, show nodes + edges from store.
 - Viewport persistence (pan/zoom writes to store).
 
 ### M3 — Interactive edits (one session)
+
 - Drag node → dispatch `moveNode`.
 - Drag port-to-port → dispatch `connectNodes`.
 - Right-click menus: bypass, delete, add effect (opens device browser).
@@ -206,11 +216,13 @@ Hydration: load layouts; topology is rebuilt on `openNodeViewForTrack`. Migratio
 - Round-trip test: a drag in the graph reorders `Track.devices`.
 
 ### M4 — Track ↔ Graph reconcile (one session)
+
 - Subscribe `trackStore`, run `reconcileFromTrack` with position preservation.
 - `applyNodeOpToTrack` translator covering all 7 op kinds.
 - Tests: adding a device in linear view shows up in graph; deleting in graph removes from linear.
 
 ### M5 — Persistence + sends (one session)
+
 - `ProjectData.nodeView.trackLayouts` schema + hydration + serialisation.
 - Send/return node pairs driven by `Track.sends` and bus tracks.
 - Tests: save/load with 2 tracks, one with a send, graph reloads at correct positions.

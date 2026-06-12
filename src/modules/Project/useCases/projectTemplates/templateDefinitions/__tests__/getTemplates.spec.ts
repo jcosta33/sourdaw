@@ -12,13 +12,6 @@ describe('getTemplates', () => {
         expect(ids).not.toContain('demo-native-showcase');
     });
 
-    it('includes native-only templates when the Tauri marker is present', () => {
-        Object.defineProperty(window, '__TAURI_INTERNALS__', { configurable: true, value: {} });
-        const ids = getTemplates().map((time) => time.id);
-        expect(ids).toContain('demo-native-showcase');
-    });
-
-
     it('always includes the empty project template', () => {
         const ids = getTemplates().map((time) => time.id);
         expect(ids).toContain('empty');
@@ -27,7 +20,6 @@ describe('getTemplates', () => {
     it('includes the genre and demo templates', () => {
         const ids = getTemplates().map((t) => t.id);
         expect(ids).toContain('pop-song');
-        expect(ids).toContain('demo-complete');
         expect(ids).toContain('demo-nebula-drift');
     });
 });

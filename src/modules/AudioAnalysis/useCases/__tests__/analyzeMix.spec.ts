@@ -15,9 +15,13 @@ const readFrequencyBalanceMock = vi.fn(() => ({
 const detectIssuesMock = vi.fn(() => []);
 const generateSuggestionsMock = vi.fn(() => []);
 const getTrackStripMock = vi.fn();
-const getTrackStoreStateMock = vi.fn(() => ({ tracks: [], selectedTrackId: null }));
+const { mocks } = vi.hoisted(() => ({
+    mocks: {
+        trackStore: { value: { tracks: [], selectedTrackId: null } },
+    },
+}));
 
-vi.mock('#/modules/AiRuntime/useCases', () => ({
+vi.mock('../../services/mixAnalysisHelpers', () => ({
     detectIssues: (...args: any[]) => detectIssuesMock(...args),
     generateSuggestions: (...args: any[]) => generateSuggestionsMock(...args),
     readFrequencyBalance: (...args: any[]) => readFrequencyBalanceMock(...args),
@@ -29,8 +33,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getTrackStrip: (...args: any[]) => getTrackStripMock(...args),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    getTrackStoreState: (...args: any[]) => getTrackStoreStateMock(...args),
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    trackStore: mocks.trackStore,
 }));
 
 describe('analyzeMix', () => {

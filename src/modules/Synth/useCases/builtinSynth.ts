@@ -3,10 +3,34 @@
  * Delegates to SynthModels for types/defaults.
  */
 
-import { defaultSynthParams, type MpeParams, type SynthParams } from '#/modules/AudioEngine/useCases';
+import { type MpeParams, type SynthParams } from '#/modules/AudioEngine/useCases';
 
 // Consumer-local shape (AGENTS.md §95 — model isolation). Only fields used here.
 type Device = { type: string; parameterValues: Record<string, number> };
+
+const defaultSynthParams: SynthParams = {
+    waveform: 'sawtooth',
+    attack: 0.01,
+    decay: 0.2,
+    sustain: 0.7,
+    release: 0.3,
+    filterCutoff: 5000,
+    filterResonance: 1,
+    filterType: 'lowpass',
+    filterEnvAmount: 0,
+    detune: 0,
+    gain: 0.3,
+    osc2Waveform: 'sawtooth',
+    osc2Detune: 0,
+    osc2Mix: 0,
+    subOscLevel: 0,
+    noiseLevel: 0,
+    vibratoRate: 0,
+    vibratoDepth: 0,
+    vibratoDelay: 0.3,
+    stereoSpread: 0,
+    filterVelocitySensitivity: 0,
+};
 
 // Pre-generated noise buffer (§54.1 — avoid per-note AudioBuffer allocation).
 // Cached by AudioContext sample rate — reused across every note until the

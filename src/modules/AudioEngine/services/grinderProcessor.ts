@@ -35,6 +35,9 @@ const PARAM_MAP: Record<string, string> = {
     transformerDrive: 'transformerDrive',
     transformerHysteresis: 'transformerHysteresis',
     transformerLfSaturation: 'transformerLfSaturation',
+    cabType: 'cabType',
+    cabIrSlot: 'cabIrSlot',
+    routingMode: 'routingMode',
     cabEnabled: 'cabEnabled',
     cabResonanceFreq: 'cabResonanceFreq',
     cabDamping: 'cabDamping',
@@ -117,7 +120,95 @@ const MAX_GRINDER_BLOCK_SIZE = 2048;
 type GrinderMsg =
     | { type: 'init'; wasmBytes: BufferSource }
     | { type: 'init-sab'; sab: SharedArrayBuffer; byteOffset: number }
-    | { type: 'param'; name: string; value: number };
+    | { type: 'param'; name: string; value: number }
+    | { type: 'patch'; patch: Record<string, unknown> };
+
+type GrinderNeuralProfilePatch = {
+    neuralModelMode?: unknown;
+    profile?: {
+        preferredTier?: unknown;
+        inputDrive?: unknown;
+        asymmetry?: unknown;
+        outputTrim?: unknown;
+        contourMix?: unknown;
+        recurrentBias?: unknown;
+        convWeights?: unknown;
+    };
+};
+
+const NEURAL_TIER_INDEX: Record<string, number> = {
+    standard: 0,
+    lite: 1,
+    nano: 2,
+    recurrent: 3,
+};
+
+function to_finite_number(value: unknown): number | null {
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function applyNeuralPatch(instance: GrinderInstance, patch: Record<string, unknown>): void {
+    const neural_patch = patch as GrinderNeuralProfilePatch;
+    if (neural_patch.neuralModelMode === 'builtin') {
+        instance.set_param('neuralModelMode', 0);
+        return;
+    }
+
+    if (
+        neural_patch.neuralModelMode !== 'imported' ||
+        !neural_patch.profile ||
+        typeof neural_patch.profile !== 'object'
+    ) {
+        return;
+    }
+
+    const profile = neural_patch.profile;
+    const conv_weights = Array.isArray(profile.convWeights) ? profile.convWeights : [];
+
+    const preferred_tier =
+        typeof profile.preferredTier === 'string' ? (NEURAL_TIER_INDEX[profile.preferredTier] ?? 0) : 0;
+    instance.set_param('neuralCustomTier', preferred_tier);
+
+    const input_drive = to_finite_number(profile.inputDrive);
+    if (input_drive !== null) {
+        instance.set_param('neuralCustomInputDrive', input_drive);
+    }
+
+    const asymmetry = to_finite_number(profile.asymmetry);
+    if (asymmetry !== null) {
+        instance.set_param('neuralCustomAsymmetry', asymmetry);
+    }
+
+    const output_trim = to_finite_number(profile.outputTrim);
+    if (output_trim !== null) {
+        instance.set_param('neuralCustomOutputTrim', output_trim);
+    }
+
+    const contour_mix = to_finite_number(profile.contourMix);
+    if (contour_mix !== null) {
+        instance.set_param('neuralCustomContourMix', contour_mix);
+    }
+
+    const recurrent_bias = to_finite_number(profile.recurrentBias);
+    if (recurrent_bias !== null) {
+        instance.set_param('neuralCustomLstmBias', recurrent_bias);
+    }
+
+    for (let layer_index = 0; layer_index < conv_weights.length; layer_index++) {
+        const weights = conv_weights[layer_index];
+        if (!Array.isArray(weights) || weights.length < 3) {
+            continue;
+        }
+        for (let weight_index = 0; weight_index < 3; weight_index++) {
+            const value = to_finite_number(weights[weight_index]);
+            if (value !== null) {
+                instance.set_param(`neuralCustomConvWeight${layer_index}_${weight_index}`, value);
+            }
+        }
+    }
+
+    instance.set_param('neuralModelMode', 1);
+}
 
 class GrinderProcessor extends AudioWorkletProcessor {
     static get parameterDescriptors() {
@@ -155,7 +246,19 @@ class GrinderProcessor extends AudioWorkletProcessor {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                 } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
                     const rustName = PARAM_MAP[msg.name] ?? msg.name;
+                    const oldLatency = this._instance.get_latency_samples();
                     this._instance.set_param(rustName, msg.value);
+                    const newLatency = this._instance.get_latency_samples();
+                    if (newLatency !== oldLatency) {
+                        this.port.postMessage({ type: 'latency-changed', latency: newLatency });
+                    }
+                } else if (msg.type === 'patch' && this._instance !== null && !this._faulted) {
+                    const oldLatency = this._instance.get_latency_samples();
+                    applyNeuralPatch(this._instance, msg.patch);
+                    const newLatency = this._instance.get_latency_samples();
+                    if (newLatency !== oldLatency) {
+                        this.port.postMessage({ type: 'latency-changed', latency: newLatency });
+                    }
                 }
             } catch (error) {
                 console.error('GrinderProcessor error:', error);
@@ -168,7 +271,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
         this._memory = wasmExports.memory;
         this._instance = new GrinderInstance(sampleRate);
         this._ready = true;
-        this.port.postMessage({ type: 'ready' });
+        this.port.postMessage({ type: 'ready', latency: this._instance.get_latency_samples() });
     }
 
     _passthrough(input: Float32Array[], output: Float32Array[]): void {

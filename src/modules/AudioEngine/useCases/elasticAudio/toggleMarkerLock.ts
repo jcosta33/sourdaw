@@ -1,6 +1,5 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
-
-import { warpStates } from '../../../Arrangement/useCases/warp/helpers';
+import { warpStates } from '#/modules/Arrangement/stores';
+import { pushUndoEntry } from '#/modules/Command/stores';
 
 function findOwningClip(markerId: string): string | null {
     for (const [clipId, state] of warpStates) {
@@ -22,9 +21,7 @@ export function toggleMarkerLock(markerId: string): void {
     }
     const beforeSnapshot = { ...before, markers: [...before.markers] };
 
-    const nextMarkers = before.markers.map((m) =>
-        m.id === markerId ? { ...m, locked: !(m.locked ?? false) } : m
-    );
+    const nextMarkers = before.markers.map((m) => (m.id === markerId ? { ...m, locked: !(m.locked ?? false) } : m));
     const nextState = { ...before, markers: nextMarkers };
     warpStates.set(clipId, nextState);
 

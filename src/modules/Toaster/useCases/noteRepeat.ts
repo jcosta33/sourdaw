@@ -62,7 +62,13 @@ function scheduleNextTrigger(): void {
     activeSession.timeoutId = setTimeout(scheduleNextTrigger, delayMs);
 }
 
-export function startNoteRepeat(deviceId: string, padIndex: number, velocity: number, bpm: number, rate: NoteRepeatRate): void {
+export function startNoteRepeat(
+    deviceId: string,
+    padIndex: number,
+    velocity: number,
+    bpm: number,
+    rate: NoteRepeatRate
+): void {
     stopNoteRepeat();
     const durationMs = rateToDurationMs(rate, bpm);
     const intervalSec = durationMs / 1000;

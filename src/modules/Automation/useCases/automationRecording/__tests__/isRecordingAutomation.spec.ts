@@ -2,20 +2,28 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { isRecordingAutomation } from '../isRecordingAutomation';
 
-import type { Track } from '#/modules/Arrangement/models/Track';
+type TestTrack = {
+    id: string;
+    kind: 'audio';
+    automationMode: 'read' | 'write' | 'touch' | 'latch';
+};
 
-const { activeRecording, touchActive, getTrackByIdMock } = vi.hoisted(() => {
+const { activeRecording, touchActive, trackSnapshot } = vi.hoisted(() => {
     const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
     const touchActive = new Set<string>();
-    const getTrackByIdMock = vi.fn<(id: string) => import('#/modules/Arrangement/models/Track').Track | undefined>();
-    return { activeRecording, touchActive, getTrackByIdMock };
+    const trackSnapshot: { value: { tracks: TestTrack[] } | null } = { value: null };
+    return { activeRecording, touchActive, trackSnapshot };
 });
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
-    const mod = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
     return {
-        ...mod,
-        getTrackById: getTrackByIdMock,
+        ...actual,
+        trackStore: {
+            get value() {
+                return trackSnapshot.value;
+            },
+        },
     };
 });
 
@@ -25,11 +33,16 @@ vi.mock('../recordingSessionState', () => ({
     makeKey: (trackId: string, parameterId: string) => `${trackId}::${parameterId}`,
 }));
 
+function setTracks(tracks: TestTrack[]): void {
+    trackSnapshot.value = { tracks };
+}
+
 describe('isRecordingAutomation', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         activeRecording.clear();
         touchActive.clear();
+        trackSnapshot.value = null;
     });
 
     it('returns false when there is no active recording session', () => {
@@ -43,7 +56,7 @@ describe('isRecordingAutomation', () => {
             startBeat: 0,
             lastValue: null,
         });
-        getTrackByIdMock.mockReturnValue(undefined);
+        setTracks([]);
 
         expect(isRecordingAutomation('t1', 'gain')).toBe(false);
     });
@@ -55,11 +68,7 @@ describe('isRecordingAutomation', () => {
             startBeat: 0,
             lastValue: null,
         });
-        getTrackByIdMock.mockReturnValue({
-            id: 't1',
-            kind: 'audio',
-            automationMode: 'write',
-        } as Track);
+        setTracks([{ id: 't1', kind: 'audio', automationMode: 'write' }]);
 
         expect(isRecordingAutomation('t1', 'gain')).toBe(true);
     });
@@ -71,11 +80,7 @@ describe('isRecordingAutomation', () => {
             startBeat: 0,
             lastValue: null,
         });
-        getTrackByIdMock.mockReturnValue({
-            id: 't1',
-            kind: 'audio',
-            automationMode: 'touch',
-        } as Track);
+        setTracks([{ id: 't1', kind: 'audio', automationMode: 'touch' }]);
 
         expect(isRecordingAutomation('t1', 'gain')).toBe(false);
 
@@ -90,11 +95,7 @@ describe('isRecordingAutomation', () => {
             startBeat: 0,
             lastValue: null,
         });
-        getTrackByIdMock.mockReturnValue({
-            id: 't1',
-            kind: 'audio',
-            automationMode: 'latch',
-        } as Track);
+        setTracks([{ id: 't1', kind: 'audio', automationMode: 'latch' }]);
 
         expect(isRecordingAutomation('t1', 'gain')).toBe(false);
 

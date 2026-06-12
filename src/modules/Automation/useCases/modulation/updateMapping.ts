@@ -1,11 +1,7 @@
 import { type ModulatorMapping } from '../../models/Modulator';
 import { modulationStore } from '../../stores/modulationStore';
 
-export function updateMapping(
-    modulatorId: string,
-    targetParamId: string,
-    patch: Partial<ModulatorMapping>
-): void {
+export function updateMapping(modulatorId: string, targetParamId: string, patch: Partial<ModulatorMapping>): void {
     const state = modulationStore.value;
     if (!state) {
         return;

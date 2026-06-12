@@ -1,7 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
-import { generateToolCalls } from '#/modules/AiRuntime';
-import { trackStore, addClip } from '#/modules/Arrangement';
-import { addMidiNote, getNotesForClip } from '#/modules/MIDI';
+import { generateToolCalls } from '#/modules/AiRuntime/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { addClip } from '#/modules/Arrangement/useCases';
+import { addMidiNote, getNotesForClip } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { llmGenerateNotes } from './llmNoteHelpers';
@@ -28,44 +29,44 @@ export const handleCompleteMidi = createHandler<'completeMidi'>({
         const notes = await llmGenerateNotes(generateToolCalls, instruction, existing, alpha.payload.clipId);
 
         if (direction === 'backward') {
-             const trackState = trackStore.value;
-             const refTrack = trackState?.tracks.find(t => t.clips.some(c => c.id === alpha.payload.clipId));
-             const refClip = refTrack?.clips.find(c => c.id === alpha.payload.clipId);
+            const trackState = trackStore.value;
+            const refTrack = trackState?.tracks.find((t) => t.clips.some((c) => c.id === alpha.payload.clipId));
+            const refClip = refTrack?.clips.find((c) => c.id === alpha.payload.clipId);
 
-             if (refTrack && refClip) {
-                 // Calculate bounds for the new prepended clip
-                 // The LLM generated notes with negative startBeat values (e.g. -4 to 0)
-                 // We normalize these to a 0-indexed clip
-                 let minBeat = 0;
-                 for (const n of notes) {
-                     if (n.startBeat < minBeat) {
-                         minBeat = n.startBeat;
-                     }
-                 }
+            if (refTrack && refClip) {
+                // Calculate bounds for the new prepended clip
+                // The LLM generated notes with negative startBeat values (e.g. -4 to 0)
+                // We normalize these to a 0-indexed clip
+                let minBeat = 0;
+                for (const n of notes) {
+                    if (n.startBeat < minBeat) {
+                        minBeat = n.startBeat;
+                    }
+                }
 
-                 const durationBeats = bars * 4;
-                 const newStartBeat = Math.max(0, refClip.startBeat - durationBeats);
+                const durationBeats = bars * 4;
+                const newStartBeat = Math.max(0, refClip.startBeat - durationBeats);
 
-                 const newClip = addClip({
-                     trackId: refTrack.id,
-                     startBeat: newStartBeat,
-                     endBeat: refClip.startBeat, // abut up to the original clip
-                     name: `${refClip.name} (intro)`,
-                     type: 'midi'
-                 });
+                const newClip = addClip({
+                    trackId: refTrack.id,
+                    startBeat: newStartBeat,
+                    endBeat: refClip.startBeat, // abut up to the original clip
+                    name: `${refClip.name} (intro)`,
+                    type: 'midi',
+                });
 
-                 if (newClip) {
-                     for (const note of notes) {
-                         // Shift notes so the lowest negative value becomes 0 relative to the new clip
-                         const shiftedStart = note.startBeat - minBeat;
-                         addMidiNote(newClip.id, note.pitch, shiftedStart, note.duration, note.velocity ?? 100);
-                     }
-                 }
-             }
+                if (newClip) {
+                    for (const note of notes) {
+                        // Shift notes so the lowest negative value becomes 0 relative to the new clip
+                        const shiftedStart = note.startBeat - minBeat;
+                        addMidiNote(newClip.id, note.pitch, shiftedStart, note.duration, note.velocity ?? 100);
+                    }
+                }
+            }
         } else {
-             for (const note of notes) {
-                 addMidiNote(alpha.payload.clipId, note.pitch, note.startBeat, note.duration, note.velocity ?? 100);
-             }
+            for (const note of notes) {
+                addMidiNote(alpha.payload.clipId, note.pitch, note.startBeat, note.duration, note.velocity ?? 100);
+            }
         }
 
         logger.info(`[AI MIDI] Completed ${String(notes.length)} notes (${direction})`);

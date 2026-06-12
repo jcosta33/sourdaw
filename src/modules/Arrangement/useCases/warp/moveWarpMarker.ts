@@ -1,4 +1,4 @@
-import { getWarpState, warpStates } from './helpers';
+import { getWarpState, warpStates } from '../../stores/warpStates';
 
 export function moveWarpMarker(clipId: string, markerId: string, newWarpedBeat: number): void {
     const current = getWarpState(clipId);

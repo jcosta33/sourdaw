@@ -36,10 +36,11 @@ export type ProofNodeResult = {
     reorderModules: (order: [number, number, number, number, number]) => void;
     resetIntegrated: () => void;
     onMeterData: (cb: (data: ProofMeterData) => void) => void;
+    onLatencyChanged: (cb: (latency: number) => void) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
     destroy: () => void;
-    ready: Promise<void>;
+    ready: Promise<Record<string, unknown>>;
 };
 
 export function isProofDevice(deviceType: string): boolean {
@@ -67,12 +68,20 @@ export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): 
 
     let bypassed = false;
     let meterCallback: ((data: ProofMeterData) => void) | null = null;
+    let latencyCallback: ((latency: number) => void) | null = null;
     let sabSlot = telemetryAllocator.allocateSlot();
     let pollInterval: ReturnType<typeof setInterval> | null = null;
 
     const handshake = createReadyHandshake({ pluginName: 'ProofNode' });
     node.port.onmessage = (event: MessageEvent) => {
         const outcome = handshake.onMessage(event);
+        if (outcome === 'other') {
+            const data = event.data as Record<string, unknown>;
+            if (data && data.type === 'latency-changed' && typeof data.latency === 'number') {
+                latencyCallback?.(data.latency);
+            }
+            return;
+        }
         if (outcome !== 'ready') {
             return;
         }
@@ -136,6 +145,9 @@ export async function createProofNode(ctx: BaseAudioContext, wasmUrl?: string): 
         },
         onMeterData(cb: (data: ProofMeterData) => void) {
             meterCallback = cb;
+        },
+        onLatencyChanged(cb: (latency: number) => void) {
+            latencyCallback = cb;
         },
         connect(dest: AudioNode) {
             node.connect(dest);

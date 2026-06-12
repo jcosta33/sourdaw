@@ -18,7 +18,11 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
  * construction regardless of which instrument the user had actually selected;
  * those samples would then race the patch-driven reload in `registerLevainDevice`.
  */
-export async function autoLoadLevainSamples(deviceId: string, nodePort: MessagePort, instrumentId: string): Promise<void> {
+export async function autoLoadLevainSamples(
+    deviceId: string,
+    nodePort: MessagePort,
+    instrumentId: string
+): Promise<void> {
     let manifestBase = `/samples/levain/${instrumentId}`;
 
     // In Tauri desktop, we bypass the embedded frontend cache

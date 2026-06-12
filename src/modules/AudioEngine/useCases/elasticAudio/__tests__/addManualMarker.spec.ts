@@ -13,11 +13,11 @@ const mocks = vi.hoisted(() => ({
     >(),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/stores', () => ({
     pushUndoEntry: (...args: unknown[]) => mocks.pushUndoEntry(...args),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement/stores', () => ({
     addWarpMarker: (clipId: string, originalBeat: number, warpedBeat: number, options?: { origin?: string }) => {
         const state = mocks.warpStates.get(clipId) ?? {
             enabled: false,
@@ -37,9 +37,6 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
         ];
         mocks.warpStates.set(clipId, { ...state, markers: nextMarkers });
     },
-}));
-
-vi.mock('../../../../Arrangement/useCases/warp/helpers', () => ({
     warpStates: mocks.warpStates,
     getWarpState: (clipId: string) =>
         mocks.warpStates.get(clipId) ?? {

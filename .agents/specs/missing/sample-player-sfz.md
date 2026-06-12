@@ -15,6 +15,7 @@ The audit references `src/modules/AudioEngine/useCases/samplePlayer/` but that d
 - `src/modules/SampleLibrary/` — sample asset management, tagging, import. We reuse its decode + cache helpers.
 
 What is missing:
+
 - SFZ parser.
 - Sample loader keyed by SFZ region.
 - Voice allocator (SFZ requires up to ~128 simultaneous voices).
@@ -37,6 +38,7 @@ Full SFZ v2 is huge. v1 supports the practical subset used by 95% of free librar
 ### Parser
 
 A new dependency: `sfz-parser` (pure TS, ~8 KB). Evaluated in [References]:
+
 - Port `@sfz-tools/core` (MIT) — best fit. Parses to a plain AST of headers (`<region>`, `<group>`, `<global>`) and opcode records. We wrap it to produce our own normalised `SfzInstrument` model.
 - Alternative: port the parser from Sfizz (C++) — too heavy for v1.
 
@@ -53,25 +55,27 @@ Decision: **use `@sfz-tools/core`** as a dependency, wrapped by our own model. N
 ### Voice allocator
 
 An SFZ device has:
+
 - A `voices: Voice[]` pool sized to `polyphony` opcode (fallback 64).
 - A free-list stack for O(1) allocation.
 - A steal policy: when full, steal the oldest released voice; if none released, steal the oldest voice with the lowest current amplitude.
 
 Each voice holds:
+
 ```ts
 type Voice = {
-    regionIndex: number;      // index into SfzInstrument.regions
+    regionIndex: number; // index into SfzInstrument.regions
     midiNote: number;
     velocity: number;
     startSample: number;
-    playhead: number;         // integer samples into sample buffer
-    amp: number;              // current amp (from envelope)
+    playhead: number; // integer samples into sample buffer
+    amp: number; // current amp (from envelope)
     envState: 'attack' | 'decay' | 'sustain' | 'release' | 'free';
-    envStage: number;         // sample-counter within current stage
+    envStage: number; // sample-counter within current stage
     loopState: 'pre-loop' | 'looping' | 'released';
     filterState: BiquadState; // if region has filter
     group: number | null;
-    offBy: number | null;     // group this voice silences when triggered (SFZ off_by)
+    offBy: number | null; // group this voice silences when triggered (SFZ off_by)
 };
 ```
 
@@ -99,6 +103,7 @@ All voice state lives in a `SharedArrayBuffer` (matches existing worklet convent
 The node is registered in `DEVICE_FACTORIES` as a generator: `inputNode.numberOfInputs === 0` so it adds to the signal path rather than interrupting it (see `TrackNode.rebuildChain` — generator branch).
 
 MIDI: extend `BuiltinDeviceNode` with an `sfzPlayerControls` block mirroring `toasterControls`:
+
 ```ts
 sfzPlayerControls?: {
     ready: boolean;
@@ -117,21 +122,23 @@ sfzPlayerControls?: {
 ```ts
 // src/modules/SamplePlayer/models/SfzInstrument.ts
 export type SfzRegion = {
-    sampleId: string;            // audioBufferCache key
-    loKey: number; hiKey: number;
+    sampleId: string; // audioBufferCache key
+    loKey: number;
+    hiKey: number;
     pitchKeyCenter: number;
-    loVel: number; hiVel: number;
+    loVel: number;
+    hiVel: number;
     volumeDb: number;
     pan: number;
     tuneCents: number;
     transposeSemis: number;
-    ampVeltrack: number;         // 0..100
+    ampVeltrack: number; // 0..100
     loopMode: 'no_loop' | 'loop_continuous' | 'one_shot';
     loopStartSample?: number;
     loopEndSample?: number;
     ampegAttackMs: number;
     ampegDecayMs: number;
-    ampegSustain: number;        // 0..1
+    ampegSustain: number; // 0..1
     ampegReleaseMs: number;
     filType: 'off' | 'lpf_2p' | 'hpf_2p';
     cutoffHz: number;
@@ -139,7 +146,7 @@ export type SfzRegion = {
     trigger: 'attack' | 'release' | 'first' | 'legato';
     group: number | null;
     offBy: number | null;
-    polyphony: number | null;    // per-region
+    polyphony: number | null; // per-region
 };
 
 export type SfzInstrument = {
@@ -158,14 +165,21 @@ export function parseSfz(sfzText: string, baseUrl: string): Result<SfzInstrument
 // src/modules/SamplePlayer/useCases/loadSfzPatch.ts
 /** Decodes the SFZ text + all referenced sample files, writes to audioBufferCache,
  *  returns the normalised SfzInstrument. Emits progress events. */
-export async function loadSfzPatch(input: { sfzText: string; baseUrl: string; onProgress?: (p: number) => void }): Promise<Result<SfzInstrument, SfzError>>;
+export async function loadSfzPatch(input: {
+    sfzText: string;
+    baseUrl: string;
+    onProgress?: (p: number) => void;
+}): Promise<Result<SfzInstrument, SfzError>>;
 
 // src/modules/SamplePlayer/useCases/loadSfzFromBundle.ts
 /** .zip bundle containing .sfz + samples */
 export async function loadSfzFromBundle(bundle: File | ArrayBuffer): Promise<Result<SfzInstrument, SfzError>>;
 
 // src/modules/SamplePlayer/useCases/attachSfzToTrack.ts
-export async function attachSfzToTrack(trackId: string, patch: SfzInstrument): Promise<Result<{ deviceId: string }, SfzError>>;
+export async function attachSfzToTrack(
+    trackId: string,
+    patch: SfzInstrument
+): Promise<Result<{ deviceId: string }, SfzError>>;
 
 // src/modules/SamplePlayer/useCases/setSfzParam.ts
 /** Global per-instrument params: masterVolume, masterTune, filterCutoffOffset */
@@ -190,10 +204,10 @@ export type SfzError =
 
 - **Drop target** — a MIDI track's header accepts `.sfz` and `.zip` drops. On drop: load → attach → notify.
 - **Device panel** — new panel component at `src/modules/SamplePlayer/presentations/views/SfzPlayerPanel.tsx`, registered in the existing plugin panel registry.
-  - Top: instrument name, patch hash (short), "Change patch" button.
-  - Middle: region map visualisation — x = MIDI note, y = velocity, coloured rectangles per region. Hovering shows region details.
-  - Bottom: global knobs (Master Volume, Master Tune, Filter Cutoff Offset, Voices Playing).
-  - Status: loading progress bar while samples decode.
+    - Top: instrument name, patch hash (short), "Change patch" button.
+    - Middle: region map visualisation — x = MIDI note, y = velocity, coloured rectangles per region. Hovering shows region details.
+    - Bottom: global knobs (Master Volume, Master Tune, Filter Cutoff Offset, Voices Playing).
+    - Status: loading progress bar while samples decode.
 - **Browser entry** — Sample Library sidebar gets a "SFZ" category. Drag-to-track creates an `sfz-player` device pre-loaded.
 - **Command Palette** — `SFZ: Load Patch…` (opens file picker), `SFZ: Unload Current Patch`.
 
@@ -202,6 +216,7 @@ export type SfzError =
 `Device` gains a new `type: 'sfz-player'` value (already a string, no enum widening needed — only `DEVICE_FACTORIES` entry).
 
 Add to `Device`:
+
 ```ts
 type Device = {
     // ... existing ...
@@ -212,6 +227,7 @@ type Device = {
 The patch text is stored **once, content-addressed**, in a new CAS map `ProjectData.samplePlayer.patches: Record<patchHash, { sfzText: string; name: string; sampleRefs: Array<{ sampleId: string; source: 'asset' | 'bundle' }> }>`. Samples themselves stay in the existing `audioBufferCache` / `AssetTransfer` CAS — SFZ just references `sampleId`s.
 
 On project load:
+
 1. Walk all devices with `type === 'sfz-player'`.
 2. For each `sfzPatchHash`, look up `ProjectData.samplePlayer.patches[hash]`.
 3. Call `loadSfzPatch` (which will hit the CAS for both patch text and sample buffers).
@@ -245,17 +261,20 @@ Migration: optional field, no migration pain.
 ## Milestones
 
 ### M1 — Parser + data model (one session)
+
 - Dependency `@sfz-tools/core`.
 - `parseSfz()` wrapping the dep → `SfzInstrument`.
 - Unit tests for 5 representative SFZs (simple single-region, multi-velocity, keyswitched group, loop-continuous, release trigger).
 
 ### M2 — Loader + cache integration (one session)
+
 - `loadSfzPatch` with parallel sample decode.
 - Content-addressed `patchHash` + `sampleId`.
 - Progress events.
 - `loadSfzFromBundle` (`.zip`).
 
 ### M3 — Worklet processor + voice allocator (one session)
+
 - `sfzPlayerProcessor.ts` AudioWorklet.
 - SAB-backed voice pool.
 - MIDI event queue.
@@ -263,6 +282,7 @@ Migration: optional field, no migration pain.
 - No filter yet.
 
 ### M4 — Device chain integration + UI (one session)
+
 - `createSfzPlayer` factory.
 - `attachSfzToTrack` use-case.
 - `SfzPlayerPanel` with region map and global knobs.
@@ -270,6 +290,7 @@ Migration: optional field, no migration pain.
 - Drop-target wiring on MIDI tracks.
 
 ### M5 — Filter, off_by, persistence (one session)
+
 - 2-pole LP/HP filter per voice.
 - `group` + `off_by` voice-silencing logic.
 - `ProjectData.samplePlayer.patches` schema + hydration.

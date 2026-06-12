@@ -317,8 +317,11 @@ export class TrackNode {
                         }
                     }
                 },
-                setBypass: (bypassed: boolean) => { dn!.bypassed = bypassed; this.scheduleRebuildChain(); },
-                destroy: () => {}
+                setBypass: (bypassed: boolean) => {
+                    dn!.bypassed = bypassed;
+                    this.scheduleRebuildChain();
+                },
+                destroy: () => {},
             };
         } else if (deviceType === 'external-plugin') {
             // Native plugin bridge: uses SharedArrayBuffer for zero-copy audio transfer
@@ -338,7 +341,7 @@ export class TrackNode {
                     pendingParams.push([name, value]);
                 },
                 setBypass: () => {},
-                destroy: () => {}
+                destroy: () => {},
             };
             dn.nativeDspControls = loadingControls;
             dn.controller = loadingControls;
@@ -352,10 +355,9 @@ export class TrackNode {
                     const idx = this.strip.deviceNodes.findIndex((d) => d.deviceId === deviceId);
                     if (idx !== -1) {
                         const controls = {
-                            setParam: (name: string, value: number) =>
-                                result.setParam(parseInt(name, 10) || 0, value),
+                            setParam: (name: string, value: number) => result.setParam(parseInt(name, 10) || 0, value),
                             setBypass: result.setBypass,
-                            destroy: () => result.workletNode.disconnect()
+                            destroy: () => result.workletNode.disconnect(),
                         };
                         const bridgeDn: BuiltinDeviceNode = {
                             deviceId,
@@ -364,7 +366,7 @@ export class TrackNode {
                             inputNode: result.workletNode,
                             outputNode: result.workletNode,
                             nativeDspControls: controls,
-                            controller: controls
+                            controller: controls,
                         };
                         this.strip.deviceNodes[idx] = bridgeDn;
                         this.scheduleRebuildChain();
@@ -387,8 +389,13 @@ export class TrackNode {
                 };
                 dn.controller = {
                     setParam: (name: string, value: number) => applyParams(dn as any, dn.type, { [name]: value }),
-                    setBypass: (bypassed: boolean) => { dn!.bypassed = bypassed; this.scheduleRebuildChain(); },
-                    destroy: () => { if (factoryNode.dispose) factoryNode.dispose(); }
+                    setBypass: (bypassed: boolean) => {
+                        dn!.bypassed = bypassed;
+                        this.scheduleRebuildChain();
+                    },
+                    destroy: () => {
+                        if (factoryNode.dispose) factoryNode.dispose();
+                    },
                 };
             } else {
                 const descriptor = findWasmDescriptor(deviceType);
@@ -423,15 +430,17 @@ export class TrackNode {
         if (!dn) {
             return;
         }
-        
+
         if (dn.controller) {
             dn.controller.destroy?.();
         } else if (dn.dispose) {
             dn.dispose();
         }
-        
+
         for (const n of dn.nodes) {
-            try { n.disconnect(); } catch {}
+            try {
+                n.disconnect();
+            } catch {}
         }
         this.strip.deviceNodes = this.strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
         this.rebuildChain();
@@ -505,7 +514,9 @@ export class TrackNode {
                 dn.dispose();
             }
             for (const n of dn.nodes) {
-                try { n.disconnect(); } catch {}
+                try {
+                    n.disconnect();
+                } catch {}
             }
         }
     }

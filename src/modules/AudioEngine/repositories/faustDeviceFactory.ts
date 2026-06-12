@@ -46,12 +46,25 @@ export async function createFaustDevice(
 
     // keyOn/keyOff in @grame/faustwasm are port.postMessage calls; they are NOT
     // sample-accurate. We schedule them via setTimeout relative to ctx.currentTime
-    // so timeline-scheduled notes still fire near their target time. Jitter is
-    // bounded by timer resolution + postMessage latency (~1–15 ms). For tighter
-    // scheduling a processor-side look-ahead scheduler would be required.
+    // so timeline-scheduled notes still fire near their target time. In offline
+    // rendering, we use ctx.suspend() to achieve block-accurate timing (since
+    // setTimeout would miss entirely). For tighter real-time scheduling, a
+    // processor-side look-ahead scheduler would be required.
     const scheduleCall = (time: number | undefined, call: () => void): void => {
         if (time !== undefined && time > ctx.currentTime) {
-            setTimeout(call, (time - ctx.currentTime) * 1000);
+            if (typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext) {
+                try {
+                    void ctx.suspend(time).then(() => {
+                        call();
+                        void ctx.resume();
+                    });
+                } catch {
+                    // If suspend fails (e.g. time already passed or duplicate suspend time), execute immediately
+                    call();
+                }
+            } else {
+                setTimeout(call, (time - ctx.currentTime) * 1000);
+            }
             return;
         }
         call();
@@ -113,9 +126,7 @@ function buildParamAddressCache(node: FaustNode): Map<string, string> {
         }
         const existing = cache.get(bareName);
         if (existing !== undefined) {
-            logger.warn(
-                `[FaustDevice] Duplicate bare param "${bareName}" — keeping "${existing}", ignoring "${key}"`
-            );
+            logger.warn(`[FaustDevice] Duplicate bare param "${bareName}" — keeping "${existing}", ignoring "${key}"`);
             continue;
         }
         cache.set(bareName, key);

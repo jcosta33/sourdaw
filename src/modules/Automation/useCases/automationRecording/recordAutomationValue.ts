@@ -1,6 +1,6 @@
-import { getTrackById } from '#/modules/Arrangement/useCases';
-import { getAudioContext, getCompensationDelay } from '#/modules/AudioEngine/useCases';
-import { getTransportStoreValue } from '#/modules/Transport/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { getAutomationRecordingDependencies } from './recordingDependencies';
+import { transportStore } from '#/modules/Transport/stores';
 
 import { type AutomationPoint } from '../../models/Automation';
 
@@ -15,17 +15,18 @@ import {
 } from './recordingSessionState';
 
 export function recordAutomationValue(trackId: string, parameterId: string, value: number, beat: number): void {
-    const track = getTrackById(trackId);
+    const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
     if (!track || !RECORDING_MODES.has(track.automationMode)) {
         return;
     }
 
-    const transport = getTransportStoreValue();
+    const transport = transportStore.value;
     const tempo = transport?.tempo ?? 120;
 
-    const ctx = getAudioContext();
+    const deps = getAutomationRecordingDependencies();
+    const ctx = deps.getAudioContext();
     const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
-    const trackLatencySec = getCompensationDelay(trackId);
+    const trackLatencySec = deps.getCompensationDelay(trackId);
     const totalLatencySec = totalHardwareLatencySec + trackLatencySec;
     const offsetBeats = (totalLatencySec * tempo) / 60;
 

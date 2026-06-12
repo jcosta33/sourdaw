@@ -9,12 +9,14 @@ Let users install, enable, and run third-party extensions that extend the DAW wi
 The entire module is frozen. The store, manifest schema, and permission enum are complete and correct; the runtime is unsafe and must be replaced before any UI is exposed.
 
 What exists:
+
 - `src/modules/Extension/stores/extension.ts` — `ExtensionManifest`, `ExtensionPermission` (15 permission strings), `ExtensionCategory`, `InstalledExtension`, `ScriptCommand`, `ExtensionMarketplaceState`, `extensionStore`.
 - `src/modules/Extension/services/scripting.ts` — `appendLog()` (correct), `createDawApi()` (unsafe: casts action to `any`, hands full `executeAppAction` access to guest code, zero permission checks).
 - `src/modules/Extension/useCases/extension/` — 12 use-cases: `installExtension`, `uninstallExtension`, `toggleExtension`, `registerCommand`, `executeCommand`, `runEditorScript` (uses `new Function`), `setEditorContent`, `toggleScriptEditor`, `clearConsole`, `getInstalledExtensions`, `getEnabledExtensions`, `getExtensionCommands`.
 - Tests cover every use-case and the scripting service in the same-origin execution model.
 
 What is missing:
+
 - Any sandbox (Web Worker, iframe, or WASM runtime).
 - Any IPC protocol between host and extension.
 - Any enforcement of `ExtensionPermission` at the dispatch boundary.
@@ -38,18 +40,18 @@ Each enabled extension runs in its own `Worker` instantiated from a blob URL tha
 
 ### Threat model
 
-| Threat | Mitigation |
-|---|---|
-| Script reads DOM / `localStorage` | Worker context has no DOM; no `self.location` leak beyond the blob URL. |
-| Script exfiltrates data over `fetch` | `fetch`, `WebSocket`, `EventSource` deleted from `self` at bootstrap unless `network` permission is present. |
-| Script performs synchronous long-running work | Host sets a watchdog timer (5 s wall-clock per RPC call) and terminates the worker on exceed. |
-| Script spawns child workers | `Worker`, `SharedWorker` constructors deleted in bootstrap. |
-| Script reaches `indexedDB` | IDB deleted unless `fs:read` or `fs:write`. Even then, access is routed through the host's virtual FS, not direct IDB. |
-| Script calls `executeAppAction` with an action its manifest does not permit | Host RPC handler consults the manifest's permission list before dispatching. Reject with `PermissionDeniedError`. |
-| Script floods the host with RPC | Rate limit: 60 RPC messages per second per extension, hard cap 500 concurrent pending calls. Breach terminates the worker. |
-| Malicious manifest with invalid permissions | Manifest validated at install time against the `ExtensionPermission` union. Unknown strings reject install. |
-| Script imports third-party code via `importScripts()` from the network | `importScripts` overridden in bootstrap to throw unless URL is `blob:` and signed by the extension's manifest SHA. |
-| Script accesses `crypto.subtle` | Allowed — deterministic and audit-friendly. No side channel to host state. |
+| Threat                                                                      | Mitigation                                                                                                                 |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Script reads DOM / `localStorage`                                           | Worker context has no DOM; no `self.location` leak beyond the blob URL.                                                    |
+| Script exfiltrates data over `fetch`                                        | `fetch`, `WebSocket`, `EventSource` deleted from `self` at bootstrap unless `network` permission is present.               |
+| Script performs synchronous long-running work                               | Host sets a watchdog timer (5 s wall-clock per RPC call) and terminates the worker on exceed.                              |
+| Script spawns child workers                                                 | `Worker`, `SharedWorker` constructors deleted in bootstrap.                                                                |
+| Script reaches `indexedDB`                                                  | IDB deleted unless `fs:read` or `fs:write`. Even then, access is routed through the host's virtual FS, not direct IDB.     |
+| Script calls `executeAppAction` with an action its manifest does not permit | Host RPC handler consults the manifest's permission list before dispatching. Reject with `PermissionDeniedError`.          |
+| Script floods the host with RPC                                             | Rate limit: 60 RPC messages per second per extension, hard cap 500 concurrent pending calls. Breach terminates the worker. |
+| Malicious manifest with invalid permissions                                 | Manifest validated at install time against the `ExtensionPermission` union. Unknown strings reject install.                |
+| Script imports third-party code via `importScripts()` from the network      | `importScripts` overridden in bootstrap to throw unless URL is `blob:` and signed by the extension's manifest SHA.         |
+| Script accesses `crypto.subtle`                                             | Allowed — deterministic and audit-friendly. No side channel to host state.                                                 |
 
 ### API surface (host → worker, RPC)
 
@@ -70,7 +72,10 @@ type DawApi = {
 
     // capability: clips:read / clips:write
     listClips(trackId: string): Promise<ReadonlyArray<ClipSummary>>;
-    addMidiNote(clipId: string, note: { pitch: number; startBeat: number; lengthBeats: number; velocity: number }): Promise<void>;
+    addMidiNote(
+        clipId: string,
+        note: { pitch: number; startBeat: number; lengthBeats: number; velocity: number }
+    ): Promise<void>;
 
     // capability: transport:read / transport:write
     transport: {
@@ -96,6 +101,7 @@ type DawApi = {
 All messages are `{ v: 1, kind, id?, ... }` — never transferable objects, never structured clones of DOM refs.
 
 Host → Worker:
+
 ```ts
 type HostMessage =
     | { v: 1; kind: 'init'; extensionId: string; manifest: ExtensionManifest; source: string }
@@ -108,6 +114,7 @@ type HostMessage =
 ```
 
 Worker → Host:
+
 ```ts
 type WorkerMessage =
     | { v: 1; kind: 'ready' }
@@ -119,6 +126,7 @@ type WorkerMessage =
 ```
 
 Panels render via a small display list (no DOM reach):
+
 ```ts
 type PanelOp =
     | { kind: 'rect'; x: number; y: number; w: number; h: number; fill: string }
@@ -152,8 +160,12 @@ function dispatch(extensionId: string, method: string, args: unknown[]): Promise
     const pendingRpc = new Map();
     let rpcCounter = 0;
     const nativeFetch = self.fetch;
-    delete self.fetch; delete self.XMLHttpRequest; delete self.WebSocket;
-    delete self.Worker; delete self.SharedWorker; delete self.indexedDB;
+    delete self.fetch;
+    delete self.XMLHttpRequest;
+    delete self.WebSocket;
+    delete self.Worker;
+    delete self.SharedWorker;
+    delete self.indexedDB;
     delete self.importScripts; // re-added conditionally below
 
     function rpc(method, ...args) {
@@ -165,15 +177,24 @@ function dispatch(extensionId: string, method: string, args: unknown[]): Promise
     }
     self.daw = makeProxy(rpc); // builds DawApi façade over `rpc`
     self.console = {
-        log: (...xs) => self.postMessage({ v: 1, kind: 'log', level: 'info',  message: xs.join(' ') }),
-        warn:(...xs) => self.postMessage({ v: 1, kind: 'log', level: 'warn',  message: xs.join(' ') }),
-        error:(...xs)=> self.postMessage({ v: 1, kind: 'log', level: 'error', message: xs.join(' ') }),
+        log: (...xs) => self.postMessage({ v: 1, kind: 'log', level: 'info', message: xs.join(' ') }),
+        warn: (...xs) => self.postMessage({ v: 1, kind: 'log', level: 'warn', message: xs.join(' ') }),
+        error: (...xs) => self.postMessage({ v: 1, kind: 'log', level: 'error', message: xs.join(' ') }),
     };
     self.onmessage = (ev) => {
         const m = ev.data;
-        if (m?.kind === 'init') { eval(m.source); /* scoped in IIFE */ self.postMessage({ v:1, kind:'ready' }); }
-        else if (m?.kind === 'rpc_result') { const p = pendingRpc.get(m.id); if (p) { m.ok ? p.resolve(m.value) : p.reject(new Error(m.error.message)); pendingRpc.delete(m.id); } }
-        else if (m?.kind === 'invoke_command') { self.dispatchEvent(new MessageEvent('command', { data: m.commandId })); }
+        if (m?.kind === 'init') {
+            eval(m.source);
+            /* scoped in IIFE */ self.postMessage({ v: 1, kind: 'ready' });
+        } else if (m?.kind === 'rpc_result') {
+            const p = pendingRpc.get(m.id);
+            if (p) {
+                m.ok ? p.resolve(m.value) : p.reject(new Error(m.error.message));
+                pendingRpc.delete(m.id);
+            }
+        } else if (m?.kind === 'invoke_command') {
+            self.dispatchEvent(new MessageEvent('command', { data: m.commandId }));
+        }
     };
 })();
 ```
@@ -208,7 +229,11 @@ export type ExtensionRuntime = {
     rpcCount: number;
 };
 
-export type PermissionDeniedError = Error & { code: 'PERMISSION_DENIED'; method: string; required: ExtensionPermission };
+export type PermissionDeniedError = Error & {
+    code: 'PERMISSION_DENIED';
+    method: string;
+    required: ExtensionPermission;
+};
 
 // src/modules/Extension/services/extensionHost.ts
 export function startExtension(ext: InstalledExtension): Result<ExtensionRuntime, Error>;
@@ -297,30 +322,35 @@ Migration: none. New optional field.
 ## Milestones
 
 ### M1 — Sandbox primitive + bootstrap (one session)
+
 - Add `src/modules/Extension/services/extensionHost.ts`, bootstrap asset, `startExtension/stopExtension`, rate-limiter, watchdog.
 - Add `PERMISSION_FOR_METHOD` static map and `dispatch()` permission check.
 - Implement `daw.notify` and `daw.listTracks` end-to-end.
 - No UI changes. Tests: unit test for permission check, integration test that runs a hello-world script in a real Worker.
 
 ### M2 — Full RPC surface (one session)
+
 - Implement every method in `DawApi` against existing `AppAction`s / stores.
 - Wire `fetchText` with origin allowlist.
 - Replace `new Function` in `runEditorScript.ts` with the new async worker path.
 - Tests: one spec per method asserting both the happy path and the permission-denied path.
 
 ### M3 — Commands + script console UI (one session)
+
 - Extension-registered commands appear in the Command Palette.
 - Log streaming from worker to `consoleLog` with extensionId attribution.
 - Wire AppActions `toggleExtension`, `runEditorScript`.
 - Tests: command registration round-trip, permission-denied logging.
 
 ### M4 — Manifest validation + install UX (one session)
+
 - Zod schema for `ExtensionManifest` including `networkOrigins`.
 - Install drop-zone, confirmation modal, permission-chip display.
 - Source CAS integration; `sourceHash` verification on load.
 - Tests: bad manifests rejected, source tamper detected.
 
 ### M5 — Persistence + panel protocol (one session)
+
 - Extend `ProjectData.extensions`, implement hydration, persist `editorContent`.
 - Implement `registerPanel` + `PanelOp` renderer.
 - One factory example extension (a "Random Melody" extension shipped in `public/extensions/`) to prove the surface end-to-end.

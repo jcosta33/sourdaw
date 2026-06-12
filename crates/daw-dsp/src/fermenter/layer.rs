@@ -75,6 +75,12 @@ pub struct Layer {
     pub grain_pitch_var: f32,
     pub grain_pan_spread: f32,
 
+    // Additive params
+    pub additive_partials: usize,
+    pub additive_tilt: f32,
+    pub additive_odd: f32,
+    pub additive_inharm: f32,
+
     // Sampler params
     pub sampler_mode: u8,
     pub sampler_start: f32,
@@ -83,7 +89,7 @@ pub struct Layer {
     // Per-voice drive
     pub voice_drive: f32,
 
-    // Spectral warp
+    // Time-domain warp
     pub warp_mode: u8,
     pub warp_amount: f32,
 
@@ -163,6 +169,10 @@ impl Layer {
             grain_spray: 0.1,
             grain_pitch_var: 0.0,
             grain_pan_spread: 0.5,
+            additive_partials: 32,
+            additive_tilt: 0.0,
+            additive_odd: 0.0,
+            additive_inharm: 0.0,
             sampler_mode: 0,
             sampler_start: 0.0,
             sampler_end: 1.0,
@@ -217,6 +227,11 @@ impl Layer {
             // Set engine BEFORE note_on so the voice knows which engine to use
             voice.set_engine(self.engine, self.sample_rate);
             voice.set_ks_damping(self.ks_damping);
+            voice.set_additive_partials(self.additive_partials);
+            voice.set_additive_tilt(self.additive_tilt);
+            voice.set_additive_odd(self.additive_odd);
+            voice.set_additive_inharm(self.additive_inharm);
+            voice.set_sampler_params(self.sampler_mode, self.sampler_start, self.sampler_end);
             voice.note_on(note, vel, self.sample_rate);
             voice.set_envelopes(
                 self.amp_attack,
@@ -466,23 +481,27 @@ impl Layer {
             }
             "additive_partials" => {
                 let n = (value as usize).clamp(1, 64);
+                self.additive_partials = n;
                 for voice in &mut self.voices {
                     voice.set_additive_partials(n);
                 }
             }
             "additive_tilt" => {
+                self.additive_tilt = value.clamp(-6.0, 6.0);
                 for voice in &mut self.voices {
-                    voice.set_additive_tilt(value);
+                    voice.set_additive_tilt(self.additive_tilt);
                 }
             }
             "additive_odd" => {
+                self.additive_odd = value.clamp(0.0, 1.0);
                 for voice in &mut self.voices {
-                    voice.set_additive_odd(value);
+                    voice.set_additive_odd(self.additive_odd);
                 }
             }
             "additive_inharm" => {
+                self.additive_inharm = value.clamp(0.0, 0.1);
                 for voice in &mut self.voices {
-                    voice.set_additive_inharm(value);
+                    voice.set_additive_inharm(self.additive_inharm);
                 }
             }
             "sampler_mode" => self.sampler_mode = (value as u8).min(2),
@@ -502,5 +521,68 @@ impl Layer {
 
     pub fn active_voice_count(&self) -> usize {
         self.voices.iter().filter(|v| v.is_active()).count()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Layer;
+
+    #[test]
+    fn mapped_oscillator_and_filter_params_update_layer_state() {
+        let mut layer = Layer::new(48_000.0);
+
+        layer.set_param("engine", 6.0);
+        layer.set_param("osc_waveform", 3.0);
+        layer.set_param("osc_level", 0.25);
+        layer.set_param("cutoff", 1_234.0);
+        layer.set_param("resonance", 7.0);
+        layer.set_param("filter_model", 5.0);
+        layer.set_param("filter_mode", 2.0);
+        layer.set_param("mod_env_to_filter", -0.75);
+        layer.set_param("mod_lfo_to_pitch", 0.5);
+
+        assert_eq!(layer.engine, 6);
+        assert_eq!(layer.osc_waveform, 3);
+        assert_eq!(layer.osc_level, 0.25);
+        assert_eq!(layer.cutoff.target(), 1_234.0);
+        assert_eq!(layer.resonance.target(), 7.0);
+        assert_eq!(layer.filter_model, 5);
+        assert_eq!(layer.filter_mode, 2);
+        assert_eq!(layer.mod_matrix.slots[0].amount, -0.75);
+        assert_eq!(layer.mod_matrix.slots[1].amount, 0.5);
+    }
+
+    #[test]
+    fn mapped_engine_specific_params_update_layer_state() {
+        let mut layer = Layer::new(48_000.0);
+
+        layer.set_param("ks_damping", 0.9);
+        layer.set_param("grain_density", 40.0);
+        layer.set_param("grain_pan_spread", 0.8);
+        layer.set_param("additive_partials", 12.0);
+        layer.set_param("additive_tilt", 3.0);
+        layer.set_param("additive_odd", 0.75);
+        layer.set_param("additive_inharm", 0.04);
+        layer.set_param("fm_algorithm", 7.0);
+        layer.set_param("fm_ratio1", 2.5);
+        layer.set_param("sampler_mode", 2.0);
+        layer.set_param("warp_mode", 6.0);
+        layer.set_param("audio_mod_target", 3.0);
+        layer.set_param("chaos_amount", 0.4);
+
+        assert_eq!(layer.ks_damping, 0.9);
+        assert_eq!(layer.grain_density, 40.0);
+        assert_eq!(layer.grain_pan_spread, 0.8);
+        assert_eq!(layer.additive_partials, 12);
+        assert_eq!(layer.additive_tilt, 3.0);
+        assert_eq!(layer.additive_odd, 0.75);
+        assert_eq!(layer.additive_inharm, 0.04);
+        assert_eq!(layer.fm_algorithm, 7);
+        assert_eq!(layer.fm_ratio[0], 2.5);
+        assert_eq!(layer.sampler_mode, 2);
+        assert_eq!(layer.warp_mode, 6);
+        assert_eq!(layer.audio_mod_target, 3);
+        assert_eq!(layer.chaos_amount, 0.4);
     }
 }

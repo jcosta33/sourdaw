@@ -1,17 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime/useCases';
-
 import { analyzeMix } from '../../../useCases/analyzeMix';
 import { handleAutoFixMix } from '../handleAutoFixMix';
 
 const mocks = vi.hoisted(() => ({
+    storeValue: null as unknown,
+    storeSet: vi.fn(),
     executeAppAction: vi.fn(),
 }));
 
-vi.mock('#/modules/AiRuntime/useCases', () => ({
-    getMixAnalysisStoreValue: vi.fn(),
-    setMixAnalysisStoreValue: vi.fn(),
+vi.mock('#/modules/AiRuntime/stores', () => ({
+    mixAnalysisStore: {
+        get value() {
+            return mocks.storeValue;
+        },
+        set: mocks.storeSet,
+    },
 }));
 
 vi.mock('../../../useCases/analyzeMix', () => ({
@@ -24,18 +28,20 @@ vi.mock('#/modules/Command/useCases', () => ({
 
 describe('handleAutoFixMix', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        mocks.storeValue = null;
+        mocks.storeSet.mockReset();
+        mocks.executeAppAction.mockReset();
+        vi.mocked(analyzeMix).mockReset();
     });
 
     it('should do nothing if store state is missing', async () => {
-        vi.mocked(getMixAnalysisStoreValue).mockReturnValue(null as any);
+        mocks.storeValue = null;
         await handleAutoFixMix.execute({ type: 'autoFixMix', payload: {} });
-        expect(setMixAnalysisStoreValue).not.toHaveBeenCalled();
+        expect(mocks.storeSet).not.toHaveBeenCalled();
     });
 
     it('should set analyzing state and call analyzeMix', async () => {
-        const initialState = { isAnalyzing: false };
-        vi.mocked(getMixAnalysisStoreValue).mockReturnValue(initialState as any);
+        mocks.storeValue = { isAnalyzing: false };
         vi.mocked(analyzeMix).mockResolvedValue({
             trackLevels: [],
             overallLevel: { peakDb: -10 },
@@ -43,25 +49,19 @@ describe('handleAutoFixMix', () => {
 
         await handleAutoFixMix.execute({ type: 'autoFixMix', payload: {} });
 
-        expect(setMixAnalysisStoreValue).toHaveBeenCalledWith(expect.objectContaining({ isAnalyzing: true }));
+        expect(mocks.storeSet).toHaveBeenCalledWith(expect.objectContaining({ isAnalyzing: true }));
         expect(analyzeMix).toHaveBeenCalled();
-        expect(setMixAnalysisStoreValue).toHaveBeenCalledWith(
-            expect.objectContaining({ isAnalyzing: false, panelOpen: true })
-        );
+        expect(mocks.storeSet).toHaveBeenCalledWith(expect.objectContaining({ isAnalyzing: false, panelOpen: true }));
     });
 
     it('should fix clipping tracks and master gain', async () => {
-        const initialState = { isAnalyzing: false };
-        vi.mocked(getMixAnalysisStoreValue).mockReturnValue(initialState as any);
+        mocks.storeValue = { isAnalyzing: false };
 
-        // Track 1 is clipping at +2dB
-        // Master is peaking at -1dB (should be reduced because > -3)
         vi.mocked(analyzeMix).mockResolvedValueOnce({
             trackLevels: [{ trackId: 't1', isClipping: true, peakDb: 2 }],
             overallLevel: { peakDb: -1 },
         } as any);
 
-        // Refresh call returns clean state
         vi.mocked(analyzeMix).mockResolvedValueOnce({
             trackLevels: [{ trackId: 't1', isClipping: false, peakDb: -6 }],
             overallLevel: { peakDb: -10 },
@@ -84,12 +84,11 @@ describe('handleAutoFixMix', () => {
     });
 
     it('should reset analyzing state on error', async () => {
-        const initialState = { isAnalyzing: false };
-        vi.mocked(getMixAnalysisStoreValue).mockReturnValue(initialState as any);
+        mocks.storeValue = { isAnalyzing: false };
         vi.mocked(analyzeMix).mockRejectedValue(new Error('crash'));
 
         await handleAutoFixMix.execute({ type: 'autoFixMix', payload: {} });
 
-        expect(setMixAnalysisStoreValue).toHaveBeenLastCalledWith(expect.objectContaining({ isAnalyzing: false }));
+        expect(mocks.storeSet).toHaveBeenLastCalledWith(expect.objectContaining({ isAnalyzing: false }));
     });
 });

@@ -7,7 +7,15 @@ const mocks = vi.hoisted(() => ({
     transportValue: { tempo: 120 } as { tempo: number } | null,
     trackStoreValue: { tracks: [] as Array<{ clips: Array<unknown> }> },
     addWarpMarkerCalls: [] as Array<{ clipId: string; originalBeat: number; options?: unknown }>,
-    warpStates: new Map<string, { enabled: boolean; markers: Array<{ id: string; originalBeat: number; warpedBeat: number; origin?: string; locked?: boolean }>; stretchMode: string; originalTempo: number | null }>(),
+    warpStates: new Map<
+        string,
+        {
+            enabled: boolean;
+            markers: Array<{ id: string; originalBeat: number; warpedBeat: number; origin?: string; locked?: boolean }>;
+            stretchMode: string;
+            originalTempo: number | null;
+        }
+    >(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -16,9 +24,6 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             return mocks.trackStoreValue;
         },
     },
-}));
-
-vi.mock('#/modules/Arrangement/useCases', () => ({
     addWarpMarker: (clipId: string, originalBeat: number, _warpedBeat: number, options?: unknown) => {
         mocks.addWarpMarkerCalls.push({ clipId, originalBeat, options });
         const state = mocks.warpStates.get(clipId) ?? {
@@ -37,6 +42,14 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
         });
         mocks.warpStates.set(clipId, state);
     },
+    warpStates: mocks.warpStates,
+    getWarpState: (clipId: string) =>
+        mocks.warpStates.get(clipId) ?? {
+            enabled: false,
+            markers: [],
+            stretchMode: 'complex',
+            originalTempo: null,
+        },
 }));
 
 vi.mock('#/modules/Transport/stores', () => ({
@@ -51,17 +64,6 @@ vi.mock('../../../stores/audioBufferCache', () => ({
     audioBufferCache: {
         get: (id: string) => mocks.bufferCacheGet(id),
     },
-}));
-
-vi.mock('../../../../Arrangement/useCases/warp/helpers', () => ({
-    warpStates: mocks.warpStates,
-    getWarpState: (clipId: string) =>
-        mocks.warpStates.get(clipId) ?? {
-            enabled: false,
-            markers: [],
-            stretchMode: 'complex',
-            originalTempo: null,
-        },
 }));
 
 import { detectTransientsForClip } from '../detectTransientsForClip';

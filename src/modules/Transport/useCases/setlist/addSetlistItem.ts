@@ -1,4 +1,4 @@
-import { pushUndoEntry } from '#/modules/Command/useCases';
+import { pushUndoEntry } from '#/modules/Command/stores';
 
 import { getNextSetlistItemId, SETLIST_ITEM_COLORS } from '../../repositories/setlistItemIdCounter';
 import { setlistStore, type SetlistItem, type SetlistState } from '../../stores/setlistStore';

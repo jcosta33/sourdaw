@@ -112,10 +112,10 @@ In the Drive section, the user can change the order of the currently supported f
 ## Implementation notes
 
 - Restrict the real chain ordering to the currently supported front-end types:
-  - `compressor`
-  - `overdrive`
-  - `distortion`
-  - `fuzz`
+    - `compressor`
+    - `overdrive`
+    - `distortion`
+    - `fuzz`
 - The bridge can transmit explicit order indices for these supported pedals rather than introducing a graph payload in this phase.
 - The Rust engine should rebuild its pedal execution order when an order parameter changes, not per sample.
 - `basePatch` belongs in Grinder store state, not in the serialized `GrinderPatch` contract.

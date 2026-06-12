@@ -22,12 +22,26 @@ function renderAcousticKick(): Float32Array {
     const out = createMono(dur);
 
     const thump = renderSine(dur, (t) => 55 + 40 * Math.exp(-t * 28));
-    const thumpEnv = renderEnvelope(dur, { attack: 0.003, decay: 0.1, sustainLevel: 0.3, sustain: 0, release: 0.4, curve: 'exp' });
+    const thumpEnv = renderEnvelope(dur, {
+        attack: 0.003,
+        decay: 0.1,
+        sustainLevel: 0.3,
+        sustain: 0,
+        release: 0.4,
+        curve: 'exp',
+    });
     applyEnvelope(thump, thumpEnv);
     mixMono(out, thump, 0.85);
 
     const shell = renderSine(dur, 90);
-    const shellEnv = renderEnvelope(dur, { attack: 0.003, decay: 0.05, sustainLevel: 0.2, sustain: 0, release: 0.35, curve: 'exp' });
+    const shellEnv = renderEnvelope(dur, {
+        attack: 0.003,
+        decay: 0.05,
+        sustainLevel: 0.2,
+        sustain: 0,
+        release: 0.35,
+        curve: 'exp',
+    });
     applyEnvelope(shell, shellEnv);
     mixMono(out, shell, 0.3);
 
@@ -47,7 +61,14 @@ function renderAcousticSnare(): Float32Array {
     const out = createMono(dur);
 
     const tone = renderSine(dur, 185);
-    const toneEnv = renderEnvelope(dur, { attack: 0.001, decay: 0.04, sustainLevel: 0.2, sustain: 0, release: 0.22, curve: 'exp' });
+    const toneEnv = renderEnvelope(dur, {
+        attack: 0.001,
+        decay: 0.04,
+        sustainLevel: 0.2,
+        sustain: 0,
+        release: 0.22,
+        curve: 'exp',
+    });
     applyEnvelope(tone, toneEnv);
     biquad(tone, { type: 'lowpass', freq: 900, q: 0.7 });
     mixMono(out, tone, 0.55);
@@ -55,7 +76,14 @@ function renderAcousticSnare(): Float32Array {
     const wires = renderNoise(dur, SAMPLE_RATE, 500);
     biquad(wires, { type: 'highpass', freq: 2000, q: 0.6 });
     biquad(wires, { type: 'peaking', freq: 5000, q: 1.4, gainDb: 5 });
-    const wiresEnv = renderEnvelope(dur, { attack: 0.001, decay: 0.06, sustainLevel: 0.3, sustain: 0, release: 0.24, curve: 'exp' });
+    const wiresEnv = renderEnvelope(dur, {
+        attack: 0.001,
+        decay: 0.06,
+        sustainLevel: 0.3,
+        sustain: 0,
+        release: 0.24,
+        curve: 'exp',
+    });
     applyEnvelope(wires, wiresEnv);
     mixMono(out, wires, 0.8);
 
@@ -128,7 +156,14 @@ function renderAcousticRide(): Float32Array {
 function renderAcousticTom(pitchHz: number, dur: number): Float32Array {
     const out = createMono(dur);
     const body = renderSine(dur, (t) => pitchHz + pitchHz * 0.4 * Math.exp(-t * 22));
-    const bEnv = renderEnvelope(dur, { attack: 0.002, decay: 0.08, sustainLevel: 0.45, sustain: 0, release: dur - 0.08, curve: 'exp' });
+    const bEnv = renderEnvelope(dur, {
+        attack: 0.002,
+        decay: 0.08,
+        sustainLevel: 0.45,
+        sustain: 0,
+        release: dur - 0.08,
+        curve: 'exp',
+    });
     applyEnvelope(body, bEnv);
     mixMono(out, body, 0.95);
 

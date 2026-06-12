@@ -17,7 +17,7 @@ function run() {
     const { positional, flags } = parseArgs(process.argv.slice(2));
     const symbol = positional[0];
     const pathFilter = flags.get('path') || 'src'; // defaults to src
-    
+
     if (!symbol) {
         console.log(red('Usage: agents:references <symbol> [--path <dir>]'));
         process.exit(1);
@@ -42,7 +42,7 @@ function run() {
             console.log(dim(`\n  ... and ${lines.length - MAX_RESULTS} more matches. Run manually to see all.`));
             break;
         }
-        
+
         // Output format is usually: filePath:lineNumber:content
         const parts = line.split(':');
         if (parts.length >= 3) {

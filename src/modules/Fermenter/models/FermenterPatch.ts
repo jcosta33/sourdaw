@@ -28,7 +28,7 @@ export type FermenterPatch = {
     // Analog drift
     oscDrift: number; // 0–1 (analog pitch instability amount)
 
-    // Spectral warp
+    // Time-domain warp
     warpMode: number; // 0=none, 1=sync, 2=quantize, 3=squeeze, 4=bend, 5=formant, 6=fold
     warpAmount: number; // 0–1
 
@@ -174,7 +174,44 @@ export type FermenterPatch = {
 
     // Macros (musical labels)
     macros: [number, number, number, number, number, number, number, number];
+    macroMappings?: FermenterMacroMapping[];
 };
+
+export type FermenterMacroCurve = 'linear' | 'exponential';
+
+export type FermenterMacroTarget = {
+    target: keyof FermenterPatch;
+    center: number;
+    depth: number;
+    min: number;
+    max: number;
+    curve: FermenterMacroCurve;
+};
+
+export type FermenterMacroMapping = {
+    targets: FermenterMacroTarget[];
+};
+
+export const DEFAULT_MACRO_MAPPINGS: FermenterMacroMapping[] = [
+    { targets: [{ target: 'filterCutoff', center: 6_090, depth: 5_910, min: 180, max: 12_000, curve: 'exponential' }] },
+    { targets: [{ target: 'lfoFilterAmount', center: 0, depth: 1, min: -1, max: 1, curve: 'linear' }] },
+    { targets: [{ target: 'stereoWidth', center: 1.15, depth: 0.7, min: 0.45, max: 1.85, curve: 'linear' }] },
+    {
+        targets: [
+            { target: 'distDrive', center: 4, depth: 4, min: 0, max: 8, curve: 'linear' },
+            { target: 'distMix', center: 0.275, depth: 0.275, min: 0, max: 0.55, curve: 'linear' },
+        ],
+    },
+    { targets: [{ target: 'reverbMix', center: 0.35, depth: 0.35, min: 0, max: 0.7, curve: 'linear' }] },
+    {
+        targets: [
+            { target: 'compMix', center: 0.325, depth: 0.325, min: 0, max: 0.65, curve: 'linear' },
+            { target: 'compThreshold', center: -20, depth: -12, min: -32, max: -8, curve: 'linear' },
+        ],
+    },
+    { targets: [{ target: 'warpAmount', center: 0.5, depth: 0.5, min: 0, max: 1, curve: 'linear' }] },
+    { targets: [{ target: 'chaosAmount', center: 0.5, depth: 0.5, min: 0, max: 1, curve: 'linear' }] },
+];
 
 export const DEFAULT_PATCH: FermenterPatch = {
     version: 1,
@@ -316,6 +353,7 @@ export const DEFAULT_PATCH: FermenterPatch = {
     masterGain: 1.0,
 
     macros: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+    macroMappings: DEFAULT_MACRO_MAPPINGS,
 };
 
 /** Parameter metadata for UI rendering */
@@ -333,7 +371,7 @@ export type FermenterParamDef = {
 
 export const FERMENTER_PARAMS: readonly FermenterParamDef[] = [
     // Oscillator
-    { id: 'oscEngine', label: 'Engine', min: 0, max: 1, default: 0, unit: '', step: 1, group: 'osc' },
+    { id: 'oscEngine', label: 'Engine', min: 0, max: 6, default: 0, unit: '', step: 1, group: 'osc' },
     { id: 'oscWaveform', label: 'Waveform', min: 0, max: 3, default: 1, unit: '', step: 1, group: 'osc' },
     { id: 'oscLevel', label: 'Osc Level', min: 0, max: 1, default: 0.8, unit: '', group: 'osc' },
     { id: 'oscCoarse', label: 'Coarse', min: -24, max: 24, default: 0, unit: 'st', step: 1, group: 'osc' },
@@ -352,7 +390,7 @@ export const FERMENTER_PARAMS: readonly FermenterParamDef[] = [
     // Drift
     { id: 'oscDrift', label: 'Drift', min: 0, max: 1, default: 0, unit: '', group: 'osc' },
 
-    // Spectral Warp
+    // Time-Domain Warp
     { id: 'warpMode', label: 'Warp Mode', min: 0, max: 6, default: 0, unit: '', step: 1, group: 'warp' },
     { id: 'warpAmount', label: 'Warp Amount', min: 0, max: 1, default: 0, unit: '', group: 'warp' },
 
@@ -628,7 +666,7 @@ export const LFO_SHAPE_NAMES = ['Sine', 'Triangle', 'Saw', 'Square'] as const;
 /** Noise color names */
 export const NOISE_COLOR_NAMES = ['White', 'Pink', 'Brown'] as const;
 
-/** Spectral warp mode names */
+/** Time-domain warp mode names */
 export const WARP_MODE_NAMES = ['Off', 'Sync', 'Quantize', 'Squeeze', 'Bend', 'Formant', 'Fold'] as const;
 
 /** Audio-rate modulation target names */

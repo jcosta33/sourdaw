@@ -9,18 +9,20 @@ The user clicks "Add Adjustment Layer" above the timeline, picks an effect (EQ, 
 This is the most-built-of-the-seven features. Partial integration is already in place.
 
 What exists:
+
 - `src/modules/Arrangement/stores/adjustmentLayer.ts` — full store: `AdjustmentLayer`, `AdjustmentRegion`, `AdjustmentParameter`, `AdjustmentEffectType` (9 types: `eq | compressor | reverb | delay | saturation | filter | stereo-width | volume | pan`), `EFFECT_PRESETS` mapping each type to default params, `LAYER_COLORS`.
 - `src/modules/Arrangement/useCases/adjustmentLayer/` — 9 use-cases:
-  - `createAdjustmentLayer` — wired via `handleCreateAdjustmentLayer`.
-  - `addAdjustmentRegion`, `removeAdjustmentRegion` — unwired.
-  - `removeAdjustmentLayer`, `toggleAdjustmentLayer` — unwired.
-  - `setLayerParameter`, `setLayerMix` — unwired.
-  - `getLayerCount`, `getActiveLayersAtBeat` — unwired.
+    - `createAdjustmentLayer` — wired via `handleCreateAdjustmentLayer`.
+    - `addAdjustmentRegion`, `removeAdjustmentRegion` — unwired.
+    - `removeAdjustmentLayer`, `toggleAdjustmentLayer` — unwired.
+    - `setLayerParameter`, `setLayerMix` — unwired.
+    - `getLayerCount`, `getActiveLayersAtBeat` — unwired.
 - `src/modules/Arrangement/handlers/batchFeature/handleCreateAdjustmentLayer.ts` — wired to the `createAdjustmentLayer` AppAction. Handler is undoable.
 - `src/modules/Command/models/AppAction.ts:368` — `{ type: 'createAdjustmentLayer'; payload: { name: string; effectType: string } }`.
 - Command palette entries at `miscCommands.ts:188-196` for EQ and Compressor layers.
 
 What is missing:
+
 - **Audio graph integration** — layers are data; they do not process audio. The audio engine never reads `adjustmentLayerStore`.
 - **UI** — no timeline overlay, no layer header row, no region drag handles, no param editor.
 - **Persistence** — `AdjustmentLayerState` is not serialised into `ProjectData`.
@@ -62,6 +64,7 @@ Multiple layers stack by chaining their buses bottom-up: the topmost layer (lowe
 `AdjustmentLayer.insertionIndex` is an integer in the same ordering as track order in the store. Semantics: "this layer sits above tracks at index ≥ insertionIndex". Analogous to Photoshop layer position. The audio engine sorts layers by `insertionIndex` ascending and builds the bus chain accordingly.
 
 Conflict between `affectedTrackIds` (explicit) and `insertionIndex` (implicit below):
+
 - If `affectedTrackIds` is non-empty, it wins. The layer affects exactly those tracks.
 - If `affectedTrackIds` is empty, the layer affects all tracks at index ≥ `insertionIndex` (the "below" rule).
 
@@ -70,6 +73,7 @@ Conflict between `affectedTrackIds` (explicit) and `insertionIndex` (implicit be
 `getActiveLayersAtBeat(beat)` already exists and returns currently-active layers. During scheduling, the audio engine computes a per-block layer activation:
 
 For each render block (128 samples ~= 2.9 ms @ 44.1 kHz), compute the block's beat range. For each layer:
+
 - If no regions → layer is always on at `blend = 1`.
 - Else find any region where `beat ∈ [startBeat, endBeat)`. Within the region, compute fade-in/out envelopes based on `fadeInBeats` / `fadeOutBeats`.
 
@@ -119,8 +123,8 @@ type AdjustmentActions =
     | { type: 'removeAdjustmentRegion'; payload: { layerId: string; regionId: string } }
     | { type: 'moveAdjustmentRegion'; payload: { regionId: string; startBeat: number; endBeat: number } } // NEW, for drag
     | { type: 'setLayerFades'; payload: { regionId: string; fadeInBeats: number; fadeOutBeats: number } } // NEW
-    | { type: 'setLayerAffectedTracks'; payload: { layerId: string; trackIds: string[] } }                // NEW
-    | { type: 'setLayerInsertionIndex'; payload: { layerId: string; insertionIndex: number } };           // NEW
+    | { type: 'setLayerAffectedTracks'; payload: { layerId: string; trackIds: string[] } } // NEW
+    | { type: 'setLayerInsertionIndex'; payload: { layerId: string; insertionIndex: number } }; // NEW
 
 // New use-cases
 export function moveAdjustmentRegion(regionId: string, startBeat: number, endBeat: number): void;
@@ -215,35 +219,41 @@ Migration: new optional field. Projects without the field load with `{ layers: [
 ## Milestones
 
 ### M1 — Complete the store-side API (one session)
+
 - Implement `moveAdjustmentRegion`, `setLayerFades`, `setLayerAffectedTracks`, `setLayerInsertionIndex` use-cases.
 - Add the 10 new AppAction variants.
 - Write handlers for all 11 (existing `createAdjustmentLayer` + 10 new) in `handlers/batchFeature/`.
 - Unit tests for each.
 
 ### M2 — Engine integration: single layer (one session)
+
 - `AdjustmentBusNode` class with eq/compressor/gain/pan only (reuse `DEVICE_FACTORIES`).
 - `createWebAudioEngine` subscribes to store, creates/destroys buses.
 - `TrackNode.routeOutput` consults `getLayersAffectingTrack`.
 - Offline render test: one layer with one region produces the expected gain reduction on the affected track.
 
 ### M3 — Scheduling: regions with fades (one session)
+
 - `scheduleAdjustmentLayers` driving wet/dry crossfades.
 - Integration with transport start / loop wrap / seek.
 - Test: crossfade audible at region boundaries (offline render diff).
 
 ### M4 — UI: header strip + region drag (one session)
+
 - `AdjustmentLayerStrip` component + `AdjustmentRegion` with drag/resize/fade-handles.
 - `AdjustmentLayerParamEditor` generic knob grid.
 - Add-layer menu.
 - Command palette entries for all 9 effect types.
 
 ### M5 — Persistence + multi-layer stacking (one session)
+
 - `ProjectData.adjustmentLayers` schema + hydration + serialisation.
 - Multi-layer bus chaining (topmost nearest to master).
 - Stacking tests with 3 overlapping layers.
 - Freeze invalidation wire.
 
 ### (M6 — Effect coverage) — if M1–M5 are on schedule
+
 - Add factories for `saturation`, `stereo-width` (currently absent from `DEVICE_FACTORIES`).
 
 ## Tests

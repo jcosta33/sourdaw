@@ -9,7 +9,7 @@ import { red, cyan, bold, dim, yellow, green } from './colors.ts';
 function calculateComplexity(content) {
     // Naive cyclomatic complexity heuristic
     let score = 1; // base score for the file
-    
+
     const keywords = [
         /\bif\s*\(/g,
         /\belse\s+if\b/g,
@@ -19,7 +19,7 @@ function calculateComplexity(content) {
         /\bcatch\s*\(/g,
         /&&/g,
         /\|\|/g,
-        /\?/g // ternary operator
+        /\?/g, // ternary operator
     ];
 
     for (const regex of keywords) {
@@ -43,7 +43,7 @@ function run() {
 
     const { positional } = parseArgs(process.argv.slice(2));
     const targetFile = positional[0];
-    
+
     if (!targetFile) {
         console.log(red('Usage: agents:complexity <path/to/file.ts>'));
         process.exit(1);
@@ -60,7 +60,7 @@ function run() {
 
     console.log(cyan(`\nComplexity Analysis for ${bold(targetFile)}:`));
     console.log(dim('Heuristic cyclomatic score (lower is better):'));
-    
+
     if (score < 10) {
         console.log(green(`Score: ${score} - Excellent. Highly maintainable.`));
     } else if (score < 25) {

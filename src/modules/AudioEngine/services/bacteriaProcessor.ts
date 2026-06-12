@@ -75,7 +75,12 @@ class BacteriaProcessor extends AudioWorkletProcessor {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                 } else if (msg.type === 'param' && this._instance !== null && !this._faulted) {
                     const rustName = PARAM_MAP[msg.name] ?? msg.name;
+                    const oldLatency = this._instance.get_latency_samples();
                     this._instance.set_param(rustName, msg.value);
+                    const newLatency = this._instance.get_latency_samples();
+                    if (newLatency !== oldLatency) {
+                        this.port.postMessage({ type: 'latency-changed', latency: newLatency });
+                    }
                 }
             } catch (error) {
                 console.error('BacteriaProcessor error:', error);
@@ -88,7 +93,7 @@ class BacteriaProcessor extends AudioWorkletProcessor {
         this._memory = wasmExports.memory;
         this._instance = new BacteriaInstance(sampleRate);
         this._ready = true;
-        this.port.postMessage({ type: 'ready' });
+        this.port.postMessage({ type: 'ready', latency: this._instance.get_latency_samples() });
     }
 
     _passthrough(input: Float32Array[], output: Float32Array[]): void {

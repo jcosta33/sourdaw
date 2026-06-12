@@ -129,15 +129,11 @@ export function setGrinderPedalParam(
     const chainKey = isPost ? 'postPedals' : 'prePedals';
     const nextPedals = upsertPedal(state.patch[chainKey], pedalType, defaults, (current) => ({
         ...current,
-        ...(paramKey === 'enabled'
-            ? { enabled: value > 0.5 }
-            : { params: { ...current.params, [paramKey]: value } }),
+        ...(paramKey === 'enabled' ? { enabled: value > 0.5 } : { params: { ...current.params, [paramKey]: value } }),
     }));
     const nextBasePedals = upsertPedal(state.basePatch[chainKey], pedalType, defaults, (current) => ({
         ...current,
-        ...(paramKey === 'enabled'
-            ? { enabled: value > 0.5 }
-            : { params: { ...current.params, [paramKey]: value } }),
+        ...(paramKey === 'enabled' ? { enabled: value > 0.5 } : { params: { ...current.params, [paramKey]: value } }),
     }));
 
     grinderStore.set({
@@ -186,9 +182,10 @@ function movePedalTypeInArray(
         return [...pedals];
     }
 
-    const range = direction === 'left'
-        ? [...pedals.keys()].slice(0, current_index).reverse()
-        : [...pedals.keys()].slice(current_index + 1);
+    const range =
+        direction === 'left'
+            ? [...pedals.keys()].slice(0, current_index).reverse()
+            : [...pedals.keys()].slice(current_index + 1);
     const swap_index = range.find((index) => isSupportedGrinderChainPedalType(pedals[index]!.type));
 
     if (swap_index === undefined) {
@@ -230,10 +227,7 @@ export function moveGrinderPedalInChain(
     return nextPatch;
 }
 
-function applySnapshotToPedals(
-    pedals: readonly GrinderPedal[],
-    bypassStates: Record<string, boolean>
-): GrinderPedal[] {
+function applySnapshotToPedals(pedals: readonly GrinderPedal[], bypassStates: Record<string, boolean>): GrinderPedal[] {
     return pedals.map((pedal) =>
         pedal.id in bypassStates ? { ...pedal, enabled: bypassStates[pedal.id] ?? pedal.enabled } : pedal
     );

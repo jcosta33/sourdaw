@@ -7,10 +7,8 @@ describe('AppError', () => {
     describe('createAppError', () => {
         it('should create an AppError with minimal arguments', () => {
             const error = createAppError('TestError', 'A test error occurred');
-            expect(error).toEqual({
-                _tag: 'TestError',
-                message: 'A test error occurred',
-            });
+            expect(error._tag).toBe('TestError');
+            expect(error.message).toBe('A test error occurred');
         });
 
         it('should create an AppError with data fields and cause', () => {

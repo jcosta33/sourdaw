@@ -1,4 +1,3 @@
-import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { audioBufferCache } from '../../stores/audioBufferCache';
 import { commit_pitch_edit_wasm } from '../../wasm/daw_dsp.js';
 
@@ -19,8 +18,11 @@ export function processPitchEditWasm(
         JSON.stringify(contour)
     );
 
-    const ctx = audioEngine.context;
-    const newBuffer = ctx.createBuffer(1, newSamples.length, originalBuffer.sampleRate);
+    const newBuffer = new AudioBuffer({
+        length: newSamples.length,
+        numberOfChannels: 1,
+        sampleRate: originalBuffer.sampleRate,
+    });
     newBuffer.copyToChannel(newSamples, 0);
 
     audioBufferCache.set(outputAudioPath, newBuffer);

@@ -9,9 +9,9 @@ const MAX_LINES_PER_COMMAND = 50;
 
 function runAndTruncate(commandStr, cwd) {
     if (!commandStr) return null;
-    
+
     console.log(`\n${bold(cyan('>'))} ${commandStr}`);
-    
+
     const [cmd, ...args] = commandStr.split(' ');
     const result = spawnSync(cmd, args, {
         cwd,
@@ -35,7 +35,7 @@ function runAndTruncate(commandStr, cwd) {
     if (output) {
         console.log(output);
     }
-    
+
     if (success) {
         console.log(green(`✓ Success`));
     } else {

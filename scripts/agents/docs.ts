@@ -14,12 +14,12 @@ function extractDocs(content) {
 
     for (const line of lines) {
         const trimmed = line.trim();
-        
+
         if (trimmed.startsWith('/**')) {
             inDocBlock = true;
             currentBlock = [];
         }
-        
+
         if (inDocBlock) {
             currentBlock.push(line);
             if (trimmed.endsWith('*/')) {
@@ -43,7 +43,7 @@ function run() {
 
     const { positional } = parseArgs(process.argv.slice(2));
     const targetFile = positional[0];
-    
+
     if (!targetFile) {
         console.log(red('Usage: agents:docs <path/to/file.ts>'));
         process.exit(1);
@@ -59,11 +59,11 @@ function run() {
     const docs = extractDocs(content);
 
     console.log(cyan(`\nExtracted Documentation for ${bold(targetFile)}:\n`));
-    
+
     if (docs.length === 0) {
         console.log(dim('  (No JSDoc blocks found in this file)'));
     } else {
-        docs.forEach(block => {
+        docs.forEach((block) => {
             console.log(green(block) + '\n');
         });
     }

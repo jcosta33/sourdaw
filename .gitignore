@@ -24,3 +24,10 @@ src-tauri/target/
 
 # Knip output (regenerated per session; audit in .agents/audits/deadcode.md is the source of truth)
 knip-results.txt
+
+# Playwright
+playwright-report/
+test-results/
+
+# Agent UI Scripts
+.agents/ui-scripts/*.png

@@ -27,7 +27,6 @@ export { restoreSnapshot } from './restoreSnapshot';
 export { getDsoSnapshotHandlers } from './getDsoSnapshotHandlers';
 export { revertAction } from './revertAction/revertAction';
 export { canRevertAction } from './revertAction/canRevertAction';
-export { saveSnapshot } from './saveSnapshot';
-export { setSemanticContext, getSemanticContext, clearSemanticContext } from './semanticChangeContext';
+export { saveSnapshot, transactSnapshot } from './saveSnapshot';
 export { startCrdtAutoSave } from './startCrdtAutoSave';
 export { subscribeToCrdtChanges } from './subscribeToCrdtChanges';

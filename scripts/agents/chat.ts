@@ -23,7 +23,7 @@ function run() {
     const { positional, flags } = parseArgs(process.argv.slice(2));
     const targetSlug = positional[0];
     const message = flags.get('message') || flags.get('m');
-    
+
     if (flags.get('from')) {
         mySlug = flags.get('from');
     }

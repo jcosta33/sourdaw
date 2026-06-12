@@ -101,9 +101,9 @@ Moving a mic farther away in the Cab section audibly changes the cabinet capture
 ## Implementation notes
 
 - A believable first-pass distance model can combine:
-  - direct gain attenuation
-  - stronger low-pass behavior as distance increases
-  - room-send weighting that rises with distance
+    - direct gain attenuation
+    - stronger low-pass behavior as distance increases
+    - room-send weighting that rises with distance
 - A believable first-pass room model can use preallocated short reflections and damping rather than a new general-purpose reverb system.
 - Reuse the existing Cab UI surfaces before adding new layout concepts.
 

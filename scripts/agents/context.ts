@@ -33,7 +33,7 @@ function extractExports(filePath) {
     try {
         const content = readFileSync(filePath, 'utf8');
         const exports = [];
-        
+
         // Naive match for export const/function/class/type/interface
         const regex = /export\s+(const|let|var|function|class|type|interface)\s+([a-zA-Z0-9_]+)/g;
         let match;
@@ -52,7 +52,7 @@ function extractExports(filePath) {
 export function generateContextMap(repoRoot, targetDirRel) {
     const targetDir = targetDirRel ? join(repoRoot, targetDirRel) : repoRoot;
     const files = findFiles(targetDir);
-    
+
     const map = {};
     for (const file of files) {
         const relPath = relative(repoRoot, file);
@@ -61,6 +61,6 @@ export function generateContextMap(repoRoot, targetDirRel) {
             map[relPath] = exports;
         }
     }
-    
+
     return map;
 }

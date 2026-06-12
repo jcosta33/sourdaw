@@ -11,8 +11,8 @@ Grounding from the current codebase:
 - `src/modules/Grinder/useCases/grinderParamBridge/loadGrinderPatchWithAudio.ts` and `src/modules/AudioEngine/services/grinderProcessor.ts` translate the current patch into a static parameter map such as `preOverdriveDrive`, `postFuzzLevel`, `mic1Distance`, etc. There is no dynamic block graph or arbitrary module ordering.
 - The Grinder audit at `.agents/audits/grinder/control-deck.md` now explicitly calls out the absence of real routing behavior and the gap between the patch/UI contract and the actual DSP path.
 - The repo already has two relevant patterns this feature should reuse:
-  - Vanilla `Store<T>` state per module/instance.
-  - Progressive disclosure via `uiLevel` / Play-Shape-Build-Route-Lab style panel organization in Fermenter, Proof, Gluten, Crust, and Dutch Oven.
+    - Vanilla `Store<T>` state per module/instance.
+    - Progressive disclosure via `uiLevel` / Play-Shape-Build-Route-Lab style panel organization in Fermenter, Proof, Gluten, Crust, and Dutch Oven.
 
 This spec defines how Grinder evolves from a fixed amp chain into a modular rig environment with Guitar Rig level control over ordering, parallel routing, amp/cab placement, macros, and snapshots, while keeping the audio thread real-time safe.
 
@@ -70,21 +70,21 @@ At a minimum, the user can:
 
 3. **Modular rig blocks**
    The graph must support at least these block families in v1:
-   - `input`
-   - `gate`
-   - `compressor`
-   - `overdrive`
-   - `distortion`
-   - `fuzz`
-   - `eq`
-   - `amp`
-   - `cab`
-   - `ir-loader`
-   - `neural-capture`
-   - `gain`
-   - `split`
-   - `merge`
-   - `output`
+    - `input`
+    - `gate`
+    - `compressor`
+    - `overdrive`
+    - `distortion`
+    - `fuzz`
+    - `eq`
+    - `amp`
+    - `cab`
+    - `ir-loader`
+    - `neural-capture`
+    - `gain`
+    - `split`
+    - `merge`
+    - `output`
 
 4. **Deterministic routing model**
    The graph must be a directed acyclic graph with one input root and one output root. Arbitrary cycles are forbidden in v1.

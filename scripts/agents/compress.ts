@@ -13,7 +13,7 @@ function skeletonize(content) {
 
     for (const line of lines) {
         const trimmed = line.trim();
-        
+
         // Keep JSDoc
         if (trimmed.startsWith('/**')) inDocBlock = true;
         if (inDocBlock) {
@@ -59,7 +59,7 @@ function run() {
 
     const { positional } = parseArgs(process.argv.slice(2));
     const targetFile = positional[0];
-    
+
     if (!targetFile) {
         console.log(red('Usage: agents:compress <path/to/file.ts>'));
         process.exit(1);
@@ -73,7 +73,7 @@ function run() {
 
     const content = readFileSync(fullPath, 'utf8');
     const originalLines = content.split('\n').length;
-    
+
     const compressed = skeletonize(content);
     const compressedLines = compressed.split('\n').length;
 

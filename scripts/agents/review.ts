@@ -18,7 +18,7 @@ function run() {
 
     const { positional } = parseArgs(process.argv.slice(2));
     const targetSlug = positional[0];
-    
+
     if (!targetSlug) {
         console.log(red('Usage: agents:review <slug-to-review>'));
         process.exit(1);
@@ -28,7 +28,9 @@ function run() {
 
     // First check if the branch exists
     const branchName = `agents/${targetSlug}`;
-    const checkBranch = spawnSync('git', ['show-ref', '--verify', '--quiet', `refs/heads/${branchName}`], { cwd: repoRoot });
+    const checkBranch = spawnSync('git', ['show-ref', '--verify', '--quiet', `refs/heads/${branchName}`], {
+        cwd: repoRoot,
+    });
     if (checkBranch.status !== 0) {
         console.error(red(`Branch ${branchName} does not exist. Cannot review.`));
         process.exit(1);
@@ -36,13 +38,13 @@ function run() {
 
     // Launch a new agent targeting that branch as its base
     const reviewSlug = `${targetSlug}-review`;
-    
+
     console.log(dim(`Spawning adversarial reviewer: ${reviewSlug} (Base: ${branchName})`));
 
     // Create a specific review task
     const tasksDir = join(repoRoot, '.agents', 'tasks');
     if (!existsSync(tasksDir)) mkdirSync(tasksDir, { recursive: true });
-    
+
     const taskPath = join(tasksDir, `${reviewSlug}.md`);
     const template = `# Review: ${targetSlug}
 
@@ -66,8 +68,11 @@ Review the changes made in \`${targetSlug}\` and ensure they are flawless.
     writeFileSync(taskPath, template, 'utf8');
 
     // Automatically invoke agents:new
-    const res = spawnSync('pnpm', ['agents:new', reviewSlug, '--base', branchName], { stdio: 'inherit', cwd: repoRoot });
-    
+    const res = spawnSync('pnpm', ['agents:new', reviewSlug, '--base', branchName], {
+        stdio: 'inherit',
+        cwd: repoRoot,
+    });
+
     if (res.status === 0) {
         console.log(green(`\n✓ Reviewer agent launched successfully.`));
     } else {

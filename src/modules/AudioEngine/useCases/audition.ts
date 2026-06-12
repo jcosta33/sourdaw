@@ -1,15 +1,20 @@
 import { type Track } from '#/modules/Arrangement/models/Track';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { getTrackById, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
-import { scheduleNote, startFaustNote, getDrumKitDefByIndex, scheduleDrumKitNote } from '#/modules/Synth/useCases';
+import {
+    scheduleNote,
+    getDrumKitDefByIndex,
+    scheduleDrumKitNote,
+    getSynthParamsFromDevices,
+} from '#/modules/Synth/useCases';
 
 import { audioEngine } from '../repositories/createWebAudioEngine';
+import { startFaustNote } from './faustScheduler/startFaustNote';
 
 export function playAuditionNote(trackId: string, pitch: number, velocity: number = 100): () => void {
     const strip = audioEngine.ensureTrackStrip(trackId);
     const now = audioEngine.context.currentTime;
 
-    const track = getTrackById(trackId);
+    const track = trackStore.value?.tracks.find((t) => t.id === trackId);
     const drumDevice = track?.devices.find(
         (data) =>
             data.type === 'builtin-drum-kit' || data.type === 'drum-kit' || data.type.startsWith('builtin-drum-machine')
@@ -39,7 +44,7 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
     let isToasterChild = false;
     let toasterParentTrack: Track | undefined;
     if (track?.parentId) {
-        toasterParentTrack = getTrackById(track.parentId);
+        toasterParentTrack = trackStore.value?.tracks.find((candidate) => candidate.id === track.parentId);
         if (toasterParentTrack?.devices.some((data) => data.type === 'toaster')) {
             isToasterChild = true;
         }
@@ -107,7 +112,7 @@ export function playAuditionNote(trackId: string, pitch: number, velocity: numbe
         return startFaustNote(trackId, faustDevice.id, pitch, velocity, now);
     }
 
-    const synthParams = getSynthParamsForTrack(trackId);
+    const synthParams = getSynthParamsFromDevices(track?.devices ?? []);
     const osc = scheduleNote(
         audioEngine.context,
         strip.gainNode,

@@ -181,7 +181,9 @@ ${indent}</Points>`;
     const lines: string[] = [];
     lines.push(`${indent}<Points target="tempo" timeUnit="beats">`);
     for (const change of tempoChanges) {
-        lines.push(`${indent}    <RealPoint time="${formatNumber(change.beat)}" value="${formatNumber(change.tempo)}"/>`);
+        lines.push(
+            `${indent}    <RealPoint time="${formatNumber(change.beat)}" value="${formatNumber(change.tempo)}"/>`
+        );
     }
     lines.push(`${indent}</Points>`);
     return lines.join('\n');

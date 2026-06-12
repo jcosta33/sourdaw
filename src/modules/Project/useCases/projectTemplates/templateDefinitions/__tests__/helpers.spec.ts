@@ -31,7 +31,6 @@ describe('helpers', () => {
 
     it('preserves the pre-existing demo entries', () => {
         const demoIds = templates.filter((template) => template.category === 'demo').map((template) => template.id);
-        expect(demoIds).toContain('demo-complete');
         expect(demoIds).toContain('demo-nebula-drift');
     });
 });

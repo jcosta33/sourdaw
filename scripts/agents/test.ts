@@ -8,7 +8,7 @@ const MAX_LINES_PER_TEST_OUTPUT = 50;
 
 function runAndTruncate(commandStr, args, cwd) {
     console.log(`\n${bold(cyan('>'))} ${commandStr} ${args.join(' ')}`);
-    
+
     const result = spawnSync(commandStr, args, {
         cwd,
         encoding: 'utf8',
@@ -24,14 +24,14 @@ function runAndTruncate(commandStr, args, cwd) {
         // Keep the top 20 lines (usually the error summary) and bottom 30 lines (usually the stack trace / summary)
         const top = outputLines.slice(0, 20);
         const bottom = outputLines.slice(outputLines.length - 30);
-        
+
         outputLines = [
             ...top,
             '',
             yellow(`... (truncated ${truncatedCount} lines of test output for LLM brevity)`),
             yellow(`Run '${commandStr} ${args.join(' ')}' manually to see the full trace.`),
             '',
-            ...bottom
+            ...bottom,
         ];
     }
 
@@ -39,7 +39,7 @@ function runAndTruncate(commandStr, args, cwd) {
     if (output) {
         console.log(output);
     }
-    
+
     if (success) {
         console.log(green(`\n✓ Tests Passed`));
     } else {
@@ -61,7 +61,7 @@ function runTest(args) {
     }
 
     let pnpmArgs = ['run', 'test', '--run']; // --run disables watch mode for vitest
-    
+
     // Pass any extra args (like specific files) down to vitest
     if (args.length > 0) {
         pnpmArgs = pnpmArgs.concat(args);

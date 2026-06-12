@@ -11,7 +11,10 @@ import { MetaText } from '../../components/Inspector/MetaText';
 import { resolveDeviceLayout } from './deviceLayoutRegistry';
 import { GenericDeviceLayout } from './GenericDeviceLayout';
 
-import './layouts';
+import './layouts/BuiltinSynthLayout';
+import './layouts/FaustInstrumentLayout';
+import './layouts/HammondB3Layout';
+import './layouts/effects';
 
 type DeviceInspectorProps = {
     device: Device;

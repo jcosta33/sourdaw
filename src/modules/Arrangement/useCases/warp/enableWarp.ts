@@ -1,4 +1,4 @@
-import { getWarpState, warpStates } from './helpers';
+import { getWarpState, warpStates } from '../../stores/warpStates';
 
 export function enableWarp(clipId: string, originalTempo: number | null = null): void {
     const current = getWarpState(clipId);

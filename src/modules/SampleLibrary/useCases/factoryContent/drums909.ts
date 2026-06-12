@@ -22,7 +22,14 @@ function render909Kick(): Float32Array {
         const sweep = Math.exp(-t * 40);
         return 50 + 150 * sweep;
     });
-    const bodyEnv = renderEnvelope(dur, { attack: 0.002, decay: 0.08, sustainLevel: 0.35, sustain: 0, release: 0.45, curve: 'exp' });
+    const bodyEnv = renderEnvelope(dur, {
+        attack: 0.002,
+        decay: 0.08,
+        sustainLevel: 0.35,
+        sustain: 0,
+        release: 0.45,
+        curve: 'exp',
+    });
     applyEnvelope(body, bodyEnv);
 
     const click = renderTriangle(0.02, 1200);
@@ -44,13 +51,27 @@ function render909Snare(): Float32Array {
     const tones = createMono(dur);
     mixMono(tones, tone1, 0.6);
     mixMono(tones, tone2, 0.4);
-    const toneEnv = renderEnvelope(dur, { attack: 0.001, decay: 0.05, sustainLevel: 0.1, sustain: 0, release: 0.2, curve: 'exp' });
+    const toneEnv = renderEnvelope(dur, {
+        attack: 0.001,
+        decay: 0.05,
+        sustainLevel: 0.1,
+        sustain: 0,
+        release: 0.2,
+        curve: 'exp',
+    });
     applyEnvelope(tones, toneEnv);
 
     const noise = renderNoise(dur, SAMPLE_RATE, 909);
     biquad(noise, { type: 'highpass', freq: 1500, q: 0.7 });
     biquad(noise, { type: 'peaking', freq: 4500, q: 0.9, gainDb: 4 });
-    const noiseEnv = renderEnvelope(dur, { attack: 0.001, decay: 0.04, sustainLevel: 0.35, sustain: 0, release: 0.22, curve: 'exp' });
+    const noiseEnv = renderEnvelope(dur, {
+        attack: 0.001,
+        decay: 0.04,
+        sustainLevel: 0.35,
+        sustain: 0,
+        release: 0.22,
+        curve: 'exp',
+    });
     applyEnvelope(noise, noiseEnv);
 
     const out = createMono(dur);
@@ -166,7 +187,14 @@ function render909Tom(): Float32Array {
         const sweep = Math.exp(-t * 20);
         return 120 + 90 * sweep;
     });
-    const bodyEnv = renderEnvelope(dur, { attack: 0.002, decay: 0.08, sustainLevel: 0.4, sustain: 0, release: 0.5, curve: 'exp' });
+    const bodyEnv = renderEnvelope(dur, {
+        attack: 0.002,
+        decay: 0.08,
+        sustainLevel: 0.4,
+        sustain: 0,
+        release: 0.5,
+        curve: 'exp',
+    });
     applyEnvelope(body, bodyEnv);
     mixMono(out, body, 0.9);
 

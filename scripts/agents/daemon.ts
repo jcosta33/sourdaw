@@ -22,24 +22,24 @@ function run() {
     let activeProcess = null;
 
     watch(join(repoRoot, 'src'), { recursive: true }, (eventType, filename) => {
-        if (!filename || !filename.endsWith('.ts') && !filename.endsWith('.tsx')) return;
+        if (!filename || (!filename.endsWith('.ts') && !filename.endsWith('.tsx'))) return;
         if (filename.endsWith('.spec.ts') || filename.endsWith('.spec.tsx')) return;
 
         if (timeout) clearTimeout(timeout);
-        
+
         // Debounce saves
         timeout = setTimeout(() => {
             console.log(yellow(`\n[Daemon] Detected change in ${filename}`));
-            
+
             if (activeProcess) {
                 console.log(dim(`Killing previous test run...`));
                 activeProcess.kill();
             }
 
             console.log(cyan(`Running blast radius check...`));
-            activeProcess = spawn('pnpm', ['agents:test-radius', join('src', filename)], { 
+            activeProcess = spawn('pnpm', ['agents:test-radius', join('src', filename)], {
                 cwd: repoRoot,
-                stdio: 'inherit'
+                stdio: 'inherit',
             });
 
             activeProcess.on('close', (code) => {
@@ -50,7 +50,6 @@ function run() {
                 }
                 activeProcess = null;
             });
-
         }, 1000);
     });
 }

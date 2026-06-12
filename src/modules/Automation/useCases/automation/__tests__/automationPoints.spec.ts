@@ -8,7 +8,7 @@ import { updateAutomationPoint } from '../updateAutomationPoint';
 const mocks = vi.hoisted(() => ({
     automationStoreValue: { value: { lanes: [] } },
     automationStoreSet: vi.fn(),
-    interpolateAutomationValue: vi.fn(),
+    interpolateAutomationPointValue: vi.fn(),
 }));
 
 vi.mock('../../../stores/automationStore', () => ({
@@ -20,9 +20,8 @@ vi.mock('../../../stores/automationStore', () => ({
     },
 }));
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    interpolateAutomationValue: mocks.interpolateAutomationValue,
+vi.mock('../../../services/automationPointAlgorithms', () => ({
+    interpolateAutomationPointValue: mocks.interpolateAutomationPointValue,
 }));
 
 describe('Automation Point Use Cases', () => {
@@ -126,12 +125,16 @@ describe('Automation Point Use Cases', () => {
                 { beat: 10, value: 0.5 },
             ];
             mocks.automationStoreValue.value = { lanes: [{ id: 'l1', points }] } as any;
-            mocks.interpolateAutomationValue.mockReturnValue(0.35);
+            mocks.interpolateAutomationPointValue.mockReturnValue(0.35);
 
             const val = getAutomationValueAtBeat('l1', 7.5);
 
             expect(val).toBe(0.35);
-            expect(mocks.interpolateAutomationValue).toHaveBeenCalledWith(points[0], points[1], 7.5);
+            expect(mocks.interpolateAutomationPointValue).toHaveBeenCalledWith({
+                firstPoint: points[0],
+                secondPoint: points[1],
+                beat: 7.5,
+            });
         });
     });
 });

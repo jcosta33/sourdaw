@@ -13,13 +13,17 @@ const mocks = vi.hoisted(() => {
     return {
         setTrackGain: vi.fn<(trackId: string, gain: number) => void>(),
         setTrackPan: vi.fn<(trackId: string, pan: number) => void>(),
-        applyAdjustmentLayerTick: vi.fn<(records: Array<{
-            layerId: string;
-            trackId: string;
-            effectType: string;
-            parameters: Record<string, number>;
-            blend: number;
-        }>) => void>(),
+        applyAdjustmentLayerTick: vi.fn<
+            (
+                records: Array<{
+                    layerId: string;
+                    trackId: string;
+                    effectType: string;
+                    parameters: Record<string, number>;
+                    blend: number;
+                }>
+            ) => void
+        >(),
         resetAdjustmentLayers: vi.fn<() => void>(),
         trackStoreValue: { tracks: [{ id: 't1', gain: 1, pan: 0 }] } as {
             tracks: Array<{ id: string; gain: number; pan: number }>;

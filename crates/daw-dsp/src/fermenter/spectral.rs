@@ -1,5 +1,5 @@
-//! Spectral warp modes — runtime timbral transforms applied to oscillator output.
-//! Inspired by Vital's spectral morph system but implemented as time-domain processing.
+//! Time-domain warp modes — runtime timbral transforms applied to oscillator output.
+//! True spectral-domain morphing remains separate future work.
 
 #[derive(Clone, Copy)]
 pub enum WarpMode {

@@ -19,7 +19,10 @@ import { isFaustModule } from '#/modules/Plugin/useCases';
 import { updateProofMeters } from '#/modules/Proof/stores';
 import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/modules/Proof/useCases';
 import { updateTunerTelemetry } from '#/modules/Scoring/stores';
-import { unregisterToasterDevice } from '#/modules/Toaster';
+import { unregisterToasterDevice } from '#/modules/Toaster/stores';
+
+import { reportLatency } from '../useCases/latencyCompensation/compensation/reportLatency';
+import { clearReportedLatency } from '../useCases/latencyCompensation/compensation/clearReportedLatency';
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
 import { createFaustDeviceNode } from '../useCases/deviceResolvers/createFaustDeviceNode';
@@ -68,6 +71,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
     matches: isFermenterDevice,
     create({ context, deviceId, deviceType, onLoaded }) {
         const pendingParams: Array<[string, number | number[]]> = [];
+        let pendingPatch: Record<string, unknown> | null = null;
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.fermenterControls = {
             ready: false,
@@ -75,6 +79,9 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
             noteOff: () => {},
             setParam: (name, value) => {
                 pendingParams.push([name, value]);
+            },
+            setPatch: (patch) => {
+                pendingPatch = patch;
             },
             setBypass: () => {},
             destroy: () => {},
@@ -84,6 +91,9 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                 await result.ready;
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
+                }
+                if (pendingPatch) {
+                    result.setPatch(pendingPatch);
                 }
                 result.onTelemetry((data) => {
                     setFermenterTelemetry(deviceId, data.peakL, data.peakR, data.scopeBuffer);
@@ -99,6 +109,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                         noteOn: result.noteOn,
                         noteOff: result.noteOff,
                         setParam: result.setParam,
+                        setPatch: result.setPatch,
                         setBypass: result.setBypass,
                         destroy: result.destroy,
                     },
@@ -107,6 +118,7 @@ const fermenterDescriptor: WasmDeviceDescriptor = {
                         noteOn: result.noteOn,
                         noteOff: result.noteOff,
                         setParam: result.setParam,
+                        setPatch: result.setPatch,
                         setBypass: result.setBypass,
                         destroy: result.destroy,
                     },
@@ -158,7 +170,9 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                         setBypass: result.setBypass,
                         destroy: () => {
                             result.destroy();
-                            try { unregisterToasterDevice(deviceId); } catch {}
+                            try {
+                                unregisterToasterDevice(deviceId);
+                            } catch {}
                         },
                     },
                     toasterControls: {
@@ -221,7 +235,9 @@ const levainDescriptor: WasmDeviceDescriptor = {
                         setBypass: result.setBypass,
                         destroy: () => {
                             result.destroy();
-                            try { _unregisterLevainDevice(deviceId); } catch {}
+                            try {
+                                _unregisterLevainDevice(deviceId);
+                            } catch {}
                         },
                     },
                     levainControls: {
@@ -317,6 +333,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                         phaseCorr: data.phaseCorr,
                         latency: data.latency,
                     });
+                    reportLatency(deviceId, (data.latency / context.sampleRate) * 1000);
                 });
                 onLoaded({
                     deviceId,
@@ -324,7 +341,14 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
-                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
+                    controller: {
+                        setParam: result.setParam,
+                        setBypass: result.setBypass,
+                        destroy: () => {
+                            result.destroy();
+                            clearReportedLatency(deviceId);
+                        },
+                    },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 return;
@@ -350,10 +374,16 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
         };
         const loadPromise = createBacteriaNode(context)
             .then(async (result: BacteriaNodeResult) => {
-                await result.ready;
+                const readyData = await result.ready;
+                const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
+                reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
+
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                result.onLatencyChanged((latency) => {
+                    reportLatency(deviceId, (latency / context.sampleRate) * 1000);
+                });
                 result.onMeterData((data) => {
                     updateBacteriaMeters(deviceId, data.inputDb, data.outputDb, data.bandLevels, data.latency);
                 });
@@ -363,7 +393,14 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
-                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
+                    controller: {
+                        setParam: result.setParam,
+                        setBypass: result.setBypass,
+                        destroy: () => {
+                            result.destroy();
+                            clearReportedLatency(deviceId);
+                        },
+                    },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 return;
@@ -380,6 +417,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
     matches: isGrinderDevice,
     create({ context, deviceId, deviceType, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
+        let pendingPatch: Record<string, unknown> | null = null;
         let pendingBypass = false;
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
@@ -390,12 +428,32 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                 pendingBypass = bypassed;
             },
         };
+        placeholder.controller = {
+            setParam: (name, value) => {
+                pendingParams.push([name, value]);
+            },
+            setPatch: (patch) => {
+                pendingPatch = patch;
+            },
+            setBypass: (bypassed) => {
+                pendingBypass = bypassed;
+            },
+        };
         const loadPromise = createGrinderNode(context)
             .then(async (result: GrinderNodeResult) => {
-                await result.ready;
+                const readyData = await result.ready;
+                const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
+                reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
+
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                if (pendingPatch) {
+                    result.setPatch(pendingPatch);
+                }
+                result.onLatencyChanged((latency) => {
+                    reportLatency(deviceId, (latency / context.sampleRate) * 1000);
+                });
                 result.onMeterData((data) => {
                     updateGrinderMeters(deviceId, {
                         inputDb: data.inputDb,
@@ -419,7 +477,15 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
-                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: result.destroy },
+                    controller: {
+                        setParam: result.setParam,
+                        setPatch: result.setPatch,
+                        setBypass: result.setBypass,
+                        destroy: () => {
+                            result.destroy();
+                            clearReportedLatency(deviceId);
+                        },
+                    },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 return;
@@ -445,10 +511,16 @@ const proofDescriptor: WasmDeviceDescriptor = {
         };
         const loadPromise = createProofNode(context)
             .then(async (result: ProofNodeResult) => {
-                await result.ready;
+                const readyData = await result.ready;
+                const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
+                reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
+
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
+                result.onLatencyChanged((latency) => {
+                    reportLatency(deviceId, (latency / context.sampleRate) * 1000);
+                });
                 result.onMeterData((data) => {
                     updateProofMeters(deviceId, data);
                 });
@@ -463,7 +535,17 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     nodes: [result.workletNode],
                     inputNode: result.workletNode,
                     outputNode: result.workletNode,
-                    controller: { setParam: result.setParam, setBypass: result.setBypass, destroy: () => { result.destroy(); try { unregisterProofDevice(deviceId); } catch {} } },
+                    controller: {
+                        setParam: result.setParam,
+                        setBypass: result.setBypass,
+                        destroy: () => {
+                            result.destroy();
+                            clearReportedLatency(deviceId);
+                            try {
+                                unregisterProofDevice(deviceId);
+                            } catch {}
+                        },
+                    },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 void syncFullPatch(deviceId);
@@ -608,8 +690,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
         placeholder.controller = {
             setParam: (name, value) => pending.push({ kind: 'param', name, value }),
             scheduleParam: (name, value, time) => pending.push({ kind: 'param', name, value, time }),
-            keyOn: (channel, pitch, velocity, time) =>
-                pending.push({ kind: 'keyOn', channel, pitch, velocity, time }),
+            keyOn: (channel, pitch, velocity, time) => pending.push({ kind: 'keyOn', channel, pitch, velocity, time }),
             keyOff: (channel, pitch, velocity, time) =>
                 pending.push({ kind: 'keyOff', channel, pitch, velocity, time }),
             destroy: () => {},

@@ -8,7 +8,7 @@ import type { TrackState } from '../../../../repositories/track/getTrackState';
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn<typeof import('../../../../repositories/track/getTrackState').getTrackState>(),
     updateTrack: vi.fn<typeof import('../../../../repositories/track/updateTrack').updateTrack>(),
-    getTransportState: vi.fn<typeof import('#/modules/Transport/useCases').getTransportState>(),
+    transportStoreValue: { isPlaying: false } as unknown,
     updateDeviceParam: vi.fn<typeof import('#/modules/AudioEngine/useCases').updateDeviceParam>(),
     recordAutomationValue: vi.fn<typeof import('#/modules/Automation/useCases').recordAutomationValue>(),
 }));
@@ -21,9 +21,13 @@ vi.mock('../../../../repositories/track/updateTrack', () => ({
     updateTrack: mocks.updateTrack,
 }));
 
-vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
-    getTransportState: mocks.getTransportState,
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
+    transportStore: {
+        get value() {
+            return mocks.transportStoreValue;
+        },
+    },
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
@@ -39,9 +43,7 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
 describe('setDeviceParameter', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.getTransportState.mockReturnValue({ isPlaying: false } as unknown as ReturnType<
-            typeof import('#/modules/Transport/useCases').getTransportState
-        >);
+        mocks.transportStoreValue = { isPlaying: false };
     });
 
     it('updates parameter in store and engine', () => {
@@ -63,9 +65,7 @@ describe('setDeviceParameter', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ id: 't1', automationMode: 'write', devices: [{ id: 'd1' }] }],
         } as unknown as TrackState);
-        mocks.getTransportState.mockReturnValue({ isPlaying: true, playheadPosition: 8 } as unknown as ReturnType<
-            typeof import('#/modules/Transport/useCases').getTransportState
-        >);
+        mocks.transportStoreValue = { isPlaying: true, playheadPosition: 8 };
 
         setDeviceParameter('d1', 'cutoff', 1000);
 

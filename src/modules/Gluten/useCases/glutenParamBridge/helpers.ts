@@ -1,7 +1,11 @@
-import { persistDeviceParam, getAllTracks } from '#/modules/Arrangement/useCases';
+import { trackStore, type Track, persistDeviceParam } from '#/modules/Arrangement/stores';
 import { updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { createFindDeviceRef, type DeviceRef, type GetAllTracksFn } from '#/utils/createFindDeviceRef';
 import { createRafBatcher, type RafBatcher } from '#/utils/DOM/createRafBatcher';
+
+function getAllTracks(): Track[] {
+    return trackStore.value?.tracks ?? [];
+}
 
 export { createFindDeviceRef };
 export type { DeviceRef, GetAllTracksFn };

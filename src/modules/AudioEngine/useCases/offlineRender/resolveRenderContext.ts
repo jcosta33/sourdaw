@@ -1,15 +1,20 @@
-import { getTrackStoreState } from '#/modules/Arrangement/useCases';
-import { getMidiStoreState } from '#/modules/MIDI/useCases';
-import { getTempoMapState, getTransportStoreValue, type TempoChange } from '#/modules/Transport/useCases';
+import { trackStore, type TrackStoreState } from '#/modules/Arrangement/stores';
+import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
+import {
+    tempoMapStore,
+    transportStore,
+    type TempoMapStoreState,
+    type TransportState,
+} from '#/modules/Transport/stores';
 
 import { beatToSeconds } from '../../services/beatConversion';
 
 export type OfflineRenderContext = {
-    tracks: ReturnType<typeof getTrackStoreState>;
-    midi: ReturnType<typeof getMidiStoreState>;
-    transport: ReturnType<typeof getTransportStoreValue>;
+    tracks: TrackStoreState | null;
+    midi: MidiStoreState | null;
+    transport: TransportState | null;
     defaultTempo: number;
-    changes: TempoChange[];
+    changes: TempoMapStoreState['changes'];
     /** Starting beat of the rendered region. */
     startBeat: number;
     /** Total render duration in seconds — includes tail. */
@@ -28,12 +33,16 @@ export function resolveRenderContext(input: ResolveRenderContextInput | number):
     const normalized: Required<ResolveRenderContextInput> =
         typeof input === 'number'
             ? { durationBeats: input, startBeat: 0, tailSeconds: 0 }
-            : { durationBeats: input.durationBeats, startBeat: input.startBeat ?? 0, tailSeconds: input.tailSeconds ?? 0 };
+            : {
+                  durationBeats: input.durationBeats,
+                  startBeat: input.startBeat ?? 0,
+                  tailSeconds: input.tailSeconds ?? 0,
+              };
 
-    const transport = getTransportStoreValue();
-    const tracks = getTrackStoreState();
-    const midi = getMidiStoreState();
-    const tempoMap = getTempoMapState();
+    const transport = transportStore.value;
+    const tracks = trackStore.value;
+    const midi = midiStore.value;
+    const tempoMap = tempoMapStore.value;
     const defaultTempo = transport?.tempo ?? 120;
     const changes = tempoMap?.changes ?? [];
 

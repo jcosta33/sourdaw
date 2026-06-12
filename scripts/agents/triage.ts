@@ -18,7 +18,7 @@ function run() {
     const { positional, flags } = parseArgs(process.argv.slice(2));
     const rawFile = positional[0];
     const slug = flags.get('slug') || basename(rawFile || 'bug', '.txt');
-    
+
     if (!rawFile) {
         console.log(red('Usage: agents:triage <path/to/raw-report.txt> [--slug my-bug-slug]'));
         process.exit(1);

@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { getWorkspaceState } from '#/modules/Workspace/useCases';
+import { workspaceStore } from '#/modules/Workspace/stores';
 
 import { copySelectedClip } from '../copySelectedClip';
 
-vi.mock('#/modules/Workspace/useCases', () => ({
-    getWorkspaceState: vi.fn(),
+vi.mock('#/modules/Workspace/stores', () => ({
+    workspaceStore: { value: null },
 }));
 
 describe('copySelectedClip', () => {
@@ -14,7 +14,7 @@ describe('copySelectedClip', () => {
     });
 
     it('returns early when workspace is unavailable', () => {
-        vi.mocked(getWorkspaceState).mockReturnValue(null as never);
+        workspaceStore.value = null;
 
         expect(() => {
             copySelectedClip();

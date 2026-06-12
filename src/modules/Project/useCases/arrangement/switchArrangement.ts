@@ -1,4 +1,4 @@
-import { clearUndoHistory } from '#/modules/Command/useCases';
+import { clearUndoHistory } from '#/modules/Command/stores';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 import { arrangementStore } from '../../stores/arrangementStore';

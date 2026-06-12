@@ -19,7 +19,14 @@ import {
 function render808Kick(): Float32Array {
     const dur = 1.2;
     const body = renderSine(dur, (t) => 40 + 25 * Math.exp(-t * 15));
-    const bodyEnv = renderEnvelope(dur, { attack: 0.003, decay: 0.12, sustainLevel: 0.55, sustain: 0.2, release: 0.85, curve: 'exp' });
+    const bodyEnv = renderEnvelope(dur, {
+        attack: 0.003,
+        decay: 0.12,
+        sustainLevel: 0.55,
+        sustain: 0.2,
+        release: 0.85,
+        curve: 'exp',
+    });
     applyEnvelope(body, bodyEnv);
 
     const click = renderTriangle(0.015, 2000);
@@ -38,14 +45,28 @@ function render808Snare(): Float32Array {
     const dur = 0.22;
     const out = createMono(dur);
     const tone = renderSine(dur, 220);
-    const toneEnv = renderEnvelope(dur, { attack: 0.001, decay: 0.06, sustainLevel: 0.1, sustain: 0, release: 0.14, curve: 'exp' });
+    const toneEnv = renderEnvelope(dur, {
+        attack: 0.001,
+        decay: 0.06,
+        sustainLevel: 0.1,
+        sustain: 0,
+        release: 0.14,
+        curve: 'exp',
+    });
     applyEnvelope(tone, toneEnv);
     mixMono(out, tone, 0.5);
 
     const noise = renderNoise(dur, SAMPLE_RATE, 808);
     biquad(noise, { type: 'highpass', freq: 1200, q: 0.7 });
     biquad(noise, { type: 'peaking', freq: 5500, q: 1.5, gainDb: 6 });
-    const noiseEnv = renderEnvelope(dur, { attack: 0.001, decay: 0.02, sustainLevel: 0.3, sustain: 0, release: 0.18, curve: 'exp' });
+    const noiseEnv = renderEnvelope(dur, {
+        attack: 0.001,
+        decay: 0.02,
+        sustainLevel: 0.3,
+        sustain: 0,
+        release: 0.18,
+        curve: 'exp',
+    });
     applyEnvelope(noise, noiseEnv);
     mixMono(out, noise, 0.9);
     softClip(out, 1.1);
@@ -119,9 +140,23 @@ function render808Cowbell(): Float32Array {
     // 808 cowbell = two square waves at 540/800 Hz. Famous exact ratio.
     const a = renderTriangle(dur, 540);
     const b = renderTriangle(dur, 800);
-    const env = renderEnvelope(dur, { attack: 0.001, decay: 0.02, sustainLevel: 0.5, sustain: 0, release: 0.45, curve: 'exp' });
+    const env = renderEnvelope(dur, {
+        attack: 0.001,
+        decay: 0.02,
+        sustainLevel: 0.5,
+        sustain: 0,
+        release: 0.45,
+        curve: 'exp',
+    });
     applyEnvelope(a, env);
-    const env2 = renderEnvelope(dur, { attack: 0.001, decay: 0.02, sustainLevel: 0.5, sustain: 0, release: 0.45, curve: 'exp' });
+    const env2 = renderEnvelope(dur, {
+        attack: 0.001,
+        decay: 0.02,
+        sustainLevel: 0.5,
+        sustain: 0,
+        release: 0.45,
+        curve: 'exp',
+    });
     applyEnvelope(b, env2);
     mixMono(out, a, 0.5);
     mixMono(out, b, 0.5);
@@ -134,7 +169,14 @@ function render808Tom(): Float32Array {
     const dur = 0.45;
     const out = createMono(dur);
     const body = renderSine(dur, (t) => 90 + 60 * Math.exp(-t * 25));
-    const bEnv = renderEnvelope(dur, { attack: 0.002, decay: 0.08, sustainLevel: 0.4, sustain: 0, release: 0.36, curve: 'exp' });
+    const bEnv = renderEnvelope(dur, {
+        attack: 0.002,
+        decay: 0.08,
+        sustainLevel: 0.4,
+        sustain: 0,
+        release: 0.36,
+        curve: 'exp',
+    });
     applyEnvelope(body, bEnv);
     mixMono(out, body, 0.95);
 

@@ -23,6 +23,10 @@ export type { TimelineViewState } from './timelineViewStore';
 
 export { trackStore, defaultTrackState } from './trackStore';
 export type { TrackStoreState, Track, Device, Clip } from './trackStore';
+export { persistDeviceParam } from './persistDeviceParam';
+export { updateClipInStore } from './updateClipInStore';
+export { appendClipToTrack } from './appendClipToTrack';
+export { appendTrack } from './appendTrack';
 
 export { adjustmentLayerStore, EFFECT_PRESETS, LAYER_COLORS } from './adjustmentLayer';
 export type {
@@ -41,3 +45,5 @@ export type { GrooveState, GrooveTemplate } from './grooveStore';
 
 export { gainEnvelopeStore, defaultGainEnvelopeStoreState } from './gainEnvelopeStore';
 export type { GainEnvelopeStoreState, ClipGainEnvelope, GainEnvelopePoint } from './gainEnvelopeStore';
+
+export { warpStates, getWarpState, addWarpMarker } from './warpStates';

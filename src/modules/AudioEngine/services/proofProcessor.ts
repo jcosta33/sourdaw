@@ -58,7 +58,7 @@ class ProofProcessor extends AudioWorkletProcessor {
         this._memory = wasmExports.memory;
         this._instance = new ProofInstance(sampleRate);
         this._ready = true;
-        this.port.postMessage({ type: 'ready' });
+        this.port.postMessage({ type: 'ready', latency: this._instance.get_latency_samples() });
     }
 
     _handleMessage(msg: ProofMsg): void {
@@ -66,6 +66,9 @@ class ProofProcessor extends AudioWorkletProcessor {
         if (!inst) {
             return;
         }
+        
+        const oldLatency = inst.get_latency_samples();
+
         switch (msg.type) {
             case 'init-sab':
             case 'init':
@@ -79,6 +82,11 @@ class ProofProcessor extends AudioWorkletProcessor {
             case 'reset_integrated':
                 inst.reset_integrated();
                 break;
+        }
+
+        const newLatency = inst.get_latency_samples();
+        if (newLatency !== oldLatency) {
+            this.port.postMessage({ type: 'latency-changed', latency: newLatency });
         }
     }
 

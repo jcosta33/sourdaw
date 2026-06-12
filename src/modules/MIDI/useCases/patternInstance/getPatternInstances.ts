@@ -1,10 +1,10 @@
-import { getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 /**
  * Get all instance clip IDs linked to a parent.
  */
 export function getPatternInstances(parentClipId: string): string[] {
-    const state = getTrackStoreState();
+    const state = trackStore.value;
     if (!state) {
         return [];
     }

@@ -61,6 +61,7 @@ type PromptAction = RuntimeAction;
 
 type PromptPreview = {
     actions: PromptAction[];
+    actionLabels: string[];
     confidence: number;
     rawText: string;
     requiresConfirmation: boolean;
@@ -243,6 +244,7 @@ export const usePromptExecution = (): PromptExecutionState => {
         if (result.preset.isDestructive) {
             setPreview({
                 actions,
+                actionLabels: actions.map((action) => describeAction(action)),
                 confidence: 0.95,
                 rawText: result.preset.label,
                 requiresConfirmation: true,
@@ -297,7 +299,10 @@ export const usePromptExecution = (): PromptExecutionState => {
             }
 
             if (result.requiresConfirmation && result.actions.length > 0) {
-                setPreview(result);
+                setPreview({
+                    ...result,
+                    actionLabels: result.actions.map((action) => describeAction(action)),
+                });
                 setIsProcessing(false);
                 shouldClearValue = false;
                 return;

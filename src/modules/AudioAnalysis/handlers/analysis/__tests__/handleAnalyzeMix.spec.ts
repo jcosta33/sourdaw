@@ -1,13 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { getMixAnalysisStoreValue, setMixAnalysisStoreValue } from '#/modules/AiRuntime/useCases';
-
 import { analyzeMix } from '../../../useCases/analyzeMix';
 import { handleAnalyzeMix } from '../handleAnalyzeMix';
 
-vi.mock('#/modules/AiRuntime/useCases', () => ({
-    getMixAnalysisStoreValue: vi.fn(),
-    setMixAnalysisStoreValue: vi.fn(),
+const mocks = vi.hoisted(() => ({
+    storeValue: null as unknown,
+    storeSet: vi.fn(),
+}));
+
+vi.mock('#/modules/AiRuntime/stores', () => ({
+    mixAnalysisStore: {
+        get value() {
+            return mocks.storeValue;
+        },
+        set: mocks.storeSet,
+    },
 }));
 
 vi.mock('../../../useCases/analyzeMix', () => ({
@@ -16,14 +23,13 @@ vi.mock('../../../useCases/analyzeMix', () => ({
 
 describe('handleAnalyzeMix', () => {
     beforeEach(() => {
-        vi.mocked(getMixAnalysisStoreValue).mockReset();
-        vi.mocked(setMixAnalysisStoreValue).mockReset();
+        mocks.storeValue = null;
+        mocks.storeSet.mockReset();
         vi.mocked(analyzeMix).mockReset();
     });
 
     it('updates store with result when state exists', async () => {
-        const baseState = { isAnalyzing: false, panelOpen: false, result: null };
-        vi.mocked(getMixAnalysisStoreValue).mockReturnValue(baseState);
+        mocks.storeValue = { isAnalyzing: false, panelOpen: false, result: null };
         vi.mocked(analyzeMix).mockResolvedValue({
             timestamp: 1,
             overallLevel: { peakDb: -6, rmsDb: -12 },
@@ -42,15 +48,13 @@ describe('handleAnalyzeMix', () => {
 
         await handleAnalyzeMix.execute({ type: 'analyzeMix', payload: undefined });
 
-        expect(setMixAnalysisStoreValue).toHaveBeenCalledWith(expect.objectContaining({ isAnalyzing: true }));
+        expect(mocks.storeSet).toHaveBeenCalledWith(expect.objectContaining({ isAnalyzing: true }));
         expect(analyzeMix).toHaveBeenCalled();
-        expect(setMixAnalysisStoreValue).toHaveBeenCalledWith(
-            expect.objectContaining({ isAnalyzing: false, panelOpen: true })
-        );
+        expect(mocks.storeSet).toHaveBeenCalledWith(expect.objectContaining({ isAnalyzing: false, panelOpen: true }));
     });
 
     it('no-ops when mix analysis store is missing', async () => {
-        vi.mocked(getMixAnalysisStoreValue).mockReturnValue(null);
+        mocks.storeValue = null;
 
         await handleAnalyzeMix.execute({ type: 'analyzeMix', payload: undefined });
 

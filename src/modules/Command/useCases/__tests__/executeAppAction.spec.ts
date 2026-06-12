@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { executeAppAction } from '../executeAppAction';
 
 const mocks = vi.hoisted(() => ({
@@ -24,17 +25,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
 
-// Mock the exact file paths to ensure interception
-vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    setSemanticContext: mocks.setSemanticContext,
-    clearSemanticContext: mocks.clearSemanticContext,
-    getDsoSnapshotHandlers: () => ({}),
-}));
-
 vi.mock('#/modules/CrdtDocument/stores', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     pushActionHistoryEntry: mocks.pushActionHistoryEntry,
+    setSemanticContext: mocks.setSemanticContext,
+    clearSemanticContext: mocks.clearSemanticContext,
 }));
 
 vi.mock('../../stores/undoStore', () => ({
@@ -44,78 +39,15 @@ vi.mock('../../stores/undoStore', () => ({
 
 vi.mock('../macro/recording/recordAction', () => ({ recordAction: mocks.recordAction }));
 
-// Mock all the individual re-exports that executeAppAction might call via its lazy registry
-vi.mock('#/modules/Arrangement', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getArrangementHandlers: () => ({ testAction: mocks.mockHandler }),
-}));
-
-vi.mock('#/modules/Transport', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getTransportHandlers: () => ({}),
-}));
-
-vi.mock('#/modules/Workspace', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getWorkspaceHandlers: () => ({}),
-    getScratchPadHandlers: () => ({}),
-}));
-
-vi.mock('#/modules/Automation', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getAutomationHandlers: () => ({}),
-}));
-
-vi.mock('#/modules/AiGeneration', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getGenerationHandlers: () => ({}),
-    getAiMidiHandlers: () => ({}),
-}));
-
-vi.mock('#/modules/AudioAnalysis', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getAnalysisHandlers: () => ({}),
-}));
-
-vi.mock('#/modules/Collaboration', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getCollaborationHandlers: () => ({}),
-}));
-
-vi.mock('#/modules/Plugin', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getPluginHostHandlers: () => ({}),
-}));
-
-vi.mock('#/modules/AiRuntime', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getAiOrganizationHandlers: () => ({}),
-}));
-
-vi.mock('#/modules/MIDI', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getChordTrackHandlers: () => ({}),
-    getMidiRoutingHandlers: () => ({}),
-    getPatternInstanceHandlers: () => ({}),
-}));
-
-vi.mock('#/modules/Project', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getSongStructureHandlers: () => ({}),
-    getVersionControlHandlers: () => ({}),
-}));
-
-vi.mock('#/modules/AudioEngine', async (importOriginal) => ({
-    ...(await importOriginal<any>()),
-    getFinalFeatureHandlers: () => ({}),
-}));
-
 describe('executeAppAction', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        clearHandlerRegistry();
+        registerHandlerMap({ testAction: mocks.mockHandler as any });
     });
 
     it('logs error if no handler is found', async () => {
+        clearHandlerRegistry();
         await executeAppAction({ type: 'unknownAction', payload: {} } as any);
         expect(mocks.logger.error).toHaveBeenCalled();
     });

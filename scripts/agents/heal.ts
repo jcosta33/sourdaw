@@ -30,9 +30,9 @@ function run() {
     const slug = `heal-${Date.now()}`;
     console.log(yellow(`Spawning emergency hotfix agent: ${bold(slug)}`));
 
-    const res = spawnSync('pnpm', ['agents:new', slug, '--title', '"Emergency Typecheck Fix"', '--type', 'fix'], { 
+    const res = spawnSync('pnpm', ['agents:new', slug, '--title', '"Emergency Typecheck Fix"', '--type', 'fix'], {
         cwd: repoRoot,
-        stdio: 'inherit'
+        stdio: 'inherit',
     });
 
     if (res.status === 0) {

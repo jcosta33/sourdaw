@@ -1,13 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-    getActiveLayersAtBeat: vi.fn(),
+    storeValue: null as { layers: unknown[] } | null,
     applyLayers: vi.fn(),
     reset: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    getActiveLayersAtBeat: mocks.getActiveLayersAtBeat,
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    adjustmentLayerStore: {
+        get value() {
+            return mocks.storeValue;
+        },
+    },
 }));
 
 vi.mock('../sharedAdjustmentLayerApplier', () => ({
@@ -34,14 +39,13 @@ describe('scheduleAdjustmentLayers', () => {
             mix: 1,
             color: 'oklch(0.4 0.1 180)',
         };
-        mocks.getActiveLayersAtBeat.mockReturnValueOnce([fakeLayer]);
+        mocks.storeValue = { layers: [fakeLayer] };
         mocks.applyLayers.mockReturnValueOnce([
             { layerId: 'layer-eq-1', trackId: 't1', effectType: 'eq', blend: 1, parameters: {}, beat: 5 },
         ]);
 
         const applied = scheduleAdjustmentLayers(5);
 
-        expect(mocks.getActiveLayersAtBeat).toHaveBeenCalledWith(5);
         expect(mocks.applyLayers).toHaveBeenCalledWith({ activeLayers: [fakeLayer], beat: 5 });
         expect(applied).toEqual([
             { layerId: 'layer-eq-1', trackId: 't1', effectType: 'eq', blend: 1, parameters: {}, beat: 5 },
@@ -62,13 +66,13 @@ describe('scheduleAdjustmentLayers', () => {
             color: 'oklch(0.4 0.1 180)',
         };
 
-        // Beat 2: not in region
-        mocks.getActiveLayersAtBeat.mockReturnValueOnce([]);
+        mocks.storeValue = { layers: [fakeLayer] };
+
+        // Beat 2: not in region (filter rejects)
         mocks.applyLayers.mockReturnValueOnce([]);
         scheduleAdjustmentLayers(2);
 
         // Beat 5: inside region
-        mocks.getActiveLayersAtBeat.mockReturnValueOnce([fakeLayer]);
         mocks.applyLayers.mockReturnValueOnce([
             {
                 layerId: 'layer-eq-2',
@@ -81,8 +85,7 @@ describe('scheduleAdjustmentLayers', () => {
         ]);
         const appliedAtBeat5 = scheduleAdjustmentLayers(5);
 
-        // Beat 10: past region
-        mocks.getActiveLayersAtBeat.mockReturnValueOnce([]);
+        // Beat 10: past region (filter rejects)
         mocks.applyLayers.mockReturnValueOnce([]);
         scheduleAdjustmentLayers(10);
 

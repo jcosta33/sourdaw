@@ -18,7 +18,7 @@ function run() {
     const { positional } = parseArgs(process.argv.slice(2));
     const targetFile = positional[0];
     const targetFunc = positional[1];
-    
+
     if (!targetFile || !targetFunc) {
         console.log(red('Usage: agents:fuzz <file> <functionName>'));
         process.exit(1);
@@ -72,7 +72,7 @@ describe('${targetFunc} Fuzzer', () => {
     });
 });
 `;
-    
+
     writeFileSync(specFile, template, 'utf8');
 
     console.log(green(`✓ Fuzzer suite created: ${specFile.replace(repoRoot + '/', '')}`));

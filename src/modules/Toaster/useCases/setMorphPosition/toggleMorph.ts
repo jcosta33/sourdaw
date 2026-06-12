@@ -10,6 +10,6 @@ export function toggleMorph(deviceId: string): void {
         [deviceId]: {
             ...state,
             morph: { ...state.morph, enabled: !state.morph.enabled },
-        }
+        },
     });
 }

@@ -24,12 +24,26 @@ function renderRhodes(): Float32Array {
     const out = createMono(dur);
     // Classic Rhodes = FM (sine × sine) with low mod index for the bell attack.
     const body = renderFmOscillator(dur, C3_FREQ, C3_FREQ, (t) => 4 * Math.exp(-t * 3));
-    const env = renderEnvelope(dur, { attack: 0.003, decay: 0.3, sustainLevel: 0.5, sustain: 0.8, release: 1.3, curve: 'exp' });
+    const env = renderEnvelope(dur, {
+        attack: 0.003,
+        decay: 0.3,
+        sustainLevel: 0.5,
+        sustain: 0.8,
+        release: 1.3,
+        curve: 'exp',
+    });
     applyEnvelope(body, env);
     mixMono(out, body, 0.9);
 
     const sub = renderSine(dur, C3_FREQ * 0.5);
-    const sEnv = renderEnvelope(dur, { attack: 0.005, decay: 0.3, sustainLevel: 0.4, sustain: 0.6, release: 1.2, curve: 'exp' });
+    const sEnv = renderEnvelope(dur, {
+        attack: 0.005,
+        decay: 0.3,
+        sustainLevel: 0.4,
+        sustain: 0.6,
+        release: 1.2,
+        curve: 'exp',
+    });
     applyEnvelope(sub, sEnv);
     mixMono(out, sub, 0.2);
     biquad(out, { type: 'lowpass', freq: 4500, q: 0.7 });
@@ -40,7 +54,14 @@ function renderRhodes(): Float32Array {
 function renderFmBell(): Float32Array {
     const dur = 2.0;
     const out = renderFmOscillator(dur, C3_FREQ, C3_FREQ * 3.5, (t) => 6 * Math.exp(-t * 2));
-    const env = renderEnvelope(dur, { attack: 0.002, decay: 0.15, sustainLevel: 0.4, sustain: 0.5, release: 1.3, curve: 'exp' });
+    const env = renderEnvelope(dur, {
+        attack: 0.002,
+        decay: 0.15,
+        sustainLevel: 0.4,
+        sustain: 0.5,
+        release: 1.3,
+        curve: 'exp',
+    });
     applyEnvelope(out, env);
     normalize(out, 0.88);
     return out;
@@ -50,7 +71,14 @@ function renderPluck(): Float32Array {
     const dur = 1.0;
     const out = renderSaw(dur, C3_FREQ);
     biquad(out, { type: 'lowpass', freq: 2500, q: 2 });
-    const env = renderEnvelope(dur, { attack: 0.001, decay: 0.2, sustainLevel: 0.15, sustain: 0, release: 0.8, curve: 'exp' });
+    const env = renderEnvelope(dur, {
+        attack: 0.001,
+        decay: 0.2,
+        sustainLevel: 0.15,
+        sustain: 0,
+        release: 0.8,
+        curve: 'exp',
+    });
     applyEnvelope(out, env);
     feedbackDelay(out, 0.15, 0.35, 0.2);
     normalize(out, 0.85);
@@ -67,7 +95,14 @@ function renderStab(): Float32Array {
     mixMono(out, b, 0.35);
     mixMono(out, c, 0.35);
     biquad(out, { type: 'lowpass', freq: 2800, q: 1.5 });
-    const env = renderEnvelope(dur, { attack: 0.003, decay: 0.1, sustainLevel: 0.3, sustain: 0, release: 0.5, curve: 'exp' });
+    const env = renderEnvelope(dur, {
+        attack: 0.003,
+        decay: 0.1,
+        sustainLevel: 0.3,
+        sustain: 0,
+        release: 0.5,
+        curve: 'exp',
+    });
     applyEnvelope(out, env);
     softClip(out, 1.15);
     normalize(out, 0.88);
@@ -84,7 +119,14 @@ function renderOrganHit(): Float32Array {
         const s = renderSine(dur, C3_FREQ * partials[p]!);
         mixMono(out, s, amps[p]!);
     }
-    const env = renderEnvelope(dur, { attack: 0.005, decay: 0.05, sustainLevel: 0.85, sustain: 0.8, release: 0.3, curve: 'linear' });
+    const env = renderEnvelope(dur, {
+        attack: 0.005,
+        decay: 0.05,
+        sustainLevel: 0.85,
+        sustain: 0.8,
+        release: 0.3,
+        curve: 'linear',
+    });
     applyEnvelope(out, env);
     normalize(out, 0.88);
     return out;
@@ -100,11 +142,25 @@ function renderSupersaw(): Float32Array {
         mixMono(out, s, 1 / detunes.length);
     }
     biquad(out, { type: 'lowpass', freq: 3000, q: 0.9 });
-    const env = renderEnvelope(dur, { attack: 0.02, decay: 0.1, sustainLevel: 0.8, sustain: 0.9, release: 0.4, curve: 'exp' });
+    const env = renderEnvelope(dur, {
+        attack: 0.02,
+        decay: 0.1,
+        sustainLevel: 0.8,
+        sustain: 0.9,
+        release: 0.4,
+        curve: 'exp',
+    });
     applyEnvelope(out, env);
     // A few triangle sub-octaves give the supersaw its body.
     const sub = renderTriangle(dur, C3_FREQ * 0.5);
-    const sEnv = renderEnvelope(dur, { attack: 0.02, decay: 0.1, sustainLevel: 0.6, sustain: 0.9, release: 0.4, curve: 'exp' });
+    const sEnv = renderEnvelope(dur, {
+        attack: 0.02,
+        decay: 0.1,
+        sustainLevel: 0.6,
+        sustain: 0.9,
+        release: 0.4,
+        curve: 'exp',
+    });
     applyEnvelope(sub, sEnv);
     mixMono(out, sub, 0.2);
     normalize(out, 0.88);

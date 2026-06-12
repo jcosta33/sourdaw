@@ -127,7 +127,7 @@ impl WavetableOsc {
         table.read(self.phase, inc)
     }
 
-    /// Return the current phase (0..1) for use by spectral warp processing.
+    /// Return the current phase (0..1) for use by time-domain warp processing.
     #[inline]
     pub fn phase(&self) -> f32 {
         self.phase

@@ -1,5 +1,5 @@
 /**
- * Spectral warp controls + Audio-rate modulation.
+ * Time-domain warp controls + Audio-rate modulation.
  */
 import { type ReactElement } from 'react';
 
@@ -80,7 +80,7 @@ export const WarpSection = ({
 
             {/* Warp mode selector */}
             <div className="space-y-0.5">
-                <div className="text-[8px] text-muted-foreground/70 px-1">Spectral Warp</div>
+                <div className="text-[8px] text-muted-foreground/70 px-1">Time-Domain Warp</div>
                 <div className="flex flex-wrap gap-0.5 px-1">
                     {WARP_MODE_NAMES.map((name, i) => (
                         <DawPluginChip

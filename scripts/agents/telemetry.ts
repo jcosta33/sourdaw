@@ -34,7 +34,7 @@ function run() {
     let completedCount = 0;
     let crashedCount = 0;
 
-    slugs.forEach(slug => {
+    slugs.forEach((slug) => {
         const info = state[slug];
         if (info.status === 'running') activeCount++;
         else if (info.status === 'crashed') crashedCount++;
@@ -46,14 +46,18 @@ function run() {
     console.log(`  Active Agents:        ${green(activeCount.toString())}`);
     console.log(`  Completed Tasks:      ${cyan(completedCount.toString())}`);
     console.log(`  Crashed/Failed:       ${crashedCount > 0 ? red(crashedCount.toString()) : green('0')}`);
-    
+
     console.log(`\n${bold(`Recent Execution Logs:`)}`);
-    
-    slugs.slice(-5).forEach(slug => {
+
+    slugs.slice(-5).forEach((slug) => {
         const info = state[slug];
-        const statusStr = info.status === 'running' ? green('[RUNNING]') : 
-                          info.status === 'crashed' ? red('[CRASHED]') : dim(`[${info.status?.toUpperCase() || 'UNKNOWN'}]`);
-        
+        const statusStr =
+            info.status === 'running'
+                ? green('[RUNNING]')
+                : info.status === 'crashed'
+                  ? red('[CRASHED]')
+                  : dim(`[${info.status?.toUpperCase() || 'UNKNOWN'}]`);
+
         console.log(`  ${statusStr} ${cyan(slug)}`);
         console.log(dim(`    Backend: ${info.backend || 'unknown'}, Agent Type: ${info.agent || 'default'}`));
     });

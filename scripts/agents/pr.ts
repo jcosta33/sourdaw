@@ -24,7 +24,7 @@ function run() {
 
     const { flags, positional } = parseArgs(process.argv.slice(2));
     const slug = positional[0];
-    
+
     if (!slug) {
         console.log(red('Usage: agents:pr <slug>'));
         process.exit(1);

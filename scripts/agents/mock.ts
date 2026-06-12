@@ -18,7 +18,7 @@ function run() {
     const { positional } = parseArgs(process.argv.slice(2));
     const targetFile = positional[0];
     const interfaceName = positional[1];
-    
+
     if (!targetFile || !interfaceName) {
         console.log(red('Usage: agents:mock <path/to/file.ts> <InterfaceName>'));
         process.exit(1);
@@ -31,7 +31,7 @@ function run() {
     }
 
     const content = readFileSync(fullPath, 'utf8');
-    
+
     // Very naive regex extraction of the interface block
     const interfaceRegex = new RegExp(`interface\\s+${interfaceName}\\s*(?:extends\\s+[^{]+)?\\s*\\{([^}]*)\\}`, 's');
     const match = content.match(interfaceRegex);
@@ -45,7 +45,10 @@ function run() {
     if (match && match[1]) {
         const body = match[1];
         // naive parse lines
-        const lines = body.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//') && !l.startsWith('/*'));
+        const lines = body
+            .split('\n')
+            .map((l) => l.trim())
+            .filter((l) => l && !l.startsWith('//') && !l.startsWith('/*'));
         const props = [];
         for (const line of lines) {
             const propMatch = line.match(/^([a-zA-Z0-9_]+)\s*[\?\:]/);
@@ -57,7 +60,7 @@ function run() {
                 else if (line.includes(': boolean')) defaultVal = 'false';
                 else if (line.includes('=>') || line.includes('()')) defaultVal = 'vi.fn()';
                 else if (line.includes('[]') || line.includes('Array')) defaultVal = '[]';
-                
+
                 props.push(`        ${prop}: ${defaultVal},`);
             }
         }

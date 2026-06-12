@@ -10,6 +10,6 @@ export function setMorphPosition(deviceId: string, position: number): void {
         [deviceId]: {
             ...state,
             morph: { ...state.morph, position: Math.max(0, Math.min(1, position)) },
-        }
+        },
     });
 }

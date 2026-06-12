@@ -4,15 +4,16 @@ import { getTrackLatency } from '../compensation/helpers';
 
 const { mocks } = vi.hoisted(() => ({
     mocks: {
-        getTrackStoreState: vi.fn().mockReturnValue(null),
+        trackStore: { value: null },
     },
 }));
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
+
     return {
         ...actual,
-        getTrackStoreState: mocks.getTrackStoreState,
+        trackStore: mocks.trackStore,
     };
 });
 

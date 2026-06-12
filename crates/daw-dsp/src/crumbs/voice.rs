@@ -223,26 +223,34 @@ impl CrumbsVoice {
             return false;
         }
 
-        // Read sample with cubic Hermite interpolation
+        // Read sample with 8-point windowed Sinc interpolation
         let frame = self.position as usize;
         let frac = (self.position - frame as f64) as f32;
 
-        let left = cubic_hermite(
+        let left_samples = [
+            sample_data.read_left(frame.wrapping_sub(3)),
+            sample_data.read_left(frame.wrapping_sub(2)),
             sample_data.read_left(frame.wrapping_sub(1)),
             sample_data.read_left(frame),
             sample_data.read_left(frame + 1),
             sample_data.read_left(frame + 2),
-            frac,
-        );
+            sample_data.read_left(frame + 3),
+            sample_data.read_left(frame + 4),
+        ];
+        let left = windowed_sinc(frac, &left_samples);
 
         let right = if sample_data.is_stereo() {
-            cubic_hermite(
+            let right_samples = [
+                sample_data.read_right(frame.wrapping_sub(3)),
+                sample_data.read_right(frame.wrapping_sub(2)),
                 sample_data.read_right(frame.wrapping_sub(1)),
                 sample_data.read_right(frame),
                 sample_data.read_right(frame + 1),
                 sample_data.read_right(frame + 2),
-                frac,
-            )
+                sample_data.read_right(frame + 3),
+                sample_data.read_right(frame + 4),
+            ];
+            windowed_sinc(frac, &right_samples)
         } else {
             left
         };
@@ -449,16 +457,32 @@ impl Default for VoiceTriggerParams {
     }
 }
 
-// ── Cubic Hermite Interpolation ────────────────────────────────────────
+// ── Windowed Sinc Interpolation ────────────────────────────────────────
 
-/// 4-point cubic Hermite interpolation for sub-sample accuracy.
+/// 8-point Hann-windowed Sinc interpolation for bandlimited fractional resampling.
 ///
-/// Given four consecutive samples (y0, y1, y2, y3) and a fractional
-/// position `t` between y1 and y2 (0.0–1.0), returns the interpolated value.
-fn cubic_hermite(y0: f32, y1: f32, y2: f32, y3: f32, t: f32) -> f32 {
-    let c0 = y1;
-    let c1 = 0.5 * (y2 - y0);
-    let c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
-    let c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
-    ((c3 * t + c2) * t + c1) * t + c0
+/// Given eight consecutive samples (y[-3] to y[4]) and a fractional
+/// position `t` between y[0] and y[1] (0.0–1.0), returns the interpolated value.
+fn windowed_sinc(t: f32, samples: &[f32; 8]) -> f32 {
+    let mut sum = 0.0;
+    
+    // For n from -3 to 4
+    for i in 0..8 {
+        let n = i as f32 - 3.0;
+        let x = t - n;
+        
+        if x == 0.0 {
+            sum += samples[i];
+        } else {
+            let pi_x = std::f32::consts::PI * x;
+            let sinc = pi_x.sin() / pi_x;
+            
+            // Hann window over [-4, 4]
+            let window = 0.5 * (1.0 + (std::f32::consts::PI * x / 4.0).cos());
+            
+            sum += samples[i] * sinc * window;
+        }
+    }
+    
+    sum
 }

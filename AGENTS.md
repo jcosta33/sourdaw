@@ -28,11 +28,32 @@ Working artifacts for this repo live in:
 | `.agents/skills/`   | Reusable domain knowledge — load before working in a domain |
 | `.agents/tasks/`    | Active work items (gitignored, worktree-specific)           |
 
-**Before implementing any non-trivial feature:** load `.agents/skills/documentation-gatekeeper/SKILL.md` — it encodes the sequencing invariants for this repo. Then check `.agents/specs/` for an existing spec and `.agents/audits/` for an existing audit of the area. Read relevant domain skills from `.agents/skills/` before touching their domains. Do not skip this step.
+**Before implementing any non-trivial feature, run this checklist in order. Do not skip steps.**
 
-**Session completion — Self-review is mandatory.** Every task file has a `## Self-review` section with specific questions and a `### Verification outputs` block. A task is not complete until every question has a written answer directly beneath it, including pasted command output (`git status`, `pnpm deps:validate`, `pnpm typecheck`, etc.). Task files do not use a separate Handoff section — they are self-contained. Declaring the task done while any Self-review question is unanswered is an invalid session output. Checkboxes alone do not count — the review must leave a written trace in the task file.
+1. Load `.agents/skills/documentation-gatekeeper/SKILL.md` — it encodes the sequencing invariants for this repo and gates what must exist before code is written.
+2. Load `.agents/skills/manage-task/SKILL.md` and fill in the task file's **Objective** and **Plan** before doing anything else.
+3. Check `.agents/specs/` for an existing spec for this area — if one is missing and the work is non-trivial, load `.agents/skills/write-spec/SKILL.md` and write one first.
+4. Check `.agents/audits/` for an existing audit of the area — if a fresh audit is needed, load `.agents/skills/write-audit/SKILL.md` and produce one before refactoring.
+5. Load every relevant domain skill from `.agents/skills/` by reading the `description` field at the top of each `SKILL.md`. Read in full any skill whose description matches the domain you're about to touch.
+6. Check `.agents/research/` for prior findings. You may proactively create new research files to validate technical assumptions before committing to an approach.
+
+**Session completion — Self-review is mandatory.** Every task file has a `## Self-review` section with specific questions and a `### Verification outputs` block. A task is not complete until every question has a written answer directly beneath it, including pasted command output (`git status`, `pnpm deps:validate`, `pnpm typecheck`, etc.). Task files do not use a separate Handoff section — they are self-contained. Use **Decisions**, **Findings**, **Next steps**, and related sections so the file stands alone for the next reader. Declaring the task done while any Self-review question is unanswered is an invalid session output. Checkboxes alone do not count — the review must leave a written trace in the task file.
 
 Agent sandboxes (isolated worktrees) are managed by `docs/08-agents.md` — the launcher tool built into this repo.
+
+---
+
+## 📋 Your task file (worktree sessions only)
+
+This section only applies if you were launched via the agents workflow (worktree-based parallel sessions). In a regular session, `.agents/tasks/` will be empty and you can ignore this entirely.
+
+If `.agents/tasks/` contains a file, that is **your** task file for this session — its filename is the session slug. Read it before doing anything else. It contains your spec reference, objective, plan, and checklist.
+
+- Fill in **Objective** before doing anything else.
+- Fill in **Linked docs** with every spec, audit, and skill you loaded.
+- Check off the **Progress checklist** steps as you complete them.
+- Log **Decisions** and **Findings** as they emerge — these are how the next reader understands what you did and why.
+- Complete `## Self-review` before ending the session: every question answered, every verification command's output pasted in.
 
 ---
 
@@ -137,6 +158,13 @@ Prohibited tools and techniques include, but are not limited to:
 - **Local Form/Settings:** Use React Hook Form + Zod.
 - **Local Primitive State:** Use `useState` + React Compiler.
 - **Context:** Used ONLY for deeply local view state (e.g. collapsing a panel). Consume Context using `use()` instead of `useContext`.
+
+## ⚛️ React 19 & UI Conventions
+
+- **No manual memoization.** Do NOT use `useMemo`, `useCallback`, or `React.memo` — the React Compiler handles memoization for the entire app. Hand-written memoization fights the compiler and is treated as a code-review reject.
+- **No `forwardRef`.** In React 19, `ref` is a regular prop. Accept it directly in the component's props type.
+- **Never render with `&&`.** Use a ternary (`cond ? <X /> : null`) or an early `return null` / guard clause. `&&` silently renders `0`, `''`, or `NaN` and breaks lists.
+- **Audio-thread code is real-time.** Anything that runs on the audio thread MUST NOT allocate, lock mutexes, take locks, or block. See `🦀 Backend Rust Tauri Architecture` above and the `web-audio-engine` skill for the full rules.
 
 ## 📝 Backend CLI & Coding Conventions
 

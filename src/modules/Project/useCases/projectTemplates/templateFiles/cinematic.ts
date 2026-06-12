@@ -41,7 +41,13 @@ export async function createCinematicTemplate(): Promise<void> {
 
     const hallReverb = createBus({
         name: 'Hall Reverb',
-        devices: [{ type: 'builtin-reverb', name: 'Large Hall', params: { 'rev-size': 0.95, 'rev-decay': 6, 'rev-damping': 0.2, 'rev-mix': 1 } }],
+        devices: [
+            {
+                type: 'builtin-reverb',
+                name: 'Large Hall',
+                params: { 'rev-size': 0.95, 'rev-decay': 6, 'rev-damping': 0.2, 'rev-mix': 1 },
+            },
+        ],
     });
     const plateReverb = createBus({
         name: 'Plate Reverb',
@@ -107,7 +113,15 @@ export async function createCinematicTemplate(): Promise<void> {
         parentId: woodwindsFolder.id,
         deviceType: 'builtin-synth',
         deviceName: 'Flute',
-        deviceParams: { waveform: 0, attack: 0.06, release: 0.35, filterCutoff: 4200, vibratoRate: 4, vibratoDepth: 10, gain: 0.35 },
+        deviceParams: {
+            waveform: 0,
+            attack: 0.06,
+            release: 0.35,
+            filterCutoff: 4200,
+            vibratoRate: 4,
+            vibratoDepth: 10,
+            gain: 0.35,
+        },
     });
     const clarinet = createInstrumentTrack({
         name: 'Clarinet',
@@ -162,7 +176,21 @@ export async function createCinematicTemplate(): Promise<void> {
     }
 
     addDeviceChain(cineSnare, [
-        { type: 'builtin-eq', name: 'Snare EQ', params: { 'eq-low-gain': 0, 'eq-low-freq': 180, 'eq-low-q': 0.9, 'eq-mid-gain': 1.5, 'eq-mid-freq': 2500, 'eq-mid-q': 1, 'eq-high-gain': 2, 'eq-high-freq': 8000, 'eq-high-q': 0.7 } },
+        {
+            type: 'builtin-eq',
+            name: 'Snare EQ',
+            params: {
+                'eq-low-gain': 0,
+                'eq-low-freq': 180,
+                'eq-low-q': 0.9,
+                'eq-mid-gain': 1.5,
+                'eq-mid-freq': 2500,
+                'eq-mid-q': 1,
+                'eq-high-gain': 2,
+                'eq-high-freq': 8000,
+                'eq-high-q': 0.7,
+            },
+        },
     ]);
 
     const stringsVca = createVca({ name: 'Strings VCA', members: [stringsHigh, stringsMid, stringsLow, cello] });
@@ -202,12 +230,26 @@ export async function createCinematicTemplate(): Promise<void> {
 
     const tracks = [
         masterTrack,
-        hallReverb, plateReverb, roomDelay,
-        stringsFolder, stringsHigh, stringsMid, stringsLow, cello,
-        brassFolder, brassLead, frenchHorn,
-        woodwindsFolder, flute, clarinet,
+        hallReverb,
+        plateReverb,
+        roomDelay,
+        stringsFolder,
+        stringsHigh,
+        stringsMid,
+        stringsLow,
+        cello,
+        brassFolder,
+        brassLead,
+        frenchHorn,
+        woodwindsFolder,
+        flute,
+        clarinet,
         piano,
-        percussionFolder, cineKick, cineSnare, cymbal, timpani,
+        percussionFolder,
+        cineKick,
+        cineSnare,
+        cymbal,
+        timpani,
     ];
 
     await finalizeTemplate({

@@ -40,13 +40,33 @@ export async function createLofiTemplate(): Promise<void> {
     });
     const tapeDelay = createBus({
         name: 'Tape Delay',
-        devices: [{ type: 'faust-tape-delay', name: 'Tape Delay', params: { delay: 0.375, feedback: 0.55, dry_wet: 1 } }],
+        devices: [
+            { type: 'faust-tape-delay', name: 'Tape Delay', params: { delay: 0.375, feedback: 0.55, dry_wet: 1 } },
+        ],
     });
     const vinylBus = createBus({
         name: 'Vinyl Bus',
         devices: [
-            { type: 'builtin-bitcrusher', name: 'Crush', params: { 'bitcrusher-bits': 10, 'bitcrusher-rate': 0.5, 'bitcrusher-mix': 0.25 } },
-            { type: 'builtin-eq', name: 'Hi-Cut', params: { 'eq-low-gain': 0, 'eq-low-freq': 100, 'eq-low-q': 0.8, 'eq-mid-gain': 0, 'eq-mid-freq': 1000, 'eq-mid-q': 1, 'eq-high-gain': -4, 'eq-high-freq': 8000, 'eq-high-q': 0.7 } },
+            {
+                type: 'builtin-bitcrusher',
+                name: 'Crush',
+                params: { 'bitcrusher-bits': 10, 'bitcrusher-rate': 0.5, 'bitcrusher-mix': 0.25 },
+            },
+            {
+                type: 'builtin-eq',
+                name: 'Hi-Cut',
+                params: {
+                    'eq-low-gain': 0,
+                    'eq-low-freq': 100,
+                    'eq-low-q': 0.8,
+                    'eq-mid-gain': 0,
+                    'eq-mid-freq': 1000,
+                    'eq-mid-q': 1,
+                    'eq-high-gain': -4,
+                    'eq-high-freq': 8000,
+                    'eq-high-q': 0.7,
+                },
+            },
         ],
     });
 
@@ -65,7 +85,21 @@ export async function createLofiTemplate(): Promise<void> {
         deviceName: 'Lo-fi Vinyl',
         deviceParams: { kit: 4, gain: 0.75 },
         extraDevices: [
-            { type: 'builtin-eq', name: 'Muffle', params: { 'eq-low-gain': -2, 'eq-low-freq': 100, 'eq-low-q': 0.8, 'eq-mid-gain': 1, 'eq-mid-freq': 400, 'eq-mid-q': 1, 'eq-high-gain': -5, 'eq-high-freq': 6000, 'eq-high-q': 0.7 } },
+            {
+                type: 'builtin-eq',
+                name: 'Muffle',
+                params: {
+                    'eq-low-gain': -2,
+                    'eq-low-freq': 100,
+                    'eq-low-q': 0.8,
+                    'eq-mid-gain': 1,
+                    'eq-mid-freq': 400,
+                    'eq-mid-q': 1,
+                    'eq-high-gain': -5,
+                    'eq-high-freq': 6000,
+                    'eq-high-q': 0.7,
+                },
+            },
         ],
     });
     const lofiHat = createInstrumentTrack({
@@ -86,7 +120,21 @@ export async function createLofiTemplate(): Promise<void> {
         deviceType: 'factory-bass-sub',
         deviceName: 'Sub',
         extraDevices: [
-            { type: 'builtin-eq', name: 'Bass EQ', params: { 'eq-low-gain': 2, 'eq-low-freq': 80, 'eq-low-q': 0.9, 'eq-mid-gain': 0, 'eq-mid-freq': 500, 'eq-mid-q': 1, 'eq-high-gain': -3, 'eq-high-freq': 4000, 'eq-high-q': 0.7 } },
+            {
+                type: 'builtin-eq',
+                name: 'Bass EQ',
+                params: {
+                    'eq-low-gain': 2,
+                    'eq-low-freq': 80,
+                    'eq-low-q': 0.9,
+                    'eq-mid-gain': 0,
+                    'eq-mid-freq': 500,
+                    'eq-mid-q': 1,
+                    'eq-high-gain': -3,
+                    'eq-high-freq': 4000,
+                    'eq-high-q': 0.7,
+                },
+            },
         ],
     });
 
@@ -125,14 +173,22 @@ export async function createLofiTemplate(): Promise<void> {
         deviceType: 'factory-pad-dark',
         deviceName: 'Wobble',
         extraDevices: [
-            { type: 'builtin-tremolo', name: 'Wobble', params: { 'trem-rate': 0.8, 'trem-depth': 0.7, 'trem-shape': 0 } },
+            {
+                type: 'builtin-tremolo',
+                name: 'Wobble',
+                params: { 'trem-rate': 0.8, 'trem-depth': 0.7, 'trem-shape': 0 },
+            },
         ],
     });
     addSend({ from: wobblePad, to: springReverb, level: 0.4 });
     addSend({ from: wobblePad, to: vinylBus, level: 0.25 });
 
     addDeviceChain(lofiPad, [
-        { type: 'builtin-reverb', name: 'Pad Verb', params: { 'rev-size': 0.7, 'rev-decay': 3, 'rev-damping': 0.4, 'rev-mix': 0.3 } },
+        {
+            type: 'builtin-reverb',
+            name: 'Pad Verb',
+            params: { 'rev-size': 0.7, 'rev-decay': 3, 'rev-damping': 0.4, 'rev-mix': 0.3 },
+        },
     ]);
 
     const drumsVca = createVca({ name: 'Drums VCA', members: [lofiKick, lofiSnare, lofiHat, vinylCrackle] });
@@ -165,11 +221,22 @@ export async function createLofiTemplate(): Promise<void> {
 
     const tracks = [
         masterTrack,
-        springReverb, tapeDelay, vinylBus,
-        drumFolder, lofiKick, lofiSnare, lofiHat, vinylCrackle,
+        springReverb,
+        tapeDelay,
+        vinylBus,
+        drumFolder,
+        lofiKick,
+        lofiSnare,
+        lofiHat,
+        vinylCrackle,
         lofiBass,
-        melodicFolder, lofiRhodes, samplerPluck, lofiPad,
-        textureFolder, tapeHiss, wobblePad,
+        melodicFolder,
+        lofiRhodes,
+        samplerPluck,
+        lofiPad,
+        textureFolder,
+        tapeHiss,
+        wobblePad,
     ];
 
     await finalizeTemplate({

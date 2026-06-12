@@ -14,7 +14,7 @@
 ---
 
 > ⚠️ **REFACTOR SESSION** — Run `{{cmdValidateDeps}}` after every 10 files. Do not declare done until it passes with zero violations. No codemods. No automated mutations. Every file change is individual and deliberate.
-> 
+>
 > **PERSONA:** Load `.agents/skills/personas/SKILL.md` and adopt **The Janitor** persona.
 
 ---

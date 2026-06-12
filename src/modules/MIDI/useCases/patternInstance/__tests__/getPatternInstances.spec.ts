@@ -3,11 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getPatternInstances } from '../getPatternInstances';
 
 const mocks = vi.hoisted(() => ({
-    getTrackStoreState: vi.fn<typeof import('#/modules/Arrangement/useCases').getTrackStoreState>(),
+    trackStore: { value: null as unknown },
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    getTrackStoreState: mocks.getTrackStoreState,
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    trackStore: mocks.trackStore,
 }));
 
 describe('getPatternInstances', () => {
@@ -16,13 +17,13 @@ describe('getPatternInstances', () => {
     });
 
     it('should return an empty list when the track store is missing', () => {
-        mocks.getTrackStoreState.mockReturnValue(null);
+        mocks.trackStore.value = null;
 
         expect(getPatternInstances('parent')).toEqual([]);
     });
 
     it('should collect clip ids whose parent matches', () => {
-        mocks.getTrackStoreState.mockReturnValue({
+        mocks.trackStore.value = {
             tracks: [
                 {
                     clips: [
@@ -31,7 +32,7 @@ describe('getPatternInstances', () => {
                     ],
                 },
             ],
-        } as unknown as ReturnType<typeof import('#/modules/Arrangement/useCases').getTrackStoreState>);
+        };
 
         expect(getPatternInstances('parent')).toEqual(['b']);
     });

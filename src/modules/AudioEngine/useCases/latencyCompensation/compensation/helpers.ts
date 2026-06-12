@@ -1,7 +1,9 @@
-import { getTrackStoreState } from '#/modules/Arrangement/useCases';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { type TrackLatency } from '../../../models/LatencyCompensationTypes';
-import { audioEngine } from '../../../repositories/createWebAudioEngine';
+import { getAudioContext } from '../../engineAccess/getAudioContext';
+
+import { externalLatencyRegistry } from './externalLatencyRegistry';
 
 export const WORKLET_BLOCK_SIZE = 128;
 
@@ -14,15 +16,14 @@ export const deviceLatencyMap: Record<string, number> = {
     'builtin-sidechain-compressor': (WORKLET_BLOCK_SIZE / 48000) * 1000,
 };
 
-export const externalLatencyRegistry = new Map<string, number>();
-
-export function getDeviceLatencyMs(deviceType: string): number {
-    const external = externalLatencyRegistry.get(deviceType);
+export function getDeviceLatencyMs(deviceId: string, deviceType: string): number {
+    const external = externalLatencyRegistry.get(deviceId);
     if (external !== undefined) {
         return external;
     }
 
-    const sampleRate = audioEngine.context.sampleRate;
+    const context = getAudioContext();
+    const sampleRate = context?.sampleRate ?? 48000;
     if (deviceType === 'builtin-sidechain-compressor') {
         return (WORKLET_BLOCK_SIZE / sampleRate) * 1000;
     }
@@ -31,7 +32,7 @@ export function getDeviceLatencyMs(deviceType: string): number {
 }
 
 export function getTrackLatency(trackId: string, visited = new Set<string>()): TrackLatency {
-    const state = getTrackStoreState();
+    const state = trackStore.value;
     if (!state) {
         return { trackId, deviceLatencyMs: 0, totalLatencyMs: 0 };
     }
@@ -46,7 +47,7 @@ export function getTrackLatency(trackId: string, visited = new Set<string>()): T
     let deviceLatencyMs = 0;
     for (const device of track.devices) {
         if (!device.bypassed) {
-            deviceLatencyMs += getDeviceLatencyMs(device.type);
+            deviceLatencyMs += getDeviceLatencyMs(device.id, device.type);
         }
     }
 
@@ -68,7 +69,7 @@ export function getTrackLatency(trackId: string, visited = new Set<string>()): T
 }
 
 export function getMaxTrackLatency(): number {
-    const state = getTrackStoreState();
+    const state = trackStore.value;
     if (!state) {
         return 0;
     }

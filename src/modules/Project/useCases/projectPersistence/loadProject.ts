@@ -1,12 +1,12 @@
 import { logger } from '#/infra/logger/appLogger';
-import { clearUndoHistory } from '#/modules/Command/useCases';
+import { clearUndoHistory } from '#/modules/Command/stores';
 import {
     createCrdtProject,
     loadCrdtProject,
     projectCrdtToStores,
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
-import { migrateAbsoluteMidiNotes } from '#/modules/MIDI';
+import { migrateAbsoluteMidiNotes } from '#/modules/MIDI/useCases';
 
 import { projectStore } from '../../stores/projectStore';
 

@@ -7,14 +7,14 @@
 
 import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
-import { createTrack, getTrackStoreState, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { appendTrack, trackStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
 import { addDeviceToStrip } from '#/modules/AudioEngine/useCases';
 
 export const createGrandBouleTrack = inject({ eventBus })(
     ({ eventBus }) =>
         function createGrandBouleTrack(): string | null {
-            const state = getTrackStoreState();
-            if (state === null) {
+            if (trackStore.value === null) {
                 return null;
             }
 
@@ -30,11 +30,7 @@ export const createGrandBouleTrack = inject({ eventBus })(
                 },
             ];
 
-            setTrackStoreState({
-                ...state,
-                tracks: [...state.tracks, track],
-                selectedTrackId: track.id,
-            });
+            appendTrack(track);
 
             addDeviceToStrip(track.id, deviceId, 'grand-boule');
 

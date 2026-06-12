@@ -35,7 +35,7 @@ function run() {
 
     const { positional } = parseArgs(process.argv.slice(2));
     const query = positional.join(' ');
-    
+
     if (!query) {
         console.log(red('Usage: agents:knowledge <query>'));
         console.log(dim('Example: agents:knowledge "audio buffer underrun fix"'));
@@ -49,23 +49,26 @@ function run() {
         join(repoRoot, '.agents', 'tasks'),
         join(repoRoot, '.agents', 'specs'),
         join(repoRoot, '.agents', 'audits'),
-        join(repoRoot, '.agents', 'research')
+        join(repoRoot, '.agents', 'research'),
     ];
 
     let files = [];
-    searchDirs.forEach(dir => {
+    searchDirs.forEach((dir) => {
         if (existsSync(dir)) files = files.concat(findFiles(dir));
     });
 
-    const keywords = query.toLowerCase().split(' ').filter(k => k.length > 2);
+    const keywords = query
+        .toLowerCase()
+        .split(' ')
+        .filter((k) => k.length > 2);
     const matches = [];
 
-    files.forEach(file => {
+    files.forEach((file) => {
         const content = readFileSync(file, 'utf8');
         const lowerContent = content.toLowerCase();
-        
+
         let score = 0;
-        keywords.forEach(kw => {
+        keywords.forEach((kw) => {
             if (lowerContent.includes(kw)) score++;
         });
 
@@ -80,10 +83,10 @@ function run() {
         console.log(yellow(`No relevant knowledge found for "${query}".`));
     } else {
         console.log(green(`✓ Found ${matches.length} highly relevant documents:`));
-        matches.slice(0, 5).forEach(m => {
+        matches.slice(0, 5).forEach((m) => {
             const relativePath = m.file.replace(repoRoot + '/', '');
             console.log(`  - ${cyan(relativePath)} ${dim(`(Relevance: ${m.score})`)}`);
-            
+
             // Extract a snippet roughly around the first keyword match
             const firstKwIndex = m.content.toLowerCase().indexOf(keywords[0] || query.toLowerCase());
             if (firstKwIndex !== -1) {

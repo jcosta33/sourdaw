@@ -2,7 +2,9 @@ import { type GrinderPatch, type GrinderPedal, migrateGrinderPatch } from '../..
 
 import {
     AMP_MODELS,
+    CAB_TYPES,
     ENGINE_MODES,
+    type GrinderNeuralAudioPatch,
     INPUT_MODES,
     NEURAL_PLACEMENTS,
     NEURAL_TIERS,
@@ -11,7 +13,9 @@ import {
     ROUTING_MODES,
     TONE_STACK_TYPES,
     type DeviceRef,
+    getCabIrSlot,
     getPedalOrderAudioEntries,
+    getNeuralModelSlot,
 } from './helpers';
 
 type SyncGrinderPatchToAudioInput = {
@@ -19,6 +23,7 @@ type SyncGrinderPatchToAudioInput = {
     ref: DeviceRef;
     persist_device_param: (device_id: string, key: string, value: number) => void;
     update_device_param: (track_id: string, device_id: string, key: string, value: number) => void;
+    update_device_patch: (track_id: string, device_id: string, patch: Record<string, unknown>) => void;
 };
 
 const AUDIO_SYNC_KEYS: readonly (keyof GrinderPatch)[] = [
@@ -56,6 +61,7 @@ const AUDIO_SYNC_KEYS: readonly (keyof GrinderPatch)[] = [
     'transformerDrive',
     'transformerHysteresis',
     'transformerLfSaturation',
+    'cabType',
     'cabEnabled',
     'cabResonanceFreq',
     'cabResonanceQ',
@@ -105,6 +111,8 @@ function toAudioValue<K extends keyof GrinderPatch>(key: K, value: GrinderPatch[
             return getOptionIndex(POWER_TUBE_TYPES, value as string);
         case 'rectifierType':
             return getOptionIndex(RECTIFIER_TYPES, value as string);
+        case 'cabType':
+            return getOptionIndex(CAB_TYPES, value as string);
         case 'neuralPlacement':
             return getOptionIndex(NEURAL_PLACEMENTS, value as string);
         case 'neuralTier':
@@ -133,8 +141,20 @@ function findFirstPedal(pedals: readonly GrinderPedal[], types: readonly string[
     return pedals.find((pedal) => types.includes(pedal.type));
 }
 
+function sendPatchToDevice(
+    input: Pick<SyncGrinderPatchToAudioInput, 'ref' | 'update_device_patch'>,
+    patch: GrinderNeuralAudioPatch
+): void {
+    input.update_device_patch(input.ref.trackId, input.ref.deviceId, patch);
+}
+
 export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): void {
     const patch = migrateGrinderPatch(input.patch);
+    const cab_ir_slot = getCabIrSlot(patch.cabIrId);
+
+    if (cab_ir_slot !== null) {
+        sendNumericParamToDevice(input, 'cabIrSlot', cab_ir_slot);
+    }
 
     for (const key of AUDIO_SYNC_KEYS) {
         const value = toAudioValue(key, patch[key]);
@@ -195,6 +215,19 @@ export function syncGrinderPatchToAudio(input: SyncGrinderPatchToAudioInput): vo
 
     for (const entry of getPedalOrderAudioEntries(true, patch.postPedals)) {
         sendNumericParamToDevice(input, entry.key, entry.value);
+    }
+
+    if (patch.neuralModelSource === 'imported' && patch.neuralModelProfile) {
+        sendPatchToDevice(input, {
+            neuralModelMode: 'imported',
+            profile: patch.neuralModelProfile,
+        });
+    } else {
+        sendPatchToDevice(input, { neuralModelMode: 'builtin' });
+        const neural_model_slot = getNeuralModelSlot(patch.neuralModelId);
+        if (neural_model_slot !== null) {
+            sendNumericParamToDevice(input, 'neuralModelSlot', neural_model_slot);
+        }
     }
 
     sendNumericParamToDevice(input, 'mic1Enabled', patch.mic1.enabled ? 1 : 0);

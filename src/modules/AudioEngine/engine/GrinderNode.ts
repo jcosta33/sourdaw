@@ -42,12 +42,14 @@ export type GrinderMeterData = {
 export type GrinderNodeResult = {
     workletNode: AudioWorkletNode;
     setParam: (name: string, value: number) => void;
+    setPatch: (patch: Record<string, unknown>) => void;
     setBypass: (bypassed: boolean) => void;
     onMeterData: (cb: (data: GrinderMeterData) => void) => void;
+    onLatencyChanged: (cb: (latency: number) => void) => void;
     connect: (dest: AudioNode) => void;
     disconnect: () => void;
     destroy: () => void;
-    ready: Promise<void>;
+    ready: Promise<Record<string, unknown>>;
 };
 
 export function isGrinderDevice(deviceType: string): boolean {
@@ -75,6 +77,7 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
 
     let slot: TelemetrySlot | null = telemetryAllocator.allocateSlot();
     let meterRafId: number | null = null;
+    let latencyCallback: ((latency: number) => void) | null = null;
 
     if (slot) {
         node.port.postMessage({ type: 'init-sab', sab: slot.sab, byteOffset: slot.byteOffset });
@@ -83,6 +86,13 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
     const handshake = createReadyHandshake({ pluginName: 'GrinderNode' });
     node.port.onmessage = (event: MessageEvent<unknown>) => {
         const outcome = handshake.onMessage(event);
+        if (outcome === 'other') {
+            const data = event.data as Record<string, unknown>;
+            if (data && data.type === 'latency-changed' && typeof data.latency === 'number') {
+                latencyCallback?.(data.latency);
+            }
+            return;
+        }
         if (
             outcome === 'late' &&
             event.data &&
@@ -112,6 +122,9 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
                 }
             }
         },
+        setPatch(patch: Record<string, unknown>) {
+            node.port.postMessage({ type: 'patch', patch });
+        },
         setBypass(state: boolean) {
             node.port.postMessage({ type: 'param', name: 'bypass', value: state ? 1 : 0 });
         },
@@ -140,6 +153,9 @@ export async function createGrinderNode(ctx: BaseAudioContext, wasmUrl?: string)
                 meterRafId = requestAnimationFrame(poll);
             };
             meterRafId = requestAnimationFrame(poll);
+        },
+        onLatencyChanged(cb: (latency: number) => void) {
+            latencyCallback = cb;
         },
         connect(dest: AudioNode) {
             node.connect(dest);

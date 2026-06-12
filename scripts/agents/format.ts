@@ -16,7 +16,7 @@ function run() {
 
     const { positional } = parseArgs(process.argv.slice(2));
     const targetFile = positional[0];
-    
+
     if (!targetFile) {
         console.log(red('Usage: agents:format <path/to/file.ts>'));
         process.exit(1);

@@ -1,9 +1,9 @@
 import { logger } from '#/infra/logger/appLogger';
-import { type persistDeviceParam, type getAllTracks } from '#/modules/Arrangement/useCases';
+import { type Track, type persistDeviceParam } from '#/modules/Arrangement/stores';
 import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
 
 import { type LevainPatch } from '../../models/LevainPatch';
-import { levainStore, setLevainParam, setMacro } from '../../stores/levainStore';
+import { defaultLevainState, levainStore, setLevainParam, setMacro } from '../../stores/levainStore';
 import { type autoLoadLevainSamples } from '../autoLoadSamples';
 
 export type LevainDevice = {
@@ -13,7 +13,7 @@ export type LevainDevice = {
 };
 
 export type LevainBridgeDeps = {
-    getAllTracks: typeof getAllTracks;
+    getAllTracks: () => Track[];
     persistDeviceParam: typeof persistDeviceParam;
     autoLoadLevainSamples: typeof autoLoadLevainSamples;
 };
@@ -31,17 +31,17 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     // Modified to include deviceId in the flush param.
     // We can use a composite key for the batcher: `${deviceId}:${rustKey}`
     const paramBatcher = createRafBatcher<number>();
-function flushParam(compositeKey: string, value: number): void {
-    const parts = compositeKey.split(':');
-    const deviceId = parts[0];
-    if (!deviceId) return;
-    const rustKey = parts.slice(1).join(':');
-    const device = activeDevices.get(deviceId);
-    if (device) {
-        device.setParam(rustKey, value);
+    function flushParam(compositeKey: string, value: number): void {
+        const parts = compositeKey.split(':');
+        const deviceId = parts[0];
+        if (!deviceId) return;
+        const rustKey = parts.slice(1).join(':');
+        const device = activeDevices.get(deviceId);
+        if (device) {
+            device.setParam(rustKey, value);
+        }
+        deps.persistDeviceParam(deviceId, rustKey, value);
     }
-    deps.persistDeviceParam(deviceId, rustKey, value);
-}
 
     function queueParam(deviceId: string, rustKey: string, value: number): void {
         paramBatcher.schedule(`${deviceId}:${rustKey}`, value, flushParam);
@@ -68,19 +68,26 @@ function flushParam(compositeKey: string, value: number): void {
         activeDevices.set(deviceId, device);
         if (port) {
             activePorts.set(deviceId, port);
-            const state = levainStore.value?.[deviceId];
-            if (state?.patch) {
-                loadSamplesForInstrument(deviceId, state.patch.instrumentId);
-                queueParam(deviceId, 'master_gain', state.patch.masterGain);
-                queueParam(deviceId, 'legato_enabled', state.patch.legato.enabled ? 1 : 0);
-                queueParam(deviceId, 'humanize_amount', state.patch.humanize.amount);
-                queueParam(deviceId, 'vibrato_depth', state.patch.expression.vibratoDepthMax);
+            // Seed a default store entry on first registration so newly-added
+            // devices get their default instrument's samples loaded — without
+            // this the worklet has no zones and produces silence until the
+            // user opens the panel and changes presets.
+            const instances = levainStore.value ?? {};
+            const state = instances[deviceId] ?? defaultLevainState;
+            if (!instances[deviceId]) {
+                levainStore.set({ ...instances, [deviceId]: state });
+            }
 
-                for (const [i, m] of state.patch.micPositions.entries()) {
-                    queueParam(deviceId, `mic_${i}_volume`, m.volume);
-                    queueParam(deviceId, `mic_${i}_pan`, m.pan);
-                    queueParam(deviceId, `mic_${i}_enabled`, m.enabled ? 1 : 0);
-                }
+            loadSamplesForInstrument(deviceId, state.patch.instrumentId);
+            queueParam(deviceId, 'master_gain', state.patch.masterGain);
+            queueParam(deviceId, 'legato_enabled', state.patch.legato.enabled ? 1 : 0);
+            queueParam(deviceId, 'humanize_amount', state.patch.humanize.amount);
+            queueParam(deviceId, 'vibrato_depth', state.patch.expression.vibratoDepthMax);
+
+            for (const [i, m] of state.patch.micPositions.entries()) {
+                queueParam(deviceId, `mic_${i}_volume`, m.volume);
+                queueParam(deviceId, `mic_${i}_pan`, m.pan);
+                queueParam(deviceId, `mic_${i}_enabled`, m.enabled ? 1 : 0);
             }
         }
     }
@@ -99,7 +106,11 @@ function flushParam(compositeKey: string, value: number): void {
         // We can't cancelAll easily per-device without changing the batcher,
         // but it's okay to let pending updates naturally drop since the device is removed from map.
     }
-    function setLevainParamWithAudio<K extends keyof LevainPatch>(deviceId: string, key: K, value: LevainPatch[K]): void {
+    function setLevainParamWithAudio<K extends keyof LevainPatch>(
+        deviceId: string,
+        key: K,
+        value: LevainPatch[K]
+    ): void {
         setLevainParam(deviceId, key, value);
 
         if (key === 'currentArticulation' && typeof value === 'string') {

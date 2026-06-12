@@ -2,6 +2,23 @@
 
 use super::params::db_to_linear;
 
+#[derive(Clone, Copy)]
+enum InputMode {
+    Instrument,
+    Line,
+    Reamp,
+}
+
+impl InputMode {
+    fn from_index(index: u32) -> Self {
+        match index {
+            1 => Self::Line,
+            2 => Self::Reamp,
+            _ => Self::Instrument,
+        }
+    }
+}
+
 /// Noise gate with attack/release envelope.
 pub struct NoiseGate {
     threshold_linear: f32,
@@ -134,7 +151,9 @@ impl NoiseGate {
 pub struct InputConditioner {
     gain_linear: f32,
     impedance: f32,
+    input_mode: InputMode,
     impedance_filter_state: f32,
+    mode_tilt_state: f32,
     sample_rate: f32,
 }
 
@@ -143,7 +162,9 @@ impl InputConditioner {
         Self {
             gain_linear: 1.0,
             impedance: 1000.0,
+            input_mode: InputMode::Instrument,
             impedance_filter_state: 0.0,
+            mode_tilt_state: 0.0,
             sample_rate,
         }
     }
@@ -152,30 +173,89 @@ impl InputConditioner {
         match name {
             "inputGain" => self.gain_linear = db_to_linear(value),
             "inputImpedance" => self.impedance = value,
+            "inputMode" => self.input_mode = InputMode::from_index(value.round().max(0.0) as u32),
             _ => {}
         }
     }
 
     pub fn process_sample(&mut self, input: f32) -> f32 {
+        let (impedance_scale, mode_gain, low_mix, edge_mix) = match self.input_mode {
+            InputMode::Instrument => (1.0, 1.06, 1.0, 1.14),
+            InputMode::Line => (1.8, 0.82, 0.97, 0.90),
+            InputMode::Reamp => (0.55, 0.90, 1.03, 0.78),
+        };
+
         // Impedance loading effect: lower impedance = more HF rolloff (pickup loading)
-        let impedance = self.impedance.clamp(10.0, 10_000.0);
+        let impedance = (self.impedance * impedance_scale).clamp(10.0, 10_000.0);
         let impedance_norm = ((impedance.log10() - 1.0) / 3.0).clamp(0.0, 1.0);
         let load_freq = 4_000.0 + impedance_norm * 24_000.0;
         let dt = 1.0 / self.sample_rate;
         let coeff = (2.0 * std::f32::consts::PI * load_freq * dt).min(0.99);
         self.impedance_filter_state += coeff * (input - self.impedance_filter_state);
 
-        self.impedance_filter_state * self.gain_linear
+        let tilt_cutoff_hz = match self.input_mode {
+            InputMode::Instrument => 360.0,
+            InputMode::Line => 320.0,
+            InputMode::Reamp => 280.0,
+        };
+        let tilt_coeff = (2.0 * std::f32::consts::PI * tilt_cutoff_hz * dt).min(0.18);
+        self.mode_tilt_state += tilt_coeff * (self.impedance_filter_state - self.mode_tilt_state);
+        let low = self.mode_tilt_state;
+        let edge = self.impedance_filter_state - low;
+        let conditioned = low * low_mix + edge * edge_mix;
+
+        conditioned * self.gain_linear * mode_gain
     }
 
     pub fn reset(&mut self) {
         self.impedance_filter_state = 0.0;
+        self.mode_tilt_state = 0.0;
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::NoiseGate;
+    use super::{InputConditioner, NoiseGate};
+
+    fn conditioned_burst_metrics(input_mode: f32) -> (f32, f32, f32) {
+        let sample_rate = 48_000.0;
+        let mut conditioner = InputConditioner::new(sample_rate);
+        conditioner.set_param("inputMode", input_mode);
+        conditioner.set_param("inputGain", 0.0);
+        conditioner.set_param("inputImpedance", 1_000.0);
+
+        let total = 2048;
+        let burst_len = 512;
+        let mut peak = 0.0_f32;
+        let mut edge_state = 0.0_f32;
+        let mut edge_sum = 0.0_f32;
+        let mut body_sum = 0.0_f32;
+        let mut count = 0_usize;
+
+        for n in 0..total {
+            let input = if n < burst_len {
+                let low =
+                    ((n as f32 * 2.0 * std::f32::consts::PI * 120.0) / sample_rate).sin() * 0.22;
+                let pick =
+                    ((n as f32 * 2.0 * std::f32::consts::PI * 2_400.0) / sample_rate).sin() * 0.08;
+                low + pick
+            } else {
+                0.0
+            };
+            let out = conditioner.process_sample(input);
+            if n < 192 {
+                peak = peak.max(out.abs());
+            }
+            edge_state += 0.12 * ((out.abs()) - edge_state);
+            if (96..640).contains(&n) {
+                edge_sum += edge_state;
+                body_sum += out.abs();
+                count += 1;
+            }
+        }
+
+        (peak, edge_sum / count.max(1) as f32, body_sum / count.max(1) as f32)
+    }
 
     #[test]
     fn default_gate_is_transparent() {
@@ -226,6 +306,44 @@ mod tests {
             gate.gain() < 1.0e-3,
             "enabled gate should clamp to a deep closed gain, got {}",
             gate.gain()
+        );
+    }
+
+    #[test]
+    fn input_modes_are_not_interchangeable() {
+        let instrument = conditioned_burst_metrics(0.0);
+        let line = conditioned_burst_metrics(1.0);
+        let reamp = conditioned_burst_metrics(2.0);
+        let line_diff =
+            (instrument.0 - line.0).abs() + (instrument.1 - line.1).abs() + (instrument.2 - line.2).abs();
+        let reamp_diff =
+            (instrument.0 - reamp.0).abs() + (instrument.1 - reamp.1).abs() + (instrument.2 - reamp.2).abs();
+
+        assert!(
+            line_diff > 0.035 && reamp_diff > 0.05,
+            "input modes should not collapse into the same conditioner response (instrument={instrument:?}, line={line:?}, reamp={reamp:?})"
+        );
+    }
+
+    #[test]
+    fn instrument_mode_preserves_more_pick_attack_than_reamp() {
+        let (instrument_peak, instrument_edge, _) = conditioned_burst_metrics(0.0);
+        let (reamp_peak, reamp_edge, _) = conditioned_burst_metrics(2.0);
+
+        assert!(
+            instrument_peak > reamp_peak + 0.015 && instrument_edge > reamp_edge + 0.01,
+            "instrument mode should preserve more pick attack than reamp (instrument_peak={instrument_peak}, reamp_peak={reamp_peak}, instrument_edge={instrument_edge}, reamp_edge={reamp_edge})"
+        );
+    }
+
+    #[test]
+    fn line_mode_is_more_padded_than_instrument() {
+        let (instrument_peak, _, instrument_body) = conditioned_burst_metrics(0.0);
+        let (line_peak, _, line_body) = conditioned_burst_metrics(1.0);
+
+        assert!(
+            line_peak + 0.02 < instrument_peak && line_body + 0.015 < instrument_body,
+            "line mode should stay more padded than instrument (instrument_peak={instrument_peak}, line_peak={line_peak}, instrument_body={instrument_body}, line_body={line_body})"
         );
     }
 }

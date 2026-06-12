@@ -1,11 +1,7 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
-
 import { handleDetectSongStructure } from '../handlers/songStructure/handleDetectSongStructure';
 
-type SongStructureAppAction = Extract<AppAction, { type: 'detectSongStructure' }>;
-
 export type SongStructureHandlersMap = {
-    [Action in SongStructureAppAction as Action['type']]: ActionHandler<Action>;
+    detectSongStructure: typeof handleDetectSongStructure;
 };
 
 /**

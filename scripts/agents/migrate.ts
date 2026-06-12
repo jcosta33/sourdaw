@@ -19,7 +19,7 @@ function run() {
     const { positional } = parseArgs(process.argv.slice(2));
     const targetFile = positional[0];
     const targetLang = positional[1] || 'Rust';
-    
+
     if (!targetFile) {
         console.log(red('Usage: agents:migrate <file> [TargetLanguage]'));
         process.exit(1);
@@ -42,25 +42,33 @@ function run() {
 
     // Translator Task
     const transTask = join(tasksDir, `${translatorSlug}.md`);
-    writeFileSync(transTask, `# Translate ${baseName} to ${targetLang}
+    writeFileSync(
+        transTask,
+        `# Translate ${baseName} to ${targetLang}
 
 ## Metadata
 - Slug: ${translatorSlug}
 
 ## Objective
 Rewrite \`${targetFile}\` entirely into ${targetLang}. Maintain exact behavioral parity. Do NOT alter the tests.
-`, 'utf8');
+`,
+        'utf8'
+    );
 
     // Verifier Task
     const verTask = join(tasksDir, `${verifierSlug}.md`);
-    writeFileSync(verTask, `# Verify Translation of ${baseName}
+    writeFileSync(
+        verTask,
+        `# Verify Translation of ${baseName}
 
 ## Metadata
 - Slug: ${verifierSlug}
 
 ## Objective
 Wait for \`${translatorSlug}\` to finish. Run the test suite against the new ${targetLang} implementation. Find edge cases they missed.
-`, 'utf8');
+`,
+        'utf8'
+    );
 
     console.log(green(`✓ Orchestration planned.`));
     console.log(dim(`  Translator: ${translatorSlug}`));
@@ -69,7 +77,6 @@ Wait for \`${translatorSlug}\` to finish. Run the test suite against the new ${t
     // Spawn Translator
     console.log(cyan(`\nSpawning Translator Agent...`));
     spawnSync('pnpm', ['agents:new', translatorSlug, '--type', 'feature'], { stdio: 'inherit', cwd: repoRoot });
-
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

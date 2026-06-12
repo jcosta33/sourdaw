@@ -182,9 +182,7 @@ const TakeRow = ({ take, minBeat, maxBeat, isActive, onPromote, onCreateRegion }
                         {isActive ? <Check className="size-2.5" aria-hidden="true" /> : null}
                     </button>
                 </TooltipTrigger>
-                <TooltipContent side="right">
-                    {isActive ? 'Active take' : 'Promote to main'}
-                </TooltipContent>
+                <TooltipContent side="right">{isActive ? 'Active take' : 'Promote to main'}</TooltipContent>
             </Tooltip>
 
             <span className="w-24 shrink-0 truncate text-[10px] text-foreground/90" title={take.name}>
@@ -237,7 +235,6 @@ type TakeLanePanelProps = {
     trackColor: string;
 };
 
-
 export const TakeLanePanel = ({ trackId, trackName, trackColor }: TakeLanePanelProps): ReactElement => {
     const laneState = useStore(takeLaneStore, DEFAULT_LANE_STATE);
     const trackState = useStore(trackStore, DEFAULT_TRACK_STATE);
@@ -248,9 +245,7 @@ export const TakeLanePanel = ({ trackId, trackName, trackColor }: TakeLanePanelP
     const laneStripRef = useRef<HTMLDivElement>(null);
 
     if (!track) {
-        return (
-            <div className="px-3 py-2 text-[10px] text-muted-foreground">Track not found.</div>
-        );
+        return <div className="px-3 py-2 text-[10px] text-muted-foreground">Track not found.</div>;
     }
 
     const handleStripMount = (element: HTMLDivElement | null): void => {
@@ -288,13 +283,7 @@ export const TakeLanePanel = ({ trackId, trackName, trackColor }: TakeLanePanelP
         const fallbackEnd = Math.max(minBeat + 4, maxBeat);
         const sourceClip = clips[0];
         if (sourceClip) {
-            addTake(
-                trackId,
-                sourceClip.id,
-                `Take ${takes.length + 1}`,
-                sourceClip.startBeat,
-                sourceClip.endBeat
-            );
+            addTake(trackId, sourceClip.id, `Take ${takes.length + 1}`, sourceClip.startBeat, sourceClip.endBeat);
             return;
         }
         addTake(trackId, `${trackId}-synthetic`, `Take ${takes.length + 1}`, fallbackStart, fallbackEnd);
@@ -321,9 +310,7 @@ export const TakeLanePanel = ({ trackId, trackName, trackColor }: TakeLanePanelP
                     style={{ backgroundColor: trackColor }}
                     aria-hidden="true"
                 />
-                <span className="font-semibold uppercase tracking-wide text-foreground/80">
-                    Takes · {trackName}
-                </span>
+                <span className="font-semibold uppercase tracking-wide text-foreground/80">Takes · {trackName}</span>
                 <span className="text-muted-foreground">
                     {takes.length} take{takes.length === 1 ? '' : 's'} · {activeCompRegions.length} comp region
                     {activeCompRegions.length === 1 ? '' : 's'}
@@ -332,12 +319,7 @@ export const TakeLanePanel = ({ trackId, trackName, trackColor }: TakeLanePanelP
                 <div className="ml-auto flex items-center gap-1">
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="xs"
-                                aria-label="Add take"
-                                onClick={handleAddTakeFromClips}
-                            >
+                            <Button variant="ghost" size="xs" aria-label="Add take" onClick={handleAddTakeFromClips}>
                                 <Plus className="size-3" aria-hidden="true" />
                                 <span className="ml-1">Take</span>
                             </Button>
@@ -380,8 +362,8 @@ export const TakeLanePanel = ({ trackId, trackName, trackColor }: TakeLanePanelP
 
             {takes.length === 0 ? (
                 <div className="px-3 pb-2 text-[10px] italic text-muted-foreground">
-                    No takes yet. Add takes to compose alternative recordings, then drag on a row to
-                    select a comp region.
+                    No takes yet. Add takes to compose alternative recordings, then drag on a row to select a comp
+                    region.
                 </div>
             ) : (
                 <div ref={handleStripMount} className="relative">
@@ -447,12 +429,7 @@ export const TakeLanesView = (): ReactElement => {
     return (
         <div className="flex h-full flex-col overflow-y-auto">
             {activeTracks.map((track) => (
-                <TakeLanePanel
-                    key={track.id}
-                    trackId={track.id}
-                    trackName={track.name}
-                    trackColor={track.color}
-                />
+                <TakeLanePanel key={track.id} trackId={track.id} trackName={track.name} trackColor={track.color} />
             ))}
         </div>
     );
