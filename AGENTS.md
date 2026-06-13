@@ -4,6 +4,12 @@ This document provides the canonical instructions and architectural rules that Y
 
 ---
 
+## Swarm workspace
+
+Swarm workspace: `../sourdaw-hq` — read the task packet you are given before coding. Specs, audits, research, tasks, reviews, findings, decisions, and the board live there, not in this repo. This repo keeps only its domain skills (`.agents/skills/`) and worktree-local task scratch (`.agents/tasks/`).
+
+---
+
 ## Documentation-first workflow
 
 Before starting significant implementation work, read the shared process documentation:
@@ -18,24 +24,26 @@ Before starting significant implementation work, read the shared process documen
 | `docs/06-testing.md`           | Vitest layout (`__tests__/` folders), mocks, DI in tests                                                                  |
 | `agents/templates/`            | Ready-to-use templates: `audit.md`, `spec.md`, `task.md`                                                                  |
 
-Working artifacts for this repo live in:
+Working artifacts live in the Swarm workspace (`../sourdaw-hq`), except the two that stay in this repo:
 
-| Directory           | Contains                                                    |
-| ------------------- | ----------------------------------------------------------- |
-| `.agents/audits/`   | Codebase state reports relative to a goal                   |
-| `.agents/specs/`    | Feature specs, requirements, acceptance criteria            |
-| `.agents/research/` | Technical findings from external sources                    |
-| `.agents/skills/`   | Reusable domain knowledge — load before working in a domain |
-| `.agents/tasks/`    | Active work items (gitignored, worktree-specific)           |
+| Directory                  | Contains                                                    |
+| -------------------------- | ----------------------------------------------------------- |
+| `../sourdaw-hq/specs/`     | Feature specs, requirements, acceptance criteria            |
+| `../sourdaw-hq/audits/`    | Codebase state reports relative to a goal                   |
+| `../sourdaw-hq/research/`  | Technical findings from external sources                    |
+| `../sourdaw-hq/reviews/`   | Review packets — the durable record of each task            |
+| `../sourdaw-hq/findings/`  | Lessons saved at Close                                      |
+| `.agents/skills/`          | Reusable domain knowledge — load before working in a domain |
+| `.agents/tasks/`           | Active work items (gitignored, worktree-specific)           |
 
 **Before implementing any non-trivial feature, run this checklist in order. Do not skip steps.**
 
 1. Load `.agents/skills/documentation-gatekeeper/SKILL.md` — it encodes the sequencing invariants for this repo and gates what must exist before code is written.
 2. Load `.agents/skills/manage-task/SKILL.md` and fill in the task file's **Objective** and **Plan** before doing anything else.
-3. Check `.agents/specs/` for an existing spec for this area — if one is missing and the work is non-trivial, load `.agents/skills/write-spec/SKILL.md` and write one first.
-4. Check `.agents/audits/` for an existing audit of the area — if a fresh audit is needed, load `.agents/skills/write-audit/SKILL.md` and produce one before refactoring.
+3. Check `../sourdaw-hq/specs/` for an existing spec for this area — if one is missing and the work is non-trivial, load `.agents/skills/write-spec/SKILL.md` and write one first (in the workspace).
+4. Check `../sourdaw-hq/audits/` for an existing audit of the area — if a fresh audit is needed, load `.agents/skills/write-audit/SKILL.md` and produce one before refactoring.
 5. Load every relevant domain skill from `.agents/skills/` by reading the `description` field at the top of each `SKILL.md`. Read in full any skill whose description matches the domain you're about to touch.
-6. Check `.agents/research/` for prior findings. You may proactively create new research files to validate technical assumptions before committing to an approach.
+6. Check `../sourdaw-hq/research/` for prior findings. You may proactively create new research files to validate technical assumptions before committing to an approach.
 
 **Session completion — Self-review is mandatory.** Every task file has a `## Self-review` section with specific questions and a `### Verification outputs` block. A task is not complete until every question has a written answer directly beneath it, including pasted command output (`git status`, `pnpm deps:validate`, `pnpm typecheck`, etc.). Task files do not use a separate Handoff section — they are self-contained. Use **Decisions**, **Findings**, **Next steps**, and related sections so the file stands alone for the next reader. Declaring the task done while any Self-review question is unanswered is an invalid session output. Checkboxes alone do not count — the review must leave a written trace in the task file.
 

@@ -22,7 +22,7 @@ src-tauri/target/
 .agents/prompts/*
 !.agents/tasks/.gitkeep
 
-# Knip output (regenerated per session; audit in .agents/audits/deadcode.md is the source of truth)
+# Knip output (regenerated per session; dead-code audit lives in ../sourdaw-hq/audits/deadcode.md)
 knip-results.txt
 
 # Playwright
@@ -31,3 +31,8 @@ test-results/
 
 # Agent UI Scripts
 .agents/ui-scripts/*.png
+
+# Swarm — agent scratch and future-CLI state (workspace lives in ../sourdaw-hq)
+.agents/tmp/
+tmp/
+.swarm/
