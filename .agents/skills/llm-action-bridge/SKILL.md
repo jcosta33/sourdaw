@@ -1,32 +1,39 @@
 ---
 name: llm-action-bridge
-description: Apply when building or reviewing AI/copilot features, prompt handling, voice-command flows, structured-output parsing, tool/action registries, or execution of AI-generated actions. This is the authoritative skill for connecting local AI to safe DAW behavior.
+type: agent-guide
+description: >-
+  Route AI-generated intent through a typed, validated action registry before it
+  touches DAW state. ALWAYS apply this skill when building or reviewing
+  copilot/AI features, prompt handling, voice-command flows, structured-output
+  parsing, or tool/action registries — even if the change looks like a small
+  prompt tweak or one new action. Do not let model output mutate React state,
+  call engine objects, or run commands directly without validation and the
+  normal action boundary. Skip this skill for non-AI feature work,
+  model/inference tuning with no action execution, or UI styling tasks.
 ---
 
-# SKILL: llm-action-bridge
+# Skill: llm-action-bridge
 
 ## Purpose
 
-The AI layer must not directly mutate arbitrary state.
+The AI layer must never directly mutate arbitrary app state. Its job is to
+interpret user intent and emit structured actions that the app validates and
+executes through the same boundary as everything else. This skill prevents the
+failure mode where a probabilistic model gets a privileged write path —
+silently editing stores, calling engine internals, or executing a partially-
+wrong output as if it were truth.
 
-Its job is to interpret user intent and emit structured actions that the app validates and executes.
-
-This skill exists to keep AI integration:
-
-- typed
-- auditable
-- deterministic enough for control tasks
-- architecturally safe
-- reversible where possible
-- isolated from direct UI/runtime mutation
+The bridge keeps AI integration typed, auditable, deterministic enough for
+control tasks, architecturally safe, reversible where possible, and isolated
+from direct UI/runtime mutation.
 
 ---
 
-## Core model
+## Core rules
 
-### The model outputs actions, not arbitrary mutations
+### 1. The model outputs actions, not arbitrary mutations
 
-Preferred flow:
+The only sanctioned flow is one direction, prompt to execution:
 
 ```text
 User prompt
@@ -38,231 +45,147 @@ User prompt
 -> normal state/runtime updates
 ```
 
-The model must not:
+The model must **not**: mutate React state directly, call engine objects
+directly, execute arbitrary code, bypass the command/action layer, reach into
+hidden internals, or invent unsupported operations at runtime.
 
-- mutate React state directly
-- call engine objects directly
-- execute arbitrary code
-- bypass the command/action layer
-- reach into hidden internals
-- invent unsupported operations at runtime
+_Why: a model is probabilistic; if its output can write directly, a single
+hallucinated field corrupts truth or runtime with no checkpoint in between._
 
-### The action registry must be explicit
+### 2. The action registry must be explicit
 
-Actions should be:
+Actions must be named, typed, validated, executable through a known registry,
+easy to audit, and constrained to what the app actually supports. Do not hide
+execution behind magical dynamic dispatch unless it remains transparent and
+strongly typed.
 
-- named
-- typed
-- validated
-- executable through a known registry
-- easy to audit
-- constrained to what the app actually supports
+_Why: an explicit registry is the audit surface — you cannot reason about what
+the AI can do if dispatch is stringly-typed or resolved at runtime._
 
-Do not hide execution behind magical dynamic dispatch unless it remains transparent and strongly typed.
+### 3. Separate planning from execution
 
----
+The model **may** plan: interpret ambiguous language, propose one or more
+actions, suggest a sequence of steps, and infer likely targets from context.
+Execution **must** stay deterministic and architecture-compliant — it validates
+action structure, validates referenced IDs/targets, enforces ranges and domain
+rules, requires confirmation for risky operations where needed, and calls the
+same action/command boundary the rest of the app uses.
 
-## Planning vs execution
+_Why: planning can be flexible because it is reversible up to the execution
+gate; execution cannot, so it must be rigid. AI does not get a privileged write
+path._
 
-### Planning
+### 4. Validate all model output before execution
 
-The model may help:
+Never trust raw model output. Validation must confirm: known action type,
+correct payload shape, sane numeric bounds, required IDs exist, referenced
+resources/capabilities are available, sensible action order when multiple
+actions are emitted, and that destructive or broad-scope operations are gated
+appropriately.
 
-- interpret ambiguous language
-- propose one or more actions
-- suggest a sequence of steps
-- infer likely targets based on context
+_Why: the model is the untrusted edge of the system; validation is the only
+place a malformed or out-of-range action is caught before it reaches state._
 
-### Execution
+### 5. Keep inference placement free, execution placement fixed
 
-Execution must remain deterministic and architecture-compliant.
+Inference may run browser-local for lightweight tasks or native-side for heavier
+local models. Execution still goes through the same app action layer either way.
+The model may be probabilistic; the execution layer must not be.
 
-The execution layer must:
+_Why: where the model runs is a performance/cost decision; how its output
+executes is a safety invariant, and the two must not be coupled._
 
-- validate action structure
-- validate referenced IDs/targets
-- enforce ranges and domain rules
-- require confirmation for risky operations where needed
-- call the same action/command boundary used by the rest of the app
+### 6. Design actions to be specific and reversible
 
-AI does not get a privileged write path.
+Good AI-driven actions are specific, composable, easy to validate, aligned to
+user intent, compatible with undo/redo, and reviewable in logs/history where
+appropriate. Do not start with uncontrolled "chatbot can do anything" behavior;
+grow the registry from a small set of validated targets (see
+[Bundled resources](#bundled-resources)).
 
----
+_Why: an action that routes through the normal command boundary inherits
+undo/redo and history for free; an ad-hoc mutation does not, and cannot be
+reversed when the model is wrong._
 
-## Validation rules
+### 7. Gate risky operations behind confirmation
 
-All model output must be validated before execution.
+Require user confirmation for destructive actions, multi-target/bulk changes,
+ambiguous target selection, operations likely to surprise the user, and
+expensive or irreversible workflows. The shape: AI proposes, app validates, user
+confirms when needed, command executes normally.
 
-Validation should confirm:
+_Why: the model cannot judge the cost of being wrong; the human confirmation
+gate is where that judgment lives for the operations that matter._
 
-- known action type
-- correct payload shape
-- sane numeric bounds
-- required IDs exist
-- referenced resources/capabilities are available
-- action order is sensible if multiple actions are emitted
-- destructive or broad-scope operations are gated appropriately
+### 8. Make AI execution observable
 
-Do not trust raw model output.
+It must be possible to answer, for any prompt: what did the model propose, what
+did validation accept, what actually executed, and what failed and why. The full
+four-question observability contract and the confirmation triggers live in
+[Bundled resources](#bundled-resources).
 
----
-
-## Action design
-
-Good AI-driven actions are:
-
-- specific
-- composable
-- easy to validate
-- aligned to user intent
-- compatible with undo/redo
-- reviewable in logs/history where appropriate
-
-Good early AI targets include:
-
-- add track
-- rename track
-- set tempo
-- toggle playback
-- mute/solo
-- create bus
-- insert plugin
-- apply preset
-- navigate to a panel or view
-- select or reveal an object
-- arm recording
-
-Do not start with uncontrolled “chatbot can do anything” behavior.
+_Why: a partially-wrong model output is undiagnosable unless every stage leaves
+a trace; observability is what makes debugging, safety, and trust possible._
 
 ---
 
-## Runtime placement
+## What does not belong
 
-### Inference and execution are separate concerns
-
-Inference may run:
-
-- browser-local for lightweight tasks
-- native-side for heavier local models
-
-Execution still goes through the same app action layer either way.
-
-### Keep the action layer deterministic
-
-The model may be probabilistic.
-Execution must not be.
-
----
-
-## Confirmation policy
-
-Require confirmation when appropriate for:
-
-- destructive actions
-- multi-target/bulk changes
-- ambiguous target selection
-- operations likely to surprise the user
-- expensive or irreversible workflows
-
-A useful design is:
-
-- AI proposes
-- app validates
-- user confirms when needed
-- command executes normally
-
----
-
-## Observability
-
-AI action execution should be easy to inspect.
-
-Prefer systems where it is possible to answer:
-
-- what did the model propose?
-- what did validation accept?
-- what actually executed?
-- what failed and why?
-
-This is important for debugging, safety, and trust.
+- **Model/inference internals** — prompt engineering depth, model selection, and
+  local-vs-native inference tuning that produces no executed action belong with
+  the AI feature's own design notes, not this bridge. This skill governs the
+  boundary from structured action to executed state, not the model behind it.
+- **The concrete command/action implementations** — the handler and command
+  boundary itself is owned by the app's state and write-path discipline. This
+  skill says AI must route through that boundary; it does not redefine it. If a
+  state/write-path guide is installed, see `../state-and-write-paths/SKILL.md`.
+- **Generic UI/presentation concerns** — how a confirmation dialog looks or where
+  a copilot panel sits is presentation work, not bridge work.
 
 ---
 
 ## Anti-patterns
 
-### 1. Model mutates arbitrary app state
-
-Wrong:
-
-- model directly edits stores, UI state, engine internals, or plugin handles
-
-Right:
-
-- model emits structured actions
-
-### 2. Free-form chat output as control surface
-
-Wrong:
-
-- execution logic depends on vague natural-language prose
-
-Right:
-
-- structured, validated actions
-
-### 3. Hidden dynamic dispatch
-
-Wrong:
-
-- action execution is hard to audit or depends on stringly magical runtime behavior
-
-Right:
-
-- explicit action registry
-
-### 4. No validation before execution
-
-Wrong:
-
-- raw model output executes directly
-
-Right:
-
-- validate first, then execute
-
-### 5. AI path bypasses normal architecture
-
-Wrong:
-
-- AI gets special permission to mutate truth or runtime directly
-
-Right:
-
-- AI uses the same action/command boundary as everything else
-
-### 6. Planning and execution collapse together
-
-Wrong:
-
-- model output is treated as directly executable truth
-
-Right:
-
-- planning can be flexible; execution remains rigid and validated
+| # | Temptation (wrong) | Do instead (right) |
+| --- | --- | --- |
+| 1 | Model directly edits stores, UI state, engine internals, or plugin handles | Model emits structured actions |
+| 2 | Execution logic depends on vague natural-language prose | Structured, validated actions |
+| 3 | Action execution is hard to audit or depends on stringly magical runtime behavior | Explicit action registry |
+| 4 | Raw model output executes directly | Validate first, then execute |
+| 5 | AI gets special permission to mutate truth or runtime directly | AI uses the same action/command boundary as everything else |
+| 6 | Model output is treated as directly executable truth | Planning can be flexible; execution remains rigid and validated |
 
 ---
 
-## Review checklist
+## Self-review gate
 
-Before accepting AI-control code, verify:
+Before accepting any AI-control change, answer each question below in writing and
+paste the supporting output. **Not complete until every answer is written and the
+`cmdValidate` and `cmdTypecheck` output appears verbatim below the answers.**
 
 1. Does the model emit structured actions rather than arbitrary mutations?
-2. Is there an explicit action registry?
-3. Is all model output validated?
-4. Does execution go through the normal action/command boundary?
-5. Are destructive or ambiguous operations gated appropriately?
+2. Is there an explicit action registry the new action is registered in?
+3. Is all model output validated before execution (type, shape, bounds, IDs, capabilities, order)?
+4. Does execution go through the normal action/command boundary — no privileged AI write path?
+5. Are destructive, bulk, or ambiguous operations gated behind confirmation?
 6. Does the AI layer avoid direct access to UI/runtime internals?
-7. Is planning separate from execution?
-8. Would this still be safe if the model output were partially wrong?
+7. Is planning kept separate from execution?
+8. Would this still be safe if the model output were partially wrong? Name the stage that catches the bad field.
+9. Can you answer the four observability questions for a sample prompt (proposed / accepted / executed / failed)?
+
+Then paste, verbatim and fenced:
+
+- `cmdValidate` output (dependency-boundary validation — proves the AI layer did not import across a boundary).
+- `cmdTypecheck` output (proves the action payloads are typed end to end).
+
+A question answered without its pasted evidence reads Unverified, not Pass. The
+review is not done until both command outputs are present.
 
 ---
+
+## Bundled resources
+
+- `references/action-catalog.md` — the early-target action list, the properties
+  shared by good AI-driven actions, the four-question observability contract, and
+  the full confirmation-policy trigger list. Read it when designing or reviewing
+  concrete actions.
