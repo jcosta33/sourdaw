@@ -53,7 +53,7 @@ skills and worktree task scratch that stay in this repo:
 **Before implementing any non-trivial feature, run this checklist in order. Do not skip steps.**
 
 1. Read the task packet you were given in `../sourdaw-hq/tasks/` and the spec it links (`../sourdaw-hq/specs/<feature>/spec.md`) — follow its scope. Load the workspace guide `../sourdaw-hq/.agents/skills/implement-task/SKILL.md`.
-2. Track session state in your worktree task scratch (`.agents/tasks/`): load `.agents/skills/manage-task/SKILL.md` and fill in **Objective** and **Plan** before doing anything else.
+2. Track session state in your worktree task scratch (`.agents/tasks/`): fill in **Objective** and **Plan** before doing anything else.
 3. Read the spec and any co-located `audit.md` / `research.md` under `../sourdaw-hq/specs/<feature>/`. If no spec exists for non-trivial work, stop — a spec is authored in the workspace first (guide: `../sourdaw-hq/.agents/skills/write-spec/SKILL.md`).
 4. Read the module's brownfield map in `../sourdaw-hq/inventory/<Module>.md` for present-state context before refactoring; check `../sourdaw-hq/intake/` for captured sources and deferred-gap items relevant to the feature.
 5. Load every relevant domain skill from `.agents/skills/` by reading the `description` field at the top of each `SKILL.md`. Read in full any skill whose description matches the domain you're about to touch.

@@ -13,7 +13,7 @@
 
 ---
 
-> **PERSONA:** Load `.agents/skills/personas/SKILL.md` and adopt **The Builder** persona.
+> **PERSONA:** Adopt **The Builder** stance — see the workspace persona guides under `../sourdaw-hq/.agents/skills/`.
 
 ---
 

@@ -22,7 +22,7 @@ Implement Phase 7 (Layout & AI) and Phase 8 (Hardware Controller Ecosystem) from
 ## Linked docs
 
 - Spec: `.agents/specs/spec-workflow-ui-research.md`
-- Skill: `manage-task`, `documentation-gatekeeper`, `write-spec`, `ui-patterns`, `web-audio-engine`, `tauri-platform`
+- Skill: `ui-patterns`, `web-audio-engine`, `tauri-platform` (spec-authoring guide: `../sourdaw-hq/.agents/skills/write-spec/SKILL.md`)
 
 ## Acceptance criteria
 

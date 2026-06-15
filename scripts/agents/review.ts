@@ -56,7 +56,7 @@ function run() {
 
 ---
 
-> **PERSONA:** Load \`.agents/skills/personas/SKILL.md\` and adopt **The Skeptic** persona.
+> **PERSONA:** Adopt **The Skeptic** stance — see the workspace persona guides under \`../sourdaw-hq/.agents/skills/\`.
 > **MANDATE:** You are the adversarial reviewer for branch \`${branchName}\`. 
 > 1. Run \`git diff main...HEAD\` to see what the original agent changed.
 > 2. Run the tests. Check the blast radius. Look for architectural violations.

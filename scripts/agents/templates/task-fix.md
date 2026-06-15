@@ -15,7 +15,7 @@
 
 > **FIX SESSION** — Prefer the smallest change that fixes the bug. If you discover a related defect or an obvious safety fix in the same area, you may take it on; document it in **Findings** or **Decisions**. Do not revert correct fixes only to keep the diff smaller.
 >
-> **PERSONA:** Load `.agents/skills/personas/SKILL.md` and adopt **The Skeptic** persona.
+> **PERSONA:** Adopt **The Skeptic** stance — see the workspace persona guides under `../sourdaw-hq/.agents/skills/`.
 
 ---
 
