@@ -5,6 +5,8 @@ description: Load at the start of every session. Covers how to fill in, maintain
 
 # SKILL: manage-task
 
+> **Note — Swarm workspace.** Durable artifacts (specs, audits, research, reviews, findings) now live in the Swarm workspace (`../sourdaw-hq`), not the `.agents/` tree here. The worktree task-scratch workflow described below is unchanged; where it says to write durable findings to audits or specs, write them to the workspace.
+
 ## Purpose
 
 The task file is the agent's working memory for a session. It records objective, plan, decisions, blockers, assumptions, and progress. A well-maintained task file means the session can be interrupted and resumed without loss. A poor one means context is reconstructed from scratch.
@@ -28,7 +30,7 @@ Task files are gitignored — they are local to the worktree and not shared.
 
 6. **Mark assumptions as pending or confirmed.** Any assumption that turns out to be wrong must be corrected. An assumption that has been verified moves from `[pending]` to `[confirmed]`.
 
-7. **Record findings as they emerge.** Discoveries about the codebase — surprising behavior, hidden dependencies, patterns — go in `## Findings`. If a finding belongs in a durable audit or spec, write it there too. Do not leave durable findings only in the task file.
+7. **Record findings as they emerge.** Discoveries about the codebase — surprising behavior, hidden dependencies, patterns — go in `## Findings`. If a finding belongs in a durable audit or spec, write it to the Swarm workspace (`../sourdaw-hq`) too. Do not leave durable findings only in the task file.
 
 8. **List docs loaded in Linked docs.** Every spec, audit, research file, or skill loaded during the session goes here. This is how the next session knows what context was available.
 
@@ -50,6 +52,6 @@ Task files are gitignored — they are local to the worktree and not shared.
 - Leaving blockers unrecorded and working around them — the workaround becomes invisible debt.
 - Leaving the Decisions section empty — significant choices made during the session will be invisible to the next.
 - Not recording findings — if you discovered something useful about the codebase, it belongs somewhere permanent.
-- Leaving durable findings only in the task file — task files are gitignored and local; write to audits or specs.
+- Leaving durable findings only in the task file — task files are gitignored and local; write to audits or specs in the Swarm workspace (`../sourdaw-hq`).
 - Ending a session with incomplete Self-review (unanswered questions or missing verification outputs).
 - Not listing loaded docs in Linked docs — the next session cannot know what context was available.

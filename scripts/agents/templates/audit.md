@@ -1,3 +1,5 @@
+> **Legacy template — superseded by the Swarm workspace.** Canonical templates now live in `../sourdaw-hq/templates/` (`spec.md`, `task.md`, `review.md`); audits map to `../sourdaw-hq/inventory/` or a co-located `../sourdaw-hq/specs/<feature>/audit.md`. Author new specs, audits, and research in the workspace, not here. This file is kept for reference only.
+
 # <Area> audit
 
 ## Scope
@@ -5,7 +7,7 @@
 What this audit covers and what it explicitly excludes.
 Reference the goal or initiative that prompted this audit.
 
-Related spec (if any): `.agents/specs/<name>.md`
+Related spec (if any): `../sourdaw-hq/specs/<feature>/spec.md`
 
 ---
 

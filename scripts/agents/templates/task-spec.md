@@ -13,7 +13,7 @@
 
 ---
 
-> 🔒 **SPEC WRITING SESSION** — This session produces a spec document, not code. You may NOT modify any source files, configuration files, or dependencies. Output: `.agents/specs/{{slug}}.md`.
+> 🔒 **SPEC WRITING SESSION** — This session produces a spec document, not code. You may NOT modify any source files, configuration files, or dependencies. Output: `../sourdaw-hq/specs/{{slug}}/spec.md`.
 >
 > **PERSONA:** Load `.agents/skills/personas/SKILL.md` and adopt **The Architect** persona.
 
@@ -33,9 +33,9 @@ What spec to write and what decision or design it resolves. One paragraph maximu
 
 ## Spec output
 
-Write your spec to: `.agents/specs/{{slug}}.md`
-Use the spec template at `scripts/agents/templates/spec.md`.
-Load `.agents/skills/write-spec/SKILL.md` before starting.
+Write your spec to: `../sourdaw-hq/specs/{{slug}}/spec.md`
+Use the spec template at `../sourdaw-hq/templates/spec.md`.
+Load `../sourdaw-hq/.agents/skills/write-spec/SKILL.md` before starting.
 
 > ⚠️ **MANDATORY: LOSSLESS DISTILLATION**
 > The spec must be a **lossless distillation** of the key information from the research. You are **STRICTLY FORBIDDEN** from omitting vital implementation details, UI/UX behavior specifications, critical listings of user controls, or architectural requirements that live in the research. The research is the source of truth; the spec removes only the fluff and never cuts to the bone. If the research specifies a control or a behavior, it MUST appear in the spec.
@@ -65,7 +65,7 @@ Look for:
 - **Existing modules that solve adjacent problems.** Search `src/modules/` for features that overlap in domain, interaction shape, or data flow.
 - **Shared helpers you can build on.** Check `src/helpers/` (Store, EventBus, inject, Logger, etc.) — prefer extending established primitives over creating new ones.
 - **Architectural conventions.** Read `docs/architecture/` and `AGENTS.md` for patterns this spec must align with (layering, DI, event flow, state ownership).
-- **Prior specs and audits.** `.agents/specs/` and `.agents/audits/` often contain decisions you should not relitigate.
+- **Prior specs and audits.** `../sourdaw-hq/specs/<feature>/` and `../sourdaw-hq/inventory/` often contain decisions you should not relitigate.
 
 Document what you found and how the spec integrates with it:
 
@@ -84,21 +84,21 @@ If you cannot find any prior art, state that explicitly — "no existing pattern
 - Work only inside this worktree
 - Do not switch branches unless explicitly instructed
 - Do not merge, rebase, or push unless explicitly instructed
-- **Proactively research and read related docs.** If context from another spec, research, or bug file is needed, you are empowered to browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own to confirm your hypotheses and make informed decisions. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are also fair game.
+- **Proactively research and read related docs.** Specs, audits, research, and findings live in the Swarm workspace (`../sourdaw-hq`). If context from another spec or audit is needed, browse `../sourdaw-hq/specs/<feature>/` (spec plus co-located `audit.md` / `research.md`), `../sourdaw-hq/inventory/`, and `../sourdaw-hq/intake/` to confirm your hypotheses. Any codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`) are also fair game.
 
 ---
 
 ## Progress checklist
 
-- [ ] Load `.agents/skills/write-spec/SKILL.md`
-- [ ] Review related specs in `.agents/specs/`
-- [ ] Review related audits in `.agents/audits/`
+- [ ] Load `../sourdaw-hq/.agents/skills/write-spec/SKILL.md`
+- [ ] Review related specs in `../sourdaw-hq/specs/`
+- [ ] Review related audits in `../sourdaw-hq/inventory/`
 - [ ] Complete all research items above
 - [ ] **Complete Pattern survey** — document existing similar implementations, reusable helpers, and conventions this spec must align with
 - [ ] Draft spec outline
 - [ ] Fill in requirements and acceptance criteria
 - [ ] Review for completeness and correctness
-- [ ] Write spec at `.agents/specs/{{slug}}.md`
+- [ ] Write spec at `../sourdaw-hq/specs/{{slug}}/spec.md`
 - [ ] Self-review: Verification outputs pasted
 - [ ] Self-review: Read-only constraint answered
 - [ ] Self-review: Completeness answered
@@ -169,7 +169,7 @@ Stop. A spec that ships with gaps, ambiguities, or unresolved questions will cau
 
 ### Consistency
 
-- Are all terms used consistently throughout? Does this spec contradict, duplicate, or conflict with anything in existing specs in `.agents/specs/`?
+- Are all terms used consistently throughout? Does this spec contradict, duplicate, or conflict with anything in existing specs in `../sourdaw-hq/specs/`?
   Answer:
 
 ### Integration with existing patterns

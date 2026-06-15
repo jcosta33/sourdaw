@@ -12,6 +12,16 @@ Swarm workspace: `../sourdaw-hq` — read the task packet you are given before c
 
 ## Documentation-first workflow
 
+**Canonical process is Swarm.** Work is driven by a task packet from
+`../sourdaw-hq/tasks/`, written against a spec in
+`../sourdaw-hq/specs/<feature>/spec.md`; the loop (Pull → Spec → Task → Run →
+Review → Close) and its guides live in the workspace (`../sourdaw-hq/AGENTS.md`
+and `../sourdaw-hq/.agents/skills/` — `implement-task`, `write-spec`,
+`review-output`, `save-findings`). The `docs/agents/*` references below capture the
+documentation-first principles this repo follows; where they name
+`.agents/specs|audits|research/` paths, those artifacts now live in the workspace
+(see the directory map below), not in this repo.
+
 Before starting significant implementation work, read the shared process documentation:
 
 | Document                       | What it covers                                                                                                            |
@@ -24,26 +34,30 @@ Before starting significant implementation work, read the shared process documen
 | `docs/06-testing.md`           | Vitest layout (`__tests__/` folders), mocks, DI in tests                                                                  |
 | `agents/templates/`            | Ready-to-use templates: `audit.md`, `spec.md`, `task.md`                                                                  |
 
-Working artifacts live in the Swarm workspace (`../sourdaw-hq`), except the two that stay in this repo:
+Working artifacts live in the Swarm workspace (`../sourdaw-hq`), except the domain
+skills and worktree task scratch that stay in this repo:
 
-| Directory                  | Contains                                                    |
-| -------------------------- | ----------------------------------------------------------- |
-| `../sourdaw-hq/specs/`     | Feature specs, requirements, acceptance criteria            |
-| `../sourdaw-hq/audits/`    | Codebase state reports relative to a goal                   |
-| `../sourdaw-hq/research/`  | Technical findings from external sources                    |
-| `../sourdaw-hq/reviews/`   | Review packets — the durable record of each task            |
-| `../sourdaw-hq/findings/`  | Lessons saved at Close                                      |
-| `.agents/skills/`          | Reusable domain knowledge — load before working in a domain |
-| `.agents/tasks/`           | Active work items (gitignored, worktree-specific)           |
+| Directory                        | Contains                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------- |
+| `../sourdaw-hq/status.md`        | The board — one state row per feature                                      |
+| `../sourdaw-hq/specs/<feature>/` | `spec.md` (AC-NNN + Verify with:), co-located `audit.md` / `research.md`   |
+| `../sourdaw-hq/inventory/`       | Brownfield module-state maps (observation-only)                           |
+| `../sourdaw-hq/intake/`          | Captured umbrella sources and deferred-gap items                          |
+| `../sourdaw-hq/tasks/`           | Task packets — the unit of agent work                                     |
+| `../sourdaw-hq/reviews/`         | Review packets — the durable record of each task                          |
+| `../sourdaw-hq/findings/`        | Lessons saved at Close                                                    |
+| `../sourdaw-hq/decisions/`       | ADRs — numbered, immutable                                                |
+| `.agents/skills/`                | Reusable domain knowledge — load before working in a domain               |
+| `.agents/tasks/`                 | Worktree-local task scratch (gitignored)                                  |
 
 **Before implementing any non-trivial feature, run this checklist in order. Do not skip steps.**
 
-1. Load `.agents/skills/documentation-gatekeeper/SKILL.md` — it encodes the sequencing invariants for this repo and gates what must exist before code is written.
-2. Load `.agents/skills/manage-task/SKILL.md` and fill in the task file's **Objective** and **Plan** before doing anything else.
-3. Check `../sourdaw-hq/specs/` for an existing spec for this area — if one is missing and the work is non-trivial, load `.agents/skills/write-spec/SKILL.md` and write one first (in the workspace).
-4. Check `../sourdaw-hq/audits/` for an existing audit of the area — if a fresh audit is needed, load `.agents/skills/write-audit/SKILL.md` and produce one before refactoring.
+1. Read the task packet you were given in `../sourdaw-hq/tasks/` and the spec it links (`../sourdaw-hq/specs/<feature>/spec.md`) — follow its scope. Load the workspace guide `../sourdaw-hq/.agents/skills/implement-task/SKILL.md`.
+2. Track session state in your worktree task scratch (`.agents/tasks/`): load `.agents/skills/manage-task/SKILL.md` and fill in **Objective** and **Plan** before doing anything else.
+3. Read the spec and any co-located `audit.md` / `research.md` under `../sourdaw-hq/specs/<feature>/`. If no spec exists for non-trivial work, stop — a spec is authored in the workspace first (guide: `../sourdaw-hq/.agents/skills/write-spec/SKILL.md`).
+4. Read the module's brownfield map in `../sourdaw-hq/inventory/<Module>.md` for present-state context before refactoring; check `../sourdaw-hq/intake/` for captured sources and deferred-gap items relevant to the feature.
 5. Load every relevant domain skill from `.agents/skills/` by reading the `description` field at the top of each `SKILL.md`. Read in full any skill whose description matches the domain you're about to touch.
-6. Check `../sourdaw-hq/research/` for prior findings. You may proactively create new research files to validate technical assumptions before committing to an approach.
+6. Run every item under the task's `## Verify` and paste the real command output — a claim without output counts as unverified. Save durable lessons at Close to `../sourdaw-hq/findings/`.
 
 **Session completion — Self-review is mandatory.** Every task file has a `## Self-review` section with specific questions and a `### Verification outputs` block. A task is not complete until every question has a written answer directly beneath it, including pasted command output (`git status`, `pnpm deps:validate`, `pnpm typecheck`, etc.). Task files do not use a separate Handoff section — they are self-contained. Use **Decisions**, **Findings**, **Next steps**, and related sections so the file stands alone for the next reader. Declaring the task done while any Self-review question is unanswered is an invalid session output. Checkboxes alone do not count — the review must leave a written trace in the task file.
 

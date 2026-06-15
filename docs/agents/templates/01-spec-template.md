@@ -1,9 +1,11 @@
+> **Legacy template — superseded by the Swarm workspace.** Canonical templates now live in `../sourdaw-hq/templates/` (`spec.md`, `task.md`, `review.md`); audits map to `../sourdaw-hq/inventory/` or a co-located `../sourdaw-hq/specs/<feature>/audit.md`. Author new specs, audits, and research in the workspace, not here. This file is kept for reference only.
+
 # <Feature name>
 
 ## Context
 
 Why this feature exists. What problem it solves. What came before it or prompted it.
-Reference any relevant research: `.agents/research/<topic>.md`
+Reference any relevant research: `../sourdaw-hq/specs/<feature>/research.md` (or `../sourdaw-hq/intake/` for multi-feature sources)
 
 ---
 

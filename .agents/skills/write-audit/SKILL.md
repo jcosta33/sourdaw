@@ -5,12 +5,13 @@ description: Load before creating or updating an audit file. Covers what an audi
 
 # SKILL: write-audit
 
+> **Superseded — spec/audit/research authoring moved to the Swarm workspace.** This repo adopted Swarm (`../sourdaw-hq`); specs, audits, research, reviews, and findings live there now, authored with the workspace guides in `../sourdaw-hq/.agents/skills/` (`write-audit`, `write-inventory`, `persona-auditor`). The craft guidance below still applies; only the paths and entry point changed. See the root `AGENTS.md` for the directory map.
+
 ## Purpose
 
 Audits are honest reports on the current state of a codebase area relative to a goal. A good audit makes the next session's job clear without requiring that session to re-examine the same ground.
 
-Full definition and required sections: `docs/agents/02-file-types.md` → Audit section.
-Template: `docs/agents/templates/audit.template.md`.
+Canonical workspace audit guidance: whole-module maps live in `../sourdaw-hq/inventory/` (brownfield maps), and per-feature, observation-only audits are co-located as `../sourdaw-hq/specs/<feature>/audit.md`.
 
 ---
 

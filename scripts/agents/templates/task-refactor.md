@@ -74,7 +74,7 @@ Every public path you add a compatibility shim to. Do not remove a shim until al
 - **Run `{{cmdValidateDeps}}` after every 10 files — mandatory, not optional**
 - No codemods, no automated mutations, no shell loops over files
 - Document every shim contract in the table above before continuing
-- **Proactively research and read related docs.** If context from another spec, research, or bug file is needed, you are empowered to browse `.agents/specs/`, `.agents/research/`, or `.agents/bugs/` on your own to confirm your hypotheses and make informed decisions. Any other codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`, `.agents/audits/`) are also fair game.
+- **Proactively research and read related docs.** Specs, audits, research, and findings live in the Swarm workspace (`../sourdaw-hq`). If context from another spec or audit is needed, browse `../sourdaw-hq/specs/<feature>/` (spec plus co-located `audit.md` / `research.md`), `../sourdaw-hq/inventory/`, and `../sourdaw-hq/intake/` to confirm your hypotheses. Any codebase docs (`docs/`, `AGENTS.md`, `.agents/skills/`) are also fair game.
 
 ---
 

@@ -1,3 +1,5 @@
+> **Legacy template — superseded by the Swarm workspace.** Canonical templates now live in `../sourdaw-hq/templates/` (`spec.md`, `task.md`, `review.md`); audits map to `../sourdaw-hq/inventory/` or a co-located `../sourdaw-hq/specs/<feature>/audit.md`. Author new specs, audits, and research in the workspace, not here. This file is kept for reference only.
+
 # <Topic>
 
 > **Note:** Research files can be authored by developers or agents. This template exists for capturing external technical findings to inform implementation. Agents are empowered to produce research when they need to validate assumptions or explore new APIs/approaches.

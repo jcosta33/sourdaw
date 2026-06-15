@@ -1,5 +1,7 @@
 # Agent process — documentation-first workflow
 
+> **Superseded — this repo adopted Swarm.** Specs, audits, research, tasks, reviews, findings, and decisions now live in the Swarm workspace (`../sourdaw-hq`), not in the `.agents/` tree here. The canonical loop (Pull -> Spec -> Task -> Run -> Review -> Close) and its guides are `../sourdaw-hq/AGENTS.md` and `../sourdaw-hq/.agents/skills/`. The writing principles below still hold; the artifact locations moved (see the directory map in the root `AGENTS.md`). Domain skills (`.agents/skills/`) and worktree task scratch (`.agents/tasks/`) still live in this repo.
+
 ## Why this exists
 
 Agentic coding sessions fail in predictable ways: agents start implementing before they understand the codebase, make assumptions they never surface, produce work that conflicts with existing architecture, and leave no trail for the next session to follow.
@@ -17,8 +19,8 @@ This repo uses three distinct tiers. Understanding the distinction matters:
 **Canonical process and templates** — `docs/agents/`
 Written for humans. Defines the workflow, file types, standards, and templates. Shared across all agents and sessions. The authoritative reference for how the system works. Changes here are intentional and reviewed.
 
-**Durable work products** — `.agents/audits/`, `.agents/specs/`, `.agents/research/`
-Generated artifacts that accumulate over the life of the project. Audits, specs, and research files are persistent, reviewable, and shared across worktrees. They outlive individual sessions.
+**Durable work products** — Swarm workspace (`../sourdaw-hq`): specs co-locate their audit and research under `../sourdaw-hq/specs/<feature>/` (`spec.md`, `audit.md`, `research.md`); whole-module audits land in `../sourdaw-hq/inventory/<Module>.md`; multi-feature research sources go to `../sourdaw-hq/intake/`
+Generated artifacts that accumulate over the life of the project. Specs, audits, and research are persistent, reviewable, and shared across worktrees. They outlive individual sessions.
 
 **Local execution scaffolding** — `.agents/tasks/`
 Runtime-only working notes for an active agent session. Task files are local, gitignored, and worktree-specific. They record progress, assumptions, decisions, blockers, and handoff notes. They are not the canonical documentation layer — they support the workflow, not replace it. When a session ends, the task file's durable findings should be reflected in audits, specs, or research where appropriate.
@@ -27,13 +29,13 @@ Runtime-only working notes for an active agent session. Task files are local, gi
 
 ## The five document types
 
-All working documents live under `.agents/`. Each subdirectory has a specific role:
+Specs, audits, and research now live in the Swarm workspace (`../sourdaw-hq`); skills and tasks stay in this repo. Each has a specific role:
 
-| Directory           | Type     | Tier                                               |
-| ------------------- | -------- | -------------------------------------------------- |
-| `.agents/audits/`   | Audit    | Durable work product                               |
-| `.agents/specs/`    | Spec     | Durable work product                               |
-| `.agents/research/` | Research | Durable work product (agent or developer-authored) |
+| Directory                                  | Type     | Tier                                               |
+| ------------------------------------------ | -------- | -------------------------------------------------- |
+| `../sourdaw-hq/specs/<feature>/audit.md` (one feature) or `../sourdaw-hq/inventory/<Module>.md` (whole module) | Audit    | Durable work product                               |
+| `../sourdaw-hq/specs/<feature>/spec.md`    | Spec     | Durable work product                               |
+| `../sourdaw-hq/specs/<feature>/research.md` (one feature) or `../sourdaw-hq/intake/` (multi-feature) | Research | Durable work product (agent or developer-authored) |
 | `.agents/skills/`   | Skill    | Durable work product                               |
 | `.agents/tasks/`    | Task     | Local execution scaffolding                        |
 
@@ -59,7 +61,7 @@ Documentation is proportionate to scope. A trivial bug fix — a single isolated
 
 When the task is non-trivial, skipping should be a deliberate decision, not a default.
 
-**Research ownership:** Agents are empowered and expected to perform research. If you need to understand an API, fix a complex bug, or evaluate a technical approach, you should aggressively search the codebase and the internet. Agents can and should create new research files in `.agents/research/` to document durable domain knowledge discovered during a session. Do not endlessly ruminate; validate your assumptions with sources.
+**Research ownership:** Agents are empowered and expected to perform research. If you need to understand an API, fix a complex bug, or evaluate a technical approach, you should aggressively search the codebase and the internet. Agents can and should create new research files in the Swarm workspace — co-located at `../sourdaw-hq/specs/<feature>/research.md` for a single feature, or `../sourdaw-hq/intake/` for multi-feature sources — to document durable domain knowledge discovered during a session. Do not endlessly ruminate; validate your assumptions with sources.
 
 ---
 

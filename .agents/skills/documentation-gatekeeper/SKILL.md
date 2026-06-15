@@ -5,6 +5,8 @@ description: Load before any non-trivial session. Decides what documentation is 
 
 # SKILL: documentation-gatekeeper
 
+> **Superseded — spec/audit/research authoring moved to the Swarm workspace.** This repo adopted Swarm (`../sourdaw-hq`); specs, audits, research, reviews, and findings live there now, authored with the workspace guides in `../sourdaw-hq/.agents/skills/` (`implement-task`, `write-spec`, `spec-check`). The craft guidance below still applies; only the paths and entry point changed. See the root `AGENTS.md` for the directory map.
+
 ## Purpose
 
 This skill encodes the sequencing invariants of the documentation-first workflow. It exists because agents that skip documentation produce work that conflicts with existing architecture, cannot be reviewed, and cannot be resumed.
@@ -33,11 +35,11 @@ These apply to non-trivial tasks. They are hard constraints, not suggestions.
 
 2. **No implementation without a spec** (for non-trivial work). Non-trivial means: more than a single isolated function, involves design choices, or affects more than one file. Load the `write-spec` skill before writing a spec. If a spec already exists, read it first.
 
-3. **Research exists → spec is mandatory.** If research files exist in `.agents/research/` for the area you are working in, a spec must also exist before implementation begins. Research is upstream input that must be translated into a spec. Do not implement directly from research.
+3. **Research exists → spec is mandatory.** If research files exist in the Swarm workspace (`../sourdaw-hq/specs/<feature>/research.md`, or `../sourdaw-hq/intake/` for multi-feature sources) for the area you are working in, a spec must also exist before implementation begins. Research is upstream input that must be translated into a spec (`../sourdaw-hq/specs/<feature>/spec.md`). Do not implement directly from research.
 
-4. **No spec without grounding.** A spec must be grounded in either existing research (`.agents/research/`) or clear prior knowledge already in the codebase. Do not spec from assumption.
+4. **No spec without grounding.** A spec must be grounded in either existing research (`../sourdaw-hq/specs/<feature>/research.md` or `../sourdaw-hq/intake/`) or clear prior knowledge already in the codebase. Do not spec from assumption.
 
-5. **Update audits after implementation.** After making changes that affect the observable state of the codebase, update (or create) the relevant audit. Load the `write-audit` skill. Mark resolved issues. Add new ones discovered.
+5. **Update audits after implementation.** After making changes that affect the observable state of the codebase, update (or create) the relevant audit. For a single feature this is the co-located `../sourdaw-hq/specs/<feature>/audit.md`; for a whole module it is the brownfield map `../sourdaw-hq/inventory/<Module>.md`. Load the `write-audit` skill. Mark resolved issues. Add new ones discovered.
 
 6. **Load domain skills before touching domain code.** Check `.agents/skills/` for any skill whose description matches the area you are about to work in. Read the `description` field of each `SKILL.md` to decide relevance. Work that crosses **`src/modules/*` boundaries** (imports between modules, root `index.ts`, `pnpm deps:validate`) must load **`architecture-violations`** and the canonical **`docs/architecture/03-typescript-module.md`** §3.3–§5.1 (including **same module = relative imports**, **other modules = `#/modules/<Module>` only**, **`index.ts` exports only for external consumers**).
 
@@ -51,7 +53,7 @@ These apply to non-trivial tasks. They are hard constraints, not suggestions.
 
 - Use your tools to search the codebase and the internet.
 - Finding sources is crucial for decision making.
-- You may create new research files in `.agents/research/` if your findings represent durable domain knowledge that should be kept. Do not fabricate findings; back them up with real documentation, codebase reality, or internet sources.
+- You may create new research files in the Swarm workspace (`../sourdaw-hq/specs/<feature>/research.md`, or `../sourdaw-hq/intake/` for multi-feature sources) if your findings represent durable domain knowledge that should be kept. Do not fabricate findings; back them up with real documentation, codebase reality, or internet sources.
 
 ---
 
