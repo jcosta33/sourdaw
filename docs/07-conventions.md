@@ -2,6 +2,8 @@
 
 This guide defines coding conventions and patterns for clarity, consistency, and maintainability.
 
+> **See also:** [Modern JS & Rust primitives](./modern-primitives.md) — current-edition language primitives (ES2024–2026 / Rust 2024) to prefer on hot, RT-audio, and interop paths.
+
 ## TypeScript soundness
 
 Agent-enforced rules for typing and tests — no `any` escapes, lazy assertions, or suppression comments without justification — are **canonical in `AGENTS.md`** under _React 19 & Coding Conventions_ → **TypeScript — soundness**. Follow that section for implementation; this document does not repeat it.
