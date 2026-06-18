@@ -4,7 +4,7 @@
     --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Mono', monospace;
 
     /* == Layer 1: Core Surface Hierarchy (True Black Skeuomorphic) == */
-    /* Canonical tokens from design-system.md */
+    /* Canonical tokens */
     --surface-deep: #000000;
     --surface-base: #0a0a0a;
     --surface-default: #111111;

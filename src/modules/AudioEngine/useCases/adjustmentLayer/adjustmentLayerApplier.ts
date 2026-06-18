@@ -14,7 +14,7 @@ import { type AppliedLayerRecord } from '../../stores/adjustmentApplicationStore
  *  - Other effect types (`eq`, `compressor`, `reverb`, `delay`, `saturation`,
  *    `filter`, `stereo-width`) are recorded in the active-application log but
  *    not yet wired to in-line DSP nodes. Follow-up work will build a per-track
- *    effect insert chain (see `.agents/specs/missing/adjustment-layer.md` §M2).
+ *    effect insert chain.
  */
 
 export type TrackGainPanApplier = {

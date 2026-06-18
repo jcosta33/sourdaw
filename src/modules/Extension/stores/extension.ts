@@ -6,7 +6,6 @@
  * permissions model) but the runtime is unsandboxed. Do not build further
  * UI or expose to users until Worker-based sandbox is implemented.
  * Permissions below are declared but never enforced at runtime.
- * See `.agents/audits/webdaw-codebase-audit.md` → **Findings → Extension scripting (frozen)**.
  */
 
 import { createStore } from '#/infra/store/createStore';

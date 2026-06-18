@@ -534,8 +534,7 @@ class AudioEngineImpl implements AudioEngine {
                     // (bow-lift noise on strings). A 128-note fan-out would
                     // retrigger that burst 128 times and produce an audible
                     // \"ksshh\" on every stop. Route through the dedicated
-                    // silent all-notes-off path instead — see
-                    // .agents/bugs/levain-stop-hihat-and-constant-white-noise.md.
+                    // silent all-notes-off path instead.
                     dn.levainControls.allNotesOff();
                 }
             }

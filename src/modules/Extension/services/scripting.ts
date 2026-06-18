@@ -8,7 +8,6 @@
  *   1. Move to Worker-based execution with postMessage proxy
  *   2. Validate each action against the extension's declared permissions
  *   3. Rate-limit API calls from scripts
- * See `.agents/audits/webdaw-codebase-audit.md` → **Findings → Extension scripting (frozen)**.
  */
 
 import { executeAppAction } from '#/modules/Command/useCases';

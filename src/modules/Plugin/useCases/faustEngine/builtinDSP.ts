@@ -532,7 +532,7 @@ export function registerBuiltinFaustDSP(): void {
     );
 
     // ── Rhodes Electric Piano ─────────────────────────────────
-    // Body/bell dual-envelope FM architecture per instruments.md
+    // Body/bell dual-envelope FM architecture
     registerFaustDSP(
         'Rhodes',
         rhodesDsp,
