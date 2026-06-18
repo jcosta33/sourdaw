@@ -45,10 +45,7 @@
         "agents:doctor": "node --experimental-strip-types ./scripts/agents.ts doctor",
         "agents:path": "node --experimental-strip-types ./scripts/agents.ts path",
         "agents:focus": "node --experimental-strip-types ./scripts/agents.ts focus",
-        "agents:pick": "node --experimental-strip-types ./scripts/agents.ts pick",
-        "delegator:new": "node --experimental-strip-types ./scripts/delegator.ts new",
-        "delegator:review": "node --experimental-strip-types ./scripts/delegator.ts review",
-        "delegator:status": "node --experimental-strip-types ./scripts/delegator.ts status"
+        "agents:pick": "node --experimental-strip-types ./scripts/agents.ts pick"
     },
     "dependencies": {
         "@anthropic-ai/sdk": "^0.90.0",
