@@ -21,13 +21,33 @@ vi.mock('#/utils/Styles/cn', () => ({
     },
 }));
 
-vi.mock('#/modules/MIDI/stores/midiStore', () => ({
-    midiStore: { value: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} } },
-}));
+vi.mock('#/modules/MIDI/stores/midiStore', () => {
+    const midiState = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
+    return {
+        midiStore: {
+            get value() {
+                return midiState;
+            },
+            getSnapshot: () => midiState,
+            subscribe: vi.fn(() => () => {}),
+            subscribeReact: vi.fn(() => () => {}),
+        },
+    };
+});
 
-vi.mock('#/modules/Arrangement/stores/trackStore', () => ({
-    trackStore: { value: { tracks: [], selectedTrackId: null } },
-}));
+vi.mock('#/modules/Arrangement/stores/trackStore', () => {
+    const trackState = { tracks: [], selectedTrackId: null };
+    return {
+        trackStore: {
+            get value() {
+                return trackState;
+            },
+            getSnapshot: () => trackState,
+            subscribe: vi.fn(() => () => {}),
+            subscribeReact: vi.fn(() => () => {}),
+        },
+    };
+});
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(<TData,>(store: { value: TData | null }, fallback?: TData) => fallback ?? store.value),
