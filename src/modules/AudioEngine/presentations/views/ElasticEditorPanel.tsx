@@ -4,13 +4,14 @@ import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
-import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { defaultTrackState, trackStore, getWarpState, warpStates } from '#/modules/Arrangement/stores';
 import { setStretchMode } from '#/modules/Arrangement/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/Workspace/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
-import { defaultElasticAudioState, elasticAudioStore, type ElasticEditorTool } from '../../stores/elasticAudio';
 import { audioBufferCache } from '../../stores/audioBufferCache';
+import { audioWarpStore, type WarpAlgorithm } from '../../stores/audioWarp';
+import { defaultElasticAudioState, elasticAudioStore, type ElasticEditorTool } from '../../stores/elasticAudio';
 import { getAlgorithmInfo } from '../../useCases/audioWarping/getAlgorithmInfo';
 import { setDefaultAlgorithm } from '../../useCases/audioWarping/setDefaultAlgorithm';
 import { addManualMarker } from '../../useCases/elasticAudio/addManualMarker';
@@ -20,9 +21,6 @@ import { removeMarker } from '../../useCases/elasticAudio/removeMarker';
 import { setElasticSensitivity } from '../../useCases/elasticAudio/setElasticSensitivity';
 import { setElasticTool } from '../../useCases/elasticAudio/setElasticTool';
 import { toggleMarkerLock } from '../../useCases/elasticAudio/toggleMarkerLock';
-
-import { getWarpState, warpStates } from '#/modules/Arrangement/stores';
-import { audioWarpStore, type WarpAlgorithm } from '../../stores/audioWarp';
 
 type StretchMode = 'repitch' | 'complex' | 'texture' | 'beats';
 

@@ -23,7 +23,6 @@ type CardTitleProps = HTMLAttributes<HTMLHeadingElement> & {
 };
 
 export const CardTitle = ({ className, ref, children, ...props }: CardTitleProps): ReactElement => (
-    // eslint-disable-next-line jsx-a11y-x/heading-has-content -- content is passed via children prop
     <h3
         ref={ref}
         className={cn('font-semibold leading-none tracking-[0.01em] text-text-primary', className)}

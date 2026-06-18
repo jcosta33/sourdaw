@@ -1,8 +1,8 @@
+import { generateBassPack } from './bass';
 import { generate808Kit } from './drums808';
 import { generate909Kit } from './drums909';
 import { generateAcousticKit } from './drumsAcoustic';
 import { generateLofiKit } from './drumsLofi';
-import { generateBassPack } from './bass';
 import { generateImpactsPack, generateRisersPack } from './fx';
 import { generateKeysPack } from './keys';
 import { generateElectronicPerc } from './percElectronic';

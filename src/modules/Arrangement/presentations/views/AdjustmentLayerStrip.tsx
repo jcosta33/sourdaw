@@ -8,7 +8,6 @@ import { useStore } from '#/infra/store/useStore';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { cn } from '#/utils/Styles/cn';
 
-import { trackStore, defaultTrackState } from '../../stores/trackStore';
 import {
     adjustmentLayerStore,
     EFFECT_PRESETS,
@@ -17,6 +16,7 @@ import {
     type AdjustmentLayerState,
     type AdjustmentRegion,
 } from '../../stores/adjustmentLayer';
+import { trackStore, defaultTrackState } from '../../stores/trackStore';
 
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 
@@ -635,36 +635,26 @@ const AdjustmentLayerRow = ({
                             backgroundColor: `${layer.color}66`,
                             borderColor: layer.color,
                         }}
-                        onMouseDown={(e) =>
-                            isSentinel ? undefined : onRegionDragStart(e, layer, region as AdjustmentRegion, 'move')
-                        }
-                        onContextMenu={(e) =>
-                            isSentinel ? undefined : onRegionContextMenu(e, layer, region as AdjustmentRegion)
-                        }
+                        onMouseDown={(e) => (isSentinel ? undefined : onRegionDragStart(e, layer, region, 'move'))}
+                        onContextMenu={(e) => (isSentinel ? undefined : onRegionContextMenu(e, layer, region))}
                         onDoubleClick={(e) => onRegionDoubleClick(e, layer)}
                     >
                         {isSentinel ? null : (
                             <>
                                 <div
                                     className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize bg-white/40"
-                                    onMouseDown={(e) =>
-                                        onRegionDragStart(e, layer, region as AdjustmentRegion, 'resizeStart')
-                                    }
+                                    onMouseDown={(e) => onRegionDragStart(e, layer, region, 'resizeStart')}
                                 />
                                 <div
                                     className="absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize bg-white/40"
-                                    onMouseDown={(e) =>
-                                        onRegionDragStart(e, layer, region as AdjustmentRegion, 'resizeEnd')
-                                    }
+                                    onMouseDown={(e) => onRegionDragStart(e, layer, region, 'resizeEnd')}
                                 />
                                 <FadeTriangles
-                                    region={region as AdjustmentRegion}
+                                    region={region}
                                     pixelsPerBeat={pixelsPerBeat}
                                     width={Math.max(4, width)}
                                     fadePreview={fadePreview}
-                                    onFadeDragStart={(e, kind) =>
-                                        onFadeDragStart(e, layer, region as AdjustmentRegion, kind)
-                                    }
+                                    onFadeDragStart={(e, kind) => onFadeDragStart(e, layer, region, kind)}
                                 />
                             </>
                         )}

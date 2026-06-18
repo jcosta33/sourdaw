@@ -1,4 +1,3 @@
-import { type FactorySample } from './types';
 import {
     applyEnvelope,
     biquad,
@@ -15,6 +14,7 @@ import {
     toAudioBufferMono,
     midiToFreq,
 } from './synthesis';
+import { type FactorySample } from './types';
 
 const C3 = 48;
 const C3_FREQ = midiToFreq(C3);
@@ -89,8 +89,8 @@ function renderStab(): Float32Array {
     const dur = 0.6;
     const out = createMono(dur);
     const a = renderSaw(dur, C3_FREQ);
-    const b = renderSaw(dur, C3_FREQ * Math.pow(2, 4 / 12));
-    const c = renderSaw(dur, C3_FREQ * Math.pow(2, 7 / 12));
+    const b = renderSaw(dur, C3_FREQ * 2 ** (4 / 12));
+    const c = renderSaw(dur, C3_FREQ * 2 ** (7 / 12));
     mixMono(out, a, 0.4);
     mixMono(out, b, 0.35);
     mixMono(out, c, 0.35);

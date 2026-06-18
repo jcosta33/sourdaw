@@ -14,6 +14,12 @@ import { getPluginById } from '#/modules/Arrangement/useCases';
 
 import { type Modulator, type ModulatorKind, type ModulatorMapping } from '../../models/Modulator';
 import { modulationStore, type ModulationStoreState } from '../../stores/modulationStore';
+import { addMapping } from '../../useCases/modulation/addMapping';
+import { addModulator } from '../../useCases/modulation/addModulator';
+import { removeMapping } from '../../useCases/modulation/removeMapping';
+import { removeModulator } from '../../useCases/modulation/removeModulator';
+import { updateMapping } from '../../useCases/modulation/updateMapping';
+import { updateModulator } from '../../useCases/modulation/updateModulator';
 
 type DeviceRef = {
     id: string;
@@ -26,12 +32,6 @@ type TrackRef = {
     name: string;
     devices: DeviceRef[];
 };
-import { addMapping } from '../../useCases/modulation/addMapping';
-import { addModulator } from '../../useCases/modulation/addModulator';
-import { removeMapping } from '../../useCases/modulation/removeMapping';
-import { removeModulator } from '../../useCases/modulation/removeModulator';
-import { updateMapping } from '../../useCases/modulation/updateMapping';
-import { updateModulator } from '../../useCases/modulation/updateModulator';
 
 const emptyModState: ModulationStoreState = { modulators: [] };
 

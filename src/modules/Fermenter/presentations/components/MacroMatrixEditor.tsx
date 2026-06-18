@@ -146,7 +146,10 @@ export function MacroMatrixEditor({ mappings, onChange }: MacroMatrixEditorProps
 
             <div className="space-y-2">
                 {mapping.targets.map((target, targetIndex) => (
-                    <div key={`${target.target}-${targetIndex}`} className="rounded-lg border border-border/20 bg-black/15 p-2">
+                    <div
+                        key={`${target.target}-${targetIndex}`}
+                        className="rounded-lg border border-border/20 bg-black/15 p-2"
+                    >
                         <div className="flex items-center gap-2">
                             <select
                                 aria-label={`Target ${targetIndex + 1}`}
@@ -172,17 +175,40 @@ export function MacroMatrixEditor({ mappings, onChange }: MacroMatrixEditorProps
                         </div>
 
                         <div className="mt-2 grid grid-cols-2 gap-2">
-                            <NumberField label="Center" value={target.center} onChange={(value) => setTarget(targetIndex, { ...target, center: value })} />
-                            <NumberField label="Depth" value={target.depth} onChange={(value) => setTarget(targetIndex, { ...target, depth: value })} />
-                            <NumberField label="Min" value={target.min} onChange={(value) => setTarget(targetIndex, { ...target, min: value })} />
-                            <NumberField label="Max" value={target.max} onChange={(value) => setTarget(targetIndex, { ...target, max: value })} />
+                            <NumberField
+                                label="Center"
+                                value={target.center}
+                                onChange={(value) => setTarget(targetIndex, { ...target, center: value })}
+                            />
+                            <NumberField
+                                label="Depth"
+                                value={target.depth}
+                                onChange={(value) => setTarget(targetIndex, { ...target, depth: value })}
+                            />
+                            <NumberField
+                                label="Min"
+                                value={target.min}
+                                onChange={(value) => setTarget(targetIndex, { ...target, min: value })}
+                            />
+                            <NumberField
+                                label="Max"
+                                value={target.max}
+                                onChange={(value) => setTarget(targetIndex, { ...target, max: value })}
+                            />
                         </div>
 
                         <label className="mt-2 flex flex-col gap-1">
-                            <span className="text-[7px] uppercase tracking-[0.18em] text-muted-foreground/55">Curve</span>
+                            <span className="text-[7px] uppercase tracking-[0.18em] text-muted-foreground/55">
+                                Curve
+                            </span>
                             <select
                                 value={target.curve}
-                                onChange={(event) => setTarget(targetIndex, { ...target, curve: event.target.value === 'exponential' ? 'exponential' : 'linear' })}
+                                onChange={(event) =>
+                                    setTarget(targetIndex, {
+                                        ...target,
+                                        curve: event.target.value === 'exponential' ? 'exponential' : 'linear',
+                                    })
+                                }
                                 className="h-7 rounded border border-border/30 bg-surface-inset px-2 text-[10px] text-foreground"
                             >
                                 <option value="linear">Linear</option>

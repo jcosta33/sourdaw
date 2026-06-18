@@ -51,8 +51,8 @@ export function parseLoopStationPadCallbackId(callbackId: string): LoopStationPa
 
 function buildLoopStationPadDefinitions(): ShortcutDefinition[] {
     const defs: ShortcutDefinition[] = [];
-    LOOP_STATION_PAD_ROWS.forEach((row, rowIndex) => {
-        row.forEach((key, columnIndex) => {
+    for (const [rowIndex, row] of LOOP_STATION_PAD_ROWS.entries()) {
+        for (const [columnIndex, key] of row.entries()) {
             defs.push({
                 id: `loopStation.pad.r${rowIndex}c${columnIndex}.play`,
                 label: `Loop Station: Play row ${rowIndex + 1} col ${columnIndex + 1}`,
@@ -67,8 +67,8 @@ function buildLoopStationPadDefinitions(): ShortcutDefinition[] {
                 defaultKeys: [`shift+${key}`],
                 action: { type: 'callback', id: getLoopStationPadCallbackId(rowIndex, columnIndex, true) },
             });
-        });
-    });
+        }
+    }
     return defs;
 }
 

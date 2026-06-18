@@ -1,6 +1,6 @@
+import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { renderHook } from '@testing-library/react';
 import { usePianoRollRenderer } from '../usePianoRollRenderer';
 
 describe('usePianoRollRenderer (Coordinate Conventions)', () => {

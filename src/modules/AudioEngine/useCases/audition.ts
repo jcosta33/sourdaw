@@ -8,6 +8,7 @@ import {
 } from '#/modules/Synth/useCases';
 
 import { audioEngine } from '../repositories/createWebAudioEngine';
+
 import { startFaustNote } from './faustScheduler/startFaustNote';
 
 export function playAuditionNote(trackId: string, pitch: number, velocity: number = 100): () => void {

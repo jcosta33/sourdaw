@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { addAutomationLane } from '../../../useCases/automation/addAutomationLane';
 import { addAutomationPoint } from '../../../useCases/automation/addAutomationPoint';
-import { removeAutomationPoint } from '../../../useCases/automation/removeAutomationPoint';
 import { quantizeAutomationBeats } from '../../../useCases/automation/quantizeAutomationBeats';
+import { removeAutomationPoint } from '../../../useCases/automation/removeAutomationPoint';
 import { reverseAutomation } from '../../../useCases/automation/reverseAutomation';
 import { scaleAutomationValues } from '../../../useCases/automation/scaleAutomationValues';
 import { stretchAutomationTime } from '../../../useCases/automation/stretchAutomationTime';

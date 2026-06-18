@@ -61,7 +61,9 @@ let telemetryRafId: number | null = null;
 
 function flushFermenterTelemetry() {
     telemetryRafId = null;
-    if (telemetryQueue.size === 0) return;
+    if (telemetryQueue.size === 0) {
+        return;
+    }
 
     const instances = fermenterStore.value ?? {};
     let changed = false;

@@ -9,9 +9,9 @@ import { type DocId } from '#/modules/CrdtDocument/models/CrdtDocumentTypes';
 // These deep paths match the pre-existing `semanticChangeContext` import style
 // in this file and stay within the `useCases/` area (not the private
 // `repositories/` path the previous revision of this file reached into).
+import { getSemanticContext } from '#/modules/CrdtDocument/stores/semanticChangeContext';
 import { getCrdtDoc } from '#/modules/CrdtDocument/useCases/getCrdtDoc';
 import { hasCrdtDoc } from '#/modules/CrdtDocument/useCases/hasCrdtDoc';
-import { getSemanticContext } from '#/modules/CrdtDocument/stores/semanticChangeContext';
 import { mutateCrdtDoc } from '#/modules/CrdtDocument/useCases/mutateCrdtDoc';
 
 import { type StorageAdapter } from './types';

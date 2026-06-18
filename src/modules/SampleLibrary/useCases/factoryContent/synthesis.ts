@@ -136,7 +136,7 @@ export function renderEnvelope(durationSec: number, env: EnvelopeSpec, sampleRat
             v = t;
         } else if (i < aSamp + dSamp) {
             const t = dSamp === 0 ? 1 : (i - aSamp) / dSamp;
-            v = curve === 'exp' ? Math.pow(1 - t, 2) * (1 - sLevel) + sLevel : 1 - t * (1 - sLevel);
+            v = curve === 'exp' ? (1 - t) ** 2 * (1 - sLevel) + sLevel : 1 - t * (1 - sLevel);
         } else if (i < aSamp + dSamp + sSamp) {
             v = sLevel;
         } else {
@@ -144,7 +144,7 @@ export function renderEnvelope(durationSec: number, env: EnvelopeSpec, sampleRat
             if (t >= 1) {
                 v = 0;
             } else {
-                v = curve === 'exp' ? sLevel * Math.pow(1 - t, 2) : sLevel * (1 - t);
+                v = curve === 'exp' ? sLevel * (1 - t) ** 2 : sLevel * (1 - t);
             }
         }
         out[i] = v;
@@ -260,7 +260,7 @@ function biquadCoeffs(
     const cosw = Math.cos(w0);
     const sinw = Math.sin(w0);
     const alpha = sinw / (2 * Math.max(0.0001, q));
-    const A = Math.pow(10, gainDb / 40);
+    const A = 10 ** (gainDb / 40);
 
     let b0 = 0;
     let b1 = 0;
@@ -364,7 +364,7 @@ export function biquadSweep(
     const len = buf.length;
     for (let i = 0; i < len; i++) {
         const t = len === 1 ? 1 : i / (len - 1);
-        const freq = spec.freqStart * Math.pow(spec.freqEnd / spec.freqStart, t);
+        const freq = spec.freqStart * (spec.freqEnd / spec.freqStart) ** t;
         const { b0, b1, b2, a1, a2 } = biquadCoeffs(spec.type, freq, q, 0, sampleRate);
         const x = buf[i]!;
         const y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
@@ -377,7 +377,7 @@ export function biquadSweep(
 }
 
 export function bitcrush(buf: MonoBuffer, bits: number, sampleRateReduction = 1): void {
-    const steps = Math.pow(2, bits - 1);
+    const steps = 2 ** (bits - 1);
     let held = 0;
     let counter = 0;
     for (let i = 0; i < buf.length; i++) {
@@ -433,5 +433,5 @@ export function renderFmOscillator(
 }
 
 export function midiToFreq(note: number): number {
-    return 440 * Math.pow(2, (note - 69) / 12);
+    return 440 * 2 ** ((note - 69) / 12);
 }

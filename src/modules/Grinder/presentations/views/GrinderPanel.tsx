@@ -25,19 +25,17 @@ import {
     type GrinderUiSection,
     getGrinderSupportedChainOrder,
 } from '../../models/GrinderPatch';
-import { ImportedNeuralLibraryCard } from '../components/ImportedNeuralLibraryCard';
+import {
+    DEFAULT_GRINDER_NEURAL_LIBRARY_STATE,
+    grinderNeuralLibraryStore,
+} from '../../stores/grinderNeuralLibraryStore';
 import {
     grinderStore,
     getGrinderState,
     replaceGrinderPatchLocally,
     type GrinderState,
 } from '../../stores/grinderStore';
-import {
-    DEFAULT_GRINDER_NEURAL_LIBRARY_STATE,
-    grinderNeuralLibraryStore,
-} from '../../stores/grinderNeuralLibraryStore';
 import { grinderTelemetryStore, getGrinderTelemetry, type GrinderTelemetry } from '../../stores/grinderTelemetryStore';
-import { importGrinderNeuralModels } from '../../useCases/importGrinderNeuralModels';
 import { exportGrinderNeuralModel } from '../../useCases/exportGrinderNeuralModel';
 import { loadGrinderPatchWithAudio } from '../../useCases/grinderParamBridge/loadGrinderPatchWithAudio';
 import { moveGrinderPedalInChainWithAudio } from '../../useCases/grinderParamBridge/moveGrinderPedalInChainWithAudio';
@@ -45,9 +43,11 @@ import { recallGrinderSnapshotWithAudio } from '../../useCases/grinderParamBridg
 import { setGrinderMicParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderMicParamWithAudio';
 import { setGrinderParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderParamWithAudio';
 import { setGrinderPedalParamWithAudio } from '../../useCases/grinderParamBridge/setGrinderPedalParamWithAudio';
+import { GRINDER_PRESETS } from '../../useCases/grinderPresets';
+import { importGrinderNeuralModels } from '../../useCases/importGrinderNeuralModels';
 import { removeGrinderNeuralModel } from '../../useCases/removeGrinderNeuralModel';
 import { restoreGrinderNeuralLibrary } from '../../useCases/restoreGrinderNeuralLibrary';
-import { GRINDER_PRESETS } from '../../useCases/grinderPresets';
+import { ImportedNeuralLibraryCard } from '../components/ImportedNeuralLibraryCard';
 
 const SECTION_TABS: ReadonlyArray<{ id: GrinderUiSection; label: string; icon: typeof Sparkles }> = [
     { id: 'browse', label: 'Browse', icon: Search },
@@ -1603,7 +1603,7 @@ function ControlDeck({
                                             neuralModelFamily: model.family,
                                             neuralModelSource: 'builtin',
                                             neuralModelProfile: null,
-                                            neuralPlacement: model.placement as GrinderPatch['neuralPlacement'],
+                                            neuralPlacement: model.placement,
                                             neuralTier: 'standard',
                                         })
                                     }

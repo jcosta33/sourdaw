@@ -1,4 +1,3 @@
-import { type FactorySample } from './types';
 import {
     applyEnvelope,
     biquad,
@@ -15,6 +14,7 @@ import {
     toAudioBufferMono,
     midiToFreq,
 } from './synthesis';
+import { type FactorySample } from './types';
 
 const C1 = 24;
 const C1_FREQ = midiToFreq(C1);

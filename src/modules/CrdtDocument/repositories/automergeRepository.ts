@@ -252,7 +252,9 @@ class AutomergeRepository {
                 dirtied.add(docId);
             } else {
                 // Bulk change
-                for (const id of this.docs.keys()) dirtied.add(id);
+                for (const id of this.docs.keys()) {
+                    dirtied.add(id);
+                }
             }
         });
 

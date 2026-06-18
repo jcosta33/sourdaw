@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { switchMonitor } from '../../../useCases/controlRoom/switchMonitor';

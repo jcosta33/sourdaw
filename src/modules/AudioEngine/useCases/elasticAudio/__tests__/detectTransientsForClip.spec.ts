@@ -130,7 +130,9 @@ describe('detectTransientsForClip', () => {
 
         const result = detectTransientsForClip('c1', 0.5);
         expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        if (!result.ok) {
+            return;
+        }
         expect(result.added).toBeGreaterThanOrEqual(3);
         for (const call of mocks.addWarpMarkerCalls) {
             const opts = call.options as { origin?: string };
@@ -156,7 +158,9 @@ describe('detectTransientsForClip', () => {
 
         const result = detectTransientsForClip('c1', 0.5);
         expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        if (!result.ok) {
+            return;
+        }
         expect(result.kept).toBe(1);
 
         const after = mocks.warpStates.get('c1')!;

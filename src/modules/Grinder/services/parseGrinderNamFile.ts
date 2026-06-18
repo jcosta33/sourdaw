@@ -31,8 +31,8 @@ function clamp(value: number, min: number, max: number): number {
 function slugify(value: string): string {
     return value
         .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
+        .replaceAll(/[^a-z0-9]+/g, '-')
+        .replaceAll(/^-+|-+$/g, '')
         .slice(0, 48);
 }
 

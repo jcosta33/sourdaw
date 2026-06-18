@@ -33,7 +33,15 @@ function getMacroMapping({ patch, index }: { patch: FermenterPatch; index: numbe
     return patch.macroMappings?.[index] ?? DEFAULT_MACRO_MAPPINGS[index] ?? { targets: [] };
 }
 
-function applyMacroTarget({ patch, value, target }: { patch: FermenterPatch; value: number; target: FermenterMacroTarget }): void {
+function applyMacroTarget({
+    patch,
+    value,
+    target,
+}: {
+    patch: FermenterPatch;
+    value: number;
+    target: FermenterMacroTarget;
+}): void {
     if (typeof patch[target.target] !== 'number') {
         return;
     }

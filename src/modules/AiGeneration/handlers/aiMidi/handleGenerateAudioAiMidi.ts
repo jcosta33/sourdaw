@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { addClip, addTrack } from '#/modules/Arrangement/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { generateAudio as genAudio, isAudioGenerationAvailable } from '#/modules/AudioAnalysis/useCases';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 

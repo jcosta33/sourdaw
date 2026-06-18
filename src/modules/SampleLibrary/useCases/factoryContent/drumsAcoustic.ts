@@ -1,4 +1,3 @@
-import { type FactorySample } from './types';
 import {
     applyEnvelope,
     biquad,
@@ -14,6 +13,7 @@ import {
     toAudioBufferMono,
     SAMPLE_RATE,
 } from './synthesis';
+import { type FactorySample } from './types';
 
 // Acoustic kick = two layered transients (beater click + shell resonance) plus
 // a tuned low-mid thump. Pitch envelope depth is shallower than 909.

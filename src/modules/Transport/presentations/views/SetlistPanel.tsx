@@ -13,8 +13,8 @@ import {
     GripVertical,
 } from 'lucide-react';
 
-import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
+import { DawEmptyState } from '#/components/daw/DawEmptyState';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';

@@ -3,8 +3,8 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { type LibraryRoot, type SampleRecord } from '../../models/LibraryTypes';
 import { persistLibraryRoots } from '../../repositories/libraryPersistence/persistLibraryRoots';
 import { persistSamples } from '../../repositories/libraryPersistence/persistSamples';
-import { buildFolderTree } from '../buildFolderTree';
 import { addLibraryRoot, addSamples, libraryStore } from '../../stores/libraryStore';
+import { buildFolderTree } from '../buildFolderTree';
 
 import { generateFactorySamples } from './generateFactorySamples';
 import { FACTORY_LIBRARY_ROOT_ID, FACTORY_SEED_FLAG_KEY, type FactorySample } from './types';
@@ -13,7 +13,7 @@ function getCategoryFolder(sample: FactorySample): string {
     const primary = sample.tags[0] ?? sample.category;
     const parts = sample.id.split('-');
     if (parts.length >= 3) {
-        return `${sample.category}/${parts[1]}-${parts[2]}`.replace(/[^a-zA-Z0-9/-]/g, '');
+        return `${sample.category}/${parts[1]}-${parts[2]}`.replaceAll(/[^a-zA-Z0-9/-]/g, '');
     }
     return `${sample.category}/${primary}`;
 }

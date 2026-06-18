@@ -17,15 +17,7 @@ const DISCRETE_PATCH_KEYS = new Set<keyof FermenterPatch>([
     'warpMode',
 ]);
 
-function discreteValue({
-    leftValue,
-    rightValue,
-    t,
-}: {
-    leftValue: number;
-    rightValue: number;
-    t: number;
-}): number {
+function discreteValue({ leftValue, rightValue, t }: { leftValue: number; rightValue: number; t: number }): number {
     return t < 0.5 ? leftValue : rightValue;
 }
 

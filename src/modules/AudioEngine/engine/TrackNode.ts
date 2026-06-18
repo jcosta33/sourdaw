@@ -394,7 +394,9 @@ export class TrackNode {
                         this.scheduleRebuildChain();
                     },
                     destroy: () => {
-                        if (factoryNode.dispose) factoryNode.dispose();
+                        if (factoryNode.dispose) {
+                            factoryNode.dispose();
+                        }
                     },
                 };
             } else {

@@ -1,9 +1,9 @@
 import { trackStore } from '#/modules/Arrangement/stores';
-import { getAutomationRecordingDependencies } from './recordingDependencies';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { type AutomationPoint } from '../../models/Automation';
 
+import { getAutomationRecordingDependencies } from './recordingDependencies';
 import {
     RECORDING_MODES,
     activeRecording,

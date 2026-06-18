@@ -1,4 +1,3 @@
-import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import {
     adjustmentLayerStore,
     markerStore,
@@ -6,6 +5,7 @@ import {
     type AdjustmentEffectType,
     type AdjustmentLayer,
 } from '#/modules/Arrangement/stores';
+import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { type AutomationCurveType, type AutomationLane } from '#/modules/Automation/models/Automation';
 import { automationStore } from '#/modules/Automation/stores';
 

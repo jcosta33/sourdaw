@@ -7,7 +7,7 @@ export type AudioEngineState = {
     baseLatency: number;
 };
 
-export interface DeviceController {
+export type DeviceController = {
     ready?: boolean;
     setParam(name: string, value: number, sampleFrame?: number): void;
     scheduleParam?(name: string, value: number, time: number): void;
@@ -30,7 +30,7 @@ export interface DeviceController {
     updateState?(clips: Record<string, any>): void;
     keyOn?(channel: number, pitch: number, velocity: number, time?: number): void;
     keyOff?(channel: number, pitch: number, velocity: number, time?: number): void;
-}
+};
 
 export type BuiltinDeviceNode = {
     deviceId: string;

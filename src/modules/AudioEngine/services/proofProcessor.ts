@@ -66,7 +66,7 @@ class ProofProcessor extends AudioWorkletProcessor {
         if (!inst) {
             return;
         }
-        
+
         const oldLatency = inst.get_latency_samples();
 
         switch (msg.type) {

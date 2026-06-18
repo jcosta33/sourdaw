@@ -170,9 +170,9 @@ export const TemplatePreviewThumb = ({ templateId }: TemplatePreviewThumbProps):
 
     const voicesOrdered = VOICE_ROW_ORDER.filter((v) => presentVoices.has(v));
     const voiceRowMap = new Map<VoiceKey, number>();
-    voicesOrdered.forEach((voice, idx) => {
+    for (const [idx, voice] of voicesOrdered.entries()) {
         voiceRowMap.set(voice, idx);
-    });
+    }
 
     const totalBeats = preview.bars * 4;
     const beatsWithGridlines = totalBeats;
@@ -196,7 +196,7 @@ export const TemplatePreviewThumb = ({ templateId }: TemplatePreviewThumbProps):
     }
 
     const blocks: ReactElement[] = [];
-    preview.events.forEach((event, idx) => {
+    for (const [idx, event] of preview.events.entries()) {
         const rowIndex = voiceRowMap.get(event.voice) ?? rowCount - 1;
         const y = paddingY + rowIndex * rowHeight + blockPadY;
         const height = Math.max(1, rowHeight - blockPadY * 2);
@@ -218,7 +218,7 @@ export const TemplatePreviewThumb = ({ templateId }: TemplatePreviewThumbProps):
                 ry={0.8}
             />
         );
-    });
+    }
 
     return (
         <svg

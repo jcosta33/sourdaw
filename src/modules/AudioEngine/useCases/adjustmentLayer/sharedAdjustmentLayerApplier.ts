@@ -2,7 +2,6 @@ import { trackStore } from '#/modules/Arrangement/stores';
 
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { adjustmentApplicationStore } from '../../stores/adjustmentApplicationStore';
-
 import { type AppliedLayerRecord } from '../../stores/adjustmentApplicationStore';
 
 import {

@@ -40,7 +40,9 @@ export function trigger16Level(gridIndex: number): void {
     const normalized = (gridIndex + 1) / 16; // 0.0625 to 1.0
 
     const deviceId = getFirstToasterDeviceId();
-    if (!deviceId) return;
+    if (!deviceId) {
+        return;
+    }
     const { padIndex: targetPad, target } = session;
 
     switch (target) {

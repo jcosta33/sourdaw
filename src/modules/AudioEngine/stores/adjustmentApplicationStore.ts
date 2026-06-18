@@ -1,5 +1,4 @@
 import { createStore } from '#/infra/store/createStore';
-
 import { type AdjustmentEffectType } from '#/modules/Arrangement/stores';
 
 /**

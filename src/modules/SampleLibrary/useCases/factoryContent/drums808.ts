@@ -1,4 +1,3 @@
-import { type FactorySample } from './types';
 import {
     applyEnvelope,
     biquad,
@@ -13,6 +12,7 @@ import {
     toAudioBufferMono,
     SAMPLE_RATE,
 } from './synthesis';
+import { type FactorySample } from './types';
 
 // 808 kicks rely on a long sine sub tail (~0.8 s) and very light saturation.
 // The pitch envelope is shallower than a 909 — only a ~20 Hz drop.

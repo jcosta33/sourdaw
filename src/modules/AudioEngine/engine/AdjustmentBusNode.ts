@@ -134,7 +134,7 @@ export class AdjustmentBusNode {
     } {
         if (this.effectType === 'pan') {
             const pan = this.context.createStereoPanner();
-            pan.pan.value = (parameters['Pan'] ?? 0) / 100;
+            pan.pan.value = (parameters.Pan ?? 0) / 100;
             this.inputNode.connect(pan);
             pan.connect(this.wetGain);
             this.wetGain.connect(this.outputNode);
@@ -227,7 +227,7 @@ export class AdjustmentBusNode {
             return;
         }
         if (this.effectType === 'pan' && this.panNode) {
-            this.panNode.pan.setTargetAtTime((parameters['Pan'] ?? 0) / 100, this.context.currentTime, 0.01);
+            this.panNode.pan.setTargetAtTime((parameters.Pan ?? 0) / 100, this.context.currentTime, 0.01);
             return;
         }
         if (!this.deviceNode) {

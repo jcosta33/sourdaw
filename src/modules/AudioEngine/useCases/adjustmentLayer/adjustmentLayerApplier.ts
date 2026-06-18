@@ -187,5 +187,5 @@ export function createAdjustmentLayerApplier(deps: AdjustmentApplierDeps): Creat
 }
 
 function dbToLinear(db: number): number {
-    return Math.pow(10, db / 20);
+    return 10 ** (db / 20);
 }

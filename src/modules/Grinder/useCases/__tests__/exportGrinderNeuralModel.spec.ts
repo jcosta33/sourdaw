@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { exportGrinderNeuralModel } from '../exportGrinderNeuralModel';
 import { downloadGrinderNeuralModelFile } from '../../repositories/neuralLibraryPersistence/downloadGrinderNeuralModelFile';
+import { exportGrinderNeuralModel } from '../exportGrinderNeuralModel';
 
 vi.mock('../../repositories/neuralLibraryPersistence/downloadGrinderNeuralModelFile', () => ({
     downloadGrinderNeuralModelFile: vi.fn(),

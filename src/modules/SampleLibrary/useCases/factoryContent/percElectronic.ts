@@ -1,4 +1,3 @@
-import { type FactorySample } from './types';
 import {
     applyEnvelope,
     biquad,
@@ -17,6 +16,7 @@ import {
     toAudioBufferMono,
     SAMPLE_RATE,
 } from './synthesis';
+import { type FactorySample } from './types';
 
 function renderZap(): Float32Array {
     const dur = 0.15;
@@ -119,7 +119,7 @@ function renderMetallicRing(): Float32Array {
 function renderSweepDown(): Float32Array {
     const dur = 0.4;
     const out = createMono(dur);
-    const body = renderTriangle(dur, (t) => 3000 * Math.pow(0.1, t / dur));
+    const body = renderTriangle(dur, (t) => 3000 * 0.1 ** (t / dur));
     const env = renderEnvelope(dur, { attack: 0.005, release: 0.38, curve: 'exp' });
     applyEnvelope(body, env);
     mixMono(out, body, 0.9);

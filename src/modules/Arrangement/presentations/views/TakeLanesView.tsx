@@ -14,9 +14,9 @@ import { addTake } from '../../useCases/comping/addTake';
 import { addTakeLane } from '../../useCases/comping/addTakeLane';
 import { flattenComp } from '../../useCases/comping/flattenComp';
 import { getTakeLaneForTrack } from '../../useCases/comping/getTakeLaneForTrack';
+import { removeCompRegion } from '../../useCases/comping/removeCompRegion';
 import { selectTake } from '../../useCases/comping/selectTake';
 import { setCompRegion } from '../../useCases/comping/setCompRegion';
-import { removeCompRegion } from '../../useCases/comping/removeCompRegion';
 
 const DEFAULT_LANE_STATE: TakeLaneStoreState = { lanes: [] };
 const DEFAULT_TRACK_STATE: TrackStoreState = { tracks: [], selectedTrackId: null };

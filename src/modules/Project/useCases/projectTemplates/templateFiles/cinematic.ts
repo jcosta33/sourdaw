@@ -1,3 +1,5 @@
+import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
+
 import {
     addDeviceChain,
     addMarkers,
@@ -12,7 +14,6 @@ import {
     setChordProgression,
     setMasterChain,
 } from '../templateHelpers/builder';
-import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
 
 export async function createCinematicTemplate(): Promise<void> {
     const totalBeats = 96;

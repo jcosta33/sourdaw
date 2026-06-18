@@ -34,7 +34,9 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     function flushParam(compositeKey: string, value: number): void {
         const parts = compositeKey.split(':');
         const deviceId = parts[0];
-        if (!deviceId) return;
+        if (!deviceId) {
+            return;
+        }
         const rustKey = parts.slice(1).join(':');
         const device = activeDevices.get(deviceId);
         if (device) {

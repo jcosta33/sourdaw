@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import {
     initializeAudioEngine,
     getAudioContext,
@@ -10,7 +11,6 @@ import {
     resumeEngine,
     requestMicPermission,
 } from '#/modules/AudioEngine/useCases';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { hasCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { registerProModulationEffects } from '#/modules/Plugin/useCases';

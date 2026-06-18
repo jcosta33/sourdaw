@@ -21,11 +21,10 @@ import { registerProofDevice, unregisterProofDevice, syncFullPatch } from '#/mod
 import { updateTunerTelemetry } from '#/modules/Scoring/stores';
 import { unregisterToasterDevice } from '#/modules/Toaster/stores';
 
-import { reportLatency } from '../useCases/latencyCompensation/compensation/reportLatency';
-import { clearReportedLatency } from '../useCases/latencyCompensation/compensation/clearReportedLatency';
-
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
 import { createFaustDeviceNode } from '../useCases/deviceResolvers/createFaustDeviceNode';
+import { clearReportedLatency } from '../useCases/latencyCompensation/compensation/clearReportedLatency';
+import { reportLatency } from '../useCases/latencyCompensation/compensation/reportLatency';
 
 import { isBacteriaDevice, createBacteriaNode, type BacteriaNodeResult } from './BacteriaNode';
 import { isFermenterDevice, createFermenterNode, type FermenterNodeResult } from './FermenterNode';

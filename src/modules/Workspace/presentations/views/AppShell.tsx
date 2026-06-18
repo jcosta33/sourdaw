@@ -6,7 +6,6 @@ import { Button } from '#/components/ui/button';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 import { useStore } from '#/infra/store/useStore';
 import { aiStore } from '#/modules/AiGeneration/stores';
-import { ElasticEditorPanel } from '#/modules/AudioEngine/presentations/views';
 import {
     GenerativeAiPanel,
     ChatPanel,
@@ -15,6 +14,8 @@ import {
     AiActionHistoryPanel,
     MixAnalysisPanel,
 } from '#/modules/AiRuntime/presentations/views';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { ElasticEditorPanel } from '#/modules/AudioEngine/presentations/views';
 import { ModulationMatrix } from '#/modules/Automation/presentations/views';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
 import { CommandPalette, useGlobalKeyboardShortcuts, UndoHistoryPanel } from '#/modules/Command/presentations/views';
@@ -26,63 +27,52 @@ import { GrandBoulePanel } from '#/modules/GrandBoule/presentations/views';
 import { GrinderPanel } from '#/modules/Grinder/presentations/views';
 import { LevainPanel } from '#/modules/Levain/presentations/views';
 import { ProofChamberPanel } from '#/modules/Plugin/presentations/views';
-import { ToasterPanel } from '#/modules/Toaster/presentations/views';
-import { LoopStationPanel, SetlistPanel } from '#/modules/Transport/presentations/views';
-import { clamp } from '#/utils/Math/clamp';
-import { onPanelShowAutomation } from '../../useCases/panels/devicePanels/onPanelShowAutomation';
-import { updateWorkspaceState } from '../../useCases/workspaceState';
-import { LaunchScreen } from '../components/LaunchScreen';
-import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
-import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
-import { useWorkspaceState } from '../hooks/useWorkspaceState';
-import { useProjectState } from '../hooks/useProjectState';
-import { useAppInitialization } from '../hooks/useAppInitialization';
-import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
-
-import { trackStore } from '#/modules/Arrangement/stores';
-
-import { isOnboardingCompleted } from '../../useCases/onboarding/isOnboardingCompleted';
-import { startOnboardingTour } from '../../useCases/onboarding/startOnboardingTour';
-
-import { AutomationBottomPanel } from './AutomationBottomPanel';
-import { InspectorPanel } from './InspectorPanel';
-import { OnboardingTour } from './OnboardingTour';
-import { Sidebar } from './Sidebar';
-import { TransportBar } from './TransportBar';
-
-import { MixerPanel } from './MixerPanel';
-import { SessionView } from './SessionView';
-import { RoutingMatrix } from './RoutingMatrix';
-import { ClipView } from './ClipView';
-import { AnalysisPanel } from './AnalysisPanel';
-
-import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
-
+import { ExportDialog } from '#/modules/Project/presentations/views';
 import { ProofPanel } from '#/modules/Proof/presentations/views';
 import { ScoringPanel } from '#/modules/Scoring/presentations/views';
-import { YeastPanel } from '#/modules/Yeast/presentations/views';
+import { ToasterPanel } from '#/modules/Toaster/presentations/views';
+import { LoopStationPanel, SetlistPanel } from '#/modules/Transport/presentations/views';
 import { VirtualKeyboard } from '#/modules/VirtualKeyboard/presentations/views';
+import { YeastPanel } from '#/modules/Yeast/presentations/views';
+import { clamp } from '#/utils/Math/clamp';
 
-import { toggleVirtualKeyboard } from '../../useCases/togglePanel/panelToggles/toggleVirtualKeyboard';
-import { closeBranchManager } from '../../useCases/togglePanel/panelToggles/closeBranchManager';
-import { ConfirmDialog } from '../components/ConfirmDialog';
-import { NotificationToast } from '../components/NotificationToast';
-
-import { ExportDialog } from '#/modules/Project/presentations/views';
-
-import { PreferencesDialog } from './PreferencesDialog';
-
-import { openMixer } from '../../useCases/togglePanel/panelToggles/openMixer';
-
-import { StatusBar } from './StatusBar';
-
-import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
-import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
-import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
-import { preferencesStore } from '../../stores/preferencesStore';
-import { alphaNoticeStore } from '../../stores/alphaNoticeStore';
 import { defaultPreferences } from '../../models/Preferences';
+import { alphaNoticeStore } from '../../stores/alphaNoticeStore';
+import { preferencesStore } from '../../stores/preferencesStore';
+import { isOnboardingCompleted } from '../../useCases/onboarding/isOnboardingCompleted';
+import { startOnboardingTour } from '../../useCases/onboarding/startOnboardingTour';
+import { onPanelShowAutomation } from '../../useCases/panels/devicePanels/onPanelShowAutomation';
+import { closeBranchManager } from '../../useCases/togglePanel/panelToggles/closeBranchManager';
+import { openMixer } from '../../useCases/togglePanel/panelToggles/openMixer';
+import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
+import { toggleVirtualKeyboard } from '../../useCases/togglePanel/panelToggles/toggleVirtualKeyboard';
+import { updateWorkspaceState } from '../../useCases/workspaceState';
+import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
+import { LaunchScreen } from '../components/LaunchScreen';
 import { MobileGate } from '../components/MobileGate';
+import { NotificationToast } from '../components/NotificationToast';
+import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
+import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
+import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
+import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
+import { useAppInitialization } from '../hooks/useAppInitialization';
+import { useProjectState } from '../hooks/useProjectState';
+import { useWorkspaceState } from '../hooks/useWorkspaceState';
+
+import { AnalysisPanel } from './AnalysisPanel';
+import { AutomationBottomPanel } from './AutomationBottomPanel';
+import { ClipView } from './ClipView';
+import { InspectorPanel } from './InspectorPanel';
+import { MixerPanel } from './MixerPanel';
+import { OnboardingTour } from './OnboardingTour';
+import { PreferencesDialog } from './PreferencesDialog';
+import { RoutingMatrix } from './RoutingMatrix';
+import { SessionView } from './SessionView';
+import { Sidebar } from './Sidebar';
+import { StatusBar } from './StatusBar';
+import { TransportBar } from './TransportBar';
 
 const CollaborationPanelLazy = lazy(() =>
     import('#/modules/Collaboration/presentations/views').then((m) => ({

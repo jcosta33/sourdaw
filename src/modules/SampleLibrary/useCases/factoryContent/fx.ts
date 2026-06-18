@@ -1,4 +1,3 @@
-import { type FactorySample } from './types';
 import {
     applyEnvelope,
     biquad,
@@ -17,6 +16,7 @@ import {
     toAudioBufferStereo,
     SAMPLE_RATE,
 } from './synthesis';
+import { type FactorySample } from './types';
 
 function renderWhiteNoiseRiser(): [Float32Array, Float32Array] {
     const dur = 3.5;
@@ -44,7 +44,7 @@ function renderTonalRiser(): [Float32Array, Float32Array] {
     const fundamentals = [110, 165, 220, 330];
     for (let p = 0; p < fundamentals.length; p++) {
         const base = fundamentals[p]!;
-        const body = renderSine(dur, (t) => base * (1 + 2 * Math.pow(t / dur, 2)));
+        const body = renderSine(dur, (t) => base * (1 + 2 * (t / dur) ** 2));
         const env = renderEnvelope(dur, { attack: dur * 0.8, release: dur * 0.2, curve: 'exp' });
         applyEnvelope(body, env);
         mixMonoIntoStereo(out, body, 0.3, p % 2 === 0 ? -0.4 : 0.4);
@@ -56,7 +56,7 @@ function renderTonalRiser(): [Float32Array, Float32Array] {
 function renderPitchBendRiser(): [Float32Array, Float32Array] {
     const dur = 2.5;
     const out = createStereo(dur);
-    const sweep = renderSine(dur, (t) => 200 * Math.pow(20, t / dur));
+    const sweep = renderSine(dur, (t) => 200 * 20 ** (t / dur));
     const env = renderEnvelope(dur, { attack: dur * 0.7, release: dur * 0.3, curve: 'exp' });
     applyEnvelope(sweep, env);
 
@@ -97,7 +97,7 @@ function renderSweptNoiseRiser(): [Float32Array, Float32Array] {
     // Non-linear ramp — push most of the energy into the final third.
     for (let i = 0; i < left.length; i++) {
         const t = i / left.length;
-        const a = Math.pow(t, 2);
+        const a = t ** 2;
         left[i]! *= a;
         right[i]! *= a;
     }
@@ -112,7 +112,7 @@ function renderSubDrop(): [Float32Array, Float32Array] {
     const dur = 3;
     const out = createStereo(dur);
 
-    const sub = renderSine(dur, (t) => 90 * Math.pow(0.35, t));
+    const sub = renderSine(dur, (t) => 90 * 0.35 ** t);
     const subEnv = renderEnvelope(dur, { attack: 0.01, release: 2.9, curve: 'exp' });
     applyEnvelope(sub, subEnv);
     mixMonoIntoStereo(out, sub, 1, 0);

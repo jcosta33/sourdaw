@@ -67,7 +67,7 @@ describe('createAdjustmentLayerApplier', () => {
         const firstCall = gainPan.calls[0]!;
         expect(firstCall.op).toBe('setGain');
         expect(firstCall.trackId).toBe('t1');
-        expect(firstCall.value).toBeCloseTo(Math.pow(10, -6 / 20), 3);
+        expect(firstCall.value).toBeCloseTo(10 ** (-6 / 20), 3);
 
         // Move playhead outside region — should clear the gain override
         applier.applyLayers({ activeLayers: [layer], beat: 10 });

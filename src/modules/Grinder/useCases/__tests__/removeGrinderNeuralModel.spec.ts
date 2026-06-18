@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { persistGrinderNeuralLibrary } from '../../repositories/neuralLibraryPersistence/persistGrinderNeuralLibrary';
 import { grinderNeuralLibraryStore } from '../../stores/grinderNeuralLibraryStore';
 import { removeGrinderNeuralModel } from '../removeGrinderNeuralModel';
-import { persistGrinderNeuralLibrary } from '../../repositories/neuralLibraryPersistence/persistGrinderNeuralLibrary';
 
 vi.mock('../../repositories/neuralLibraryPersistence/persistGrinderNeuralLibrary', () => ({
     persistGrinderNeuralLibrary: vi.fn(async () => true),

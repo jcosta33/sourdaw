@@ -1,10 +1,11 @@
 import { type updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { type recordAutomationValue } from '#/modules/Automation/useCases';
-import type { transportStore } from '#/modules/Transport/stores';
 
 import { type getTrackById } from '../../repositories/track/getTrackById';
 import { type AutomationMode } from '../../stores/trackStore';
 import { type getAllTracks } from '../getAllTracks';
+
+import type { transportStore } from '#/modules/Transport/stores';
 
 export const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);
 

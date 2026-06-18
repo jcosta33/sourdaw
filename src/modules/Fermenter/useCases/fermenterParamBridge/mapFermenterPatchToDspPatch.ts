@@ -6,7 +6,9 @@ type MapFermenterPatchToDspPatchInput = {
 
 type MapFermenterPatchToDspPatchOutput = Record<string, number>;
 
-export function mapFermenterPatchToDspPatch(input: MapFermenterPatchToDspPatchInput): MapFermenterPatchToDspPatchOutput {
+export function mapFermenterPatchToDspPatch(
+    input: MapFermenterPatchToDspPatchInput
+): MapFermenterPatchToDspPatchOutput {
     const dsp_patch: Record<string, number> = {};
 
     for (const [key, value] of Object.entries(input.patch)) {

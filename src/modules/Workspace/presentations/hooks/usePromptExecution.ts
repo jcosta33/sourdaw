@@ -188,7 +188,6 @@ export const usePromptExecution = (): PromptExecutionState => {
             return;
         }
         if (!isFocused) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional state clear on mode/focus change; no cascade risk
             setFuzzyResults([]);
             return;
         }

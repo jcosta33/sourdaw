@@ -59,7 +59,14 @@ describe('applyFermenterMacroMapping', () => {
                 macroMappings: [
                     {
                         targets: [
-                            { target: 'filterCutoff', center: 1_000, depth: 500, min: 100, max: 2_000, curve: 'linear' },
+                            {
+                                target: 'filterCutoff',
+                                center: 1_000,
+                                depth: 500,
+                                min: 100,
+                                max: 2_000,
+                                curve: 'linear',
+                            },
                             { target: 'reverbMix', center: 0.5, depth: -0.5, min: 0, max: 1, curve: 'linear' },
                         ],
                     },

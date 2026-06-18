@@ -1,4 +1,3 @@
-import { type FactorySample } from './types';
 import {
     applyEnvelope,
     biquad,
@@ -13,6 +12,7 @@ import {
     toAudioBufferMono,
     SAMPLE_RATE,
 } from './synthesis';
+import { type FactorySample } from './types';
 
 function renderTabla(): Float32Array {
     const dur = 0.35;

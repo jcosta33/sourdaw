@@ -1,5 +1,5 @@
-import { trackStore } from '#/modules/Arrangement/stores';
 import { logger } from '#/infra/logger/appLogger';
+import { trackStore } from '#/modules/Arrangement/stores';
 
 import { midiStore } from '../../stores/midiStore';
 
@@ -11,7 +11,9 @@ export function migrateAbsoluteMidiNotes(): void {
     const state = trackStore.value;
     const midiState = midiStore.value;
 
-    if (!state || !midiState) return;
+    if (!state || !midiState) {
+        return;
+    }
 
     const tracks = state.tracks || [];
     const notesByClipId = { ...midiState.notesByClipId };
@@ -19,10 +21,14 @@ export function migrateAbsoluteMidiNotes(): void {
 
     for (const track of tracks) {
         for (const clip of track.clips) {
-            if (clip.type !== 'midi' || clip.startBeat === 0) continue;
+            if (clip.type !== 'midi' || clip.startBeat === 0) {
+                continue;
+            }
 
             const notes = notesByClipId[clip.id];
-            if (!notes || notes.length === 0) continue;
+            if (!notes || notes.length === 0) {
+                continue;
+            }
 
             const minStart = Math.min(...notes.map((n) => n.startBeat));
 

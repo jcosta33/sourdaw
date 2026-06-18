@@ -1,4 +1,3 @@
-import { type FactorySample } from './types';
 import {
     applyEnvelope,
     biquad,
@@ -13,6 +12,7 @@ import {
     toAudioBufferMono,
     SAMPLE_RATE,
 } from './synthesis';
+import { type FactorySample } from './types';
 
 // 909 kicks need a fast pitch sweep on the first ~60 ms — without that "clack"
 // they collapse into a pure sub sine tone, which doesn't cut through a mix.
