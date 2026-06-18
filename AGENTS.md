@@ -69,7 +69,7 @@ has been retired.
 
 ## 📋 Your task file (worktree sessions only)
 
-This section only applies if you were launched via the agents workflow (worktree-based parallel sessions). In a regular session, `.agents/tasks/` will be empty and you can ignore this entirely.
+This section only applies in a Swarm worktree session (an isolated worktree spun up for parallel work). In a regular session, `.agents/tasks/` will be empty and you can ignore this entirely.
 
 If `.agents/tasks/` contains a file, that is **your** task file for this session — its filename is the session slug. Read it before doing anything else. It contains your spec reference, objective, plan, and checklist.
 
@@ -193,7 +193,7 @@ Prohibited tools and techniques include, but are not limited to:
 ## 📝 Backend CLI & Coding Conventions
 
 - **Module Naming:** Modules MUST be Capitalized (e.g., `Workspace`, `Terminal`, `TaskManagement`).
-- **File Naming:** Filenames MUST use kebab-case (e.g., `git-utils.ts`, `task-types.json`).
+- **File Naming:** Filenames MUST use kebab-case (e.g., `download-levain-samples.ts`, `generate-view-tests.ts`).
 - **Variable/Function Naming:** Variables and functions MUST use snake_case (worm case) (e.g., `my_variable`, `run_command()`). Do NOT use camelCase.
 - **Control Flow:** All `if` statements must use block syntax `{}`. Guard clauses / early returns ONLY. No chained ternaries.
 - **TypeScript Forms:** Prefer `type` over `interface`. Prefer `as const` objects over `enum`. Use explicit type-only imports (`import { type MyType }`).
