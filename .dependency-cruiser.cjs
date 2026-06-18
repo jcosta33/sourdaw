@@ -61,6 +61,16 @@ const MODULE_PRESENTATION_PATH_NOT = [
 module.exports = {
     forbidden: [
         // --------------------------------------------------------------------
+        // FORWARD-LOOKING RULES (provisioned, not yet exercised)
+        // --------------------------------------------------------------------
+        // Several rules below reference structure that is not present in the
+        // current flat 34-module tree: the `Common/` / `Supporting/` module
+        // subgroups, the `application/` layer, the `presentations/stores/` and
+        // `presentations/context/` folders, and the `validators/` / `runtime/` /
+        // `worklets/` private folders. They enforce nothing today (no files
+        // match), but they guard the intended structure the moment it is added,
+        // so they are kept in place deliberately — do not delete them.
+        // --------------------------------------------------------------------
         // Circular dependencies
         // --------------------------------------------------------------------
         // Reports any cycle in the dependency graph, including cycles where one
@@ -84,19 +94,18 @@ module.exports = {
         // compliance).
         {
             name: 'no-circular',
-            // NOTE: severity is `warn` (not `error`) because enabling this rule surfaces
-            // ~630 pre-existing barrel-mediated cycles that pre-date this rule.
-            // The 38 file-level cycles have all been cleared (Patterns A–E).
-            // Landing as `error` requires a separate cleanup pass for the barrel cycles.
-            severity: 'warn',
+            // NOTE: the file-level cycles have all been cleared (`depcruise src`
+            // reports 0 cycles), so this now lands at `error` to lock in the
+            // cleared state. (The previous `warn` premise — ~630 pre-existing
+            // barrel-mediated cycles — is stale and no longer applies.)
+            severity: 'error',
             comment:
                 'Circular dependencies cause non-deterministic module-load order ' +
                 '(Vite HMR / Vitest hoisting) and can break inject() runtime resolution. ' +
                 '`await import(...)` is NOT a free break — the cycle still exists at runtime, ' +
                 'and using dynamic import purely to silence this rule is fake compliance. ' +
                 'Prefer extracting shared logic into a third file, flipping an ownership edge, ' +
-                'or emitting a signal instead of a call-back. ' +
-                'Currently `warn` pending the barrel-cycle cleanup.',
+                'or emitting a signal instead of a call-back.',
             from: {},
             to: {
                 circular: true,
@@ -123,9 +132,9 @@ module.exports = {
                 path: '^src/modules/',
                 pathNot: [
                     '^$1$2', // same module may import its own internals freely
-                    // TRANSITIONAL: accept both old root-barrel AND new contract-folder barrels.
-                    // Remove the root-barrel alternative once all modules are migrated.
-                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(index|(useCases|events|stores|presentations/views)/index)(?:\\.ts)?$',
+                    // Migration complete: only contract-folder barrels are accepted.
+                    // Module-root barrels are no longer allowed (0/34 modules have a root index.ts).
+                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
                     '^src/shared/',
                     '^src/helpers/',
                 ],
@@ -455,7 +464,7 @@ module.exports = {
             severity: 'error',
             comment:
                 'application/ may only depend on module contract-folder barrels, src/shared/, and src/helpers/. ' +
-                'During migration, root index.ts is also accepted.',
+                'Migration complete: module-root index.ts is no longer accepted.',
             from: {
                 path: '^application/',
             },
@@ -464,8 +473,9 @@ module.exports = {
                 pathNot: [
                     '^src/shared/',
                     '^src/helpers/',
-                    // TRANSITIONAL: accept both old root-barrel AND new contract-folder barrels.
-                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(index|(useCases|events|stores|presentations/views)/index)(?:\\.ts)?$',
+                    // Migration complete: only contract-folder barrels are accepted.
+                    // Module-root barrels are no longer allowed (0/34 modules have a root index.ts).
+                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
                 ],
             },
         },
@@ -501,15 +511,15 @@ module.exports = {
         // --------------------------------------------------------------------
         // General hygiene
         // --------------------------------------------------------------------
-        // {
-        //     name: 'models-must-be-title-case',
-        //     severity: 'error',
-        //     comment: 'Files inside models/ must start with an uppercase letter (TitleCase). Domain entities should be clearly named nouns. Constants should be co-located with their relevant domain entity file.',
-        //     from: {},
-        //     to: {
-        //         path: '^' + MODULE_ROOT.slice(1) + 'models/[a-z].*' + SOURCE_FILE_RE,
-        //     },
-        // },
+        {
+            name: 'models-must-be-title-case',
+            severity: 'warn',
+            comment: 'Files inside models/ must start with an uppercase letter (TitleCase). Domain entities should be clearly named nouns. Constants should be co-located with their relevant domain entity file.',
+            from: {},
+            to: {
+                path: '^' + MODULE_ROOT.slice(1) + 'models/[a-z].*' + SOURCE_FILE_RE,
+            },
+        },
         {
             name: 'not-to-spec',
             severity: 'error',
@@ -533,7 +543,7 @@ module.exports = {
         },
         {
             name: 'not-to-fixture-or-mock',
-            severity: 'warn',
+            severity: 'error',
             comment: 'Production code should not depend on fixtures or mocks.',
             from: {
                 path: '^(src|application)/',
@@ -545,7 +555,7 @@ module.exports = {
         },
         {
             name: 'not-to-dev-dep',
-            severity: 'warn',
+            severity: 'error',
             comment:
                 'Production code depends on an npm package listed in devDependencies. Move it to dependencies if it ships.',
             from: {
