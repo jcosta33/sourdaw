@@ -46,7 +46,7 @@ export default defineConfig({
         setupFiles: ['./src/setupTests.ts'],
         globals: true,
         /** Local agent worktrees mirror `src/` — exclude so `vitest run` only hits the main tree. */
-        exclude: [...configDefaults.exclude, 'dist/**', '.claude/**'],
+        exclude: [...configDefaults.exclude, 'dist/**', '.claude/**', 'tests/e2e/**', '**/*.e2e.spec.*'],
         coverage: {
             all: true,
             provider: 'v8',
