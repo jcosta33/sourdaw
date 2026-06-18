@@ -19,6 +19,10 @@ export const CommandPalette = (): ReactElement | null => {
 
     const results = searchCommands(query);
 
+    // Keep selection in range when results filter; a stale hover index here used
+    // to fall out of bounds and swallow Enter (palette stayed open).
+    const activeIndex = results.length > 0 ? Math.min(selectedIndex, results.length - 1) : -1;
+
     const [prevOpen, setPrevOpen] = useState(commandPaletteOpen);
     if (prevOpen !== commandPaletteOpen) {
         setPrevOpen(commandPaletteOpen);
@@ -46,9 +50,9 @@ export const CommandPalette = (): ReactElement | null => {
         } else if (event.key === 'ArrowUp') {
             event.preventDefault();
             setSelectedIndex((index) => Math.max(index - 1, 0));
-        } else if (event.key === 'Enter' && results[selectedIndex]) {
+        } else if (event.key === 'Enter' && results[activeIndex]) {
             event.preventDefault();
-            execute(results[selectedIndex]);
+            execute(results[activeIndex]);
         }
     };
 
@@ -85,15 +89,18 @@ export const CommandPalette = (): ReactElement | null => {
                             type="button"
                             key={cmd.id}
                             role="option"
-                            aria-selected={index === selectedIndex}
+                            aria-selected={index === activeIndex}
                             className={cn(
                                 'flex w-full items-center justify-between px-4 py-3 text-left text-sm transition-colors border-l-2',
-                                index === selectedIndex
+                                index === activeIndex
                                     ? 'bg-accent/80 border-primary shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]'
                                     : 'border-transparent text-muted-foreground hover:bg-surface-overlay/50'
                             )}
                             onClick={() => execute(cmd)}
-                            onMouseEnter={() => setSelectedIndex(index)}
+                            // Use pointermove (real cursor motion), not mouseenter:
+                            // mouseenter fires when filtering shifts an option under a
+                            // stationary cursor, clobbering keyboard nav with a stale index.
+                            onPointerMove={() => setSelectedIndex(index)}
                         >
                             <div>
                                 <span className="text-foreground">{cmd.label}</span>
