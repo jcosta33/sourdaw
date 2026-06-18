@@ -17,7 +17,7 @@
 //   TRANSITIONAL: cross-module-index-only currently accepts BOTH the old root-
 //   barrel form (<module>/index.ts) AND the new contract-folder form
 //   (<module>/<contract>/index.ts). The root-barrel form will be removed once
-//   every module is migrated. See .agents/specs/contract-folder-barrels.md.
+//   every module is migrated.
 //
 //   Contract-folder barrel rules (target state):
 //     - <contract>/index.ts may only re-export from files in its own folder.
@@ -80,15 +80,13 @@ module.exports = {
         // unavoidable. For every other cycle, prefer a real fix: extract shared
         // logic into a third file, flip an ownership edge, or emit a
         // signal/event instead of calling back. See
-        // `.agents/audits/circular-dependencies.md` and
         // `.agents/skills/architecture-violations/SKILL.md` §4.2 (fake
         // compliance).
         {
             name: 'no-circular',
             // NOTE: severity is `warn` (not `error`) because enabling this rule surfaces
             // ~630 pre-existing barrel-mediated cycles that pre-date this rule.
-            // The 38 file-level cycles documented in
-            // `.agents/audits/circular-dependencies.md` have all been cleared (Patterns A–E).
+            // The 38 file-level cycles have all been cleared (Patterns A–E).
             // Landing as `error` requires a separate cleanup pass for the barrel cycles.
             severity: 'warn',
             comment:
@@ -98,7 +96,7 @@ module.exports = {
                 'and using dynamic import purely to silence this rule is fake compliance. ' +
                 'Prefer extracting shared logic into a third file, flipping an ownership edge, ' +
                 'or emitting a signal instead of a call-back. ' +
-                'Currently `warn` pending the barrel-cycle cleanup tracked in the circular-dependencies audit.',
+                'Currently `warn` pending the barrel-cycle cleanup.',
             from: {},
             to: {
                 circular: true,
@@ -117,8 +115,7 @@ module.exports = {
                 '<module>/useCases/index.ts, <module>/stores/index.ts, ' +
                 '<module>/events/index.ts, or <module>/presentations/views/index.ts. ' +
                 '' +
-                'Direct imports into models/, repositories/, handlers/, or any non-barrel path are forbidden. ' +
-                'See .agents/specs/contract-folder-barrels.md for the target state.',
+                'Direct imports into models/, repositories/, handlers/, or any non-barrel path are forbidden.',
             from: {
                 path: MODULE_ROOT,
             },
