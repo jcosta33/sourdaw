@@ -184,13 +184,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     useEffect(() => {
         if (!project.initialized) {
-            return;
+            return undefined;
         }
         if (!alphaDismissed) {
-            return;
+            return undefined;
         }
         if (isOnboardingCompleted()) {
-            return;
+            return undefined;
         }
         const triggerIfReady = (): boolean => {
             const trackCount = trackStore.value?.tracks.length ?? 0;
@@ -201,7 +201,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             return true;
         };
         if (triggerIfReady()) {
-            return;
+            return undefined;
         }
         const unsubscribe = trackStore.subscribe(() => {
             if (isOnboardingCompleted()) {
@@ -352,7 +352,35 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             }, 700);
             return () => clearTimeout(t);
         }
+        return undefined;
     }, [project.initialized, project.loading, showLaunch, launchExiting]);
+
+    // Bottom-dock tab content. `mixer`/`routing` and any unknown value fall back
+    // to the RoutingMatrix exactly as the original ternary chain did.
+    const renderBottomTabContent = (): ReactNode => {
+        switch (bottomTab) {
+            case 'editor':
+                return <ClipView />;
+            case 'mixer':
+                return <MixerPanel style={{ height: '100%' }} />;
+            case 'automation':
+                return <AutomationBottomPanel />;
+            case 'session':
+                return <SessionView />;
+            case 'analysis':
+                return <AnalysisPanel />;
+            case 'setlist':
+                return <SetlistPanel />;
+            case 'loopStation':
+                return <LoopStationPanel />;
+            case 'modulation':
+                return <ModulationMatrix />;
+            case 'elastic':
+                return <ElasticEditorPanel />;
+            default:
+                return <RoutingMatrix />;
+        }
+    };
 
     return (
         <MobileGate>
@@ -689,29 +717,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                         </Button>
                                     </div>
                                     {/* Panel content */}
-                                    <div className="flex-1 overflow-hidden">
-                                        {bottomTab === 'editor' ? (
-                                            <ClipView />
-                                        ) : bottomTab === 'mixer' ? (
-                                            <MixerPanel style={{ height: '100%' }} />
-                                        ) : bottomTab === 'automation' ? (
-                                            <AutomationBottomPanel />
-                                        ) : bottomTab === 'session' ? (
-                                            <SessionView />
-                                        ) : bottomTab === 'analysis' ? (
-                                            <AnalysisPanel />
-                                        ) : bottomTab === 'setlist' ? (
-                                            <SetlistPanel />
-                                        ) : bottomTab === 'loopStation' ? (
-                                            <LoopStationPanel />
-                                        ) : bottomTab === 'modulation' ? (
-                                            <ModulationMatrix />
-                                        ) : bottomTab === 'elastic' ? (
-                                            <ElasticEditorPanel />
-                                        ) : (
-                                            <RoutingMatrix />
-                                        )}
-                                    </div>
+                                    <div className="flex-1 overflow-hidden">{renderBottomTabContent()}</div>
                                 </div>
                             </>
                         ) : null}

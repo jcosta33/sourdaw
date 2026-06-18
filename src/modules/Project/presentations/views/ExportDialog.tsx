@@ -59,7 +59,35 @@ type WebFileHandle = {
     }>;
 };
 
+type ShowSaveFilePicker = (opts: {
+    suggestedName?: string;
+    types?: { accept: Record<string, string[]> }[];
+}) => Promise<WebFileHandle>;
+
+/**
+ * The File System Access API (`window.showSaveFilePicker`) is not in the
+ * standard `Window` lib types. Narrow the value at the call boundary instead
+ * of asserting through `unknown`.
+ */
+const getShowSaveFilePicker = (): ShowSaveFilePicker | null => {
+    const candidate = (window as Window & { showSaveFilePicker?: unknown }).showSaveFilePicker;
+    return typeof candidate === 'function' ? (candidate as ShowSaveFilePicker) : null;
+};
+
 const validMp3BitRates: readonly number[] = [96, 128, 192, 320];
+
+const resolveExportMime = (isZip: boolean, primaryExt: string): string => {
+    if (isZip) {
+        return 'application/zip';
+    }
+    if (primaryExt === 'wav') {
+        return 'audio/wav';
+    }
+    if (primaryExt === 'flac') {
+        return 'audio/flac';
+    }
+    return 'audio/mpeg';
+};
 
 const loadExportSettings = (): {
     formats: ExportFormat[];
@@ -253,21 +281,14 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                     }
                 } else {
                     // Web Environment
-                    if ('showSaveFilePicker' in window) {
+                    const showSaveFilePicker = getShowSaveFilePicker();
+                    if (showSaveFilePicker) {
                         const isZip = mode === 'stems' || formats.size > 1; // Zipping required for >1 file
                         const primaryExt = Array.from(formats)[0] || 'wav';
                         const fileExt = isZip ? '.zip' : `.${primaryExt}`;
-                        const mime = isZip
-                            ? 'application/zip'
-                            : primaryExt === 'wav'
-                              ? 'audio/wav'
-                              : primaryExt === 'flac'
-                                ? 'audio/flac'
-                                : 'audio/mpeg';
+                        const mime = resolveExportMime(isZip, primaryExt);
 
-                        webFileHandle = await (
-                            window as unknown as { showSaveFilePicker: (opts: unknown) => Promise<WebFileHandle> }
-                        ).showSaveFilePicker({
+                        webFileHandle = await showSaveFilePicker({
                             suggestedName: `${baseName}${fileExt}`,
                             types: [{ accept: { [mime]: [fileExt] } }],
                         });
@@ -638,6 +659,51 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         );
     };
 
+    const renderFooter = (): ReactElement => {
+        if (exporting) {
+            return (
+                <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleCancel}
+                    className="border border-red-900/50 bg-red-950 text-red-400 hover:bg-red-900 hover:text-red-200"
+                >
+                    <X className="mr-1 size-3.5" />
+                    Turn off Oven
+                </Button>
+            );
+        }
+        if (progress === 100) {
+            return (
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onClose}
+                    className="border-green-900/50 text-green-400 hover:bg-green-950/30 hover:text-green-300"
+                >
+                    <CheckCircle2 className="mr-1 size-3.5" />
+                    Close Bakery
+                </Button>
+            );
+        }
+        return (
+            <>
+                <Button variant="ghost" size="sm" onClick={onClose} className="text-stone-400 hover:text-stone-200">
+                    Cancel
+                </Button>
+                <Button
+                    size="sm"
+                    onClick={handleExport}
+                    disabled={(mode !== 'render-to-clip' && formats.size === 0) || isExportActive()}
+                    className="border-t border-orange-400/30 bg-orange-600 font-medium text-white shadow-[0_0_15px_rgba(234,88,12,0.3)] transition-all hover:bg-orange-500 hover:shadow-[0_0_20px_rgba(249,115,22,0.5)]"
+                >
+                    <Flame className="mr-1.5 size-3.5 opacity-80" />
+                    {mode === 'render-to-clip' ? 'Render to Clip' : 'Start Baking'}
+                </Button>
+            </>
+        );
+    };
+
     return (
         <Dialog
             open={open}
@@ -956,47 +1022,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 </DawDialogBody>
 
                 <DawDialogFooter tone="warm" align="end" className="px-6">
-                    {exporting ? (
-                        <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={handleCancel}
-                            className="border border-red-900/50 bg-red-950 text-red-400 hover:bg-red-900 hover:text-red-200"
-                        >
-                            <X className="mr-1 size-3.5" />
-                            Turn off Oven
-                        </Button>
-                    ) : progress === 100 ? (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={onClose}
-                            className="border-green-900/50 text-green-400 hover:bg-green-950/30 hover:text-green-300"
-                        >
-                            <CheckCircle2 className="mr-1 size-3.5" />
-                            Close Bakery
-                        </Button>
-                    ) : (
-                        <>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={onClose}
-                                className="text-stone-400 hover:text-stone-200"
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                size="sm"
-                                onClick={handleExport}
-                                disabled={(mode !== 'render-to-clip' && formats.size === 0) || isExportActive()}
-                                className="border-t border-orange-400/30 bg-orange-600 font-medium text-white shadow-[0_0_15px_rgba(234,88,12,0.3)] transition-all hover:bg-orange-500 hover:shadow-[0_0_20px_rgba(249,115,22,0.5)]"
-                            >
-                                <Flame className="mr-1.5 size-3.5 opacity-80" />
-                                {mode === 'render-to-clip' ? 'Render to Clip' : 'Start Baking'}
-                            </Button>
-                        </>
-                    )}
+                    {renderFooter()}
                 </DawDialogFooter>
             </DialogContent>
         </Dialog>

@@ -407,9 +407,7 @@ function cloneNeuralProfile(profile: GrinderNeuralProfile | null | undefined): G
     };
 }
 
-export function isSupportedGrinderChainPedalType(
-    pedal_type: GrinderPedalType | string
-): pedal_type is GrinderSupportedChainPedalType {
+export function isSupportedGrinderChainPedalType(pedal_type: string): pedal_type is GrinderSupportedChainPedalType {
     return (SUPPORTED_GRINDER_CHAIN_PEDAL_TYPES as readonly string[]).includes(pedal_type);
 }
 

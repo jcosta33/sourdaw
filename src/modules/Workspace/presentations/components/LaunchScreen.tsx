@@ -191,6 +191,23 @@ const LogoBlock = (): ReactElement => (
     </div>
 );
 
+// Icon for a category pill. Mirrors the original ternary chain: any category
+// other than all/demo/music/podcast (i.e. film) falls back to the Film icon.
+const CategoryPillIcon = ({ category }: { category: LaunchTemplateCategory | 'all' }): ReactElement => {
+    switch (category) {
+        case 'all':
+            return <Layers className="size-3" aria-hidden="true" />;
+        case 'demo':
+            return <Sparkles className="size-3" aria-hidden="true" />;
+        case 'music':
+            return <Music className="size-3" aria-hidden="true" />;
+        case 'podcast':
+            return <Mic className="size-3" aria-hidden="true" />;
+        default:
+            return <Film className="size-3" aria-hidden="true" />;
+    }
+};
+
 // ─────────────────────────────────────────────────────────────
 // Main export
 // ─────────────────────────────────────────────────────────────
@@ -219,7 +236,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     useEffect(() => {
         if (view !== 'loading') {
             clearInterval(intervalRef.current);
-            return;
+            return undefined;
         }
         intervalRef.current = setInterval(() => {
             setQuipIndex((i) => (i + 1) % LOADING_QUIPS.length);
@@ -239,7 +256,10 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     };
 
     const handleImportDawProject = (): void => {
-        (async () => {
+        // Fire-and-forget: invoked from a click handler with no caller to
+        // propagate to; the body resolves to void and has no rejection path
+        // worth surfacing beyond the engine's own logging.
+        void (async () => {
             const ok = await pickAndImportDawProject();
             if (!ok) {
                 return;
@@ -262,8 +282,11 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     const handleRecentProjectSelect = (entry: RecentProject): void => {
         setLoadingName(entry.name);
         setView('loading');
-        (async () => {
-            await new Promise<void>((r) => setTimeout(r, 80));
+        // Fire-and-forget: a click handler returns void; the failure path is
+        // handled inline (notifyUser + reset to home) so there is nothing to
+        // await or propagate.
+        void (async () => {
+            await new Promise<void>((resolve) => setTimeout(resolve, 80));
             const ok = await loadRecentProject(entry.key);
             if (!ok) {
                 notifyUser(`Failed to open "${entry.name}"`, 'error');
@@ -276,8 +299,10 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     const handleTemplateSelect = (template: LaunchTemplate): void => {
         setLoadingName(template.name);
         setView('loading');
-        (async () => {
-            await new Promise<void>((r) => setTimeout(r, 80));
+        // Fire-and-forget: a click handler returns void; createFromTemplate
+        // surfaces its own failures, so there is nothing to await here.
+        void (async () => {
+            await new Promise<void>((resolve) => setTimeout(resolve, 80));
             await createFromTemplate(template.id);
         })();
     };
@@ -288,8 +313,10 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         setIsDragOver(false);
         setLoadingName('Importing files…');
         setView('loading');
-        (async () => {
-            await new Promise<void>((r) => setTimeout(r, 100));
+        // Fire-and-forget: a drop handler returns void; per-file decode
+        // failures are caught and reported inline within the loop below.
+        void (async () => {
+            await new Promise<void>((resolve) => setTimeout(resolve, 100));
             newProject();
             for (const file of Array.from(e.dataTransfer.files)) {
                 const ext = file.name.toLowerCase().split('.').pop() ?? '';
@@ -502,17 +529,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                                                 : 'bg-white/[0.03] text-white/35 border-white/[0.06] hover:bg-white/[0.06] hover:text-white/60'
                                         }`}
                                     >
-                                        {cat === 'all' ? (
-                                            <Layers className="size-3" aria-hidden="true" />
-                                        ) : cat === 'demo' ? (
-                                            <Sparkles className="size-3" aria-hidden="true" />
-                                        ) : cat === 'music' ? (
-                                            <Music className="size-3" aria-hidden="true" />
-                                        ) : cat === 'podcast' ? (
-                                            <Mic className="size-3" aria-hidden="true" />
-                                        ) : (
-                                            <Film className="size-3" aria-hidden="true" />
-                                        )}
+                                        <CategoryPillIcon category={cat} />
                                         {CATEGORY_LABELS[cat]}
                                     </button>
                                 );

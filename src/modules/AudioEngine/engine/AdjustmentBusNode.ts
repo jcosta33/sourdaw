@@ -183,7 +183,10 @@ export class AdjustmentBusNode {
         }
         try {
             source.disconnect(this.inputNode);
-        } catch {}
+        } catch {
+            // Intentionally empty: WebAudio throws if the edge was already
+            // removed; the bookkeeping below still needs to run.
+        }
         this.sources.delete(source);
     }
 
@@ -197,7 +200,10 @@ export class AdjustmentBusNode {
         if (this.destination) {
             try {
                 this.outputNode.disconnect(this.destination);
-            } catch {}
+            } catch {
+                // Intentionally empty: detaching a stale destination edge throws
+                // if it was already removed; we re-point to `dest` regardless.
+            }
         }
         this.outputNode.connect(dest);
         this.destination = dest;
@@ -207,7 +213,10 @@ export class AdjustmentBusNode {
         if (this.destination) {
             try {
                 this.outputNode.disconnect(this.destination);
-            } catch {}
+            } catch {
+                // Intentionally empty: WebAudio throws if the destination edge
+                // was already removed; clearing the reference below is enough.
+            }
             this.destination = null;
         }
     }
@@ -249,43 +258,65 @@ export class AdjustmentBusNode {
             return;
         }
         this.disposed = true;
+        // Every disconnect() below is a teardown guard: WebAudio throws when an
+        // edge was already removed (e.g. the node was detached elsewhere). The
+        // empty catches are intentional — there is nothing to recover, and the
+        // remaining teardown steps must still run.
         for (const src of this.sources) {
             try {
                 src.disconnect(this.inputNode);
-            } catch {}
+            } catch {
+                // Intentionally empty: source edge may already be detached.
+            }
         }
         this.sources.clear();
         if (this.destination) {
             try {
                 this.outputNode.disconnect(this.destination);
-            } catch {}
+            } catch {
+                // Intentionally empty: destination edge may already be detached.
+            }
             this.destination = null;
         }
         try {
             this.inputNode.disconnect();
-        } catch {}
+        } catch {
+            // Intentionally empty: input node may already be detached.
+        }
         try {
             this.dryGain.disconnect();
-        } catch {}
+        } catch {
+            // Intentionally empty: dry-gain node may already be detached.
+        }
         try {
             this.wetGain.disconnect();
-        } catch {}
+        } catch {
+            // Intentionally empty: wet-gain node may already be detached.
+        }
         if (this.panNode) {
             try {
                 this.panNode.disconnect();
-            } catch {}
+            } catch {
+                // Intentionally empty: pan node may already be detached.
+            }
         }
         if (this.deviceNode) {
             try {
                 this.deviceNode.inputNode.disconnect();
-            } catch {}
+            } catch {
+                // Intentionally empty: device input may already be detached.
+            }
             try {
                 this.deviceNode.outputNode.disconnect();
-            } catch {}
+            } catch {
+                // Intentionally empty: device output may already be detached.
+            }
             for (const node of this.deviceNode.nodes) {
                 try {
                     node.disconnect();
-                } catch {}
+                } catch {
+                    // Intentionally empty: internal device node may already be detached.
+                }
             }
             this.deviceNode.dispose?.();
         }

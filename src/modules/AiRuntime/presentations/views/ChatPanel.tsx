@@ -18,6 +18,7 @@ import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { cn } from '#/utils/Styles/cn';
 
+import { type ChatMessage } from '../../models/Chat';
 import { chatStore, clearChatMessages, toggleReasoning, setChatMode, stopGenerating } from '../../stores/chatStore';
 import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
 import { isLlmAvailable } from '../../useCases/llmOrchestration/backendResolution/isLlmAvailable';
@@ -71,7 +72,7 @@ const ReasoningBlock = ({ reasoning, isStreaming }: { reasoning: string; isStrea
     );
 };
 
-const ChatMessageItem = memo(({ msg }: { msg: any }): ReactElement => {
+const ChatMessageItem = memo(({ msg }: { msg: ChatMessage }): ReactElement => {
     let msgIcon = <User className="size-3" />;
     if (msg.isDsoAction) {
         msgIcon = <Zap className="size-3 text-emerald-400" />;

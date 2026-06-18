@@ -153,7 +153,7 @@ export const OnboardingTour = (): ReactElement | null => {
 
     useEffect(() => {
         if (!state.active) {
-            return;
+            return undefined;
         }
 
         const measure = (): void => {
@@ -174,7 +174,7 @@ export const OnboardingTour = (): ReactElement | null => {
 
     useEffect(() => {
         if (!state.active) {
-            return;
+            return undefined;
         }
         const onKeyDown = (event: KeyboardEvent): void => {
             if (event.key === 'Escape') {

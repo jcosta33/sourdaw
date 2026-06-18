@@ -72,7 +72,7 @@ export const aiCommands: CommandEntry[] = [
         description: 'Create a bassline that follows the selected MIDI clip harmonically',
         category: 'AI',
         action: requireMidiClip((clipId) => {
-            executeAppAction({ type: 'generateBassline', payload: { clipId, style: 'root-fifth' } });
+            void executeAppAction({ type: 'generateBassline', payload: { clipId, style: 'root-fifth' } });
         }),
     },
     {
@@ -81,7 +81,7 @@ export const aiCommands: CommandEntry[] = [
         description: 'Extend the selected MIDI clip forward with AI-generated notes',
         category: 'AI',
         action: requireMidiClip((clipId) => {
-            executeAppAction({ type: 'completeMidi', payload: { clipId, bars: 4 } });
+            void executeAppAction({ type: 'completeMidi', payload: { clipId, bars: 4 } });
         }),
     },
     {
@@ -90,7 +90,7 @@ export const aiCommands: CommandEntry[] = [
         description: 'Create a variation of the selected MIDI clip on the same track',
         category: 'AI',
         action: requireMidiClip((clipId) => {
-            executeAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.3 } });
+            void executeAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.3 } });
         }),
     },
     {
@@ -99,7 +99,7 @@ export const aiCommands: CommandEntry[] = [
         description: 'Gentle variation (10% divergence) of the selected MIDI clip',
         category: 'AI',
         action: requireMidiClip((clipId) => {
-            executeAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.1 } });
+            void executeAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.1 } });
         }),
     },
     {
@@ -108,7 +108,7 @@ export const aiCommands: CommandEntry[] = [
         description: 'Major variation (60% divergence) of the selected MIDI clip',
         category: 'AI',
         action: requireMidiClip((clipId) => {
-            executeAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.6 } });
+            void executeAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.6 } });
         }),
     },
     {

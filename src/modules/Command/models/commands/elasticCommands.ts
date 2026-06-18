@@ -11,7 +11,7 @@ export const elasticCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'detectTransients', payload: { clipId } });
+                void executeAppAction({ type: 'detectTransients', payload: { clipId } });
             }
         },
     },
@@ -23,7 +23,7 @@ export const elasticCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'openElasticEditor', payload: { clipId } });
+                void executeAppAction({ type: 'openElasticEditor', payload: { clipId } });
             }
         },
     },
@@ -35,7 +35,7 @@ export const elasticCommands: CommandEntry[] = [
         action: () => {
             const clipId = getSelectedClipId();
             if (clipId) {
-                executeAppAction({ type: 'quantizeTransients', payload: { clipId } });
+                void executeAppAction({ type: 'quantizeTransients', payload: { clipId } });
             }
         },
     },

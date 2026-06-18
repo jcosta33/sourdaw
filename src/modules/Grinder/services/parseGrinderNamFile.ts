@@ -52,8 +52,12 @@ function get_finite_number(value: unknown): number | null {
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+function is_unknown_array(value: unknown): value is unknown[] {
+    return Array.isArray(value);
+}
+
 function collect_weights(value: unknown): number[] {
-    if (!Array.isArray(value)) {
+    if (!is_unknown_array(value)) {
         return [];
     }
 
@@ -61,7 +65,7 @@ function collect_weights(value: unknown): number[] {
     const queue: unknown[] = [...value];
     while (queue.length > 0) {
         const current = queue.shift();
-        if (Array.isArray(current)) {
+        if (is_unknown_array(current)) {
             queue.unshift(...current);
             continue;
         }

@@ -223,7 +223,7 @@ export const TimelineSurface = (): ReactElement => {
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
-            return;
+            return undefined;
         }
 
         let lastScale = 1;
@@ -260,7 +260,7 @@ export const TimelineSurface = (): ReactElement => {
         const canvas = canvasRef.current;
         const container = containerRef.current;
         if (!canvas || !container) {
-            return;
+            return undefined;
         }
 
         let disposed = false;
@@ -334,7 +334,11 @@ export const TimelineSurface = (): ReactElement => {
             animationScheduler.register(`timeline-${renderId}`, renderLoop);
         };
 
-        initRenderer();
+        // Async renderer setup inside an effect. A rejection (e.g. WebGPU init
+        // failing) leaves the canvas blank, so it is surfaced rather than dropped.
+        initRenderer().catch((error: unknown) => {
+            console.error('Failed to initialize timeline renderer', error);
+        });
 
         const resizeObserver = new ResizeObserver((entries) => {
             for (const entry of entries) {

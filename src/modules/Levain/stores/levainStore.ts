@@ -57,7 +57,11 @@ export function getLevainState(deviceId: string): LevainState {
 // Engine sync is handled exclusively in useCases/levainParamBridge.ts.
 // ---------------------------------------------------------------------------
 
-export function setLevainParam<K extends keyof LevainPatch>(deviceId: string, key: K, value: LevainPatch[K]): void {
+export function setLevainParam<TKey extends keyof LevainPatch>(
+    deviceId: string,
+    key: TKey,
+    value: LevainPatch[TKey]
+): void {
     const instances = levainStore.value ?? {};
     const state = instances[deviceId] ?? defaultLevainState;
     levainStore.set({

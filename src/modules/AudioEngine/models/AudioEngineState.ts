@@ -27,7 +27,7 @@ export type DeviceController = {
     noteOnMidi2?(midiNote: number, velocity16bit: number, pitchOffsetQ24: number): void;
     setTemperament?(index: number): void;
     loadAttackClip?(key: number, samples: Float32Array): void;
-    updateState?(clips: Record<string, any>): void;
+    updateState?(clips: Record<string, unknown>): void;
     keyOn?(channel: number, pitch: number, velocity: number, time?: number): void;
     keyOff?(channel: number, pitch: number, velocity: number, time?: number): void;
 };

@@ -3,8 +3,8 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { pushUndoEntry } from '#/modules/Command/stores';
 
 export type RenderToClipInput = {
-    /** Target track id, or 'new' to create a fresh audio track. */
-    targetTrackId: string | 'new';
+    /** Target track id, or the literal 'new' to create a fresh audio track. */
+    targetTrackId: string;
     startBeat: number;
     endBeat: number;
     buffer: AudioBuffer;

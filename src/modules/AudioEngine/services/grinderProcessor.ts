@@ -163,7 +163,7 @@ function applyNeuralPatch(instance: GrinderInstance, patch: Record<string, unkno
     }
 
     const profile = neural_patch.profile;
-    const conv_weights = Array.isArray(profile.convWeights) ? profile.convWeights : [];
+    const conv_weights: unknown[] = Array.isArray(profile.convWeights) ? profile.convWeights : [];
 
     const preferred_tier =
         typeof profile.preferredTier === 'string' ? (NEURAL_TIER_INDEX[profile.preferredTier] ?? 0) : 0;

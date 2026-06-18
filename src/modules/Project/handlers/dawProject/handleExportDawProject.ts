@@ -5,6 +5,23 @@ import { isTauri } from '#/utils/tauriBridge';
 
 import { exportDawProject } from '../../useCases/dawProject/exportDawProject';
 
+type ShowSaveFilePicker = (opts: { suggestedName: string; types?: unknown[] }) => Promise<{
+    createWritable: () => Promise<{
+        write: (data: Uint8Array) => Promise<void>;
+        close: () => Promise<void>;
+    }>;
+}>;
+
+/**
+ * The File System Access API (`window.showSaveFilePicker`) is not in the
+ * standard `Window` lib types. Narrow the value at the call boundary instead
+ * of asserting through `unknown`.
+ */
+function getShowSaveFilePicker(): ShowSaveFilePicker | null {
+    const candidate = (window as Window & { showSaveFilePicker?: unknown }).showSaveFilePicker;
+    return typeof candidate === 'function' ? (candidate as ShowSaveFilePicker) : null;
+}
+
 async function saveBytes(bytes: Uint8Array, suggestedName: string): Promise<void> {
     if (isTauri()) {
         const { save } = await import('@tauri-apps/plugin-dialog');
@@ -20,16 +37,7 @@ async function saveBytes(bytes: Uint8Array, suggestedName: string): Promise<void
         return;
     }
 
-    const saveFilePicker = (
-        window as unknown as {
-            showSaveFilePicker?: (opts: { suggestedName: string; types?: unknown[] }) => Promise<{
-                createWritable: () => Promise<{
-                    write: (data: Uint8Array) => Promise<void>;
-                    close: () => Promise<void>;
-                }>;
-            }>;
-        }
-    ).showSaveFilePicker;
+    const saveFilePicker = getShowSaveFilePicker();
 
     if (saveFilePicker) {
         try {

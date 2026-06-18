@@ -1,7 +1,4 @@
-import { renderHook } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-import { usePianoRollRenderer } from '../usePianoRollRenderer';
+import { describe, it, expect } from 'vitest';
 
 describe('usePianoRollRenderer (Coordinate Conventions)', () => {
     it('uses clip-relative coordinates to position notes', () => {

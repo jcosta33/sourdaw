@@ -87,7 +87,7 @@ export function setFermenterTelemetry(deviceId: string, peakL: number, peakR: nu
         if (typeof requestAnimationFrame !== 'undefined') {
             telemetryRafId = requestAnimationFrame(flushFermenterTelemetry);
         } else {
-            telemetryRafId = setTimeout(flushFermenterTelemetry, 16) as unknown as number;
+            telemetryRafId = window.setTimeout(flushFermenterTelemetry, 16);
         }
     }
 }

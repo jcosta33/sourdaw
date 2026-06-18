@@ -108,10 +108,10 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         // We can't cancelAll easily per-device without changing the batcher,
         // but it's okay to let pending updates naturally drop since the device is removed from map.
     }
-    function setLevainParamWithAudio<K extends keyof LevainPatch>(
+    function setLevainParamWithAudio<TKey extends keyof LevainPatch>(
         deviceId: string,
-        key: K,
-        value: LevainPatch[K]
+        key: TKey,
+        value: LevainPatch[TKey]
     ): void {
         setLevainParam(deviceId, key, value);
 

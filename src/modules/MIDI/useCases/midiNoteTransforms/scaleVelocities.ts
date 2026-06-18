@@ -42,6 +42,9 @@ function applyMidiVelocityCurve(normalized: number, curve: string): number {
             }
             return 0.7 + (normalized - 0.5) * 1.4;
         }
+        default: {
+            return normalized;
+        }
     }
 }
 

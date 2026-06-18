@@ -77,20 +77,20 @@ function dispatchAiChord(key: string): boolean {
     const normalized = key.toLowerCase();
     switch (normalized) {
         case 'd':
-            executeAppAction({ type: 'generateDrumPattern', payload: { style: 'rock' } });
+            void executeAppAction({ type: 'generateDrumPattern', payload: { style: 'rock' } });
             return true;
         case 'm':
-            executeAppAction({ type: 'generateMelody', payload: { style: 'simple' } });
+            void executeAppAction({ type: 'generateMelody', payload: { style: 'simple' } });
             return true;
         case 'c':
-            executeAppAction({ type: 'generateChordProgression', payload: { style: 'pop' } });
+            void executeAppAction({ type: 'generateChordProgression', payload: { style: 'pop' } });
             return true;
         case 'b': {
             const selectedId = workspaceStore.value?.selectedClipId;
             if (!selectedId) {
                 return true;
             }
-            executeAppAction({ type: 'generateBassline', payload: { clipId: selectedId, style: 'root-fifth' } });
+            void executeAppAction({ type: 'generateBassline', payload: { clipId: selectedId, style: 'root-fifth' } });
             return true;
         }
         default:

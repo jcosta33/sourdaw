@@ -15,7 +15,7 @@ export type TrackNodeDeps = {
     getBusGainNode: (id: string) => GainNode | undefined;
     getTrackGainNode: (id: string) => GainNode | undefined;
     getSendsForTrack: (tId: string) => SendNode[];
-    pendingDevicePromises: Set<Promise<any>>;
+    pendingDevicePromises: Set<Promise<unknown>>;
     transportSAB?: SharedArrayBuffer;
     /** Adjustment-layer insert: when non-null for this track, `analyserNode`
      *  routes to this node instead of the track's default destination. */
@@ -135,10 +135,10 @@ export class TrackNode {
     public registerTuningTable(frequencies: number[]): void {
         for (const dn of this.strip.deviceNodes) {
             if (dn.kneadControls) {
-                dn.kneadControls.setParam('tuning-table', frequencies as any);
+                dn.kneadControls.setParam('tuning-table', frequencies);
             }
             if (dn.fermenterControls) {
-                dn.fermenterControls.setParam('tuning-table', frequencies as any);
+                dn.fermenterControls.setParam('tuning-table', frequencies);
             }
         }
     }
@@ -374,7 +374,10 @@ export class TrackNode {
                 })
                 .catch((error) => logger.warn(`[WebAudioEngine] Native plugin bridge failed: ${error}`));
             pendingDevicePromises.add(loadPromise);
-            loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
+            // Fire-and-forget cleanup: `loadPromise` already has its own .catch()
+            // (above); this .finally() only removes the entry from the tracking
+            // Set once settled and never rejects meaningfully.
+            void loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
         } else {
             const factory = DEVICE_FACTORIES[deviceType];
             if (factory) {
@@ -388,7 +391,7 @@ export class TrackNode {
                     dispose: factoryNode.dispose,
                 };
                 dn.controller = {
-                    setParam: (name: string, value: number) => applyParams(dn as any, dn.type, { [name]: value }),
+                    setParam: (name: string, value: number) => applyParams(factoryNode, dn.type, { [name]: value }),
                     setBypass: (bypassed: boolean) => {
                         dn!.bypassed = bypassed;
                         this.scheduleRebuildChain();
@@ -419,7 +422,10 @@ export class TrackNode {
                 });
                 dn = placeholder;
                 pendingDevicePromises.add(loadPromise);
-                loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
+                // Fire-and-forget cleanup: the descriptor's `loadPromise` already
+                // has its own .catch() (see wasmDeviceRegistry); this .finally()
+                // only removes the entry from the tracking Set once settled.
+                void loadPromise.finally(() => pendingDevicePromises.delete(loadPromise));
             }
         }
 
@@ -442,7 +448,10 @@ export class TrackNode {
         for (const n of dn.nodes) {
             try {
                 n.disconnect();
-            } catch {}
+            } catch {
+                // Intentionally empty: a node already detached from the graph
+                // throws on disconnect(); nothing to clean up in that case.
+            }
         }
         this.strip.deviceNodes = this.strip.deviceNodes.filter((d) => d.deviceId !== deviceId);
         this.rebuildChain();
@@ -518,7 +527,10 @@ export class TrackNode {
             for (const n of dn.nodes) {
                 try {
                     n.disconnect();
-                } catch {}
+                } catch {
+                    // Intentionally empty: a node already detached from the graph
+                    // throws on disconnect() during teardown; safe to ignore.
+                }
             }
         }
     }

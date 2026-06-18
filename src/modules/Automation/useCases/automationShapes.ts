@@ -76,6 +76,8 @@ function generateAutomationShapePoints({
             }
             return points;
         }
+        default:
+            return [];
     }
 }
 

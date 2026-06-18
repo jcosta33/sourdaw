@@ -57,6 +57,16 @@ const SLOT_STATE_LABEL: Record<LoopSlotState, string> = {
     stopped: 'Stop',
 };
 
+function getSlotBackgroundClass(state: LoopSlotState): string {
+    if (state === 'recording' || state === 'overdubbing') {
+        return 'bg-[var(--color-state-record)]/15';
+    }
+    if (state === 'playing') {
+        return 'bg-[var(--color-accent-mint)]/10';
+    }
+    return 'bg-surface-inset';
+}
+
 type TrackRef = { id: string; name: string; color: string | null };
 
 function toTrackRef(track: { id: string; name: string; color?: string | null }): TrackRef {
@@ -125,11 +135,7 @@ const LoopStationSlotCell = ({
         <div
             className={cn(
                 'flex h-14 flex-col gap-1 border-b border-r border-border-hairline px-1.5 py-1 transition-colors',
-                slot.state === 'recording' || slot.state === 'overdubbing'
-                    ? 'bg-[var(--color-state-record)]/15'
-                    : slot.state === 'playing'
-                      ? 'bg-[var(--color-accent-mint)]/10'
-                      : 'bg-surface-inset'
+                getSlotBackgroundClass(slot.state)
             )}
         >
             <div className="flex items-center gap-1">
@@ -224,7 +230,7 @@ export const LoopStationPanel = (): ReactElement => {
         );
         if (!isActive) {
             setTickPosition(transport.playheadPosition);
-            return;
+            return undefined;
         }
         let raf = 0;
         const tick = (): void => {

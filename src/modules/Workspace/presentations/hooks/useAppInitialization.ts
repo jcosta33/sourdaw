@@ -80,7 +80,9 @@ export const useAppInitialization = (): void => {
     }, []);
 
     useEffect(() => {
-        (async () => {
+        // Fire-and-forget best-effort library restore at mount; the seed step
+        // already reports its own failures and there is no caller to await.
+        void (async () => {
             await restoreLibrary();
             try {
                 await seedFactoryLibrary(getAudioContext());
@@ -108,14 +110,16 @@ export const useAppInitialization = (): void => {
     }, []);
 
     useEffect(() => {
-        let alreadyShown = false;
+        let alreadyShown: boolean;
         try {
             alreadyShown = localStorage.getItem(FIRST_LOAD_HINT_KEY) === '1';
         } catch {
+            // localStorage unavailable (private mode / blocked): treat as already
+            // shown so we don't pester the user when we can't persist the flag.
             alreadyShown = true;
         }
         if (alreadyShown) {
-            return;
+            return undefined;
         }
 
         const modKey = isTauri() ? 'Ctrl' : '⌘';
@@ -123,7 +127,10 @@ export const useAppInitialization = (): void => {
             notifyUser(`Press ? for shortcuts · ${modKey}K to search commands`, 'info');
             try {
                 localStorage.setItem(FIRST_LOAD_HINT_KEY, '1');
-            } catch {}
+            } catch {
+                // Best-effort persistence: if the write fails (quota / private
+                // mode) the hint may reappear next load, which is acceptable.
+            }
         }, FIRST_LOAD_HINT_DELAY_MS);
 
         return () => clearTimeout(timeout);

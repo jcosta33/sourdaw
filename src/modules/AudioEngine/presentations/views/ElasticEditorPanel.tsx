@@ -108,7 +108,7 @@ export const ElasticEditorPanel = (): ReactElement => {
 
     useEffect(() => {
         if (clipId === null) {
-            return;
+            return undefined;
         }
         const onKeyDown = (event: KeyboardEvent): void => {
             const target = event.target as HTMLElement | null;
@@ -180,7 +180,9 @@ export const ElasticEditorPanel = (): ReactElement => {
     };
 
     const handleSensitivity = (value: number): void => {
-        setElasticSensitivity(value);
+        // Fire-and-forget settings dispatch from a slider handler; the new
+        // sensitivity is observed reactively via the store, no rejection to await.
+        void setElasticSensitivity(value);
     };
 
     const handleStretchMode = (mode: StretchMode): void => {

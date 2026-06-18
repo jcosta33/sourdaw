@@ -171,7 +171,10 @@ const toasterDescriptor: WasmDeviceDescriptor = {
                             result.destroy();
                             try {
                                 unregisterToasterDevice(deviceId);
-                            } catch {}
+                            } catch {
+                                // Intentionally empty: the device may already be
+                                // unregistered from the Toaster store; teardown proceeds.
+                            }
                         },
                     },
                     toasterControls: {
@@ -236,7 +239,10 @@ const levainDescriptor: WasmDeviceDescriptor = {
                             result.destroy();
                             try {
                                 _unregisterLevainDevice(deviceId);
-                            } catch {}
+                            } catch {
+                                // Intentionally empty: the device may already be
+                                // unregistered from the Levain store; teardown proceeds.
+                            }
                         },
                     },
                     levainControls: {
@@ -542,7 +548,10 @@ const proofDescriptor: WasmDeviceDescriptor = {
                             clearReportedLatency(deviceId);
                             try {
                                 unregisterProofDevice(deviceId);
-                            } catch {}
+                            } catch {
+                                // Intentionally empty: the device may already be
+                                // unregistered from the Proof store; teardown proceeds.
+                            }
                         },
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
@@ -775,7 +784,10 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                         destroy: () => {
                             try {
                                 result.workletNode.disconnect();
-                            } catch {}
+                            } catch {
+                                // Intentionally empty: the worklet node may already
+                                // be detached; the port is closed regardless below.
+                            }
                             result.workletNode.port.close();
                         },
                     },

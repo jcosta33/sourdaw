@@ -233,8 +233,8 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             <DawMenuButton
                 role="menuitem"
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
-                onClick={act(() =>
-                    runAiActionWithToast(
+                onClick={act(() => {
+                    void runAiActionWithToast(
                         () => executeAppAction({ type: 'variationMidi', payload: { clipId, amount: 0.6 } }),
                         {
                             startMsg: 'Regenerating with wilder divergence…',
@@ -242,16 +242,16 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                             successDetails: ['Variation applied with 60% divergence'],
                             failMsg: 'MIDI regeneration failed',
                         }
-                    )
-                )}
+                    );
+                })}
             >
                 Regenerate (different style)
             </DawMenuButton>
             <DawMenuButton
                 role="menuitem"
                 leadingContent={<span className="text-[var(--color-accent-cyan)]">✦</span>}
-                onClick={act(() =>
-                    runAiActionWithToast(
+                onClick={act(() => {
+                    void runAiActionWithToast(
                         () => executeAppAction({ type: 'generateBassline', payload: { clipId, style: 'root-fifth' } }),
                         {
                             startMsg: 'Generating bassline that follows this clip…',
@@ -259,8 +259,8 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                             successDetails: ['New MIDI track with a bassline following this clip'],
                             failMsg: 'Bassline generation failed',
                         }
-                    )
-                )}
+                    );
+                })}
             >
                 Generate Bassline from Clip
             </DawMenuButton>

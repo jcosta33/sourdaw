@@ -104,7 +104,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
 
     useEffect(() => {
         if (contextMenu.kind === 'none') {
-            return;
+            return undefined;
         }
         const handleClick = (e: globalThis.MouseEvent) => {
             if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -117,7 +117,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
 
     useEffect(() => {
         if (!addMenuOpen) {
-            return;
+            return undefined;
         }
         const handleClick = (e: globalThis.MouseEvent) => {
             if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
@@ -172,7 +172,9 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             const finalPreview = previewRef.current;
             dragStateRef.current = null;
             if (finalPreview) {
-                executeAppAction({
+                // Fire-and-forget command dispatch from a mouseup handler; the
+                // store update is observed reactively, no rejection to await here.
+                void executeAppAction({
                     type: 'moveAdjustmentRegion',
                     payload: {
                         regionId: finalPreview.regionId,
@@ -233,7 +235,9 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             const finalPreview = fadePreviewRef.current;
             dragStateRef.current = null;
             if (finalPreview) {
-                executeAppAction({
+                // Fire-and-forget command dispatch from a mouseup handler; the
+                // store update is observed reactively, no rejection to await here.
+                void executeAppAction({
                     type: 'setLayerFades',
                     payload: {
                         regionId: finalPreview.regionId,
@@ -261,9 +265,12 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
 
     const openAddMenu = () => setAddMenuOpen((prev) => !prev);
 
+    // These wrappers dispatch commands from UI handlers (click / slider / lane
+    // click). The resulting state is observed reactively via the store, so each
+    // dispatch is fire-and-forget — no rejection to await at the call site.
     const createLayer = (effectType: AdjustmentEffectType) => {
         const label = `${effectType.charAt(0).toUpperCase()}${effectType.slice(1)} Layer`;
-        executeAppAction({
+        void executeAppAction({
             type: 'createAdjustmentLayer',
             payload: { name: label, effectType },
         });
@@ -271,32 +278,32 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
     };
 
     const toggleLayer = (layerId: string) => {
-        executeAppAction({ type: 'toggleAdjustmentLayer', payload: { layerId } });
+        void executeAppAction({ type: 'toggleAdjustmentLayer', payload: { layerId } });
     };
 
     const removeLayer = (layerId: string) => {
-        executeAppAction({ type: 'removeAdjustmentLayer', payload: { layerId } });
+        void executeAppAction({ type: 'removeAdjustmentLayer', payload: { layerId } });
     };
 
     const removeRegion = (layerId: string, regionId: string) => {
-        executeAppAction({ type: 'removeAdjustmentRegion', payload: { layerId, regionId } });
+        void executeAppAction({ type: 'removeAdjustmentRegion', payload: { layerId, regionId } });
     };
 
     const setLayerMix = (layerId: string, mix: number) => {
-        executeAppAction({ type: 'setLayerMix', payload: { layerId, mix } });
+        void executeAppAction({ type: 'setLayerMix', payload: { layerId, mix } });
     };
 
     const setLayerParameter = (layerId: string, paramName: string, value: number) => {
-        executeAppAction({ type: 'setLayerParameter', payload: { layerId, paramName, value } });
+        void executeAppAction({ type: 'setLayerParameter', payload: { layerId, paramName, value } });
     };
 
     const setAffectedTracks = (layerId: string, trackIds: string[]) => {
-        executeAppAction({ type: 'setLayerAffectedTracks', payload: { layerId, trackIds } });
+        void executeAppAction({ type: 'setLayerAffectedTracks', payload: { layerId, trackIds } });
     };
 
     const addRegionAtBeat = (layerId: string, beat: number) => {
         const start = Math.max(0, Math.floor(beat));
-        executeAppAction({
+        void executeAppAction({
             type: 'addAdjustmentRegion',
             payload: { layerId, startBeat: start, endBeat: start + 4, blend: 1 },
         });

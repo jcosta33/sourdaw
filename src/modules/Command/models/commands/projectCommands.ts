@@ -60,8 +60,8 @@ export const projectCommands: CommandEntry[] = [
         label: 'Import Project',
         description: 'Import a .sourdaw project file',
         category: 'Project',
-        action: async () => {
-            await pickAndImportProjectFile();
+        action: () => {
+            void pickAndImportProjectFile();
         },
     },
     {

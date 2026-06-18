@@ -58,17 +58,8 @@ export function getAudioParamKeyForPedal(isPost: boolean, pedalType: string, par
 
 function getAudioOrderKeyForPedal(isPost: boolean, pedal_type: GrinderSupportedChainPedalType): string {
     const prefix = isPost ? 'post' : 'pre';
-
-    switch (pedal_type) {
-        case 'compressor':
-            return `${prefix}CompressorOrder`;
-        case 'overdrive':
-            return `${prefix}OverdriveOrder`;
-        case 'distortion':
-            return `${prefix}DistortionOrder`;
-        case 'fuzz':
-            return `${prefix}FuzzOrder`;
-    }
+    const pedalName = pedal_type.charAt(0).toUpperCase() + pedal_type.slice(1);
+    return `${prefix}${pedalName}Order`;
 }
 
 export function getPedalOrderAudioEntries(

@@ -37,6 +37,16 @@ function isTargetMatch(firstTarget: LearningTarget, secondTarget: LearningTarget
     );
 }
 
+function getMidiLearnLabel(isLearningThis: boolean, existingMapping: ReturnType<typeof findMappingForTarget>): string {
+    if (isLearningThis) {
+        return 'Listening for MIDI CC...';
+    }
+    if (existingMapping) {
+        return `MIDI CC ${existingMapping.cc} (ch ${existingMapping.channel + 1})`;
+    }
+    return 'MIDI Learn';
+}
+
 export const MidiLearnButton = ({ targetType, trackId, deviceId, paramId }: MidiLearnButtonProps): ReactElement => {
     const state = useStore(midiLearnStore, defaultMidiLearnState);
 
@@ -57,11 +67,7 @@ export const MidiLearnButton = ({ targetType, trackId, deviceId, paramId }: Midi
         }
     };
 
-    const label = isLearningThis
-        ? 'Listening for MIDI CC...'
-        : existingMapping
-          ? `MIDI CC ${existingMapping.cc} (ch ${existingMapping.channel + 1})`
-          : 'MIDI Learn';
+    const label = getMidiLearnLabel(isLearningThis, existingMapping);
 
     return (
         <Tooltip>
