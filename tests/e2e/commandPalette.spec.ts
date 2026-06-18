@@ -10,7 +10,7 @@ test.describe('Command Palette', () => {
         const launchScreen = page.getByLabel('Sourdaw — start a project');
         await launchScreen.waitFor({ state: 'visible' });
         await page.locator('#launch-new-project').click();
-        
+
         // Wait for the workspace to initialize
         await expect(page.getByText('Baking')).toBeVisible({ timeout: 5000 });
         await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
@@ -46,7 +46,9 @@ test.describe('Command Palette', () => {
         await expect(newTrackRow).toBeVisible();
     });
 
-    test('Enter selects and runs the top match after the cursor hovered a now-filtered-out option', async ({ page }) => {
+    test('Enter selects and runs the top match after the cursor hovered a now-filtered-out option', async ({
+        page,
+    }) => {
         // Regression guard for the hover/keyboard-nav desync: hovering an option in
         // the full (unfiltered) list bumped selectedIndex high; filtering the list
         // down then left that index out of range, so the Enter handler's
