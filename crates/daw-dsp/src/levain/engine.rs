@@ -308,8 +308,7 @@ impl LevainEngine {
     /// active voice without firing per-note realism release transients —
     /// sending a `note_off` for all 128 MIDI notes to clear state would
     /// otherwise retrigger the bow-lift noise burst 128 times and sum into
-    /// an audible "ksshh" on every stop (see
-    /// `.agents/bugs/levain-stop-hihat-and-constant-white-noise.md`).
+    /// an audible "ksshh" on every stop.
     /// Keyswitch articulation selection is intentionally preserved.
     pub fn all_notes_off(&mut self) {
         self.voice_pool.release_all();

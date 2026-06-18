@@ -1,8 +1,7 @@
 //! Orchestral realism layer.
 //!
 //! Augments the sample-based Levain engine with the physical-modeling
-//! artifacts described in `.agents/specs/factory/orchestra.md` Appendix
-//! "Achieving Orchestral Realism": parametric body resonance bank,
+//! artifacts of orchestral realism: parametric body resonance bank,
 //! open-string sympathetic resonators, bow-noise + release noise burst,
 //! breath/reed air noise, and frequency-dependent damping.
 //!

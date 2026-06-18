@@ -1,8 +1,8 @@
 //! Physical parameter tables for the Grand Boule piano.
 //!
-//! Values are interpolated from Steinway D reference data per the plugin spec
-//! (`.agents/specs/piano-plugin.md §6`). All curves are key-indexed where
-//! `key = 1` is A0 (MIDI 21) and `key = 88` is C8 (MIDI 108).
+//! Values are interpolated from Steinway D reference data per the plugin spec.
+//! All curves are key-indexed where `key = 1` is A0 (MIDI 21) and `key = 88` is
+//! C8 (MIDI 108).
 //!
 //! Every helper here is a pure function, allocation-free and panic-free over
 //! the valid key range.
