@@ -345,6 +345,19 @@ module.exports = {
         },
 
         {
+            name: 'presentation-no-direct-handlers',
+            severity: 'error',
+            comment:
+                'Presentation code cannot access handlers/ directly. Go through a use case or a presentation hook calling a use case.',
+            from: {
+                path: '^' + MODULE_ROOT.slice(1) + 'presentations/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path: '^$1$2/handlers/.+' + SOURCE_FILE_RE,
+            },
+        },
+
+        {
             name: 'presentation-no-engine-runtime-imports',
             severity: 'error',
             comment: 'Presentation code cannot import engine/, runtime/, or worklets/ directly.',
@@ -423,10 +436,37 @@ module.exports = {
             comment: 'React belongs only in presentations/. Business and I/O layers must stay React-free.',
             from: {
                 path: '^(src|application)/.+',
-                pathNot: MODULE_PRESENTATION_PATH_NOT,
+                // presentations/ (all module variants) plus legitimate shared-UI
+                // and React-binding infra: src/components|app|routes are shared
+                // UI; src/infra/store holds the useSyncExternalStore hooks and
+                // src/utils/UI holds React UI hooks — all legitimately React.
+                pathNot: [
+                    ...MODULE_PRESENTATION_PATH_NOT,
+                    '^src/components/',
+                    '^src/app/',
+                    '^src/routes/',
+                    '^src/infra/store/',
+                    '^src/utils/UI/',
+                ],
             },
             to: {
-                path: '^react$|^react/',
+                // Resolved-path match: the pnpm store resolves a real `import …
+                // from 'react'` to a path ending in /react/index.js. The old
+                // '^react$|^react/' bare-specifier pattern never matched a
+                // resolved path, so this rule silently never fired.
+                //
+                // We deliberately match ONLY /react/index — NOT the jsx-runtime /
+                // jsx-dev-runtime entries. With tsconfig `"jsx": "react-jsx"` the
+                // TS compiler injects a synthetic `react/jsx-runtime` import into
+                // every compiled .ts/.tsx file (413 files here), whether or not it
+                // uses React. Including those tokens would flag pure non-React
+                // files (e.g. src/infra/errors/result.ts, src/utils/DOM/
+                // createRafBatcher.ts — both have zero import statements) as
+                // leaks. Matching react/index alone catches every genuine React
+                // import (205 files, all in presentation/shared-UI/binding infra)
+                // and ignores the compiler artifact, so this lands at error/0.
+                path: '/react/index',
+                dependencyTypes: ['npm'],
             },
         },
 
@@ -436,10 +476,19 @@ module.exports = {
             comment: 'react-dom belongs only in presentations/.',
             from: {
                 path: '^(src|application)/.+',
-                pathNot: MODULE_PRESENTATION_PATH_NOT,
+                pathNot: [
+                    ...MODULE_PRESENTATION_PATH_NOT,
+                    '^src/components/',
+                    '^src/app/',
+                    '^src/routes/',
+                    '^src/infra/store/',
+                    '^src/utils/UI/',
+                ],
             },
             to: {
-                path: '^react-dom$|^react-dom/',
+                // Resolved-path match (see react-only-in-presentation above).
+                path: '/react-dom/',
+                dependencyTypes: ['npm'],
             },
         },
 
@@ -448,14 +497,25 @@ module.exports = {
         // --------------------------------------------------------------------
         {
             name: 'tauri-ipc-only-in-repositories',
-            severity: 'error',
+            // WARN pending the IPC→repositories refactor: the resolved-path fix
+            // below (was '^@tauri-apps/', which never matched the pnpm-resolved
+            // path so the rule silently never fired) surfaces 14 real violations
+            // — IPC used directly from useCases/ and presentation hooks. Landing
+            // this at 'error' would block until that 14-site refactor (backlogged)
+            // is done; until then it stays 'warn' so the violations are visible.
+            severity: 'warn',
             comment:
-                'Tauri IPC (invoke, listen, Channel APIs) may only be used from repositories/. The shell is accessed through adapters, not use cases or presentation.',
+                'Tauri IPC (invoke, listen, Channel APIs) may only be used from repositories/. The shell is accessed through adapters, not use cases or presentation. ' +
+                'Currently warn pending the backlogged IPC→repositories refactor (14 sites in useCases/hooks).',
             from: {
                 path: '^(src/modules/)(?!.*repositories/).*' + SOURCE_FILE_RE,
             },
             to: {
-                path: '^@tauri-apps/',
+                // Resolved-path match: the pnpm store resolves @tauri-apps/* to a
+                // path containing /@tauri-apps/. The old '^@tauri-apps/' bare-
+                // specifier pattern never matched a resolved path.
+                path: '/@tauri-apps/',
+                dependencyTypes: ['npm'],
             },
         },
 
@@ -508,6 +568,30 @@ module.exports = {
             },
         },
 
+        {
+            name: 'utils-no-module-imports',
+            severity: 'error',
+            comment: 'src/utils/ must remain module-agnostic and may not import from src/modules/.',
+            from: {
+                path: '^src/utils/',
+            },
+            to: {
+                path: '^src/modules/',
+            },
+        },
+
+        {
+            name: 'infra-no-module-imports',
+            severity: 'error',
+            comment: 'src/infra/ must remain module-agnostic and may not import from src/modules/.',
+            from: {
+                path: '^src/infra/',
+            },
+            to: {
+                path: '^src/modules/',
+            },
+        },
+
         // --------------------------------------------------------------------
         // General hygiene
         // --------------------------------------------------------------------
@@ -518,6 +602,16 @@ module.exports = {
             from: {},
             to: {
                 path: '^' + MODULE_ROOT.slice(1) + 'models/[a-z].*' + SOURCE_FILE_RE,
+            },
+        },
+        {
+            name: 'not-to-unresolvable',
+            severity: 'error',
+            comment:
+                'A dependency could not be resolved (broken or deleted import). Fix the import path or remove the dead import.',
+            from: {},
+            to: {
+                couldNotResolve: true,
             },
         },
         {
@@ -560,7 +654,11 @@ module.exports = {
                 'Production code depends on an npm package listed in devDependencies. Move it to dependencies if it ships.',
             from: {
                 path: '^(src|application)',
-                pathNot: SPEC_FILE_RE,
+                // Test-support files legitimately import dev-only test tooling
+                // (vitest, @testing-library, mocks). They are excluded from the
+                // production bundle, so a dev-dep import there is fine. Without
+                // these exemptions, removing includeOnly surfaces 5 such files.
+                pathNot: [SPEC_FILE_RE, '__tests__/', '/testing/', 'setupTests', '\\.mock\\.'],
             },
             to: {
                 dependencyTypes: ['npm-dev'],
@@ -586,6 +684,34 @@ module.exports = {
                 dependencyTypes: ['npm-peer'],
             },
         },
+        {
+            name: 'no-orphans',
+            // WARN pending a dead-module cleanup pass. The raw orphan count (107)
+            // is mostly false positives: type-only modules whose only consumers
+            // are excluded spec files, plus barrels/entry points. The pathNot list
+            // trims those well-known non-orphan shapes; the remainder is a genuine
+            // dead-module backlog, so this stays 'warn' until that pass lands.
+            severity: 'warn',
+            comment:
+                'Module is not imported by anything and is not an entry point (orphan). Likely dead code. ' +
+                'Warn pending a dead-module cleanup pass.',
+            from: {
+                orphan: true,
+                pathNot: [
+                    '\\.d\\.ts$',
+                    '(^|/)index\\.ts$',
+                    '/models/',
+                    '/events/',
+                    '/types\\.ts$',
+                    '/testing/',
+                    'src/main',
+                    'src/setupTests',
+                    'vite-env',
+                    'src/routes/',
+                ],
+            },
+            to: {},
+        },
     ],
 
     options: {
@@ -595,7 +721,11 @@ module.exports = {
         exclude: {
             path: '\\.(spec|test)\\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$',
         },
-        includeOnly: ['src', 'application'],
+        // includeOnly intentionally removed (Tier 2/3 hardening): scoping the graph
+        // to src/application pruned the leaf node_modules edge, which made the
+        // React/react-dom/Tauri confinement rules silently never match the
+        // pnpm-resolved package path. doNotFollow (below) still prevents traversal
+        // *into* node_modules while keeping the from→package leaf edge visible.
         moduleSystems: ['cjs', 'es6'],
         enhancedResolveOptions: {
             exportsFields: ['exports'],
