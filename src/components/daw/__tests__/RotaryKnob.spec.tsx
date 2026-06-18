@@ -36,7 +36,8 @@ describe('RotaryKnob', () => {
         const onChange = vi.fn();
         const { container } = render(<RotaryKnob value={10} onChange={onChange} defaultValue={50} min={0} max={100} />);
         fireEvent.doubleClick(container.firstChild as HTMLElement);
-        expect(onChange).toHaveBeenCalledWith(50);
+        // Reset to default is a committed change, not a transient drag — isTransient is false.
+        expect(onChange).toHaveBeenCalledWith(50, false);
     });
 
     it('should drag and quantize value', () => {
