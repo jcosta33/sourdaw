@@ -80,6 +80,42 @@ function colorToRgba(color: string, alpha = 1): [number, number, number, number]
     return [isNaN(r) ? 0.4 : r, isNaN(gain) ? 0.4 : gain, isNaN(buffer) ? 0.4 : buffer, alpha];
 }
 
+// ─── MIDI note geometry (pure) ────────────────────────────────────────────────
+/** Clip-relative beat span of a single MIDI note occurrence within a clip. */
+export type MidiNoteBeatSpan = {
+    /** Beat of the note's onset, relative to the clip's start (0 = clip start). */
+    relStartBeat: number;
+    /** Beat of the note's tail, relative to the clip's start. */
+    relEndBeat: number;
+    /** False when the occurrence falls entirely outside the clip window. */
+    visible: boolean;
+};
+
+/**
+ * Compute a MIDI note occurrence's clip-relative beat span.
+ *
+ * `note.startBeat` is already clip-relative (0 = the clip's left edge) — the
+ * same convention the Canvas renderer (`clipDrawing.ts`), the render-model
+ * builder (`buildTimelineRenderModel.ts`), and the playback scheduler
+ * (`scheduleMidiNotes.ts`, which adds `clip.startBeat` only at schedule time)
+ * all use. `midiOffset` (clip.midiOffsetBeats) shifts which slice of the MIDI
+ * content the clip window reveals; `loopOffset` advances each loop repetition.
+ *
+ * Pure and side-effect-free so the coordinate math is unit-testable without a
+ * GPU device (a full WebGPU render is not exercisable under vitest/jsdom).
+ */
+export function computeMidiNoteBeatSpan(
+    note: { startBeat: number; duration: number },
+    midiOffset: number,
+    loopOffset: number,
+    clipDuration: number
+): MidiNoteBeatSpan {
+    const relStartBeat = note.startBeat - midiOffset + loopOffset;
+    const relEndBeat = relStartBeat + Math.max(note.duration, 0.125);
+    const visible = relEndBeat > 0 && relStartBeat < clipDuration;
+    return { relStartBeat, relEndBeat, visible };
+}
+
 // ─── Geometry helper ──────────────────────────────────────────────────────────
 /**
  * Push a screen-space rectangle into the Float32Array vertex buffer.
@@ -336,17 +372,21 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                                     break;
                                 }
 
-                                // note.startBeat is absolute (timeline position).
-                                // Convert to clip-relative, then add loop offset.
-                                const noteRelative = note.startBeat - midiOffset - clip.startBeat;
-                                const relBeat = noteRelative + loopOffset;
-                                const noteEndRelative = relBeat + Math.max(note.duration, 0.125);
-                                if (noteEndRelative <= 0 || relBeat >= clipDuration) {
+                                // note.startBeat is clip-relative (0 = clip
+                                // start); midiOffset shifts the revealed slice
+                                // and loopOffset advances each loop repeat.
+                                const { relStartBeat, relEndBeat, visible } = computeMidiNoteBeatSpan(
+                                    note,
+                                    midiOffset,
+                                    loopOffset,
+                                    clipDuration
+                                );
+                                if (!visible) {
                                     continue;
                                 }
 
-                                const nx1 = beatToX(clip.startBeat + relBeat);
-                                const nx2 = beatToX(clip.startBeat + noteEndRelative);
+                                const nx1 = beatToX(clip.startBeat + relStartBeat);
+                                const nx2 = beatToX(clip.startBeat + relEndBeat);
                                 if (nx2 < cx1 || nx1 > cx2) {
                                     continue;
                                 }
