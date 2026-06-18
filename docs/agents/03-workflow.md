@@ -8,21 +8,11 @@ Step-by-step execution flow for agent sessions in this repo.
 
 ## 1. Start a sandbox
 
-Use the launcher to create an isolated worktree for the task:
-
-```bash
-anew "Implement limiter DSP backend"
-# or
-npm run agents:new -- "Implement limiter DSP backend"
-```
-
-This creates:
-
-- a dedicated branch (`agent/implement-limiter-dsp-backend`)
-- an isolated worktree (`../webdaw--implement-limiter-dsp-backend`)
-- a task file at `.agents/tasks/implement-limiter-dsp-backend.md`
-
-See `docs/08-agents.md` for the full launcher reference.
+> **Retired.** The in-repo `agents:*` worktree launcher has been removed. Isolated
+> worktrees and task delegation are now owned by the Swarm workspace
+> (`../sourdaw-hq`) + Claude Code — start from the task packet you were given in
+> `../sourdaw-hq/tasks/` (see `../sourdaw-hq/AGENTS.md`). Worktree-local task scratch
+> still lives at `.agents/tasks/`.
 
 ---
 

@@ -81,12 +81,8 @@ These apply to all agents in all worktrees:
 
 ## Tooling
 
-Agent sandboxes — isolated git worktrees with their own branch, task file, and terminal session — are managed by the launcher built into this repo. See `docs/08-agents.md` for usage.
-
-The short version:
-
-```bash
-anew "Implement limiter DSP backend"        # create sandbox, launch agent
-alist                                       # see what's running
-aopen investigate-flaky-checkout-test       # resume a sandbox
-```
+> **Retired.** The in-repo `agents:*` worktree launcher has been removed. Isolated
+> worktrees and task delegation are now owned by the Swarm workspace
+> (`../sourdaw-hq`) + Claude Code. Start from the task packet you were given in
+> `../sourdaw-hq/tasks/` (see `../sourdaw-hq/AGENTS.md`); worktree-local task scratch
+> still lives at `.agents/tasks/`.

@@ -32,7 +32,7 @@ Before starting significant implementation work, read the shared process documen
 | `docs/agents/04-standards.md`  | Writing quality for specs/audits/tasks; task focus vs opportunistic fixes (not TypeScript — see `docs/07-conventions.md`) |
 | `docs/07-conventions.md`       | Coding patterns for humans; **TypeScript soundness** is canonical in **`AGENTS.md`** (see § TypeScript — soundness there) |
 | `docs/06-testing.md`           | Vitest layout (`__tests__/` folders), mocks, DI in tests                                                                  |
-| `agents/templates/`            | Ready-to-use templates: `audit.md`, `spec.md`, `task.md`                                                                  |
+| `../sourdaw-hq/templates/`     | Ready-to-use Swarm artifact templates (specs, tasks, reviews, etc.)                                                      |
 
 Working artifacts live in the Swarm workspace (`../sourdaw-hq`), except the domain
 skills and worktree task scratch that stay in this repo:
@@ -61,7 +61,9 @@ skills and worktree task scratch that stay in this repo:
 
 **Session completion — Self-review is mandatory.** Every task file has a `## Self-review` section with specific questions and a `### Verification outputs` block. A task is not complete until every question has a written answer directly beneath it, including pasted command output (`git status`, `pnpm deps:validate`, `pnpm typecheck`, etc.). Task files do not use a separate Handoff section — they are self-contained. Use **Decisions**, **Findings**, **Next steps**, and related sections so the file stands alone for the next reader. Declaring the task done while any Self-review question is unanswered is an invalid session output. Checkboxes alone do not count — the review must leave a written trace in the task file.
 
-Agent sandboxes (isolated worktrees) are managed by `docs/08-agents.md` — the launcher tool built into this repo.
+Agent sandboxes (isolated worktrees) and task delegation are owned by the Swarm
+workspace (`../sourdaw-hq`) + Claude Code. The pre-Swarm in-repo `agents:*` launcher
+has been retired.
 
 ---
 

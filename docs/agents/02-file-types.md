@@ -240,7 +240,9 @@ Task files are the agent's working memory for one session. They record context, 
 **Relationship to other types:** A task file is the execution companion to a spec. If a spec exists, a task file must exist while implementation is in progress. The task file links back to the spec, audit, and research it was created under. When a session ends, findings that belong in a durable artifact should be written there — not left only in the task file.
 
 **When to create one:**
-At the start of any non-trivial agent session. The launcher (`anew "title"`) creates one automatically from the template.
+At the start of any non-trivial agent session. Task packets and worktrees are now
+owned by the Swarm workspace (`../sourdaw-hq`) + Claude Code (the pre-Swarm `agents:*`
+launcher has been retired); worktree-local task scratch lives at `.agents/tasks/`.
 
 **Where it lives:** `.agents/tasks/<slug>.md` — gitignored, local to the worktree
 
