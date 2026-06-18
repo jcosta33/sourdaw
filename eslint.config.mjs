@@ -1037,7 +1037,14 @@ export default defineConfig(
 
     // ─── Test files ──────────────────────────────────────────────────────────
     {
-        files: ['**/*.spec.{ts,tsx}', '**/*.test.{ts,tsx}', '**/setupTests.ts'],
+        files: [
+            '**/*.spec.{ts,tsx}',
+            '**/*.test.{ts,tsx}',
+            '**/setupTests.ts',
+            // Non-.spec test scaffolding: mock factories and __tests__ helpers.
+            '**/*.mock.ts',
+            '**/__tests__/**/*.{ts,tsx}',
+        ],
         rules: {
             '@eslint-react/no-unnecessary-use-prefix': 'off',
             '@eslint-react/no-missing-context-display-name': 'off',
@@ -1067,6 +1074,9 @@ export default defineConfig(
             '@typescript-eslint/no-unsafe-member-access': 'warn',
             '@typescript-eslint/no-unsafe-return': 'warn',
             '@typescript-eslint/no-explicit-any': 'warn',
+            // Unawaited async in a test body (fire-and-forget, intentional ordering
+            // assertions) is acceptable; production keeps this at 'error'.
+            '@typescript-eslint/no-floating-promises': 'warn',
         },
     },
 
