@@ -177,14 +177,16 @@ describe('TrackLevelSection', () => {
         render(<TrackLevelSection track={mockTrack} />);
         const slider = screen.getByTestId('slider');
         fireEvent.change(slider, { target: { value: '80' } });
-        expect(mockSetTrackGain).toHaveBeenCalledWith('track-1', 0.8);
+        // Slider drag (onValueChange) is a transient update: engine-only, isTransient=true.
+        expect(mockSetTrackGain).toHaveBeenCalledWith('track-1', 0.8, true);
     });
 
     it('should call setTrackPan when knob value changes', () => {
         render(<TrackLevelSection track={mockTrack} />);
         const knob = screen.getByTestId('rotary-knob');
         fireEvent.click(knob);
-        expect(mockSetTrackPan).toHaveBeenCalledWith('track-1', 11);
+        // Knob mock fires onChange without isTransient, so the commit branch runs: isTransient=false.
+        expect(mockSetTrackPan).toHaveBeenCalledWith('track-1', 11, false);
     });
 
     it('should render two surface cards', () => {
