@@ -419,11 +419,11 @@ useCases/
 
 ### Use cases are a behavioral contract, not a shared type surface
 
-A use case file must export its own typed function — never a pure re-export of a repository function. A file that only does `export { getX } from '../repositories/Y'` creates no real boundary; it launders private access through a fake public path. The **runtime behavior and function entry point** are what other modules may import; **types defined in `useCases/` stay inside the module** (including DTOs and aliases used to implement the function). Other modules do not `import type` from another module’s `useCases/` or from `index.ts` re-exports of those types — they keep **local types** or derive shapes with `ReturnType<typeof fn>` / `Parameters<typeof fn>` when calling an imported function.
+A use case file must export its own typed function — never a pure re-export of a repository function. A file that only does `export { getX } from '../repositories/Y'` creates no real boundary; it launders private access through a fake public path. The **runtime behavior and function entry point** are what other modules may import; **types defined in `useCases/` stay inside the module** (including DTOs and aliases used to implement the function). Other modules do not `import type` from another module’s `useCases/` or from `useCases/index.ts` re-exports of those types — they keep **local types** or derive shapes with `ReturnType<typeof fn>` / `Parameters<typeof fn>` when calling an imported function.
 
 When a repository returns something that is not a pure model, the use case still defines internal types for mapping — those types are not part of the cross-module export surface.
 
-Cross-module **named types** for events belong in **`events/`** and may be re-exported from `index.ts` like any other event payload contract.
+Cross-module **named types** for events belong in **`events/`** and may be re-exported from the `events/index.ts` barrel like any other event payload contract.
 
 See the `architecture-violations` skill (§6) for detailed rules and examples.
 
@@ -441,12 +441,12 @@ Acceptable type exports from a module's public surface:
 
 | Type origin                                                                                                | Cross-module export?                                                                                                                                                                                                                                                                                                                                     |
 | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `events/` event payloads                                                                                   | **Yes.** Re-export via `index.ts` as `export type { FooEvent } from './events/...'`. This is the canonical shared-type surface across modules.                                                                                                                                                                                                           |
-| `stores/` store value types                                                                                | **Yes.** A `Store<T>` instance is part of the public contract; the `T` shape is naturally part of that. Re-export the store's value type via `index.ts` if needed.                                                                                                                                                                                       |
-| `useCases/` local types                                                                                    | **Intra-module only by default.** Other modules prefer `ReturnType<typeof fn>` / `Parameters<typeof fn>` or define a local shape. If a use-case input/output type genuinely must be shared cross-module (rare), the only legal way is an `export type { … }` line on the module's root `index.ts` — never a deep import of `#/modules/<X>/useCases/...`. |
-| `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `engine/`, `errors/`, `handlers/` | **Never.** Not from `index.ts`, not from a use case file, not from anywhere.                                                                                                                                                                                                                                                                             |
+| `events/` event payloads                                                                                   | **Yes.** Re-export via the `events/index.ts` barrel as `export type { FooEvent } from './...'`. This is the canonical shared-type surface across modules.                                                                                                                                                                                                |
+| `stores/` store value types                                                                                | **Yes.** A `Store<T>` instance is part of the public contract; the `T` shape is naturally part of that. Re-export the store's value type via the `stores/index.ts` barrel if needed.                                                                                                                                                                     |
+| `useCases/` local types                                                                                    | **Intra-module only.** The `useCases/index.ts` barrel re-exports functions and constants only — never `export type` (`no-usecase-type-exports-on-index`). Other modules use `ReturnType<typeof fn>` / `Parameters<typeof fn>` or define a local shape. If a use-case input/output type genuinely must be shared cross-module, model it as a typed payload in `events/` (exported via `events/index.ts`) — never a deep import of `#/modules/<X>/useCases/...`. |
+| `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `engine/`, `errors/`, `handlers/` | **Never.** Not from any contract barrel, not from a use case file, not from anywhere.                                                                                                                                                                                                                                                                    |
 
-The hard rule: **cross-module type consumption goes through the module's root `index.ts` or it does not happen.** A use case file is allowed to declare and export types that describe its own contract, but it is never a back door for promoting model, repository, or other private types to a cross-module surface.
+The hard rule: **cross-module type consumption goes through `events/index.ts` (typed payloads), or through `ReturnType` / `Parameters` / a local shape on the consumer — or it does not happen.** A use case file is allowed to declare and export types that describe its own contract, but it is never a back door for promoting model, repository, or other private types to a cross-module surface, and `useCases/index.ts` never re-exports them.
 
 ---
 
@@ -459,7 +459,7 @@ This layer is **not** part of the general cross-module contract. Other feature m
 ### Placement
 
 - Prefer **`handlers/`** at the module root (same depth as `useCases/`). Until migration, legacy `useCases/*Handlers.ts` files are acceptable; new work should use `handlers/`.
-- **`handlers/` is private** — it is **not** re-exported from `index.ts`. Dependency-cruiser treats it like other internals.
+- **`handlers/` is private** — it is **not** re-exported from any contract barrel. Dependency-cruiser treats it like other internals.
 
 ### Construction
 
@@ -781,7 +781,7 @@ PluginRackView
 MixerConsoleView
 ```
 
-Other modules consume **promoted** views only via that module’s **`index.ts`** re-exports — never by importing `presentations/views/` directly from outside the module.
+Other modules consume **promoted** views only via that module’s **`presentations/views/index.ts`** barrel — never by importing a `presentations/views/` file directly from outside the module.
 
 ### `presentations/hooks/`
 
@@ -865,17 +865,17 @@ They should not become business logic containers.
 
 ## 5.1 The public surface
 
-The only file other modules may import from is the module's root `index.ts`.
+The only files other modules may import from are a module's **contract-folder barrels** — `useCases/index.ts`, `events/index.ts`, `stores/index.ts`, and `presentations/views/index.ts`. There is **no module-root `index.ts`** (see §3.3).
 
-Symbols on `index.ts` are the **cross-module** contract: export only what **other** modules may import. Files inside the module do not use this file — they import implementation files with **relative** paths (see §3.3 rules 6–7).
+Symbols on a contract barrel are the **cross-module** contract: export only what **other** modules may import. Files inside the module do not use these barrels — they import implementation files with **relative** paths (see §3.3 rule 4).
 
-`index.ts` may only re-export from these internal folders:
+Each contract barrel re-exports only from files **within its own folder**:
 
 ```text
-useCases/              → business operations (functions on index.ts — not use-case type exports)
-events/                → typed domain event payloads
-stores/                → shared business-layer state
-presentations/views/   → composable UI entry points (cross-module only via index.ts)
+useCases/index.ts            → business operations (functions only — not use-case type exports)
+events/index.ts              → typed domain event payloads
+stores/index.ts              → shared business-layer state
+presentations/views/index.ts → composable UI entry points (cross-module only via this barrel)
 ```
 
 ## 5.2 Private folders
@@ -894,13 +894,13 @@ presentations/stores/
 presentations/context/
 presentations/components/
 presentations/renderers/
-presentations/views/   ← use the owning module’s index.ts instead
+presentations/views/   ← use the owning module’s presentations/views barrel instead
 engine/
 runtime/
 worklets/
 ```
 
-If a type must be shared cross-module, prefer **`events/`** (payload types) or consumers’ **local types**. Do not re-export types from `useCases/` on `index.ts`. Views that are part of the public contract are re-exported from `index.ts` as above.
+If a type must be shared cross-module, prefer **`events/`** (payload types) or consumers’ **local types**. Do not re-export types from `useCases/` on its barrel (`no-usecase-type-exports-on-index`). Views that are part of the public contract are re-exported from the `presentations/views/index.ts` barrel as above.
 
 ---
 
@@ -962,7 +962,7 @@ Never the reverse.
 
 ## 7. Cross-module interaction patterns
 
-Modules should communicate through a narrow set of approved patterns. All of them go through the target module’s `index.ts`.
+Modules should communicate through a narrow set of approved patterns. All of them go through the target module’s **contract-folder barrels** (`useCases`/`stores`/`events`/`presentations/views`) — never a module-root `index.ts`, which no longer exists.
 
 ## 7.1 Pattern A: direct use-case call
 
@@ -973,8 +973,8 @@ Use when:
 - the dependency is intentional and acceptable
 
 ```typescript
-// Import from the module’s index.ts, not from useCases/ directly
-import { getRoutingForTrack } from ‘#/modules/Routing’;
+// Import from the module’s useCases barrel, not from a useCases/ file directly
+import { getRoutingForTrack } from ‘#/modules/Routing/useCases’;
 ```
 
 ## 7.2 Pattern B: event-driven interaction
@@ -998,8 +998,8 @@ Use when:
 - the read is stable and intentional
 
 ```typescript
-// Store exported from module index.ts
-import { transportStore } from ‘#/modules/Transport’;
+// Store exported from the module’s stores barrel
+import { transportStore } from ‘#/modules/Transport/stores’;
 const transport = transportStore.value;
 ```
 
@@ -1011,8 +1011,8 @@ Use when:
 - the dependency is presentational, not business-layer
 
 ```typescript
-// Views re-exported from index.ts
-import { ArrangementView } from ‘#/modules/Arrangement’;
+// Views re-exported from the module’s presentations/views barrel
+import { ArrangementView } from ‘#/modules/Arrangement/presentations/views’;
 ```
 
 ---
@@ -1422,15 +1422,15 @@ Module boundaries exist for ownership and invariants, not for cosmetics.
 Before accepting TypeScript module architecture work, verify:
 
 1. Is the module boundary an ownership boundary, not just a UI slice?
-2. Is the module root `index.ts` a narrow, intentional surface for **other** modules only (not a full re-export), and do in-module files avoid importing `#/modules/<ThisModule>`?
+2. Are the contract-folder barrels (`useCases/`, `events/`, `stores/`, `presentations/views/` `index.ts`) narrow, intentional surfaces for **other** modules only (not a full re-export, each scoped to its own folder), and do in-module files avoid importing their own barrels (`#/modules/<ThisModule>/useCases`, etc.) in favor of relative paths?
 3. Are models plain and framework-free?
 4. Are use cases the real write boundary?
-5. Are use-case **types** kept private (no `export type` from `useCases/` on `index.ts` for other modules)?
+5. Are use-case **types** kept private (no `export type` from `useCases/` on its `useCases/index.ts` barrel for other modules)?
 6. Are repositories truly I/O-only?
 7. Are validators/services/transformers private and well-scoped?
 8. Are business stores separated from presentation stores?
-9. Are promoted views re-exported from `index.ts` while hooks/components/context/renderers stay private by default?
-10. Is cross-module interaction happening only via each module’s `index.ts` and approved patterns?
+9. Are promoted views re-exported from the `presentations/views/index.ts` barrel while hooks/components/context/renderers stay private by default?
+10. Is cross-module interaction happening only via each module’s contract-folder barrels (`useCases`/`stores`/`events`/`presentations/views`) and approved patterns?
 11. Did the refactor reduce or increase hidden coupling?
 
 ---

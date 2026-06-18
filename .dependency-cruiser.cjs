@@ -4,24 +4,24 @@
 // ----------------------------------------------------------------------------
 // Sourdaw TypeScript module architecture enforcement
 //
-// Module boundary model (contract-folder barrels — migration in progress 2026-04-10):
+// Module boundary model (contract-folder barrels — migration complete):
 //
-//   TARGET STATE: Each module exposes four independently-importable contract
-//   surfaces. No module-root index.ts.
+//   REALIZED STATE: Each module exposes up to four independently-importable
+//   contract surfaces. There is no module-root index.ts (0 exist).
 //
 //     import { addTrack }        from '#/modules/Arrangement/useCases';
 //     import { trackStore }      from '#/modules/Arrangement/stores';
 //     import type { FooEvent }   from '#/modules/Arrangement/events';
 //     import { ArrangementView } from '#/modules/Arrangement/presentations/views';
 //
-//   TRANSITIONAL: cross-module-index-only currently accepts BOTH the old root-
-//   barrel form (<module>/index.ts) AND the new contract-folder form
-//   (<module>/<contract>/index.ts). The root-barrel form will be removed once
-//   every module is migrated.
+//   cross-module-index-only accepts ONLY the contract-folder form
+//   (<module>/<contract>/index.ts). The old root-barrel form (<module>/index.ts,
+//   or the bare <module> root) was removed in Tier 1; importing it is
+//   unresolvable and fails (not-to-unresolvable) + tsgo.
 //
-//   Contract-folder barrel rules (target state):
+//   Contract-folder barrel rules:
 //     - <contract>/index.ts may only re-export from files in its own folder.
-//     - No root index.ts in a fully-migrated module.
+//     - No root index.ts in any module.
 //     - Same module: use relative paths, never #/modules/<Self>/<contract>.
 //
 //   Private folders (never importable cross-module):
