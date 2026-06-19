@@ -31,10 +31,6 @@ vi.mock('#/modules/Command/useCases/executeAppAction', () => ({
     executeAppAction: vi.fn(),
 }));
 
-vi.mock('../../../useCases/timelineViewActions', () => ({
-    pasteClip: vi.fn(),
-}));
-
 vi.mock('../../../useCases/importMidiFile', () => ({
     importMidiFile: vi.fn(),
 }));
