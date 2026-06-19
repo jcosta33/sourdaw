@@ -33,9 +33,26 @@ export const PadGrid = ({ pads, selectedIndex, onSelectPad, onTriggerPad }: PadG
         );
     }
 
+    // Prune the pending flash timer for any pad that leaves the rendered list
+    // so its deferred callback can't call setFlashingPads for a removed pad
+    // (Finding #33). A stale entry left in flashingPads for a departed index is
+    // harmless — it is only read for live indices in the render loop below.
+    // Effect re-runs whenever the set of live indices changes; the unmount
+    // cleanup clears any survivors.
+    const liveCount = Math.min(pads.length, 16);
     useEffect(() => {
+        for (const [index, timer] of flashTimers.current) {
+            if (index >= liveCount) {
+                clearTimeout(timer);
+                flashTimers.current.delete(index);
+            }
+        }
+    }, [liveCount]);
+
+    useEffect(() => {
+        const timers = flashTimers.current;
         return () => {
-            for (const timer of flashTimers.current.values()) {
+            for (const timer of timers.values()) {
                 clearTimeout(timer);
             }
         };
@@ -53,6 +70,8 @@ export const PadGrid = ({ pads, selectedIndex, onSelectPad, onTriggerPad }: PadG
                         key={pad.id}
                         type="button"
                         className="relative aspect-square rounded-[16px] border transition-all select-none"
+                        aria-label={`Trigger ${pad.name}`}
+                        aria-pressed={isSelected}
                         style={{
                             background: isFlashing
                                 ? `linear-gradient(180deg, ${pad.color}, rgba(255,255,255,0.16))`
@@ -66,6 +85,18 @@ export const PadGrid = ({ pads, selectedIndex, onSelectPad, onTriggerPad }: PadG
                         onClick={() => onSelectPad(index)}
                         onMouseDown={(event) => {
                             if (event.button === 0) {
+                                onTriggerPad(index);
+                                triggerFlash(index);
+                            }
+                        }}
+                        onKeyDown={(event) => {
+                            // Enter/Space also selects via the button's native
+                            // click; here we add the trigger + flash so keyboard
+                            // users get the same activation as a mouse press.
+                            if (event.key === 'Enter' || event.key === ' ') {
+                                if (event.repeat) {
+                                    return;
+                                }
                                 onTriggerPad(index);
                                 triggerFlash(index);
                             }

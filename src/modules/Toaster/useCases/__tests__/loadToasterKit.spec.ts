@@ -124,7 +124,7 @@ describe('getToasterControls', () => {
     it('should return null when there is no toaster track', () => {
         vi.mocked(getAllTracks).mockReturnValue([]);
 
-        expect(getToasterControls()).toBeNull();
+        expect(getToasterControls('d1')).toBeNull();
     });
 
     it('should return controls when a ready toaster device exists on the strip', () => {
@@ -132,10 +132,21 @@ describe('getToasterControls', () => {
         const setPadParam = vi.fn();
         wireToasterMocks(setParam, setPadParam);
 
-        const controls = getToasterControls();
+        const controls = getToasterControls('d1');
 
         expect(controls).not.toBeNull();
         expect(controls?.setParam).toBe(setParam);
+    });
+
+    // Regression — controls must be scoped to the requested deviceId. The old
+    // behavior returned the FIRST toaster device, so a second instance's preset
+    // load was routed onto the first instance's worklet.
+    it('returns null for a deviceId that is not the first toaster device', () => {
+        const setParam = vi.fn();
+        const setPadParam = vi.fn();
+        wireToasterMocks(setParam, setPadParam);
+
+        expect(getToasterControls('not-d1')).toBeNull();
     });
 });
 

@@ -18,6 +18,29 @@ const KIT_PARAM_MAP = {
     lofiMix: 'lofi_mix',
 } as const;
 
+const kitPending = new Map<string, number>();
+const kitLatest = new Map<string, { paramName: string; value: number }>();
+
+function flushKitParam(cacheKey: string, trackId: string): void {
+    kitPending.delete(cacheKey);
+    const entry = kitLatest.get(cacheKey);
+    if (!entry) {
+        return;
+    }
+    kitLatest.delete(cacheKey);
+
+    const strip = getTrackStrip(trackId);
+    if (!strip) {
+        return;
+    }
+    const deviceNode = strip.deviceNodes.find(
+        (device) => device.toasterControls && device.toasterControls.ready !== undefined
+    );
+    if (deviceNode?.toasterControls) {
+        deviceNode.toasterControls.setParam(entry.paramName, entry.value);
+    }
+}
+
 export function setToasterKitParam<Key extends keyof typeof KIT_PARAM_MAP>(
     deviceId: string,
     key: Key,
@@ -31,14 +54,16 @@ export function setToasterKitParam<Key extends keyof typeof KIT_PARAM_MAP>(
     }
 
     const paramName = KIT_PARAM_MAP[key];
-    const strip = getTrackStrip(ref.trackId);
-    if (!strip) {
-        return;
-    }
-    const deviceNode = strip.deviceNodes.find(
-        (device) => device.toasterControls && device.toasterControls.ready !== undefined
-    );
-    if (deviceNode?.toasterControls) {
-        deviceNode.toasterControls.setParam(paramName, value as number);
+    // Coalesce worklet writes per (device, param) to one rAF tick so dragging a
+    // kit knob does not flood the worklet at full pointer-event rate. The store
+    // already holds the authoritative latest value (updateKit above); only the
+    // last value sampled before the frame fires reaches the worklet.
+    const cacheKey = `${deviceId}_${key}`;
+    kitLatest.set(cacheKey, { paramName, value: value as number });
+    if (!kitPending.has(cacheKey)) {
+        kitPending.set(
+            cacheKey,
+            requestAnimationFrame(() => flushKitParam(cacheKey, ref.trackId))
+        );
     }
 }

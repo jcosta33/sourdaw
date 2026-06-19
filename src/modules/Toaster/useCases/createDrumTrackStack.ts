@@ -62,7 +62,17 @@ export const createDrumTrackStack = inject({ eventBus })(
             // Wire the Toaster device into the audio engine
             void addDeviceToStrip(parent.id, toasterId, 'toaster');
 
+            // Emit one `track.added` per track so downstream subscribers
+            // (CRDT/undo/persistence) get a signal for every track the kit owns,
+            // not just the parent. Emitting only the parent (Finding #18) meant
+            // those subscribers never learned the 16 children existed, so they
+            // could not keep the children bound to the parent — deleting the
+            // parent would orphan them. Parent first so a child's `parentId`
+            // already resolves when its event is handled.
             void eventBus.emit('track.added', { trackId: parent.id, name: parent.name, kind: parent.kind });
+            for (const child of children) {
+                void eventBus.emit('track.added', { trackId: child.id, name: child.name, kind: child.kind });
+            }
 
             return parent.id;
         }

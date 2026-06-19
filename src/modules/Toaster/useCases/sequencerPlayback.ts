@@ -11,7 +11,6 @@ import { toasterStore } from '../stores/toasterStore';
 
 import { TOASTER_ENGINE_MAP } from './loadToasterKit';
 import { morphPatterns } from './patternMorph';
-import { getFirstToasterDeviceId } from './toasterParamBridge/getFirstToasterDeviceId';
 import { setPadEngineImmediate } from './toasterParamBridge/setPadEngineImmediate';
 import { setToasterPadParam } from './toasterParamBridge/setToasterPadParam';
 import { triggerToasterPad } from './triggerPad';
@@ -26,6 +25,10 @@ type SequencerState = {
     playCount: number;
     nextTickTime: number;
     timeoutId: ReturnType<typeof setTimeout> | null;
+    // Microtiming / retrigger fires scheduled by ticks. Tracked per device so
+    // stopSequencer can cancel ghost hits that would otherwise fire after Stop
+    // (clearing the next-tick timeoutId alone leaves these armed).
+    pendingFireIds: Set<ReturnType<typeof setTimeout>>;
 };
 
 const sequencerStates = new Map<string, SequencerState>();
@@ -39,10 +42,21 @@ function getSeqState(deviceId: string): SequencerState {
             playCount: 0,
             nextTickTime: 0,
             timeoutId: null,
+            pendingFireIds: new Set(),
         };
         sequencerStates.set(deviceId, state);
     }
     return state;
+}
+
+// Schedule a delayed fire whose id is tracked in the device's pendingFireIds
+// so stopSequencer can cancel it. The id is removed once it runs.
+function scheduleTrackedFire(seqState: SequencerState, fn: () => void, delayMs: number): void {
+    const id = setTimeout(() => {
+        seqState.pendingFireIds.delete(id);
+        fn();
+    }, delayMs);
+    seqState.pendingFireIds.add(id);
 }
 
 export function setFillActive(deviceId: string, active: boolean): void {
@@ -117,8 +131,6 @@ function tick(deviceId: string, currentStep: number, bpm: number, stepsPerBeat: 
     const totalSteps = pattern.stepsPerBar * pattern.bars;
     const stepDurationMs = 60_000 / bpm / stepsPerBeat;
 
-    const toasterDeviceId = getFirstToasterDeviceId();
-
     for (const track of pattern.tracks) {
         const trackSteps = track.stepsOverride ?? totalSteps;
         const stepIdx = currentStep % trackSteps;
@@ -133,40 +145,44 @@ function tick(deviceId: string, currentStep: number, bpm: number, stepsPerBeat: 
         const vel = Math.round(step.velocity * 127);
 
         const pad = state.kit.pads[track.padIndex];
-        if (step.soundLock && pad && toasterDeviceId) {
-            const lockIdx = TOASTER_ENGINE_MAP[step.soundLock] ?? 0;
-            setPadEngineImmediate(toasterDeviceId, track.padIndex, lockIdx);
+
+        // Param locks are immediate (no delay), so route them now to this
+        // sequencer's OWN device — never to getFirstToasterDeviceId(), which
+        // would steer instance B's locks onto instance A's worklet.
+        const locks = step.paramLocks;
+        for (const [key, value] of Object.entries(locks)) {
+            if (key.startsWith('_')) {
+                continue;
+            }
+            setToasterPadParam(deviceId, track.padIndex, key as keyof import('../models/ToasterKit').PadState, value);
         }
 
-        if (toasterDeviceId) {
-            const locks = step.paramLocks;
-            for (const [key, value] of Object.entries(locks)) {
-                if (key.startsWith('_')) {
-                    continue;
-                }
-                setToasterPadParam(
-                    toasterDeviceId,
-                    track.padIndex,
-                    key as keyof import('../models/ToasterKit').PadState,
-                    value
-                );
-            }
-        }
+        // Resolve the sound-locked engine index for this step but DON'T swap
+        // the shared engine slot yet — overlapping sound-locked steps on the
+        // same pad would cross-talk. The swap rides inside the deferred fire.
+        const lockedEngineIdx = step.soundLock ? (TOASTER_ENGINE_MAP[step.soundLock] ?? 0) : null;
+        const defaultEngineIdx = pad ? (TOASTER_ENGINE_MAP[pad.engineType] ?? 0) : null;
 
         const microOffsetMs = step.microTiming * stepDurationMs;
         const swingMs = stepIdx % 2 === 1 ? state.kit.swing * stepDurationMs * 0.5 : 0;
         const totalDelayMs = Math.max(0, swingMs + microOffsetMs);
 
+        const padIndex = track.padIndex;
         const fire = () => {
-            triggerToasterPad(deviceId, track.padIndex, vel);
-            if (step.soundLock && pad && toasterDeviceId) {
-                const defaultIdx = TOASTER_ENGINE_MAP[pad.engineType] ?? 0;
-                setPadEngineImmediate(toasterDeviceId, track.padIndex, defaultIdx);
+            // Carry the locked engine into the fire so the swap happens right
+            // before the trigger and reverts right after, per-trigger — never
+            // mutating the shared slot ahead of the delay.
+            if (lockedEngineIdx !== null && defaultEngineIdx !== null) {
+                setPadEngineImmediate(deviceId, padIndex, lockedEngineIdx);
+                triggerToasterPad(deviceId, padIndex, vel);
+                setPadEngineImmediate(deviceId, padIndex, defaultEngineIdx);
+            } else {
+                triggerToasterPad(deviceId, padIndex, vel);
             }
         };
 
         if (totalDelayMs > 1) {
-            setTimeout(fire, totalDelayMs);
+            scheduleTrackedFire(seqState, fire, totalDelayMs);
         } else {
             fire();
         }
@@ -175,8 +191,9 @@ function tick(deviceId: string, currentStep: number, bpm: number, stepsPerBeat: 
             const subInterval = stepDurationMs / (step.retriggerCount + 1);
             for (let r = 1; r <= step.retriggerCount; r++) {
                 const retrigVel = Math.max(20, Math.round(vel * (1 - r * 0.12)));
-                setTimeout(
-                    () => triggerToasterPad(deviceId, track.padIndex, retrigVel),
+                scheduleTrackedFire(
+                    seqState,
+                    () => triggerToasterPad(deviceId, padIndex, retrigVel),
                     totalDelayMs + subInterval * r
                 );
             }
@@ -214,6 +231,12 @@ export function stopSequencer(deviceId: string): void {
         clearTimeout(seqState.timeoutId);
         seqState.timeoutId = null;
     }
+    // Cancel any microtiming/retrigger fires already scheduled by the last
+    // tick so no ghost hit lands after Stop.
+    for (const id of seqState.pendingFireIds) {
+        clearTimeout(id);
+    }
+    seqState.pendingFireIds.clear();
     const state = toasterStore.value?.[deviceId];
     if (state) {
         toasterStore.set({ ...toasterStore.value, [deviceId]: { ...state, isPlaying: false, currentStep: 0 } });

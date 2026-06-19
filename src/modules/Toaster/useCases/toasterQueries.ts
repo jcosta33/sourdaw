@@ -20,7 +20,9 @@ export const DEFAULT_PAD_NAMES = [
 ] as const;
 
 export function getToasterPresets(): ToasterKitPreset[] {
-    return _TOASTER_PRESETS;
+    // Return a shallow copy so callers cannot mutate the shared preset array
+    // (push/splice/reorder) and corrupt the registry for every other consumer.
+    return [..._TOASTER_PRESETS];
 }
 
 export { _TOASTER_PRESETS as TOASTER_PRESETS };

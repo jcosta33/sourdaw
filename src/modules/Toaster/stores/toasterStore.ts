@@ -65,7 +65,12 @@ export function selectPad(deviceId: string, index: number): void {
 
 export function updatePad(deviceId: string, index: number, updates: Partial<PadState>): void {
     const instances = toasterStore.value ?? {};
-    const state = instances[deviceId] ?? defaultToasterState;
+    const state = instances[deviceId];
+    // Do not synthesize a default record for an unknown deviceId: a param
+    // write arriving after teardown must not resurrect a deleted device.
+    if (!state) {
+        return;
+    }
     const pads = [...state.kit.pads];
     if (!pads[index]) {
         return;
@@ -76,13 +81,21 @@ export function updatePad(deviceId: string, index: number, updates: Partial<PadS
 
 export function loadKit(deviceId: string, kit: ToasterKit): void {
     const instances = toasterStore.value ?? {};
-    const state = instances[deviceId] ?? defaultToasterState;
+    const state = instances[deviceId];
+    // Unknown deviceId → no-op; loading a kit must not recreate a torn-down device.
+    if (!state) {
+        return;
+    }
     toasterStore.set({ ...instances, [deviceId]: { ...state, kit, selectedPadIndex: 0 } });
 }
 
 export function updateKit(deviceId: string, updates: Partial<ToasterKit>): void {
     const instances = toasterStore.value ?? {};
-    const state = instances[deviceId] ?? defaultToasterState;
+    const state = instances[deviceId];
+    // Unknown deviceId → no-op; a kit-param write must not resurrect a deleted device.
+    if (!state) {
+        return;
+    }
 
     toasterStore.set({
         ...instances,

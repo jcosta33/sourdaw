@@ -12,13 +12,14 @@ import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
-import { type PadState } from '../../models/ToasterKit';
+import { type PadState, withActivePatternId } from '../../models/ToasterKit';
 import {
     defaultToasterState,
     selectPad,
     setStepVelocity,
     toasterStore,
     toggleStep,
+    updateKit,
     updatePad,
 } from '../../stores/toasterStore';
 import { applyEuclideanToTrack } from '../../useCases/applyEuclidean';
@@ -127,7 +128,25 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     }
 
     const { kit, selectedPadIndex, activeVoices, isPlaying, currentStep } = liveState;
-    const selectedPad: PadState = kit.pads[selectedPadIndex] ?? kit.pads[0]!;
+
+    // A corrupt persisted kit can deserialize with zero pads. `kit.pads[0]!`
+    // would silence that real runtime case at the type level and then throw on
+    // every field access below (AGENTS soundness, Finding #32). Handle it
+    // explicitly with a fallback instead of asserting the array is non-empty.
+    const selectedPad: PadState | undefined = kit.pads[selectedPadIndex] ?? kit.pads[0];
+    if (!selectedPad) {
+        return (
+            <div className="toaster-faceplate flex h-full min-h-0 items-center justify-center rounded-[26px] p-6 text-center">
+                <div className="space-y-2">
+                    <div className="text-[12px] font-semibold text-foreground">This kit has no pads</div>
+                    <div className="text-[10px] text-muted-foreground">
+                        Load a kit from the shelf to restore the pad bay.
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     const activePattern = kit.patterns.find((pattern) => pattern.id === kit.activePatternId);
     const presetSearch = presetQuery.trim().toLowerCase();
     const visiblePresets = TOASTER_PRESETS.filter((preset) => {
@@ -140,6 +159,13 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
 
     function triggerPad(index: number): void {
         triggerToasterPad(deviceId, index, 100);
+    }
+
+    function handleSelectPattern(patternId: string): void {
+        const next = withActivePatternId(kit, patternId);
+        if (next !== kit) {
+            updateKit(deviceId, { activePatternId: next.activePatternId });
+        }
     }
 
     function handlePadParam(padIndex: number, key: string, value: number): void {
@@ -312,12 +338,38 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                         </div>
 
                         <div className="flex flex-wrap justify-end gap-2">
-                            <DawPluginMetricTile
-                                className="toaster-window min-w-[94px]"
-                                label="Pattern"
-                                value={activePattern?.name ?? 'A1'}
-                                detail="Current lane"
-                            />
+                            {kit.patterns.length > 1 ? (
+                                <div
+                                    className="toaster-window flex min-w-[94px] flex-col gap-1 px-3 py-2"
+                                    role="group"
+                                    aria-label="Active pattern"
+                                >
+                                    <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">
+                                        Pattern
+                                    </div>
+                                    <div className="flex flex-wrap gap-1">
+                                        {kit.patterns.map((pattern) => (
+                                            <DawPluginChip
+                                                key={pattern.id}
+                                                active={pattern.id === kit.activePatternId}
+                                                tone="peach"
+                                                size="sm"
+                                                aria-pressed={pattern.id === kit.activePatternId}
+                                                onClick={() => handleSelectPattern(pattern.id)}
+                                            >
+                                                {pattern.name}
+                                            </DawPluginChip>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : (
+                                <DawPluginMetricTile
+                                    className="toaster-window min-w-[94px]"
+                                    label="Pattern"
+                                    value={activePattern?.name ?? 'A1'}
+                                    detail="Current lane"
+                                />
+                            )}
                             <DawPluginMetricTile
                                 className="toaster-window min-w-[94px]"
                                 label="Step"

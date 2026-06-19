@@ -19,20 +19,52 @@ export const PadMixer = ({ pads, onPadParam }: PadMixerProps): ReactElement => (
                 <div
                     className="w-3 rounded-full relative cursor-ns-resize mb-0.5"
                     style={{ height: 50, backgroundColor: 'rgba(255,255,255,0.04)' }}
+                    role="slider"
+                    tabIndex={0}
+                    aria-label={`${pad.name} volume`}
+                    aria-orientation="vertical"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(pad.volume * 100)}
+                    aria-valuetext={`${Math.round(pad.volume * 100)}%`}
+                    onKeyDown={(event) => {
+                        const step = event.shiftKey ? 0.1 : 0.05;
+                        let next: number | null = null;
+                        if (event.key === 'ArrowUp' || event.key === 'ArrowRight') {
+                            next = Math.min(1, pad.volume + step);
+                        } else if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') {
+                            next = Math.max(0, pad.volume - step);
+                        } else if (event.key === 'Home') {
+                            next = 0;
+                        } else if (event.key === 'End') {
+                            next = 1;
+                        }
+                        if (next !== null) {
+                            event.preventDefault();
+                            onPadParam(index, 'volume', next);
+                        }
+                    }}
                     onPointerDown={(event) => {
-                        const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+                        const track = event.currentTarget as HTMLElement;
                         const setVol = (clientY: number) => {
+                            // Recompute the rect each move so a mid-drag panel
+                            // resize/scroll doesn't make the math stale.
+                            const rect = track.getBoundingClientRect();
                             const ratio = 1 - Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
                             onPadParam(index, 'volume', ratio);
                         };
                         setVol(event.clientY);
                         const onMove = (ev: PointerEvent) => setVol(ev.clientY);
-                        const onUp = () => {
+                        const release = () => {
                             document.removeEventListener('pointermove', onMove);
-                            document.removeEventListener('pointerup', onUp);
+                            document.removeEventListener('pointerup', release);
+                            document.removeEventListener('pointercancel', release);
+                            window.removeEventListener('blur', release);
                         };
                         document.addEventListener('pointermove', onMove);
-                        document.addEventListener('pointerup', onUp);
+                        document.addEventListener('pointerup', release);
+                        document.addEventListener('pointercancel', release);
+                        window.addEventListener('blur', release);
                     }}
                 >
                     {/* Fill level */}

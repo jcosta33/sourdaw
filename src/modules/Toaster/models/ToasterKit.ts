@@ -217,6 +217,25 @@ export function createDefaultPattern(numPads: number): Pattern {
     };
 }
 
+/**
+ * Return a kit with `activePatternId` switched to `patternId`, or the same kit
+ * unchanged when `patternId` does not name a pattern that exists. The model
+ * carries a multi-`patterns` array (used by pattern morph and meant to back a
+ * pattern-switch affordance), but nothing was ever able to change which one is
+ * active — `activePatternId` was only set by `createDefaultKit`/`loadKit`. This
+ * is the pure switch that backs that affordance; the guard keeps a stray id
+ * from pointing the live sequencer/exporter at a non-existent pattern.
+ */
+export function withActivePatternId(kit: ToasterKit, patternId: string): ToasterKit {
+    if (kit.activePatternId === patternId) {
+        return kit;
+    }
+    if (!kit.patterns.some((pattern) => pattern.id === patternId)) {
+        return kit;
+    }
+    return { ...kit, activePatternId: patternId };
+}
+
 export function createDefaultKit(): ToasterKit {
     const numPads = 16;
     return {

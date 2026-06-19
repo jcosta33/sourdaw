@@ -57,4 +57,38 @@ describe('createDrumTrackStack', () => {
             expect.objectContaining({ trackId: parentId, kind: 'folder' })
         );
     });
+
+    it('emits track.added for the parent and all 16 children (Finding #18)', () => {
+        const committed: { tracks: Array<{ id: string; kind: string; parentId: string | null }> }[] = [];
+        vi.mocked(getTrackStoreState).mockReturnValue({ tracks: [], selectedTrackId: null });
+        vi.mocked(setTrackStoreState).mockImplementation((next) => {
+            committed.push(next as (typeof committed)[number]);
+        });
+
+        const eventBus = createMock<EventBusShape>();
+        eventBus.emit.mockResolvedValue(undefined);
+        injectDependencies(createDrumTrackStack, { eventBus });
+
+        const parentId = createDrumTrackStack();
+
+        // One parent + 16 children committed.
+        const childIds = committed[0]!.tracks.filter((t) => t.parentId === parentId).map((t) => t.id);
+        expect(childIds).toHaveLength(16);
+
+        // A track.added fired for the parent and for every child, so downstream
+        // subscribers can keep all 16 children bound to the parent.
+        const addedIds = eventBus.emit.mock.calls
+            .filter(([eventName]) => eventName === 'track.added')
+            .map(([, payload]) => (payload as { trackId: string }).trackId);
+        expect(addedIds).toContain(parentId);
+        for (const childId of childIds) {
+            expect(addedIds).toContain(childId);
+        }
+        expect(addedIds).toHaveLength(17);
+
+        // Parent must be announced before any of its children resolve.
+        const parentPos = addedIds.indexOf(parentId);
+        const earliestChildPos = Math.min(...childIds.map((id) => addedIds.indexOf(id)));
+        expect(parentPos).toBeLessThan(earliestChildPos);
+    });
 });

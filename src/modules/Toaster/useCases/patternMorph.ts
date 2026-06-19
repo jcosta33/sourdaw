@@ -5,9 +5,19 @@
 
 import { type Pattern, type Step } from '../models/ToasterKit';
 
+// Reserved namespace for synthetic morph patterns. Prefixed with a NUL (U+0000)
+// control char, which the UI/preset pattern-id scheme (A1, A2, …) never emits,
+// so a user-named pattern such as "morph-A1-A2" can no longer collide here.
+const MORPH_ID_SENTINEL = '\u0000morph';
+
 function lerpStep(alpha: Step, b: Step, time: number): Step {
+    // Activation is the interpolated probability that the step is on; resolve
+    // it deterministically with a 0.5 threshold rather than re-rolling
+    // Math.random() every tick (which made a held mid-morph flicker and be
+    // unreproducible). At t<0.5 A's activation dominates, at t>0.5 B's does.
+    const activeProbability = (alpha.active ? 1 - time : 0) + (b.active ? time : 0);
     return {
-        active: Math.random() < (alpha.active ? 1 - time : 0) + (b.active ? time : 0),
+        active: activeProbability >= 0.5,
         velocity: alpha.velocity * (1 - time) + b.velocity * time,
         probability: alpha.probability * (1 - time) + b.probability * time,
         microTiming: alpha.microTiming * (1 - time) + b.microTiming * time,
@@ -65,7 +75,7 @@ export function morphPatterns(alpha: Pattern, b: Pattern, time: number): Pattern
     });
 
     return {
-        id: `morph-${alpha.id}-${b.id}`,
+        id: `${MORPH_ID_SENTINEL}-${alpha.id}-${b.id}`,
         name: `${alpha.name} → ${b.name}`,
         stepsPerBar: clamped < 0.5 ? alpha.stepsPerBar : b.stepsPerBar,
         bars: clamped < 0.5 ? alpha.bars : b.bars,

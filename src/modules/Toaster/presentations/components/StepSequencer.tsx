@@ -54,6 +54,9 @@ export const StepSequencer = ({
 
     return (
         <div className="select-none" onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}>
+            <div className="mb-1 px-2 text-[8px] uppercase tracking-[0.18em] text-white/35">
+                Click to toggle · Alt-drag a step up/down to set velocity
+            </div>
             {pattern.tracks.map((track) => {
                 const pad = pads[track.padIndex];
                 if (!pad) {
@@ -86,6 +89,13 @@ export const StepSequencer = ({
                                 return (
                                     <div
                                         key={stepIndex}
+                                        role="checkbox"
+                                        tabIndex={0}
+                                        aria-checked={step.active}
+                                        aria-label={`${pad.name} step ${stepIndex + 1}${
+                                            step.active ? `, on, velocity ${Math.round(step.velocity * 100)}%` : ', off'
+                                        }`}
+                                        title="Click to toggle · Alt-drag up/down to set velocity"
                                         className={`relative min-w-[19px] flex-1 cursor-pointer rounded-[10px] transition-all ${isBarStart ? 'ml-1' : ''}`}
                                         style={{
                                             height: STEP_HEIGHT,
@@ -97,6 +107,12 @@ export const StepSequencer = ({
                                         onPointerDown={(event) =>
                                             handleStepPointerDown(track.padIndex, stepIndex, event)
                                         }
+                                        onKeyDown={(event) => {
+                                            if (event.key === 'Enter' || event.key === ' ') {
+                                                event.preventDefault();
+                                                onToggleStep(track.padIndex, stepIndex);
+                                            }
+                                        }}
                                     >
                                         <div className="absolute inset-[1px] rounded-[9px] bg-black/22" />
 

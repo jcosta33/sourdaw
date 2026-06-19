@@ -17,7 +17,9 @@ type NoteRepeatSession = {
     intervalSec: number;
 };
 
-let activeSession: NoteRepeatSession | null = null;
+// Keyed by deviceId so two Toaster instances can each hold an independent
+// note-repeat without one stealing or stopping the other's session.
+const activeSessions = new Map<string, NoteRepeatSession>();
 
 export type NoteRepeatRate = '1/4' | '1/8' | '1/16' | '1/32' | '1/8t' | '1/16t';
 
@@ -41,25 +43,39 @@ function rateToDurationMs(rate: NoteRepeatRate, bpm: number): number {
     }
 }
 
-export function stopNoteRepeat(): void {
-    if (activeSession) {
-        clearTimeout(activeSession.timeoutId);
-        activeSession = null;
+export function stopNoteRepeat(deviceId: string): void {
+    const session = activeSessions.get(deviceId);
+    if (session) {
+        clearTimeout(session.timeoutId);
+        activeSessions.delete(deviceId);
     }
 }
 
-function scheduleNextTrigger(): void {
-    if (!activeSession) {
+// If the timer wakes more than this many intervals late (e.g. the tab was
+// suspended in the background), don't try to replay every missed trigger —
+// that burns CPU firing a burst of catch-up hits. Resync to "now" instead.
+const MAX_CATCHUP_INTERVALS = 2;
+
+function scheduleNextTrigger(deviceId: string): void {
+    const session = activeSessions.get(deviceId);
+    if (!session) {
         return;
     }
 
-    triggerToasterPad(activeSession.deviceId, activeSession.padIndex, activeSession.velocity);
+    triggerToasterPad(session.deviceId, session.padIndex, session.velocity);
 
-    activeSession.nextTriggerTime += activeSession.intervalSec;
     const now = getAudioTime();
-    const delayMs = Math.max(1, (activeSession.nextTriggerTime - now) * 1000);
+    session.nextTriggerTime += session.intervalSec;
 
-    activeSession.timeoutId = setTimeout(scheduleNextTrigger, delayMs);
+    // Clamp catch-up: if we fell far behind (tab-suspend), reset the schedule
+    // to one interval from now rather than firing repeatedly to catch up.
+    if (now - session.nextTriggerTime > MAX_CATCHUP_INTERVALS * session.intervalSec) {
+        session.nextTriggerTime = now + session.intervalSec;
+    }
+
+    const delayMs = Math.max(1, (session.nextTriggerTime - now) * 1000);
+
+    session.timeoutId = setTimeout(() => scheduleNextTrigger(deviceId), delayMs);
 }
 
 export function startNoteRepeat(
@@ -69,7 +85,7 @@ export function startNoteRepeat(
     bpm: number,
     rate: NoteRepeatRate
 ): void {
-    stopNoteRepeat();
+    stopNoteRepeat(deviceId);
     const durationMs = rateToDurationMs(rate, bpm);
     const intervalSec = durationMs / 1000;
 
@@ -77,13 +93,13 @@ export function startNoteRepeat(
 
     const nextTriggerTime = getAudioTime() + intervalSec;
     const delayMs = Math.max(1, intervalSec * 1000);
-    const timeoutId = setTimeout(scheduleNextTrigger, delayMs);
+    const timeoutId = setTimeout(() => scheduleNextTrigger(deviceId), delayMs);
 
-    activeSession = { deviceId, padIndex, velocity, timeoutId, nextTriggerTime, intervalSec };
+    activeSessions.set(deviceId, { deviceId, padIndex, velocity, timeoutId, nextTriggerTime, intervalSec });
 }
 
-export function isNoteRepeating(): boolean {
-    return activeSession !== null;
+export function isNoteRepeating(deviceId: string): boolean {
+    return activeSessions.has(deviceId);
 }
 
 export const NOTE_REPEAT_RATES: NoteRepeatRate[] = ['1/4', '1/8', '1/16', '1/32', '1/8t', '1/16t'];
