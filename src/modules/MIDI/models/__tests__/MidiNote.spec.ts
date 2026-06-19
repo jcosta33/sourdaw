@@ -9,7 +9,7 @@ describe('createMidiNote', () => {
         expect(alpha.pitch).toBe(60);
         expect(alpha.velocity).toBe(100);
         expect(alpha.probability).toBe(100);
-        expect(alpha.id).toMatch(/^note-[a-f0-9]{8}$/i);
+        expect(alpha.id).toMatch(/^note-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i);
         expect(b.velocity).toBe(80);
         expect(b.probability).toBe(50);
         expect(b.id).not.toBe(alpha.id);
@@ -23,7 +23,7 @@ describe('createMidiCC', () => {
         expect(ev.value).toBe(100);
         expect(ev.beat).toBe(2);
         expect(ev.channel).toBe(0);
-        expect(ev.id).toMatch(/^cc-[a-f0-9]{8}$/i);
+        expect(ev.id).toMatch(/^cc-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i);
     });
 });
 
@@ -33,6 +33,6 @@ describe('createMidiPitchBend', () => {
         expect(ev.value).toBe(0.5);
         expect(ev.beat).toBe(1);
         expect(ev.channel).toBe(2);
-        expect(ev.id).toMatch(/^pb-[a-f0-9]{8}$/i);
+        expect(ev.id).toMatch(/^pb-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i);
     });
 });

@@ -18,7 +18,7 @@ export function formatChordName(event: ChordEvent): string {
 
 export function createChordEvent(beat: number, root: number, quality: ChordType, duration: number): ChordEvent {
     return {
-        id: `chord-${crypto.randomUUID().slice(0, 8)}`,
+        id: `chord-${crypto.randomUUID()}`,
         beat,
         root: ((root % 12) + 12) % 12,
         quality,

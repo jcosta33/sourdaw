@@ -145,7 +145,14 @@ export type AppAction =
     | { type: 'quantizeNotes'; payload: { clipId: string; gridSize: number; strength?: number; swing?: number } }
     | { type: 'quantizeNoteLengths'; payload: { clipId: string; gridSize: number } }
     | { type: 'transposeNotes'; payload: { clipId: string; semitones: number } }
-    | { type: 'humanizeNotes'; payload: { clipId: string; amount: number } }
+    | {
+          type: 'humanizeNotes';
+          // `seed` and `velocityAmount` are captured by the handler on first
+          // execute and replayed on redo so undo→redo reproduces identical
+          // offsets (deterministic randomness). Both are optional: callers
+          // construct the action without them, the handler fills `seed` in.
+          payload: { clipId: string; amount: number; velocityAmount?: number; seed?: number };
+      }
     | { type: 'invertNotes'; payload: { clipId: string } }
     | { type: 'retrogradeNotes'; payload: { clipId: string } }
     | {

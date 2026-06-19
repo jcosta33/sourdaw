@@ -38,6 +38,16 @@ describe('setNoteVelocity', () => {
         expect(midiStore.value?.notesByClipId.c1?.find((node) => node.id === 'n2')?.velocity).toBe(1);
     });
 
+    it('should round a fractional velocity to a whole MIDI step', () => {
+        // MIDI velocity is a 7-bit integer; fractional input must collapse to a
+        // whole step, matching addMidiNote/batchAddMidiNotes/stampChord.
+        setNoteVelocity('c1', 'n1', 63.4);
+        expect(midiStore.value?.notesByClipId.c1?.find((node) => node.id === 'n1')?.velocity).toBe(63);
+
+        setNoteVelocity('c1', 'n2', 63.6);
+        expect(midiStore.value?.notesByClipId.c1?.find((node) => node.id === 'n2')?.velocity).toBe(64);
+    });
+
     it('should not mutate when the clip or store is missing', () => {
         setNoteVelocity('missing', 'n1', 64);
         midiStore.set(null);

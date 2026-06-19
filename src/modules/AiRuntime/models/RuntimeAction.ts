@@ -126,7 +126,12 @@ export type RuntimeAction =
     | { type: 'quantizeNotes'; payload: { clipId: string; gridSize: number; strength?: number; swing?: number } }
     | { type: 'quantizeNoteLengths'; payload: { clipId: string; gridSize: number } }
     | { type: 'transposeNotes'; payload: { clipId: string; semitones: number } }
-    | { type: 'humanizeNotes'; payload: { clipId: string; amount: number } }
+    | {
+          type: 'humanizeNotes';
+          // Mirrors the AppAction payload: optional `seed`/`velocityAmount` let
+          // the handler capture and replay the RNG seed for deterministic undo/redo.
+          payload: { clipId: string; amount: number; velocityAmount?: number; seed?: number };
+      }
     | { type: 'invertNotes'; payload: { clipId: string } }
     | { type: 'retrogradeNotes'; payload: { clipId: string } }
     | {

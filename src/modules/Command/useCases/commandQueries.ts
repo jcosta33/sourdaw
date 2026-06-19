@@ -142,7 +142,13 @@ export type AppAction =
     | { type: 'quantizeNotes'; payload: { clipId: string; gridSize: number; strength?: number; swing?: number } }
     | { type: 'quantizeNoteLengths'; payload: { clipId: string; gridSize: number } }
     | { type: 'transposeNotes'; payload: { clipId: string; semitones: number } }
-    | { type: 'humanizeNotes'; payload: { clipId: string; amount: number } }
+    | {
+          type: 'humanizeNotes';
+          // `seed`/`velocityAmount` are optional and captured by the handler on
+          // first execute, replayed on redo — kept in sync with
+          // Command/models/AppAction.ts and AiRuntime/models/RuntimeAction.ts.
+          payload: { clipId: string; amount: number; velocityAmount?: number; seed?: number };
+      }
     | { type: 'invertNotes'; payload: { clipId: string } }
     | { type: 'retrogradeNotes'; payload: { clipId: string } }
     | {

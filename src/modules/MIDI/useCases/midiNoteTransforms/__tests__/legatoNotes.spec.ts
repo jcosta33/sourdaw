@@ -35,14 +35,10 @@ describe('legatoNotes', () => {
         expect(noteA?.duration).toBe(2);
     });
 
-    it('should fallback to next note on any pitch within selection', () => {
-        // Remove b, or select a and c.
-        legatoNotes('clip1', ['a', 'c']);
-        const notes = midiStore.value?.notesByClipId.clip1;
-        const _noteA = notes?.find((node) => node.id === 'a');
-        // It finds 'b' even if not in selection if b is on same pitch.
-        // Wait, the logic finds ANY note in the clip for same-pitch, but fallback only selection.
-        // Let's test fallback.
+    it('should fallback to next note on any pitch in the clip', () => {
+        // 'a' (pitch 60) has no later same-pitch note, so the fallback extends it
+        // to the start of the next note on ANY pitch in the clip — here 'c' at
+        // beat 4 — even though 'c' is a different pitch (inventory triage #9).
         midiStore.set({
             notesByClipId: {
                 clip1: [note('a', 60, 0, 0.5), note('c', 64, 4, 0.5)],

@@ -34,7 +34,7 @@ export function createMidiNote(
     probability = 100
 ): MidiNote {
     return {
-        id: `note-${crypto.randomUUID().slice(0, 8)}`,
+        id: `note-${crypto.randomUUID()}`,
         pitch,
         startBeat,
         duration,
@@ -45,7 +45,7 @@ export function createMidiNote(
 
 export function createMidiCC(controller: number, value: number, beat: number, channel = 0): MidiCC {
     return {
-        id: `cc-${crypto.randomUUID().slice(0, 8)}`,
+        id: `cc-${crypto.randomUUID()}`,
         controller,
         value,
         beat,
@@ -55,7 +55,7 @@ export function createMidiCC(controller: number, value: number, beat: number, ch
 
 export function createMidiPitchBend(value: number, beat: number, channel = 0): MidiPitchBend {
     return {
-        id: `pb-${crypto.randomUUID().slice(0, 8)}`,
+        id: `pb-${crypto.randomUUID()}`,
         value,
         beat,
         channel,

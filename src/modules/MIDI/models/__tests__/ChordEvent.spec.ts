@@ -47,6 +47,6 @@ describe('createChordEvent', () => {
         expect(ev.root).toBe(2);
         expect(ev.quality).toBe('dim');
         expect(ev.duration).toBe(2);
-        expect(ev.id).toMatch(/^chord-[0-9a-f]{8}$/);
+        expect(ev.id).toMatch(/^chord-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     });
 });
