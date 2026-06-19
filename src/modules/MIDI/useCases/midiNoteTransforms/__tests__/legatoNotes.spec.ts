@@ -60,4 +60,26 @@ describe('legatoNotes', () => {
         const noteC = midiStore.value?.notesByClipId.clip1?.find((node) => node.id === 'c');
         expect(noteC?.duration).toBe(0.5);
     });
+
+    it('should stop the cross-pitch fallback at an unselected note in between', () => {
+        // Selected note 'a' has no later same-pitch note. The fallback must extend to
+        // the next note on ANY pitch in the clip — including the unselected 'mid' at
+        // beat 1 — not skip past it to the selected 'far' at beat 4 (which would
+        // overrun 'mid' and distort the voicing).
+        midiStore.set({
+            notesByClipId: {
+                clip1: [
+                    note('a', 60, 0, 0.5),
+                    note('mid', 67, 1, 0.5), // unselected note in between
+                    note('far', 64, 4, 0.5), // selected note further out
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        legatoNotes('clip1', ['a', 'far']);
+        const noteA = midiStore.value?.notesByClipId.clip1?.find((node) => node.id === 'a');
+        // Extends to the unselected 'mid' at beat 1, not to the selected 'far' at beat 4.
+        expect(noteA?.duration).toBe(1);
+    });
 });

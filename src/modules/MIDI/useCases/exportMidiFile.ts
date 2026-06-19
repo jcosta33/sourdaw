@@ -1,11 +1,19 @@
+import { logger } from '#/infra/logger/appLogger';
+
 import { type MidiNote, type MidiCC } from '../models/MidiNote';
 import { downloadBlob } from '../repositories/downloadFile';
 
 const TICKS_PER_BEAT = 480;
+const VAR_LEN_MAX = 0x0fffffff;
 
 function writeVarLen(value: number): number[] {
+    if (value > VAR_LEN_MAX) {
+        logger.warn(
+            `MIDI export: variable-length quantity ${value} exceeds the 28-bit SMF limit (${VAR_LEN_MAX}) and was truncated`
+        );
+    }
     const bytes: number[] = [];
-    let value1 = value & 0x0fffffff;
+    let value1 = value & VAR_LEN_MAX;
     bytes.unshift(value1 & 0x7f);
     while (value1 > 0x7f) {
         value1 >>= 7;
@@ -49,9 +57,10 @@ function buildTrackEvents(notes: MidiNote[], ccs: MidiCC[], clipStartBeat: numbe
         const endTick = Math.round((clipStartBeat + note.startBeat + note.duration) * TICKS_PER_BEAT);
         const vel = Math.max(1, Math.min(127, Math.round(note.velocity)));
         const pitch = Math.max(0, Math.min(127, note.pitch));
+        const channel = (note.channel ?? 0) & 0x0f;
 
-        events.push({ tick: startTick, data: [0x90, pitch, vel] });
-        events.push({ tick: endTick, data: [0x80, pitch, 0] });
+        events.push({ tick: startTick, data: [0x90 | channel, pitch, vel] });
+        events.push({ tick: endTick, data: [0x80 | channel, pitch, 0] });
     }
 
     for (const cc of ccs) {

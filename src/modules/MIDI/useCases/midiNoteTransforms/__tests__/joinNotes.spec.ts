@@ -64,4 +64,35 @@ describe('joinNotes', () => {
         expect(notes?.length).toBe(1);
         expect(notes?.[0]?.duration).toBe(3);
     });
+
+    it('should still merge notes left with sub-grid jitter after humanize/quantize', () => {
+        // After humanize or quantize(strength<1) the end of 'a' no longer lands exactly
+        // on the start of 'b'; a residual gap of 0.02 beats far exceeds the old 0.001
+        // tolerance yet is musically adjacent on a 1/4 grid (tolerance = gridSize/8).
+        midiStore.set({
+            notesByClipId: {
+                clip1: [note('a', 60, 0, 0.98), note('b', 60, 1, 1)], // 0.02-beat gap
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        joinNotes('clip1', ['a', 'b'], 0.25); // 1/4 grid -> tolerance 0.03125
+        const notes = midiStore.value?.notesByClipId.clip1;
+        expect(notes?.length).toBe(1);
+        // Merged note spans from a.start (0) to b.end (1 + 1 = 2).
+        expect(notes?.[0]?.duration).toBe(2);
+    });
+
+    it('should not merge across a gap larger than the grid tolerance', () => {
+        midiStore.set({
+            notesByClipId: {
+                clip1: [note('a', 60, 0, 0.5), note('b', 60, 1, 1)], // 0.5-beat gap
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        joinNotes('clip1', ['a', 'b'], 0.25); // tolerance 0.03125 << 0.5 gap
+        const notes = midiStore.value?.notesByClipId.clip1;
+        expect(notes?.length).toBe(2);
+    });
 });

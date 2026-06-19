@@ -70,7 +70,7 @@ export function extractGrooveFromClip(clipId: string, gridDivision = 0.25): Groo
     }
 
     return {
-        id: `groove-${crypto.randomUUID().slice(0, 8)}`,
+        id: `groove-${crypto.randomUUID()}`,
         name: `Groove from clip`,
         offsets,
         gridDivision,

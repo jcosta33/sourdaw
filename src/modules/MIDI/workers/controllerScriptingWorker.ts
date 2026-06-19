@@ -14,7 +14,6 @@ self.onmessage = (event: MessageEvent<ControllerScriptMessage>) => {
             // SECURITY NOTE: using new Function() in a Worker provides basic isolation
             // but is not a full secure sandbox. Production usage should use a more
             // robust isolation mechanism if running untrusted third-party scripts.
-            console.log('Running controller script...');
 
             // API provided to the script
             const DAW = {

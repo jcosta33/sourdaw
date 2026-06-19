@@ -1,13 +1,26 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
-import { midiLearnStore, type MidiMapping, type MidiMappingTargetType } from '../../stores/midiLearnStore';
+import {
+    midiLearnStore,
+    type MidiMapping,
+    type MidiMappingScaleMode,
+    type MidiMappingTargetType,
+} from '../../stores/midiLearnStore';
 
-const VALUE_RANGES: Record<MidiMappingTargetType, { min: number; max: number }> = {
-    trackGain: { min: 0, max: 1 },
-    trackPan: { min: -50, max: 50 },
-    deviceParam: { min: 0, max: 1 },
-    fermenterGlobalParam: { min: 0, max: 1 },
+/**
+ * Per-target value contract for MIDI Learn. Ranges mirror the real param
+ * contracts each target writes to:
+ *  - `trackGain`  → `setTrackGain` clamps [0, 1] (linear amplitude), but a
+ *    knob/fader feels right with a perceptual `log` taper, so that is the default.
+ *  - `trackPan`   → `setTrackPan` clamps [-50, 50] (linear, symmetric).
+ *  - `deviceParam` / `fermenterGlobalParam` → normalised [0, 1], linear.
+ */
+const VALUE_RANGES: Record<MidiMappingTargetType, { min: number; max: number; scaleMode: MidiMappingScaleMode }> = {
+    trackGain: { min: 0, max: 1, scaleMode: 'log' },
+    trackPan: { min: -50, max: 50, scaleMode: 'linear' },
+    deviceParam: { min: 0, max: 1, scaleMode: 'linear' },
+    fermenterGlobalParam: { min: 0, max: 1, scaleMode: 'linear' },
 };
 
 export const completeMidiLearn = inject({ logger })(
@@ -35,6 +48,7 @@ export const completeMidiLearn = inject({ logger })(
                 paramId: target.paramId,
                 minValue: defaults.min,
                 maxValue: defaults.max,
+                scaleMode: defaults.scaleMode,
             };
 
             const mappings = [...state.mappings];

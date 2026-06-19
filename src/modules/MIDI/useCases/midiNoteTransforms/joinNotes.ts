@@ -4,15 +4,26 @@ import { updateNotesForClip } from '../midiNoteCrud/updateNotesForClip';
 /**
  * Merges adjacent selected notes on the same pitch into single notes (R-A6).
  *
- * Two notes are considered adjacent when the end of the first equals (within 0.001 beats)
- * the start of the next. Velocity takes the first note's value. Non-adjacent notes
- * or notes on different pitches within the selection are left unchanged.
+ * Two notes are considered adjacent when the gap between the end of the first and
+ * the start of the next is within a musically-meaningful tolerance — an eighth of
+ * `gridSize`. A fixed sub-millibeat tolerance silently failed to merge notes after
+ * humanize / quantize(strength<1), which leave residual timing jitter far larger
+ * than 0.001 beats yet still perceptually adjacent. Velocity takes the first note's
+ * value. Non-adjacent notes or notes on different pitches within the selection are
+ * left unchanged.
+ *
+ * `gridSize` defaults to one beat (a quarter note in 4/4) when the caller has no
+ * grid context.
  */
-export function joinNotes(clipId: string, selectedIds: string[]): void {
+export function joinNotes(clipId: string, selectedIds: string[], gridSize: number = 1): void {
     if (selectedIds.length < 2) {
         return;
     }
     const idSet = new Set(selectedIds);
+
+    // Tolerate gaps up to an eighth of the grid: large enough to absorb humanize /
+    // partial-quantize jitter, small enough not to swallow a genuine rest.
+    const adjacencyTolerance = Math.abs(gridSize) / 8;
 
     updateNotesForClip(clipId, (notes) => {
         const selected = notes.filter((node) => idSet.has(node.id));
@@ -37,8 +48,8 @@ export function joinNotes(clipId: string, selectedIds: string[]): void {
                 // Extend the run while notes are adjacent (end of j meets start of j+1)
                 while (
                     jIndex + 1 < sorted.length &&
-                    Math.abs(sorted[jIndex]!.startBeat + sorted[jIndex]!.duration - sorted[jIndex + 1]!.startBeat) <
-                        0.001
+                    Math.abs(sorted[jIndex]!.startBeat + sorted[jIndex]!.duration - sorted[jIndex + 1]!.startBeat) <=
+                        adjacencyTolerance
                 ) {
                     jIndex++;
                 }

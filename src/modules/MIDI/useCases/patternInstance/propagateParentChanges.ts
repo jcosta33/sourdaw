@@ -40,7 +40,10 @@ export function propagateParentChanges(parentClipId: string): void {
             const offset = clip.startBeat - parentClip.startBeat;
             const clonedNotes = parentNotes.map((node) => ({
                 ...node,
-                id: `note-inst-${crypto.randomUUID().slice(0, 8)}`,
+                // Derive a stable child id from the (child clip, parent note) pair so
+                // re-propagation after a parent edit preserves note identity instead of
+                // minting a fresh id on every pass.
+                id: `note-inst-${clip.id}-${node.id}`,
                 startBeat: node.startBeat + offset,
             }));
             setNotesForClip(clip.id, clonedNotes);

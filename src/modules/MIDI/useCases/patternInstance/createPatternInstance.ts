@@ -51,7 +51,7 @@ export function createPatternInstance(sourceClipId: string, targetTrackId: strin
         const offset = startBeat - sourceClip.startBeat;
         const clonedNotes = sourceNotes.map((node) => ({
             ...node,
-            id: `note-inst-${crypto.randomUUID().slice(0, 8)}`,
+            id: `note-inst-${crypto.randomUUID()}`,
             startBeat: node.startBeat + offset,
         }));
         setNotesForClip(instanceId, clonedNotes);

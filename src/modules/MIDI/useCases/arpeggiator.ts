@@ -1,15 +1,22 @@
+import { createSeededRandom, generateSeed } from '#/utils/SeededRandom/SeededRandom';
+
 import { type MidiNote } from '../models/MidiNote';
 import { midiStore } from '../stores/midiStore';
 
 export type ArpPattern = 'up' | 'down' | 'updown' | 'downup' | 'random';
 export type ArpRate = 4 | 8 | 16 | 32;
 
+/** How the generated arpeggio notes combine with the clip's existing notes. */
+export type ArpMode = 'replace' | 'merge';
+
 export function arpeggiate(
     clipId: string,
     pattern: ArpPattern = 'up',
     rate: ArpRate = 16,
     octaves: number = 1,
-    gatePercent: number = 80
+    gatePercent: number = 80,
+    mode: ArpMode = 'replace',
+    seed?: number
 ): void {
     const state = midiStore.value;
     if (!state) {
@@ -59,9 +66,12 @@ export function arpeggiate(
             break;
         }
         case 'random': {
+            // Use a seeded PRNG so the shuffle is reproducible (undo/redo,
+            // tests) instead of the non-capturable Math.random().
+            const rng = createSeededRandom(seed ?? generateSeed());
             sequence = [...expandedPitches];
             for (let index = sequence.length - 1; index > 0; index--) {
-                const jIndex = Math.floor(Math.random() * (index + 1));
+                const jIndex = Math.floor(rng() * (index + 1));
                 [sequence[index], sequence[jIndex]] = [sequence[jIndex]!, sequence[index]!];
             }
             break;
@@ -92,7 +102,10 @@ export function arpeggiate(
     for (let beat = minBeat; beat < maxBeat; beat += stepSize) {
         const pitch = sequence[stepIndex % sequence.length]!;
         newNotes.push({
-            id: `arp-${clipId}-${stepIndex}`,
+            // Globally unique id. The previous `arp-${clipId}-${stepIndex}`
+            // collided across repeated runs and across clips, corrupting
+            // selection and undo state.
+            id: `arp-${crypto.randomUUID()}`,
             pitch,
             startBeat: beat,
             duration: gateDuration,
@@ -101,11 +114,15 @@ export function arpeggiate(
         stepIndex++;
     }
 
+    // In 'merge' mode the arpeggio is added to the clip's existing notes; in
+    // 'replace' mode (the default) it overwrites them.
+    const merged = mode === 'merge' ? [...notes, ...newNotes] : newNotes;
+
     midiStore.set({
         ...state,
         notesByClipId: {
             ...state.notesByClipId,
-            [clipId]: newNotes,
+            [clipId]: merged,
         },
     });
 }

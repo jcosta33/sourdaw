@@ -1,3 +1,5 @@
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { type ControllerMapping } from '../../models/ControllerProfile';
 import { hardwareControllerStore } from '../../stores/hardwareControllerStore';
 
@@ -14,8 +16,53 @@ export function exportHardwareMappings(profileId: string): string | null {
     return JSON.stringify(profile.mappings, null, 2);
 }
 
+const VALID_CONTROL_TYPES: ReadonlySet<ControllerMapping['controlType']> = new Set(['pad', 'knob', 'fader', 'button']);
+const VALID_ACTION_TYPES: ReadonlySet<ControllerMapping['action']['type']> = new Set([
+    'parameter',
+    'transport',
+    'workflow',
+]);
+
+function isControllerMapping(value: unknown): value is ControllerMapping {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    const entry = value as Record<string, unknown>;
+
+    if (typeof entry.id !== 'string') {
+        return false;
+    }
+    if (
+        typeof entry.controlType !== 'string' ||
+        !VALID_CONTROL_TYPES.has(entry.controlType as ControllerMapping['controlType'])
+    ) {
+        return false;
+    }
+    if (typeof entry.controlIndex !== 'number' || typeof entry.channel !== 'number') {
+        return false;
+    }
+    if (typeof entry.action !== 'object' || entry.action === null) {
+        return false;
+    }
+    const action = entry.action as Record<string, unknown>;
+    if (
+        typeof action.type !== 'string' ||
+        !VALID_ACTION_TYPES.has(action.type as ControllerMapping['action']['type'])
+    ) {
+        return false;
+    }
+    if (action.target !== undefined && typeof action.target !== 'string') {
+        return false;
+    }
+    return true;
+}
+
 /**
  * Import hardware mappings from a JSON string (J3).
+ *
+ * A malformed document or an entry that fails {@link isControllerMapping}
+ * surfaces an error notification rather than failing silently, so the user
+ * learns the import did nothing instead of assuming it succeeded.
  */
 export function importHardwareMappings(profileId: string, json: string): void {
     const state = hardwareControllerStore.value;
@@ -23,35 +70,23 @@ export function importHardwareMappings(profileId: string, json: string): void {
         return;
     }
 
+    let parsed: unknown;
     try {
-        const parsed: unknown = JSON.parse(json);
-        if (!Array.isArray(parsed)) {
-            return;
-        }
-        const VALID_CONTROL_TYPES = ['pad', 'knob', 'fader', 'button'];
-        const VALID_ACTION_TYPES = ['parameter', 'transport', 'workflow'];
-        for (const entry of parsed) {
-            if (
-                typeof entry !== 'object' ||
-                entry === null ||
-                !VALID_CONTROL_TYPES.includes((entry as Record<string, unknown>).controlType as string) ||
-                typeof (entry as Record<string, unknown>).controlIndex !== 'number' ||
-                typeof (entry as Record<string, unknown>).channel !== 'number' ||
-                typeof (entry as Record<string, unknown>).action !== 'object' ||
-                (entry as Record<string, unknown>).action === null ||
-                !VALID_ACTION_TYPES.includes(
-                    ((entry as Record<string, unknown>).action as Record<string, unknown>).type as string
-                )
-            ) {
-                return;
-            }
-        }
-        const mappings = parsed as ControllerMapping[];
-        hardwareControllerStore.set({
-            ...state,
-            profiles: state.profiles.map((param) => (param.id === profileId ? { ...param, mappings } : param)),
-        });
+        parsed = JSON.parse(json);
     } catch (error) {
-        console.error('Failed to import hardware mappings:', error);
+        const detail = error instanceof Error ? error.message : String(error);
+        notifyUser(`Failed to import hardware mappings: ${detail}`, 'error');
+        return;
     }
+
+    if (!Array.isArray(parsed) || !parsed.every(isControllerMapping)) {
+        notifyUser('Failed to import hardware mappings: file is not a valid controller mapping list', 'error');
+        return;
+    }
+
+    const mappings: ControllerMapping[] = parsed;
+    hardwareControllerStore.set({
+        ...state,
+        profiles: state.profiles.map((param) => (param.id === profileId ? { ...param, mappings } : param)),
+    });
 }
