@@ -12,6 +12,15 @@ export function startPlayback(): void {
         return;
     }
 
+    // Guard against re-entry while already playing. A second spacebar (or any
+    // duplicate trigger) would otherwise re-run `startPlayheadScheduler`, which
+    // re-snaps `lastTickTime` to the current audio-clock time. The next worker
+    // tick then sees `deltaSec ≈ 0`, advances the playhead by ~0 beats, and the
+    // transport loses one grain of forward motion. No-op if already running.
+    if (state.isPlaying) {
+        return;
+    }
+
     void resumeEngine();
     ensureTrackStrips();
 

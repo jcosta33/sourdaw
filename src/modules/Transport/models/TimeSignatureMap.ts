@@ -48,7 +48,9 @@ export function getBarBeatAtPosition(
     let currentDenominator = defaultDenominator;
 
     for (const change of sorted) {
-        if (change.beat >= position) {
+        // A position landing exactly on a change beat must adopt the new time
+        // signature, so consume the change before breaking (`>` not `>=`).
+        if (change.beat > position) {
             break;
         }
         const quarterNotesInSegment = change.beat - currentBeat;

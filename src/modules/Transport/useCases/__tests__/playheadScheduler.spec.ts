@@ -1,10 +1,28 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { stopAllScheduled } from '#/modules/AudioEngine/useCases/scheduling/stopAllScheduled';
 import { startAutomationRecording } from '#/modules/Automation/useCases/automationRecording/startAutomationRecording';
 import { stopAutomationRecording } from '#/modules/Automation/useCases/automationRecording/stopAutomationRecording';
 
+import { playheadPositionRef } from '../../stores/playheadPositionRef';
+import { tempoMapStore } from '../../stores/tempoMapStore';
 import { transportStore } from '../../stores/transportStore';
-import { startPlayheadScheduler, stopPlayheadScheduler } from '../playheadScheduler';
+import { startPlayheadScheduler, stopPlayheadScheduler, disposePlayheadScheduler } from '../playheadScheduler';
+import { disposeAudioClipScheduling } from '../scheduling/scheduleAudioClips';
+
+type FakeWorker = {
+    onmessage: ((e: MessageEvent<unknown>) => void) | null;
+    postMessage: (msg: unknown) => void;
+    terminate: () => void;
+};
+
+// Shared mutable test state, hoisted so the vi.mock factories below can close
+// over it (vi.mock factories are hoisted above imports).
+const harness = vi.hoisted(() => ({
+    clock: 0,
+    setTransportInfo: vi.fn(),
+    workers: [] as FakeWorker[],
+}));
 
 vi.mock('../../stores/transportStore', () => ({
     transportStore: { value: null, set: vi.fn() },
@@ -39,7 +57,9 @@ vi.mock('#/modules/AudioEngine/useCases/audioRecorder/startAudioRecording', () =
 vi.mock('#/modules/AudioEngine/useCases/audioRecorder/stopAudioRecording', () => ({ stopAudioRecording: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases/engineAccess/getAudioContext', () => ({
     getAudioContext: vi.fn(() => ({
-        currentTime: 0,
+        get currentTime() {
+            return harness.clock;
+        },
         createGain: vi.fn(() => ({
             gain: {
                 value: 1,
@@ -51,17 +71,19 @@ vi.mock('#/modules/AudioEngine/useCases/engineAccess/getAudioContext', () => ({
             disconnect: vi.fn(),
         })),
     })),
-    audioEngine: {},
+    audioEngine: {
+        setTransportInfo: (...args: unknown[]): void => {
+            harness.setTransportInfo(...args);
+        },
+    },
 }));
 vi.mock('../scheduling/scheduleMetronome', () => ({
     resetMetronomeBeat: vi.fn(),
     scheduleMetronome: vi.fn(),
 }));
-vi.mock('../scheduling/scheduleMidiNotes', () => ({
-    scheduleMidiNotes: vi.fn(),
-}));
 vi.mock('../scheduling/scheduleAudioClips', () => ({
     scheduleAudioClips: vi.fn(),
+    disposeAudioClipScheduling: vi.fn(),
 }));
 vi.mock('../scheduling/applyAutomation/applyVcaGains', () => ({
     applyVcaGains: vi.fn(),
@@ -81,6 +103,66 @@ vi.mock('#/modules/Automation/useCases/modulation/applyModulation', () => ({
 vi.mock('#/modules/Automation/useCases/modulation/applyModulationToEngine', () => ({
     applyModulationToEngine: vi.fn(),
 }));
+vi.mock('#/modules/AudioEngine/useCases/adjustmentLayer/scheduleAdjustmentLayers', () => ({
+    scheduleAdjustmentLayers: vi.fn(),
+}));
+vi.mock('../scheduling/scheduleMidiNotes', () => ({
+    scheduleMidiNotes: vi.fn(() => Promise.resolve()),
+    scheduleFrozenTrack: vi.fn(() => false),
+}));
+
+// Stub the Worker the scheduler creates so we can capture its message handler
+// and drive ticks synchronously instead of relying on a real worker thread.
+const OriginalWorker = globalThis.Worker;
+beforeEach(() => {
+    harness.clock = 0;
+    harness.workers = [];
+    class WorkerStub {
+        onmessage: ((e: MessageEvent<unknown>) => void) | null = null;
+        postMessage = vi.fn();
+        terminate = vi.fn();
+        constructor() {
+            harness.workers.push(this as unknown as FakeWorker);
+        }
+    }
+    globalThis.Worker = WorkerStub as unknown as typeof Worker;
+});
+afterEach(() => {
+    globalThis.Worker = OriginalWorker;
+});
+
+const playingTransport = {
+    isPlaying: true,
+    isRecording: false,
+    isLooping: false,
+    overdubEnabled: false,
+    metronomeEnabled: false,
+    metronomeVolume: 0.5,
+    tempo: 120,
+    timeSignatureNumerator: 4,
+    timeSignatureDenominator: 4,
+    playheadPosition: 0,
+    loopStart: 0,
+    loopEnd: 0,
+    scheduleGrainMs: 10,
+    punchInEnabled: false,
+    punchInBeat: 0,
+    punchOutBeat: 16,
+    countInEnabled: false,
+    countInBars: 1,
+    preRollEnabled: false,
+    preRollBars: 2,
+    masterGain: 80,
+};
+
+/** Fire one scheduler tick through the captured worker handler. */
+async function fireTick(): Promise<void> {
+    const worker = harness.workers[harness.workers.length - 1]!;
+    worker.onmessage?.({ data: { type: 'tick' } } as MessageEvent<unknown>);
+    // tick() is async; flush the microtask queue.
+    await Promise.resolve();
+    await Promise.resolve();
+}
 
 describe('startPlayheadScheduler', () => {
     beforeEach(() => {
@@ -104,5 +186,99 @@ describe('stopPlayheadScheduler', () => {
         stopPlayheadScheduler();
 
         expect(stopAutomationRecording).toHaveBeenCalled();
+    });
+});
+
+describe('playhead scheduler tick', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        harness.clock = 0;
+        playheadPositionRef.current = 0;
+        tempoMapStore.value = { changes: [] };
+        transportStore.value = { ...playingTransport };
+        disposePlayheadScheduler();
+    });
+
+    afterEach(() => {
+        disposePlayheadScheduler();
+    });
+
+    it('clamps a suspended/resumed clock leap so the playhead does not skip events (regression: §B fix 1)', async () => {
+        startPlayheadScheduler();
+
+        // Normal small tick: 0.05 s at 120bpm (2 beats/s) advances 0.1 beats.
+        harness.clock = 0.05;
+        await fireTick();
+        expect(playheadPositionRef.current).toBeCloseTo(0.1, 6);
+
+        // The context was suspended and resumed: the clock leaps forward 5 s. An
+        // unclamped delta would advance 5 * 2 = 10 beats in a single tick, skipping
+        // every event in between. The clamp caps the advance at one grain window
+        // (SCHEDULE_AHEAD_SECONDS = 0.1 s -> 0.2 beats).
+        harness.clock = 5.05;
+        await fireTick();
+        expect(playheadPositionRef.current).toBeCloseTo(0.3, 6); // 0.1 + clamp(0.2)
+        expect(playheadPositionRef.current).toBeLessThan(1);
+    });
+
+    it('invalidates scheduled clips when the tempo map changes mid-playback (regression: §B fix 4)', async () => {
+        startPlayheadScheduler();
+
+        // First steady tick — no change, so no invalidation teardown.
+        harness.clock = 0.05;
+        await fireTick();
+        const stopCallsBefore = vi.mocked(stopAllScheduled).mock.calls.length;
+
+        // A mid-playback tempo edit replaces the changes array reference.
+        tempoMapStore.value = { changes: [{ id: 't1', beat: 0, tempo: 90, curve: 'instant' }] };
+        harness.clock = 0.1;
+        await fireTick();
+
+        // The tempo-map change must trigger the same teardown the loop-wrap uses
+        // (stopAllScheduled) so clips re-schedule at the new rate.
+        expect(vi.mocked(stopAllScheduled).mock.calls.length).toBeGreaterThan(stopCallsBefore);
+    });
+
+    it('invalidates scheduled clips when the loop region changes mid-playback (regression: §B fix 4)', async () => {
+        startPlayheadScheduler();
+
+        harness.clock = 0.05;
+        await fireTick();
+        const stopCallsBefore = vi.mocked(stopAllScheduled).mock.calls.length;
+
+        // Move the loop region without wrapping.
+        transportStore.value = { ...playingTransport, loopStart: 2, loopEnd: 6 };
+        harness.clock = 0.1;
+        await fireTick();
+
+        expect(vi.mocked(stopAllScheduled).mock.calls.length).toBeGreaterThan(stopCallsBefore);
+    });
+
+    it('does not invalidate when neither tempo map nor loop region changes', async () => {
+        startPlayheadScheduler();
+
+        harness.clock = 0.05;
+        await fireTick();
+        const stopCallsBefore = vi.mocked(stopAllScheduled).mock.calls.length;
+
+        harness.clock = 0.1;
+        await fireTick();
+        harness.clock = 0.15;
+        await fireTick();
+
+        expect(vi.mocked(stopAllScheduled).mock.calls.length).toBe(stopCallsBefore);
+    });
+
+    it('disposePlayheadScheduler terminates the worker and clears the audio-clip pool (regression: §B fix 5)', async () => {
+        startPlayheadScheduler();
+        const worker = harness.workers[harness.workers.length - 1]!;
+
+        harness.clock = 0.05;
+        await fireTick();
+
+        disposePlayheadScheduler();
+
+        expect(vi.mocked(worker.terminate)).toHaveBeenCalled();
+        expect(vi.mocked(disposeAudioClipScheduling)).toHaveBeenCalled();
     });
 });

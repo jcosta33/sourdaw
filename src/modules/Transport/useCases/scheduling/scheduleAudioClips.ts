@@ -56,6 +56,31 @@ function releaseGainNode(node: GainNode, ctx: BaseAudioContext): void {
     }
 }
 
+/**
+ * Reset this module's process-lifetime holders so a stale `gainNodePool`
+ * (which grows monotonically and is bound to a now-discarded AudioContext)
+ * and a stale `requestedAssets` dedup do not survive an HMR reload or a
+ * project switch. Disconnecting pooled nodes drops their reference into the
+ * old graph so it can be collected.
+ */
+export function disposeAudioClipScheduling(): void {
+    for (const node of gainNodePool) {
+        try {
+            node.disconnect();
+        } catch {
+            // node might already be disconnected
+        }
+    }
+    gainNodePool.length = 0;
+    sessionState.requestedAssets.clear();
+}
+
+// Vite HMR: clear the pool + asset dedup before this module is replaced so a
+// fresh AudioContext never inherits GainNodes wired into the disposed graph.
+import.meta.hot?.dispose(() => {
+    disposeAudioClipScheduling();
+});
+
 export function scheduleAudioClips(
     fromBeat: number,
     toBeat: number,
@@ -131,6 +156,19 @@ export function scheduleAudioClips(
             const stretchRatio = clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1;
             const clipTempo = getTempoAtBeat(changes, clip.startBeat, transport.tempo);
             const clipBeatsPerSecond = clipTempo / 60;
+
+            // Single source of truth for beat → audio-context time on the timeline.
+            // Both the iteration start time and its duration must derive from the
+            // *same* tempo basis or, under a tempo curve, the audible clip length
+            // drifts from its visual length (the start time used the scheduler's
+            // currentTempo while the duration used the clip's local tempo). Buffer-
+            // content offsets stay on `clipBeatsPerSecond` (the rate the audio was
+            // rendered at); only timeline placement/duration use this mapping.
+            const timelineBeatsPerSecond = currentTempo / 60;
+            function beatToAudioTime(beat: number): number {
+                return getCurrentTime() + (beat - accumulatedPosition) / timelineBeatsPerSecond + compensation;
+            }
+
             const clipVisualLength = clip.endBeat - clip.startBeat;
             const loopLen = clip.loopEnabled ? (clip.loopLength ?? clipVisualLength) : clipVisualLength;
             const maxIterations = clip.loopEnabled ? Math.ceil(clipVisualLength / loopLen) : 1;
@@ -144,7 +182,9 @@ export function scheduleAudioClips(
 
                 const remainingBeats = clip.endBeat - iterStartBeat;
                 const iterDurationBeats = Math.min(loopLen, remainingBeats);
-                const iterDurationSeconds = iterDurationBeats / clipBeatsPerSecond;
+                // Timeline duration of this iteration: derived from the same beat→time
+                // mapping as iterStartTime so start and length agree under a tempo curve.
+                const iterDurationSeconds = iterDurationBeats / timelineBeatsPerSecond;
 
                 const source = createBufferSource();
                 source.buffer = buffer;
@@ -178,8 +218,7 @@ export function scheduleAudioClips(
                 }
                 source.connect(outputNode);
 
-                const beatOffset = iterStartBeat - accumulatedPosition;
-                const iterStartTime = getCurrentTime() + beatOffset / (currentTempo / 60) + compensation;
+                const iterStartTime = beatToAudioTime(iterStartBeat);
                 const now = getCurrentTime();
                 const clipAudioOffsetBeats = clip.audioOffsetBeats ?? 0;
                 const clipAudioOffsetSeconds = clipAudioOffsetBeats / clipBeatsPerSecond;
@@ -233,10 +272,7 @@ export function scheduleAudioClips(
                     }
 
                     if (isLastIter && clip.fadeOutBeats > 0) {
-                        const clipEndTime =
-                            getCurrentTime() +
-                            (clip.endBeat - accumulatedPosition) / (currentTempo / 60) +
-                            compensation;
+                        const clipEndTime = beatToAudioTime(clip.endBeat);
                         const fadeOutStart = clipEndTime - clip.fadeOutBeats / clipBeatsPerSecond;
                         fadeGain.gain.setValueAtTime(1, Math.max(fadeOutStart, effectiveStart));
                         fadeGain.gain.linearRampToValueAtTime(0, clipEndTime);

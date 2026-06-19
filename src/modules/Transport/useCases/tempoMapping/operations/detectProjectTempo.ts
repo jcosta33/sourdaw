@@ -59,9 +59,29 @@ export function detectTempoFromOnsets(onsets: number[]): TempoMapResult {
     const points: TempoMapPoint[] = [];
     let currentBeat = 0;
 
-    for (let index = 0; index < bpmEstimates.length; index++) {
-        const neighbors = bpmEstimates.slice(Math.max(0, index - 2), index + 3);
-        const smoothedBpm = neighbors.reduce((alpha, b) => alpha + b, 0) / neighbors.length;
+    // Centered moving average over a window of up to 5 estimates (index-2 .. index+2),
+    // clamped at both ends. Maintain the window's running sum incrementally so each
+    // frame is O(1) rather than slicing + reducing the whole neighborhood (O(N^2)).
+    const estimateCount = bpmEstimates.length;
+    let windowLow = 0; // inclusive
+    let windowHigh = 0; // exclusive
+    let windowSum = 0;
+
+    for (let index = 0; index < estimateCount; index++) {
+        const desiredLow = Math.max(0, index - 2);
+        const desiredHigh = Math.min(estimateCount, index + 3);
+
+        while (windowHigh < desiredHigh) {
+            windowSum += bpmEstimates[windowHigh]!;
+            windowHigh++;
+        }
+        while (windowLow < desiredLow) {
+            windowSum -= bpmEstimates[windowLow]!;
+            windowLow++;
+        }
+
+        const windowSize = windowHigh - windowLow;
+        const smoothedBpm = windowSum / windowSize;
         const deviation = Math.abs(smoothedBpm - averageBpm) / averageBpm;
         const confidence = Math.max(0, 1 - deviation * 3);
 

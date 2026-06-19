@@ -8,8 +8,10 @@ import {
     getCompensationDelay,
 } from '#/modules/AudioEngine/useCases';
 
+import { getTimeSignatureAtBeat } from '../../models/TimeSignatureMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
+import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
 
 import { setCountInTimerId, stopActiveRecording } from './recordingLifecycle';
@@ -81,7 +83,18 @@ export function toggleRecording(): void {
     }
 
     if (state.countInEnabled && state.countInBars > 0) {
-        const beatsPerBar = state.timeSignatureNumerator;
+        // The count-in leads into the beat where recording begins, so resolve
+        // the meter at the playhead rather than using the flat
+        // `timeSignatureNumerator`. A project that changes time signature at
+        // the record point would otherwise count in (and accent) in the wrong
+        // meter.
+        const { numerator } = getTimeSignatureAtBeat(
+            timeSignatureMapStore.value?.changes ?? [],
+            state.playheadPosition,
+            state.timeSignatureNumerator,
+            state.timeSignatureDenominator
+        );
+        const beatsPerBar = numerator;
         const countInBeats = state.countInBars * beatsPerBar;
         const countInDurationSec = countInBeats / (state.tempo / 60);
 

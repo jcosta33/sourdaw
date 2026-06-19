@@ -65,4 +65,23 @@ describe('startPlayback', () => {
         expect(resumeEngine).not.toHaveBeenCalled();
         expect(update).not.toHaveBeenCalled();
     });
+
+    it('should be a no-op when already playing so a duplicate trigger does not re-snap the scheduler', () => {
+        const update = vi.fn<typeof updateTransportState>();
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            playheadPosition: 8,
+        });
+        vi.mocked(updateTransportState).mockImplementation(update);
+
+        startPlayback();
+
+        // Re-running while playing would re-call startPlayheadScheduler, which
+        // re-snaps lastTickTime and costs one tick of playhead advance.
+        expect(resumeEngine).not.toHaveBeenCalled();
+        expect(ensureTrackStrips).not.toHaveBeenCalled();
+        expect(startPlayheadScheduler).not.toHaveBeenCalled();
+        expect(update).not.toHaveBeenCalled();
+    });
 });

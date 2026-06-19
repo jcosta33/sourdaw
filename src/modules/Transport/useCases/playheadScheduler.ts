@@ -24,7 +24,7 @@ import { transportStore } from '../stores/transportStore';
 import { evaluateFollowActions } from './evaluateFollowActions';
 import { applyAutomation } from './scheduling/applyAutomation/applyAutomation';
 import { applyVcaGains } from './scheduling/applyAutomation/applyVcaGains';
-import { scheduleAudioClips } from './scheduling/scheduleAudioClips';
+import { scheduleAudioClips, disposeAudioClipScheduling } from './scheduling/scheduleAudioClips';
 import { scheduleMetronome, resetMetronomeBeat } from './scheduling/scheduleMetronome';
 import { scheduleMidiNotes } from './scheduling/scheduleMidiNotes';
 
@@ -63,7 +63,16 @@ const schedulerSession = {
     activeAudioSources: [] as AudioBufferSourceNode[],
     punchRecordingActive: false,
     onStopRequested: null as (() => void) | null,
+    // Last-seen tempo-map identity and loop-region signature. A mid-playback edit
+    // to either changes the beat→time alignment of already-scheduled clips, but
+    // the dedup Set would keep them suppressed; we detect the change and invalidate.
+    lastTempoMapChanges: null as unknown[] | null,
+    lastLoopSignature: '',
 };
+
+function loopSignatureOf(state: { isLooping: boolean; loopStart: number; loopEnd: number }): string {
+    return `${state.isLooping ? 1 : 0}:${state.loopStart}:${state.loopEnd}`;
+}
 
 /**
  * Wire the scheduler's follow-action stop path to the full `stopPlayback`
@@ -80,6 +89,19 @@ export function setStopPlaybackCallback(fn: () => void): void {
 
 const SCHEDULE_AHEAD_SECONDS = 0.1;
 
+/**
+ * Upper bound on a single tick's elapsed real time before we advance the
+ * playhead. If the AudioContext is suspended and later resumed (tab
+ * backgrounded, OS sleep, device unplugged) `ctx.currentTime` leaps forward by
+ * the whole gap; an unclamped `deltaSec` would jump `accumulatedPosition` past
+ * an entire span of beats the look-ahead never scheduled, dropping every
+ * metronome click, MIDI note, and audio clip in between. Clamping to one grain
+ * window keeps advancement bounded so the next ticks re-schedule normally
+ * instead of skipping. The clock leap itself is absorbed (the playhead simply
+ * does not race ahead), which is the correct behaviour for a paused context.
+ */
+const MAX_DELTA_SECONDS = SCHEDULE_AHEAD_SECONDS;
+
 export function startPlayheadScheduler(): void {
     const state = transportStore.value;
     if (!state) {
@@ -93,6 +115,8 @@ export function startPlayheadScheduler(): void {
     schedulerSession.accumulatedPosition = state.playheadPosition;
     playheadPositionRef.current = state.playheadPosition;
     schedulerSession.lastScheduledBeat = state.playheadPosition - 0.0001;
+    schedulerSession.lastTempoMapChanges = tempoMapStore.value?.changes ?? null;
+    schedulerSession.lastLoopSignature = loopSignatureOf(state);
     resetMetronomeBeat(state.playheadPosition);
 
     const grainMs = state.scheduleGrainMs;
@@ -104,10 +128,36 @@ export function startPlayheadScheduler(): void {
         }
 
         const now = ctx.currentTime;
-        const deltaSec = now - schedulerSession.lastTickTime;
+        // Clamp the per-tick advance: a suspended/resumed context leaps `now`
+        // forward by the whole gap, which would skip every event in between.
+        const rawDeltaSec = now - schedulerSession.lastTickTime;
+        const deltaSec = Math.max(0, Math.min(rawDeltaSec, MAX_DELTA_SECONDS));
         schedulerSession.lastTickTime = now;
 
-        const changes = tempoMapStore.value?.changes ?? [];
+        // Read the live tempo-map reference (stable across ticks unless the store
+        // is replaced by an edit) for change detection; fall back to [] only for
+        // the actual tempo lookups so an absent map never spuriously invalidates.
+        const liveChanges = tempoMapStore.value?.changes ?? null;
+        const changes = liveChanges ?? [];
+
+        // A mid-playback tempo-map or loop-region edit changes the beat→time
+        // alignment of clips, but the dedup Set still marks them scheduled and
+        // would never re-emit them at the new rate. Loop-wrap already clears the
+        // Set; this covers the edit-while-playing case. Re-emit by clearing the
+        // dedup Sets and tearing down the stale-aligned active sources, exactly as
+        // the wrap path does — without moving the playhead or the metronome.
+        const loopSignature = loopSignatureOf(current);
+        const tempoMapChanged = schedulerSession.lastTempoMapChanges !== liveChanges;
+        const loopChanged = schedulerSession.lastLoopSignature !== loopSignature;
+        if (tempoMapChanged || loopChanged) {
+            schedulerSession.lastTempoMapChanges = liveChanges;
+            schedulerSession.lastLoopSignature = loopSignature;
+            stopAllScheduled();
+            stopActiveSources(schedulerSession.activeAudioSources, ctx);
+            schedulerSession.scheduledAudioClips.clear();
+            schedulerSession.scheduledFrozenTracks.clear();
+        }
+
         const currentTempo = getTempoAtBeat(changes, schedulerSession.accumulatedPosition, current.tempo);
         const beatsPerSecond = currentTempo / 60;
         const deltaBeats = deltaSec * beatsPerSecond;
@@ -301,3 +351,47 @@ export function stopPlayheadScheduler(): void {
     stopActiveSources(schedulerSession.activeAudioSources, ctx);
     stopAllScheduled();
 }
+
+/**
+ * Tear down all process-lifetime scheduler state. `schedulerSession` and
+ * `sessionState.requestedAssets` (in scheduleAudioClips) plus the GainNode pool
+ * are module-level holders that otherwise survive an HMR reload or a project
+ * switch — the old `tick` worker keeps running against stale closures, the
+ * dedup Sets keep clips suppressed, and the pool keeps GainNodes wired into a
+ * discarded AudioContext alive. Disposing terminates the worker, stops active
+ * sources, clears every dedup Set and the requested-asset set, drops the stop
+ * callback, and resets the change-detection signatures so a fresh session
+ * starts clean.
+ */
+export function disposePlayheadScheduler(): void {
+    if (schedulerSession.worker) {
+        schedulerSession.worker.postMessage({ type: 'stop' });
+        schedulerSession.worker.terminate();
+        schedulerSession.worker = null;
+    }
+    try {
+        const ctx = getAudioContext();
+        stopActiveSources(schedulerSession.activeAudioSources, ctx);
+    } catch {
+        // AudioContext may already be gone on teardown; still drop the references.
+        schedulerSession.activeAudioSources.length = 0;
+    }
+    schedulerSession.lastTickTime = 0;
+    schedulerSession.accumulatedPosition = 0;
+    schedulerSession.lastScheduledBeat = -1;
+    schedulerSession.punchRecordingActive = false;
+    schedulerSession.scheduledAudioClips.clear();
+    schedulerSession.scheduledFrozenTracks.clear();
+    schedulerSession.onStopRequested = null;
+    schedulerSession.lastTempoMapChanges = null;
+    schedulerSession.lastLoopSignature = '';
+    resetMetronomeBeat(0);
+    disposeAudioClipScheduling();
+}
+
+// Vite HMR: dispose all scheduler holders before this module is replaced so a
+// reload never leaves an orphaned worker ticking against stale closures or a
+// pool of GainNodes bound to a discarded AudioContext.
+import.meta.hot?.dispose(() => {
+    disposePlayheadScheduler();
+});
