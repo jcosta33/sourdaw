@@ -27,9 +27,11 @@ describe('addMapping', () => {
         ]);
     });
 
-    it('updates the amount when a mapping for the same target already exists', () => {
-        addMapping('a', { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'p1', amount: 0.3 });
+    it('preserves the existing amount when a mapping for the same target is re-added', () => {
+        // Re-adding a duplicate destination is a no-op: the picker's default amount
+        // must not clobber a user-tuned amount (use updateMapping to change it).
         addMapping('a', { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'p1', amount: 0.9 });
+        addMapping('a', { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'p1', amount: 0.3 });
 
         const mappings = modulationStore.value?.modulators[0]?.mappings ?? [];
         expect(mappings).toHaveLength(1);

@@ -205,8 +205,11 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
                     }
                     aria-label="Modulator kind"
                 >
+                    {/* Envelope is hidden: an ADSR needs a trigger/gate time the
+                        modulation evaluator does not carry, so the card's ADSR
+                        inputs drove nothing (computeModulatorValue returns 0 for
+                        'envelope'). Restore the option once a trigger model exists. */}
                     <option value="lfo">LFO</option>
-                    <option value="envelope">Envelope</option>
                     <option value="step">Step</option>
                 </DawCompactSelect>
                 <label className="text-[10px] text-muted-foreground">Track</label>
@@ -251,43 +254,10 @@ const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElem
                     </>
                 ) : null}
 
-                {form.kind === 'envelope' ? (
-                    <>
-                        <label className="text-[10px] text-muted-foreground">Attack (s)</label>
-                        <DawCompactInput
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={form.envAttack}
-                            onChange={(event) => setField('envAttack', event.target.value)}
-                        />
-                        <label className="text-[10px] text-muted-foreground">Decay (s)</label>
-                        <DawCompactInput
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={form.envDecay}
-                            onChange={(event) => setField('envDecay', event.target.value)}
-                        />
-                        <label className="text-[10px] text-muted-foreground">Sustain (0-1)</label>
-                        <DawCompactInput
-                            type="number"
-                            min="0"
-                            max="1"
-                            step="0.01"
-                            value={form.envSustain}
-                            onChange={(event) => setField('envSustain', event.target.value)}
-                        />
-                        <label className="text-[10px] text-muted-foreground">Release (s)</label>
-                        <DawCompactInput
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={form.envRelease}
-                            onChange={(event) => setField('envRelease', event.target.value)}
-                        />
-                    </>
-                ) : null}
+                {/* Envelope inputs intentionally omitted: the 'envelope' kind is
+                    hidden from the picker until the evaluator supports a
+                    trigger/gate time. `buildModulator` keeps its envelope branch
+                    so a project that already contains one round-trips. */}
 
                 {form.kind === 'step' ? (
                     <>
@@ -432,7 +402,15 @@ const MappingRow = ({ modulator, mapping, destination }: MappingRowProps): React
         if (!Number.isFinite(next)) {
             return;
         }
-        updateMapping(modulator.id, mapping.targetParamId, { amount: Math.max(-1, Math.min(1, next)) });
+        updateMapping(
+            modulator.id,
+            {
+                targetTrackId: mapping.targetTrackId,
+                targetDeviceId: mapping.targetDeviceId,
+                targetParamId: mapping.targetParamId,
+            },
+            { amount: Math.max(-1, Math.min(1, next)) }
+        );
     };
 
     return (
@@ -460,7 +438,13 @@ const MappingRow = ({ modulator, mapping, destination }: MappingRowProps): React
                 <Button
                     variant="ghost"
                     size="icon-xs"
-                    onClick={() => removeMapping(modulator.id, mapping.targetParamId)}
+                    onClick={() =>
+                        removeMapping(modulator.id, {
+                            targetTrackId: mapping.targetTrackId,
+                            targetDeviceId: mapping.targetDeviceId,
+                            targetParamId: mapping.targetParamId,
+                        })
+                    }
                     aria-label="Remove mapping"
                 >
                     <Trash2 className="size-3.5" />
@@ -565,7 +549,7 @@ export const ModulationMatrix = (): ReactElement => {
                     {modulators.length === 0 ? (
                         <DawEmptyState
                             title="No modulators"
-                            description="Create an LFO, envelope, or step modulator to animate device parameters during playback."
+                            description="Create an LFO or step modulator to animate device parameters during playback."
                             className="mx-auto mt-6 max-w-sm"
                         />
                     ) : (
@@ -596,7 +580,7 @@ export const ModulationMatrix = (): ReactElement => {
                         <tbody>
                             {flatRows.map((row) => (
                                 <MappingRow
-                                    key={`${row.modulator.id}:${row.mapping.targetParamId}`}
+                                    key={`${row.modulator.id}:${row.mapping.targetTrackId}:${row.mapping.targetDeviceId}:${row.mapping.targetParamId}`}
                                     modulator={row.modulator}
                                     mapping={row.mapping}
                                     destination={row.destination}

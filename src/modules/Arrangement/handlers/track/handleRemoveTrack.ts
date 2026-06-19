@@ -1,4 +1,5 @@
-import { automationStore } from '#/modules/Automation/stores';
+import { automationStore, modulationStore } from '#/modules/Automation/stores';
+import { removeMapping, removeModulator } from '#/modules/Automation/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { createHandler } from '#/utils/createHandler';
 
@@ -12,9 +13,51 @@ type MidiNoteEntry = { readonly id: string };
 type MidiCcEntry = { readonly id: string };
 type MidiPitchBendEntry = { readonly id: string };
 
+/**
+ * Drop every modulation reference to a removed track: modulators it owns become
+ * dangling (their bindings can never resolve once the track is gone), and any
+ * modulator on another track that maps INTO the removed track holds a mapping
+ * that can never resolve. Removing both keeps the modulation store consistent
+ * with `trackStore`. Reverting the engine param is a no-op here (the device is
+ * already gone), but `removeModulator`/`removeMapping` still clean the store and
+ * runtime values. Runs after `removeTrack` so the snapshot captured in
+ * `describe` (pre-execute) is unaffected.
+ *
+ * Note: `restoreTrack` does not yet restore deleted modulators — the inverse
+ * action snapshot covers automation/MIDI/take lanes but not modulation.
+ */
+function reconcileModulatorsForRemovedTrack(trackId: string): void {
+    const modState = modulationStore.value;
+    if (!modState) {
+        return;
+    }
+    // Snapshot ids/targets first; both helpers mutate the store as they go.
+    const ownedIds = modState.modulators.filter((m) => m.trackId === trackId).map((m) => m.id);
+    const crossTrackMappings = modState.modulators
+        .filter((m) => m.trackId !== trackId)
+        .flatMap((m) =>
+            m.mappings
+                .filter((mapping) => mapping.targetTrackId === trackId)
+                .map((mapping) => ({
+                    modulatorId: m.id,
+                    targetTrackId: mapping.targetTrackId,
+                    targetDeviceId: mapping.targetDeviceId,
+                    targetParamId: mapping.targetParamId,
+                }))
+        );
+
+    for (const id of ownedIds) {
+        removeModulator(id);
+    }
+    for (const { modulatorId, ...target } of crossTrackMappings) {
+        removeMapping(modulatorId, target);
+    }
+}
+
 export const handleRemoveTrack = createHandler<'removeTrack'>({
     execute: (action) => {
         removeTrack(action.payload.trackId);
+        reconcileModulatorsForRemovedTrack(action.payload.trackId);
     },
     describe: (alpha) => {
         // Snapshot everything that removeTrack will delete, so the inverse

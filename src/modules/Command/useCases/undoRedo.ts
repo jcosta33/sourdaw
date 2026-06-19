@@ -3,12 +3,24 @@ import { undoStore } from '../stores/undoStore';
 import { type UndoEntry } from './commandQueries';
 import { executeAppAction } from './executeAppAction';
 
-async function executeUndo(entry: UndoEntry, runExecuteAppAction: typeof executeAppAction): Promise<void> {
+/**
+ * Performs the undo side-effect for one entry and reports whether anything was
+ * actually undone. An `action` entry with no `inverseAction` cannot be undone — the
+ * caller must NOT consume such an entry (move it past→future), or the undo stack
+ * desyncs from real state: the user's undo would be a silent no-op while a later redo
+ * re-executes the action, double-applying it. Returning `false` lets the caller leave
+ * the entry in place so the failure surfaces instead of being masked.
+ */
+async function executeUndo(entry: UndoEntry, runExecuteAppAction: typeof executeAppAction): Promise<boolean> {
     if (entry.kind === 'callback') {
         entry.undo();
-    } else if (entry.inverseAction) {
-        await runExecuteAppAction(entry.inverseAction);
+        return true;
     }
+    if (entry.inverseAction) {
+        await runExecuteAppAction(entry.inverseAction);
+        return true;
+    }
+    return false;
 }
 
 async function executeRedo(entry: UndoEntry, runExecuteAppAction: typeof executeAppAction): Promise<void> {
@@ -36,8 +48,17 @@ export async function undo(): Promise<void> {
         }
         const newPast = state.past.slice(0, index + 1);
 
+        let anyUndone = false;
         for (let jIndex = groupEntries.length - 1; jIndex >= 0; jIndex--) {
-            await executeUndo(groupEntries[jIndex]!, executeAppAction);
+            const undone = await executeUndo(groupEntries[jIndex]!, executeAppAction);
+            anyUndone = anyUndone || undone;
+        }
+
+        // If no member of the group could be undone, the operation was inert — leave the
+        // group in `past` rather than silently consuming it (which would let a later redo
+        // re-apply the actions). See executeUndo.
+        if (!anyUndone) {
+            return;
         }
 
         undoStore.set({
@@ -47,7 +68,12 @@ export async function undo(): Promise<void> {
         return;
     }
 
-    await executeUndo(lastEntry, executeAppAction);
+    const undone = await executeUndo(lastEntry, executeAppAction);
+    // An inert undo (no inverse, no callback) must not consume the entry — doing so
+    // desyncs the stack from real state. See executeUndo.
+    if (!undone) {
+        return;
+    }
 
     const newPast = state.past.slice(0, -1);
     undoStore.set({

@@ -1,18 +1,11 @@
+import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { transportStore } from '#/modules/Transport/stores';
 
 import { type AutomationPoint } from '../../models/Automation';
 
 import { getAutomationRecordingDependencies } from './recordingDependencies';
-import {
-    RECORDING_MODES,
-    activeRecording,
-    pendingPoints,
-    touchActive,
-    makeKey,
-    findLaneId,
-    clearPointsInRange,
-} from './recordingSessionState';
+import { RECORDING_MODES, activeRecording, pendingPoints, touchActive, makeKey } from './recordingSessionState';
 
 export function recordAutomationValue(trackId: string, parameterId: string, value: number, beat: number): void {
     const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
@@ -21,7 +14,38 @@ export function recordAutomationValue(trackId: string, parameterId: string, valu
     }
 
     const transport = transportStore.value;
-    const tempo = transport?.tempo ?? 120;
+    if (!transport) {
+        // The transport store has not hydrated yet — its tempo is unknown.
+        // Recording now would convert beats with a guessed 120 BPM and land the
+        // points at the wrong time silently. Skip and surface why instead.
+        logger.warn(
+            `recordAutomationValue: transport not hydrated — dropping automation value for ${trackId}/${parameterId} (beat ${beat})`
+        );
+        return;
+    }
+
+    const key = makeKey(trackId, parameterId);
+    let session = activeRecording.get(key);
+
+    if (!session) {
+        session = {
+            parameterId,
+            trackId,
+            startBeat: beat,
+            lastValue: null,
+            tempoAtStart: transport.tempo,
+        };
+        activeRecording.set(key, session);
+        pendingPoints.set(key, []);
+    }
+
+    // Capture tempo once, at the session's first value. Reusing it for the rest
+    // of the session keeps a mid-session tempo change from re-timing beats that
+    // were already recorded under the original tempo.
+    if (session.tempoAtStart === null || session.tempoAtStart === undefined) {
+        session.tempoAtStart = transport.tempo;
+    }
+    const tempo = session.tempoAtStart;
 
     const deps = getAutomationRecordingDependencies();
     const ctx = deps.getAudioContext();
@@ -32,38 +56,24 @@ export function recordAutomationValue(trackId: string, parameterId: string, valu
 
     const compensatedBeat = Math.max(0, beat - offsetBeats);
 
-    const key = makeKey(trackId, parameterId);
-    let session = activeRecording.get(key);
-
-    if (!session) {
-        session = {
-            parameterId,
-            trackId,
-            startBeat: compensatedBeat,
-            lastValue: null,
-        };
-        activeRecording.set(key, session);
-        pendingPoints.set(key, []);
+    // The session may have been seeded above with the raw `beat`; the
+    // latency-compensated beat is the real start, so anchor it on first value.
+    if (session.startBeat > compensatedBeat) {
+        session.startBeat = compensatedBeat;
     }
 
     const point: AutomationPoint = { beat: compensatedBeat, value, curve: 'linear', tension: 0 };
-    const laneId = findLaneId(trackId, parameterId);
 
     // The session-creation branch above always calls `pendingPoints.set(key, [])`
     // so the entry exists here — push in place rather than allocating a
-    // throwaway `[]` and re-setting (§106.2).
+    // throwaway `[]` and re-setting (§106.2). Buffer only: write-mode lane
+    // clearing happens ONCE at flush (stopAutomationRecording), not per value
+    // — the old per-value clearPointsInRange ran a full lane re-map at ~100Hz.
     const points = pendingPoints.get(key);
+    points?.push(point);
+    session.lastValue = value;
 
-    if (track.automationMode === 'write') {
-        if (laneId) {
-            // Clear from recording start to current position (not shifting start)
-            clearPointsInRange(laneId, session.startBeat, compensatedBeat);
-        }
-        points?.push(point);
-        session.lastValue = value;
-    } else if (track.automationMode === 'touch' || track.automationMode === 'latch') {
+    if (track.automationMode === 'touch' || track.automationMode === 'latch') {
         touchActive.add(key);
-        points?.push(point);
-        session.lastValue = value;
     }
 }

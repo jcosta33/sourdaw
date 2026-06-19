@@ -13,11 +13,14 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 import { modulationStore } from '../../../stores/modulationStore';
-import { applyModulationToEngine } from '../applyModulationToEngine';
+import { applyModulationToEngine, resetModulationSlew } from '../applyModulationToEngine';
 import { setModulationDependencies } from '../modulationDependencies';
 
 describe('applyModulationToEngine', () => {
     beforeEach(() => {
+        // The slew map is module-level and survives across ticks; clear it so a
+        // prior test's seeded value does not suppress the first write here.
+        resetModulationSlew();
         mocks.updateDeviceParam.mockReset();
         mocks.getPluginById.mockReset();
         setModulationDependencies({

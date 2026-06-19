@@ -14,9 +14,19 @@ export function zoomToUsedRange(laneId: string): void {
         return;
     }
 
-    const values = lane.points.map((param) => param.value);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
+    // Single pass: the prior `Math.min/max(...lane.points.map(...))` spreads
+    // every value as an argument, overflowing V8's ~32k arg cap on a long, dense
+    // recording (~5 min @ 100 Hz ≈ 30k points) — §117.2 pattern.
+    let min = Infinity;
+    let max = -Infinity;
+    for (const param of lane.points) {
+        if (param.value < min) {
+            min = param.value;
+        }
+        if (param.value > max) {
+            max = param.value;
+        }
+    }
     const range = max - min;
     const padding = Math.max(range * 0.1, (lane.maxValue - lane.minValue) * 0.02);
 

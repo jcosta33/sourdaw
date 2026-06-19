@@ -34,7 +34,10 @@ export function getAutomationValueAtBeat(
         return null;
     }
 
-    // R-F3.3: Follow linked lane if set
+    // R-F3.3: Follow linked lane if set. A linked lane *is* its source — it does
+    // not consult its own points, so the linked source is authoritative even
+    // when the source is empty: an empty source yields null (no value to report),
+    // never a silent fall-through to this lane's local points.
     if (lane.linkedLaneId) {
         // Guard against circular links (A→B→A) — break the cycle.
         if (_visited.has(lane.linkedLaneId)) {
@@ -42,10 +45,11 @@ export function getAutomationValueAtBeat(
         }
         _visited.add(laneId);
         const sourceVal = getAutomationValueAtBeat(lane.linkedLaneId, beat, _visited);
-        if (sourceVal !== null) {
-            const scale = lane.linkScale ?? 1;
-            return sourceVal * scale;
+        if (sourceVal === null) {
+            return null;
         }
+        const scale = lane.linkScale ?? 1;
+        return sourceVal * scale;
     }
 
     if (lane.points.length === 0) {
@@ -76,9 +80,16 @@ export function getAutomationValueAtBeat(
         return points[beforeIdx]!.value;
     }
 
+    // Pass the surrounding points so a 'smooth' (Catmull-Rom) segment uses its
+    // true interior neighbors; without them every interior segment collapses to
+    // a 2-point Hermite that ignores curvature. `previousPoint`/`nextPoint` are
+    // optional — undefined at the ends, where the spline already degrades to the
+    // endpoint tangents by design.
     return interpolateAutomationPointValue({
         firstPoint: points[beforeIdx]!,
         secondPoint: points[beforeIdx + 1]!,
         beat,
+        previousPoint: points[beforeIdx - 1],
+        nextPoint: points[beforeIdx + 2],
     });
 }

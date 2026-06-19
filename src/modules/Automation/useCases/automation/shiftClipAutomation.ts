@@ -13,10 +13,16 @@ export function shiftClipAutomation(clipId: string, beatDelta: number): void {
             }
             return {
                 ...lane,
-                points: lane.points.map((param) => ({
-                    ...param,
-                    beat: param.beat + beatDelta,
-                })),
+                // Clamp to >= 0: a clip never lives before the timeline origin,
+                // so a negative net beat would detach the automation from the
+                // audio it rides. Sort afterwards because the clamp can collide
+                // several leading points onto beat 0, breaking sort order.
+                points: lane.points
+                    .map((param) => ({
+                        ...param,
+                        beat: Math.max(0, param.beat + beatDelta),
+                    }))
+                    .sort((alpha, b) => alpha.beat - b.beat),
             };
         }),
     });

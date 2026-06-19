@@ -53,6 +53,18 @@ export function simplifyAutomationPoints({ points, tolerance }: SimplifyAutomati
     return [first, last];
 }
 
+/** Evaluate a cubic Bézier with control values (a, b, c, d) at parameter `s ∈ [0,1]`. */
+function cubicBezier(a: number, b: number, c: number, d: number, s: number): number {
+    const mt = 1 - s;
+    return mt * mt * mt * a + 3 * mt * mt * s * b + 3 * mt * s * s * c + s * s * s * d;
+}
+
+/** Derivative of {@link cubicBezier} with respect to `s`. */
+function cubicBezierDeriv(a: number, b: number, c: number, d: number, s: number): number {
+    const mt = 1 - s;
+    return 3 * mt * mt * (b - a) + 6 * mt * s * (c - b) + 3 * s * s * (d - c);
+}
+
 type ApplyTensionInput = {
     t: number;
     tension: number;
@@ -122,6 +134,44 @@ export function interpolateAutomationPointValue({
         return (
             0.5 * (2 * v1 + (-v0 + v2) * t + (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 + (-v0 + 3 * v1 - 3 * v2 + v3) * t3)
         );
+    }
+
+    if (firstPoint.curve === 'bezier') {
+        // Mirror the render path (automationViewHelpers `C ...`): a cubic Bézier
+        // whose x control points are fractions of the segment span (defaults
+        // 0.33/0.66, matching the renderer) and whose y control points are the
+        // normalized control values (defaulting to the segment endpoints).
+        // `t` is the fraction along x, but the Bézier is parameterized by its
+        // own `s`; solve x(s) === t for `s`, then evaluate y(s). The solve is a
+        // fixed-iteration Newton step — no allocation, bounded work (RT-safe).
+        const cx1 = firstPoint.cp1?.x ?? 0.33;
+        const cx2 = firstPoint.cp2?.x ?? 0.66;
+        const cy1 = firstPoint.cp1?.y ?? firstPoint.value;
+        const cy2 = firstPoint.cp2?.y ?? secondPoint.value;
+        const y0 = firstPoint.value;
+        const y3 = secondPoint.value;
+
+        // x(s) has control points (0, cx1, cx2, 1) — endpoints fixed at 0/1.
+        // Newton–Raphson on x(s) = t, seeded at s = t; clamp into [0,1].
+        let s = t;
+        for (let iter = 0; iter < 6; iter++) {
+            const xs = cubicBezier(0, cx1, cx2, 1, s) - t;
+            if (Math.abs(xs) < 1e-6) {
+                break;
+            }
+            const dx = cubicBezierDeriv(0, cx1, cx2, 1, s);
+            if (Math.abs(dx) < 1e-9) {
+                break;
+            }
+            s -= xs / dx;
+            if (s < 0) {
+                s = 0;
+            } else if (s > 1) {
+                s = 1;
+            }
+        }
+
+        return cubicBezier(y0, cy1, cy2, y3, s);
     }
 
     return firstPoint.value + (secondPoint.value - firstPoint.value) * t;

@@ -6,6 +6,13 @@ export function quantizeAutomationBeats(laneId: string, gridSize: number): void 
     if (!state) {
         return;
     }
+    // Guard divide-by-zero / non-finite grids: `Math.round(beat / 0)` is NaN for
+    // every point, and a Map keyed on NaN collapses the whole lane into one
+    // NaN-beat point — silent total data loss. A non-positive or non-finite grid
+    // has no meaningful quantization, so leave the beats untouched.
+    if (!(gridSize > 0) || !Number.isFinite(gridSize)) {
+        return;
+    }
     automationStore.set({
         lanes: state.lanes.map((lane) => {
             if (lane.id !== laneId) {

@@ -31,8 +31,15 @@ function flushPendingState(): void {
 
 /**
  * Snap a beat to the nearest grid position.
+ *
+ * A non-positive (or non-finite) grid resolution has no snap interval — dividing
+ * by it yields `NaN`/`±Infinity`, which would poison the painted point's beat.
+ * In that case the raw beat is returned unsnapped.
  */
 function snapToGrid(beat: number, gridResolution: number): number {
+    if (!(gridResolution > 0) || !Number.isFinite(gridResolution)) {
+        return beat;
+    }
     return Math.round(beat / gridResolution) * gridResolution;
 }
 

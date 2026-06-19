@@ -23,19 +23,19 @@ describe('removeMapping', () => {
         });
     });
 
-    it('removes the mapping whose targetParamId matches', () => {
-        removeMapping('a', 'p1');
+    it('removes the mapping whose full target matches', () => {
+        removeMapping('a', { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'p1' });
         const mappings = modulationStore.value?.modulators[0]?.mappings ?? [];
         expect(mappings.map((x) => x.targetParamId)).toEqual(['p2']);
     });
 
     it('is a no-op when the modulator id is unknown', () => {
-        removeMapping('zzz', 'p1');
+        removeMapping('zzz', { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'p1' });
         expect(modulationStore.value?.modulators[0]?.mappings).toHaveLength(2);
     });
 
-    it('is a no-op when the target param id does not match any mapping', () => {
-        removeMapping('a', 'nope');
+    it('is a no-op when the target does not match any mapping', () => {
+        removeMapping('a', { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'nope' });
         expect(modulationStore.value?.modulators[0]?.mappings).toHaveLength(2);
     });
 });

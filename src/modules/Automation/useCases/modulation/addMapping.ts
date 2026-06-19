@@ -18,16 +18,10 @@ export function addMapping(modulatorId: string, mapping: ModulatorMapping): void
                     x.targetParamId === mapping.targetParamId
             );
             if (exists) {
-                return {
-                    ...m,
-                    mappings: m.mappings.map((x) =>
-                        x.targetTrackId === mapping.targetTrackId &&
-                        x.targetDeviceId === mapping.targetDeviceId &&
-                        x.targetParamId === mapping.targetParamId
-                            ? { ...x, ...mapping }
-                            : x
-                    ),
-                };
+                // Re-adding an existing destination is a no-op: the picker's
+                // default amount (0.5) must not clobber a user-tuned amount.
+                // Use `updateMapping` to deliberately change an amount.
+                return m;
             }
             return { ...m, mappings: [...m.mappings, mapping] };
         }),

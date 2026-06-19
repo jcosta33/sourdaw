@@ -9,22 +9,36 @@ type TestTrack = {
     automationMode: 'read' | 'write' | 'touch' | 'latch';
 };
 
-const { activeRecording, pendingPoints, touchActive, findLaneId, clearPointsInRange, trackSnapshot } = vi.hoisted(
-    () => {
-        const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
-        const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
-        const touchActive = new Set<string>();
-        const trackSnapshot: { value: { tracks: TestTrack[] } | null } = { value: null };
-        return {
-            activeRecording,
-            pendingPoints,
-            touchActive,
-            findLaneId: vi.fn(() => null as string | null),
-            clearPointsInRange: vi.fn(),
-            trackSnapshot,
-        };
-    }
-);
+const {
+    activeRecording,
+    pendingPoints,
+    touchActive,
+    findLaneId,
+    clearPointsInRange,
+    trackSnapshot,
+    transportSnapshot,
+    warn,
+} = vi.hoisted(() => {
+    const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
+    const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
+    const touchActive = new Set<string>();
+    const trackSnapshot: { value: { tracks: TestTrack[] } | null } = { value: null };
+    const transportSnapshot: { value: { tempo: number } | null } = { value: { tempo: 120 } };
+    return {
+        activeRecording,
+        pendingPoints,
+        touchActive,
+        findLaneId: vi.fn(() => null as string | null),
+        clearPointsInRange: vi.fn(),
+        trackSnapshot,
+        transportSnapshot,
+        warn: vi.fn(),
+    };
+});
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { warn, error: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
@@ -38,11 +52,15 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     };
 });
 
-vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
+vi.mock('#/modules/Transport/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Transport/stores')>();
     return {
         ...actual,
-        getTransportStoreValue: vi.fn(() => ({ tempo: 120 })),
+        transportStore: {
+            get value() {
+                return transportSnapshot.value;
+            },
+        },
     };
 });
 
@@ -68,6 +86,7 @@ describe('recordAutomationValue', () => {
         touchActive.clear();
         findLaneId.mockReturnValue(null);
         trackSnapshot.value = null;
+        transportSnapshot.value = { tempo: 120 };
         setAutomationRecordingDependencies({
             getAudioContext: () => ({ baseLatency: 0, outputLatency: 0 }) as AudioContext,
             getCompensationDelay: () => 0,
@@ -103,13 +122,19 @@ describe('recordAutomationValue', () => {
         expect(activeRecording.get(key)?.lastValue).toBe(0.75);
     });
 
-    it('clears existing lane points in write mode when a lane is resolved', () => {
+    // Regression (Batch B fix 3): write mode used to call clearPointsInRange on
+    // EVERY value at ~100Hz (a full lane re-map + filter). Recording now only
+    // buffers — the recorded span is cleared once at flush (stopAutomationRecording).
+    it('never clears the lane per value in write mode (clearing is deferred to flush)', () => {
         findLaneId.mockReturnValue('lane-1');
         setTracks([{ id: 't1', kind: 'audio', automationMode: 'write' }]);
 
         recordAutomationValue('t1', 'gain', 0.5, 4);
+        recordAutomationValue('t1', 'gain', 0.6, 5);
+        recordAutomationValue('t1', 'gain', 0.7, 6);
 
-        expect(clearPointsInRange).toHaveBeenCalledWith('lane-1', 4, 4);
+        expect(clearPointsInRange).not.toHaveBeenCalled();
+        expect(pendingPoints.get('t1::gain')?.map((point) => point.beat)).toEqual([4, 5, 6]);
     });
 
     it('records a pending point in touch mode and marks the key as touch-active', () => {
@@ -120,5 +145,42 @@ describe('recordAutomationValue', () => {
         const key = 't1::pan';
         expect(touchActive.has(key)).toBe(true);
         expect(pendingPoints.get(key)?.[0]).toMatchObject({ beat: 2, value: -0.2 });
+    });
+
+    // Regression (Batch B fix 4): before the transport store hydrates its tempo
+    // is unknown. Recording then would convert beats with a guessed 120 BPM and
+    // misplace points silently. It must skip + warn instead.
+    it('drops the value and warns when the transport store is not hydrated', () => {
+        transportSnapshot.value = null;
+        setTracks([{ id: 't1', kind: 'audio', automationMode: 'write' }]);
+
+        recordAutomationValue('t1', 'gain', 0.5, 4);
+
+        expect(pendingPoints.size).toBe(0);
+        expect(activeRecording.size).toBe(0);
+        expect(warn).toHaveBeenCalledTimes(1);
+    });
+
+    // Regression (Batch B fix 3): tempo is captured at the session's first value
+    // and reused, so a mid-session tempo change does not re-time recorded beats.
+    it('captures tempo at the first value and ignores a mid-session tempo change', () => {
+        // Non-zero latency makes the beat->second conversion tempo-sensitive.
+        setAutomationRecordingDependencies({
+            getAudioContext: () => ({ baseLatency: 0, outputLatency: 0.5 }) as AudioContext,
+            getCompensationDelay: () => 0,
+        });
+        setTracks([{ id: 't1', kind: 'audio', automationMode: 'write' }]);
+
+        transportSnapshot.value = { tempo: 60 };
+        recordAutomationValue('t1', 'gain', 0.5, 4); // offset = 0.5s * 60/60 = 0.5 beats -> 3.5
+        const key = 't1::gain';
+        const session = activeRecording.get(key);
+        expect(session?.tempoAtStart).toBe(60);
+
+        transportSnapshot.value = { tempo: 240 }; // would give offset 2 beats if re-read
+        recordAutomationValue('t1', 'gain', 0.6, 8); // still uses 60 BPM -> offset 0.5 -> 7.5
+
+        expect(session?.tempoAtStart).toBe(60);
+        expect(pendingPoints.get(key)?.map((point) => point.beat)).toEqual([3.5, 7.5]);
     });
 });

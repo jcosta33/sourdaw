@@ -8,16 +8,18 @@ type TestTrack = {
     automationMode: 'read' | 'write' | 'touch' | 'latch';
 };
 
-const { activeRecording, pendingPoints, touchActive, automationSnapshot, trackSnapshot } = vi.hoisted(() => {
-    const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
-    const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
-    const touchActive = new Set<string>();
-    const automationSnapshot: {
-        value: { lanes: Array<{ trackId: string; parameterId: string }> } | null;
-    } = { value: null };
-    const trackSnapshot: { value: { tracks: TestTrack[] } | null } = { value: null };
-    return { activeRecording, pendingPoints, touchActive, automationSnapshot, trackSnapshot };
-});
+const { activeRecording, pendingPoints, touchActive, automationSnapshot, trackSnapshot, transportSnapshot } =
+    vi.hoisted(() => {
+        const activeRecording = new Map<string, import('../recordingSessionState').RecordingSession>();
+        const pendingPoints = new Map<string, import('../../../models/Automation').AutomationPoint[]>();
+        const touchActive = new Set<string>();
+        const automationSnapshot: {
+            value: { lanes: Array<{ trackId: string; parameterId: string }> } | null;
+        } = { value: null };
+        const trackSnapshot: { value: { tracks: TestTrack[] } | null } = { value: null };
+        const transportSnapshot: { value: { playheadPosition: number } | null } = { value: null };
+        return { activeRecording, pendingPoints, touchActive, automationSnapshot, trackSnapshot, transportSnapshot };
+    });
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
@@ -26,6 +28,18 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
         trackStore: {
             get value() {
                 return trackSnapshot.value;
+            },
+        },
+    };
+});
+
+vi.mock('#/modules/Transport/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Transport/stores')>();
+    return {
+        ...actual,
+        transportStore: {
+            get value() {
+                return transportSnapshot.value;
             },
         },
     };
@@ -64,6 +78,7 @@ describe('startAutomationRecording', () => {
         touchActive.add('stale');
         automationSnapshot.value = null;
         trackSnapshot.value = null;
+        transportSnapshot.value = null;
     });
 
     it('clears prior recording maps before inspecting tracks', () => {
@@ -117,5 +132,35 @@ describe('startAutomationRecording', () => {
         });
         expect(pendingPoints.get('t1::gain')).toEqual([]);
         expect(activeRecording.has('t2')).toBe(false);
+    });
+
+    // Regression (Batch B fix 1): seeding startBeat at 0 makes latch-mode stop
+    // clear [0, lastBeat], wiping pre-existing automation before the record
+    // point. The session must anchor at the current playhead instead.
+    it('seeds startBeat from the current playhead position, not 0', () => {
+        transportSnapshot.value = { playheadPosition: 12 };
+        automationSnapshot.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    parameterId: 'gain',
+                    parameterName: 'Gain',
+                    points: [],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    virginTerritory: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ],
+        };
+        setTracks([{ id: 't1', kind: 'audio', automationMode: 'latch' }]);
+
+        startAutomationRecording();
+
+        expect(activeRecording.get('t1::gain')?.startBeat).toBe(12);
     });
 });

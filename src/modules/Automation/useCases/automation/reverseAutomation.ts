@@ -13,7 +13,15 @@ export function reverseAutomation(laneId: string): void {
             if (lane.points.length === 0) {
                 return lane;
             }
-            const maxBeat = Math.max(...lane.points.map((param) => param.beat));
+            // Single pass: `Math.max(...lane.points.map(...))` spreads every beat
+            // as an argument, which overflows V8's ~32k arg cap on a long, dense
+            // recording (~5 min @ 100 Hz ≈ 30k points) — §117.2 pattern.
+            let maxBeat = -Infinity;
+            for (const param of lane.points) {
+                if (param.beat > maxBeat) {
+                    maxBeat = param.beat;
+                }
+            }
             return {
                 ...lane,
                 points: lane.points

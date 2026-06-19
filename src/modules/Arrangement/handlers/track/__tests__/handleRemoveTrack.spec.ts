@@ -5,7 +5,10 @@ import { handleRemoveTrack } from '../handleRemoveTrack';
 const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
     removeTrack: vi.fn(),
+    removeModulator: vi.fn(),
+    removeMapping: vi.fn(),
     automationStoreValue: { value: null } as any,
+    modulationStoreValue: { value: null } as any,
     midiStoreValue: { value: null } as any,
     takeLaneStoreValue: { value: null } as any,
 }));
@@ -24,6 +27,16 @@ vi.mock('#/modules/Automation/stores', () => ({
             return mocks.automationStoreValue.value;
         },
     },
+    modulationStore: {
+        get value() {
+            return mocks.modulationStoreValue.value;
+        },
+    },
+}));
+
+vi.mock('#/modules/Automation/useCases', () => ({
+    removeModulator: mocks.removeModulator,
+    removeMapping: mocks.removeMapping,
 }));
 
 vi.mock('#/modules/MIDI/stores', () => ({
@@ -46,6 +59,7 @@ describe('handleRemoveTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.automationStoreValue.value = null;
+        mocks.modulationStoreValue.value = null;
         mocks.midiStoreValue.value = null;
         mocks.takeLaneStoreValue.value = null;
     });
