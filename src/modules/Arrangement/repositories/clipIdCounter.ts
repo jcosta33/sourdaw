@@ -6,5 +6,7 @@
  * persisted projects (sequential counters reset on HMR/reload).
  */
 export function getNextClipId(): string {
-    return `clip-${crypto.randomUUID().slice(0, 8)}`;
+    // Use the full 122-bit UUID rather than the first 8 hex chars (32 bits):
+    // truncating invited birthday collisions around ~65k clips in a project.
+    return `clip-${crypto.randomUUID()}`;
 }

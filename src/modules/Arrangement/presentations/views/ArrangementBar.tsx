@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
+import { type ReactElement, type MouseEvent, useState, useRef, useEffect, useLayoutEffect } from 'react';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawInlineHint } from '#/components/daw/DawInlineHint';
@@ -66,6 +66,11 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
     const menuRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const dragRef = useRef<DragState>(null);
+    const barRef = useRef<HTMLDivElement>(null);
+    // Holds the teardown for the in-flight drag's global listeners so an unmount
+    // mid-drag can detach them; null when no drag is active.
+    const dragCleanupRef = useRef<(() => void) | null>(null);
+    const [barWidth, setBarWidth] = useState(0);
 
     useEffect(() => {
         if (editing && inputRef.current) {
@@ -73,6 +78,30 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
             inputRef.current.select();
         }
     }, [editing]);
+
+    // Detach any global drag listeners still attached when the bar unmounts.
+    useEffect(() => {
+        return () => {
+            dragCleanupRef.current?.();
+            dragCleanupRef.current = null;
+        };
+    }, []);
+
+    useLayoutEffect(() => {
+        const bar = barRef.current;
+        if (!bar) {
+            return undefined;
+        }
+        const observer = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            if (entry) {
+                setBarWidth(entry.contentRect.width);
+            }
+        });
+        observer.observe(bar);
+        setBarWidth(bar.getBoundingClientRect().width);
+        return () => observer.disconnect();
+    }, []);
 
     useContextMenuDismiss(menuRef, () => setContextMenu({ kind: 'none' }));
 
@@ -148,6 +177,11 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
             setDragPreview({ sectionId: section.id, startBeat: lastStart, endBeat: lastEnd });
         };
 
+        const detachListeners = () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+
         const handleMouseUp = () => {
             if (mode === 'move' && lastStart !== origStart) {
                 moveSection(section.id, lastStart);
@@ -159,10 +193,11 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
             }
             dragRef.current = null;
             setDragPreview(null);
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
+            detachListeners();
+            dragCleanupRef.current = null;
         };
 
+        dragCleanupRef.current = detachListeners;
         window.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('mouseup', handleMouseUp);
     };
@@ -265,6 +300,7 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
 
     return (
         <TimelineChromeSurface
+            ref={barRef}
             className="select-none"
             style={{ height: ARRANGEMENT_BAR_HEIGHT }}
             onContextMenu={handleBarContextMenu}
@@ -278,7 +314,10 @@ export const ArrangementBar = ({ pixelsPerBeat, scrollX }: ArrangementBarProps):
                 const left = displayStart * pixelsPerBeat - scrollX;
                 const width = (displayEnd - displayStart) * pixelsPerBeat;
 
-                if (left + width < 0 || left > 4000) {
+                // Cull sections outside the bar's actual width; fall back to a
+                // permissive bound until the bar has been measured.
+                const rightBound = barWidth > 0 ? barWidth : Infinity;
+                if (left + width < 0 || left > rightBound) {
                     return null;
                 }
 

@@ -1,4 +1,11 @@
-import { type ReactElement, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react';
+import {
+    type ReactElement,
+    type MouseEvent as ReactMouseEvent,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+} from 'react';
 
 import { Layers, Plus, Power, Settings2, Trash2, X } from 'lucide-react';
 
@@ -101,6 +108,35 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
     const dragStateRef = useRef<DragState>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const addMenuRef = useRef<HTMLDivElement>(null);
+    // Holds the teardown for the in-flight drag's global listeners (region or
+    // fade) so an unmount mid-drag can detach them; null when no drag is active.
+    const dragCleanupRef = useRef<(() => void) | null>(null);
+    const stripRef = useRef<HTMLDivElement>(null);
+    const [stripWidth, setStripWidth] = useState(0);
+
+    // Detach any global drag listeners still attached when the strip unmounts.
+    useEffect(() => {
+        return () => {
+            dragCleanupRef.current?.();
+            dragCleanupRef.current = null;
+        };
+    }, []);
+
+    useLayoutEffect(() => {
+        const strip = stripRef.current;
+        if (!strip) {
+            return undefined;
+        }
+        const observer = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            if (entry) {
+                setStripWidth(entry.contentRect.width);
+            }
+        });
+        observer.observe(strip);
+        setStripWidth(strip.getBoundingClientRect().width);
+        return () => observer.disconnect();
+    }, []);
 
     useEffect(() => {
         if (contextMenu.kind === 'none') {
@@ -147,6 +183,12 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
 
         dragStateRef.current = { kind, layerId: layer.id, regionId: region.id, startClientX, origStart, origEnd };
 
+        // Last position computed by handleMove, read synchronously by handleUp.
+        // Using a plain closure variable (rather than reading dragPreview state
+        // synced through an effect) avoids a one-commit lag when the final
+        // mousemove and mouseup coalesce before React flushes the effect.
+        let lastPreview: { regionId: string; startBeat: number; endBeat: number } | null = null;
+
         const handleMove = (moveEvent: globalThis.MouseEvent) => {
             const deltaPx = moveEvent.clientX - startClientX;
             if (Math.abs(deltaPx) < MIN_DRAG_PX) {
@@ -163,14 +205,20 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             } else {
                 nextEnd = Math.max(origStart + 0.25, origEnd + deltaBeats);
             }
-            setDragPreview({ regionId: region.id, startBeat: nextStart, endBeat: nextEnd });
+            lastPreview = { regionId: region.id, startBeat: nextStart, endBeat: nextEnd };
+            setDragPreview(lastPreview);
+        };
+
+        const detachListeners = () => {
+            window.removeEventListener('mousemove', handleMove);
+            window.removeEventListener('mouseup', handleUp);
         };
 
         const handleUp = () => {
-            window.removeEventListener('mousemove', handleMove);
-            window.removeEventListener('mouseup', handleUp);
-            const finalPreview = previewRef.current;
+            detachListeners();
+            const finalPreview = lastPreview;
             dragStateRef.current = null;
+            dragCleanupRef.current = null;
             if (finalPreview) {
                 // Fire-and-forget command dispatch from a mouseup handler; the
                 // store update is observed reactively, no rejection to await here.
@@ -186,6 +234,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             setDragPreview(null);
         };
 
+        dragCleanupRef.current = detachListeners;
         window.addEventListener('mousemove', handleMove);
         window.addEventListener('mouseup', handleUp);
     };
@@ -216,6 +265,12 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             regionWidthBeats,
         };
 
+        // Last fade computed by handleMove, read synchronously by handleUp.
+        // Using a plain closure variable (rather than reading fadePreview state
+        // synced through an effect) avoids a one-commit lag when the final
+        // mousemove and mouseup coalesce before React flushes the effect.
+        let lastFade: FadePreview | null = null;
+
         const handleMove = (moveEvent: globalThis.MouseEvent) => {
             const deltaPx = moveEvent.clientX - startClientX;
             const deltaBeats = deltaPx / pixelsPerBeat;
@@ -226,14 +281,20 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             } else {
                 nextFadeOut = Math.max(0, Math.min(regionWidthBeats - origFadeIn, origFadeOut - deltaBeats));
             }
-            setFadePreview({ regionId: region.id, fadeInBeats: nextFadeIn, fadeOutBeats: nextFadeOut });
+            lastFade = { regionId: region.id, fadeInBeats: nextFadeIn, fadeOutBeats: nextFadeOut };
+            setFadePreview(lastFade);
+        };
+
+        const detachListeners = () => {
+            window.removeEventListener('mousemove', handleMove);
+            window.removeEventListener('mouseup', handleUp);
         };
 
         const handleUp = () => {
-            window.removeEventListener('mousemove', handleMove);
-            window.removeEventListener('mouseup', handleUp);
-            const finalPreview = fadePreviewRef.current;
+            detachListeners();
+            const finalPreview = lastFade;
             dragStateRef.current = null;
+            dragCleanupRef.current = null;
             if (finalPreview) {
                 // Fire-and-forget command dispatch from a mouseup handler; the
                 // store update is observed reactively, no rejection to await here.
@@ -249,19 +310,10 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             setFadePreview(null);
         };
 
+        dragCleanupRef.current = detachListeners;
         window.addEventListener('mousemove', handleMove);
         window.addEventListener('mouseup', handleUp);
     };
-
-    const fadePreviewRef = useRef<FadePreview | null>(null);
-    useEffect(() => {
-        fadePreviewRef.current = fadePreview;
-    }, [fadePreview]);
-
-    const previewRef = useRef<{ regionId: string; startBeat: number; endBeat: number } | null>(null);
-    useEffect(() => {
-        previewRef.current = dragPreview;
-    }, [dragPreview]);
 
     const openAddMenu = () => setAddMenuOpen((prev) => !prev);
 
@@ -344,6 +396,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
 
     return (
         <TimelineChromeSurface
+            ref={stripRef}
             className="select-none"
             style={{ height: rowsHeight + ROW_HEIGHT }}
             role="region"
@@ -377,6 +430,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
                         yOffset={yOffset}
                         pixelsPerBeat={pixelsPerBeat}
                         scrollX={scrollX}
+                        laneWidth={stripWidth}
                         dragPreview={dragPreview}
                         fadePreview={fadePreview}
                         onLaneClick={handleLaneClick}
@@ -524,6 +578,8 @@ type AdjustmentLayerRowProps = {
     yOffset: number;
     pixelsPerBeat: number;
     scrollX: number;
+    /** Measured width of the strip, used to cull off-screen regions. */
+    laneWidth: number;
     dragPreview: { regionId: string; startBeat: number; endBeat: number } | null;
     fadePreview: FadePreview | null;
     onLaneClick: (e: ReactMouseEvent<HTMLDivElement>, layer: AdjustmentLayer) => void;
@@ -552,6 +608,7 @@ const AdjustmentLayerRow = ({
     yOffset,
     pixelsPerBeat,
     scrollX,
+    laneWidth,
     dragPreview,
     fadePreview,
     onLaneClick,
@@ -625,7 +682,11 @@ const AdjustmentLayerRow = ({
                         : { startBeat: region.startBeat, endBeat: region.endBeat };
                 const left = liveRegion.startBeat * pixelsPerBeat - scrollX;
                 const width = (liveRegion.endBeat - liveRegion.startBeat) * pixelsPerBeat;
-                if (left + width < 100 || left > 4000) {
+                // Cull regions outside the strip's actual width; fall back to a
+                // permissive bound until the strip has been measured. The 100px
+                // left margin is reserved for the in-row layer controls.
+                const rightBound = laneWidth > 0 ? laneWidth : Infinity;
+                if (left + width < 100 || left > rightBound) {
                     return null;
                 }
                 const isSentinel = region === EMPTY_RANGE_SENTINEL;
@@ -673,15 +734,18 @@ const AdjustmentLayerRow = ({
 };
 
 // Sentinel used to render a full-range band for layers without explicit regions.
-const EMPTY_RANGE_SENTINEL: AdjustmentRegion = {
+// Frozen because it is a shared singleton: any path that writes to a region's
+// startBeat/endBeat would otherwise mutate this object for every layer.
+// Exported for the freeze regression test.
+export const EMPTY_RANGE_SENTINEL: AdjustmentRegion = Object.freeze({
     id: '__sentinel__',
     startBeat: 0,
     endBeat: 200,
     blend: 1,
     fadeInBeats: 0,
     fadeOutBeats: 0,
-};
-const DEFAULT_FULL_RANGE_REGION: AdjustmentRegion[] = [EMPTY_RANGE_SENTINEL];
+});
+export const DEFAULT_FULL_RANGE_REGION: readonly AdjustmentRegion[] = Object.freeze([EMPTY_RANGE_SENTINEL]);
 
 type AdjustmentLayerParamEditorProps = {
     layer: AdjustmentLayer;

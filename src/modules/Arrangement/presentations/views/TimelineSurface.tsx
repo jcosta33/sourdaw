@@ -6,13 +6,12 @@ import { transportStore, playheadPositionRef, tempoMapStore, timeSignatureMapSto
 import { workspaceStore, defaultWorkspaceState } from '#/modules/Workspace/stores';
 import { TRACK_HEIGHT_VALUES, onZoomToFit, onZoomToSelection, onScrollToPlayhead } from '#/modules/Workspace/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
-import { type GestureEvent } from '#/utils/DOM/GestureEvent';
 
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { previewDirtyFlag } from '../../stores/clipDragPreviewRef';
 import { markerStore } from '../../stores/markerStore';
 import { takeLaneStore } from '../../stores/takeLaneStore';
-import { zoomTimeline, setAutoScroll, timelineViewStore } from '../../stores/timelineViewStore';
+import { setAutoScroll, timelineViewStore } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { initTimelineRenderer } from '../../useCases/initTimelineRenderer';
@@ -98,14 +97,20 @@ export const TimelineSurface = (): ReactElement => {
                 continue;
             }
 
+            // Mirror buildTimelineRenderModel.ts:162 / the renderer's row layout:
+            // folders collapse to a fixed 26px and every other track uses its own
+            // resizable height. Using a single constant here misaligned the
+            // marquee box against the rendered rows (#32-new).
+            const rowHeight = track.kind === 'folder' ? 26 : track.height;
+
             if (i === topTrackIdx) {
                 top = trackYOffset;
             }
             if (i === bottomTrackIdx) {
-                bottom = trackYOffset + TRACK_HEIGHT_VALUES.normal;
+                bottom = trackYOffset + rowHeight;
             }
 
-            trackYOffset += TRACK_HEIGHT_VALUES.normal;
+            trackYOffset += rowHeight;
         }
 
         return {
@@ -208,53 +213,28 @@ export const TimelineSurface = (): ReactElement => {
     }, []);
 
     useEffect(() => {
+        // Only re-enable auto-scroll on the stopped → playing transition.
+        // Forcing it true on every transport tick (tempo, playhead, etc.) while
+        // already playing defeated a user-initiated setAutoScroll(false) made by
+        // manually scrolling horizontally during playback.
+        let wasPlaying = transportStore.value?.isPlaying ?? false;
         const unsubscribe = transportStore.subscribe(() => {
             const transport = transportStore.value;
             if (!transport) {
                 return;
             }
-            if (transport.isPlaying) {
+            if (transport.isPlaying && !wasPlaying) {
                 setAutoScroll(true);
             }
+            wasPlaying = transport.isPlaying;
         });
         return unsubscribe;
     }, []);
 
-    useEffect(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) {
-            return undefined;
-        }
-
-        let lastScale = 1;
-
-        const onGestureStart = (e: Event) => {
-            e.preventDefault();
-            lastScale = 1;
-        };
-
-        const onGestureChange = (e: Event) => {
-            e.preventDefault();
-            const ge = e as GestureEvent;
-            const delta = ge.scale - lastScale;
-            lastScale = ge.scale;
-            zoomTimeline(delta * 2);
-        };
-
-        const onGestureEnd = (e: Event) => {
-            e.preventDefault();
-        };
-
-        canvas.addEventListener('gesturestart', onGestureStart, { passive: false });
-        canvas.addEventListener('gesturechange', onGestureChange, { passive: false });
-        canvas.addEventListener('gestureend', onGestureEnd, { passive: false });
-
-        return () => {
-            canvas.removeEventListener('gesturestart', onGestureStart);
-            canvas.removeEventListener('gesturechange', onGestureChange);
-            canvas.removeEventListener('gestureend', onGestureEnd);
-        };
-    }, []);
+    // NOTE: pinch/gesture handling (gesturestart/change/end) is owned solely by
+    // useTimelineGestures (invoked via useTimelineInteractions). A duplicate
+    // listener block previously lived here too, so each Safari `gesturechange`
+    // fired zoomTimeline(delta * 2) twice → 2x zoom (NEW-bug). Do not re-add it.
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -391,15 +371,25 @@ export const TimelineSurface = (): ReactElement => {
             onDrop={handleFileDrop}
         >
             {isDragOver ? (
-                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-primary/10 border-2 border-dashed border-primary pointer-events-none">
+                <div
+                    role="status"
+                    aria-live="polite"
+                    className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-primary/10 border-2 border-dashed border-primary pointer-events-none"
+                >
                     <span className="text-sm font-medium text-primary">Drop audio or MIDI files here</span>
                     <span className="text-xs text-primary/60">WAV, MP3, FLAC, AIFF, OGG, MIDI</span>
                 </div>
             ) : null}
             {isImporting ? (
-                <div className="absolute inset-0 z-20 flex items-center justify-center bg-surface-base/60 pointer-events-none">
+                <div
+                    role="status"
+                    aria-live="polite"
+                    className="absolute inset-0 z-20 flex items-center justify-center bg-surface-base/60 pointer-events-none"
+                >
                     <div className="daw-floating-surface flex items-center gap-2 rounded-md px-4 py-2">
-                        <div className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        {/* Decorative spinner: only animate when the user has not
+                            requested reduced motion (prefers-reduced-motion). */}
+                        <div className="size-4 motion-safe:animate-spin rounded-full border-2 border-primary border-t-transparent" />
                         <span className="text-sm font-medium text-foreground">Importing audio…</span>
                     </div>
                 </div>

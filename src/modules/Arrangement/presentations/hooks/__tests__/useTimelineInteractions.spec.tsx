@@ -222,4 +222,50 @@ describe('useTimelineInteractions', () => {
             endY: 50,
         });
     });
+
+    const pointer = (pointerId: number, clientX: number, clientY: number) =>
+        ({ pointerId, clientX, clientY, nativeEvent: { clientX, clientY } }) as any;
+
+    it('applies a proportional pinch-zoom step (not a fixed ±2)', () => {
+        // finding #81/#17: the pointer pinch must scale with the spread delta to
+        // match the Ctrl+wheel / gesture feel, instead of a flat ±2 ppb jump.
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+
+        act(() => {
+            result.current.handlePointerDown(pointer(1, 0, 0));
+            result.current.handlePointerDown(pointer(2, 100, 0)); // 100px apart
+        });
+        // Spread grows by 50px (pointer 2 moves 100 → 150).
+        act(() => {
+            result.current.handlePointerMove(pointer(2, 150, 0));
+        });
+
+        // 50px delta * 0.02 = +1.0 ppb — proportional, and distinct from the old ±2.
+        expect(mocks.zoomTimeline).toHaveBeenCalledTimes(1);
+        expect(mocks.zoomTimeline).toHaveBeenCalledWith(1);
+    });
+
+    it('ignores a 3rd pointer so it cannot pollute the pinch distance (finding #60)', () => {
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+
+        act(() => {
+            result.current.handlePointerDown(pointer(1, 0, 0));
+            result.current.handlePointerDown(pointer(2, 100, 0));
+            result.current.handlePointerDown(pointer(3, 999, 999)); // 3rd contact — ignored
+        });
+
+        // Moving the (untracked) 3rd pointer must not trigger a zoom: it isn't in
+        // the 2-pointer map, so there is no prior position to diff against.
+        act(() => {
+            result.current.handlePointerMove(pointer(3, 0, 0));
+        });
+        expect(mocks.zoomTimeline).not.toHaveBeenCalled();
+
+        // The genuine two-pointer pinch still works: pointer 2 spreads by 100px.
+        act(() => {
+            result.current.handlePointerMove(pointer(2, 200, 0));
+        });
+        expect(mocks.zoomTimeline).toHaveBeenCalledTimes(1);
+        expect(mocks.zoomTimeline).toHaveBeenCalledWith(2); // 100px * 0.02
+    });
 });

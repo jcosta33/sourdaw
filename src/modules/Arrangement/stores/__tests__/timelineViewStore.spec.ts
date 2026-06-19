@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import {
     timelineViewStore,
@@ -9,6 +9,7 @@ import {
     toggleAutoScroll,
     setScrollY,
 } from '../timelineViewStore';
+import { trackStore } from '../trackStore';
 
 describe('timelineViewStore view helpers', () => {
     beforeEach(() => {
@@ -18,6 +19,11 @@ describe('timelineViewStore view helpers', () => {
             pixelsPerBeat: 12,
             autoScrollEnabled: true,
         });
+        trackStore.set({ tracks: [], selectedTrackId: null } as any);
+    });
+
+    afterEach(() => {
+        trackStore.set({ tracks: [], selectedTrackId: null } as any);
     });
 
     it('should clamp zoomTimeline pixelsPerBeat between 2 and 80', () => {
@@ -50,6 +56,25 @@ describe('timelineViewStore view helpers', () => {
     it('should clamp setScrollY when there are no tracks', () => {
         setScrollY(500);
         expect(timelineViewStore.value?.scrollY).toBe(0);
+    });
+
+    // Regression: setScrollY must clamp against the viewport height the caller
+    // passes, not its hardcoded 200px default. The gesture hook already knows
+    // the real canvas height; double-clamping against 200 produced a wrong
+    // scroll ceiling.
+    it('should clamp setScrollY using the caller-provided viewport height', () => {
+        trackStore.set({
+            tracks: [{ id: 'a', kind: 'audio', height: 100 } as any, { id: 'b', kind: 'audio', height: 100 } as any],
+            selectedTrackId: null,
+        } as any);
+
+        // total content height = 200, viewport = 50 → maxY = 150.
+        setScrollY(500, 50);
+        expect(timelineViewStore.value?.scrollY).toBe(150);
+
+        // A larger viewport shrinks the scroll ceiling.
+        setScrollY(500, 80);
+        expect(timelineViewStore.value?.scrollY).toBe(120);
     });
 
     it('should not throw when store is null', () => {

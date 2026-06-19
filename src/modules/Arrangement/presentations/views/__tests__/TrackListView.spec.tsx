@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
+import { setScrollY } from '../../../stores/timelineViewStore';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../../hooks/useTracks';
 import { TrackListView } from '../TrackListView';
@@ -81,7 +82,10 @@ vi.mock('#/modules/Workspace/stores/preferencesStore', () => ({
 }));
 
 vi.mock('../../../stores/timelineViewStore', () => ({
-    timelineViewStore: {},
+    timelineViewStore: {
+        getSnapshot: () => ({ scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true }),
+        subscribeReact: () => () => {},
+    },
     setScrollY: vi.fn(),
 }));
 
@@ -195,5 +199,31 @@ describe('TrackListView', () => {
     it('should have border styling', () => {
         const { container } = renderWithTooltip(<TrackListView />);
         expect(container.firstChild).toHaveClass('border-r');
+    });
+
+    it('coalesces a burst of scroll events to one store write per frame (finding #49)', () => {
+        // Capture rAF callbacks so we can flush exactly one frame manually.
+        const rafCallbacks: FrameRequestCallback[] = [];
+        const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+            rafCallbacks.push(cb);
+            return rafCallbacks.length;
+        });
+
+        const { container } = renderWithTooltip(<TrackListView />);
+        const scrollEl = container.querySelector('.overflow-y-auto') as HTMLElement;
+
+        // Three scroll events before any frame flushes — should schedule once
+        // and write nothing until the frame runs.
+        fireEvent.scroll(scrollEl);
+        fireEvent.scroll(scrollEl);
+        fireEvent.scroll(scrollEl);
+        expect(setScrollY).not.toHaveBeenCalled();
+        expect(rafCallbacks.length).toBe(1);
+
+        // Flushing the scheduled frame writes exactly once.
+        rafCallbacks[0]?.(0);
+        expect(setScrollY).toHaveBeenCalledTimes(1);
+
+        rafSpy.mockRestore();
     });
 });

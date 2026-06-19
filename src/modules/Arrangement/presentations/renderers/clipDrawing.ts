@@ -13,7 +13,11 @@ export const drawClip = (
     clip: ClipRenderModel,
     model: TimelineRenderModel,
     trackY: number,
-    trackHeight: number
+    trackHeight: number,
+    // Monotonic frame clock (ms) used only for the "generating" animation. Defaults
+    // to performance.now() so existing call sites keep their current behavior; the
+    // renderer can pass a single per-frame timestamp to keep clips in lockstep.
+    now: number = performance.now()
 ): void => {
     const { pixelsPerBeat, viewportStartBeat, selectedClipId, selectedClipIds } = model;
     const x = (clip.startBeat - viewportStartBeat) * pixelsPerBeat;
@@ -25,7 +29,7 @@ export const drawClip = (
     const isGenerating = clip.generating;
 
     if (isGenerating) {
-        ctx.globalAlpha = (Math.sin(Date.now() / 150) + 1) * 0.15 + 0.1;
+        ctx.globalAlpha = (Math.sin(now / 150) + 1) * 0.15 + 0.1;
         ctx.fillStyle = clip.color;
         ctx.beginPath();
         ctx.roundRect(x, trackY + padding, w, trackHeight - padding * 2, 3);
@@ -36,7 +40,7 @@ export const drawClip = (
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 4]);
 
-        const time = Date.now() / 1000;
+        const time = now / 1000;
         ctx.lineDashOffset = -time * 20;
 
         ctx.beginPath();
@@ -76,11 +80,10 @@ export const drawClip = (
     })();
     const bodyAlpha = baseAlpha * (isSelected ? 0.85 : 0.55);
 
-    // Create a gradient that darkens slightly toward the bottom for depth
-    const bodyGrad = ctx.createLinearGradient(0, clipY, 0, clipY + clipH);
-    bodyGrad.addColorStop(0, clip.color);
-    bodyGrad.addColorStop(1, clip.color);
-    ctx.fillStyle = bodyGrad;
+    // Flat body fill. (The previous "gradient" had two identical color stops, so
+    // it produced a flat fill anyway while allocating a CanvasGradient every frame.)
+    // The depth shading below is provided by the real depthGrad overlay.
+    ctx.fillStyle = clip.color;
     ctx.globalAlpha = bodyAlpha;
     ctx.beginPath();
     ctx.roundRect(x, clipY, w, clipH, 3);
@@ -346,24 +349,24 @@ const drawMidiNotePreview = (
 
     let minPitch = 127;
     let maxPitch = 0;
+    // Loop once to find the pitch extent. A spread (Math.min(...notes.map()))
+    // can blow the call-stack for clips with very many notes, so we never spread.
+    for (const node of notes) {
+        if (node.pitch < minPitch) {
+            minPitch = node.pitch;
+        }
+        if (node.pitch > maxPitch) {
+            maxPitch = node.pitch;
+        }
+    }
     if (isInline) {
-        // When inline, use a fixed range or a reasonable default if notes are sparse
-        minPitch = Math.min(...notes.map((node) => node.pitch)) - 2;
-        maxPitch = Math.max(...notes.map((node) => node.pitch)) + 2;
-        // Ensure at least an octave range for visibility
+        // When inline, pad the range and ensure at least an octave of visibility.
+        minPitch -= 2;
+        maxPitch += 2;
         if (maxPitch - minPitch < 12) {
             const center = Math.round((maxPitch + minPitch) / 2);
             minPitch = center - 6;
             maxPitch = center + 6;
-        }
-    } else {
-        for (const node of notes) {
-            if (node.pitch < minPitch) {
-                minPitch = node.pitch;
-            }
-            if (node.pitch > maxPitch) {
-                maxPitch = node.pitch;
-            }
         }
     }
     const pitchRange = Math.max(maxPitch - minPitch, 1);

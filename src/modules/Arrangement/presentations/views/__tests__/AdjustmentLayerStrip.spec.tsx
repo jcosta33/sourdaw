@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { AdjustmentLayerStrip } from '../AdjustmentLayerStrip';
+import { AdjustmentLayerStrip, EMPTY_RANGE_SENTINEL, DEFAULT_FULL_RANGE_REGION } from '../AdjustmentLayerStrip';
 
 type MockLayer = {
     id: string;
@@ -166,5 +166,19 @@ describe('AdjustmentLayerStrip', () => {
         const addButton = screen.getByRole('button', { name: /add adjustment layer/i });
         fireEvent.click(addButton);
         expect(screen.getByText('New Adjustment Layer')).toBeInTheDocument();
+    });
+
+    describe('full-range sentinel (finding #55)', () => {
+        it('is frozen so a stray write cannot mutate the shared singleton', () => {
+            expect(Object.isFrozen(EMPTY_RANGE_SENTINEL)).toBe(true);
+            expect(Object.isFrozen(DEFAULT_FULL_RANGE_REGION)).toBe(true);
+
+            // A write to a region's startBeat must not corrupt the shared object
+            // used for every region-less layer. In strict mode this throws.
+            expect(() => {
+                (EMPTY_RANGE_SENTINEL as { startBeat: number }).startBeat = 999;
+            }).toThrow(TypeError);
+            expect(EMPTY_RANGE_SENTINEL.startBeat).toBe(0);
+        });
     });
 });

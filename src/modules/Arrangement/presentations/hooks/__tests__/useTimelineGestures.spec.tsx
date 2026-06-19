@@ -118,6 +118,11 @@ describe('useTimelineGestures', () => {
             });
         });
 
-        expect(mocks.setScrollY).toHaveBeenCalledWith(150);
+        // The hook now forwards the raw scroll target plus the real viewport
+        // height (canvas.clientHeight) and lets setScrollY perform the single
+        // authoritative clamp — it no longer pre-clamps against a separately
+        // computed ceiling only to have setScrollY re-clamp against its 200px
+        // default.
+        expect(mocks.setScrollY).toHaveBeenCalledWith(150, 500);
     });
 });

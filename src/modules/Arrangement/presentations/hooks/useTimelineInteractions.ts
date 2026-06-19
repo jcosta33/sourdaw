@@ -1,4 +1,4 @@
-import { type MouseEvent, type DragEvent, useRef, useState } from 'react';
+import { type MouseEvent, type DragEvent, useEffect, useRef, useState } from 'react';
 
 import { removeAutomationPoint, batchAddAutomationPoints } from '#/modules/Automation/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
@@ -64,6 +64,11 @@ type ClipMenuState = { kind: 'clip'; x: number; y: number; clipId: string; track
 type EmptyMenuState = { kind: 'empty'; x: number; y: number; trackId: string | null; beat: number };
 export type ContextMenuState = ClipMenuState | EmptyMenuState | null;
 
+// Pixels-of-pinch-spread → pixels-per-beat conversion for two-finger pinch zoom.
+// Kept in the same range as the Ctrl+wheel pinch step (see useTimelineGestures,
+// -deltaY * 0.02) so touch and trackpad pinch feel consistent (findings #81/#17).
+const PINCH_ZOOM_FACTOR = 0.02;
+
 export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasElement | null>) => {
     const [dragState, setDragState] = useState<DragState | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
@@ -93,11 +98,42 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
     const rubberBandRef = useRef<{ startX: number; startY: number } | null>(null);
     const [hoverCursor, setHoverCursor] = useState<string | null>(null);
     const lastPresenceBroadcastRef = useRef<number>(0);
+    // Cached canvas bounding rect. getBoundingClientRect() forces a synchronous
+    // layout flush, so calling it on every 60+Hz pointer event is expensive
+    // (finding #57). We cache it and invalidate on resize / scroll instead.
+    const canvasRectRef = useRef<DOMRect | null>(null);
 
     useTimelineGestures(canvasRef);
 
+    // Keep the cached rect fresh: invalidate when the canvas resizes or anything
+    // scrolls (capture phase catches ancestor scroll containers too).
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        const invalidate = (): void => {
+            canvasRectRef.current = null;
+        };
+        const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(invalidate) : null;
+        if (canvas && observer) {
+            observer.observe(canvas);
+        }
+        window.addEventListener('scroll', invalidate, { capture: true, passive: true });
+        window.addEventListener('resize', invalidate, { passive: true });
+        return () => {
+            observer?.disconnect();
+            window.removeEventListener('scroll', invalidate, { capture: true });
+            window.removeEventListener('resize', invalidate);
+        };
+    }, [canvasRef]);
+
+    const getCanvasRect = (): DOMRect | null => {
+        if (!canvasRectRef.current) {
+            canvasRectRef.current = canvasRef.current?.getBoundingClientRect() ?? null;
+        }
+        return canvasRectRef.current;
+    };
+
     const getCanvasCoords = (event: MouseEvent<HTMLCanvasElement>): { x: number; y: number } => {
-        const rect = canvasRef.current?.getBoundingClientRect();
+        const rect = getCanvasRect();
         if (!rect) {
             return { x: 0, y: 0 };
         }
@@ -108,7 +144,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
 
     const { handleFileDrop, isDragOver, setIsDragOver, isImporting } = useTimelineFileDrop({
         getCanvasCoords: (event: DragEvent<HTMLDivElement>): { x: number; y: number } => {
-            const rect = canvasRef.current?.getBoundingClientRect();
+            const rect = getCanvasRect();
             if (!rect) {
                 return { x: 0, y: 0 };
             }
@@ -146,7 +182,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             return;
         }
         if (tool === 'automation') {
-            handleAutomationTool(x, y, beat, getScrollY(), autoDragRef);
+            // Only paint when the automation lane is actually visible — otherwise
+            // the tool writes points onto a hidden lane (finding #88). This mirrors
+            // the sub-lane paint guard above.
+            if (workspaceStore.value?.automationVisibility !== 'hidden') {
+                handleAutomationTool(x, y, beat, getScrollY(), autoDragRef);
+            }
             return;
         }
 
@@ -919,16 +960,24 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
     // ── Pointer (pinch-zoom) ──────────────────────────────────────────────────
 
     const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+        // Cap the tracked pointers at 2. A 3rd contact (e.g. finger + pencil +
+        // finger) would otherwise be recorded and leak stale deltas into later
+        // pinch frames (finding #60).
+        if (pointersRef.current.size >= 2 && !pointersRef.current.has(event.pointerId)) {
+            return;
+        }
         pointersRef.current.set(event.pointerId, event.nativeEvent);
     };
 
     const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
         if (pointersRef.current.size === 2) {
             const prev = pointersRef.current.get(event.pointerId);
-            pointersRef.current.set(event.pointerId, event.nativeEvent);
+            // Only update pointers we already track; ignore a 3rd contact so it
+            // can't pollute the pinch distance (finding #60).
             if (!prev) {
                 return;
             }
+            pointersRef.current.set(event.pointerId, event.nativeEvent);
             const [p1, p2] = [...pointersRef.current.values()];
             if (!p1 || !p2) {
                 return;
@@ -941,9 +990,12 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             const currDist = Math.hypot(p1.clientX - p2.clientX, p1.clientY - p2.clientY);
             const delta = currDist - prevDist;
             if (Math.abs(delta) > 1) {
-                zoomTimeline(delta > 0 ? 2 : -2);
+                // Proportional zoom step to match Ctrl+wheel / trackpad gesture feel
+                // (findings #81/#17), instead of a fixed ±2 ppb jump.
+                zoomTimeline(delta * PINCH_ZOOM_FACTOR);
             }
-        } else {
+        } else if (pointersRef.current.size < 2 || pointersRef.current.has(event.pointerId)) {
+            // Track up to 2 pointers; ignore any beyond the first two (finding #60).
             pointersRef.current.set(event.pointerId, event.nativeEvent);
         }
     };

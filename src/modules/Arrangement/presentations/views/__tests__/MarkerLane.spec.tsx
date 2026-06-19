@@ -170,4 +170,28 @@ describe('MarkerLane', () => {
         const { container } = renderWithTooltip(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
         expect(container.firstChild).toHaveClass('select-none');
     });
+
+    it('detaches window drag listeners when unmounted mid-drag (no leak)', () => {
+        mockMarkerState = {
+            markers: [{ id: 'm1', name: 'Intro', beat: 4, color: 'oklch(0.40 0.07 200)' }],
+            sections: [],
+        };
+        const { container, unmount } = renderWithTooltip(<MarkerLane pixelsPerBeat={12} scrollX={0} />);
+
+        // The marker's drag handle carries the mousedown that attaches the
+        // window-level mousemove/mouseup listeners.
+        const dragHandle = container.querySelector('.cursor-ew-resize') as HTMLElement;
+        expect(dragHandle).toBeTruthy();
+
+        const removeSpy = vi.spyOn(window, 'removeEventListener');
+        fireEvent.mouseDown(dragHandle, { button: 0, clientX: 48 });
+
+        // Unmount before mouseup fires.
+        unmount();
+
+        const removedEvents = removeSpy.mock.calls.map((call) => call[0]);
+        expect(removedEvents).toContain('mousemove');
+        expect(removedEvents).toContain('mouseup');
+        removeSpy.mockRestore();
+    });
 });

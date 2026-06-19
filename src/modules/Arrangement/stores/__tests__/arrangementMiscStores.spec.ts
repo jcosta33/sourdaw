@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { clipboardStore, setClipClipboard, setNoteClipboard } from '../clipboardStore';
-import { getEnvelope, setEnvelope, __resetGainEnvelopesForTest } from '../gainEnvelopeStore';
+import { getEnvelope, removeEnvelope, setEnvelope, __resetGainEnvelopesForTest } from '../gainEnvelopeStore';
 import { markerStore } from '../markerStore';
 import { takeLaneStore } from '../takeLaneStore';
 import { getVcaGroupsState, setVcaGroupsState } from '../vcaGroupStore';
@@ -42,6 +42,30 @@ describe('Arrangement Misc Stores', () => {
             const env = { clipId: 'c1', points: [], enabled: true };
             setEnvelope('c1', env);
             expect(getEnvelope('c1')).toEqual(env);
+        });
+
+        it('removeEnvelope drops the envelope for a clip and leaves others intact', () => {
+            setEnvelope('c1', { clipId: 'c1', points: [], enabled: true });
+            setEnvelope('c2', { clipId: 'c2', points: [], enabled: false });
+
+            removeEnvelope('c1');
+
+            expect(getEnvelope('c1')).toBeUndefined();
+            expect(getEnvelope('c2')).toEqual({ clipId: 'c2', points: [], enabled: false });
+        });
+
+        it('removeEnvelope is a no-op for an unknown clip id', () => {
+            setEnvelope('c2', { clipId: 'c2', points: [], enabled: false });
+            removeEnvelope('nope');
+            expect(getEnvelope('c2')).toEqual({ clipId: 'c2', points: [], enabled: false });
+        });
+
+        it('__resetGainEnvelopesForTest clears the store under test mode', () => {
+            // Vitest sets import.meta.env.MODE to 'test', so the guard permits
+            // the reset here; in a production build it is a no-op.
+            setEnvelope('c1', { clipId: 'c1', points: [], enabled: true });
+            __resetGainEnvelopesForTest();
+            expect(getEnvelope('c1')).toBeUndefined();
         });
     });
 

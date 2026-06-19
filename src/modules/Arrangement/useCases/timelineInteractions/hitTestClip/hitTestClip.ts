@@ -2,8 +2,6 @@ import { timelineViewStore } from '../../../stores/timelineViewStore';
 import { buildTimelineRenderModel } from '../../buildTimelineRenderModel';
 import { getTrackAtY } from '../getTrackAtY';
 
-import { RULER_HEIGHT } from './helpers';
-
 export type ClipHitResult = {
     clipId: string;
     trackId: string;
@@ -19,7 +17,7 @@ export function hitTestClip(canvasX: number, canvasY: number): ClipHitResult | n
         return null;
     }
 
-    const contentY = Math.max(0, canvasY - RULER_HEIGHT + (viewState.scrollY ?? 0));
+    const contentY = Math.max(0, canvasY + (viewState.scrollY ?? 0));
     const hit = getTrackAtY(model.tracks, contentY);
     if (!hit) {
         return null;
@@ -49,8 +47,20 @@ export function hitTestClip(canvasX: number, canvasY: number): ClipHitResult | n
                 const contentHeight = track.height - padding * 2;
                 const notes = clip.midiNotes;
 
-                const minPitch = Math.min(...notes.map((node) => node.pitch)) - 2;
-                const maxPitch = Math.max(...notes.map((node) => node.pitch)) + 2;
+                // Loop to find the pitch extent — spreading (Math.min(...map()))
+                // can blow the call-stack for clips with very many notes.
+                let minPitch = 127;
+                let maxPitch = 0;
+                for (const node of notes) {
+                    if (node.pitch < minPitch) {
+                        minPitch = node.pitch;
+                    }
+                    if (node.pitch > maxPitch) {
+                        maxPitch = node.pitch;
+                    }
+                }
+                minPitch -= 2;
+                maxPitch += 2;
                 const pitchRange = Math.max(maxPitch - minPitch, 1);
                 const noteHeight = contentHeight / (pitchRange + 1);
 

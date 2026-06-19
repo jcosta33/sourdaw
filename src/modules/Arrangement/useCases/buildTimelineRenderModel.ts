@@ -100,7 +100,7 @@ const renderCache: {
     midi: unknown;
     ws: unknown;
     prefs: unknown;
-    transport: unknown;
+    transport: number | null;
     timeSig: unknown;
 } = {
     model: null,
@@ -113,6 +113,16 @@ const renderCache: {
     timeSig: null,
 };
 
+// The transport store mints a new object every playhead tick during playback,
+// but the cached render model only consumes one render-affecting transport
+// field (tempo) — the playhead is read live from playheadPositionRef and the
+// time signature comes from getTimeSignatureAtBeat. Keying cache invalidation
+// on the whole transport object rebuilt the entire track/clip tree on every
+// playing frame. Compare only the render-affecting field instead.
+function renderAffectingTransport(transport: { tempo: number } | null | undefined): number | null {
+    return transport?.tempo ?? null;
+}
+
 export function buildTimelineRenderModel(): TimelineRenderModel {
     const trackState = trackStore.value;
     const viewState = timelineViewStore.value;
@@ -121,6 +131,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
     const ws = workspaceStore.value;
     const prefs = preferencesStore.value;
     const timeSigState = timeSignatureMapStore.value;
+    const transportTempo = renderAffectingTransport(transportState);
 
     const dataChanged =
         !renderCache.model ||
@@ -129,7 +140,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         midiState !== renderCache.midi ||
         ws !== renderCache.ws ||
         prefs !== renderCache.prefs ||
-        transportState !== renderCache.transport ||
+        transportTempo !== renderCache.transport ||
         timeSigState !== renderCache.timeSig;
 
     if (dataChanged) {
@@ -138,7 +149,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         renderCache.midi = midiState;
         renderCache.ws = ws;
         renderCache.prefs = prefs;
-        renderCache.transport = transportState;
+        renderCache.transport = transportTempo;
         renderCache.timeSig = timeSigState;
 
         const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
@@ -294,7 +305,14 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         };
     } else {
         renderCache.model!.dataDirty = false;
-        renderCache.model!.playheadPosition = playheadPositionRef.current;
+        const playhead = playheadPositionRef.current;
+        renderCache.model!.playheadPosition = playhead;
+        // Keep the playhead-dependent time signature fresh on cache hits too,
+        // so crossing a time-signature change during playback still updates the
+        // renderer's bar spacing without rebuilding the whole track/clip tree.
+        const { numerator, denominator } = getTimeSignatureAtBeat(playhead);
+        renderCache.model!.timeSignatureNumerator = numerator;
+        renderCache.model!.timeSignatureDenominator = denominator;
     }
 
     const cachedModel = renderCache.model!;

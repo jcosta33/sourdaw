@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type Track } from '../../../models/Track';
-import { toggleInputMonitoring } from '../toggleInputMonitoring';
+import { type Track, type InputMonitoring } from '../../../models/Track';
+import { INPUT_MONITORING_CYCLE, toggleInputMonitoring } from '../toggleInputMonitoring';
 
 const mocks = vi.hoisted(() => ({
     getTrackById: vi.fn(),
@@ -37,38 +37,37 @@ describe('toggleInputMonitoring', () => {
         expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
     });
 
-    it('should turn monitoring on and start the engine path when currently off', () => {
-        mocks.getTrackById.mockReturnValue({
-            id: 't1',
-            inputMonitoring: 'off',
-        } as unknown as Track);
+    it('exposes the canonical auto → on → off → auto cycle', () => {
+        // This is the single source of truth shared with the TrackHeader button
+        // so both entry points advance the state identically (finding #44).
+        expect(INPUT_MONITORING_CYCLE).toEqual({ auto: 'on', on: 'off', off: 'auto' });
+    });
 
+    function advance(from: InputMonitoring): InputMonitoring {
+        mocks.getTrackById.mockReturnValue({ id: 't1', inputMonitoring: from } as unknown as Track);
         toggleInputMonitoring('t1');
-
-        const patch = mocks.updateTrack.mock.calls[0]![1] as (t: { inputMonitoring: string; id: string }) => {
-            inputMonitoring: string;
-            id: string;
+        const patch = mocks.updateTrack.mock.calls.at(-1)![1] as (t: { inputMonitoring: InputMonitoring }) => {
+            inputMonitoring: InputMonitoring;
         };
-        expect(patch({ inputMonitoring: 'off', id: 't1' })).toEqual({ inputMonitoring: 'on', id: 't1' });
+        return patch({ inputMonitoring: from }).inputMonitoring;
+    }
 
+    it('advances auto → on and starts the engine path', () => {
+        expect(advance('auto')).toBe('on');
         expect(mocks.startInputMonitoring).toHaveBeenCalledWith('t1');
         expect(mocks.stopInputMonitoring).not.toHaveBeenCalled();
     });
 
-    it('should turn monitoring off and stop the engine path when currently on', () => {
-        mocks.getTrackById.mockReturnValue({
-            id: 't1',
-            inputMonitoring: 'on',
-        } as unknown as Track);
+    it('advances on → off and stops the engine path', () => {
+        expect(advance('on')).toBe('off');
+        expect(mocks.stopInputMonitoring).toHaveBeenCalledTimes(1);
+        expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
+    });
 
-        toggleInputMonitoring('t1');
-
-        const patch = mocks.updateTrack.mock.calls[0]![1] as (t: { inputMonitoring: string; id: string }) => {
-            inputMonitoring: string;
-            id: string;
-        };
-        expect(patch({ inputMonitoring: 'on', id: 't1' })).toEqual({ inputMonitoring: 'off', id: 't1' });
-
+    it('advances off → auto (does not skip auto) and stops the engine path', () => {
+        // Previously this toggled off → on, skipping auto and diverging from the
+        // TrackHeader button. Now it matches the shared cycle.
+        expect(advance('off')).toBe('auto');
         expect(mocks.stopInputMonitoring).toHaveBeenCalledTimes(1);
         expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
     });

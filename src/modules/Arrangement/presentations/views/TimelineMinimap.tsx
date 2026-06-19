@@ -1,9 +1,17 @@
-import { type ReactElement, type MouseEvent, useRef, useLayoutEffect, useState } from 'react';
+import {
+    type ReactElement,
+    type MouseEvent,
+    type KeyboardEvent,
+    useEffect,
+    useRef,
+    useLayoutEffect,
+    useState,
+} from 'react';
 
 import { useStore } from '#/infra/store/useStore';
 import { transportStore } from '#/modules/Transport/stores';
 
-import { setAutoScroll, timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
+import { setAutoScroll, setScrollX, timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
 import { trackStore, type TrackStoreState } from '../../stores/trackStore';
 
 import { TimelineChromeSurface } from './TimelineChromeSurface';
@@ -25,6 +33,9 @@ export const TimelineMinimap = (): ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
     const isDraggingRef = useRef(false);
     const dragOffsetRef = useRef(0);
+    // Holds the teardown for the in-flight drag's global listeners so an unmount
+    // mid-drag can detach them; null when no drag is active.
+    const dragCleanupRef = useRef<(() => void) | null>(null);
     const [containerWidth, setContainerWidth] = useState(0);
 
     const trackState = useStore(trackStore, defaultTrackState);
@@ -149,6 +160,14 @@ export const TimelineMinimap = (): ReactElement => {
         return () => observer.disconnect();
     }, []);
 
+    // Detach any global drag listeners still attached when the minimap unmounts.
+    useEffect(() => {
+        return () => {
+            dragCleanupRef.current?.();
+            dragCleanupRef.current = null;
+        };
+    }, []);
+
     const getMinimapMetrics = () => {
         const container = containerRef.current;
         if (!container) {
@@ -219,11 +238,18 @@ export const TimelineMinimap = (): ReactElement => {
             if (!isDraggingRef.current) {
                 return;
             }
+            const container = containerRef.current;
+            if (!container) {
+                return;
+            }
             const currentMetrics = getMinimapMetrics();
             if (!currentMetrics) {
                 return;
             }
-            const moveX = moveEvent.clientX - rect.left;
+            // Re-read the rect each move so a remount/resize mid-drag computes
+            // against current geometry rather than the rect captured on mousedown.
+            const currentRect = container.getBoundingClientRect();
+            const moveX = moveEvent.clientX - currentRect.left;
             const newViewportStartPx = moveX - dragOffsetRef.current;
             const targetScrollX = Math.max(0, (newViewportStartPx / currentMetrics.beatsToPixels) * pixelsPerBeat);
             const currentViewState = timelineViewStore.value;
@@ -232,14 +258,60 @@ export const TimelineMinimap = (): ReactElement => {
             }
         };
 
-        const handleMouseUp = () => {
-            isDraggingRef.current = false;
+        const detachListeners = () => {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
         };
 
+        const handleMouseUp = () => {
+            isDraggingRef.current = false;
+            detachListeners();
+            dragCleanupRef.current = null;
+        };
+
+        dragCleanupRef.current = detachListeners;
         document.addEventListener('mousemove', handleMouseMove);
         document.addEventListener('mouseup', handleMouseUp);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+        // Keyboard scrolling for the slider: a small step on the arrows, a full
+        // visible page on Page keys, and Home jumps to the start.
+        const stepBeats = 4;
+        const stepPx = stepBeats * pixelsPerBeat;
+        const pageBeats = containerWidth > 0 ? containerWidth / pixelsPerBeat : 16;
+        const pagePx = pageBeats * pixelsPerBeat;
+
+        if (transportStore.value?.isPlaying) {
+            setAutoScroll(false);
+        }
+
+        switch (event.key) {
+            case 'ArrowLeft':
+            case 'ArrowDown':
+                event.preventDefault();
+                setScrollX(scrollX - stepPx);
+                break;
+            case 'ArrowRight':
+            case 'ArrowUp':
+                event.preventDefault();
+                setScrollX(scrollX + stepPx);
+                break;
+            case 'PageUp':
+                event.preventDefault();
+                setScrollX(scrollX - pagePx);
+                break;
+            case 'PageDown':
+                event.preventDefault();
+                setScrollX(scrollX + pagePx);
+                break;
+            case 'Home':
+                event.preventDefault();
+                setScrollX(0);
+                break;
+            default:
+                break;
+        }
     };
 
     return (
@@ -249,7 +321,9 @@ export const TimelineMinimap = (): ReactElement => {
             className="cursor-pointer"
             style={{ height: MINIMAP_HEIGHT }}
             onMouseDown={handleMouseDown}
-            aria-label="Timeline minimap — drag the viewport to scroll, click to jump"
+            onKeyDown={handleKeyDown}
+            tabIndex={0}
+            aria-label="Timeline minimap — drag the viewport to scroll, click to jump, or use arrow keys"
             role="slider"
             aria-valuemin={0}
             aria-valuemax={100}

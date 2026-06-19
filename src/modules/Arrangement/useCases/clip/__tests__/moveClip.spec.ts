@@ -99,4 +99,19 @@ describe('moveClip', () => {
         moveClip('c1', 't1', 10);
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
+
+    it('bails without deleting the clip when the target track does not exist', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 0, endBeat: 4 }] }],
+        });
+
+        // The clip exists, but the destination track id is bogus. Without the
+        // guard, the strip-then-readd logic would remove c1 from t1 and never
+        // re-add it anywhere — silently destroying the clip.
+        moveClip('c1', 'does-not-exist', 10);
+
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+        expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
+        expect(mocks.shiftClipMidiNotes).not.toHaveBeenCalled();
+    });
 });

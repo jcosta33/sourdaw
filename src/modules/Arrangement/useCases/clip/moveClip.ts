@@ -11,6 +11,14 @@ export function moveClip(clipId: string, targetTrackId: string, startBeat: numbe
         return;
     }
 
+    // Guard against moving to a track that doesn't exist. The strip-then-readd
+    // logic below removes the clip from its source track unconditionally and
+    // only re-inserts it into the track whose id matches targetTrackId — so a
+    // bad target id would silently delete the clip with no error.
+    if (!state.tracks.some((time) => time.id === targetTrackId)) {
+        return;
+    }
+
     let movedClip: Clip | undefined;
     let oldStartBeat: number | undefined;
     const tracksWithoutClip = state.tracks.map((time) => {

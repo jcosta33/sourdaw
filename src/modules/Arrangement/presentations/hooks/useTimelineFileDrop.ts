@@ -29,6 +29,70 @@ type UseTimelineFileDropResult = {
     isImporting: boolean;
 };
 
+type AiRenderPayload = { name: string; bufferId: string; durationSeconds: number };
+type SamplePayload = { name: string; id: string; path: string; libraryRootId: string; durationSeconds?: number };
+type PluginPayload = { name: string; id: string };
+
+function asRecord(raw: string): Record<string, unknown> {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) {
+        throw new TypeError('drag payload is not an object');
+    }
+    return parsed as Record<string, unknown>;
+}
+
+function requireString(value: unknown, field: string): string {
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new TypeError(`drag payload field "${field}" is not a non-empty string`);
+    }
+    return value;
+}
+
+function requireFiniteNumber(value: unknown, field: string): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new TypeError(`drag payload field "${field}" is not a finite number`);
+    }
+    return value;
+}
+
+// Validate the AI-render drag payload before it can produce a clip. A missing
+// or non-finite durationSeconds previously yielded a NaN duration that addClip
+// silently rejected (no-op drop with no feedback — #35-new); throwing here
+// routes it to a user-facing error instead.
+function parseAiRender(raw: string): AiRenderPayload {
+    const obj = asRecord(raw);
+    return {
+        name: requireString(obj.name, 'name'),
+        bufferId: requireString(obj.bufferId, 'bufferId'),
+        durationSeconds: requireFiniteNumber(obj.durationSeconds, 'durationSeconds'),
+    };
+}
+
+function parseSample(raw: string): SamplePayload {
+    const obj = asRecord(raw);
+    let durationSeconds: number | undefined;
+    if (obj.durationSeconds !== undefined) {
+        // Only a present-but-invalid duration is rejected; absence is allowed
+        // (the drop handler falls back to a default beat length).
+        durationSeconds = requireFiniteNumber(obj.durationSeconds, 'durationSeconds');
+    }
+    return {
+        name: requireString(obj.name, 'name'),
+        id: requireString(obj.id, 'id'),
+        path: requireString(obj.path, 'path'),
+        libraryRootId: requireString(obj.libraryRootId, 'libraryRootId'),
+        durationSeconds,
+    };
+}
+
+function parsePlugin(raw: string): PluginPayload {
+    const obj = asRecord(raw);
+    return {
+        name: requireString(obj.name, 'name'),
+        id: requireString(obj.id, 'id'),
+    };
+}
+
 export const useTimelineFileDrop = ({
     getCanvasCoords,
     getBeatFromX,
@@ -49,11 +113,7 @@ export const useTimelineFileDrop = ({
         const aiRenderData = event.dataTransfer.getData('application/x-sourdaw-ai-render');
         if (aiRenderData) {
             try {
-                const render = JSON.parse(aiRenderData) as {
-                    name: string;
-                    bufferId: string;
-                    durationSeconds: number;
-                };
+                const render = parseAiRender(aiRenderData);
                 let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
                 const targetTrack = targetTrackId
                     ? trackStore.value?.tracks.find((time) => time.id === targetTrackId)
@@ -76,7 +136,7 @@ export const useTimelineFileDrop = ({
                     audioBufferId: render.bufferId,
                 });
             } catch {
-                /* ignored */
+                notifyUser('Could not place the generated clip — the dropped item was malformed.', 'error');
             }
             return;
         }
@@ -85,13 +145,7 @@ export const useTimelineFileDrop = ({
         if (sampleData) {
             setIsImporting(true);
             try {
-                const sample = JSON.parse(sampleData) as {
-                    name: string;
-                    id: string;
-                    path: string;
-                    libraryRootId: string;
-                    durationSeconds?: number;
-                };
+                const sample = parseSample(sampleData);
 
                 let targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
                 const sampleTargetTrack = targetTrackId
@@ -172,7 +226,7 @@ export const useTimelineFileDrop = ({
                     assetHash,
                 });
             } catch {
-                /* ignored */
+                notifyUser('Could not place the dropped sample — its metadata was malformed.', 'error');
             } finally {
                 setIsImporting(false);
             }
@@ -182,13 +236,15 @@ export const useTimelineFileDrop = ({
         const pluginData = event.dataTransfer.getData('application/x-sourdaw-plugin');
         if (pluginData) {
             try {
-                const plugin = JSON.parse(pluginData) as { name: string; id: string };
+                const plugin = parsePlugin(pluginData);
                 const targetTrackId = trackHit ?? trackStore.value?.selectedTrackId;
-                if (targetTrackId) {
-                    addDevice(targetTrackId, plugin.name);
+                if (!targetTrackId) {
+                    notifyUser('Drop the plugin onto a track to add it.', 'warning');
+                    return;
                 }
+                addDevice(targetTrackId, plugin.name);
             } catch {
-                /* ignored */
+                notifyUser('Could not add the dropped plugin — its data was malformed.', 'error');
             }
             return;
         }

@@ -1,6 +1,7 @@
-import { type ReactElement, useEffect, useRef } from 'react';
+import { type ReactElement, useEffect, useId, useRef } from 'react';
 
 import { getMasterAnalyser } from '#/modules/AudioEngine/useCases';
+import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 import { cn } from '#/utils/Styles/cn';
 
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
@@ -8,7 +9,7 @@ import { useTracks } from '../hooks/useTracks';
 
 export const MiniMasterSpectrum = ({ className }: { className?: string }): ReactElement | null => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const animationRef = useRef<number>(0);
+    const schedulerId = useId();
     const { tracks, selectedTrackId } = useTracks();
     const masterTrack = tracks.find((time) => time.kind === 'master');
     const isSelected = masterTrack?.id === selectedTrackId;
@@ -24,6 +25,16 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
             return undefined;
         }
 
+        // The spectrum is a decorative live readout of the master bus. It only
+        // conveys anything when the master track is selected (it renders flat
+        // grey otherwise), so the 60 Hz analyser read + redraw should not run
+        // when unselected or when the tab is hidden — gate the loop entirely.
+        if (!isSelected) {
+            const dpr = window.devicePixelRatio || 1;
+            ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+            return undefined;
+        }
+
         // Try getting the master analyser. Might be null if engine isn't ready.
         let analyser: AnalyserNode | undefined;
         try {
@@ -36,51 +47,62 @@ export const MiniMasterSpectrum = ({ className }: { className?: string }): React
             return undefined;
         }
 
+        // §181.1 — hoist per-frame allocations outside the draw loop.
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
 
+        // DPR scaling — size the backing store to CSS pixels × devicePixelRatio
+        // so the spectrum is crisp on 2x displays instead of being drawn at half
+        // resolution (findings #26/#62). All drawing below is then in CSS pixels.
+        const dpr = window.devicePixelRatio || 1;
+        const cssWidth = canvas.clientWidth || canvas.width || 180;
+        const cssHeight = canvas.clientHeight || canvas.height || 80;
+        canvas.width = Math.round(cssWidth * dpr);
+        canvas.height = Math.round(cssHeight * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.imageSmoothingEnabled = false;
 
-        // §181.1 — hoist per-frame allocations outside the rAF loop.
-        // The gradient only needs to be created once per effect run (it
-        // depends on canvas height, which is fixed at mount), and the
-        // fill style is the same for every bar so it can be set once
-        // per frame instead of once per bar.
-        const canvasHeight = canvas.height;
-        const canvasWidth = canvas.width;
-        const gradient = ctx.createLinearGradient(0, canvasHeight, 0, 0);
+        const gradient = ctx.createLinearGradient(0, cssHeight, 0, 0);
         gradient.addColorStop(0, 'rgba(217, 119, 6, 0.4)'); // amber/orange
         gradient.addColorStop(0.5, 'rgba(234, 179, 8, 0.8)'); // yellow
         gradient.addColorStop(1, 'rgba(252, 211, 77, 1)'); // bright
-        const barFill: CanvasGradient | string = isSelected ? gradient : 'rgba(255,255,255,0.06)';
-        const barWidth = Math.max(1, (canvasWidth / bufferLength) * 2.5);
+        const barWidth = Math.max(1, (cssWidth / bufferLength) * 2.5);
         const innerBarWidth = barWidth - 0.5;
 
         const draw = (): void => {
-            animationRef.current = requestAnimationFrame(draw);
+            // Skip work entirely while the document is hidden — the analyser
+            // data is invisible and rAF is already throttled, but this avoids
+            // the read + fill churn on a backgrounded tab.
+            if (typeof document !== 'undefined' && document.hidden) {
+                return;
+            }
 
             analyser.getByteFrequencyData(dataArray);
 
-            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-            ctx.fillStyle = barFill;
+            ctx.clearRect(0, 0, cssWidth, cssHeight);
+            ctx.fillStyle = gradient;
 
             let x = 0;
             for (let index = 0; index < bufferLength; index += 2) {
-                if (x > canvasWidth) {
+                if (x > cssWidth) {
                     break;
                 }
-                const barHeight = (dataArray[index]! / 255) * canvasHeight;
-                ctx.fillRect(x, canvasHeight - barHeight, innerBarWidth, barHeight);
+                const barHeight = (dataArray[index]! / 255) * cssHeight;
+                ctx.fillRect(x, cssHeight - barHeight, innerBarWidth, barHeight);
                 x += barWidth;
             }
         };
 
-        draw();
+        // Route through the shared animation scheduler instead of a private
+        // requestAnimationFrame loop so every timeline animation shares one rAF
+        // (findings #40/#63/#64).
+        const id = `mini-master-spectrum-${schedulerId}`;
+        animationScheduler.register(id, draw);
 
         return () => {
-            cancelAnimationFrame(animationRef.current);
+            animationScheduler.unregister(id);
         };
-    }, [isSelected]);
+    }, [isSelected, schedulerId]);
 
     if (!masterTrack) {
         return null;

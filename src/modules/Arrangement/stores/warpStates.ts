@@ -13,6 +13,19 @@ export function getWarpState(clipId: string): WarpState {
     return warpStates.get(clipId) ?? defaultWarpState;
 }
 
+/** Replace the warp state for a clip (used when duplicating a clip). */
+export function setWarpState(clipId: string, state: WarpState): void {
+    warpStates.set(clipId, state);
+}
+
+/**
+ * Drop the warp state keyed by a clip id. Called on clip removal so the map
+ * doesn't retain entries for clips that no longer exist.
+ */
+export function removeWarpState(clipId: string): void {
+    warpStates.delete(clipId);
+}
+
 export function addWarpMarker(
     clipId: string,
     originalBeat: number,

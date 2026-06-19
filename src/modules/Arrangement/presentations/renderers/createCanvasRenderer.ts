@@ -126,8 +126,18 @@ function getTrackYOffsets(tracks: { height: number }[]): number[] {
 }
 
 function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, width: number): void {
-    const { tracks, selectedTrackId } = model;
+    const { tracks, selectedTrackId, pixelsPerBeat, viewportStartBeat } = model;
     const yOffsets = getTrackYOffsets(tracks);
+
+    // Horizontal viewport cull — mirrors the WebGPU renderer
+    // (createWebGpuRenderer.ts:316). Off-screen clips still allocate gradients
+    // and paths per frame in drawClip, so skip any clip whose x-range lies
+    // entirely left of 0 or right of the canvas width.
+    const isClipVisible = (clip: { startBeat: number; endBeat: number }): boolean => {
+        const x = (clip.startBeat - viewportStartBeat) * pixelsPerBeat;
+        const w = (clip.endBeat - clip.startBeat) * pixelsPerBeat;
+        return x + w >= 0 && x <= width;
+    };
 
     for (const track of tracks) {
         const y = yOffsets[track.index]!;
@@ -201,6 +211,9 @@ function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, w
             }
 
             for (const clip of track.clips) {
+                if (!isClipVisible(clip)) {
+                    continue;
+                }
                 drawClip(ctx, clip, model, y, h);
             }
 
@@ -220,6 +233,9 @@ function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, w
                     ctx.fillText(lane.name, 4, ly + 14);
 
                     for (const clip of lane.clips) {
+                        if (!isClipVisible(clip)) {
+                            continue;
+                        }
                         drawClip(ctx, clip, model, ly, varLaneHeight);
                     }
 

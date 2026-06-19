@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent, useState, useRef, useEffect } from 'react';
+import { type ReactElement, type MouseEvent, useState, useRef, useEffect, useLayoutEffect } from 'react';
 
 import { Flag } from 'lucide-react';
 
@@ -51,6 +51,10 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
     const inputRef = useRef<HTMLInputElement>(null);
     const dragRef = useRef<DragState>(null);
     const laneRef = useRef<HTMLDivElement>(null);
+    // Holds the teardown for the in-flight drag's global listeners so an unmount
+    // mid-drag can detach them; null when no drag is active.
+    const dragCleanupRef = useRef<(() => void) | null>(null);
+    const [laneWidth, setLaneWidth] = useState(0);
 
     useEffect(() => {
         if (editing && inputRef.current) {
@@ -58,6 +62,30 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
             inputRef.current.select();
         }
     }, [editing]);
+
+    // Detach any global drag listeners still attached when the lane unmounts.
+    useEffect(() => {
+        return () => {
+            dragCleanupRef.current?.();
+            dragCleanupRef.current = null;
+        };
+    }, []);
+
+    useLayoutEffect(() => {
+        const lane = laneRef.current;
+        if (!lane) {
+            return undefined;
+        }
+        const observer = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            if (entry) {
+                setLaneWidth(entry.contentRect.width);
+            }
+        });
+        observer.observe(lane);
+        setLaneWidth(lane.getBoundingClientRect().width);
+        return () => observer.disconnect();
+    }, []);
 
     useEffect(() => {
         if (contextMenu.kind === 'none') {
@@ -98,16 +126,22 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
             setDragPreview({ markerId: marker.id, beat: lastBeat });
         };
 
+        const detachListeners = () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+
         const handleMouseUp = () => {
             if (lastBeat !== originalBeat) {
                 moveMarker(marker.id, lastBeat);
             }
             dragRef.current = null;
             setDragPreview(null);
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
+            detachListeners();
+            dragCleanupRef.current = null;
         };
 
+        dragCleanupRef.current = detachListeners;
         window.addEventListener('mousemove', handleMouseMove);
         window.addEventListener('mouseup', handleMouseUp);
     };
@@ -186,7 +220,10 @@ export const MarkerLane = ({ pixelsPerBeat, scrollX }: MarkerLaneProps): ReactEl
                 const isDragging = dragPreview?.markerId === marker.id;
                 const displayBeat = isDragging ? dragPreview.beat : marker.beat;
                 const left = displayBeat * pixelsPerBeat - scrollX;
-                if (left < -50 || left > 4000) {
+                // Cull markers outside the lane's actual width; fall back to a
+                // permissive bound until the lane has been measured.
+                const rightBound = laneWidth > 0 ? laneWidth + 50 : Infinity;
+                if (left < -50 || left > rightBound) {
                     return null;
                 }
 

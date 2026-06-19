@@ -182,6 +182,100 @@ describe('useTimelineFileDrop', () => {
         });
     });
 
+    // Regression (#35-new): a malformed AI-render payload with a non-finite
+    // durationSeconds previously produced a NaN clip span that addClip silently
+    // rejected — a no-op drop with no feedback. The drop must now surface an
+    // error and never call addClip.
+    it('rejects an AI-render drop with a non-finite duration and notifies the user', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) => {
+                    if (type === 'application/x-sourdaw-ai-render') {
+                        // durationSeconds is missing → NaN duration downstream.
+                        return JSON.stringify({ name: 'Pad', bufferId: 'buf-ai' });
+                    }
+                    return '';
+                },
+                files: [],
+            },
+        };
+
+        mocks.hitTestTrack.mockReturnValue('t1');
+        mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }], selectedTrackId: 't1' } as any;
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.any(String), 'error');
+        });
+        expect(mocks.addClip).not.toHaveBeenCalled();
+    });
+
+    // Regression (#35-new): a structurally broken sample payload must surface an
+    // error instead of being swallowed by a silent catch.
+    it('rejects a malformed sample drop and notifies the user', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) => {
+                    if (type === 'application/x-sourdaw-sample') {
+                        // Missing required string fields (id/path/libraryRootId).
+                        return JSON.stringify({ name: 'Broken' });
+                    }
+                    return '';
+                },
+                files: [],
+            },
+        };
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.any(String), 'error');
+        });
+        expect(mocks.addClip).not.toHaveBeenCalled();
+    });
+
+    it('places a valid AI-render drop as a clip', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) => {
+                    if (type === 'application/x-sourdaw-ai-render') {
+                        return JSON.stringify({ name: 'Pad', bufferId: 'buf-ai', durationSeconds: 4 });
+                    }
+                    return '';
+                },
+                files: [],
+            },
+        };
+
+        mocks.hitTestTrack.mockReturnValue('t1');
+        mocks.trackStoreValue.value = { tracks: [{ id: 't1', kind: 'audio' }], selectedTrackId: 't1' } as any;
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.addClip).toHaveBeenCalledWith(
+                expect.objectContaining({ trackId: 't1', name: 'Pad', type: 'audio', audioBufferId: 'buf-ai' })
+            );
+        });
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
     it('handles external file drop (Audio)', async () => {
         const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
 

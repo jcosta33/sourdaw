@@ -23,12 +23,13 @@ import {
 } from '#/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
+import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { injectPromptCommand } from '#/modules/AiRuntime/useCases';
 import { preferencesStore } from '#/modules/Workspace/stores';
 import { defaultPreferences, type Preferences, setTrackHeight, setWorkspaceMode } from '#/modules/Workspace/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
-import { timelineViewStore, setScrollY, type TimelineViewState } from '../../stores/timelineViewStore';
+import { timelineViewStore, setScrollY } from '../../stores/timelineViewStore';
 import { addTrack } from '../../useCases/addTrack';
 import { createFolder } from '../../useCases/folder/createFolder';
 import { removeTrack } from '../../useCases/removeTrack';
@@ -60,17 +61,14 @@ export const TrackListView = ({
     const dragTrackIdRef = useRef<string | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const isSyncingRef = useRef(false);
+    const scrollRafRef = useRef<number | null>(null);
     const prefs = useStore(preferencesStore, defaultPreferences);
     const currentHeight = prefs.trackHeight;
 
-    const defaultTimelineView: TimelineViewState = {
-        scrollX: 0,
-        scrollY: 0,
-        pixelsPerBeat: 12,
-        autoScrollEnabled: true,
-    };
-    const timelineView = useStore(timelineViewStore, defaultTimelineView);
-    const scrollY = timelineView.scrollY;
+    // Subscribe to scrollY alone — reading the whole TimelineViewState would
+    // re-render this non-virtualised header tree on every pixelsPerBeat /
+    // scrollX / autoScrollEnabled change.
+    const scrollY = useStoreSelector(timelineViewStore, (state) => state?.scrollY ?? 0);
 
     useLayoutEffect(() => {
         const el = scrollRef.current;
@@ -86,16 +84,33 @@ export const TrackListView = ({
         }
     }, [scrollY]);
 
+    // Coalesce native scroll events to one store write per animation frame so a
+    // fast scroll doesn't dispatch setScrollY on every pixel.
     const handleScroll = () => {
         if (isSyncingRef.current) {
             return;
         }
-        const el = scrollRef.current;
-        if (!el) {
+        if (scrollRafRef.current !== null) {
             return;
         }
-        setScrollY(el.scrollTop);
+        scrollRafRef.current = requestAnimationFrame(() => {
+            scrollRafRef.current = null;
+            const el = scrollRef.current;
+            if (!el) {
+                return;
+            }
+            setScrollY(el.scrollTop);
+        });
     };
+
+    useLayoutEffect(() => {
+        return () => {
+            if (scrollRafRef.current !== null) {
+                cancelAnimationFrame(scrollRafRef.current);
+                scrollRafRef.current = null;
+            }
+        };
+    }, []);
 
     const collapsedFolders = new Set(
         tracks.filter((time) => time.kind === 'folder' && time.collapsed).map((time) => time.id)

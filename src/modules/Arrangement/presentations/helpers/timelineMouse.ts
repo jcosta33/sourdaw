@@ -8,8 +8,6 @@ import { timelineViewStore } from '../../stores/timelineViewStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { getTrackAtY } from '../../useCases/timelineInteractions/getTrackAtY';
 
-const RULER_HEIGHT = 0;
-
 export type TrackHitResult = {
     trackId: string;
     height: number;
@@ -18,9 +16,10 @@ export type TrackHitResult = {
 };
 
 /**
- * Convert canvas Y to content-space Y (ruler-stripped + scroll-adjusted).
+ * Convert canvas Y to content-space Y (scroll-adjusted). The timeline canvas
+ * has no ruler inset, so canvas Y maps directly to content Y plus scroll.
  */
-export const getContentY = (canvasY: number, scrollY: number): number => canvasY - RULER_HEIGHT + scrollY;
+export const getContentY = (canvasY: number, scrollY: number): number => canvasY + scrollY;
 
 /**
  * Resolve which track a content-space Y falls into, along with its height and

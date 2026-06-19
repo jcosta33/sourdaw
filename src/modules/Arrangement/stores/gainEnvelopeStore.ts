@@ -56,7 +56,26 @@ export function getAllEnvelopes(): ClipGainEnvelope[] {
     return Object.values(current.envelopes);
 }
 
-/** Test-only: reset the store to its empty default. */
+/** Drop the gain envelope keyed by a clip id (e.g. on clip removal). */
+export function removeEnvelope(clipId: string): void {
+    const current = gainEnvelopeStore.value ?? defaultGainEnvelopeStoreState;
+    if (!(clipId in current.envelopes)) {
+        return;
+    }
+    const { [clipId]: _removed, ...rest } = current.envelopes;
+    gainEnvelopeStore.set({ envelopes: rest });
+}
+
+/**
+ * Test-only: reset the store to its empty default.
+ *
+ * Guarded behind `import.meta.env.MODE` so it cannot mutate the live store in a
+ * production build — under Vitest `MODE` is `'test'`. Exported (rather than
+ * moved to a test helper) so the existing `*.spec.ts` callers keep working.
+ */
 export function __resetGainEnvelopesForTest(): void {
+    if (import.meta.env.MODE !== 'test') {
+        return;
+    }
     gainEnvelopeStore.set(defaultGainEnvelopeStoreState);
 }

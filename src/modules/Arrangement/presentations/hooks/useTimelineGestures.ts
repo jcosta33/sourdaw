@@ -10,7 +10,6 @@ import {
     setScrollY,
     timelineViewStore,
 } from '../../stores/timelineViewStore';
-import { trackStore } from '../../stores/trackStore';
 
 export const useTimelineGestures = (canvasRef: RefObject<HTMLCanvasElement | null>): void => {
     useEffect(() => {
@@ -51,12 +50,13 @@ export const useTimelineGestures = (canvasRef: RefObject<HTMLCanvasElement | nul
                     setAutoScroll(false);
                 }
             } else {
+                // Let setScrollY perform the single authoritative clamp using the
+                // real viewport height. Pre-clamping here against a separately
+                // computed maxY only to have setScrollY re-clamp against its
+                // hardcoded 200px default produced a wrong scroll ceiling.
                 const currentY = timelineViewStore.value?.scrollY ?? 0;
-                const trackState = trackStore.value;
-                const totalTrackHeight = (trackState?.tracks ?? []).reduce((sum, time) => sum + (time.height ?? 64), 0);
                 const viewHeight = canvas.clientHeight;
-                const maxY = Math.max(0, totalTrackHeight - viewHeight);
-                setScrollY(Math.min(maxY, Math.max(0, currentY + event.deltaY)));
+                setScrollY(currentY + event.deltaY, viewHeight);
             }
         };
 

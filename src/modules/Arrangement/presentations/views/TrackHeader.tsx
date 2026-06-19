@@ -30,6 +30,7 @@ import { muteTrack } from '../../useCases/toggleTrackState/muteTrack';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { soloTrack } from '../../useCases/toggleTrackState/soloTrack';
 import { soloTrackExclusive } from '../../useCases/toggleTrackState/soloTrackExclusive';
+import { INPUT_MONITORING_CYCLE } from '../../useCases/toggleTrackState/toggleInputMonitoring';
 import { toggleVariationLanes } from '../../useCases/toggleTrackState/toggleVariationLanes';
 
 import { TrackContextMenu } from './TrackContextMenu';
@@ -44,12 +45,6 @@ const TRACK_KIND_ICON: Record<string, typeof Music> = {
     midi: Music,
     bus: Radio,
     master: Monitor,
-};
-
-const INPUT_MONITORING_CYCLE: Record<InputMonitoring, InputMonitoring> = {
-    auto: 'on',
-    on: 'off',
-    off: 'auto',
 };
 
 const INPUT_MONITORING_LABEL: Record<InputMonitoring, string> = {

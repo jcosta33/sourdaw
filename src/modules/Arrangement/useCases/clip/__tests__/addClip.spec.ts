@@ -85,4 +85,66 @@ describe('addClip', () => {
         const result = addClip({ trackId: 't1', startBeat: 0, endBeat: 4, name: 'X' });
         expect(result).toBeNull();
     });
+
+    it('returns null when the target track does not exist (no orphaned clip)', () => {
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [] }] });
+
+        const result = addClip({ trackId: 'missing', startBeat: 0, endBeat: 4, name: 'X' });
+
+        expect(result).toBeNull();
+        // updateTrack would silently no-op on a missing track, so we must not
+        // even attempt the write — and must never hand back a phantom clip.
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
+    it('returns null when endBeat does not exceed startBeat', () => {
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [] }] });
+
+        expect(addClip({ trackId: 't1', startBeat: 4, endBeat: 4, name: 'zero' })).toBeNull();
+        expect(addClip({ trackId: 't1', startBeat: 4, endBeat: 2, name: 'inverted' })).toBeNull();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
+    it('returns null when startBeat is negative', () => {
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [] }] });
+
+        expect(addClip({ trackId: 't1', startBeat: -1, endBeat: 4, name: 'neg' })).toBeNull();
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+    });
+
+    it('preserves passthrough source properties when provided', () => {
+        mocks.getTrackState.mockReturnValue({ tracks: [{ id: 't1', kind: 'audio', clips: [] }] });
+
+        const result = addClip({
+            trackId: 't1',
+            startBeat: 0,
+            endBeat: 4,
+            name: 'Vocal',
+            fadeInBeats: 0.5,
+            fadeOutBeats: 1,
+            gain: 0.3,
+            color: '#abcdef',
+            locked: true,
+            muted: true,
+            audioOffsetBeats: 2,
+            stretchMode: 'timestretch',
+            stretchRatio: 1.5,
+            loopEnabled: true,
+            loopLength: 8,
+        });
+
+        expect(result).toMatchObject({
+            fadeInBeats: 0.5,
+            fadeOutBeats: 1,
+            gain: 0.3,
+            color: '#abcdef',
+            locked: true,
+            muted: true,
+            audioOffsetBeats: 2,
+            stretchMode: 'timestretch',
+            stretchRatio: 1.5,
+            loopEnabled: true,
+            loopLength: 8,
+        });
+    });
 });

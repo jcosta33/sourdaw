@@ -92,4 +92,45 @@ describe('drawClip (Coordinate Conventions)', () => {
         expect(noteCall).toBeTruthy();
         expect(noteCall[0]).toBe(200);
     });
+
+    it('does not stack-overflow when an inline-editing clip has very many notes', () => {
+        // Regression: the inline path used Math.min(...notes.map()) / Math.max(...),
+        // which throws `RangeError: Maximum call stack size exceeded` once the spread
+        // argument count gets large. The fix folds the extent into a single loop.
+        const noteCount = 150_000;
+        const midiNotes = Array.from({ length: noteCount }, (_unused, index) => ({
+            id: `n${index}`,
+            clipId: 'big',
+            startBeat: (index % 16) / 4,
+            duration: 0.25,
+            pitch: 36 + (index % 60),
+            velocity: 100,
+        }));
+
+        const clip: ClipRenderModel = {
+            id: 'big',
+            startBeat: 0,
+            endBeat: 4,
+            name: 'Big Clip',
+            type: 'midi',
+            midiNotes,
+            color: '#000',
+            muted: false,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            isInlineEditing: true, // forces the inline extent path
+        } as any;
+
+        const model: TimelineRenderModel = {
+            tracks: [],
+            viewportStartBeat: 0,
+            viewportEndBeat: 16,
+            pixelsPerBeat: 25,
+            selectedClipIds: [],
+            selectedClipId: null,
+        } as any;
+
+        // isInlineEditing:true exercises the padded-extent path that used the spread.
+        expect(() => drawClip(mockCtx, clip, model, 0, 30)).not.toThrow();
+    });
 });
