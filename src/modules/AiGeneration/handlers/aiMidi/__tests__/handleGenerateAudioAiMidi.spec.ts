@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     generateAudio: vi.fn(),
     isAudioGenerationAvailable: vi.fn(),
     notifyUser: vi.fn(),
+    getTransportState: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
@@ -35,9 +36,18 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     isAudioGenerationAvailable: mocks.isAudioGenerationAvailable,
 }));
 
+vi.mock('#/modules/Transport/useCases', () => ({
+    getTransportState: mocks.getTransportState,
+}));
+
+const UNAVAILABLE_MESSAGE =
+    'Audio generation requires the Sourdaw desktop app (uses Stable Audio Open via Python sidecar)';
+
 describe('handleGenerateAudioAiMidi', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // Default: 120 BPM, playhead at 0 (matches the legacy assumption).
+        mocks.getTransportState.mockReturnValue({ tempo: 120, playheadPosition: 0 });
     });
 
     it('bails if audio generation is unavailable', async () => {
@@ -50,7 +60,7 @@ describe('handleGenerateAudioAiMidi', () => {
             })
         ).rejects.toThrow(/Sourdaw desktop/);
 
-        expect(mocks.notifyUser).toHaveBeenCalledWith('Audio generation requires the Sourdaw desktop app', 'warning');
+        expect(mocks.notifyUser).toHaveBeenCalledWith(UNAVAILABLE_MESSAGE, 'warning');
         expect(mocks.generateAudio).not.toHaveBeenCalled();
     });
 
@@ -70,6 +80,7 @@ describe('handleGenerateAudioAiMidi', () => {
         expect(mocks.generateAudio).toHaveBeenCalledWith('epic drum loop', 4);
         expect(mocks.cacheSet).toHaveBeenCalledWith(expect.any(String), mockBuffer);
 
+        // 4.5s at 120 BPM = 4.5 * 120 / 60 = 9 beats.
         expect(mocks.addClip).toHaveBeenCalledWith(
             expect.objectContaining({
                 trackId: 'new-track',
@@ -77,6 +88,29 @@ describe('handleGenerateAudioAiMidi', () => {
                 endBeat: 9,
                 name: 'AI: epic drum loop',
                 type: 'audio',
+            })
+        );
+    });
+
+    it('derives beats from project tempo and places the clip at the playhead', async () => {
+        mocks.isAudioGenerationAvailable.mockReturnValue(true);
+        mocks.addTrack.mockReturnValue({ id: 'new-track' });
+        // 90 BPM, playhead parked at beat 16.
+        mocks.getTransportState.mockReturnValue({ tempo: 90, playheadPosition: 16 });
+
+        const mockBuffer = { duration: 4, sampleRate: 44100 };
+        mocks.generateAudio.mockResolvedValue(mockBuffer);
+
+        await handleGenerateAudioAiMidi.execute({
+            type: 'generateAudio',
+            payload: { prompt: 'pad swell' },
+        });
+
+        // 4s at 90 BPM = 4 * 90 / 60 = 6 beats, starting at the playhead (16).
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({
+                startBeat: 16,
+                endBeat: 22,
             })
         );
     });

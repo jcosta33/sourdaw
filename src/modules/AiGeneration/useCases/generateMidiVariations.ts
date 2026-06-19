@@ -26,21 +26,37 @@ type GenerateMidiVariationsOptions = {
 
 /**
  * Validate that an unknown value is a well-formed VariationNote array.
- * Each note must have numeric pitch, startBeat, duration, and velocity.
+ * Each note must have finite, in-range pitch, startBeat, duration, and
+ * velocity. NaN/Infinity and out-of-range MIDI values are rejected so they
+ * never reach createAlternativeClips. (A bare typeof check passes for NaN.)
  */
 function isVariationNoteArray(arr: unknown): arr is VariationNote[] {
     if (!Array.isArray(arr)) {
         return false;
     }
-    return arr.every(
-        (node) =>
-            typeof node === 'object' &&
-            node !== null &&
-            typeof (node as Record<string, unknown>).pitch === 'number' &&
-            typeof (node as Record<string, unknown>).startBeat === 'number' &&
-            typeof (node as Record<string, unknown>).duration === 'number' &&
-            typeof (node as Record<string, unknown>).velocity === 'number'
-    );
+    return arr.every((node) => {
+        if (typeof node !== 'object' || node === null) {
+            return false;
+        }
+        const record = node as Record<string, unknown>;
+        const { pitch, startBeat, duration, velocity } = record;
+        return (
+            typeof pitch === 'number' &&
+            Number.isFinite(pitch) &&
+            pitch >= 0 &&
+            pitch <= 127 &&
+            typeof startBeat === 'number' &&
+            Number.isFinite(startBeat) &&
+            startBeat >= 0 &&
+            typeof duration === 'number' &&
+            Number.isFinite(duration) &&
+            duration > 0 &&
+            typeof velocity === 'number' &&
+            Number.isFinite(velocity) &&
+            velocity >= 1 &&
+            velocity <= 127
+        );
+    });
 }
 
 export async function generateMidiVariations(
@@ -73,21 +89,32 @@ export async function generateMidiVariations(
     }
 
     const duration = targetClip.endBeat - targetClip.startBeat;
-    if (duration <= 0) {
+    // Number.isFinite first: a bare `duration <= 0` lets NaN through (NaN <= 0 is
+    // false), which would otherwise build a prompt advertising "length NaN beats".
+    if (!Number.isFinite(duration) || duration <= 0) {
         throw createAiGenerationError('Clip has zero or negative duration — cannot generate variations.');
     }
 
     const startBeat = targetClip.startBeat;
 
+    // Cap the note list so a long clip can't blow the LLM context window. We
+    // describe the variation goal, not reproduce every note, so a representative
+    // prefix plus a count of the remainder is enough for the model.
+    const MAX_PROMPT_NOTES = 200;
+    const promptNotes = notes.slice(0, MAX_PROMPT_NOTES);
+
     // Build a compact note representation relative to clip start for the LLM prompt
-    const noteStrings = notes
+    const noteStrings = promptNotes
         .map(
             (node) =>
                 `[pitch=${node.pitch}, start=${(node.startBeat - startBeat).toFixed(2)}, duration=${node.duration.toFixed(2)}, velocity=${node.velocity.toFixed(2)}]`
         )
         .join(', ');
 
-    const projectContext = `We have a MIDI clip of length ${String(duration)} beats. Current notes (relative to clip start): ${noteStrings}`;
+    const omittedCount = notes.length - promptNotes.length;
+    const omittedSuffix = omittedCount > 0 ? ` (+${String(omittedCount)} more notes omitted for brevity)` : '';
+
+    const projectContext = `We have a MIDI clip of length ${String(duration)} beats. Current notes (relative to clip start): ${noteStrings}${omittedSuffix}`;
 
     const prompt = `Generate 3 completely unique musical variations of these MIDI notes. Keep the total length exactly ${String(duration)} beats. Keep them in the same key.
 Return ONLY valid JSON matching this schema:
@@ -127,15 +154,18 @@ ONLY output raw JSON, no markdown blocks.`;
         );
     }
 
-    // Extract JSON from the response — the model sometimes wraps output in markdown fences
-    const jsonMatch = responseStr.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    // Extract JSON from the response — the model sometimes wraps output in markdown
+    // fences and may emit several objects (e.g. a "thinking" preamble). Take the first
+    // balanced-brace object that carries a "variations" key rather than a greedy
+    // /\{[\s\S]*\}/, which over-captures across multiple objects into one blob.
+    const jsonText = extractVariationsJsonObject(responseStr);
+    if (jsonText === null) {
         throw createAiGenerationError('No JSON object found in AI response for variations.');
     }
 
     let variations: VariationNote[][];
     try {
-        const data = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+        const data = JSON.parse(jsonText) as Record<string, unknown>;
         if (!data || !Array.isArray(data.variations)) {
             throw new Error('Missing or invalid "variations" array in AI response');
         }
@@ -180,4 +210,61 @@ ONLY output raw JSON, no markdown blocks.`;
         { source: 'ai' }
     );
     return variations.length;
+}
+
+/**
+ * Find the first balanced-brace JSON object in `text` that contains a
+ * "variations" key, or null if none. String literals (with escapes) are tracked
+ * so braces inside strings don't skew the depth count.
+ *
+ * Preferred over a greedy /\{[\s\S]*\}/: when the model emits several objects
+ * (e.g. a "thinking" preamble before the payload) the greedy form spans from the
+ * first `{` to the last `}`, merging them into one un-parseable blob.
+ */
+function extractVariationsJsonObject(text: string): string | null {
+    for (let start = text.indexOf('{'); start !== -1; start = text.indexOf('{', start + 1)) {
+        const candidate = readBalancedObject(text, start);
+        if (candidate !== null && candidate.includes('"variations"')) {
+            return candidate;
+        }
+    }
+    return null;
+}
+
+/**
+ * Read the balanced-brace JSON object starting at `start` (which must point at
+ * a `{`), or null if it never closes.
+ */
+function readBalancedObject(text: string, start: number): string | null {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let index = start; index < text.length; index++) {
+        const char = text[index];
+
+        if (inString) {
+            if (escaped) {
+                escaped = false;
+            } else if (char === '\\') {
+                escaped = true;
+            } else if (char === '"') {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (char === '"') {
+            inString = true;
+        } else if (char === '{') {
+            depth++;
+        } else if (char === '}') {
+            depth--;
+            if (depth === 0) {
+                return text.slice(start, index + 1);
+            }
+        }
+    }
+
+    return null;
 }

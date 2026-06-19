@@ -11,6 +11,51 @@ import type { DrumPatternStyle } from '../../models/GenerationStyles';
 
 export type { DrumPatternStyle };
 
+/**
+ * Runtime roster of every {@link DrumPatternStyle} the algorithm handles —
+ * the single source the handler layer derives `VALID_DRUM_STYLES` from, so a
+ * style can never be advertised as valid without a matching `switch` arm.
+ *
+ * The two `satisfies`-style guards below make this list and the
+ * `DrumPatternStyle` union fail the type-check the moment they drift: the
+ * `satisfies` clause rejects any member not in the union, and
+ * `assertCoversUnion` rejects any union member missing from the list.
+ */
+export const DRUM_PATTERN_STYLES = [
+    'four-on-floor',
+    'breakbeat',
+    'trap',
+    'jazz',
+    'latin',
+    'rock',
+    'dnb',
+    'half-time',
+    'blues',
+    'reggae',
+    'lofi',
+    'house',
+    'techno',
+    'synthwave',
+    'afrobeat',
+    'metal',
+    'punk',
+] as const satisfies readonly DrumPatternStyle[];
+
+// Compile-time exhaustiveness: fails if `DrumPatternStyle` gains a member that
+// is not listed above (the `never` makes the assignment unrepresentable).
+type DrumStyleNotListed = Exclude<DrumPatternStyle, (typeof DRUM_PATTERN_STYLES)[number]>;
+const _assertDrumStylesCoverUnion: DrumStyleNotListed extends never ? true : never = true;
+void _assertDrumStylesCoverUnion;
+
+/**
+ * Exhaustiveness guard for `switch` statements over a discriminated union:
+ * reaching it is a type error, so a newly added style fails the build instead
+ * of silently falling through to a runtime throw.
+ */
+function assertNever(value: never): never {
+    throw new Error(`Unhandled drum pattern style: ${String(value)}`);
+}
+
 export type GenerateDrumPatternOptions = {
     style: DrumPatternStyle;
     bars?: number;
@@ -450,7 +495,7 @@ function buildPatternForBar(style: DrumPatternStyle): ProbabilityMap[] {
                 },
             ];
         default:
-            throw new Error(`Unknown drum pattern style: ${style}`);
+            return assertNever(style);
     }
 }
 

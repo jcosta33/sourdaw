@@ -1,15 +1,37 @@
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { addClip, addTrack } from '#/modules/Arrangement/useCases';
+import { addClip, addTrack, removeTrack } from '#/modules/Arrangement/useCases';
 import { separateStems as doSeparateStems } from '#/modules/AudioAnalysis/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { audioBufferToWav } from '#/modules/AudioEngine/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+/** Targets `separateStems` accepts. Mirrors `StemSelection` in
+ *  `Command/models/AppAction.ts`; kept local so the boundary check has a
+ *  runtime allow-list to validate against (the payload type is structurally
+ *  `string[]`, so garbage like `['voccals']` is only stopped here). */
+const VALID_STEMS = ['all', 'vocals', 'drums', 'bass', 'other'] as const;
+type StemSelection = (typeof VALID_STEMS)[number];
+
+function isValidStem(value: string): value is StemSelection {
+    return (VALID_STEMS as readonly string[]).includes(value);
+}
+
 export const handleStemSeparate = createHandler<'stemSeparate'>({
     execute: async (alpha) => {
-        const stems = alpha.payload.stems ?? ['all'];
+        const requested = alpha.payload.stems ?? ['all'];
+
+        // Validate at the boundary: reject any stem name outside the allow-list
+        // rather than forwarding garbage (e.g. ['voccals']) to separateStems.
+        const invalid = requested.filter((stem) => !isValidStem(stem));
+        if (invalid.length > 0) {
+            const message = `Stem separation failed: unknown stem(s) ${invalid.join(', ')}`;
+            notifyUser(message, 'error');
+            throw new Error(message);
+        }
+        const stems: StemSelection[] = requested.filter(isValidStem);
+
         logger.info(`[Audio AI] Separating stems: ${stems.join(', ')} for clip ${alpha.payload.clipId}`);
 
         const state = trackStore.value;
@@ -36,7 +58,20 @@ export const handleStemSeparate = createHandler<'stemSeparate'>({
 
             const durationBeats = clip.endBeat - clip.startBeat;
             for (const [stemName, stemBuffer] of Object.entries(stemResults)) {
-                const stemTrack = addTrack({ name: `${clip.name} — ${stemName}`, kind: 'audio' });
+                const stemTrackName = `${clip.name} — ${stemName}`;
+
+                // De-dup: a re-run produces the same deterministic stem-track
+                // names, so drop any prior stem track of this name before
+                // creating the replacement. Without this, re-running stem
+                // separation on the same clip accumulates duplicate tracks.
+                const existingStemTracks = (trackStore.value?.tracks ?? []).filter(
+                    (existing) => existing.name === stemTrackName
+                );
+                for (const existing of existingStemTracks) {
+                    removeTrack(existing.id);
+                }
+
+                const stemTrack = addTrack({ name: stemTrackName, kind: 'audio' });
                 if (!stemTrack) {
                     continue;
                 }

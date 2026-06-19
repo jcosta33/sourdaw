@@ -1,9 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { handleGenerateMidiPrompt } from '../handleGenerateMidiPrompt';
+import { handleGenerateMidiPrompt, buildSeedNotesFromPrompt } from '../handleGenerateMidiPrompt';
 
-const { updateTaskMock } = vi.hoisted(() => ({
+const {
+    updateTaskMock,
+    addTrackMock,
+    addClipMock,
+    pushUndoEntryMock,
+    trackStoreMock,
+    midiStoreMock,
+    workspaceStoreMock,
+    generateMidiViaLlmMock,
+} = vi.hoisted(() => ({
     updateTaskMock: vi.fn(),
+    addTrackMock: vi.fn(),
+    addClipMock: vi.fn(),
+    pushUndoEntryMock: vi.fn(),
+    trackStoreMock: {
+        value: { tracks: [] as Array<{ id: string; kind: string }>, selectedTrackId: null as string | null },
+        set: vi.fn(),
+    },
+    midiStoreMock: { value: {} as Record<string, unknown>, set: vi.fn() },
+    workspaceStoreMock: { value: { selectedClipId: null as string | null }, set: vi.fn() },
+    generateMidiViaLlmMock: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
@@ -19,8 +38,32 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
         ...actual,
-        addTrack: vi.fn(),
-        addClip: vi.fn(),
+        addTrack: addTrackMock,
+        addClip: addClipMock,
+    };
+});
+
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
+    return {
+        ...actual,
+        trackStore: trackStoreMock,
+    };
+});
+
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/MIDI/stores')>();
+    return {
+        ...actual,
+        midiStore: midiStoreMock,
+    };
+});
+
+vi.mock('#/modules/Workspace/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Workspace/stores')>();
+    return {
+        ...actual,
+        workspaceStore: workspaceStoreMock,
     };
 });
 
@@ -32,11 +75,11 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     };
 });
 
-vi.mock('#/modules/Command/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
+vi.mock('#/modules/Command/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Command/stores')>();
     return {
         ...actual,
-        createCallbackUndoEntry: vi.fn(),
+        pushUndoEntry: pushUndoEntryMock,
     };
 });
 
@@ -44,12 +87,12 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
     return {
         ...actual,
-        getTransportState: vi.fn(),
+        getTransportState: vi.fn().mockReturnValue({ playheadPosition: 0 }),
     };
 });
 
 vi.mock('../../llmMidiGeneration', () => ({
-    generateMidiViaLlm: vi.fn().mockResolvedValue([]),
+    generateMidiViaLlm: generateMidiViaLlmMock,
 }));
 
 vi.mock('../addTask', () => ({
@@ -63,6 +106,8 @@ vi.mock('../updateTask', () => ({
 describe('handleGenerateMidiPrompt', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        trackStoreMock.value = { tracks: [], selectedTrackId: null };
+        generateMidiViaLlmMock.mockResolvedValue([]);
     });
 
     it('records an error task when generation yields no notes', async () => {
@@ -74,5 +119,48 @@ describe('handleGenerateMidiPrompt', () => {
                 status: 'error',
             })
         );
+    });
+
+    it('registers an undo entry and reports error when the clip cannot be created on a freshly added track', async () => {
+        // Notes generated, a new track is created, but addClip fails (returns null).
+        generateMidiViaLlmMock.mockResolvedValue([{ pitch: 60, start_beat: 0, duration_beats: 1, velocity: 100 }]);
+        addTrackMock.mockReturnValue({ id: 'new-midi-track' });
+        addClipMock.mockReturnValue(null);
+
+        await handleGenerateMidiPrompt('a melody');
+
+        // The orphan track is rolled-back-able: an undo entry was registered
+        // even though no clip (and therefore no note batch) was inserted.
+        expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
+        // And the task is surfaced as an error, not a false success.
+        expect(updateTaskMock).toHaveBeenCalledWith('task-1', expect.objectContaining({ status: 'error' }));
+    });
+});
+
+describe('buildSeedNotesFromPrompt', () => {
+    it('falls back to an ascending C-major fragment when no key is named', () => {
+        expect(buildSeedNotesFromPrompt('chill lofi groove')).toEqual([
+            [60, 80, 0, 0.5],
+            [62, 75, 0.5, 0.5],
+            [64, 85, 1.0, 0.5],
+            [65, 80, 1.5, 0.5],
+        ]);
+    });
+
+    it('derives a minor-scale seed rooted on the key named in the prompt', () => {
+        // F# minor: root pitch class 6 → MIDI 66; minor steps [0,2,3,5].
+        const seed = buildSeedNotesFromPrompt('moody bassline in F# minor');
+        expect(seed.map((s) => s[0])).toEqual([66, 68, 69, 71]);
+    });
+
+    it('derives a major-scale seed and is case-insensitive', () => {
+        // D major: root pitch class 2 → MIDI 62; major steps [0,2,4,5].
+        const seed = buildSeedNotesFromPrompt('Bright lead in D Major');
+        expect(seed.map((s) => s[0])).toEqual([62, 64, 66, 67]);
+    });
+
+    it('does not treat an incidental note letter (no mode word) as a key', () => {
+        // "cinematic" begins with c but has no major/minor → default C major.
+        expect(buildSeedNotesFromPrompt('cinematic pad').map((s) => s[0])).toEqual([60, 62, 64, 65]);
     });
 });

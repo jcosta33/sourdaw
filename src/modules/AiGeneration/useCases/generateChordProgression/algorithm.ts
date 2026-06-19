@@ -11,6 +11,15 @@ import type { ChordProgressionStyle, ChordVoicing } from '../../models/Generatio
 
 export type { ChordProgressionStyle, ChordVoicing };
 
+/**
+ * Exhaustiveness guard for `switch` statements over a discriminated union:
+ * reaching it is a type error, so a newly added voicing/rhythm fails the build
+ * instead of silently falling through to an empty result.
+ */
+function assertNever(value: never): never {
+    throw new Error(`Unhandled chord-progression case: ${String(value)}`);
+}
+
 export type GenerateChordProgressionOptions = {
     style: ChordProgressionStyle;
     key: number;
@@ -110,6 +119,14 @@ const PROGRESSIONS: Record<ChordProgressionStyle, readonly Progression[]> = {
     ],
 };
 
+/**
+ * Runtime roster of every {@link ChordProgressionStyle} the algorithm handles,
+ * derived from the {@link PROGRESSIONS} table itself so the two cannot drift.
+ * `PROGRESSIONS` is a `Record<ChordProgressionStyle, …>`, so its keys are
+ * exactly the union — the handler layer derives `VALID_CHORD_STYLES` from this.
+ */
+export const CHORD_PROGRESSION_STYLES = Object.keys(PROGRESSIONS) as ChordProgressionStyle[];
+
 function pickProgression(style: ChordProgressionStyle, rng: () => number): Progression {
     const options = PROGRESSIONS[style];
     return options[Math.floor(rng() * options.length)]!;
@@ -155,9 +172,9 @@ function applyVoicing(intervals: readonly number[], rootMidi: number, voicing: C
             const fifth = clampMidi(rootMidi + 7);
             return [root, fifth];
         }
+        default:
+            return assertNever(voicing);
     }
-
-    return [];
 }
 
 type RhythmEvent = { offsetBeat: number; durationBeats: number };
@@ -187,9 +204,9 @@ function buildRhythmEvents(rhythm: 'whole' | 'half' | 'quarter' | 'syncopated', 
                 { offsetBeat: 3.5, durationBeats: 0.5 },
             ];
         }
+        default:
+            return assertNever(rhythm);
     }
-
-    return [];
 }
 
 export function generateChordProgression(options: GenerateChordProgressionOptions & { seed?: number }): {

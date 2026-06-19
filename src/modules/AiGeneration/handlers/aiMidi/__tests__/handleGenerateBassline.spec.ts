@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     generateToolCalls: vi.fn(),
     llmGenerateNotes: vi.fn(),
     info: vi.fn(),
+    notifyUser: vi.fn(),
     trackStore: {
         value: {
             tracks: [
@@ -20,6 +21,10 @@ const mocks = vi.hoisted(() => ({
             ],
         },
     },
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: mocks.notifyUser,
 }));
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
@@ -55,11 +60,17 @@ vi.mock('#/infra/logger/appLogger', () => ({
 describe('handleGenerateBassline', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        // Reset the shared track store fixture so the missing-clip test's
+        // mutation doesn't leak into other tests (declaration order aside).
+        mocks.trackStore.value = {
+            tracks: [{ id: 't1', clips: [{ id: 'c1', startBeat: 4, endBeat: 8, name: 'Lead', type: 'midi' }] }],
+        };
     });
 
-    it('generates a bassline on a new track when trackId is omitted', async () => {
+    it('generates a bassline on a new clip on the new track when trackId is omitted', async () => {
         mocks.getNotesForClip.mockReturnValue([{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }]);
         mocks.addTrack.mockReturnValue({ id: 't2' });
+        mocks.addClip.mockReturnValue({ id: 'bass-clip' });
         mocks.llmGenerateNotes.mockResolvedValue([{ pitch: 36, startBeat: 0, duration: 1, velocity: 80 }]);
 
         await handleGenerateBassline.execute({
@@ -69,6 +80,11 @@ describe('handleGenerateBassline', () => {
 
         expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Bass (root-fifth)', kind: 'midi' });
 
+        // A new clip is created on the new track (t2), mirroring the source clip's span.
+        expect(mocks.addClip).toHaveBeenCalledWith(
+            expect.objectContaining({ trackId: 't2', startBeat: 4, endBeat: 8, name: 'Bassline (root-fifth)' })
+        );
+
         // Assert it calls LLM helper with the correct arguments
         expect(mocks.llmGenerateNotes).toHaveBeenCalledWith(
             mocks.generateToolCalls,
@@ -77,8 +93,27 @@ describe('handleGenerateBassline', () => {
             'c1'
         );
 
-        expect(mocks.addMidiNote).toHaveBeenCalledWith('c1', 36, 0, 1, 80);
+        // Notes land on the NEW clip, never on the source clip ('c1').
+        expect(mocks.addMidiNote).toHaveBeenCalledWith('bass-clip', 36, 0, 1, 80);
         expect(mocks.info).toHaveBeenCalledWith(expect.stringContaining('Generated root-fifth bassline'));
+    });
+
+    it('bails (does not fall back to the source clip) when the reference clip is missing on a new track', async () => {
+        mocks.trackStore.value = { tracks: [] };
+        mocks.getNotesForClip.mockReturnValue([]);
+        mocks.addTrack.mockReturnValue({ id: 't2' });
+        mocks.llmGenerateNotes.mockResolvedValue([{ pitch: 36, startBeat: 0, duration: 1, velocity: 80 }]);
+
+        await expect(
+            handleGenerateBassline.execute({
+                type: 'generateBassline',
+                payload: { clipId: 'missing' },
+            })
+        ).rejects.toThrow(/source clip not found/i);
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Bassline generation failed: source clip not found', 'error');
+        // Critically: nothing is appended to the source clip id.
+        expect(mocks.addMidiNote).not.toHaveBeenCalled();
     });
 
     it('bails if track creation fails', async () => {

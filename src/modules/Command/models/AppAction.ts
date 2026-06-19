@@ -43,6 +43,11 @@ export type RipplePlanSnapshot = {
 
 export type AutomationMode = 'read' | 'write' | 'touch' | 'latch' | 'off';
 
+/** Valid targets for `stemSeparate`. `'all'` requests every stem; the others
+ *  request a single named stem. Anything outside this set is rejected at the
+ *  handler boundary (see `AiGeneration/handlers/aiMidi/handleStemSeparate.ts`). */
+export type StemSelection = 'all' | 'vocals' | 'drums' | 'bass' | 'other';
+
 export type AppAction =
     | { type: 'addTrack'; payload: { name: string; kind: TrackKind } }
     | { type: 'removeTrack'; payload: { trackId: string } }
@@ -335,7 +340,7 @@ export type AppAction =
       }
     | {
           type: 'stemSeparate';
-          payload: { clipId: string; stems?: string[] };
+          payload: { clipId: string; stems?: StemSelection[] };
       }
     | {
           type: 'autoOrganizeProject';

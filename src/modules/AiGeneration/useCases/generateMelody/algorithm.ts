@@ -14,6 +14,34 @@ import type { MelodyStyle, ScaleType } from '../../models/GenerationStyles';
 
 export type { MelodyStyle, ScaleType };
 
+/**
+ * Runtime roster of every {@link MelodyStyle} the algorithm handles — the
+ * single source the handler layer derives `VALID_MELODY_STYLES` from. The
+ * guard below fails the type-check if `MelodyStyle` gains a member that is not
+ * listed here, so a style can never be advertised as valid without a `switch`
+ * arm to back it.
+ */
+export const MELODY_STYLES = [
+    'simple',
+    'arpeggiated',
+    'stepwise',
+    'rhythmic',
+    'ambient',
+] as const satisfies readonly MelodyStyle[];
+
+type MelodyStyleNotListed = Exclude<MelodyStyle, (typeof MELODY_STYLES)[number]>;
+const _assertMelodyStylesCoverUnion: MelodyStyleNotListed extends never ? true : never = true;
+void _assertMelodyStylesCoverUnion;
+
+/**
+ * Exhaustiveness guard for `switch` statements over a discriminated union:
+ * reaching it is a type error, so a newly added melody style fails the build
+ * instead of silently returning the current index.
+ */
+function assertNever(value: never): never {
+    throw new Error(`Unhandled melody style: ${String(value)}`);
+}
+
 export type GenerateMelodyOptions = {
     style: MelodyStyle;
     key: number;
@@ -47,6 +75,14 @@ const SCALE_INTERVALS: Record<ScaleType, readonly number[]> = {
     'whole-tone': [0, 2, 4, 6, 8, 10],
     chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
 };
+
+/**
+ * Runtime roster of every {@link ScaleType} the algorithm supports, derived
+ * from the {@link SCALE_INTERVALS} table itself so the two cannot drift.
+ * `SCALE_INTERVALS` is a `Record<ScaleType, …>`, so its keys are exactly the
+ * union — the handler layer derives `VALID_SCALES` from this.
+ */
+export const SCALE_TYPES = Object.keys(SCALE_INTERVALS) as ScaleType[];
 
 function buildScaleNotesFromIntervals(
     intervals: readonly number[],
@@ -186,14 +222,12 @@ function pickNextNote(scaleNotes: number[], currentIndex: number, style: MelodyS
         case 'arpeggiated': {
             const direction = rng() < 0.7 ? 1 : -1;
             const step = direction * (rng() < 0.5 ? 2 : 3);
-            let next = currentIndex + step;
-            if (next >= len) {
-                next = next % len;
-            }
-            if (next < 0) {
-                next = len + (next % len);
-            }
-            return next;
+            const next = currentIndex + step;
+            // Positive-modulo wrap: `next % len` is negative (or -0) when `next`
+            // is negative, and `len + (next % len)` yields `len` (out of range)
+            // when `next === -len`. `((next % len) + len) % len` always lands in
+            // `[0, len)`, even for short scales where `|step| >= len`.
+            return ((next % len) + len) % len;
         }
 
         case 'stepwise': {
@@ -215,7 +249,7 @@ function pickNextNote(scaleNotes: number[], currentIndex: number, style: MelodyS
             return Math.max(0, Math.min(len - 1, currentIndex + step));
         }
         default:
-            return currentIndex;
+            return assertNever(style);
     }
 }
 

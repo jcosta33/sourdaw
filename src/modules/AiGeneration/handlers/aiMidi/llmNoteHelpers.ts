@@ -52,12 +52,22 @@ Generate the MIDI notes now. Output ONLY the tool call.`;
     const results = await runToolCalls(systemPrompt, userMessage);
     const addNotesCall = results.find((r) => r.name === 'addNotes');
     if (addNotesCall && Array.isArray(addNotesCall.arguments.notes)) {
-        return addNotesCall.arguments.notes as Array<{
+        const candidates = addNotesCall.arguments.notes as Array<{
             pitch: number;
             startBeat: number;
             duration: number;
             velocity?: number;
         }>;
+        // Drop notes whose required numeric fields aren't finite. A bare typeof
+        // check passes for NaN, which the downstream handler clamps to itself
+        // (Math.round/min/max are NaN-fixed-points) and writes to the clip.
+        return candidates.filter(
+            (note) =>
+                Number.isFinite(note.pitch) &&
+                Number.isFinite(note.startBeat) &&
+                Number.isFinite(note.duration) &&
+                (note.velocity === undefined || Number.isFinite(note.velocity))
+        );
     }
 
     return [];

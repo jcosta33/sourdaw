@@ -1,15 +1,23 @@
 import { logger } from '#/infra/logger/appLogger';
 import { addClip, addTrack } from '#/modules/Arrangement/useCases';
-import { generateAudio as genAudio, isAudioGenerationAvailable } from '#/modules/AudioAnalysis/useCases';
+import { generateAudio as genAudio } from '#/modules/AudioAnalysis/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { getTransportState } from '#/modules/Transport/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import {
+    AUDIO_GENERATION_UNAVAILABLE_MESSAGE,
+    ensureAudioGenerationAvailable,
+} from '../../useCases/actions/handleGenerateAudioFallback';
+
 export const handleGenerateAudioAiMidi = createHandler<'generateAudio'>({
     execute: async (alpha) => {
-        if (!isAudioGenerationAvailable()) {
-            notifyUser('Audio generation requires the Sourdaw desktop app', 'warning');
-            throw new Error('Audio generation requires the Sourdaw desktop app');
+        try {
+            ensureAudioGenerationAvailable();
+        } catch (error) {
+            notifyUser(AUDIO_GENERATION_UNAVAILABLE_MESSAGE, 'warning');
+            throw error;
         }
 
         let trackId = alpha.payload.trackId;
@@ -34,20 +42,27 @@ export const handleGenerateAudioAiMidi = createHandler<'generateAudio'>({
             const bufferId = crypto.randomUUID();
             audioBufferCache.set(bufferId, audioBuffer);
 
-            const durationBeats = Math.max(1, Math.ceil(audioBuffer.duration * 2));
+            // Convert the rendered audio's real-time duration into beats using the
+            // project tempo (beats = seconds * BPM / 60) rather than assuming
+            // 120 BPM. Place the clip at the transport playhead so the generated
+            // audio lands where the user is working instead of always at beat 0.
+            const transport = getTransportState();
+            const tempo = transport?.tempo ?? 120;
+            const startBeat = transport?.playheadPosition ?? 0;
+            const durationBeats = Math.max(1, Math.ceil((audioBuffer.duration * tempo) / 60));
 
             const promptLabel = alpha.payload.prompt.slice(0, 40);
             addClip({
                 trackId,
-                startBeat: 0,
-                endBeat: durationBeats,
+                startBeat,
+                endBeat: startBeat + durationBeats,
                 name: `AI: ${promptLabel}`,
                 type: 'audio',
                 audioBufferId: bufferId,
             });
 
             logger.info(
-                `[Audio AI] Created clip "${promptLabel}" (${String(durationBeats)} beats) on track ${trackId}`
+                `[Audio AI] Created clip "${promptLabel}" (${String(durationBeats)} beats at beat ${String(startBeat)}) on track ${trackId}`
             );
         } catch (error) {
             logger.warn(`[Audio AI] Generation failed: ${String(error)}`);

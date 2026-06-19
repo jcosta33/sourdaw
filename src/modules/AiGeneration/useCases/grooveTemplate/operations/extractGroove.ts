@@ -3,6 +3,14 @@ import { midiStore } from '#/modules/MIDI/stores';
 
 import { type GrooveTemplate } from '../../../models/GrooveTemplate';
 
+/**
+ * MIDI velocities run 0–127, so a recorded note at full velocity should map to
+ * a groove factor of 1.0. Normalising against 127 (not 100) keeps the
+ * extracted velocity factors in their intended ~[0, 1] band; `applyGroove`
+ * treats 1.0 as "unchanged" and scales around it.
+ */
+const REFERENCE_VELOCITY = 127;
+
 /** Local type matching Track module's MidiNote shape, avoids cross-module model import. */
 type MidiNote = {
     id: string;
@@ -41,7 +49,7 @@ export function extractGroove(clipId: string, subdivisions = 16): GrooveTemplate
         const offset = note.startBeat - gridBeat;
 
         offsetAccum[stepIndex]!.push(Math.max(-0.5, Math.min(0.5, offset)));
-        velocityAccum[stepIndex]!.push(note.velocity / 100);
+        velocityAccum[stepIndex]!.push(note.velocity / REFERENCE_VELOCITY);
     }
 
     const offsets = offsetAccum.map((arr) =>

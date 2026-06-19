@@ -143,12 +143,12 @@ function buildUserMessage(prompt: string, numNotes: number, creativity: number):
 
 function parseMidiResponse(raw: string): MidiGenerationNote[] {
     try {
-        const jsonMatch = raw.match(/\{[\s\S]*"notes"[\s\S]*\}/);
-        if (!jsonMatch) {
+        const jsonText = extractNotesJsonObject(raw);
+        if (jsonText === null) {
             return [];
         }
 
-        const parsed = JSON.parse(jsonMatch[0]) as LlmMidiResponse;
+        const parsed = JSON.parse(jsonText) as LlmMidiResponse;
         if (!Array.isArray(parsed.notes)) {
             return [];
         }
@@ -156,10 +156,13 @@ function parseMidiResponse(raw: string): MidiGenerationNote[] {
         return parsed.notes
             .filter(
                 (note) =>
-                    typeof note.pitch === 'number' &&
-                    typeof note.velocity === 'number' &&
-                    typeof note.start_beat === 'number' &&
-                    typeof note.duration_beats === 'number'
+                    // Number.isFinite excludes NaN/Infinity (and non-numbers): a bare
+                    // typeof === 'number' passes for NaN, and Math.round/clamp are
+                    // NaN-fixed-points, so a NaN field would otherwise reach the engine.
+                    Number.isFinite(note.pitch) &&
+                    Number.isFinite(note.velocity) &&
+                    Number.isFinite(note.start_beat) &&
+                    Number.isFinite(note.duration_beats)
             )
             .map((note) => ({
                 pitch: clamp(Math.round(note.pitch), 0, 127),
@@ -170,6 +173,64 @@ function parseMidiResponse(raw: string): MidiGenerationNote[] {
     } catch {
         return [];
     }
+}
+
+/**
+ * Find the first balanced-brace JSON object in `raw` that contains a "notes"
+ * key, or null if none. String literals (with escapes) are tracked so braces
+ * inside strings don't skew the depth count.
+ *
+ * Preferred over a greedy /\{[\s\S]*"notes"[\s\S]*\}/: when the model emits
+ * several objects the greedy form spans from the first `{` to the last `}`,
+ * merging them into one un-parseable blob.
+ */
+function extractNotesJsonObject(raw: string): string | null {
+    for (let start = raw.indexOf('{'); start !== -1; start = raw.indexOf('{', start + 1)) {
+        const candidate = readBalancedObject(raw, start);
+        if (candidate !== null && candidate.includes('"notes"')) {
+            return candidate;
+        }
+    }
+    return null;
+}
+
+/**
+ * Read the balanced-brace JSON object starting at `start` (which must point at
+ * a `{`), or null if it never closes. String literals (with escapes) are
+ * tracked so braces inside strings don't skew the depth count.
+ */
+function readBalancedObject(text: string, start: number): string | null {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let index = start; index < text.length; index++) {
+        const char = text[index];
+
+        if (inString) {
+            if (escaped) {
+                escaped = false;
+            } else if (char === '\\') {
+                escaped = true;
+            } else if (char === '"') {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (char === '"') {
+            inString = true;
+        } else if (char === '{') {
+            depth++;
+        } else if (char === '}') {
+            depth--;
+            if (depth === 0) {
+                return text.slice(start, index + 1);
+            }
+        }
+    }
+
+    return null;
 }
 
 function clamp(value: number, min: number, max: number): number {

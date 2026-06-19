@@ -5,6 +5,7 @@ import { handleStemSeparate } from '../handleStemSeparate';
 const mocks = vi.hoisted(() => ({
     addClip: vi.fn(),
     addTrack: vi.fn(),
+    removeTrack: vi.fn(),
     cacheSet: vi.fn(),
     cacheGet: vi.fn(),
     info: vi.fn(),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addClip: mocks.addClip,
     addTrack: mocks.addTrack,
+    removeTrack: mocks.removeTrack,
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -155,6 +157,52 @@ describe('handleStemSeparate', () => {
         );
 
         expect(mocks.info).toHaveBeenCalledWith('[Audio AI] Separated into 2 stems');
+    });
+
+    it('rejects unknown stem names at the boundary before calling separateStems', async () => {
+        mocks.trackStoreValue.value = {
+            tracks: [{ clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf1', startBeat: 0, endBeat: 4 }] }],
+        };
+
+        await expect(
+            handleStemSeparate.execute({
+                type: 'stemSeparate',
+                // @ts-expect-error — deliberately passing an invalid stem to exercise the runtime guard
+                payload: { clipId: 'c1', stems: ['voccals'] },
+            })
+        ).rejects.toThrow(/unknown stem/i);
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('voccals'), 'error');
+        expect(mocks.separateStems).not.toHaveBeenCalled();
+    });
+
+    it('removes a prior stem track of the same name before re-creating it (no duplicate accumulation)', async () => {
+        // A previous separation already produced a "Vocals — vocals" track (t-old).
+        mocks.trackStoreValue.value = {
+            tracks: [
+                {
+                    id: 'src',
+                    clips: [
+                        { id: 'c1', name: 'Vocals', type: 'audio', audioBufferId: 'buf1', startBeat: 0, endBeat: 4 },
+                    ],
+                },
+                { id: 't-old', name: 'Vocals — vocals', clips: [] },
+            ],
+        };
+
+        mocks.cacheGet.mockReturnValue({} as AudioBuffer);
+        mocks.audioBufferToWav.mockReturnValue(new ArrayBuffer(10));
+        mocks.separateStems.mockResolvedValue({ vocals: {} as AudioBuffer });
+        mocks.addTrack.mockReturnValue({ id: 't-new' });
+
+        await handleStemSeparate.execute({
+            type: 'stemSeparate',
+            payload: { clipId: 'c1', stems: ['vocals'] },
+        });
+
+        expect(mocks.removeTrack).toHaveBeenCalledWith('t-old');
+        expect(mocks.addTrack).toHaveBeenCalledWith({ name: 'Vocals — vocals', kind: 'audio' });
+        expect(mocks.addClip).toHaveBeenCalledTimes(1);
     });
 
     it('logs warning if separation throws', async () => {

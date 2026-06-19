@@ -1,6 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { resolveOrCreateMidiTrack, getPlayheadBeat } from '../generationHandlerHelpers';
+import { CHORD_PROGRESSION_STYLES } from '../../../useCases/generateChordProgression/algorithm';
+import { DRUM_PATTERN_STYLES } from '../../../useCases/generateDrumPattern/algorithm';
+import { MELODY_STYLES, SCALE_TYPES } from '../../../useCases/generateMelody/algorithm';
+import {
+    resolveOrCreateMidiTrack,
+    getPlayheadBeat,
+    VALID_DRUM_STYLES,
+    VALID_MELODY_STYLES,
+    VALID_SCALES,
+    VALID_CHORD_STYLES,
+    VALID_VOICINGS,
+} from '../generationHandlerHelpers';
 
 const mocks = vi.hoisted(() => ({
     getTransportState: vi.fn(),
@@ -102,6 +113,59 @@ describe('generationHandlerHelpers', () => {
         it('returns 0 if transport state is unavailable', () => {
             mocks.getTransportState.mockReturnValue(null);
             expect(getPlayheadBeat()).toBe(0);
+        });
+    });
+
+    // Regression: the hand-maintained VALID_* sets had drifted out of sync with
+    // the algorithm rosters (drum 8/17, chord 8/12, scale 7/14), so valid
+    // selections were silently coerced to the default. They are now derived
+    // from the algorithm rosters, so every advertised style is accepted and the
+    // counts match exactly.
+    describe('VALID_* sets cover the full algorithm rosters', () => {
+        it('accepts every drum-pattern style the algorithm handles', () => {
+            expect(DRUM_PATTERN_STYLES.length).toBe(17);
+            for (const style of DRUM_PATTERN_STYLES) {
+                expect(VALID_DRUM_STYLES.has(style)).toBe(true);
+            }
+            expect(VALID_DRUM_STYLES.size).toBe(DRUM_PATTERN_STYLES.length);
+            // Spot-check styles that the old hand-maintained set was missing.
+            expect(VALID_DRUM_STYLES.has('reggae')).toBe(true);
+            expect(VALID_DRUM_STYLES.has('house')).toBe(true);
+            expect(VALID_DRUM_STYLES.has('techno')).toBe(true);
+        });
+
+        it('accepts every chord-progression style the algorithm handles', () => {
+            expect(CHORD_PROGRESSION_STYLES.length).toBe(12);
+            for (const style of CHORD_PROGRESSION_STYLES) {
+                expect(VALID_CHORD_STYLES.has(style)).toBe(true);
+            }
+            expect(VALID_CHORD_STYLES.size).toBe(CHORD_PROGRESSION_STYLES.length);
+            expect(VALID_CHORD_STYLES.has('neo-soul')).toBe(true);
+            expect(VALID_CHORD_STYLES.has('gospel')).toBe(true);
+        });
+
+        it('accepts every scale the algorithm handles', () => {
+            expect(SCALE_TYPES.length).toBe(14);
+            for (const scale of SCALE_TYPES) {
+                expect(VALID_SCALES.has(scale)).toBe(true);
+            }
+            expect(VALID_SCALES.size).toBe(SCALE_TYPES.length);
+            expect(VALID_SCALES.has('lydian')).toBe(true);
+            expect(VALID_SCALES.has('chromatic')).toBe(true);
+        });
+
+        it('accepts every melody style the algorithm handles', () => {
+            for (const style of MELODY_STYLES) {
+                expect(VALID_MELODY_STYLES.has(style)).toBe(true);
+            }
+            expect(VALID_MELODY_STYLES.size).toBe(MELODY_STYLES.length);
+        });
+
+        it('lists every chord voicing', () => {
+            expect(VALID_VOICINGS.has('close')).toBe(true);
+            expect(VALID_VOICINGS.has('open')).toBe(true);
+            expect(VALID_VOICINGS.has('spread')).toBe(true);
+            expect(VALID_VOICINGS.has('power')).toBe(true);
         });
     });
 });

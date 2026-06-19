@@ -49,15 +49,17 @@ describe('extractGroove', () => {
         expect(template.id).toBe('extracted-c1');
         expect(template.subdivisions).toBe(4);
 
-        // step 0 expected offset: 0.1, velocity factor: 1.1
-        // step 1 expected offset: -0.1, velocity factor: 0.9
-        // steps 2 & 3 should be 0 and 1.
+        // Velocity factors normalise against MIDI max (127), not 100, so a
+        // recorded velocity of 127 maps to a factor of exactly 1.0.
+        // step 0 expected offset: 0.1, velocity factor: 110/127 ≈ 0.8661
+        // step 1 expected offset: -0.1, velocity factor: 90/127 ≈ 0.7087
+        // steps 2 & 3 have no notes, so default offset 0 and factor 1.
 
         expect(template.offsets[0]).toBeCloseTo(0.1);
-        expect(template.velocities[0]).toBeCloseTo(1.1);
+        expect(template.velocities[0]).toBeCloseTo(110 / 127);
 
         expect(template.offsets[1]).toBeCloseTo(-0.1);
-        expect(template.velocities[1]).toBeCloseTo(0.9);
+        expect(template.velocities[1]).toBeCloseTo(90 / 127);
 
         expect(template.offsets[2]).toBe(0);
         expect(template.velocities[2]).toBe(1);
@@ -89,7 +91,8 @@ describe('extractGroove', () => {
         const template = extractGroove('c1', 1);
 
         expect(template.offsets[0]).toBeCloseTo(0.15);
-        expect(template.velocities[0]).toBeCloseTo(1.1);
+        // Avg velocity 110, normalised against MIDI max 127 → factor ≈ 0.8661.
+        expect(template.velocities[0]).toBeCloseTo(110 / 127);
     });
 
     it('clamps offsets between -0.5 and 0.5', () => {

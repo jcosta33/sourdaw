@@ -4,6 +4,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { addClip, addTrack } from '#/modules/Arrangement/useCases';
 import { addMidiNote, getNotesForClip } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { llmGenerateNotes } from './llmNoteHelpers';
 
@@ -27,24 +28,33 @@ export const handleGenerateBassline = createHandler<'generateBassline'>({
 
         let targetClipId = alpha.payload.clipId;
 
-        // If we created a new track, we need to create a new clip on it to hold the notes
+        // If we created a new track, we must create a new clip on THAT track to
+        // hold the notes. If the reference clip can't be found (or the new clip
+        // can't be created), bail with a notification — falling back to the
+        // source clip id would append the bassline onto the original clip on a
+        // different track, silently mis-placing it.
         if (targetId !== alpha.payload.trackId) {
             const trackState = trackStore.value;
             const refTrack = trackState?.tracks.find((t) => t.clips.some((c) => c.id === alpha.payload.clipId));
             const refClip = refTrack?.clips.find((c) => c.id === alpha.payload.clipId);
 
-            if (refClip) {
-                const newClip = addClip({
-                    trackId: targetId,
-                    startBeat: refClip.startBeat,
-                    endBeat: refClip.endBeat,
-                    name: `Bassline (${style})`,
-                    type: 'midi',
-                });
-                if (newClip) {
-                    targetClipId = newClip.id;
-                }
+            if (!refClip) {
+                notifyUser('Bassline generation failed: source clip not found', 'error');
+                throw new Error('Generate bassline: source clip not found');
             }
+
+            const newClip = addClip({
+                trackId: targetId,
+                startBeat: refClip.startBeat,
+                endBeat: refClip.endBeat,
+                name: `Bassline (${style})`,
+                type: 'midi',
+            });
+            if (!newClip) {
+                notifyUser('Bassline generation failed: could not create clip', 'error');
+                throw new Error('Generate bassline: could not create clip on new track');
+            }
+            targetClipId = newClip.id;
         }
 
         for (const note of notes) {

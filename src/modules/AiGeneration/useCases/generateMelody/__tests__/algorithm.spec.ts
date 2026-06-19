@@ -51,6 +51,36 @@ describe('generateMelody (algorithm)', () => {
         expect(sparse.notes.length).toBeLessThan(dense.notes.length);
     });
 
+    it('never emits an out-of-scale pitch for arpeggiated wrap on a short scale', () => {
+        // Regression: the arpeggiated wrap used `len + (next % len)`, which
+        // returns `len` (an out-of-bounds index → undefined pitch coerced to a
+        // bogus number) when `next === -len`. This is reachable on short scales
+        // (len <= 3). `range: 4` over minor-pentatonic ([0,3,5,7,10]) yields a
+        // 2-note scale, which exercises the wrap. Every generated pitch must be
+        // a finite number drawn from that 2-note scale.
+        for (let seed = 0; seed < 200; seed++) {
+            const result = generateMelody({
+                style: 'arpeggiated',
+                key: 0,
+                scale: 'minor-pentatonic',
+                octave: 4,
+                bars: 4,
+                density: 1,
+                range: 4,
+                seed,
+            });
+
+            // Same short scale the algorithm builds: baseMidi = key + octave*12
+            // = 0 + 48 = 48; minor-pentatonic intervals [0,3,...] within range 4
+            // → notes 48 and 51 (a 2-note scale).
+            const allowed = new Set([48, 51]);
+            for (const note of result.notes) {
+                expect(Number.isFinite(note.pitch)).toBe(true);
+                expect(allowed.has(note.pitch)).toBe(true);
+            }
+        }
+    });
+
     it('clamps velocities within valid MIDI ranges', () => {
         const result = generateMelody({
             style: 'ambient', // Ambient has wild velocity swings

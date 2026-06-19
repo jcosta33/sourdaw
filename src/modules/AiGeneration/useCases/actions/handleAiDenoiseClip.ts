@@ -33,19 +33,25 @@ export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7
 
             let noisePower = 0;
             for (let index = 0; index < noiseSamples; index++) {
-                noisePower += (mono[index] ?? 0) * (mono[index] ?? 0);
+                noisePower += mono[index]! * mono[index]!;
             }
             noisePower /= Math.max(noiseSamples, 1);
             outNoiseFloor = 10 * Math.log10(Math.max(noisePower, 1e-12));
 
             const threshold = Math.sqrt(noisePower * (1 + strength * 3));
+            // Below-threshold expansion gain. At ratio = 0 the gain is `floorGain`
+            // (deeper suppression as strength rises); it ramps linearly to exactly
+            // 1.0 at ratio = 1, which is continuous with the unity passthrough above
+            // the threshold — no gain step at the boundary (the old branch jumped
+            // from state*(1 - strength) to state, an audible click).
+            const floorGain = 1 - strength * 0.95;
             const output = new Float32Array(mono.length);
             for (let index = 0; index < mono.length; index++) {
-                const state = mono[index] ?? 0;
+                const state = mono[index]!;
                 const abs = Math.abs(state);
                 if (abs < threshold) {
                     const ratio = abs / threshold;
-                    output[index] = state * (ratio * (1 - strength) + (1 - ratio) * 0.05);
+                    output[index] = state * (floorGain + (1 - floorGain) * ratio);
                 } else {
                     output[index] = state;
                 }
@@ -65,6 +71,7 @@ export async function handleAiDenoiseClip(clipId: string, strength: number = 0.7
     } catch (error: unknown) {
         updateTask(taskId, {
             status: 'error',
+            data: { clipId, strength },
             error: (() => {
                 if (isAppError(error)) {
                     return error.message;
