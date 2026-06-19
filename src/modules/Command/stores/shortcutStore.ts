@@ -277,18 +277,12 @@ const INITIAL_DEFINITIONS: ShortcutDefinition[] = [
         defaultKeys: ['mod+a'],
         action: { type: 'callback', id: 'selectAllClips' },
     },
-    {
-        id: 'workspace.clearClipSelection',
-        label: 'Clear Clip Selection',
-        category: 'editing',
-        // `Escape` is the sole combo — `mod+shift+a` now belongs to
-        // `workspace.showAutomationPanel` (see unification above). The
-        // `stopPlayback` callback clears selection first when one is active,
-        // so this entry is a convenient alias that goes through the same
-        // Escape binding above.
-        defaultKeys: ['Escape'],
-        action: { type: 'callback', id: 'clearClipSelection' },
-    },
+    // NOTE: there is intentionally no `workspace.clearClipSelection` /
+    // `Escape` definition here. `transport.stopPlayback` already binds
+    // `Escape` earlier in this list, and the `handleKeydown` loop returns on
+    // the first matching definition — so a second `Escape` entry was dead
+    // code. The `stopPlayback` callback clears the active selection before
+    // stopping transport, so Escape-to-deselect behaviour is preserved.
     {
         id: 'arrangement.duplicateTrack',
         label: 'Duplicate Track',
@@ -321,7 +315,13 @@ const INITIAL_DEFINITIONS: ShortcutDefinition[] = [
         id: 'view.zoomToSelection',
         label: 'Zoom to Selection',
         category: 'view',
-        defaultKeys: ['F'],
+        // `shift+f`, not bare `'F'`: `matches()` compares `hasShift` (derived
+        // from the combo's modifier list) against `desc.shift`. A bare `'F'`
+        // combo has no `shift` modifier, so it only matches an event with
+        // `shift === false` — but you can't type uppercase `F` without Shift,
+        // so it was unreachable (and `'f'` matched `view.zoomToFit` first).
+        // `'shift+f'` makes the exact-modifier match fire on Shift+F.
+        defaultKeys: ['shift+f'],
         action: { type: 'appAction', action: { type: 'zoomToSelection' } },
     },
     {

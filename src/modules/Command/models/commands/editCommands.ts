@@ -72,7 +72,12 @@ export const editCommands: CommandEntry[] = [
         label: 'Deselect All',
         description: 'Clear clip selection',
         category: 'Edit',
-        shortcut: '⌘⇧D',
+        // No `shortcut` advertised: `⌘⇧D` was a lie — that combo is bound to
+        // `arrangement.duplicateTrack` in `shortcutStore`, and there is no
+        // dedicated deselect binding. The keyboard path to clear a selection
+        // is `Escape` (context-dependent: `transport.stopPlayback` clears the
+        // active selection before stopping transport), which can't be honestly
+        // labelled here as a single Deselect-All keycap.
         action: () => {
             deselectAllClips();
         },

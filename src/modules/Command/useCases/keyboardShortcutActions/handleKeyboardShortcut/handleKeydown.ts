@@ -259,9 +259,12 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
                 case 'selectAllClips':
                     selectAllClips(getAllClipIds);
                     return true;
-                case 'clearClipSelection':
-                    clearClipSelection();
-                    return true;
+                // NOTE: no `case 'clearClipSelection'` — its only producer was
+                // the `workspace.clearClipSelection` shortcut definition, which
+                // was removed as a dead `Escape` alias (transport.stopPlayback
+                // owns `Escape` and clears the selection first). The
+                // `clearClipSelection` import is still used by the
+                // `stopPlayback` case and `deleteSelectionShortcut` below.
                 case 'duplicateTrack': {
                     const selectedId = trackStore.value?.selectedTrackId;
                     if (selectedId) {
@@ -509,23 +512,15 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
         return true;
     }
 
-    function handleSimpleKeys(key: string, desc: KeyDescriptor): boolean {
-        // Check shortcut store first
-        const { definitions, customMappings } = shortcutStore.value ?? {
-            definitions: [],
-            customMappings: {},
-        };
-        const loopStationArmed = loopStationStore.value?.armed === true;
-        for (const def of definitions) {
-            const keys = customMappings[def.id] ?? def.defaultKeys;
-            if (matches(desc, keys)) {
-                if (def.id.startsWith('loopStation.pad.') && def.id.endsWith('.play') && !loopStationArmed) {
-                    continue;
-                }
-                return executeShortcutAction(def.action);
-            }
-        }
-
+    function handleSimpleKeys(key: string): boolean {
+        // NOTE: no shortcut-store definitions loop here. The outer
+        // `handleKeydown` already iterates every definition with `matches()`
+        // and returns on the first match (with identical input-gating and
+        // loop-station-pad gating) before delegating to `handleSimpleKeys`, so
+        // a second copy of that loop could never find a match the outer loop
+        // hadn't already consumed. This function only handles the keys that
+        // have no shortcut-store definition (`Home`, `End`, `[`, `]`, the
+        // numeric / letter tool selectors, and the `L` scroll-to-playhead).
         switch (key) {
             case 'L':
                 void eventBus.emit('zoom.scrollToPlayhead', undefined);
@@ -627,6 +622,6 @@ export const handleKeydown = inject({ eventBus })(({ eventBus }) => {
             }
         }
 
-        return handleSimpleKeys(key, desc);
+        return handleSimpleKeys(key);
     };
 });

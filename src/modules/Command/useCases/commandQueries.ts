@@ -363,6 +363,7 @@ export type AppAction =
     | { type: 'stopMacroRecording'; payload: { name: string } }
     | { type: 'playMacro'; payload: { macroId: string } }
     | { type: 'deleteMacro'; payload: { macroId: string } }
+    | { type: 'renameMacro'; payload: { macroId: string; name: string } }
     | { type: 'toggleUndoTree'; payload?: undefined }
     | { type: 'labelUndoBranch'; payload: { nodeId: string; label: string } }
     | { type: 'detectSongStructure'; payload: { trackId?: string } }

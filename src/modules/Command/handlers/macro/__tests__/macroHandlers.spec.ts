@@ -38,4 +38,14 @@ describe('Command Macro Handlers', () => {
         void handleDeleteMacro.execute({ type: 'deleteMacro', payload: { macroId: 'm1' } });
         expect(deleteMacro).toHaveBeenCalledWith('m1');
     });
+
+    it('handleDeleteMacro is not undoable (no inverse exists, so Cmd+Z must not consume the press)', () => {
+        // Regression for audit #4: marking deleteMacro undoable with no inverseAction made
+        // Cmd+Z a silent no-op that still consumed the keypress. Until a restore action
+        // exists, the action stays out of the undo history.
+        expect(handleDeleteMacro.undoable).toBe(false);
+        expect(handleDeleteMacro.describe({ type: 'deleteMacro', payload: { macroId: 'm1' } })).toEqual({
+            label: 'Delete Macro',
+        });
+    });
 });

@@ -1,4 +1,4 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
 
 import { handleAddChordEvent } from '../handlers/chordTrack/handleAddChordEvent';
 import { handleClearChordTrack } from '../handlers/chordTrack/handleClearChordTrack';

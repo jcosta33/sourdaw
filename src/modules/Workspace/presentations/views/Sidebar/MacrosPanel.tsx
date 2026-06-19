@@ -15,13 +15,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { useStore } from '#/infra/store/useStore';
 import { macroStore } from '#/modules/Command/stores';
-import {
-    startMacroRecording,
-    stopMacroRecording,
-    playMacro,
-    deleteMacro,
-    renameMacro,
-} from '#/modules/Command/useCases';
+import { startMacroRecording, stopMacroRecording, executeAppAction, renameMacro } from '#/modules/Command/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 type MacroView = {
@@ -165,7 +159,12 @@ export const MacrosPanel = (): ReactElement => {
                                         <button
                                             type="button"
                                             className="size-4 rounded flex items-center justify-center text-muted-foreground/40 hover:text-[var(--color-state-success)] hover:bg-[var(--color-state-success)]/10 transition-colors"
-                                            onClick={() => playMacro(macro.id)}
+                                            onClick={() => {
+                                                void executeAppAction({
+                                                    type: 'playMacro',
+                                                    payload: { macroId: macro.id },
+                                                });
+                                            }}
                                             aria-label={`Play macro ${macro.name}`}
                                             title="Play macro"
                                         >
@@ -186,7 +185,12 @@ export const MacrosPanel = (): ReactElement => {
                                         <button
                                             type="button"
                                             className="size-4 rounded flex items-center justify-center text-muted-foreground/40 hover:text-destructive/70 hover:bg-destructive/5 transition-colors"
-                                            onClick={() => deleteMacro(macro.id)}
+                                            onClick={() => {
+                                                void executeAppAction({
+                                                    type: 'deleteMacro',
+                                                    payload: { macroId: macro.id },
+                                                });
+                                            }}
                                             aria-label={`Delete macro ${macro.name}`}
                                             title="Delete"
                                         >

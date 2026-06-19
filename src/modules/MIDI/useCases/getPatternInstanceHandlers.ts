@@ -1,4 +1,4 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
 
 import { handleCreatePatternInstance } from '../handlers/patternInstance/handleCreatePatternInstance';
 import { handleDetachPatternInstance } from '../handlers/patternInstance/handleDetachPatternInstance';

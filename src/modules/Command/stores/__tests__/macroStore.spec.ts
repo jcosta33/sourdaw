@@ -5,21 +5,32 @@ import { macroStore } from '../macroStore';
 
 const STORAGE_KEY = 'sourdaw:macros';
 
+/** Resolve after the persistence microtask flush has run. */
+function flushPersist(): Promise<void> {
+    return new Promise<void>((resolve) => queueMicrotask(resolve));
+}
+
 describe('macroStore', () => {
     beforeEach(() => {
         localStorage.removeItem(STORAGE_KEY);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
     });
 
-    afterEach(() => {
+    afterEach(async () => {
+        // Let any pending coalesced write flush before clearing, so a deferred
+        // write from one test cannot leak into the next.
+        await flushPersist();
         localStorage.removeItem(STORAGE_KEY);
     });
 
-    it('should persist macros array to localStorage when state updates', () => {
+    it('should persist macros array to localStorage when state updates', async () => {
         const macros: Macro[] = [
             { id: 'm1', name: 'Test macro', actions: [{ type: 'togglePlayback' }], createdAt: 42 },
         ];
         macroStore.set({ macros, recording: false, currentRecording: [] });
+
+        // Persistence writes are coalesced onto a microtask flush.
+        await flushPersist();
 
         const raw = localStorage.getItem(STORAGE_KEY);
         expect(raw).not.toBeNull();
@@ -34,5 +45,90 @@ describe('macroStore', () => {
 
         expect(macroStore.value?.recording).toBe(true);
         expect(macroStore.value?.currentRecording).toEqual([{ type: 'stopPlayback' }]);
+    });
+
+    it('should NOT write to localStorage while recording (no O(N) writes per recorded action)', async () => {
+        // Seed a committed write so the key exists, then flip into recording.
+        macroStore.set({
+            macros: [{ id: 'm1', name: 'seed', actions: [], createdAt: 1 }],
+            recording: false,
+            currentRecording: [],
+        });
+        await flushPersist();
+        localStorage.removeItem(STORAGE_KEY);
+
+        // Each recorded action mutates currentRecording while recording === true.
+        macroStore.set({
+            macros: macroStore.value!.macros,
+            recording: true,
+            currentRecording: [{ type: 'togglePlayback' }],
+        });
+        macroStore.set({
+            macros: macroStore.value!.macros,
+            recording: true,
+            currentRecording: [{ type: 'togglePlayback' }, { type: 'stopPlayback' }],
+        });
+        await flushPersist();
+
+        expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    });
+
+    it('should coalesce multiple committing mutations in the same turn into one write', async () => {
+        // Three synchronous sets before the microtask runs.
+        macroStore.set({
+            macros: [{ id: 'a', name: 'a', actions: [], createdAt: 1 }],
+            recording: false,
+            currentRecording: [],
+        });
+        macroStore.set({
+            macros: [{ id: 'b', name: 'b', actions: [], createdAt: 2 }],
+            recording: false,
+            currentRecording: [],
+        });
+        macroStore.set({
+            macros: [{ id: 'c', name: 'c', actions: [], createdAt: 3 }],
+            recording: false,
+            currentRecording: [],
+        });
+        await flushPersist();
+
+        // Only the final state is serialized.
+        const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY)!) as Macro[];
+        expect(parsed).toHaveLength(1);
+        expect(parsed[0]?.id).toBe('c');
+    });
+
+    it('should cap the persisted macro list at MAX_MACROS (100)', async () => {
+        const macros: Macro[] = Array.from({ length: 130 }, (length, index) => ({
+            id: `m${index}`,
+            name: `macro ${index}`,
+            actions: [],
+            createdAt: index,
+        }));
+        macroStore.set({ macros, recording: false, currentRecording: [] });
+        await flushPersist();
+
+        const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY)!) as Macro[];
+        expect(parsed).toHaveLength(100);
+        // The most recent macros are kept (tail slice).
+        expect(parsed[0]?.id).toBe('m30');
+        expect(parsed[parsed.length - 1]?.id).toBe('m129');
+        // In-memory state is untouched — only the persisted projection is trimmed.
+        expect(macroStore.value?.macros).toHaveLength(130);
+    });
+
+    it('should cap each persisted macro at MAX_MACRO_ACTIONS (500)', async () => {
+        const actions = Array.from({ length: 600 }, () => ({ type: 'togglePlayback' as const }));
+        macroStore.set({
+            macros: [{ id: 'big', name: 'big', actions, createdAt: 1 }],
+            recording: false,
+            currentRecording: [],
+        });
+        await flushPersist();
+
+        const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY)!) as Macro[];
+        expect(parsed[0]?.actions).toHaveLength(500);
+        // In-memory state keeps the full action list.
+        expect(macroStore.value?.macros[0]?.actions).toHaveLength(600);
     });
 });

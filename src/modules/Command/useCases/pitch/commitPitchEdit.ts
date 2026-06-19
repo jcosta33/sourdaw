@@ -2,6 +2,7 @@ import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { processPitchEditWasm } from '#/modules/AudioEngine/useCases';
 import { type PitchContour } from '#/modules/Knead/stores/kneadStore';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { isTauri, tauriInvoke } from '#/utils/tauriBridge';
 
 import { createCallbackUndoEntry } from '../commandQueries';
@@ -115,6 +116,13 @@ export async function commitPitchEditCommand(
         const entry = createCallbackUndoEntry('Commit Pitch Edit', undoFn, redoFn, 'manual');
         commitUndoEntry(entry);
     } catch (error) {
+        // Previously the failure was swallowed into `console.error` only, so a
+        // failed pitch commit looked like success to the user (no edit applied,
+        // no feedback). Surface it. (Full migration of this command onto an
+        // AppAction/handler + the project `logger` facade is tracked as a
+        // follow-up; the `console.error` is retained here only because its
+        // existing regression test asserts it.)
         console.error('Failed to commit pitch edit:', error);
+        notifyUser('Failed to commit pitch edit', 'error');
     }
 }

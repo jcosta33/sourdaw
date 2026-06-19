@@ -1,4 +1,4 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
 
 import { handleCreateCollabSession } from '../handlers/collaboration/handleCreateCollabSession';
 import { handleJoinCollabSession } from '../handlers/collaboration/handleJoinCollabSession';

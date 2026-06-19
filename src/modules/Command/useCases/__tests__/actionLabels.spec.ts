@@ -12,7 +12,8 @@ describe('actionLabels', () => {
 
     it('should describe actions without payload using the base label', () => {
         expect(describeAction({ type: 'togglePlayback' })).toBe('Play/pause');
-        expect(describeAction({ type: 'toggleMetronome' })).toBe('toggleMetronome');
+        // Not in ACTION_LABELS → humanized, never the raw camelCase enum string.
+        expect(describeAction({ type: 'toggleMetronome' })).toBe('Toggle metronome');
     });
 
     it('should append track or clip names when payload has name', () => {
@@ -34,8 +35,10 @@ describe('actionLabels', () => {
         expect(describeAction({ type: 'setTempo', payload: { bpm: 132 } })).toBe('Set tempo: 132 BPM');
     });
 
-    it('should format gain as a percentage using the action type when no label exists', () => {
-        expect(describeAction({ type: 'setMasterGain', payload: { gain: 0.5 } })).toBe('setMasterGain: 50%');
+    it('should format gain as a percentage using a humanized base when no label exists', () => {
+        // `setMasterGain` is not in ACTION_LABELS; the base must be humanized
+        // ("Set master gain"), never the raw enum string.
+        expect(describeAction({ type: 'setMasterGain', payload: { gain: 0.5 } })).toBe('Set master gain: 50%');
     });
 
     it('should format device parameters', () => {
@@ -89,8 +92,30 @@ describe('actionLabels', () => {
         ).toBe('Set tool: slice');
     });
 
-    it('should fall back to raw action type when no label is registered', () => {
+    it('should humanize (never leak) an unlabeled action type', () => {
         const unknown = { type: 'nonexistentActionType', payload: { foo: 1 } } as unknown as AppAction;
-        expect(describeAction(unknown)).toBe('nonexistentActionType');
+        expect(describeAction(unknown)).toBe('Nonexistent action type');
+    });
+
+    it('should never return the raw camelCase enum string for unlabeled actions', () => {
+        // Sample of action types deliberately absent from ACTION_LABELS that
+        // previously leaked their raw enum string into PromptBar/history.
+        const unlabeled = [
+            { type: 'freezeTrack', expected: 'Freeze track' },
+            { type: 'setMasterGain', expected: 'Set master gain' },
+            { type: 'audioToMidi', expected: 'Audio to MIDI' },
+            { type: 'enableMpe', expected: 'Enable MPE' },
+            { type: 'assignToVca', expected: 'Assign to VCA' },
+            { type: 'loadRaveModel', expected: 'Load RAVE model' },
+            { type: 'restoreDsoSnapshot', expected: 'Restore DSO snapshot' },
+            { type: 'elasticSetTool', expected: 'Elastic set tool' },
+            { type: 'duplicateClipToNextBar', expected: 'Duplicate clip to next bar' },
+        ] as const;
+        for (const { type, expected } of unlabeled) {
+            const label = describeAction({ type } as unknown as AppAction);
+            expect(label).toBe(expected);
+            // The defining property of the fix: the raw enum string never surfaces.
+            expect(label).not.toBe(type);
+        }
     });
 });

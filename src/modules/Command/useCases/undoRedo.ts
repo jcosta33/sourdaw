@@ -2,6 +2,15 @@ import { undoStore } from '../stores/undoStore';
 
 import { type UndoEntry } from './commandQueries';
 import { executeAppAction } from './executeAppAction';
+import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
+
+/** The undo entry now at the top of `past`, or `null` when `past` is empty — i.e. the
+ *  tree node the user is currently "at". Mirrored onto the undo tree's `currentNodeId`
+ *  so a subsequent commit parents off the real position rather than the last-pushed
+ *  node. See `undoTreeMoveTo`. */
+function currentEntryId(past: readonly UndoEntry[]): string | null {
+    return past.length > 0 ? past[past.length - 1]!.id : null;
+}
 
 /**
  * Performs the undo side-effect for one entry and reports whether anything was
@@ -17,7 +26,12 @@ async function executeUndo(entry: UndoEntry, runExecuteAppAction: typeof execute
         return true;
     }
     if (entry.inverseAction) {
-        await runExecuteAppAction(entry.inverseAction);
+        // `skipUndo: true` is load-bearing: the inverse is a replay driven by the undo
+        // engine, NOT a fresh user edit. Without it the inverse commits its own undo
+        // entry mid-loop, which (a) pollutes the past/future stacks with synthetic
+        // entries and (b) invalidates the `state` snapshot the caller captured before
+        // the loop, so the finalizer writes a stale past/future. See `undo`.
+        await runExecuteAppAction(entry.inverseAction, { skipUndo: true });
         return true;
     }
     return false;
@@ -31,7 +45,28 @@ async function executeRedo(entry: UndoEntry, runExecuteAppAction: typeof execute
     }
 }
 
-export async function undo(): Promise<void> {
+/**
+ * In-flight guard. `undo`/`redo` read `undoStore.value` up front and write the moved
+ * stacks at the end; the `await` on the inverse/forward replay in between yields the
+ * microtask queue. Without serialization two overlapping `undo()` calls both read the
+ * same `state`, both pop the same `lastEntry`, and the second write clobbers the first —
+ * the same entry is consumed twice and one document mutation is undone without its stack
+ * bookkeeping. We serialize every mutation through one FIFO promise chain so a second
+ * call only reads `undoStore.value` after the first has committed its write. Sequential
+ * awaited callers (e.g. `undoToIndex`) still proceed one step at a time.
+ */
+let mutationChain: Promise<void> = Promise.resolve();
+
+function runExclusive(operation: () => Promise<void>): Promise<void> {
+    const result = mutationChain.then(operation);
+    // Keep the chain alive even if an operation rejects, so one failure does not wedge
+    // every future undo/redo. Swallow only on the chain copy; the caller still sees the
+    // rejection via `result`.
+    mutationChain = result.catch(() => undefined);
+    return result;
+}
+
+async function undoImpl(): Promise<void> {
     const state = undoStore.value;
     if (!state || state.past.length === 0) {
         return;
@@ -65,6 +100,7 @@ export async function undo(): Promise<void> {
             past: newPast,
             future: [...groupEntries, ...state.future],
         });
+        undoTreeMoveTo(currentEntryId(newPast));
         return;
     }
 
@@ -80,9 +116,10 @@ export async function undo(): Promise<void> {
         past: newPast,
         future: [lastEntry, ...state.future],
     });
+    undoTreeMoveTo(currentEntryId(newPast));
 }
 
-export async function redo(): Promise<void> {
+async function redoImpl(): Promise<void> {
     const state = undoStore.value;
     if (!state || state.future.length === 0) {
         return;
@@ -93,10 +130,20 @@ export async function redo(): Promise<void> {
 
     await executeRedo(entry, executeAppAction);
 
+    const newPast = [...state.past, entry];
     undoStore.set({
-        past: [...state.past, entry],
+        past: newPast,
         future: newFuture,
     });
+    undoTreeMoveTo(currentEntryId(newPast));
+}
+
+export function undo(): Promise<void> {
+    return runExclusive(undoImpl);
+}
+
+export function redo(): Promise<void> {
+    return runExclusive(redoImpl);
 }
 
 export async function undoToIndex(targetIndex: number): Promise<void> {

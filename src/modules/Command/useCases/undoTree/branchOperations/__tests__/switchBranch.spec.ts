@@ -51,6 +51,15 @@ describe('switchBranch', () => {
         expect(undoTreeStore.value?.tree.nodes.fork?.activeBranch).toBe(1);
     });
 
+    it('records branch selection without moving the document position (currentNodeId unchanged)', () => {
+        // switchBranch is selection-only, not traversal: moving currentNodeId without
+        // replaying the branch would desync the tree from document state. See the
+        // function's scope comment.
+        expect(undoTreeStore.value?.tree.currentNodeId).toBe('child0');
+        switchBranch('fork', 1);
+        expect(undoTreeStore.value?.tree.currentNodeId).toBe('child0');
+    });
+
     it('should not mutate when branch index is out of range', () => {
         const before = undoTreeStore.value;
         switchBranch('fork', 9);

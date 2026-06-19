@@ -1,5 +1,5 @@
 import { addTrack, getTrackStoreState } from '#/modules/Arrangement/useCases';
-import { type AppAction } from '#/modules/Command/models/AppAction';
+import { type AppAction } from '#/modules/Command/useCases';
 import { selectClipWithFocus } from '#/modules/Workspace/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';

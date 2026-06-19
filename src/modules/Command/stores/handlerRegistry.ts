@@ -1,5 +1,3 @@
-import { logger } from '#/infra/logger/appLogger';
-
 import { type ActionHandler } from '../useCases/commandQueries';
 
 /**
@@ -24,11 +22,14 @@ const registry: HandlerMap = {};
 export function registerHandlerMap(map: HandlerMap): void {
     for (const key of Object.keys(map)) {
         if (key in registry) {
-            const message = `[handlerRegistry] Duplicate handler for action type: ${key}`;
-            if (import.meta.env.DEV) {
-                throw new Error(message);
-            }
-            logger.warn(message);
+            // A duplicate registration is a bootstrap programming error: two
+            // handler maps claim the same action type, so which one wins is
+            // non-deterministic (it depends on bootstrap ordering). Previously
+            // PROD only logged a warning and let the second registration
+            // silently overwrite the first; that masked the conflict and could
+            // route an action to the wrong handler. Fail loudly in every
+            // environment so the conflict is caught at wire-up time.
+            throw new Error(`[handlerRegistry] Duplicate handler for action type: ${key}`);
         }
         registry[key] = map[key]!;
     }

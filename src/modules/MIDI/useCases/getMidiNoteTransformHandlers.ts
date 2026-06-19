@@ -1,4 +1,4 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
 
 import { handleHumanizeNotes } from '../handlers/noteTransform/handleHumanizeNotes';
 import { handleInvertNotes } from '../handlers/noteTransform/handleInvertNotes';

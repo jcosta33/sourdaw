@@ -17,8 +17,7 @@ import {
     initEngine,
 } from '#/modules/AiRuntime/useCases';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
-import { type AppAction } from '#/modules/Command/models/AppAction';
-import { executeAppAction, generateGroupId, describeAction } from '#/modules/Command/useCases';
+import { type AppAction, executeAppAction, generateGroupId, describeAction } from '#/modules/Command/useCases';
 
 import { defaultWorkspaceState } from '../../models/WorkspaceState';
 import { workspaceStore } from '../../stores/workspaceStore';

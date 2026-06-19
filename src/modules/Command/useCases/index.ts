@@ -12,10 +12,13 @@ export type { ExecuteOptions } from './executeAppAction';
 export { getMacroHandlers } from './getMacroHandlers';
 export { getUndoTreeHandlers } from './getUndoTreeHandlers';
 
-export { deleteMacro } from './macro/management/deleteMacro';
+// `playMacro` / `deleteMacro` are invoked through `executeAppAction` (they have
+// `playMacro` / `deleteMacro` AppActions + handlers), so their use-case re-exports
+// were redundant cross-module entry points that bypassed dispatch — removed.
+// `renameMacro` is still re-exported: it has no handler yet, so MacrosPanel calls
+// the use-case directly (a `renameMacro` AppAction now exists in the union for the
+// future handler; see follow-up to wire it and route MacrosPanel through dispatch).
 export { renameMacro } from './macro/management/renameMacro';
-
-export { playMacro } from './macro/playback';
 
 export { startMacroRecording } from './macro/recording/startMacroRecording';
 export { stopMacroRecording } from './macro/recording/stopMacroRecording';

@@ -1,4 +1,4 @@
-import { type ActionHandler, type AppAction } from '#/modules/Command/useCases/commandQueries';
+import { type ActionHandler, type AppAction } from '#/modules/Command/useCases';
 
 import { handleAddNotes } from '../handlers/aiMidi/handleAddNotes';
 import { handleCompleteMidi } from '../handlers/aiMidi/handleCompleteMidi';

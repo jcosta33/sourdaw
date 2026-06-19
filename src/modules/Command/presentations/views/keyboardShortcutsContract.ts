@@ -10,7 +10,21 @@ export const useGlobalKeyboardShortcuts = (): void => {
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
             const target = event.target as HTMLElement;
-            const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+            // A canvas-based editor (PianoRoll / Elastic / Mixer) that handles
+            // its own destructive keys advertises this by carrying a
+            // `data-canvas-editor` attribute (matching the codebase's existing
+            // `[data-*]` target-routing convention). When focus is inside one,
+            // gate the global shortcut layer exactly like a text input so
+            // Delete / Backspace routes to that editor's own note/marker delete
+            // instead of also firing the arrangement clip-delete path. The
+            // arrangement timeline surface is *not* marked, so Delete there
+            // still reaches the global clip-delete shortcut.
+            const isCanvasEditor = target.closest('[data-canvas-editor]') !== null;
+            const isInput =
+                isCanvasEditor ||
+                target.tagName === 'INPUT' ||
+                target.tagName === 'TEXTAREA' ||
+                target.isContentEditable;
 
             const shouldPreventDefault = handleKeydown({
                 key: event.key,
