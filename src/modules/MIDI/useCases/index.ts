@@ -53,6 +53,7 @@ export { setNotePitchBend } from './midiEvent/setNotePitchBend';
 export { startMidiLearn } from './midiLearn/startMidiLearn';
 export { stopMidiLearn } from './midiLearn/stopMidiLearn';
 export { completeMidiLearn } from './midiLearn/completeMidiLearn';
+export { clearAllMappings } from './midiLearn/clearAllMappings';
 export { handleMidiMessage, scaleMidiValue } from './midiLearn/handleMidiMessage';
 export { findMappingForTarget } from './midiLearn/findMappingForTarget';
 
@@ -99,6 +100,7 @@ export {
 } from './stepRecording/stepRecordNavigation';
 
 export { getMidiNoteTransformHandlers } from './getMidiNoteTransformHandlers';
+export { getMidiLearnHandlers } from './getMidiLearnHandlers';
 export { setMidiLearnDependencies } from './midiLearn/midiLearnDependencies';
 export type { MidiLearnDependencies } from './midiLearn/midiLearnDependencies';
 

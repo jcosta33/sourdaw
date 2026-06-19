@@ -177,6 +177,7 @@ const KNOWN_ACTION_TYPES_MAP = {
     assignToVca: true,
     autoOrganizeProject: true,
     captureScratchPad: true,
+    clearAllMidiMappings: true,
     clearChordTrack: true,
     clearMidiOutput: true,
     clearScratchPad: true,

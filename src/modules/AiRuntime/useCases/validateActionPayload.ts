@@ -328,6 +328,7 @@ const validators = {
     toggleChordTrack: 'unchecked',
 
     // MIDI routing + output
+    clearAllMidiMappings: 'unchecked',
     setMidiOutput: 'unchecked',
     clearMidiOutput: 'unchecked',
     connectPush: 'unchecked',

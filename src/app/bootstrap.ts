@@ -41,6 +41,7 @@ import { setFermenterDependencies } from '#/modules/Fermenter/useCases/fermenter
 import {
     getChordTrackHandlers,
     getMidiNoteTransformHandlers,
+    getMidiLearnHandlers,
     getPatternInstanceHandlers,
     setMidiLearnDependencies,
 } from '#/modules/MIDI/useCases';
@@ -117,6 +118,7 @@ registerHandlerMap(getAiMidiHandlers());
 registerHandlerMap(getAiOrganizationHandlers());
 registerHandlerMap(getChordTrackHandlers());
 registerHandlerMap(getMidiNoteTransformHandlers());
+registerHandlerMap(getMidiLearnHandlers());
 registerHandlerMap(getScratchPadHandlers());
 registerHandlerMap(getPatternInstanceHandlers());
 registerHandlerMap(getMacroHandlers());

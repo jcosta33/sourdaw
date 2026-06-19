@@ -100,4 +100,11 @@ export const midiCommands: CommandEntry[] = [
             }
         },
     },
+    {
+        id: 'clear-all-midi-mappings',
+        label: 'Clear All MIDI Mappings',
+        description: 'MIDI panic: remove every MIDI Learn mapping and cancel any in-progress learn',
+        category: 'MIDI',
+        action: { type: 'clearAllMidiMappings' },
+    },
 ];
