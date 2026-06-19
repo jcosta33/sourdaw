@@ -4,7 +4,9 @@ import { getAllTracks } from '#/modules/Arrangement/useCases';
 import { getTrackStrip } from '#/modules/AudioEngine/useCases';
 
 import { toasterStore } from '../stores/toasterStore';
-import { TOASTER_ENGINE_MAP } from '../useCases/loadToasterKit';
+
+import { disposeToasterDevice } from './disposeToasterDevice';
+import { TOASTER_ENGINE_MAP } from './loadToasterKit';
 
 type DeviceNodeRef = {
     deviceId: string;
@@ -82,6 +84,20 @@ export const initToasterSubscribers = inject({ eventBus, logger })(
                 }
             });
 
-            return unsubscribe;
+            // Device teardown: AudioEngine cannot call into the Toaster useCases
+            // barrel directly (acyclic-boundary constraint), so it emits and we
+            // dispose here. Synchronous handler → runs inline during emit(),
+            // preserving the original synchronous teardown timing.
+            const unsubscribeRemoved = eventBus.on('audioDevice.removed', (payload) => {
+                if (payload.deviceType !== 'toaster') {
+                    return;
+                }
+                disposeToasterDevice(payload.deviceId);
+            });
+
+            return () => {
+                unsubscribe();
+                unsubscribeRemoved();
+            };
         }
 );

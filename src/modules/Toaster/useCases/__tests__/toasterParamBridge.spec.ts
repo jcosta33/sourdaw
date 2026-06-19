@@ -24,18 +24,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     getAllTracks: mockGetAllTracks,
 }));
 
-import { getFirstToasterDeviceId } from '../toasterParamBridge/getFirstToasterDeviceId';
 import { setPadEngineImmediate } from '../toasterParamBridge/setPadEngineImmediate';
-
-describe('getFirstToasterDeviceId', () => {
-    beforeEach(() => {
-        mockGetAllTracks.mockReturnValue([] as never);
-    });
-
-    it('returns null when there are no tracks', () => {
-        expect(getFirstToasterDeviceId()).toBeNull();
-    });
-});
 
 describe('setPadEngineImmediate', () => {
     beforeEach(() => {

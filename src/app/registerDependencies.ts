@@ -5,7 +5,7 @@ import {
     type TrackRemovedPayload,
     type TrackSelectionChangedPayload,
 } from '#/modules/Arrangement/events';
-import { type AudioDeviceLoadedPayload } from '#/modules/AudioEngine/events';
+import { type AudioDeviceLoadedPayload, type AudioDeviceRemovedPayload } from '#/modules/AudioEngine/events';
 import {
     type ShowDevicePanelPayload,
     type ShowDevicePanelGenericPayload,
@@ -27,6 +27,7 @@ export type AppEvents = {
     'track.removed': TrackRemovedPayload;
     'track.selectionChanged': TrackSelectionChangedPayload;
     'audioDevice.loaded': AudioDeviceLoadedPayload;
+    'audioDevice.removed': AudioDeviceRemovedPayload;
 
     // Panel toggles (generic — prefer this over per-device events)
     'panel.showDevice': ShowDevicePanelGenericPayload;
