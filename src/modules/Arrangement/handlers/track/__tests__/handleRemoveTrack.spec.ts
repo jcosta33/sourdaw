@@ -72,6 +72,60 @@ describe('handleRemoveTrack', () => {
             });
             expect(mocks.removeTrack).toHaveBeenCalledWith('t1');
         });
+
+        it('reconciles modulation: removes modulators owned by the track and mappings that target it', () => {
+            // m1 is owned by the removed track (t1) → its bindings can never resolve.
+            // m2 lives on another track (t2) but maps INTO t1 → that mapping dangles.
+            // m2 also has a mapping to t3 that must be left alone.
+            mocks.modulationStoreValue.value = {
+                modulators: [
+                    { id: 'm1', trackId: 't1', mappings: [] },
+                    {
+                        id: 'm2',
+                        trackId: 't2',
+                        mappings: [
+                            { targetTrackId: 't1', targetDeviceId: 'd1', targetParamId: 'cutoff' },
+                            { targetTrackId: 't3', targetDeviceId: 'd9', targetParamId: 'gain' },
+                        ],
+                    },
+                ],
+            };
+
+            void handleRemoveTrack.execute({
+                type: 'removeTrack',
+                payload: { trackId: 't1' },
+            });
+
+            // The owned modulator is removed by id.
+            expect(mocks.removeModulator).toHaveBeenCalledTimes(1);
+            expect(mocks.removeModulator).toHaveBeenCalledWith('m1');
+
+            // The cross-track mapping that targets t1 is removed by (modulatorId, target).
+            expect(mocks.removeMapping).toHaveBeenCalledTimes(1);
+            expect(mocks.removeMapping).toHaveBeenCalledWith('m2', {
+                targetTrackId: 't1',
+                targetDeviceId: 'd1',
+                targetParamId: 'cutoff',
+            });
+
+            // The mapping into the surviving track t3 is left intact.
+            expect(mocks.removeMapping).not.toHaveBeenCalledWith(
+                'm2',
+                expect.objectContaining({ targetTrackId: 't3' })
+            );
+        });
+
+        it('does not reconcile modulation when the modulation store is empty', () => {
+            mocks.modulationStoreValue.value = null;
+
+            void handleRemoveTrack.execute({
+                type: 'removeTrack',
+                payload: { trackId: 't1' },
+            });
+
+            expect(mocks.removeModulator).not.toHaveBeenCalled();
+            expect(mocks.removeMapping).not.toHaveBeenCalled();
+        });
     });
 
     describe('describe', () => {

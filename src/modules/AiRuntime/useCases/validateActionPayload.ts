@@ -277,6 +277,9 @@ const validators = {
     reverseAutomation: 'unchecked',
     thinAutomation: 'unchecked',
     quantizeAutomation: 'unchecked',
+    // Internal inverse-only actions (emitted by handlers' describe(), never by the AI).
+    restoreAutomationLanePoints: 'unchecked',
+    removeAutomationLane: 'unchecked',
 
     // Preset / template
     loadPreset: 'unchecked',

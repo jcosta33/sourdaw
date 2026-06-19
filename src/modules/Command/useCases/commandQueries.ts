@@ -13,6 +13,18 @@ export type ClipSnapshot = {
     readonly endBeat: number;
 };
 export type AutomationLaneSnapshot = { readonly id: string; readonly trackId: string };
+/** A captured automation point, carried by the `restoreAutomationLanePoints` inverse
+ *  action. Command cannot import Automation's `AutomationPoint` model (model isolation),
+ *  so this specifies only the fields a transform-undo round-trips. */
+export type AutomationPointSnapshot = {
+    readonly beat: number;
+    readonly value: number;
+    readonly curve: string;
+    readonly tension: number;
+    readonly stairSteps?: number;
+    readonly cp1?: { readonly x: number; readonly y: number };
+    readonly cp2?: { readonly x: number; readonly y: number };
+};
 export type TakeLaneSnapshot = { readonly id: string; readonly trackId: string };
 export type MidiNotesSnapshot = readonly { readonly id: string }[];
 export type MidiCcSnapshot = readonly { readonly id: string }[];
@@ -127,6 +139,15 @@ export type AppAction =
     | { type: 'renameSection'; payload: { sectionId: string; name: string } }
     | { type: 'addAutomationLane'; payload: { trackId: string; parameterId: string; parameterName: string } }
     | {
+          /** Inverse of `addAutomationLane`. Keyed by `(trackId, parameterId)` — the
+           *  identity a lane is created under — because the generated lane id is not
+           *  known when the inverse is captured (pre-execute). Emitted only by the
+           *  `addAutomationLane` handler's `describe()`. Keep mirrored in
+           *  Command/models/AppAction.ts and AiRuntime/models/RuntimeAction.ts. */
+          type: 'removeAutomationLane';
+          payload: { trackId: string; parameterId: string };
+      }
+    | {
           type: 'addAutomationPoint';
           payload: {
               laneId: string;
@@ -211,6 +232,15 @@ export type AppAction =
     | { type: 'reverseAutomation'; payload: { laneId: string } }
     | { type: 'thinAutomation'; payload: { laneId: string; tolerance?: number } }
     | { type: 'quantizeAutomation'; payload: { laneId: string; gridSize: number } }
+    | {
+          /** Inverse of the automation transform handlers (reverse/scale/stretch/thin/
+           *  quantize/invert). Restores a lane's `points` to a snapshot captured
+           *  pre-execute. Emitted only by those handlers' `describe()` — not invoked
+           *  directly. Keep mirrored in Command/models/AppAction.ts and
+           *  AiRuntime/models/RuntimeAction.ts. */
+          type: 'restoreAutomationLanePoints';
+          payload: { laneId: string; points: readonly AutomationPointSnapshot[] };
+      }
     | { type: 'loadPreset'; payload: { presetId: string; trackId?: string } }
     | { type: 'savePreset'; payload: { trackId: string; name: string; category: string } }
     | {

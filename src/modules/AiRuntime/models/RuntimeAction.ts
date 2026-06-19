@@ -111,6 +111,12 @@ export type RuntimeAction =
     | { type: 'renameSection'; payload: { sectionId: string; name: string } }
     | { type: 'addAutomationLane'; payload: { trackId: string; parameterId: string; parameterName: string } }
     | {
+          /** Inverse of `addAutomationLane`, keyed by `(trackId, parameterId)`. Mirrors
+           *  Command's AppAction unions. */
+          type: 'removeAutomationLane';
+          payload: { trackId: string; parameterId: string };
+      }
+    | {
           type: 'addAutomationPoint';
           payload: {
               laneId: string;
@@ -194,6 +200,23 @@ export type RuntimeAction =
     | { type: 'reverseAutomation'; payload: { laneId: string } }
     | { type: 'thinAutomation'; payload: { laneId: string; tolerance?: number } }
     | { type: 'quantizeAutomation'; payload: { laneId: string; gridSize: number } }
+    | {
+          /** Inverse of the automation transform handlers. Restores a lane's points to a
+           *  pre-execute snapshot. Mirrors Command's AppAction unions. */
+          type: 'restoreAutomationLanePoints';
+          payload: {
+              laneId: string;
+              points: readonly {
+                  readonly beat: number;
+                  readonly value: number;
+                  readonly curve: string;
+                  readonly tension: number;
+                  readonly stairSteps?: number;
+                  readonly cp1?: { readonly x: number; readonly y: number };
+                  readonly cp2?: { readonly x: number; readonly y: number };
+              }[];
+          };
+      }
     | { type: 'loadPreset'; payload: { presetId: string; trackId?: string } }
     | { type: 'savePreset'; payload: { trackId: string; name: string; category: string } }
     | { type: 'generateDrumPattern'; payload: { style: string; trackId?: string; bars?: number; density?: number } }

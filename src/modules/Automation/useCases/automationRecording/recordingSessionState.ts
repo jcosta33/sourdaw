@@ -3,9 +3,12 @@
  * This state is internal to the recording subsystem — not reusable elsewhere.
  *
  * The mutable session collections (active sessions, buffered points, touch
- * flags) live behind a get/reset accessor — the same DI-seam shape used by
- * `recordingDependencies` — so a spec can grab the live state and reset it
- * between cases instead of leaking across specs through module-level singletons.
+ * flags) are grouped under a single `sessionState` holder that is the one source
+ * of truth. The collections are exported as bindings onto that holder and are
+ * mutated in place by the recording use-cases; the holder is never reseated, so
+ * there is no second view of the state that could drift from these bindings.
+ * Specs that need isolation `vi.mock` this module (or clear the collections in
+ * `beforeEach`); they never reseat the holder.
  */
 
 import { type AutomationPoint } from '../../models/Automation';
@@ -30,8 +33,8 @@ export type RecordingSession = {
 
 export const RECORDING_MODES: ReadonlySet<AutomationMode> = new Set(['write', 'touch', 'latch']);
 
-/** The mutable per-session recording state, grouped so it can be reset as a unit. */
-export type RecordingSessionState = {
+/** The mutable per-session recording state, grouped under the single holder. */
+type RecordingSessionState = {
     /** Active recording sessions keyed by `makeKey(trackId, parameterId)`. */
     activeRecording: Map<string, RecordingSession>;
     /** Points buffered during a session, flushed to the store on release/stop. */
@@ -48,28 +51,13 @@ function createRecordingSessionState(): RecordingSessionState {
     };
 }
 
-let sessionState: RecordingSessionState = createRecordingSessionState();
+// The single source of truth for recording-session state. Holder identity is
+// fixed for the module's lifetime; the collections below are mutated in place,
+// never reseated, so every consumer observes the same Map/Set.
+const sessionState: RecordingSessionState = createRecordingSessionState();
 
-/** Get the live recording-session state (the DI seam). */
-export function getRecordingSessionState(): RecordingSessionState {
-    return sessionState;
-}
-
-/** Replace the recording-session state wholesale (for tests / explicit reseat). */
-export function setRecordingSessionState(state: RecordingSessionState): void {
-    sessionState = state;
-}
-
-/** Clear every collection in place so no session, buffer, or touch flag leaks. */
-export function resetRecordingSessionState(): void {
-    sessionState.activeRecording.clear();
-    sessionState.pendingPoints.clear();
-    sessionState.touchActive.clear();
-}
-
-// Named bindings onto the live state. These remain the canonical collections —
-// `getRecordingSessionState()` returns the same identity — so they stay valid
-// for the lifetime of the (single) session-state holder.
+// Named bindings onto the single holder — the canonical collections the
+// recording use-cases mutate directly (`.clear()`/`.set()`/`.get()`/`.add()`).
 export const activeRecording = sessionState.activeRecording;
 export const pendingPoints = sessionState.pendingPoints;
 export const touchActive = sessionState.touchActive;
