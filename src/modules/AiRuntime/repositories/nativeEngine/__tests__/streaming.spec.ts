@@ -59,6 +59,69 @@ describe('streamNativeCompletion', () => {
                 mockChannel.onmessage({ event: 'error', data: { message: 'Boom' } });
             }).not.toThrow();
         });
+
+        it('propagates an abort thrown from inside onToken instead of swallowing it', async () => {
+            // Regression: when onToken throws (e.g. the caller checks an abort
+            // signal and throws), the throw escapes the Tauri channel dispatcher
+            // and is lost. It must be captured and rethrown after the invoke.
+            const mockChannel = { onmessage: null } as any;
+            mocks.createChannel.mockResolvedValue(mockChannel);
+
+            // Faithfully model the Tauri channel dispatcher: it invokes
+            // onmessage and SWALLOWS any throw, then the command resolves
+            // normally. So a throw from onToken is lost unless streamNativeCompletion
+            // captures it into streamState.error itself.
+            mocks.tauriInvoke.mockImplementation(() => {
+                try {
+                    mockChannel.onmessage({ event: 'token', data: { text: 'partial' } });
+                } catch {
+                    // dispatcher swallows — exactly the production behavior we guard against
+                }
+                return Promise.resolve(undefined);
+            });
+
+            const onToken = vi.fn(() => {
+                throw new Error('AbortedByUser');
+            });
+
+            await expect(streamNativeCompletion([{ role: 'user', content: 'hi' }], onToken)).rejects.toThrow(
+                'AbortedByUser'
+            );
+        });
+
+        it('rejects when the native invoke exceeds the watchdog timeout', async () => {
+            vi.useFakeTimers();
+            try {
+                const mockChannel = { onmessage: null } as any;
+                mocks.createChannel.mockResolvedValue(mockChannel);
+                // Invoke never resolves — simulate a hung backend.
+                mocks.tauriInvoke.mockReturnValue(new Promise<void>(() => undefined));
+
+                const promise = streamNativeCompletion([{ role: 'user', content: 'hi' }], vi.fn(), {
+                    timeoutMs: 5000,
+                });
+                const assertion = expect(promise).rejects.toThrow('timed out after 5000ms');
+
+                await vi.advanceTimersByTimeAsync(5000);
+                await assertion;
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it('rejects when the abort signal fires before the native invoke resolves', async () => {
+            const mockChannel = { onmessage: null } as any;
+            mocks.createChannel.mockResolvedValue(mockChannel);
+            mocks.tauriInvoke.mockReturnValue(new Promise<void>(() => undefined));
+
+            const aborter = new AbortController();
+            const promise = streamNativeCompletion([{ role: 'user', content: 'hi' }], vi.fn(), {
+                signal: aborter.signal,
+            });
+            aborter.abort();
+
+            await expect(promise).rejects.toThrow('aborted');
+        });
     });
 
     describe('when running in browser (dev mode)', () => {
@@ -84,6 +147,7 @@ describe('streamNativeCompletion', () => {
                     }
                     return Promise.resolve({ done: true, value: undefined });
                 }),
+                cancel: vi.fn().mockResolvedValue(undefined),
             };
 
             mocks.fetch.mockResolvedValue({
@@ -123,6 +187,56 @@ describe('streamNativeCompletion', () => {
             await expect(streamNativeCompletion([], vi.fn<(...args: unknown[]) => void>())).rejects.toThrow(
                 'No response body'
             );
+        });
+
+        it('stops pulling tokens and cancels the reader once the signal is aborted', async () => {
+            // Regression: the SSE while(true) loop had no abort plumbing, so an
+            // aborted request kept reading and delivering tokens. The loop must
+            // break on abort and release the reader.
+            const encoder = new TextEncoder();
+            const aborter = new AbortController();
+
+            const cancel = vi.fn().mockResolvedValue(undefined);
+            let readCount = 0;
+            const mockReader = {
+                read: vi.fn().mockImplementation(() => {
+                    readCount += 1;
+                    // First read yields a token, then the caller aborts.
+                    if (readCount === 1) {
+                        return Promise.resolve({
+                            done: false,
+                            value: encoder.encode('data: {"choices": [{"delta": {"content": "Hello"}}]}\n\n'),
+                        });
+                    }
+                    // The loop should break before issuing further reads.
+                    return Promise.resolve({
+                        done: false,
+                        value: encoder.encode('data: {"choices": [{"delta": {"content": " World"}}]}\n\n'),
+                    });
+                }),
+                cancel,
+            };
+
+            mocks.fetch.mockResolvedValue({
+                ok: true,
+                body: { getReader: () => mockReader },
+            });
+
+            const tokens: string[] = [];
+            await streamNativeCompletion(
+                [{ role: 'user', content: 'hi' }],
+                (token) => {
+                    tokens.push(token);
+                    aborter.abort(); // abort after the first token
+                },
+                { signal: aborter.signal }
+            );
+
+            expect(tokens).toEqual(['Hello']);
+            expect(cancel).toHaveBeenCalledTimes(1);
+            // The abort check sits at the top of the loop, so at most one further
+            // read is issued before the break — never the full stream.
+            expect(mockReader.read.mock.calls.length).toBeLessThanOrEqual(2);
         });
     });
 });

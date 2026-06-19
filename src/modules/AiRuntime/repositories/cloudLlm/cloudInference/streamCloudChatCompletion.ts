@@ -1,4 +1,6 @@
-import { getCloudClient } from '../keyManagement';
+import { logger } from '#/infra/logger/appLogger';
+
+import { getCloudClient, registerCloudStreamController, unregisterCloudStreamController } from '../keyManagement';
 
 import { CLOUD_MODEL } from './helpers';
 
@@ -20,16 +22,40 @@ export async function streamCloudChatCompletion(
             content: message.content,
         }));
 
-    const stream = client.messages.stream({
-        model: CLOUD_MODEL,
-        max_tokens: options?.maxTokens ?? 2048,
-        system: systemMessage?.content ?? 'You are a helpful music production assistant embedded in a DAW.',
-        messages: chatMessages,
-    });
+    // Register an abort controller so clearing the API key (key revocation)
+    // tears this stream down immediately, rather than letting it keep using the
+    // revoked key until the SSE stream closes on its own.
+    const controller = registerCloudStreamController(new AbortController());
 
-    for await (const event of stream) {
-        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-            onToken(event.delta.text);
+    try {
+        const stream = client.messages.stream(
+            {
+                model: CLOUD_MODEL,
+                max_tokens: options?.maxTokens ?? 2048,
+                system: systemMessage?.content ?? 'You are a helpful music production assistant embedded in a DAW.',
+                messages: chatMessages,
+            },
+            { signal: controller.signal }
+        );
+
+        for await (const event of stream) {
+            // Text tokens are the visible output.
+            if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+                onToken(event.delta.text);
+                continue;
+            }
+
+            // A non-end_turn stop is the model truncating (e.g. hit max_tokens) or
+            // refusing — previously invisible to the caller. Surface it as a
+            // diagnostic so a cut-off completion is not silently treated as whole.
+            if (event.type === 'message_delta') {
+                const stopReason = event.delta.stop_reason;
+                if (stopReason !== null && stopReason !== 'end_turn') {
+                    logger.warn(`[Cloud AI] stream stopped with reason="${stopReason}" (output may be incomplete)`);
+                }
+            }
         }
+    } finally {
+        unregisterCloudStreamController(controller);
     }
 }

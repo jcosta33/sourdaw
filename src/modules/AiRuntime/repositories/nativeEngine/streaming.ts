@@ -7,25 +7,40 @@ type LlmStreamEvent =
     | { event: 'done'; data: { totalTokens: number } }
     | { event: 'error'; data: { message: string } };
 
+/** Default watchdog: abort a native invoke that produces no resolution in time. */
+const DEFAULT_NATIVE_TIMEOUT_MS = 120_000;
+
 /**
  * Streaming completion.
  * In Tauri: in-process streaming via mistral.rs + Tauri Channel.
  * In browser dev mode: SSE from localhost llama-server.
+ *
+ * `options.signal` lets a caller abort: the browser SSE loop stops pulling
+ * tokens and cancels the reader, and the native invoke is raced against the
+ * signal. `options.timeoutMs` bounds the native invoke so a hung backend
+ * cannot leave the await pending forever.
  */
 export async function streamNativeCompletion(
     messages: Array<{ role: string; content: string }>,
     onToken: (text: string) => void,
-    options?: { temperature?: number; maxTokens?: number }
+    options?: { temperature?: number; maxTokens?: number; signal?: AbortSignal; timeoutMs?: number }
 ): Promise<void> {
     if (isTauri()) {
         const channel = await createChannel<LlmStreamEvent>();
 
         // Errors thrown inside onmessage (a synchronous callback) do not propagate
         // to the awaiting tauriInvoke call — capture and rethrow after the invoke.
+        // This includes an abort thrown from inside `onToken` (e.g. the caller
+        // checking signal.aborted): without this catch the throw escapes into the
+        // Tauri channel dispatcher and is swallowed, so the stream keeps running.
         const streamState = { error: null as Error | null };
         channel.onmessage = (event: LlmStreamEvent) => {
-            if (event.event === 'token') {
-                onToken(event.data.text);
+            try {
+                if (event.event === 'token') {
+                    onToken(event.data.text);
+                }
+            } catch (tokenError) {
+                streamState.error = tokenError instanceof Error ? tokenError : new Error(String(tokenError));
             }
             if (event.event === 'error') {
                 streamState.error = new Error(event.data.message);
@@ -35,13 +50,19 @@ export async function streamNativeCompletion(
         const systemPrompt = messages.find((message) => message.role === 'system')?.content ?? '';
         const nonSystemMessages = messages.filter((message) => message.role !== 'system');
 
-        await tauriInvoke('stream_native_completion', {
+        const invocation = tauriInvoke('stream_native_completion', {
             systemPrompt,
             messages: nonSystemMessages,
             temperature: options?.temperature ?? 0.7,
             maxTokens: options?.maxTokens ?? 2048,
             onEvent: channel,
         });
+
+        // Watchdog: a hung native backend would otherwise keep this await pending
+        // forever (streamState.error is only inspected once the invoke resolves).
+        // Race the invoke against a timeout and an optional abort signal so the
+        // caller is not stuck waiting on a stalled stream.
+        await raceWithWatchdog(invocation, options?.timeoutMs ?? DEFAULT_NATIVE_TIMEOUT_MS, options?.signal);
 
         if (streamState.error) {
             throw streamState.error;
@@ -50,6 +71,7 @@ export async function streamNativeCompletion(
     }
 
     // Browser dev mode: SSE from llama-server
+    const signal = options?.signal;
     const response = await fetch(`${BASE_URL}/v1/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -60,6 +82,8 @@ export async function streamNativeCompletion(
             seed: 0,
             stream: true,
         }),
+        // Let fetch tear down the connection itself when the caller aborts.
+        signal,
     });
 
     if (!response.ok) {
@@ -75,34 +99,81 @@ export async function streamNativeCompletion(
     const decoder = new TextDecoder();
     let buffer = '';
 
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-            break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith('data: ')) {
-                continue;
+    try {
+        // Stop pulling tokens the moment the caller aborts — previously the loop
+        // ran `while (true)` until the server closed the stream, so an aborted
+        // request kept delivering tokens and burning the connection.
+        while (!signal?.aborted) {
+            const { done, value } = await reader.read();
+            if (done) {
+                break;
             }
-            const jsonStr = trimmed.slice(6);
-            if (jsonStr === '[DONE]') {
-                return;
-            }
-            try {
-                const chunk = JSON.parse(jsonStr) as { choices: Array<{ delta: { content?: string } }> };
-                const content = chunk.choices[0]?.delta.content;
-                if (content) {
-                    onToken(content);
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith('data: ')) {
+                    continue;
                 }
-            } catch {
-                // Skip malformed SSE chunks
+                const jsonStr = trimmed.slice(6);
+                if (jsonStr === '[DONE]') {
+                    return;
+                }
+                try {
+                    const chunk = JSON.parse(jsonStr) as { choices: Array<{ delta: { content?: string } }> };
+                    const content = chunk.choices[0]?.delta.content;
+                    if (content) {
+                        onToken(content);
+                    }
+                } catch {
+                    // Skip malformed SSE chunks
+                }
             }
+        }
+    } finally {
+        // Release the underlying stream so an aborted/early-broken loop does not
+        // leave the reader (and socket) dangling.
+        await reader.cancel().catch(() => undefined);
+    }
+}
+
+/**
+ * Race a promise against a timeout and an optional abort signal. Resolves when
+ * the work settles first; rejects if the watchdog fires or the signal aborts.
+ * Used to bound the native Tauri invoke, which has no built-in cancellation.
+ */
+async function raceWithWatchdog<TWork>(work: Promise<TWork>, timeoutMs: number, signal?: AbortSignal): Promise<TWork> {
+    if (signal?.aborted) {
+        throw new Error('Native completion aborted');
+    }
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
+
+    const guard = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+            reject(new Error(`Native completion timed out after ${String(timeoutMs)}ms`));
+        }, timeoutMs);
+
+        if (signal) {
+            onAbort = () => {
+                reject(new Error('Native completion aborted'));
+            };
+            signal.addEventListener('abort', onAbort, { once: true });
+        }
+    });
+
+    try {
+        return await Promise.race([work, guard]);
+    } finally {
+        if (timer !== undefined) {
+            clearTimeout(timer);
+        }
+        if (signal && onAbort) {
+            signal.removeEventListener('abort', onAbort);
         }
     }
 }

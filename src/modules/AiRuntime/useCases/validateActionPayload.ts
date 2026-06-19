@@ -55,9 +55,6 @@ function isInRange(value: unknown, min: number, max: number): value is number {
 function isOptional<Value>(value: unknown, check: (value: unknown) => value is Value): value is Value | undefined {
     return value === undefined || check(value);
 }
-function isStringArray(value: unknown): value is string[] {
-    return Array.isArray(value) && value.every(isString);
-}
 
 // ── Validators (destructive / high-risk actions) ─────────────────────────
 
@@ -66,6 +63,25 @@ function hasTrackId(param: unknown): param is { trackId: string } {
 }
 function hasClipId(param: unknown): param is { clipId: string } {
     return isObj(param) && isString(param.clipId);
+}
+
+// A DocumentBundle is `Map<DocId, Uint8Array>` (CrdtDocumentTypes). The
+// restoreDsoSnapshot payload is the AI undo pipeline's own inverse action
+// (executeDsoEdit.ts emits it with binary Automerge snapshots); the LLM is
+// never supposed to produce it. This minimal guard enforces that trust
+// boundary at runtime: the bundle must be a Map whose entries are
+// (string key, Uint8Array value), so a hallucinated or hand-crafted JSON
+// payload — which deserializes to a plain object, not a Map — is rejected.
+function isDocumentBundle(value: unknown): value is Map<string, Uint8Array> {
+    if (!(value instanceof Map)) {
+        return false;
+    }
+    for (const [key, bytes] of value) {
+        if (!isString(key) || !(bytes instanceof Uint8Array)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 const validators = {
@@ -85,7 +101,11 @@ const validators = {
 
     // Clip lifecycle
     addClip: (param): param is PayloadOf<'addClip'> =>
-        isObj(param) && isString(param.trackId) && isNumber(param.startBeat) && isNumber(param.endBeat),
+        isObj(param) &&
+        isString(param.trackId) &&
+        isNumber(param.startBeat) &&
+        isNumber(param.endBeat) &&
+        isString(param.name),
     removeClip: hasClipId as PayloadValidator<'removeClip'>,
     splitClip: (param): param is PayloadOf<'splitClip'> =>
         isObj(param) && isString(param.clipId) && isNumber(param.splitBeat),
@@ -134,7 +154,7 @@ const validators = {
 
     // MIDI note batch ops
     quantizeNotes: (param): param is PayloadOf<'quantizeNotes'> =>
-        isObj(param) && isString(param.clipId) && isNumber(param.grid),
+        isObj(param) && isString(param.clipId) && isNumber(param.gridSize),
     transposeNotes: (param): param is PayloadOf<'transposeNotes'> =>
         isObj(param) && isString(param.clipId) && isNumber(param.semitones),
 
@@ -151,17 +171,22 @@ const validators = {
         isObj(param) && isNumber(param.atBeat) && isNumber(param.durationBeats),
 
     // Imports / exports / project lifecycle
-    importAudioFile: (param): param is PayloadOf<'importAudioFile'> => isObj(param) && isString(param.path),
-    importMidiFile: (param): param is PayloadOf<'importMidiFile'> => isObj(param) && isString(param.path),
+    // importAudioFile / importMidiFile carry no payload (`payload?: undefined`):
+    // the file is chosen via a native picker in the handler, so there is no
+    // LLM-controlled field to validate. Marked 'unchecked' rather than running
+    // a guard that rejects every legitimate (undefined) payload.
+    importAudioFile: 'unchecked',
+    importMidiFile: 'unchecked',
     exportProject: (param): param is PayloadOf<'exportProject'> => isObj(param) && isOptional(param.format, isString),
-    exportMidi: (param): param is PayloadOf<'exportMidi'> => isObj(param) && isOptional(param.trackIds, isStringArray),
+    exportMidi: (param): param is PayloadOf<'exportMidi'> => isObj(param) && isString(param.clipId),
     exportDawProject: 'unchecked',
     saveProject: 'unchecked',
     newProject: 'unchecked',
 
     // Collaboration lifecycle
     createCollabSession: 'unchecked',
-    joinCollabSession: (param): param is PayloadOf<'joinCollabSession'> => isObj(param) && isString(param.inviteCode),
+    joinCollabSession: (param): param is PayloadOf<'joinCollabSession'> =>
+        isObj(param) && isString(param.inviteString) && isString(param.peerName),
     leaveCollabSession: 'unchecked',
 
     // UI / workspace toggles — no payload validation needed (view state only)
@@ -359,7 +384,11 @@ const validators = {
     createVersionBranch: 'unchecked',
     restoreTrack: 'unchecked',
     restoreClip: 'unchecked',
-    restoreDsoSnapshot: 'unchecked',
+    // Inverse-only action emitted by the AI undo pipeline (executeDsoEdit.ts) with
+    // binary Automerge snapshots — the LLM is never meant to produce it. Guard the
+    // bundle shape so an arbitrary/hand-crafted payload can't be restored unchecked.
+    restoreDsoSnapshot: (param): param is PayloadOf<'restoreDsoSnapshot'> =>
+        isObj(param) && isDocumentBundle(param.bundle),
 
     // Warp + pitch
     enableWarping: 'unchecked',

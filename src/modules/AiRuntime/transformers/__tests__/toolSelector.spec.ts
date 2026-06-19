@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
+import { DAW_TOOL_SCHEMAS } from '../../models/toolDefinitions';
 import { type ToolSchema } from '../../models/tools/types';
 import { selectToolsForPrompt } from '../toolSelector';
 
@@ -78,5 +79,53 @@ describe('toolSelector', () => {
 
         const selected = selectToolsForPrompt(massiveTools, 'track');
         expect(selected.length).toBeLessThanOrEqual(30);
+    });
+
+    // Regression: the selector previously referenced tool names that exist in
+    // neither RuntimeActionType nor DAW_TOOL_SCHEMAS (setTimeSignature,
+    // addMidiNote, quantizeMidi, transposeMidi, addTempoChange). They never
+    // matched a real schema so they were silently dropped — but every keyword/
+    // core name still consumed a budget slot in the selection Set, weakening the
+    // MAX_TOOLS cap. The compile-time guard is `CORE_TOOLS: ReadonlySet<RuntimeActionType>`;
+    // these tests pin the observable behavior against the real schema set.
+    it('only ever emits tool names that exist in DAW_TOOL_SCHEMAS', () => {
+        const realNames = new Set(DAW_TOOL_SCHEMAS.map((schema) => schema.function.name));
+
+        // Drive the selector across every keyword bucket so every internal name
+        // is exercised, then confirm the result is a subset of the real tools.
+        const prompts = [
+            'do nothing specifically', // core-only path
+            'set up tracks for a new song project',
+            'make a midi melody, quantize and transpose the notes, add a drum beat',
+            'balance the mix gain and pan levels',
+            'add a reverb effect and a compressor plugin',
+            'change the tempo to be faster',
+            'draw an automation envelope fade',
+            'arm the track and punch in a take',
+            'route a send to a bus with sidechain',
+            'add a marker and arrange the song structure',
+            'split, trim and duplicate the clip',
+            'separate the vocal stem',
+            'generate some audio and a chord progression',
+            'insert time and delete a range',
+            'detect the key and transpose to a new scale',
+        ];
+
+        for (const prompt of prompts) {
+            const selected = selectToolsForPrompt([...DAW_TOOL_SCHEMAS], prompt);
+            for (const schema of selected) {
+                expect(realNames.has(schema.function.name)).toBe(true);
+            }
+        }
+    });
+
+    it('fills the no-match fallback path with MAX_TOOLS real tools (no slot wasted on a phantom)', () => {
+        // The no-keyword-match path tops the selection up from the keyword
+        // buckets until it reaches MAX_TOOLS. A phantom name in a bucket would
+        // occupy a Set slot but never survive the schema filter, so the returned
+        // count would fall short of the cap. Against the real schemas the result
+        // must reach exactly MAX_TOOLS.
+        const selected = selectToolsForPrompt([...DAW_TOOL_SCHEMAS], 'xyzzy plugh nothing matches here');
+        expect(selected).toHaveLength(30);
     });
 });

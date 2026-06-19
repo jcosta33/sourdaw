@@ -305,12 +305,43 @@ const sourdawPlugin = {
             },
             /** @param {import('eslint').Rule.RuleContext} context */
             create(context) {
+                // Local binding names for `memo` imported from 'react' (handles
+                // `import { memo }` and `import { memo as m }`). A bare `memo()`
+                // call only counts as manual memoization when it resolves to
+                // React's memo — not to some unrelated function named `memo`.
+                /** @type {Set<string>} */
+                const reactMemoBindings = new Set();
+
                 return {
+                    /** @param {any} node */
+                    ImportDeclaration(node) {
+                        if (node.source.value !== 'react') return;
+                        for (const spec of node.specifiers) {
+                            if (
+                                spec.type === 'ImportSpecifier' &&
+                                spec.imported?.type === 'Identifier' &&
+                                spec.imported.name === 'memo'
+                            ) {
+                                reactMemoBindings.add(spec.local.name);
+                            }
+                        }
+                    },
                     /** @param {any} node */
                     CallExpression(node) {
                         if (
                             node.callee.type === 'Identifier' &&
                             (node.callee.name === 'useMemo' || node.callee.name === 'useCallback')
+                        ) {
+                            context.report({
+                                node,
+                                messageId: 'noManualMemoization',
+                            });
+                        }
+
+                        // Bare `memo(...)` imported from react (e.g. `import { memo }`).
+                        if (
+                            node.callee.type === 'Identifier' &&
+                            reactMemoBindings.has(node.callee.name)
                         ) {
                             context.report({
                                 node,

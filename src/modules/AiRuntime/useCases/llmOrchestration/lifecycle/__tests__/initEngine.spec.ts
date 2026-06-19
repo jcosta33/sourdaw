@@ -80,6 +80,35 @@ describe('initEngine', () => {
         expect(llmStatusStore.value).toEqual({ state: 'ready', modelId: 'claude' });
     });
 
+    it('falls back to Cloud when native fails, WebGPU is present, but WebLLM also fails', async () => {
+        // Regression: previously the WebLLM init was awaited unguarded inside the
+        // native-failure handler. With WebGPU present, a WebLLM init failure threw
+        // past the cloud branch, so a configured cloud key was never tried.
+        mocks.resolveBackend.mockReturnValue('native');
+        mocks.initNativeEngine.mockRejectedValue(new Error('Native failed'));
+        Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+        mocks.initWebLlmEngine.mockRejectedValue(new Error('WebLLM failed'));
+        mocks.isCloudAvailable.mockReturnValue(true);
+
+        await initEngine();
+
+        expect(mocks.initWebLlmEngine).toHaveBeenCalledTimes(1);
+        expect(mocks.warn).toHaveBeenCalledWith(expect.stringContaining('WebLLM fallback failed'));
+        expect(mocks.info).toHaveBeenCalledWith(expect.stringContaining('Falling back to cloud'));
+        expect(llmStatusStore.value).toEqual({ state: 'ready', modelId: 'claude' });
+    });
+
+    it('throws when native fails, WebGPU is present, WebLLM fails, and cloud is unavailable', async () => {
+        mocks.resolveBackend.mockReturnValue('native');
+        mocks.initNativeEngine.mockRejectedValue(new Error('Native failed'));
+        Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+        mocks.initWebLlmEngine.mockRejectedValue(new Error('WebLLM failed'));
+        mocks.isCloudAvailable.mockReturnValue(false);
+
+        await expect(initEngine()).rejects.toThrow('Native AI engine failed');
+        expect(llmStatusStore.value?.state).toBe('error');
+    });
+
     it('throws if native fails and there are no fallbacks', async () => {
         mocks.resolveBackend.mockReturnValue('native');
         mocks.initNativeEngine.mockRejectedValue(new Error('Boom'));

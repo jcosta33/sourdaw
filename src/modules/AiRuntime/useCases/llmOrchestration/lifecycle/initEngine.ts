@@ -31,6 +31,12 @@ export async function initEngine(modelId?: string): Promise<void> {
             const msg = error instanceof Error ? error.message : String(error);
             logger.warn(`[AI Engine] Native AI backend failed: ${msg}`);
 
+            // Independent fallbacks: WebLLM and cloud are each tried in turn so a
+            // native failure can reach cloud even when WebGPU is present. WebLLM
+            // is wrapped in its own try/catch — previously its init was awaited
+            // unguarded, so a WebLLM failure threw past the cloud branch (which
+            // was only reachable when WebGPU was absent), leaving a configured
+            // cloud key unused on a native failure.
             if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
                 logger.info('[AI Engine] Falling back to WebLLM...');
                 llmStatusStore.set({
@@ -38,8 +44,13 @@ export async function initEngine(modelId?: string): Promise<void> {
                     progress: 0,
                     text: 'Native AI unavailable — loading WebLLM...',
                 });
-                await initWebLlmEngine(modelId);
-                return;
+                try {
+                    await initWebLlmEngine(modelId);
+                    return;
+                } catch (webLlmError) {
+                    const webLlmMsg = webLlmError instanceof Error ? webLlmError.message : String(webLlmError);
+                    logger.warn(`[AI Engine] WebLLM fallback failed: ${webLlmMsg}`);
+                }
             }
 
             if (isCloudAvailable()) {

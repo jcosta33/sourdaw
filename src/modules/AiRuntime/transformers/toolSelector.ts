@@ -4,12 +4,20 @@
  * which overflows a 4-8K context. This selector picks ≤30 tools.
  */
 
+import { type RuntimeActionType } from '../models/RuntimeAction';
 import { type ToolSchema } from '../models/tools/types';
 
 const MAX_TOOLS = 30;
 
-/** Core tools always included — these cover the most common operations. */
-const CORE_TOOLS = new Set([
+/**
+ * Core tools always included — these cover the most common operations.
+ *
+ * Typed as `ReadonlySet<RuntimeActionType>` so every entry must be a real
+ * runtime action name. A typo (e.g. a tool that doesn't exist in
+ * `RuntimeActionType` / `DAW_TOOL_SCHEMAS`) is a compile error rather than a
+ * silently-dropped name that still consumes a `MAX_TOOLS` budget slot.
+ */
+const CORE_TOOLS: ReadonlySet<RuntimeActionType> = new Set<RuntimeActionType>([
     'addTrack',
     'removeTrack',
     'setTrackGain',
@@ -17,14 +25,13 @@ const CORE_TOOLS = new Set([
     'muteTrack',
     'soloTrack',
     'setTempo',
-    'setTimeSignature',
+    'addTimeSignatureChange',
     'togglePlayback',
     'stopPlayback',
     'addClip',
     'removeClip',
     'addDevice',
     'removeDevice',
-    'addMidiNote',
     'addNotes',
 ]);
 
@@ -55,9 +62,8 @@ const KEYWORD_TOOLS: Array<{ keywords: RegExp; tools: string[] }> = [
             'generateDrumPattern',
             'generateMelody',
             'generateChordProgression',
-            'addMidiNote',
-            'quantizeMidi',
-            'transposeMidi',
+            'quantizeNotes',
+            'transposeNotes',
         ],
     },
     {
@@ -70,7 +76,7 @@ const KEYWORD_TOOLS: Array<{ keywords: RegExp; tools: string[] }> = [
     },
     {
         keywords: /tempo|bpm|speed|faster|slower/i,
-        tools: ['setTempo', 'addTempoChange'],
+        tools: ['setTempo'],
     },
     {
         keywords: /automat|envelope|curve|fade/i,
@@ -114,7 +120,7 @@ const KEYWORD_TOOLS: Array<{ keywords: RegExp; tools: string[] }> = [
     },
     {
         keywords: /key|scale|transpose/i,
-        tools: ['transposeMidi', 'detectKey'],
+        tools: ['transposeNotes', 'detectKey'],
     },
 ];
 

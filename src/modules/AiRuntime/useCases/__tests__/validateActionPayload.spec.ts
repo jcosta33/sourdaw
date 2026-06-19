@@ -50,14 +50,99 @@ describe('validateActionPayload / PAYLOAD_VALIDATORS', () => {
     });
 
     describe('joinCollabSession', () => {
-        it('should require inviteCode string', () => {
+        it('should require inviteString and peerName strings (the fields the handler reads)', () => {
             const guard = PAYLOAD_VALIDATORS.joinCollabSession;
             expect(guard).not.toBe('unchecked');
             if (guard === 'unchecked') {
                 return;
             }
-            expect(guard({ inviteCode: 'abc' })).toBe(true);
+            // The RuntimeAction payload + fast path use { inviteString, peerName };
+            // the handler reads inviteString. The old validator checked a
+            // nonexistent `inviteCode` field, so every legitimate join was dropped.
+            expect(guard({ inviteString: 'abc', peerName: 'Ada' })).toBe(true);
+            expect(guard({ inviteString: 'abc' })).toBe(false);
+            expect(guard({ inviteCode: 'abc' })).toBe(false);
             expect(guard({})).toBe(false);
+        });
+    });
+
+    describe('quantizeNotes', () => {
+        it('should require clipId string and gridSize number (the payload field, not `grid`)', () => {
+            const guard = PAYLOAD_VALIDATORS.quantizeNotes;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+            // Payload type + fast path emit { clipId, gridSize }; the old validator
+            // checked `param.grid`, so every legitimate call was dropped.
+            expect(guard({ clipId: 'clip-1', gridSize: 0.25 })).toBe(true);
+            expect(guard({ clipId: 'clip-1', grid: 0.25 })).toBe(false);
+            expect(guard({ clipId: 'clip-1' })).toBe(false);
+        });
+    });
+
+    describe('exportMidi', () => {
+        it('should require clipId string', () => {
+            const guard = PAYLOAD_VALIDATORS.exportMidi;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+            // Payload type is { clipId: string }. The old validator only checked an
+            // optional `trackIds` (a nonexistent field), so {} passed validation.
+            expect(guard({ clipId: 'clip-1' })).toBe(true);
+            expect(guard({})).toBe(false);
+            expect(guard({ clipId: 1 })).toBe(false);
+        });
+    });
+
+    describe('importAudioFile / importMidiFile', () => {
+        it('should be unchecked (payload is undefined — file chosen via native picker)', () => {
+            // Both action types are `payload?: undefined`. A guard demanding
+            // isObj(param) && isString(param.path) rejected every legitimate
+            // (undefined) payload, so the imports were always dropped.
+            expect(PAYLOAD_VALIDATORS.importAudioFile).toBe('unchecked');
+            expect(PAYLOAD_VALIDATORS.importMidiFile).toBe('unchecked');
+        });
+    });
+
+    describe('addClip', () => {
+        it('should require trackId, startBeat, endBeat, and name', () => {
+            const guard = PAYLOAD_VALIDATORS.addClip;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+            expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: 'Clip' })).toBe(true);
+            // name is required by the payload type but was previously unchecked.
+            expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4 })).toBe(false);
+            expect(guard({ trackId: 't-1', startBeat: 0, endBeat: 4, name: 1 })).toBe(false);
+        });
+    });
+
+    describe('restoreDsoSnapshot', () => {
+        it('should accept a bundle that is a Map<string, Uint8Array>', () => {
+            const guard = PAYLOAD_VALIDATORS.restoreDsoSnapshot;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+            const bundle = new Map<string, Uint8Array>([['root', new Uint8Array([1, 2, 3])]]);
+            expect(guard({ bundle })).toBe(true);
+            expect(guard({ bundle: new Map() })).toBe(true);
+        });
+
+        it('should reject a non-Map bundle or a Map with the wrong entry shapes', () => {
+            const guard = PAYLOAD_VALIDATORS.restoreDsoSnapshot;
+            expect(guard).not.toBe('unchecked');
+            if (guard === 'unchecked') {
+                return;
+            }
+            // A hallucinated JSON payload deserializes to a plain object, not a Map.
+            expect(guard({ bundle: { root: [1, 2, 3] } })).toBe(false);
+            expect(guard({})).toBe(false);
+            expect(guard({ bundle: new Map([['root', [1, 2, 3]]]) })).toBe(false);
+            expect(guard({ bundle: new Map([[1, new Uint8Array()]]) })).toBe(false);
         });
     });
 

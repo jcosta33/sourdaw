@@ -52,7 +52,12 @@ const NOTE_NAME_TO_MIDI: Record<string, number> = {
 };
 
 function noteNameToMidi(name: string): number {
-    return NOTE_NAME_TO_MIDI[name] ?? NOTE_NAME_TO_MIDI[name.charAt(0).toUpperCase() + name.slice(1)] ?? 60;
+    const resolved = NOTE_NAME_TO_MIDI[name] ?? NOTE_NAME_TO_MIDI[name.charAt(0).toUpperCase() + name.slice(1)];
+    if (resolved === undefined) {
+        logger.warn(`DSO: unknown note name "${name}", defaulting to middle C (MIDI 60).`);
+        return 60;
+    }
+    return resolved;
 }
 
 // Record-based lookups — values are typed literals, keys are strings the LLM might produce.
@@ -138,23 +143,48 @@ const DRUM_STYLE_MAP: Record<string, DrumPatternStyle> = {
 };
 
 function toMelodyStyle(state: string): MelodyStyle {
-    return MELODY_STYLE_MAP[state.toLowerCase()] ?? 'simple';
+    const resolved = MELODY_STYLE_MAP[state.toLowerCase()];
+    if (resolved === undefined) {
+        logger.warn(`DSO: unknown melody style "${state}", defaulting to "simple".`);
+        return 'simple';
+    }
+    return resolved;
 }
 
 function toScaleType(state: string): ScaleType {
-    return SCALE_MAP[state.toLowerCase()] ?? 'major';
+    const resolved = SCALE_MAP[state.toLowerCase()];
+    if (resolved === undefined) {
+        logger.warn(`DSO: unknown scale type "${state}", defaulting to "major".`);
+        return 'major';
+    }
+    return resolved;
 }
 
 function toChordStyle(state: string): ChordProgressionStyle {
-    return CHORD_STYLE_MAP[state] ?? CHORD_STYLE_MAP[state.toLowerCase()] ?? 'pop';
+    const resolved = CHORD_STYLE_MAP[state] ?? CHORD_STYLE_MAP[state.toLowerCase()];
+    if (resolved === undefined) {
+        logger.warn(`DSO: unknown chord progression style "${state}", defaulting to "pop".`);
+        return 'pop';
+    }
+    return resolved;
 }
 
 function toChordVoicing(state: string): ChordVoicing {
-    return CHORD_VOICING_MAP[state.toLowerCase()] ?? 'close';
+    const resolved = CHORD_VOICING_MAP[state.toLowerCase()];
+    if (resolved === undefined) {
+        logger.warn(`DSO: unknown chord voicing "${state}", defaulting to "close".`);
+        return 'close';
+    }
+    return resolved;
 }
 
 function toDrumStyle(state: string): DrumPatternStyle {
-    return DRUM_STYLE_MAP[state.toLowerCase()] ?? 'rock';
+    const resolved = DRUM_STYLE_MAP[state.toLowerCase()];
+    if (resolved === undefined) {
+        logger.warn(`DSO: unknown drum style "${state}", defaulting to "rock".`);
+        return 'rock';
+    }
+    return resolved;
 }
 
 /**
@@ -275,6 +305,22 @@ function bestMatch<TItem>(
 // ── Name resolution ──────────────────────────────────────────────────────────
 
 /**
+ * Track-targeting ops for which an unresolved `track_id` may be auto-created.
+ * These materialize new content on a target track, so the LLM naming a track
+ * that does not exist yet is a legitimate "create it" intent. Every other
+ * track-targeting op (remove_track, rename_track, mute_track, solo_track,
+ * arm_track, color_track, reorder_track, remove_device) references an existing
+ * track — a miss there is a resolution error, never a silent create.
+ */
+const ADDITIVE_TRACK_OPS: ReadonlySet<Dso['op']> = new Set<Dso['op']>([
+    'add_clip',
+    'insert_device',
+    'generate_melody',
+    'generate_chords',
+    'generate_drums',
+]);
+
+/**
  * Resolve name-based references in DSOs to actual store IDs.
  * Uses fuzzy matching to handle typos and partial names.
  * Mutates the DSO objects in-place.
@@ -347,8 +393,11 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
                 if (isSelectedRef && selectedTrack) {
                     // Resolve to the actually selected track
                     (dso as Record<string, unknown>).track_id = selectedTrack.id;
-                } else {
-                    // Fallback: auto-create this track
+                } else if (ADDITIVE_TRACK_OPS.has(dso.op)) {
+                    // Fallback: auto-create this track — only for additive ops that
+                    // legitimately materialize content on a (possibly new) target
+                    // track. A miss on a non-additive op (remove_*/mute_*/etc.)
+                    // must NOT silently create the track it was meant to address.
                     const newId = `track-${crypto.randomUUID().slice(0, 8)}`;
                     const kindFallback =
                         dso.op === 'generate_drums' || lowerName.includes('drum') || lowerName.includes('midi')
@@ -365,6 +414,10 @@ export function resolveDsoNames(dsos: Dso[]): DsoValidationError[] {
                     mockTracks.push({ id: newId, name: dso.track_id });
                     (dso as Record<string, unknown>).track_id = newId;
                     index++;
+                } else {
+                    // Non-additive op referencing a track that does not exist:
+                    // surface a resolution error instead of fabricating a track.
+                    errors.push({ dso, reason: `Could not find track "${dso.track_id}"` });
                 }
             }
         }
@@ -774,10 +827,9 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
         }
 
         case 'set_tempo': {
-            await executeAppAction(
-                { type: 'setTempo', payload: { bpm: Math.max(20, Math.min(999, dso.bpm)) } },
-                DSO_EXEC_OPTIONS
-            );
+            // No clamp here: validateDsos already rejects bpm outside [20, 999]
+            // before execution, so dso.bpm is in range by the time we reach this.
+            await executeAppAction({ type: 'setTempo', payload: { bpm: dso.bpm } }, DSO_EXEC_OPTIONS);
             break;
         }
 
@@ -936,24 +988,41 @@ async function executeSingleDso(dso: Dso, context: DsoExecContext): Promise<void
     }
 }
 
+/** A DSO that threw during execution, with the surfaced reason. */
+export type DsoExecutionFailure = {
+    op: Dso['op'];
+    reason: string;
+};
+
+/** Outcome of an `executeDsos` run: which ops applied, which threw. */
+export type DsoExecutionResult = {
+    summaries: string[];
+    failures: DsoExecutionFailure[];
+};
+
 /**
  * Execute a list of validated DSOs against the DAW stores.
- * Returns human-readable summaries of each applied operation.
+ * Returns human-readable summaries of each applied operation alongside the
+ * failures of any DSO that threw — callers must surface failures rather than
+ * report unconditional success.
  */
-export async function executeDsos(dsos: Dso[]): Promise<string[]> {
+export async function executeDsos(dsos: Dso[]): Promise<DsoExecutionResult> {
     const context: DsoExecContext = { lastInsertedDeviceId: null };
     const summaries: string[] = [];
+    const failures: DsoExecutionFailure[] = [];
 
     for (const dso of dsos) {
         try {
             await executeSingleDso(dso, context);
             summaries.push(describeDso(dso));
         } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
             logger.warn(`Failed to execute DSO ${dso.op}:`, error);
+            failures.push({ op: dso.op, reason });
         }
     }
 
-    return summaries;
+    return { summaries, failures };
 }
 
 // ── Human-readable summaries ─────────────────────────────────────────────────

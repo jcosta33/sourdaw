@@ -3,7 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { type RuntimeAction, type RuntimeActionType } from '../models/RuntimeAction';
 
-import { PAYLOAD_VALIDATORS } from './validateActionPayload';
+import { PAYLOAD_VALIDATORS, type PayloadValidator } from './validateActionPayload';
 
 // `satisfies Record<RuntimeActionType, true>` below forces the compiler to
 // verify this list contains every RuntimeActionType — if a new action is
@@ -266,7 +266,13 @@ export const validateActions = inject({ logger })(
                 // decision about whether its payload is validated.
                 const validator = PAYLOAD_VALIDATORS[action.type];
                 if (validator !== 'unchecked') {
-                    const guard = validator as (p: unknown) => boolean;
+                    // Keep the type-guard signature so the narrowing isn't
+                    // discarded: indexing PAYLOAD_VALIDATORS with the `action.type`
+                    // union yields a union of `PayloadValidator<…>`; widen only the
+                    // *parameter* to `unknown` (validators accept `unknown` already)
+                    // while preserving the `payload is …` predicate. A bare
+                    // `(p: unknown) => boolean` cast would throw away the guard.
+                    const guard = validator as PayloadValidator<RuntimeActionType>;
                     if (!guard(action.payload)) {
                         logger.warn(`Invalid payload for action ${action.type}`);
                         return false;

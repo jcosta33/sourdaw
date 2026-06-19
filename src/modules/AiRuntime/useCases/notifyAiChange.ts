@@ -14,6 +14,13 @@ export type AiChangeNotification = {
 
 let changeListeners: ((change: AiChangeNotification) => void)[] = [];
 
+/**
+ * Monotonic counter combined with the timestamp so two notifications emitted
+ * within the same millisecond receive distinct ids (a React list keyed on id
+ * would otherwise collapse the second — observable during batch DSO execution).
+ */
+let notificationSeq = 0;
+
 export function subscribeAiChangeNotification(cb: (change: AiChangeNotification) => void): () => void {
     changeListeners.push(cb);
     return () => {
@@ -23,7 +30,7 @@ export function subscribeAiChangeNotification(cb: (change: AiChangeNotification)
 
 export function notifyAiChange(summary: string, details: string[]): void {
     const notification: AiChangeNotification = {
-        id: `ai-change-${Date.now()}`,
+        id: `ai-change-${Date.now()}-${notificationSeq++}`,
         summary,
         details,
         timestamp: Date.now(),
