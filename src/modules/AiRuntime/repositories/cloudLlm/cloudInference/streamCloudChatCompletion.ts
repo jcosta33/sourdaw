@@ -38,6 +38,15 @@ export async function streamCloudChatCompletion(
             { signal: controller.signal }
         );
 
+        // Stream-error handling: the Anthropic SDK's MessageStream event union
+        // (RawMessageStreamEvent) has NO 'error' member — it is only
+        // message_start | message_delta | message_stop | content_block_{start,delta,stop}.
+        // An SDK stream error (network drop, API error, abort) is surfaced by the
+        // async iterator *rejecting*, so it propagates out of this `for await` as a
+        // thrown exception and is caught by the caller's try/catch (sendChatMessage).
+        // There is therefore no explicit 'error' branch to add here — guarding for
+        // `event.type === 'error'` would be a dead branch that can never run. The
+        // `finally` below still runs on the throw, unregistering the controller.
         for await (const event of stream) {
             // Text tokens are the visible output.
             if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {

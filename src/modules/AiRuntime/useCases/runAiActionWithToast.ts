@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { notifyAiChange } from './notifyAiChange';
@@ -17,7 +18,12 @@ export async function runAiActionWithToast(
     try {
         await action();
         notifyAiChange(messages.successMsg, messages.successDetails);
-    } catch {
-        notifyUser(messages.failMsg, 'error');
+    } catch (error) {
+        // The previous bare `catch {}` neither bound nor logged the cause, so a
+        // failed action was swallowed: no diagnostic for developers and a toast
+        // with no reason for the user. Log the cause and surface it in the toast.
+        const cause = error instanceof Error ? error : new Error(String(error));
+        logger.error(cause);
+        notifyUser(`${messages.failMsg}: ${cause.message}`, 'error');
     }
 }

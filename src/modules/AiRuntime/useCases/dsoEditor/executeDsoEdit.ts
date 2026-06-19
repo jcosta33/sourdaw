@@ -48,7 +48,7 @@ export type DsoEditResult = {
  */
 export const executeDsoEdit = inject({ logger })(
     ({ logger }) =>
-        async function executeDsoEdit(userRequest: string): Promise<DsoEditResult> {
+        async function executeDsoEdit(userRequest: string, signal?: AbortSignal): Promise<DsoEditResult> {
             const backend = resolveBackend();
 
             if (!isDsoBackendAvailable()) {
@@ -89,7 +89,7 @@ export const executeDsoEdit = inject({ logger })(
 
             try {
                 // 4. Invoke LLM — schema-constrained for native, regular for others
-                const rawResponse = await invokeLlm(backend, system, user, assistantMsgId);
+                const rawResponse = await invokeLlm(backend, system, user, assistantMsgId, signal);
 
                 // 5. Extract reasoning tokens (Qwen3 uses <think>...</think>) and parse EditPlan
                 const { reasoning, cleanResponse } = extractReasoning(rawResponse);
@@ -445,7 +445,13 @@ async function commitDsos(
 
 // ── LLM invocation per backend ───────────────────────────────────────────────
 
-async function invokeLlm(backend: string, system: string, user: string, chatMsgId: string): Promise<string> {
+async function invokeLlm(
+    backend: string,
+    system: string,
+    user: string,
+    chatMsgId: string,
+    signal?: AbortSignal
+): Promise<string> {
     let tokenCount = 0;
 
     function onProgress(): void {
@@ -467,10 +473,16 @@ async function invokeLlm(backend: string, system: string, user: string, chatMsgI
             { role: 'system' as const, content: system },
             { role: 'user' as const, content: user },
         ];
-        await streamNativeCompletion(messages, (chunk) => {
-            result += chunk;
-            onProgress();
-        });
+        await streamNativeCompletion(
+            messages,
+            (chunk) => {
+                result += chunk;
+                onProgress();
+            },
+            // Thread the abort signal so a stopped DSO edit tears the dev-mode SSE
+            // stream down at the source instead of draining the whole response.
+            { signal }
+        );
         return result;
     }
 

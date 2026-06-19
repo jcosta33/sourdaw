@@ -360,7 +360,12 @@ export async function sendChatMessage(userText: string): Promise<void> {
                     const parsed = thinkParser.push(token);
                     updateChatMessage(assistantMsgId, { content: parsed.content, reasoning: parsed.reasoning });
                 },
-                { temperature: 0.7, maxTokens: 2048 }
+                // Thread the abort signal so Stop tears the stream down at the
+                // source: in browser dev mode the SSE loop breaks immediately
+                // instead of draining the whole response, and in native mode the
+                // watchdog race is unblocked. Without this, only the per-token
+                // throw above could stop it — and only while tokens keep arriving.
+                { temperature: 0.7, maxTokens: 2048, signal: aborter.signal }
             );
         } else if (backend === 'cloud') {
             // Cloud: streaming completion via Claude API

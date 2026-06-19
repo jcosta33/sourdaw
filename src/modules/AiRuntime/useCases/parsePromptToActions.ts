@@ -76,7 +76,7 @@ export const parsePromptToActions = inject({ logger })(
             // Cloud is NOT used for DSO planning (chat only). No model fallback.
             if (isDsoBackendAvailable()) {
                 try {
-                    const result = await executeDsoEdit(prompt);
+                    const result = await executeDsoEdit(prompt, signal);
 
                     if (signal?.aborted) {
                         return { actions: [], confidence: 0, rawText: prompt, requiresConfirmation: false };
