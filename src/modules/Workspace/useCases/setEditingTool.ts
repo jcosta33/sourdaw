@@ -1,4 +1,5 @@
-import { getWorkspaceState, updateWorkspaceState } from '../repositories/workspace';
+import { getWorkspaceState } from '../repositories/getWorkspaceState';
+import { updateWorkspaceState } from '../repositories/updateWorkspaceState';
 
 import { type EditingTool } from './workspaceQueries/helpers';
 

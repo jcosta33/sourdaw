@@ -1,4 +1,5 @@
-import { getWorkspaceState, updateWorkspaceState } from '../../../repositories/workspace';
+import { getWorkspaceState } from '../../../repositories/getWorkspaceState';
+import { updateWorkspaceState } from '../../../repositories/updateWorkspaceState';
 
 export const toggleWorkspaceMode = (): void => {
     const current = getWorkspaceState();

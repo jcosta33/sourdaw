@@ -1,4 +1,5 @@
-import { getWorkspaceState, updateWorkspaceState } from '../../repositories/workspace';
+import { getWorkspaceState } from '../../repositories/getWorkspaceState';
+import { updateWorkspaceState } from '../../repositories/updateWorkspaceState';
 
 export function setAutomationSubLanes(trackId: string, paramIds: string[]): void {
     const current = getWorkspaceState();

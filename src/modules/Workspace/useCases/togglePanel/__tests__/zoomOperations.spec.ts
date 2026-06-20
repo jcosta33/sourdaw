@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { defaultWorkspaceState } from '../../../models/WorkspaceState';
-import * as workspaceRepo from '../../../repositories/workspace';
+import * as workspaceRepo from '../../../repositories/getWorkspaceState';
 import { cycleAutomationVisibility } from '../zoomOperations/cycleAutomationVisibility';
 import { onScrollToPlayhead } from '../zoomOperations/onScrollToPlayhead';
 import { onZoomToFit } from '../zoomOperations/onZoomToFit';
@@ -20,7 +20,7 @@ vi.mock('#/app/registerDependencies', () => ({
     eventBus: mocks.mockEventBus,
 }));
 
-vi.mock('../../../repositories/workspace', () => ({
+vi.mock('../../../repositories/getWorkspaceState', () => ({
     getWorkspaceState: vi.fn(),
 }));
 

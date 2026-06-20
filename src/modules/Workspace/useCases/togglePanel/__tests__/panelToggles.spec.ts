@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import { defaultWorkspaceState } from '../../../models/WorkspaceState';
-import { getWorkspaceState, updateWorkspaceState } from '../../../repositories/workspace';
+import { getWorkspaceState } from '../../../repositories/getWorkspaceState';
+import { updateWorkspaceState } from '../../../repositories/updateWorkspaceState';
 import { clearClipSelection } from '../panelToggles/clearClipSelection';
 import { closeBranchManager } from '../panelToggles/closeBranchManager';
 import { closeCollaborationPanel } from '../panelToggles/closeCollaborationPanel';
@@ -36,8 +37,10 @@ import { toggleUndoHistory } from '../panelToggles/toggleUndoHistory';
 import { toggleVirtualKeyboard } from '../panelToggles/toggleVirtualKeyboard';
 import { toggleWorkspaceMode } from '../panelToggles/toggleWorkspaceMode';
 
-vi.mock('#/modules/Workspace/repositories/workspace', () => ({
+vi.mock('#/modules/Workspace/repositories/getWorkspaceState', () => ({
     getWorkspaceState: vi.fn(),
+}));
+vi.mock('#/modules/Workspace/repositories/updateWorkspaceState', () => ({
     updateWorkspaceState: vi.fn(),
 }));
 

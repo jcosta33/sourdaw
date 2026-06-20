@@ -1,4 +1,4 @@
-import { updateWorkspaceState } from '../../../repositories/workspace';
+import { updateWorkspaceState } from '../../../repositories/updateWorkspaceState';
 
 export const closeBranchManager = (): void => {
     updateWorkspaceState({ branchManagerOpen: false });

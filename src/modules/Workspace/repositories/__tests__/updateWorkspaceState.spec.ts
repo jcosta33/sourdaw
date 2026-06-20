@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { workspaceStore } from '../../stores/workspaceStore';
-import { getWorkspaceState, updateWorkspaceState } from '../workspace';
+import { getWorkspaceState } from '../getWorkspaceState';
+import { updateWorkspaceState } from '../updateWorkspaceState';
 
 import type { WorkspaceState } from '../../models/WorkspaceState';
 
@@ -19,14 +20,10 @@ vi.mock('../../stores/workspaceStore', () => {
     };
 });
 
-describe('workspace repository', () => {
+describe('updateWorkspaceState repository', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         workspaceStore.set({ mode: 'arrange' } as WorkspaceState);
-    });
-
-    it('getWorkspaceState should return store value', () => {
-        expect(getWorkspaceState()?.mode).toBe('arrange');
     });
 
     it('updateWorkspaceState should merge patch', () => {

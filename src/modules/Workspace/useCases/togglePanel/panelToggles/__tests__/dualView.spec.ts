@@ -8,8 +8,10 @@ const mocks = vi.hoisted(() => ({
     updateWorkspaceState: vi.fn<(...args: unknown[]) => void>(),
 }));
 
-vi.mock('../../../../repositories/workspace', () => ({
+vi.mock('../../../../repositories/getWorkspaceState', () => ({
     getWorkspaceState: () => workspaceStore.value,
+}));
+vi.mock('../../../../repositories/updateWorkspaceState', () => ({
     updateWorkspaceState: mocks.updateWorkspaceState,
 }));
 

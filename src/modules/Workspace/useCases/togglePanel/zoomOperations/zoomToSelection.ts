@@ -2,7 +2,7 @@ import { eventBus } from '#/app/registerDependencies';
 import { inject } from '#/infra/di/inject';
 import { trackStore } from '#/modules/Arrangement/stores';
 
-import { getWorkspaceState } from '../../../repositories/workspace';
+import { getWorkspaceState } from '../../../repositories/getWorkspaceState';
 
 export const zoomToSelection = inject({ eventBus })(
     ({ eventBus }) =>

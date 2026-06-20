@@ -5,11 +5,13 @@ import { toggleTimeDisplayMode } from '../toggleTimeDisplayMode';
 
 const mocks = vi.hoisted(() => ({
     getWorkspaceState: vi.fn<() => WorkspaceState | null>(),
-    updateWorkspaceState: vi.fn<typeof import('../../../../repositories/workspace').updateWorkspaceState>(),
+    updateWorkspaceState: vi.fn<typeof import('../../../../repositories/updateWorkspaceState').updateWorkspaceState>(),
 }));
 
-vi.mock('../../../../repositories/workspace', () => ({
+vi.mock('../../../../repositories/getWorkspaceState', () => ({
     getWorkspaceState: mocks.getWorkspaceState,
+}));
+vi.mock('../../../../repositories/updateWorkspaceState', () => ({
     updateWorkspaceState: mocks.updateWorkspaceState,
 }));
 

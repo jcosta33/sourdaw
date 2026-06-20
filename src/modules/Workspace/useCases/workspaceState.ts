@@ -1,4 +1,4 @@
-import { updateWorkspaceState as updateWorkspaceStateRepo } from '../repositories/workspace';
+import { updateWorkspaceState as updateWorkspaceStateRepo } from '../repositories/updateWorkspaceState';
 
 import { type WorkspaceState } from './workspaceQueries/helpers';
 

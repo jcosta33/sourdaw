@@ -1,4 +1,4 @@
-import { getWorkspaceState } from '../../repositories/workspace';
+import { getWorkspaceState } from '../../repositories/getWorkspaceState';
 
 import { setAutomationSubLanes } from './helpers';
 

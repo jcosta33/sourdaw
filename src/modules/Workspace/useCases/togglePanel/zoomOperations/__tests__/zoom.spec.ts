@@ -15,7 +15,7 @@ vi.mock('#/app/registerDependencies', () => ({
     eventBus: mocks.eventBus,
 }));
 
-vi.mock('../../../../repositories/workspace', () => ({
+vi.mock('../../../../repositories/getWorkspaceState', () => ({
     getWorkspaceState: mocks.getWorkspaceState,
 }));
 

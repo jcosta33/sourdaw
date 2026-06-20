@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     repoUpdate: vi.fn(),
 }));
 
-vi.mock('#/modules/Workspace/repositories/workspace', () => ({
+vi.mock('#/modules/Workspace/repositories/updateWorkspaceState', () => ({
     updateWorkspaceState: mocks.repoUpdate,
 }));
 
