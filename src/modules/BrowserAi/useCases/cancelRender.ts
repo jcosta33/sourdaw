@@ -8,7 +8,7 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 
 import { inferenceWorkerBridge } from '../repositories/inferenceWorkerBridge';
-import { clearActiveRender } from '../stores/inferenceProgressStore';
+import { clearActiveRender, inferenceProgressStore } from '../stores/inferenceProgressStore';
 import { cancelQueuedRender, updateRenderStatus, renderQueueStore } from '../stores/renderQueueStore';
 
 type CancelRenderInput = {
@@ -21,15 +21,24 @@ export const cancelRender = inject({ logger })(
         function cancelRender({ phraseId, requestId }: CancelRenderInput): void {
             logger.info(`[BrowserAi] Cancelling render: phrase=${phraseId}`);
 
-            // Determine which worker is running this render and terminate it.
-            // Termination rejects all in-flight promises and allows respawn on next use.
-            const entry = renderQueueStore.value?.entries.find((event) => event.phraseId === phraseId);
-            if (entry?.pipeline === 'ddsp') {
-                inferenceWorkerBridge.terminateTfjsWorker();
-            } else {
+            // Resolve the pipeline for this render. Prefer the active-render store
+            // (the source of truth for what is *currently* on a worker); fall back
+            // to the queue entry. A stale lookup or a missing entry must NOT default
+            // to terminating the ONNX worker — that would kill unrelated DiffSinger/
+            // Kokoro renders. When the pipeline is unknown, cancel nothing on the
+            // worker side and only unwind the queue/status bookkeeping below.
+            const activeRender = inferenceProgressStore.value?.activeRenders[requestId];
+            const queueEntry = renderQueueStore.value?.entries.find((event) => event.phraseId === phraseId);
+            const pipeline = activeRender?.pipeline ?? queueEntry?.pipeline;
+
+            // Cancel only THIS request on its worker — sibling renders are untouched.
+            if (pipeline === 'ddsp') {
+                inferenceWorkerBridge.cancelTfjsRequest(requestId);
+            } else if (pipeline === 'kokoro' || pipeline === 'diffsinger') {
                 // kokoro and diffsinger both run on the ONNX worker
-                inferenceWorkerBridge.terminateOnnxWorker();
+                inferenceWorkerBridge.cancelOnnxRequest(requestId);
             }
+            // Unknown pipeline → no worker teardown (avoid collateral cancellation).
 
             cancelQueuedRender(phraseId);
             clearActiveRender(requestId);

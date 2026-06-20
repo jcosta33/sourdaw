@@ -224,9 +224,36 @@ export const inferenceWorkerBridge = {
     },
 
     /**
+     * Cancel a single in-flight ONNX render without disturbing sibling renders.
+     *
+     * Rejects only the targeted request's promise and forgets it. ORT has no
+     * abortable run primitive and the ONNX worker is shared across renders, so
+     * we only terminate (which is what actually stops compute) when no other
+     * ONNX render is in flight. When siblings remain, the cancelled request's
+     * eventual worker response is silently dropped (the message handler ignores
+     * responses for requestIds no longer in pendingRequests).
+     *
+     * Used by cancelRender to stop a DiffSinger/Kokoro render mid-flight.
+     */
+    cancelOnnxRequest(requestId: string): void {
+        const pending = workerState.onnx.pendingRequests.get(requestId);
+        if (pending) {
+            workerState.onnx.pendingRequests.delete(requestId);
+            pending.reject(new Error('Render cancelled'));
+        }
+        // Only tear down the shared worker if this was the last in-flight render —
+        // otherwise we'd kill compute (and reject promises) for sibling renders.
+        if (workerState.onnx.pendingRequests.size === 0 && workerState.onnx.worker) {
+            workerState.onnx.worker.terminate();
+            workerState.onnx.worker = null;
+            workerState.onnx.initialized = false;
+        }
+    },
+
+    /**
      * Terminate the ONNX worker immediately, rejecting all in-flight requests.
      * The worker is respawned automatically on the next inference call.
-     * Used by cancelRender to stop DiffSinger/Kokoro inference mid-flight.
+     * Used by terminateAll for a hard reset of all ONNX inference.
      */
     terminateOnnxWorker(): void {
         for (const { reject } of workerState.onnx.pendingRequests.values()) {
@@ -241,8 +268,29 @@ export const inferenceWorkerBridge = {
     },
 
     /**
+     * Cancel a single in-flight DDSP (TF.js) render without disturbing siblings.
+     * Mirror of cancelOnnxRequest — see that method for the rationale.
+     */
+    cancelTfjsRequest(requestId: string): void {
+        const pending = workerState.tfjs.pendingRequests.get(requestId);
+        if (pending) {
+            workerState.tfjs.pendingRequests.delete(requestId);
+            pending.reject(new Error('Render cancelled'));
+        }
+        if (workerState.tfjs.pendingRequests.size === 0 && workerState.tfjs.worker) {
+            workerState.tfjs.worker.terminate();
+            workerState.tfjs.worker = null;
+            workerState.tfjs.initialized = false;
+            if (workerState.tfjsIdleTimer !== null) {
+                clearTimeout(workerState.tfjsIdleTimer);
+                workerState.tfjsIdleTimer = null;
+            }
+        }
+    },
+
+    /**
      * Terminate the TF.js worker immediately, rejecting all in-flight requests.
-     * Used by cancelRender to stop DDSP inference mid-flight.
+     * Used by terminateAll for a hard reset of all DDSP inference.
      */
     terminateTfjsWorker(): void {
         for (const { reject } of workerState.tfjs.pendingRequests.values()) {

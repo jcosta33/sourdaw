@@ -20,6 +20,7 @@ import { readModel, readRenderCache, writeRenderCache, computeRenderCacheKey } f
 import { applyFades, normalizePeak } from '../services/audioResampler';
 import { type MidiNote } from '../services/midiToDdspInput';
 import { phonemize } from '../services/phonemizer';
+import { capabilityStore } from '../stores/capabilityStore';
 import { startActiveRender, clearActiveRender } from '../stores/inferenceProgressStore';
 import { enqueueRender, markRenderComplete, updateRenderStatus } from '../stores/renderQueueStore';
 
@@ -101,12 +102,15 @@ export const renderDiffSingerPhrase = inject({
 
             // Compute cache key — must include pitch, timing, and depth so that
             // different note sequences with the same pitches don't collide.
+            // Hash full-precision timing: rounding to whole milliseconds let two
+            // edits differing by <0.5 ms hash to the same key, so a sub-millisecond
+            // nudge silently reused the stale render instead of invalidating it.
             const inputData = new TextEncoder().encode(
                 `${lyrics}:${voicebankId}:${JSON.stringify(
                     notes.map((node) => ({
                         p: node.pitch,
-                        s: Math.round(node.startSec * 1000),
-                        d: Math.round(node.durationSec * 1000),
+                        s: node.startSec,
+                        d: node.durationSec,
                     }))
                 )}:${String(depth)}`
             ).buffer;
@@ -148,8 +152,14 @@ export const renderDiffSingerPhrase = inject({
             try {
                 updateRenderStatus(phraseId, 'rendering-browser');
 
-                // Check Tauri non-Chrome platform — should have been caught at UI level
-                if (isTauri() && typeof navigator !== 'undefined' && !('gpu' in navigator)) {
+                // Check Tauri non-Chrome platform — should have been caught at UI level.
+                // Consult the capability store (the single source of truth populated by
+                // capability detection at init) rather than re-probing navigator.gpu, which
+                // would duplicate and drift from that decision.
+                const capabilityState = capabilityStore.value;
+                const platformUnsupported =
+                    capabilityState?.phase === 'done' && capabilityState.report.capability === 'unsupported-platform';
+                if (isTauri() && platformUnsupported) {
                     throw new Error(
                         'DiffSinger browser rendering not available on this platform. Use native rendering.'
                     );

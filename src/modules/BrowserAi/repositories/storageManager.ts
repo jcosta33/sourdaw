@@ -62,12 +62,27 @@ type WriteRenderCacheOutput = Promise<void>;
 
 type GetStorageStatusOutput = Promise<StorageStatus>;
 
+/**
+ * A genuine cache miss surfaces as a DOMException with name 'NotFoundError'
+ * (the directory or file does not exist). Any other error — a permission
+ * failure, a corrupt OPFS, or transient IO — must NOT be silently reported as
+ * "not cached", or a recoverable fault would masquerade as an absent model.
+ */
+function isNotFoundError(error: unknown): boolean {
+    return error instanceof DOMException && error.name === 'NotFoundError';
+}
+
 export const checkModelCached = inject({ logger })(
     ({ logger }) =>
         async function checkModelCached({ family, modelId }: CheckModelCachedInput): CheckModelCachedOutput {
             try {
                 const root = await navigator.storage.getDirectory();
-                const modelsDir = await root.getDirectoryHandle('models', { create: false }).catch(() => null);
+                const modelsDir = await root.getDirectoryHandle('models', { create: false }).catch((error: unknown) => {
+                    if (isNotFoundError(error)) {
+                        return null;
+                    }
+                    throw error;
+                });
                 if (!modelsDir) {
                     return false;
                 }
@@ -76,17 +91,30 @@ export const checkModelCached = inject({ logger })(
                 const fileName = parts.pop()!;
                 let dir: FileSystemDirectoryHandle = modelsDir;
                 for (const part of parts) {
-                    const next = await dir.getDirectoryHandle(part, { create: false }).catch(() => null);
+                    const next = await dir.getDirectoryHandle(part, { create: false }).catch((error: unknown) => {
+                        if (isNotFoundError(error)) {
+                            return null;
+                        }
+                        throw error;
+                    });
                     if (!next) {
                         return false;
                     }
                     dir = next;
                 }
                 await dir.getFileHandle(fileName, { create: false });
+                logger.debug(`[StorageManager] Model cached: ${family}/${modelId}`);
                 return true;
-            } catch {
-                logger.info(`[StorageManager] Model not cached: ${family}/${modelId}`);
-                return false;
+            } catch (error) {
+                if (isNotFoundError(error)) {
+                    // True miss: the file does not exist.
+                    logger.debug(`[StorageManager] Model not cached: ${family}/${modelId}`);
+                    return false;
+                }
+                // Permission failure / corrupt OPFS / transient IO — surface it rather
+                // than collapsing it into a false "not cached" result.
+                logger.warn(`[StorageManager] checkModelCached failed for ${family}/${modelId}: ${String(error)}`);
+                throw error;
             }
         }
 );
@@ -109,17 +137,28 @@ export const readModel = inject({ logger })(
         }
 );
 
+/**
+ * Open a main-thread writable stream for a model file, creating intermediate
+ * directories as needed. Callers stream chunks straight to OPFS instead of
+ * accumulating the whole model in memory first.
+ *
+ * Use `createWritable` for main-thread writes (no sync access handles on main thread).
+ */
+export async function createModelWritable({ family, modelId }: ModelPath): Promise<FileSystemWritableFileStream> {
+    const root = await navigator.storage.getDirectory();
+    const modelsDir = await root.getDirectoryHandle('models', { create: true });
+    const fileHandle = await resolveFileHandle(modelsDir, toOpfsPath({ family, modelId }), { create: true });
+    return fileHandle.createWritable();
+}
+
 export const writeModel = inject({ logger })(
     ({ logger }) =>
         async function writeModel({ family, modelId, data }: WriteModelInput): WriteModelOutput {
-            const root = await navigator.storage.getDirectory();
-            const modelsDir = await root.getDirectoryHandle('models', { create: true });
-            const fileHandle = await resolveFileHandle(modelsDir, toOpfsPath({ family, modelId }), { create: true });
-            // Use createWritable for main-thread writes (no sync access handles on main thread)
-            // slice(0) ensures we have a plain ArrayBuffer (not SharedArrayBuffer)
-            const safeData = data.slice(0);
-            const writable = await fileHandle.createWritable();
-            await writable.write(safeData);
+            // `data` is a plain ArrayBuffer by contract, so it can be written in place.
+            // The previous unconditional `data.slice(0)` doubled the heap for 100+ MB
+            // models for no benefit — createWritable().write() accepts an ArrayBuffer directly.
+            const writable = await createModelWritable({ family, modelId });
+            await writable.write(data);
             await writable.close();
             logger.info(`[StorageManager] Wrote model ${family}/${modelId} (${String(data.byteLength)} bytes)`);
         }
@@ -202,7 +241,15 @@ export const getStorageStatus = inject({ logger })(
                     return size;
                 }
 
-                usedBytes = await measureDir(root);
+                // Measure only the directories this module owns. Walking the entire OPFS
+                // root would count every other module's bytes (project files, render
+                // caches outside ours, etc.) against the BrowserAi cache budget.
+                for (const subdir of ['models', 'renders']) {
+                    const dir = await root.getDirectoryHandle(subdir, { create: false }).catch(() => null);
+                    if (dir) {
+                        usedBytes += await measureDir(dir);
+                    }
+                }
             } catch (error) {
                 logger.warn(`[StorageManager] Failed to measure storage: ${String(error)}`);
             }

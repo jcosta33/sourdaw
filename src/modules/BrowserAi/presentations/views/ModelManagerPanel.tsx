@@ -4,33 +4,15 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
 import { DawReadoutRow } from '#/components/daw/DawReadoutRow';
 import { DawUtilitySection } from '#/components/daw/DawUtilitySection';
+import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
 
 import { type DiffSingerVoicebank } from '../../models/BrowserModel';
-import {
-    DDSP_INSTRUMENT_CATALOG,
-    NSF_HIFIGAN_URL,
-    NSF_HIFIGAN_SIZE_BYTES,
-    KOKORO_MODEL_URL,
-    KOKORO_MODEL_SIZE_BYTES,
-} from '../../models/ddspInstrumentCatalog';
+import { DDSP_INSTRUMENT_CATALOG } from '../../models/ddspInstrumentCatalog';
 import { modelRegistryStore } from '../../stores/modelRegistryStore';
 import { downloadModel } from '../../useCases/downloadModel';
+import { KOKORO_MODEL_ENTRY, NSF_HIFIGAN_VOCODER } from '../../useCases/initBrowserAi';
 import { removeModel } from '../../useCases/removeModel';
-
-const KOKORO_MODEL_SPEC = {
-    modelId: 'kokoro-82m-q8',
-    family: 'kokoro',
-    url: KOKORO_MODEL_URL,
-    sizeBytes: KOKORO_MODEL_SIZE_BYTES,
-};
-
-const VOCODER_MODEL_SPEC = {
-    modelId: 'nsf-hifigan-44k',
-    family: 'diffsinger/vocoder',
-    url: NSF_HIFIGAN_URL,
-    sizeBytes: NSF_HIFIGAN_SIZE_BYTES,
-};
 
 function formatBytes(bytes: number): string {
     if (bytes < 1024 * 1024) {
@@ -67,7 +49,12 @@ function ModelAction({ id, name, family, url, sizeBytes, status, downloadProgres
         void downloadModel({ modelId: id, family, url, sizeBytes });
     };
     const handleRemove = (): void => {
-        void removeModel({ modelId: id, family });
+        // Surface a failed delete instead of letting the rejection vanish into a
+        // bare void; without this a failed OPFS delete leaves the model showing
+        // "Ready" with no feedback.
+        void removeModel({ modelId: id, family }).catch((error: unknown) => {
+            logger.error(new Error(`[BrowserAi] Failed to remove model "${id}"`, { cause: error }));
+        });
     };
 
     if (status === 'downloading') {
@@ -151,9 +138,15 @@ function VoicebankAction({ voicebank }: VoicebankActionProps): ReactElement {
         // This matches how renderDiffSingerPhrase reads sub-models via readModel().
         // model.family is the hyphen-typed ModelFamily enum value — do not use it here.
         const opfsFamily = `diffsinger/${voicebank.id}`;
-        for (const key of ['linguistic', 'dur', 'pitch', 'variance', 'acoustic'] as const) {
-            void removeModel({ modelId: key, family: opfsFamily });
-        }
+        const keys = ['linguistic', 'dur', 'pitch', 'variance', 'acoustic'] as const;
+        // Await all five deletes together so a failed delete surfaces instead of
+        // vanishing into an un-awaited promise, and so the storage-usage poll each
+        // removeModel runs reflects a fully-removed voicebank rather than a partial one.
+        void Promise.all(keys.map((key) => removeModel({ modelId: key, family: opfsFamily }))).catch(
+            (error: unknown) => {
+                logger.error(new Error(`[BrowserAi] Failed to remove voicebank "${voicebank.id}"`, { cause: error }));
+            }
+        );
     };
 
     if (voicebank.status === 'downloading') {
@@ -294,14 +287,14 @@ export function ModelManagerPanel(): ReactElement {
             <DawUtilitySection title="Kokoro TTS (82M)" detail="Vocal scratch tracks · Apache 2.0 · hexgrad">
                 <DawPickerRow
                     heading="Kokoro-82M (q8)"
-                    description={`21 voices · ${formatBytes(KOKORO_MODEL_SPEC.sizeBytes)}`}
+                    description={`21 voices · ${formatBytes(KOKORO_MODEL_ENTRY.sizeBytes)}`}
                     endSlot={
                         <ModelAction
-                            id={KOKORO_MODEL_SPEC.modelId}
+                            id={KOKORO_MODEL_ENTRY.id}
                             name="Kokoro-82M (q8)"
-                            family={KOKORO_MODEL_SPEC.family}
-                            url={KOKORO_MODEL_SPEC.url}
-                            sizeBytes={KOKORO_MODEL_SPEC.sizeBytes}
+                            family={KOKORO_MODEL_ENTRY.family}
+                            url={KOKORO_MODEL_ENTRY.url}
+                            sizeBytes={KOKORO_MODEL_ENTRY.sizeBytes}
                             status={kokoroStatus}
                             downloadProgress={kokoroProgress}
                         />
@@ -313,14 +306,14 @@ export function ModelManagerPanel(): ReactElement {
             <DawUtilitySection title="NSF-HiFiGAN Vocoder" detail="Shared mel→audio · CC-BY-NC-SA 4.0 · openvpi">
                 <DawPickerRow
                     heading="NSF-HiFiGAN 44.1k"
-                    description={`Shared across all voices · ${formatBytes(VOCODER_MODEL_SPEC.sizeBytes)}`}
+                    description={`Shared across all voices · ${formatBytes(NSF_HIFIGAN_VOCODER.sizeBytes)}`}
                     endSlot={
                         <ModelAction
-                            id={VOCODER_MODEL_SPEC.modelId}
+                            id={NSF_HIFIGAN_VOCODER.id}
                             name="NSF-HiFiGAN 44.1k"
-                            family={VOCODER_MODEL_SPEC.family}
-                            url={VOCODER_MODEL_SPEC.url}
-                            sizeBytes={VOCODER_MODEL_SPEC.sizeBytes}
+                            family={NSF_HIFIGAN_VOCODER.family}
+                            url={NSF_HIFIGAN_VOCODER.url}
+                            sizeBytes={NSF_HIFIGAN_VOCODER.sizeBytes}
                             status={vocoderStatus}
                             downloadProgress={vocoderProgress}
                         />

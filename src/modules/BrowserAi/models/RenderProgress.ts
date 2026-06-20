@@ -60,5 +60,4 @@ export type ActiveRender = {
     stage: string;
     progress: number;
     startedAt: number;
-    abortController: AbortController;
 };

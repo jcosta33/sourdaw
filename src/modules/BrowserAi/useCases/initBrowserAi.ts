@@ -10,7 +10,7 @@
 
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
-import { midiStore } from '#/modules/MIDI/stores';
+import { midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
 
 import { type DdspInstrument, type KokoroModel, type VocoderModel } from '../models/BrowserModel';
 import {
@@ -130,9 +130,24 @@ export const initBrowserAi = inject({ logger, detectCapabilitiesRepo, checkModel
             // The unsubscribe function is stored at module scope so it is not garbage-collected
             // and can be called if the module is ever torn down (e.g. in tests or HMR).
             midiStaleSubscription?.();
-            let prevNotesByClipId = midiStore.value?.notesByClipId ?? {};
+
+            // Do NOT snapshot the baseline at subscribe time: midiStore may not be
+            // hydrated yet (Automerge loads asynchronously), so midiStore.value is the
+            // empty seed `{}` until the first emission lands. If MIDI hydrates *after*
+            // BrowserAi, diffing a populated map against that empty baseline would mark
+            // every already-rendered phrase stale. Instead, adopt the first emission as
+            // the baseline and only compare from the second emission onward.
+            let prevNotesByClipId: MidiStoreState['notesByClipId'] | undefined;
             midiStaleSubscription = midiStore.subscribe((next) => {
                 const nextNotesByClipId = next?.notesByClipId ?? {};
+
+                // First emission (incl. the hydration emission): establish the baseline
+                // without flagging anything stale.
+                if (prevNotesByClipId === undefined) {
+                    prevNotesByClipId = nextNotesByClipId;
+                    return;
+                }
+
                 const queueState = renderQueueStore.value;
                 if (!queueState) {
                     prevNotesByClipId = nextNotesByClipId;

@@ -40,18 +40,6 @@ export async function resampleTo44100({ audio, fromSampleRate, channels = 1 }: R
 }
 
 /**
- * Convert a Float32Array PCM (at 44.1 kHz) to an AudioBuffer
- * that can be used with the Web Audio graph.
- */
-export function float32ToAudioBuffer(audio: Float32Array, sampleRate = TARGET_SAMPLE_RATE): AudioBuffer {
-    const ctx = new AudioContext({ sampleRate });
-    const buffer = ctx.createBuffer(1, audio.length, sampleRate);
-    buffer.copyToChannel(new Float32Array(audio), 0);
-    void ctx.close();
-    return buffer;
-}
-
-/**
  * Apply a simple fade-in/fade-out at phrase boundaries to avoid clicks.
  * Mutates the input array in-place for performance.
  */
@@ -71,16 +59,26 @@ export function applyFades(audio: Float32Array, fadeSamples: number): void {
  */
 export function normalizePeak(audio: Float32Array): void {
     let peak = 0;
-    for (const sample of audio) {
+    for (let index = 0; index < audio.length; index++) {
+        const sample = audio[index]!;
+        if (!Number.isFinite(sample)) {
+            // NaN/±Infinity never compare greater-than, so they would otherwise
+            // leave peak at 0 (no normalization) and stay in the output. Clamp to
+            // silence so a single bad sample can't poison the whole buffer.
+            audio[index] = 0;
+            continue;
+        }
         const abs = Math.abs(sample);
         if (abs > peak) {
             peak = abs;
         }
     }
-    if (peak > 0 && peak !== 1) {
+    // peak is finite by construction (non-finite samples were zeroed above); the
+    // Number.isFinite guard is belt-and-suspenders against a future change.
+    if (Number.isFinite(peak) && peak > 0 && peak !== 1) {
         const scale = 1 / peak;
         for (let index = 0; index < audio.length; index++) {
-            audio[index] = (audio[index] ?? 0) * scale;
+            audio[index]! *= scale;
         }
     }
 }

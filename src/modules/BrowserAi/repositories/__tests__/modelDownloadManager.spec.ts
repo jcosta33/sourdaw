@@ -1,0 +1,235 @@
+/**
+ * Regression tests for the model download manager.
+ *
+ * Covers the memory / main-thread and cancellation bugs:
+ *  - A single BroadcastChannel is held for the whole download, not constructed
+ *    and closed per progress event.
+ *  - Raw (non-ZIP, unverified) downloads stream chunks straight to an OPFS
+ *    writable instead of accumulating every chunk in memory.
+ *  - High-frequency progress updates are throttled (~10 Hz).
+ *  - An AbortSignal interrupts the retry backoff: a cancelled download stops and
+ *    does not mark the model 'error' after the user moved on.
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { type ModelDownloadProgressPayload } from '../../events/ModelDownloadProgressEvent';
+import { downloadModel } from '../modelDownloadManager';
+
+// --- OPFS writable capture --------------------------------------------------
+
+type WriteCall = number; // byteLength of each streamed chunk
+let lastWritable: { writes: WriteCall[]; closed: boolean; aborted: boolean } | null = null;
+
+function installStorage(): void {
+    function makeWritable(): FileSystemWritableFileStream {
+        const state = { writes: [] as WriteCall[], closed: false, aborted: false };
+        lastWritable = state;
+        return {
+            write(chunk: ArrayBufferView | ArrayBuffer): Promise<void> {
+                state.writes.push('byteLength' in chunk ? chunk.byteLength : (chunk as ArrayBuffer).byteLength);
+                return Promise.resolve();
+            },
+            close(): Promise<void> {
+                state.closed = true;
+                return Promise.resolve();
+            },
+            abort(): Promise<void> {
+                state.aborted = true;
+                return Promise.resolve();
+            },
+        } as unknown as FileSystemWritableFileStream;
+    }
+
+    const fileHandle = {
+        kind: 'file',
+        createWritable: vi.fn(() => Promise.resolve(makeWritable())),
+    };
+    const leafDir = {
+        kind: 'directory',
+        getDirectoryHandle: vi.fn(() => Promise.resolve(leafDir)),
+        getFileHandle: vi.fn(() => Promise.resolve(fileHandle)),
+        removeEntry: vi.fn(() => Promise.resolve()),
+        // Empty directory — getStorageStatus iterates but measures nothing here.
+        [Symbol.asyncIterator](): AsyncIterator<unknown> {
+            return { next: () => Promise.resolve({ done: true, value: undefined }) };
+        },
+    };
+    Object.defineProperty(globalThis.navigator, 'storage', {
+        configurable: true,
+        value: {
+            getDirectory: vi.fn(() => Promise.resolve(leafDir)),
+            estimate: vi.fn(() => Promise.resolve({ quota: 1e12, usage: 0 })),
+            persisted: vi.fn(() => Promise.resolve(false)),
+            persist: vi.fn(() => Promise.resolve(true)),
+        },
+    });
+}
+
+// --- BroadcastChannel capture ----------------------------------------------
+
+let channelConstructions = 0;
+let openChannels = 0;
+
+class FakeBroadcastChannel {
+    constructor(public name: string) {
+        channelConstructions += 1;
+        openChannels += 1;
+    }
+    postMessage(): void {}
+    close(): void {
+        openChannels -= 1;
+    }
+}
+
+// --- fetch helpers ----------------------------------------------------------
+
+function streamingResponse(chunks: Uint8Array[], totalBytes: number): Response {
+    let i = 0;
+    return {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: { get: (h: string) => (h === 'content-length' ? String(totalBytes) : null) },
+        body: {
+            getReader() {
+                return {
+                    read(): Promise<{ done: boolean; value?: Uint8Array }> {
+                        if (i < chunks.length) {
+                            return Promise.resolve({ done: false, value: chunks[i++] });
+                        }
+                        return Promise.resolve({ done: true, value: undefined });
+                    },
+                };
+            },
+        },
+    } as unknown as Response;
+}
+
+// --- setup / teardown -------------------------------------------------------
+
+beforeEach(() => {
+    channelConstructions = 0;
+    openChannels = 0;
+    lastWritable = null;
+    vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel as unknown as typeof BroadcastChannel);
+    installStorage();
+});
+
+afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+});
+
+const baseSpec = {
+    modelId: 'violin-1',
+    family: 'ddsp',
+    url: 'https://cdn.example/violin-1.onnx',
+    sizeBytes: 30,
+};
+
+describe('downloadModel — streaming + single channel', () => {
+    it('streams each chunk straight to the OPFS writable for a raw .onnx download', async () => {
+        const chunks = [new Uint8Array(10), new Uint8Array(10), new Uint8Array(10)];
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse(chunks, 30)))
+        );
+
+        await downloadModel({ spec: baseSpec });
+
+        expect(lastWritable).not.toBeNull();
+        // Each network chunk was written to OPFS as it arrived — not buffered and
+        // written once at the end.
+        expect(lastWritable?.writes).toEqual([10, 10, 10]);
+        expect(lastWritable?.closed).toBe(true);
+    });
+
+    it('constructs exactly one BroadcastChannel for the whole download and closes it', async () => {
+        const chunks = Array.from({ length: 20 }, () => new Uint8Array(10));
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse(chunks, 200)))
+        );
+
+        await downloadModel({ spec: { ...baseSpec, sizeBytes: 200 } });
+
+        // One channel for the entire download (the old code built+closed one per chunk).
+        expect(channelConstructions).toBe(1);
+        // ...and it was closed (no leak).
+        expect(openChannels).toBe(0);
+    });
+
+    it('throttles in-loop downloading progress to ~10 Hz', async () => {
+        // 50 chunks delivered effectively instantly — without throttling this would
+        // emit ~50 'downloading' events. At 10 Hz from a single timestamp window it
+        // emits far fewer.
+        const chunks = Array.from({ length: 50 }, () => new Uint8Array(4));
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(() => Promise.resolve(streamingResponse(chunks, 200)))
+        );
+
+        const downloadingEvents: number[] = [];
+        await downloadModel({
+            spec: { ...baseSpec, sizeBytes: 200 },
+            onProgress: (p: ModelDownloadProgressPayload) => {
+                if (p.stage === 'downloading') {
+                    downloadingEvents.push(p.progress);
+                }
+            },
+        });
+
+        // 50 chunks would be 50 events un-throttled; throttling collapses the burst.
+        expect(downloadingEvents.length).toBeLessThan(50);
+    });
+});
+
+describe('downloadModel — cancellation', () => {
+    it('interrupts the retry backoff and does not mark the model error after abort', async () => {
+        const controller = new AbortController();
+        // fetch always fails, so the manager enters its exponential backoff between
+        // attempts. We abort during the first backoff window.
+        const fetchMock = vi.fn((_url: string, init?: { signal?: AbortSignal }) => {
+            if (init?.signal?.aborted) {
+                return Promise.reject(new DOMException('Aborted', 'AbortError'));
+            }
+            return Promise.reject(new Error('network down'));
+        });
+        vi.stubGlobal('fetch', fetchMock);
+
+        const errorEvents: string[] = [];
+        const promise: Promise<void> = downloadModel({
+            spec: baseSpec,
+            signal: controller.signal,
+            onProgress: (p: ModelDownloadProgressPayload) => {
+                if (p.stage === 'error') {
+                    errorEvents.push(p.stage);
+                }
+            },
+        });
+
+        // Let the first attempt fail and enter the 1000ms backoff, then abort.
+        await Promise.resolve();
+        await Promise.resolve();
+        controller.abort();
+
+        await expect(promise).rejects.toThrow();
+
+        // The download was cancelled, not failed: no 'error' stage emitted, and the
+        // channel was still cleaned up.
+        expect(errorEvents).toEqual([]);
+        expect(openChannels).toBe(0);
+    });
+
+    it('passes the AbortSignal through to fetch', async () => {
+        const controller = new AbortController();
+        const fetchMock = vi.fn(() => Promise.resolve(streamingResponse([new Uint8Array(30)], 30)));
+        vi.stubGlobal('fetch', fetchMock);
+
+        await downloadModel({ spec: baseSpec, signal: controller.signal });
+
+        const init = fetchMock.mock.calls[0]?.[1] as { signal?: AbortSignal } | undefined;
+        expect(init?.signal).toBe(controller.signal);
+    });
+});

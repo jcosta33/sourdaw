@@ -7,7 +7,7 @@
  * cached in audioBufferCache, and the bufferId is set as drag data.
  */
 
-import { type DragEvent, type ReactElement, useRef, useState } from 'react';
+import { type DragEvent, type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { GripVertical, Play, Square } from 'lucide-react';
 
@@ -38,6 +38,10 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
     const [isPlaying, setIsPlaying] = useState(false);
     const sourceRef = useRef<AudioBufferSourceNode | null>(null);
     const bufferIdRef = useRef<string | null>(null);
+    // Set once this row's buffer has been dragged onto a track: the dropped clip
+    // now points at the same cache entry (see useTimelineFileDrop), so this row
+    // must not evict it on unmount or it would silence the placed clip.
+    const handedOffRef = useRef(false);
 
     const durationSec = audio.length / sampleRate;
 
@@ -47,6 +51,25 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
         }
         return bufferIdRef.current;
     };
+
+    // Evict this row's cached AudioBuffer from the cross-module audioBufferCache
+    // when the component unmounts or when the audio it represents changes.
+    // Without this, every previewed render leaks an entry into a cache shared
+    // across the app, growing unbounded for the lifetime of the session.
+    // The buffer is derived from (audio, sampleRate), so a change to either makes
+    // the previously cached buffer stale and reachable only through the dropped ref.
+    // A buffer that was dragged onto a track is owned by the resulting clip and is
+    // deliberately left in place.
+    useEffect(() => {
+        const evictPriorBuffer = (): void => {
+            if (bufferIdRef.current && !handedOffRef.current) {
+                audioBufferCache.remove(bufferIdRef.current);
+            }
+            bufferIdRef.current = null;
+            handedOffRef.current = false;
+        };
+        return evictPriorBuffer;
+    }, [audio, sampleRate]);
 
     const handlePlay = (): void => {
         if (isPlaying) {
@@ -80,6 +103,9 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
 
     const handleDragStart = (event: DragEvent<HTMLDivElement>): void => {
         const bufferId = ensureBufferId();
+        // The dropped clip will reference this same cached buffer; mark it handed
+        // off so the unmount cleanup does not evict it out from under the clip.
+        handedOffRef.current = true;
         event.dataTransfer.setData(
             'application/x-sourdaw-ai-render',
             JSON.stringify({ name, bufferId, durationSeconds: durationSec })

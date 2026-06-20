@@ -44,17 +44,33 @@ export function updateModelStatus(
             message.id === modelId ? { ...message, ...patch } : message
         );
 
-        const updatedVoicebanks = state.diffSingerVoicebanks.map((vb) => ({
-            ...vb,
-            models: {
-                linguistic:
-                    vb.models.linguistic.id === modelId ? { ...vb.models.linguistic, ...patch } : vb.models.linguistic,
-                dur: vb.models.dur.id === modelId ? { ...vb.models.dur, ...patch } : vb.models.dur,
-                acoustic: vb.models.acoustic.id === modelId ? { ...vb.models.acoustic, ...patch } : vb.models.acoustic,
-                pitch: vb.models.pitch.id === modelId ? { ...vb.models.pitch, ...patch } : vb.models.pitch,
-                variance: vb.models.variance.id === modelId ? { ...vb.models.variance, ...patch } : vb.models.variance,
-            },
-        }));
+        const updatedVoicebanks = state.diffSingerVoicebanks.map((vb) => {
+            // A download patch targets exactly one model id. Voicebanks whose five
+            // sub-models all have a different id are unaffected, so return the same
+            // reference instead of rebuilding the whole models sub-tree — otherwise
+            // every voicebank churns on every progress chunk for any model (N×M).
+            const m = vb.models;
+            const affects =
+                m.linguistic.id === modelId ||
+                m.dur.id === modelId ||
+                m.acoustic.id === modelId ||
+                m.pitch.id === modelId ||
+                m.variance.id === modelId;
+            if (!affects) {
+                return vb;
+            }
+
+            return {
+                ...vb,
+                models: {
+                    linguistic: m.linguistic.id === modelId ? { ...m.linguistic, ...patch } : m.linguistic,
+                    dur: m.dur.id === modelId ? { ...m.dur, ...patch } : m.dur,
+                    acoustic: m.acoustic.id === modelId ? { ...m.acoustic, ...patch } : m.acoustic,
+                    pitch: m.pitch.id === modelId ? { ...m.pitch, ...patch } : m.pitch,
+                    variance: m.variance.id === modelId ? { ...m.variance, ...patch } : m.variance,
+                },
+            };
+        });
 
         const kokoroModel = state.kokoroModel?.id === modelId ? { ...state.kokoroModel, ...patch } : state.kokoroModel;
 

@@ -23,6 +23,13 @@ type OrtInferenceSession = {
 type OrtTensor = {
     data: Float32Array | BigInt64Array | Int32Array | Uint8Array;
     dims: number[];
+    /**
+     * Releases the tensor's backing memory (GPU buffer or WASM heap allocation).
+     * Present on every onnxruntime-web Tensor; optional here because tensors we
+     * construct via `new ort.Tensor(...)` and those returned from `session.run()`
+     * are the same runtime type, and disposal is a best-effort cleanup.
+     */
+    dispose?: () => void;
 };
 
 type OrtModule = {
@@ -50,12 +57,14 @@ const SESSION_MEMORY_BUDGET = 1024 * 1024 * 1024; // 1 GB
 
 const sessionCache: Map<string, SessionEntry> = new Map();
 let totalMemoryBytes = 0;
-let ortModule: OrtModule | null = null;
+// Cache the in-flight import PROMISE (not just the resolved module): self.onmessage
+// async chains interleave at every await, so two concurrent first messages could
+// otherwise both pass the `if (ortModule)` guard, double-import onnxruntime-web, and
+// configure ort.env twice. Coalescing on the promise makes the import-and-configure
+// happen exactly once.
+let ortPromise: Promise<OrtModule> | null = null;
 
-async function getOrt(): Promise<OrtModule> {
-    if (ortModule) {
-        return ortModule;
-    }
+async function loadAndConfigureOrt(): Promise<OrtModule> {
     // Dynamic import keeps onnxruntime-web out of the main bundle
     // eslint-disable-next-line sourdaw/no-type-assertion-escape -- onnxruntime-web module shape diverges from OrtModule structural subset; double cast required
     const ort = (await import('onnxruntime-web')) as unknown as OrtModule;
@@ -67,8 +76,17 @@ async function getOrt(): Promise<OrtModule> {
     // Suppress "Some nodes were not assigned to the preferred execution providers"
     // warnings — these are informational (ORT moves shape ops to CPU intentionally).
     ort.env.logLevel = 'error';
-    ortModule = ort;
     return ort;
+}
+
+function getOrt(): Promise<OrtModule> {
+    // Reset the cache on failure so a later message can retry the import — without
+    // this, one transient import error would poison every subsequent inference.
+    ortPromise ??= loadAndConfigureOrt().catch((error: unknown) => {
+        ortPromise = null;
+        throw error;
+    });
+    return ortPromise;
 }
 
 function selectExecutionProviders(): string[] {
@@ -92,9 +110,12 @@ async function evictLru(): Promise<void> {
             break;
         }
         const [id, entry] = oldest;
-        await entry.session.release();
-        totalMemoryBytes -= entry.sizeBytes;
+        // Remove from the cache and adjust accounting BEFORE awaiting release():
+        // a concurrent getOrCreateSession touching this modelId during the await
+        // must not find (and hand back) a session that is being released.
         sessionCache.delete(id);
+        totalMemoryBytes -= entry.sizeBytes;
+        await entry.session.release();
     }
 }
 
@@ -107,16 +128,22 @@ async function getOrCreateSession(modelId: string, modelData: ArrayBuffer): Prom
 
     const ort = await getOrt();
     const providers = selectExecutionProviders();
+
+    // Capture the model weight BEFORE create(): onnxruntime-web may consume or
+    // detach the ArrayBuffer during session creation, after which byteLength reads
+    // 0. Reading it afterwards would leave totalMemoryBytes near 0 and evictLru
+    // would never fire, defeating the 1 GB budget.
+    const sizeBytes = modelData.byteLength;
     const session = await ort.InferenceSession.create(modelData, { executionProviders: providers });
 
     const entry: SessionEntry = {
         session,
         modelId,
-        sizeBytes: modelData.byteLength,
+        sizeBytes,
         lastUsedAt: Date.now(),
     };
     sessionCache.set(modelId, entry);
-    totalMemoryBytes += modelData.byteLength;
+    totalMemoryBytes += sizeBytes;
 
     await evictLru();
     return session;
@@ -181,141 +208,166 @@ async function runDiffSingerPipeline(
         self.postMessage(msg);
     };
 
-    // ── 1. Linguistic encoder ──────────────────────────────────────────────
-    post('Encoding phonemes', 0.05);
-    const nTokens = params.tokenIds.length;
-    const nWords = params.wordDiv.length;
-
-    const tokens = new ort.Tensor('int64', BigInt64Array.from(params.tokenIds.map(BigInt)), [1, nTokens]);
-    const wordDiv = new ort.Tensor('int64', BigInt64Array.from(params.wordDiv.map(BigInt)), [1, nWords]);
-    const wordDur = new ort.Tensor('int64', BigInt64Array.from(params.wordDur.map(BigInt)), [1, nWords]);
-
-    const linguisticOut = await sessions.linguistic.run({ tokens, word_div: wordDiv, word_dur: wordDur });
-    const encoderOut = linguisticOut.encoder_out;
-    if (!encoderOut) {
-        throw new Error('Linguistic encoder produced no encoder_out output');
-    }
-    const xMasks = linguisticOut.x_masks;
-    if (!xMasks) {
-        throw new Error('Linguistic encoder produced no x_masks output');
-    }
-    post('Encoding phonemes', 0.15);
-
-    // ── 2. Duration predictor ──────────────────────────────────────────────
-    post('Predicting durations', 0.2);
-    const noteMidi = new ort.Tensor('float32', params.noteMidi, [1, params.noteMidi.length]);
-    const noteDur = new ort.Tensor('int64', params.noteDur, [1, params.noteDur.length]);
-
-    const durFeeds: Record<string, OrtTensor> = {
-        encoder_out: encoderOut,
-        x_masks: xMasks,
-        note_midi: noteMidi,
-        note_dur: noteDur,
+    // Every tensor we construct or receive from session.run() owns a GPU/WASM
+    // allocation. Track them all and dispose in the finally so no stage's
+    // intermediate outputs leak across renders. The returned waveform is copied
+    // into a fresh Float32Array before disposal, so disposing it here is safe.
+    const tracked = new Set<OrtTensor>();
+    const track = <TTensor extends OrtTensor>(t: TTensor): TTensor => {
+        tracked.add(t);
+        return t;
     };
-    if (params.speakerEmbed) {
-        durFeeds.spk_embed = broadcastSpkEmbed(ort, params.speakerEmbed, nTokens);
-    }
-
-    const durOut = await sessions.dur.run(durFeeds);
-    const phDur = durOut.ph_dur;
-    if (!phDur) {
-        throw new Error('Duration predictor produced no ph_dur output');
-    }
-    post('Predicting durations', 0.3);
-
-    // ── 3. Pitch predictor ─────────────────────────────────────────────────
-    post('Predicting pitch', 0.35);
-    const pitchPlaceholder = new ort.Tensor('float32', new Float32Array(params.durationFrames), [
-        1,
-        params.durationFrames,
-    ]);
-    // retake = all true → predict all tokens fresh (not retaining any previous pitch)
-    const retakePitch = new ort.Tensor('bool', new Uint8Array(nTokens).fill(1), [1, nTokens]);
-    const steps = new ort.Tensor('int64', BigInt64Array.from([BigInt(params.steps)]), [1]);
-
-    const pitchFeeds: Record<string, OrtTensor> = {
-        encoder_out: encoderOut,
-        ph_dur: phDur,
-        note_midi: noteMidi,
-        note_dur: noteDur,
-        pitch: pitchPlaceholder,
-        retake: retakePitch,
-        steps,
+    const trackOutputs = (outputs: Record<string, OrtTensor>): Record<string, OrtTensor> => {
+        for (const t of Object.values(outputs)) {
+            tracked.add(t);
+        }
+        return outputs;
     };
-    if (params.speakerEmbed) {
-        pitchFeeds.spk_embed = broadcastSpkEmbed(ort, params.speakerEmbed, params.durationFrames);
-    }
 
-    const pitchOut = await sessions.pitch.run(pitchFeeds);
-    const pitchPred = pitchOut.pitch_pred;
-    if (!pitchPred) {
-        throw new Error('Pitch predictor produced no pitch_pred output');
-    }
-    post('Predicting pitch', 0.5);
+    try {
+        // ── 1. Linguistic encoder ──────────────────────────────────────────────
+        post('Encoding phonemes', 0.05);
+        const nTokens = params.tokenIds.length;
+        const nWords = params.wordDiv.length;
 
-    // ── 4. Variance predictor ──────────────────────────────────────────────
-    post('Predicting expression', 0.55);
-    const retakeVariance = new ort.Tensor('bool', new Uint8Array(nTokens).fill(1), [1, nTokens]);
-    const varianceFeeds: Record<string, OrtTensor> = {
-        encoder_out: encoderOut,
-        x_masks: xMasks,
-        ph_dur: phDur,
-        pitch: pitchPred,
-        retake: retakeVariance,
-        steps,
-    };
-    if (params.speakerEmbed) {
-        varianceFeeds.spk_embed = broadcastSpkEmbed(ort, params.speakerEmbed, params.durationFrames);
-    }
+        const tokens = track(new ort.Tensor('int64', BigInt64Array.from(params.tokenIds.map(BigInt)), [1, nTokens]));
+        const wordDiv = track(new ort.Tensor('int64', BigInt64Array.from(params.wordDiv.map(BigInt)), [1, nWords]));
+        const wordDur = track(new ort.Tensor('int64', BigInt64Array.from(params.wordDur.map(BigInt)), [1, nWords]));
 
-    const varianceOut = await sessions.variance.run(varianceFeeds);
-    const energyPred = varianceOut.energy_pred;
-    const breathinessPred = varianceOut.breathiness_pred;
-    post('Predicting expression', 0.65);
+        const linguisticOut = trackOutputs(
+            await sessions.linguistic.run({ tokens, word_div: wordDiv, word_dur: wordDur })
+        );
+        const encoderOut = linguisticOut.encoder_out;
+        if (!encoderOut) {
+            throw new Error('Linguistic encoder produced no encoder_out output');
+        }
+        const xMasks = linguisticOut.x_masks;
+        if (!xMasks) {
+            throw new Error('Linguistic encoder produced no x_masks output');
+        }
+        post('Encoding phonemes', 0.15);
 
-    // ── 5. Acoustic model (shallow diffusion) ─────────────────────────────
-    post('Rendering mel-spectrogram', 0.68);
-    const depthTensor = new ort.Tensor('float32', new Float32Array([params.depth]), [1]);
+        // ── 2. Duration predictor ──────────────────────────────────────────────
+        post('Predicting durations', 0.2);
+        const noteMidi = track(new ort.Tensor('float32', params.noteMidi, [1, params.noteMidi.length]));
+        const noteDur = track(new ort.Tensor('int64', params.noteDur, [1, params.noteDur.length]));
 
-    const acousticFeeds: Record<string, OrtTensor> = {
-        tokens,
-        durations: phDur,
-        f0: pitchPred,
-        depth: depthTensor,
-        steps,
-    };
-    if (energyPred) {
-        acousticFeeds.energy = energyPred;
-    }
-    if (breathinessPred) {
-        acousticFeeds.breathiness = breathinessPred;
-    }
-    if (params.speakerEmbed) {
-        acousticFeeds.spk_embed = broadcastSpkEmbed(ort, params.speakerEmbed, params.durationFrames);
-    }
+        const durFeeds: Record<string, OrtTensor> = {
+            encoder_out: encoderOut,
+            x_masks: xMasks,
+            note_midi: noteMidi,
+            note_dur: noteDur,
+        };
+        if (params.speakerEmbed) {
+            durFeeds.spk_embed = track(broadcastSpkEmbed(ort, params.speakerEmbed, nTokens));
+        }
 
-    // The acoustic model runs all diffusion steps internally via the `steps` tensor.
-    const acousticOut = await sessions.acoustic.run(acousticFeeds);
-    // Key may vary by ONNX export ('mel' is conventional, but some exports use other names)
-    const mel = acousticOut.mel ?? Object.values(acousticOut)[0];
-    if (!mel) {
-        throw new Error('Acoustic model produced no mel-spectrogram output');
-    }
-    post('Rendering mel-spectrogram', 0.82);
+        const durOut = trackOutputs(await sessions.dur.run(durFeeds));
+        const phDur = durOut.ph_dur;
+        if (!phDur) {
+            throw new Error('Duration predictor produced no ph_dur output');
+        }
+        post('Predicting durations', 0.3);
 
-    // ── 6. Vocoder ─────────────────────────────────────────────────────────
-    post('Running vocoder', 0.87);
-    const vocoderOut = await sessions.vocoder.run({
-        mel,
-        f0: pitchPred,
-    });
-    const waveform = vocoderOut.waveform;
-    post('Running vocoder', 0.98);
+        // ── 3. Pitch predictor ─────────────────────────────────────────────────
+        post('Predicting pitch', 0.35);
+        const pitchPlaceholder = track(
+            new ort.Tensor('float32', new Float32Array(params.durationFrames), [1, params.durationFrames])
+        );
+        // retake = all true → predict all tokens fresh (not retaining any previous pitch)
+        const retakePitch = track(new ort.Tensor('bool', new Uint8Array(nTokens).fill(1), [1, nTokens]));
+        const steps = track(new ort.Tensor('int64', BigInt64Array.from([BigInt(params.steps)]), [1]));
 
-    if (!waveform) {
-        throw new Error('Vocoder produced no waveform output');
+        const pitchFeeds: Record<string, OrtTensor> = {
+            encoder_out: encoderOut,
+            ph_dur: phDur,
+            note_midi: noteMidi,
+            note_dur: noteDur,
+            pitch: pitchPlaceholder,
+            retake: retakePitch,
+            steps,
+        };
+        if (params.speakerEmbed) {
+            pitchFeeds.spk_embed = track(broadcastSpkEmbed(ort, params.speakerEmbed, params.durationFrames));
+        }
+
+        const pitchOut = trackOutputs(await sessions.pitch.run(pitchFeeds));
+        const pitchPred = pitchOut.pitch_pred;
+        if (!pitchPred) {
+            throw new Error('Pitch predictor produced no pitch_pred output');
+        }
+        post('Predicting pitch', 0.5);
+
+        // ── 4. Variance predictor ──────────────────────────────────────────────
+        post('Predicting expression', 0.55);
+        const retakeVariance = track(new ort.Tensor('bool', new Uint8Array(nTokens).fill(1), [1, nTokens]));
+        const varianceFeeds: Record<string, OrtTensor> = {
+            encoder_out: encoderOut,
+            x_masks: xMasks,
+            ph_dur: phDur,
+            pitch: pitchPred,
+            retake: retakeVariance,
+            steps,
+        };
+        if (params.speakerEmbed) {
+            varianceFeeds.spk_embed = track(broadcastSpkEmbed(ort, params.speakerEmbed, params.durationFrames));
+        }
+
+        const varianceOut = trackOutputs(await sessions.variance.run(varianceFeeds));
+        const energyPred = varianceOut.energy_pred;
+        const breathinessPred = varianceOut.breathiness_pred;
+        post('Predicting expression', 0.65);
+
+        // ── 5. Acoustic model (shallow diffusion) ─────────────────────────────
+        post('Rendering mel-spectrogram', 0.68);
+        const depthTensor = track(new ort.Tensor('float32', new Float32Array([params.depth]), [1]));
+
+        const acousticFeeds: Record<string, OrtTensor> = {
+            tokens,
+            durations: phDur,
+            f0: pitchPred,
+            depth: depthTensor,
+            steps,
+        };
+        if (energyPred) {
+            acousticFeeds.energy = energyPred;
+        }
+        if (breathinessPred) {
+            acousticFeeds.breathiness = breathinessPred;
+        }
+        if (params.speakerEmbed) {
+            acousticFeeds.spk_embed = track(broadcastSpkEmbed(ort, params.speakerEmbed, params.durationFrames));
+        }
+
+        // The acoustic model runs all diffusion steps internally via the `steps` tensor.
+        const acousticOut = trackOutputs(await sessions.acoustic.run(acousticFeeds));
+        // Key may vary by ONNX export ('mel' is conventional, but some exports use other names)
+        const mel = acousticOut.mel ?? Object.values(acousticOut)[0];
+        if (!mel) {
+            throw new Error('Acoustic model produced no mel-spectrogram output');
+        }
+        post('Rendering mel-spectrogram', 0.82);
+
+        // ── 6. Vocoder ─────────────────────────────────────────────────────────
+        post('Running vocoder', 0.87);
+        const vocoderOut = trackOutputs(
+            await sessions.vocoder.run({
+                mel,
+                f0: pitchPred,
+            })
+        );
+        const waveform = vocoderOut.waveform;
+        post('Running vocoder', 0.98);
+
+        if (!waveform) {
+            throw new Error('Vocoder produced no waveform output');
+        }
+        return new Float32Array(waveform.data as Float32Array);
+    } finally {
+        for (const t of tracked) {
+            t.dispose?.();
+        }
     }
-    return new Float32Array(waveform.data as Float32Array);
 }
 
 // ── Kokoro TTS via onnxruntime-web ────────────────────────────────────────
@@ -358,21 +410,33 @@ async function runKokoroOnnx(
     const styleTensor = new ort.Tensor('float32', style, [1, 256]);
     const speedTensor = new ort.Tensor('float32', new Float32Array([speed]), [1]);
 
-    const outputs = await session.run({
-        input_ids: inputIdsTensor,
-        style: styleTensor,
-        speed: speedTensor,
-    });
+    // Track input + output tensors and dispose them after copying the audio out,
+    // so each Kokoro inference does not leak its GPU/WASM tensor allocations.
+    const tracked = new Set<OrtTensor>([inputIdsTensor, styleTensor, speedTensor]);
+    try {
+        const outputs = await session.run({
+            input_ids: inputIdsTensor,
+            style: styleTensor,
+            speed: speedTensor,
+        });
+        for (const t of Object.values(outputs)) {
+            tracked.add(t);
+        }
 
-    post('Synthesizing speech', 0.95);
+        post('Synthesizing speech', 0.95);
 
-    // The model outputs a waveform tensor — key may vary by export
-    const waveform = outputs.waveform ?? outputs.audio ?? Object.values(outputs)[0];
-    if (!waveform) {
-        throw new Error('Kokoro ONNX produced no output');
+        // The model outputs a waveform tensor — key may vary by export
+        const waveform = outputs.waveform ?? outputs.audio ?? Object.values(outputs)[0];
+        if (!waveform) {
+            throw new Error('Kokoro ONNX produced no output');
+        }
+
+        return new Float32Array(waveform.data as Float32Array);
+    } finally {
+        for (const t of tracked) {
+            t.dispose?.();
+        }
     }
-
-    return new Float32Array(waveform.data as Float32Array);
 }
 
 // ── Message handler ────────────────────────────────────────────────────────
@@ -443,9 +507,11 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
     if (req.type === 'release-session') {
         const entry = sessionCache.get(req.modelId);
         if (entry) {
-            await entry.session.release();
-            totalMemoryBytes -= entry.sizeBytes;
+            // Delete from the cache and adjust accounting BEFORE awaiting release(),
+            // so a concurrent getOrCreateSession cannot return the released session.
             sessionCache.delete(req.modelId);
+            totalMemoryBytes -= entry.sizeBytes;
+            await entry.session.release();
         }
         return;
     }

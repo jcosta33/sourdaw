@@ -58,8 +58,15 @@ export function midiToDdspInput({
         const startFrame = Math.floor(note.startSec * frameRate);
         const endFrame = Math.min(nFrames, Math.ceil((note.startSec + note.durationSec) * frameRate));
 
-        const attackFrames = Math.ceil(attackSec * frameRate);
-        const releaseFrames = Math.ceil(releaseSec * frameRate);
+        const noteLength = endFrame - startFrame;
+
+        // Clamp attack and release so a short note keeps a real attack ramp:
+        // their combined span can never exceed the note, and each gets at most
+        // half. Without this, attack+release > noteLength makes the release
+        // branch win for the whole note (all-release / no-attack).
+        const maxRampFrames = noteLength / 2;
+        const effectiveAttack = Math.min(Math.ceil(attackSec * frameRate), maxRampFrames);
+        const effectiveRelease = Math.min(Math.ceil(releaseSec * frameRate), maxRampFrames);
 
         for (let frame = startFrame; frame < endFrame; frame++) {
             if (frame >= nFrames) {
@@ -67,15 +74,15 @@ export function midiToDdspInput({
             }
             pitchHz[frame] = freqHz;
 
-            // Amplitude envelope: linear attack, linear release
+            // Amplitude envelope: linear attack, then sustain, then linear release.
+            // Attack is tested before release so the opening frames always ramp up.
             const noteFrame = frame - startFrame;
-            const noteLength = endFrame - startFrame;
 
             let gain = 1;
-            if (noteFrame < attackFrames) {
-                gain = noteFrame / attackFrames;
-            } else if (noteFrame > noteLength - releaseFrames) {
-                gain = (noteLength - noteFrame) / releaseFrames;
+            if (effectiveAttack > 0 && noteFrame < effectiveAttack) {
+                gain = noteFrame / effectiveAttack;
+            } else if (effectiveRelease > 0 && noteFrame > noteLength - effectiveRelease) {
+                gain = (noteLength - noteFrame) / effectiveRelease;
             }
 
             // Clamp gain

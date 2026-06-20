@@ -13,9 +13,14 @@
  * Spec §12. All exports are API-stable.
  */
 
+import { logger } from '#/infra/logger/appLogger';
+
 import { DEFAULT_EN_PHONEME_MAP } from '../models/phonemeMap';
 
 import { phonemize } from './phonemizer';
+
+/** Kokoro v1.0 context limit is 512 tokens including the two pad tokens. */
+const MAX_PHONEME_TOKENS = 510;
 
 /** Kokoro IPA token vocabulary (character → ID). */
 export const KOKORO_VOCAB: Record<string, number> = {
@@ -173,6 +178,13 @@ type KokoroInputIds = {
      * Used to index the voice embedding file: style = voices[tokenCount] * shape [1,256].
      */
     tokenCount: number;
+    /**
+     * Non-fatal issues that altered the output: input truncated past the model's
+     * context limit, or phonemes dropped because they are absent from the Kokoro
+     * vocabulary. Empty when the text mapped cleanly. Callers can surface these to
+     * the user instead of silently producing degraded audio.
+     */
+    warnings: string[];
 };
 
 /**
@@ -185,6 +197,8 @@ export function textToKokoroInputIds(text: string): KokoroInputIds {
     const { phonemes } = phonemize({ lyrics: text, phonemeToId: DEFAULT_EN_PHONEME_MAP });
 
     const tokenIds: number[] = [];
+    const warnings: string[] = [];
+    const droppedPhonemes: string[] = [];
 
     for (let index = 0; index < phonemes.length; index++) {
         const ph = phonemes[index]!;
@@ -198,8 +212,18 @@ export function textToKokoroInputIds(text: string): KokoroInputIds {
         const ids = ARPABET_TO_KOKORO_IDS[ph];
         if (ids) {
             tokenIds.push(...ids);
+        } else {
+            // Unknown phonemes are dropped (shouldn't happen with a complete map),
+            // but record them so the caller can flag degraded output instead of
+            // silently mispronouncing the input.
+            droppedPhonemes.push(ph);
         }
-        // Unknown phonemes are silently dropped (shouldn't happen with a complete map)
+    }
+
+    if (droppedPhonemes.length > 0) {
+        const warning = `Kokoro tokenizer dropped ${String(droppedPhonemes.length)} phoneme(s) absent from the vocabulary: ${droppedPhonemes.join(', ')}`;
+        warnings.push(warning);
+        logger.warn(`[BrowserAi] ${warning}`);
     }
 
     if (tokenIds.length === 0) {
@@ -208,15 +232,22 @@ export function textToKokoroInputIds(text: string): KokoroInputIds {
 
     const tokenCount = tokenIds.length;
 
-    if (tokenCount > 510) {
-        // Kokoro v1.0 context limit is 512 tokens including the two pad tokens.
-        // Truncate to 510 so the padded sequence never exceeds the model's limit.
-        tokenIds.splice(510);
+    if (tokenCount > MAX_PHONEME_TOKENS) {
+        // Truncate so the padded sequence never exceeds the model's context limit.
+        const dropped = tokenCount - MAX_PHONEME_TOKENS;
+        tokenIds.splice(MAX_PHONEME_TOKENS);
+        const warning = `Kokoro input truncated: ${String(tokenCount)} tokens exceeded the ${String(MAX_PHONEME_TOKENS)}-token limit, ${String(dropped)} dropped from the end`;
+        warnings.push(warning);
+        logger.warn(`[BrowserAi] ${warning}`);
     }
+
+    // tokenCount above is the pre-truncation phoneme count; the voice-embedding
+    // lookup must use the actual (possibly truncated) length.
+    const effectiveTokenCount = tokenIds.length;
 
     // Wrap with pad token 0 at both ends (Kokoro v1.0 post-processor convention)
     const paddedIds = [0, ...tokenIds, 0];
     const inputIds = BigInt64Array.from(paddedIds.map(BigInt));
 
-    return { inputIds, tokenCount };
+    return { inputIds, tokenCount: effectiveTokenCount, warnings };
 }
