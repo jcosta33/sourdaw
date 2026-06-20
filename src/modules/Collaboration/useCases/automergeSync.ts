@@ -24,6 +24,32 @@ import { DOC_ID_BRANCHES } from '../models/syncChannelConstants';
 import { type PeerConnectionManager } from '../repositories/peerConnection';
 
 const DOC_PREFIX_ROOT = 'root';
+const DOC_PREFIX_BRANCH = 'branch_';
+
+/**
+ * Optional hooks supplied by the session layer so AutomergeSync can enforce
+ * an edit boundary and surface persistence failures without importing the
+ * collaboration store or permission manager directly.
+ */
+export type AutomergeSyncHooks = {
+    /**
+     * Gate applied before a received project sync is written into the
+     * repository. Return `false` to drop the sync (e.g. the sender is a
+     * viewer with no edit capability). When omitted, all syncs are applied.
+     */
+    canApplySync?: (peerId: PeerId, docId: string) => boolean;
+    /** Called when an async persist after a received sync fails. */
+    onPersistError?: (error: unknown) => void;
+};
+
+/**
+ * Whether `docId` names a document this node is willing to host. We only
+ * accept syncs for the root project doc, the session branch-metadata doc,
+ * and branch content docs — never an arbitrary doc minted by a remote peer.
+ */
+function isKnownDocId(docId: string): boolean {
+    return docId === DOC_PREFIX_ROOT || docId === DOC_ID_BRANCHES || docId.startsWith(DOC_PREFIX_BRANCH);
+}
 
 // Sync state is per-peer per-doc: each document requires its own Automerge SyncState.
 type PerDocSyncStateMap = Map<string, SyncState>;
@@ -45,14 +71,35 @@ export class AutomergeSync {
     private syncStates: SyncStateMap = new Map();
     private peerManager: PeerConnectionManager;
     private unsubscribeFromChanges: (() => void) | null = null;
+    private hooks: AutomergeSyncHooks;
+    /**
+     * Guard set while a received remote sync is being written into the
+     * repository. The change subscription checks it and skips re-broadcasting
+     * so a received sync doesn't bounce straight back to every peer (mirrors
+     * the isProjectingBranches pattern in sessionManagement).
+     */
+    private isApplyingRemoteSync = false;
 
-    constructor(peerManager: PeerConnectionManager) {
+    constructor(peerManager: PeerConnectionManager, hooks: AutomergeSyncHooks = {}) {
         this.peerManager = peerManager;
+        this.hooks = hooks;
     }
 
     /** Start syncing: subscribe to local document changes. */
     start(): void {
+        // Idempotent: a second start() must not leak the prior subscription.
+        // Tear the existing one down before re-subscribing.
+        if (this.unsubscribeFromChanges) {
+            this.unsubscribeFromChanges();
+            this.unsubscribeFromChanges = null;
+        }
         this.unsubscribeFromChanges = subscribeToCrdtChanges((docId) => {
+            // While applying a received remote sync, the resulting repository
+            // change must not be re-broadcast — that would echo every received
+            // message back to all peers and form a sync loop.
+            if (this.isApplyingRemoteSync) {
+                return;
+            }
             // §138.1 — If the repository tells us which doc changed,
             // skip the per-peer generateSyncMessage for every other
             // doc and only sync the one that actually moved. Bulk
@@ -95,10 +142,25 @@ export class AutomergeSync {
         docId: string;
         syncMessageBase64: string;
     }): void {
+        // Only accept syncs for documents this node is willing to host. A
+        // remote peer must not be able to mint arbitrary docs in our
+        // repository (which the next persist would write to IDB).
+        if (!isKnownDocId(docId)) {
+            logger.warn('[AutomergeSync] Dropping sync for unknown docId from peer', peerId, docId);
+            return;
+        }
+
+        // Edit boundary: a peer without edit capability (e.g. a viewer) must
+        // not be able to mutate the project via the sync channel.
+        if (this.hooks.canApplySync && !this.hooks.canApplySync(peerId, docId)) {
+            logger.warn('[AutomergeSync] Dropping sync from peer without edit capability', peerId, docId);
+            return;
+        }
+
         let doc = getCrdtDoc(docId);
         if (!doc) {
-            // Unknown doc — peer is syncing a branch or metadata doc we don't have yet.
-            // Initialize empty and let the sync message fill it in.
+            // Known-but-absent doc — peer is syncing a branch or metadata doc
+            // we don't have yet. Initialize empty and let the sync fill it in.
             createCrdtDoc(docId);
             doc = getCrdtDoc(docId)!;
         }
@@ -120,12 +182,19 @@ export class AutomergeSync {
         this.syncStates.set(peerId, peerStates);
 
         // Update the document in the repository.
-        // This triggers onChange → hydration + response sync messages.
-        replaceCrdtDoc({ id: docId, doc: newDoc });
+        // This triggers onChange → hydration. Guard the broadcast so the
+        // resulting change isn't echoed straight back to every peer.
+        this.isApplyingRemoteSync = true;
+        try {
+            replaceCrdtDoc({ id: docId, doc: newDoc });
+        } finally {
+            this.isApplyingRemoteSync = false;
+        }
 
         // Persist asynchronously — don't block the sync loop.
         persistCrdtProject().catch((error) => {
             logger.warn('[AutomergeSync] Failed to persist after receiving sync:', error);
+            this.hooks.onPersistError?.(error);
         });
     }
 

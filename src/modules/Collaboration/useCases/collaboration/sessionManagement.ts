@@ -2,7 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
-import { branchStore } from '#/modules/CrdtDocument/stores';
+import { branchStore, MAIN_BRANCH_ID } from '#/modules/CrdtDocument/stores';
 import {
     setupProjectionBridge,
     subscribeToCrdtChanges,
@@ -14,18 +14,24 @@ import {
     hasCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
+import { bytesToBase64 } from '#/utils/base64';
 
 import { createCollaborationError } from '../../errors/CollaborationError';
-import { type PeerId, type PeerMessage, type SignalingMessage, PEER_COLORS } from '../../models/CollaborationTypes';
+import {
+    type PeerId,
+    type PeerMessage,
+    type SignalingMessage,
+    PEER_COLORS,
+    peerColorForIndex,
+    type PresenceDelta,
+} from '../../models/CollaborationTypes';
 import { DOC_ID_ASSET, DOC_ID_BRANCHES } from '../../models/syncChannelConstants';
 import { PeerConnectionManager } from '../../repositories/peerConnection';
 import { collaborationStore } from '../../stores/collaborationStore';
 import { AssetTransfer } from '../assetTransfer';
-import { AutomergeSync } from '../automergeSync';
+import { AutomergeSync, type AutomergeSyncHooks } from '../automergeSync';
 import { type CollaborationPeer, type PresenceData } from '../collaborationQueries';
 import { PermissionManager } from '../permissions';
-
-const MAIN_BRANCH_ID = 'main';
 
 type LocalBranchRecord = {
     branchId: string;
@@ -61,7 +67,7 @@ const sessionState: {
     assetTransfer: AssetTransfer | null;
     permissionManager: PermissionManager | null;
     cleanupProjectionBridge: (() => void) | null;
-    presenceListeners: Set<(data: PresenceData) => void>;
+    presenceListeners: Set<(data: PresenceDelta) => void>;
     playheadBroadcastInterval: ReturnType<typeof setInterval> | null;
     /** Host-assigned peer slot ID for the in-flight invite, if any. */
     pendingInviteId: PeerId | null;
@@ -106,6 +112,26 @@ const PEER_CLEANUP_DELAY_MS = 15_000;
 
 const PLAYHEAD_BROADCAST_HZ = 4;
 
+/** Max accepted length for sender-supplied presence display fields. */
+const MAX_PRESENCE_NAME_LEN = 64;
+const MAX_PRESENCE_COLOR_LEN = 32;
+
+/**
+ * Bound the sender-controlled display fields on incoming presence so a hostile
+ * peer can't supply an unbounded name/color string (rendered verbatim in the
+ * presence overlay). Behaviour-preserving for well-formed presence.
+ */
+function sanitizePresence(data: PresenceDelta): PresenceDelta {
+    if (data.name.length <= MAX_PRESENCE_NAME_LEN && data.color.length <= MAX_PRESENCE_COLOR_LEN) {
+        return data;
+    }
+    return {
+        ...data,
+        name: data.name.slice(0, MAX_PRESENCE_NAME_LEN),
+        color: data.color.slice(0, MAX_PRESENCE_COLOR_LEN),
+    };
+}
+
 // -- Branch sync helpers --
 
 /**
@@ -123,10 +149,10 @@ const PLAYHEAD_BROADCAST_HZ = 4;
  * Only `branches` is synced; `activeBranchId` is per-peer and never shared.
  */
 function startBranchSync(isHost: boolean): void {
-    // Snapshot current state so we can restore it on session end.
-    sessionState.branchStoreSnapshot = branchStore.value
-        ? { ...branchStore.value, branches: [...branchStore.value.branches] }
-        : null;
+    // Snapshot current state so we can restore it on session end. Deep-clone
+    // the branch records (not just the array) so live edits during the
+    // session can't mutate the snapshot we restore from on leave.
+    sessionState.branchStoreSnapshot = branchStore.value ? structuredClone(branchStore.value) : null;
 
     if (isHost) {
         // Seed the metadata doc. Remove any stale doc from a previous session first.
@@ -225,7 +251,54 @@ function stopBranchSync(): void {
     // Persist without the __branches__ doc so IDB stays clean.
     persistCrdtProject().catch((error) => {
         logger.warn('[Collaboration] Failed to persist after branch sync cleanup:', error);
+        setCollaborationError('Failed to save project locally after leaving the session.');
     });
+}
+
+/** Surface an error to the user via the collaboration store. */
+function setCollaborationError(message: string): void {
+    const state = collaborationStore.value;
+    if (state) {
+        collaborationStore.set({ ...state, error: message });
+    }
+}
+
+/**
+ * Build the hooks AutomergeSync uses to (1) enforce the edit boundary and
+ * (2) surface persistence failures. Read lazily so the predicate sees the
+ * permission manager once it's constructed.
+ */
+function buildAutomergeSyncHooks(): AutomergeSyncHooks {
+    return {
+        canApplySync: (peerId: PeerId, docId: string) => {
+            // The host is the session authority: its syncs always apply. The
+            // host's own edit capability is never broadcast as a role.grant
+            // (it's implicit), so canEdit(host) is false on joiners — without
+            // this short-circuit a joiner would wrongly drop the host's root
+            // sync and break the fundamental project sync.
+            const senderIsHost =
+                collaborationStore.value?.peers.some((param) => param.id === peerId && param.isHost) ?? false;
+            if (senderIsHost) {
+                return true;
+            }
+            // §fix-7 — Branch metadata is host-authoritative. A non-host sender
+            // may never rewrite every joiner's branch list.
+            if (docId === DOC_ID_BRANCHES) {
+                return false;
+            }
+            const manager = sessionState.permissionManager;
+            // No permission manager yet → fail open (session not fully wired).
+            if (!manager) {
+                return true;
+            }
+            // §fix-1 — A non-host peer without edit capability (e.g. a viewer)
+            // must not be able to mutate the project via the sync channel.
+            return manager.canEdit(peerId);
+        },
+        onPersistError: () => {
+            setCollaborationError('Failed to save received changes locally.');
+        },
+    };
 }
 
 function generatePeerId(): PeerId {
@@ -235,10 +308,26 @@ function generateSessionId(): string {
     return crypto.randomUUID().slice(0, 8);
 }
 
-/** Pick the first color from PEER_COLORS not already in use. */
+/**
+ * Pick a distinct color not already in use. Prefers the curated palette;
+ * once all palette entries are taken, falls back to golden-angle HSL slots
+ * (peerColorForIndex) so a 9th+ peer gets a unique color instead of
+ * colliding onto the host's blue.
+ */
 function pickPeerColor(excludeColors: string[]): string {
     const used = new Set(excludeColors);
-    return PEER_COLORS.find((context) => !used.has(context)) ?? PEER_COLORS[0]!;
+    const fromPalette = PEER_COLORS.find((context) => !used.has(context));
+    if (fromPalette) {
+        return fromPalette;
+    }
+    // All palette colors are taken — advance through HSL overflow slots until
+    // we find one not already assigned.
+    for (let index = PEER_COLORS.length; ; index++) {
+        const candidate = peerColorForIndex(index);
+        if (!used.has(candidate)) {
+            return candidate;
+        }
+    }
 }
 
 function getLocalPeerInfo(): CollaborationPeer {
@@ -272,7 +361,7 @@ export function createSession(name: string): string {
         onDisconnected: handlePeerDisconnected,
     });
 
-    sessionState.automergeSync = new AutomergeSync(sessionState.peerManager);
+    sessionState.automergeSync = new AutomergeSync(sessionState.peerManager, buildAutomergeSyncHooks());
     sessionState.automergeSync.start();
     sessionState.cleanupProjectionBridge = setupProjectionBridge();
 
@@ -362,7 +451,7 @@ export async function joinSession(inviteString: string, name: string): Promise<s
 
     const peerId = generatePeerId();
     // Pick a color that doesn't clash with the host's (always the first color).
-    const color = pickPeerColor([PEER_COLORS[0]!]);
+    const color = pickPeerColor([PEER_COLORS[0]]);
 
     sessionState.peerManager = new PeerConnectionManager({
         onMessage: handlePeerMessage,
@@ -370,7 +459,7 @@ export async function joinSession(inviteString: string, name: string): Promise<s
         onDisconnected: handlePeerDisconnected,
     });
 
-    sessionState.automergeSync = new AutomergeSync(sessionState.peerManager);
+    sessionState.automergeSync = new AutomergeSync(sessionState.peerManager, buildAutomergeSyncHooks());
     sessionState.automergeSync.start();
     sessionState.cleanupProjectionBridge = setupProjectionBridge();
 
@@ -399,7 +488,7 @@ export async function joinSession(inviteString: string, name: string): Promise<s
             {
                 id: invite.peerId,
                 name: invite.name,
-                color: PEER_COLORS[0]!,
+                color: PEER_COLORS[0],
                 isHost: true,
                 isConnected: false,
                 lastSeen: Date.now(),
@@ -543,6 +632,10 @@ function startPlayheadBroadcast(): void {
             return;
         }
         const playheadBeat = transportStore.value?.playheadPosition ?? null;
+        // §fix-9 — Playhead-only delta. Omitting the cursor/selection fields
+        // (rather than nulling them) lets the receiver's merge preserve the
+        // cursor set by the higher-rate cursor-broadcast path, eliminating the
+        // 4 Hz presence flicker.
         sessionState.peerManager.broadcastPresence({
             type: 'presence',
             data: {
@@ -550,14 +643,6 @@ function startPlayheadBroadcast(): void {
                 name: state.localName,
                 color: state.localColor,
                 view: 'arrangement',
-                cursorBeat: null,
-                cursorTrackId: null,
-                selectedClipIds: [],
-                selectedNoteIds: [],
-                viewportStartBeat: 0,
-                viewportEndBeat: 0,
-                viewportTrackIds: [],
-                action: null,
                 playheadBeat,
             },
         });
@@ -573,13 +658,32 @@ function stopPlayheadBroadcast(): void {
 
 /**
  * Leave the current session.
+ *
+ * §fix-11 — Previously this broadcast `peer-leave` and then immediately called
+ * `closeAll()`, which dropped the buffered message: the remote never saw the
+ * leave and waited the full PEER_CLEANUP_DELAY_MS before reaping us. We now
+ * send the leave through the buffered/back-pressure-aware send path and await
+ * it per connected peer before tearing the channels down, so the message
+ * actually flushes. Returns a Promise so callers may await the flush; existing
+ * fire-and-forget callers are unaffected (cleanup still runs after the await).
  */
-export function leaveSession(): void {
-    if (sessionState.peerManager) {
-        sessionState.peerManager.broadcastCrdtSync({
+export async function leaveSession(): Promise<void> {
+    const peerManager = sessionState.peerManager;
+    if (peerManager) {
+        const leaveMessage: PeerMessage = {
             type: 'peer-leave',
             peerId: collaborationStore.value?.localPeerId ?? '',
-        });
+        };
+        // Drain the send buffer to each connected peer before closing so the
+        // leave isn't discarded mid-flight by closeAll().
+        await Promise.all(
+            peerManager.getConnectedPeerIds().map((peerId) =>
+                peerManager.sendCrdtSyncBuffered({ peerId, message: leaveMessage }).catch(() => {
+                    // A peer that errors/closes during flush is being torn down
+                    // anyway; ignore so the remaining peers still get the leave.
+                })
+            )
+        );
     }
 
     cleanupSubsystems();
@@ -598,9 +702,14 @@ export function leaveSession(): void {
 }
 
 /**
- * Broadcast local presence data to all peers.
+ * Broadcast a local presence delta to all peers.
+ *
+ * §fix-9 — Callers send only the fields their path owns (e.g. the cursor path
+ * omits playheadBeat). Omitted fields are preserved by the receiver's merge,
+ * so the cursor broadcast and the playhead heartbeat no longer clobber each
+ * other's state.
  */
-export function broadcastPresence(data: Omit<PresenceData, 'peerId' | 'name' | 'color'>): void {
+export function broadcastPresence(data: Partial<Omit<PresenceData, 'peerId' | 'name' | 'color'>>): void {
     if (!sessionState.peerManager) {
         return;
     }
@@ -624,7 +733,7 @@ export function broadcastPresence(data: Omit<PresenceData, 'peerId' | 'name' | '
 /**
  * Subscribe to incoming presence data from peers.
  */
-export function onPresence(listener: (data: PresenceData) => void): () => void {
+export function onPresence(listener: (data: PresenceDelta) => void): () => void {
     sessionState.presenceListeners.add(listener);
     return () => {
         sessionState.presenceListeners.delete(listener);
@@ -655,14 +764,26 @@ function handlePeerMessage({ peerId, message }: HandlePeerMessageInput): void {
             sessionState.automergeSync?.handlePeerMessage({ peerId, message });
         }
     } else if (message.type === 'presence') {
-        for (const listener of sessionState.presenceListeners) {
-            listener(message.data);
+        // Only surface presence from a peer the store already knows, and bound
+        // the sender-supplied display fields so a hostile peer can't blow up
+        // overlay rendering with megabyte names/colors.
+        const known = collaborationStore.value?.peers.some((param) => param.id === message.data.peerId);
+        if (message.data.peerId === peerId && known) {
+            const sanitized = sanitizePresence(message.data);
+            for (const listener of sessionState.presenceListeners) {
+                listener(sanitized);
+            }
         }
         updatePeerLastSeen(peerId);
     } else if (message.type === 'peer-info') {
-        addOrUpdatePeer(message.peer);
+        addOrUpdatePeer({ senderPeerId: peerId, peer: message.peer });
     } else if (message.type === 'peer-leave') {
-        removePeer(message.peerId);
+        // Only honor a self-leave: a peer may remove itself, never a third
+        // party. Without this a hostile joiner could eject any other peer by
+        // id (closing the underlying connection).
+        if (message.peerId === peerId) {
+            removePeer(message.peerId);
+        }
     }
 }
 
@@ -680,6 +801,21 @@ function handlePeerConnected(peerId: PeerId): void {
         peerId,
         message: { type: 'peer-info', peer: getLocalPeerInfo() },
     });
+
+    // §fix-16 — As host, tell the joiner the color we assigned it (chosen in
+    // acceptAnswer) so it can reconcile its locally-picked color. The joiner
+    // recognises a peer-info whose id matches its own localPeerId as its
+    // host-assigned record.
+    const hostState = collaborationStore.value;
+    if (hostState?.isHost) {
+        const assigned = hostState.peers.find((param) => param.id === peerId);
+        if (assigned) {
+            sessionState.peerManager?.sendCrdtSync({
+                peerId,
+                message: { type: 'peer-info', peer: { ...assigned, isConnected: true, lastSeen: Date.now() } },
+            });
+        }
+    }
 
     // Host auto-grants editor role so joiners can edit immediately.
     sessionState.permissionManager?.grantRole(peerId, 'editor');
@@ -712,57 +848,84 @@ function handlePeerDisconnected(peerId: PeerId): void {
     }
 }
 
-function addOrUpdatePeer(peer: CollaborationPeer): void {
-    const state = collaborationStore.value;
-    if (!state) {
+type AddOrUpdatePeerInput = { senderPeerId: PeerId; peer: CollaborationPeer };
+
+function addOrUpdatePeer({ senderPeerId, peer }: AddOrUpdatePeerInput): void {
+    const current = collaborationStore.value;
+    if (!current) {
         return;
     }
-    const existing = state.peers.findIndex((param) => param.id === peer.id);
-    if (existing >= 0) {
-        const peers = [...state.peers];
-        peers[existing] = { ...peer, isConnected: true, lastSeen: Date.now() };
-        collaborationStore.set({ ...state, peers });
-    } else {
-        collaborationStore.set({
-            ...state,
-            peers: [...state.peers, { ...peer, isConnected: true, lastSeen: Date.now() }],
-        });
+
+    // §fix-16 — A peer-info describing *us* is the host's color assignment for
+    // this node. Adopt the assigned color so we render the same color others
+    // see, instead of the one we picked locally on join. Don't add ourselves to
+    // the peer list.
+    if (peer.id === current.localPeerId) {
+        const senderIsHost = current.peers.some((param) => param.id === senderPeerId && param.isHost);
+        if (!current.isHost && senderIsHost && peer.color && peer.color !== current.localColor) {
+            collaborationStore.set({ ...current, localColor: peer.color });
+        }
+        return;
     }
+
+    // §fix-2 — A peer may not promote itself (or anyone) to host via peer-info.
+    // Host authority is established locally at join/accept time; an incoming
+    // peer-info can confirm an existing host flag but never grant a new one.
+    // §fix-13 — Functional update so concurrent peer-list writes compose
+    // rather than clobber.
+    collaborationStore.update((state) => {
+        if (!state) {
+            return state;
+        }
+        const existingIndex = state.peers.findIndex((param) => param.id === peer.id);
+        const trustedIsHost = existingIndex >= 0 ? state.peers[existingIndex]!.isHost : false;
+        const merged: CollaborationPeer = {
+            ...peer,
+            isHost: trustedIsHost,
+            isConnected: true,
+            lastSeen: Date.now(),
+        };
+        if (existingIndex >= 0) {
+            const peers = state.peers.map((param) => (param.id === peer.id ? merged : param));
+            return { ...state, peers };
+        }
+        return { ...state, peers: [...state.peers, merged] };
+    });
 }
 
 function removePeer(peerId: PeerId): void {
-    const state = collaborationStore.value;
-    if (!state) {
-        return;
-    }
-    collaborationStore.set({
-        ...state,
-        peers: state.peers.filter((param) => param.id !== peerId),
+    collaborationStore.update((state) => {
+        if (!state) {
+            return state;
+        }
+        return { ...state, peers: state.peers.filter((param) => param.id !== peerId) };
     });
     sessionState.peerManager?.removePeer(peerId);
 }
 
 function updatePeerLastSeen(peerId: PeerId): void {
-    const state = collaborationStore.value;
-    if (!state) {
-        return;
-    }
-    collaborationStore.set({
-        ...state,
-        peers: state.peers.map((param) => (param.id === peerId ? { ...param, lastSeen: Date.now() } : param)),
+    collaborationStore.update((state) => {
+        if (!state) {
+            return state;
+        }
+        return {
+            ...state,
+            peers: state.peers.map((param) => (param.id === peerId ? { ...param, lastSeen: Date.now() } : param)),
+        };
     });
 }
 
 function updatePeerConnectionState(peerId: PeerId, isConnected: boolean): void {
-    const state = collaborationStore.value;
-    if (!state) {
-        return;
-    }
-    collaborationStore.set({
-        ...state,
-        peers: state.peers.map((param) =>
-            param.id === peerId ? { ...param, isConnected, lastSeen: Date.now() } : param
-        ),
+    collaborationStore.update((state) => {
+        if (!state) {
+            return state;
+        }
+        return {
+            ...state,
+            peers: state.peers.map((param) =>
+                param.id === peerId ? { ...param, isConnected, lastSeen: Date.now() } : param
+            ),
+        };
     });
 }
 
@@ -800,8 +963,7 @@ async function compressInvite(json: string): Promise<string> {
     void writer.write(bytes);
     void writer.close();
     const result = await readAllChunks(stream.readable);
-    const binary = Array.from(result, (b) => String.fromCharCode(b)).join('');
-    return `z:${btoa(binary)}`;
+    return `z:${bytesToBase64(result)}`;
 }
 
 async function decompressInvite(raw: string): Promise<string> {

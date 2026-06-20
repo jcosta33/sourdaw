@@ -19,8 +19,8 @@ export const InviteCodeRow = ({ value, copied, onCopy, className }: InviteCodeRo
             className
         )}
     >
-        <code className="min-w-0 flex-1 truncate text-[9px] font-mono text-foreground/90">
-            {value.length > 40 ? `${value.slice(0, 40)}...` : value}
+        <code className="min-w-0 flex-1 truncate text-[9px] font-mono text-foreground/90" aria-label={value}>
+            <span aria-hidden="true">{value.length > 40 ? `${value.slice(0, 40)}...` : value}</span>
         </code>
         <Button variant="ghost" size="icon-xs" onClick={onCopy} className="shrink-0">
             {copied ? <Check className="size-3 text-[var(--color-state-success)]" /> : <Copy className="size-3" />}

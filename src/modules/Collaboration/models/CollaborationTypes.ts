@@ -41,6 +41,17 @@ export type PresenceData = {
 };
 
 /**
+ * A partial presence broadcast. Identity fields are always present; every
+ * other field is optional so a sender can emit a *delta* (e.g. a cursor-only
+ * update, or a playhead-only heartbeat) without nulling fields owned by the
+ * other broadcast path. The receiver merges deltas onto a per-peer record,
+ * so omitted fields preserve their prior value. This prevents the presence
+ * flicker that full overwrites caused (one path nulling the other's fields).
+ */
+export type PresenceDelta = Pick<PresenceData, 'peerId' | 'name' | 'color'> &
+    Partial<Omit<PresenceData, 'peerId' | 'name' | 'color'>>;
+
+/**
  * Messages sent over the signaling channel (manual exchange or WebSocket).
  * These are used to establish WebRTC connections, not for project data.
  */
@@ -53,11 +64,11 @@ export type SignalingMessage =
  */
 export type PeerMessage =
     | { type: 'crdt-sync'; docId: string; data: string }
-    | { type: 'presence'; data: PresenceData }
+    | { type: 'presence'; data: PresenceDelta }
     | { type: 'peer-info'; peer: PeerInfo }
     | { type: 'peer-leave'; peerId: PeerId };
 
-/** Peer colors for up to 8 collaborators. */
+/** Peer colors for the first 8 collaborators (host is always the first). */
 export const PEER_COLORS = [
     '#3b82f6', // blue
     '#ef4444', // red
@@ -67,4 +78,19 @@ export const PEER_COLORS = [
     '#ec4899', // pink
     '#06b6d4', // cyan
     '#f97316', // orange
-];
+] as const;
+
+/**
+ * Deterministically derive a distinct color for a peer slot beyond the
+ * curated {@link PEER_COLORS} palette. Spreads hues around the wheel via the
+ * golden-angle (~137.5°) so consecutive overflow peers stay visually distinct
+ * instead of all collapsing onto the host's blue (the previous fallback).
+ */
+export function peerColorForIndex(index: number): string {
+    if (index < PEER_COLORS.length) {
+        return PEER_COLORS[index]!;
+    }
+    const overflow = index - PEER_COLORS.length;
+    const hue = Math.round((overflow * 137.508) % 360);
+    return `hsl(${hue}, 70%, 55%)`;
+}

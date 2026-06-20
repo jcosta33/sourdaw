@@ -321,6 +321,8 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                 const tracks = trackStore.value?.tracks ?? [];
                 const contentY = getContentY(y, getScrollY());
                 const trackHit = getTrackAtYHelper(tracks, Math.max(0, contentY));
+                // §fix-9 — Cursor-only delta: omit playheadBeat so it doesn't
+                // overwrite the value the playhead heartbeat keeps current.
                 broadcastPresence({
                     view: 'arrangement',
                     cursorBeat,
@@ -331,7 +333,6 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     viewportEndBeat: 0,
                     viewportTrackIds: [],
                     action: null,
-                    playheadBeat: null,
                 });
             }
         }

@@ -1,9 +1,34 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { type PresenceDelta } from '../../models/CollaborationTypes';
 import { onPresence } from '../../useCases/collaboration/sessionManagement';
 import { type PresenceData } from '../../useCases/collaborationQueries';
 
 const PRESENCE_EXPIRY_MS = 5000;
+
+/**
+ * Seed a complete PresenceData record for a peer we've not seen before, using
+ * the identity carried by the first delta. Subsequent deltas merge onto this,
+ * so the overlay always reads fully-defined fields (never `undefined` from an
+ * omitted delta field).
+ */
+function seedPresence(delta: PresenceDelta): PresenceData {
+    return {
+        peerId: delta.peerId,
+        name: delta.name,
+        color: delta.color,
+        view: delta.view ?? 'arrangement',
+        cursorBeat: delta.cursorBeat ?? null,
+        cursorTrackId: delta.cursorTrackId ?? null,
+        selectedClipIds: delta.selectedClipIds ?? [],
+        selectedNoteIds: delta.selectedNoteIds ?? [],
+        viewportStartBeat: delta.viewportStartBeat ?? 0,
+        viewportEndBeat: delta.viewportEndBeat ?? 0,
+        viewportTrackIds: delta.viewportTrackIds ?? [],
+        action: delta.action ?? null,
+        playheadBeat: delta.playheadBeat ?? null,
+    };
+}
 
 /**
  * Subscribe to all peer presence data.
@@ -25,10 +50,14 @@ export const usePresence = (): readonly PresenceData[] => {
 
     useEffect(() => {
         const unsubscribe = onPresence((data) => {
-            // Merge with existing entry so partial updates (e.g. playhead-only
-            // broadcasts) don't wipe fields set by other update paths.
+            // Merge the delta onto the existing record so partial updates (e.g.
+            // the playhead-only heartbeat or a cursor-only broadcast) preserve
+            // fields owned by the other path. A peer's first delta seeds a
+            // complete record so every field stays defined. `{ ...existing,
+            // ...data }` is safe here because a delta omits (rather than nulls)
+            // the fields it doesn't own.
             const existing = dataRef.current[data.peerId];
-            dataRef.current[data.peerId] = existing ? { ...existing, ...data } : data;
+            dataRef.current[data.peerId] = existing ? { ...existing, ...data } : seedPresence(data);
             setVersion((value) => value + 1);
 
             // Reset expiration timer for this peer

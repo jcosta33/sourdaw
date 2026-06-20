@@ -34,6 +34,13 @@ describe('QrInvite', () => {
         expect(document.querySelector('canvas')).toBeInTheDocument();
     });
 
+    it('exposes the QR canvas to AT as an image labelled with the invite', () => {
+        render(<QrInvite inviteString={mockInviteString} />);
+        const qr = screen.getByRole('img');
+        expect(qr.tagName).toBe('CANVAS');
+        expect(qr).toHaveAttribute('aria-label', expect.stringContaining(mockInviteString));
+    });
+
     it('should render Copy Invite button', () => {
         render(<QrInvite inviteString={mockInviteString} />);
         expect(screen.getByText(/Copy Invite/i)).toBeInTheDocument();

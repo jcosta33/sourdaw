@@ -9,4 +9,11 @@ describe('CollaborationStatusRow', () => {
         expect(screen.getByTestId('ico')).toBeInTheDocument();
         expect(screen.getByText('Connected')).toBeInTheDocument();
     });
+
+    it('exposes a live status region so AT announces connection changes', () => {
+        render(<CollaborationStatusRow icon={<span>i</span>} label="Connecting..." />);
+        const status = screen.getByRole('status');
+        expect(status).toHaveAttribute('aria-live', 'polite');
+        expect(status).toHaveTextContent('Connecting...');
+    });
 });

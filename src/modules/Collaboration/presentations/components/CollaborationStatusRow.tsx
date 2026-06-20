@@ -18,6 +18,8 @@ export const CollaborationStatusRow = ({
     className,
 }: CollaborationStatusRowProps): ReactElement => (
     <div
+        role="status"
+        aria-live="polite"
         className={cn(
             'flex items-center gap-2 rounded-md border px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]',
             tone === 'danger'

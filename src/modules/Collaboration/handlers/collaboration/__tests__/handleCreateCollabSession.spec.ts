@@ -19,4 +19,12 @@ describe('collaborationHandlers', () => {
 
         expect(createSession).toHaveBeenCalledWith('Jam');
     });
+
+    it('defaults to "Host" when name is omitted', () => {
+        // The schema marks `name` optional, so a name-less payload must type-check
+        // and the handler must supply the documented default rather than `undefined`.
+        void handleCreateCollabSession.execute({ type: 'createCollabSession', payload: {} });
+
+        expect(createSession).toHaveBeenCalledWith('Host');
+    });
 });

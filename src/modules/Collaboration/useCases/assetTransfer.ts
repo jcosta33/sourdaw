@@ -49,6 +49,15 @@ export class AssetTransfer {
         }
     >();
 
+    /**
+     * Hashes this peer has actively requested and is still awaiting a manifest
+     * for. A manifest is only accepted if its hash is in this set, so a remote
+     * peer cannot start (and grow) a transfer slot we never asked for
+     * (unsolicited-manifest DoS). Cleared once a manifest is chosen — the
+     * first responder wins and later manifests for the same hash are ignored.
+     */
+    private requestedHashes = new Set<string>();
+
     constructor(peerManager: PeerConnectionManager, callbacks: AssetTransferCallbacks) {
         this.peerManager = peerManager;
         this.callbacks = callbacks;
@@ -73,6 +82,15 @@ export class AssetTransfer {
 
     /** Request a missing asset from connected peers. */
     requestAsset(hash: string): void {
+        // A transfer already in flight already has (or is fetching) the asset.
+        if (this.localAssets.has(hash) || this.incomingTransfers.has(hash)) {
+            return;
+        }
+
+        // Mark the hash as outstanding so an incoming manifest for it is treated
+        // as a solicited reply rather than an unsolicited transfer slot.
+        this.requestedHashes.add(hash);
+
         const msg: AssetControlMessage = {
             type: 'asset.request',
             hash,
@@ -161,9 +179,38 @@ export class AssetTransfer {
     }
 
     private handleManifest(_peerId: PeerId, manifest: AssetManifest): void {
+        // Already have the asset — nothing to fetch.
         if (this.localAssets.has(manifest.hash)) {
             return;
         }
+
+        // Ignore manifests for hashes this peer never requested. An incoming
+        // manifest must answer an outstanding requestAsset, otherwise a remote
+        // peer could spin up an arbitrary number of transfer slots we never
+        // asked for (unsolicited-manifest memory DoS).
+        if (!this.requestedHashes.has(manifest.hash)) {
+            return;
+        }
+
+        // First-responder-wins: once a transfer is in flight for this hash, the
+        // chosen manifest is locked in and later manifests (from other peers)
+        // are ignored. Without this, every peer's manifest would overwrite the
+        // slot and reset progress, fanning out the transfer to O(N) responders.
+        if (this.incomingTransfers.has(manifest.hash)) {
+            return;
+        }
+
+        // Reject manifests whose declared dimensions are inconsistent or
+        // unbounded — these define the limits all later chunks are checked
+        // against, so an untrustworthy manifest is itself a DoS vector.
+        if (!isManifestSane(manifest)) {
+            logger.warn(`[AssetTransfer] Rejecting malformed manifest for ${manifest.hash}`);
+            return;
+        }
+
+        // The request is now answered: drop the outstanding flag so duplicate
+        // or stale manifests for the same hash are ignored from here on.
+        this.requestedHashes.delete(manifest.hash);
 
         this.incomingTransfers.set(manifest.hash, {
             manifest,
@@ -173,19 +220,46 @@ export class AssetTransfer {
     }
 
     private handleChunk(hash: string, index: number, base64Data: string): void {
+        // Reject chunks for a hash with no in-flight (requested) transfer. This
+        // covers chunks arriving before/without a manifest, chunks from peers
+        // that lost the first-responder race, and chunks for assets we already
+        // hold or never asked for.
         const transfer = this.incomingTransfers.get(hash);
         if (!transfer) {
             return;
         }
 
+        const { manifest } = transfer;
+
+        // Reject out-of-range indices. A malicious peer could otherwise store
+        // chunks at arbitrary indices (including indices >= chunkCount),
+        // growing transfer.chunks without bound.
+        if (!Number.isInteger(index) || index < 0 || index >= manifest.chunkCount) {
+            logger.warn(`[AssetTransfer] Rejecting chunk ${index} for ${hash}: index out of range`);
+            this.incomingTransfers.delete(hash);
+            return;
+        }
+
         const data = base64ToArrayBuffer(base64Data);
+
+        // Bound the decoded chunk size against the manifest's declared chunk
+        // size. The manifest fixes chunkSize as the per-chunk maximum; any chunk
+        // larger than that is oversized data the sender should never produce.
+        if (data.byteLength > manifest.chunkSize) {
+            logger.warn(
+                `[AssetTransfer] Rejecting chunk ${index} for ${hash}: ${data.byteLength} bytes exceeds declared chunk size ${manifest.chunkSize}`
+            );
+            this.incomingTransfers.delete(hash);
+            return;
+        }
+
         transfer.chunks.set(index, new Uint8Array(data));
         transfer.receivedBitmap.add(index);
 
-        this.callbacks.onProgress(hash, transfer.receivedBitmap.size, transfer.manifest.chunkCount);
+        this.callbacks.onProgress(hash, transfer.receivedBitmap.size, manifest.chunkCount);
 
         // Check if all chunks received
-        if (transfer.receivedBitmap.size === transfer.manifest.chunkCount) {
+        if (transfer.receivedBitmap.size === manifest.chunkCount) {
             void this.assembleAsset(hash, transfer);
         }
     }
@@ -228,6 +302,37 @@ export class AssetTransfer {
         this.incomingTransfers.delete(hash);
         this.callbacks.onAssetAvailable(hash);
     }
+}
+
+/** Hard ceiling on a single accepted asset transfer (512 MiB). */
+const MAX_ASSET_SIZE = 512 * 1024 * 1024;
+
+/**
+ * Validate a manifest's declared dimensions before committing to a transfer.
+ *
+ * The manifest is attacker-controlled: every later chunk is bounds-checked
+ * against `chunkCount` and `chunkSize`, so an inconsistent or unbounded
+ * manifest is itself a memory-DoS vector. Reject anything non-integral,
+ * negative, mutually inconsistent, or over the hard size ceiling.
+ */
+function isManifestSane(manifest: AssetManifest): boolean {
+    const { size, chunkSize, chunkCount } = manifest;
+
+    if (!Number.isInteger(size) || size < 0 || size > MAX_ASSET_SIZE) {
+        return false;
+    }
+    if (!Number.isInteger(chunkSize) || chunkSize <= 0 || chunkSize > MAX_ASSET_SIZE) {
+        return false;
+    }
+    if (!Number.isInteger(chunkCount) || chunkCount < 0) {
+        return false;
+    }
+    // chunkCount must be exactly the number of chunkSize-sized pieces that
+    // cover `size`, so a manifest can't declare more chunks than its size needs.
+    if (chunkCount !== Math.ceil(size / chunkSize)) {
+        return false;
+    }
+    return true;
 }
 
 /** Hash a blob using SHA-256 (browser-native). BLAKE3 can be added via wasm. */

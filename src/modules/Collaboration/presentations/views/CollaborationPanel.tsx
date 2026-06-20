@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useRef, useEffect } from 'react';
+import { type KeyboardEvent, type ReactElement, useState, useRef, useEffect } from 'react';
 
 import { X, Copy, Users, Wifi, WifiOff, Loader2, QrCode } from 'lucide-react';
 
@@ -68,6 +68,13 @@ export const CollaborationPanel = (): ReactElement | null => {
     if (!panelOpen) {
         return null;
     }
+
+    const handlePanelKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+        if (event.key === 'Escape') {
+            event.stopPropagation();
+            closeCollaborationPanel();
+        }
+    };
 
     const handleCreate = () => {
         createSession(hostName.trim() || 'Host');
@@ -166,7 +173,13 @@ export const CollaborationPanel = (): ReactElement | null => {
     })();
 
     return (
-        <DawUtilityPanel className="absolute right-2 top-10 z-40 w-72">
+        <DawUtilityPanel
+            className="absolute right-2 top-10 z-40 w-72"
+            role="dialog"
+            aria-label="Collaborate"
+            tabIndex={-1}
+            onKeyDown={handlePanelKeyDown}
+        >
             {/* Header */}
             <DawHeaderBand
                 className="rounded-t-lg px-3 py-2"

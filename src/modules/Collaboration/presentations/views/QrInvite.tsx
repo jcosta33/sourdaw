@@ -84,7 +84,12 @@ export const QrInvite = ({ inviteString }: QrInviteProps): ReactElement => {
             description="Share this QR when copying the raw invite text is inconvenient."
             className="flex flex-col items-center gap-2"
         >
-            <canvas ref={canvasRef} className="rounded" />
+            <canvas
+                ref={canvasRef}
+                role="img"
+                aria-label={`QR code to join the collaboration session. Invite: ${inviteString}`}
+                className="rounded"
+            />
             <DawInlineHint className="px-0 py-0 text-[10px] text-muted-foreground/70">
                 Scan this QR code to join, or copy the invite text
             </DawInlineHint>
