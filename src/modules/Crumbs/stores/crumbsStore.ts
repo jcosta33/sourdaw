@@ -197,14 +197,24 @@ export function setLoopParams(instanceId: string, mode?: LoopMode, start?: numbe
     });
 }
 
+/**
+ * Valid master-gain range for the Crumbs engine. The Rust `set_param`
+ * (`crates/daw-dsp/src/crumbs/engine.rs`) does `master_gain.set(value)` with no
+ * clamp, so an out-of-range value would reach the engine unbounded. Bound it here
+ * at the single source of truth so every caller — not just the UI Knob — is safe.
+ */
+const MASTER_GAIN_MIN = 0;
+const MASTER_GAIN_MAX = 2;
+
 export function setMasterGain(instanceId: string, gain: number): void {
+    const clamped = Math.min(Math.max(gain, MASTER_GAIN_MIN), MASTER_GAIN_MAX);
     crumbsStore.update((s) => {
         if (!s || !s[instanceId]) {
             return s;
         }
         return {
             ...s,
-            [instanceId]: { ...s[instanceId], masterGain: gain },
+            [instanceId]: { ...s[instanceId], masterGain: clamped },
         };
     });
 }

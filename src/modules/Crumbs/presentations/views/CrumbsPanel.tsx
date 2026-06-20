@@ -81,11 +81,19 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     // Gates the status LED so a failed init can't read 'Ready' while param writes
     // silently no-op against a missing backend instance.
     const [engineReady, setEngineReady] = useState<boolean | null>(null);
+    // Reset the gate to 'initializing' when the panel is pointed at a new device:
+    // done during render via the previous-prop pattern (react.dev "storing
+    // information from previous renders") rather than synchronously in the effect
+    // body, which would trigger a cascading re-render.
+    const [prevDeviceId, setPrevDeviceId] = useState(deviceId);
+    if (prevDeviceId !== deviceId) {
+        setPrevDeviceId(deviceId);
+        setEngineReady(null);
+    }
 
     // Create / destroy crumbs engine instance on mount/unmount.
     useEffect(() => {
         let cancelled = false;
-        setEngineReady(null);
         ensureInstance(deviceId);
         ensurePadInstance(deviceId);
         ensureSliceInstance(deviceId);
