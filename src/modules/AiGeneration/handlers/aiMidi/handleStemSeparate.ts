@@ -7,10 +7,10 @@ import { audioBufferToWav } from '#/modules/AudioEngine/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-/** Targets `separateStems` accepts. Mirrors `StemSelection` in
- *  `Command/models/AppAction.ts`; kept local so the boundary check has a
- *  runtime allow-list to validate against (the payload type is structurally
- *  `string[]`, so garbage like `['voccals']` is only stopped here). */
+/** Targets `separateStems` accepts. The `stemSeparate` AppAction payload types
+ *  `stems` as a bare `string[]` (see `Command/useCases/commandQueries.ts`), so
+ *  this local allow-list is the only runtime guard — garbage like `['voccals']`
+ *  is stopped here at the boundary. */
 const VALID_STEMS = ['all', 'vocals', 'drums', 'bass', 'other'] as const;
 type StemSelection = (typeof VALID_STEMS)[number];
 

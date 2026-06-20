@@ -147,4 +147,18 @@ describe('PianoRoll', () => {
         render(<PianoRoll {...defaultProps} />);
         expect(screen.getByLabelText('Piano roll editor')).toBeInTheDocument();
     });
+
+    // Regression (#21): the focused canvas must advertise itself as a canvas
+    // editor so the global keyboard contract's `closest('[data-canvas-editor]')`
+    // gate goes live and suppresses the arrangement clip-delete while the piano
+    // roll (which owns Delete via `handleKeyDown`) is focused. Without this
+    // attribute the gate is always-false and Delete double-fires.
+    it('marks its focusable canvas with data-canvas-editor so the global delete gate is live', () => {
+        render(<PianoRoll {...defaultProps} />);
+        const canvas = screen.getByLabelText('Piano roll editor');
+        expect(canvas.hasAttribute('data-canvas-editor')).toBe(true);
+        // The marked surface must be the focusable one — the gate keys off the
+        // focused `event.target`, so a non-focusable marker would be inert.
+        expect(canvas).toHaveAttribute('tabindex', '0');
+    });
 });

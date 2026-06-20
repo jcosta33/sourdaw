@@ -3,7 +3,7 @@
 
 export { describeAction } from './actionLabels';
 
-export type { AppAction, ActionHandler } from './commandQueries';
+export type { AppAction, ActionHandler, HandlerDescribeResult } from './commandQueries';
 export { generateGroupId } from './commandQueries';
 
 export { executeAppAction } from './executeAppAction';
@@ -12,13 +12,10 @@ export type { ExecuteOptions } from './executeAppAction';
 export { getMacroHandlers } from './getMacroHandlers';
 export { getUndoTreeHandlers } from './getUndoTreeHandlers';
 
-// `playMacro` / `deleteMacro` are invoked through `executeAppAction` (they have
-// `playMacro` / `deleteMacro` AppActions + handlers), so their use-case re-exports
-// were redundant cross-module entry points that bypassed dispatch — removed.
-// `renameMacro` is still re-exported: it has no handler yet, so MacrosPanel calls
-// the use-case directly (a `renameMacro` AppAction now exists in the union for the
-// future handler; see follow-up to wire it and route MacrosPanel through dispatch).
-export { renameMacro } from './macro/management/renameMacro';
+// `playMacro` / `deleteMacro` / `renameMacro` are invoked through
+// `executeAppAction` (each has an AppAction + a handler registered in
+// `getMacroHandlers`), so their use-case re-exports would be redundant
+// cross-module entry points that bypass dispatch — not re-exported.
 
 export { startMacroRecording } from './macro/recording/startMacroRecording';
 export { stopMacroRecording } from './macro/recording/stopMacroRecording';

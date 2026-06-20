@@ -1,4 +1,4 @@
-import { type HandlerDescribeResult } from '#/modules/Command/useCases/commandQueries';
+import { type HandlerDescribeResult } from '#/modules/Command/useCases';
 
 import { getAutomationStoreState } from '../../useCases/getAutomationStoreState';
 

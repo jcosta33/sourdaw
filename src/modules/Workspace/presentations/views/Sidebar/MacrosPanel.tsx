@@ -15,7 +15,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawPanelSurface } from '#/components/daw/DawPanelSurface';
 import { useStore } from '#/infra/store/useStore';
 import { macroStore } from '#/modules/Command/stores';
-import { startMacroRecording, stopMacroRecording, executeAppAction, renameMacro } from '#/modules/Command/useCases';
+import { startMacroRecording, stopMacroRecording, executeAppAction } from '#/modules/Command/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 type MacroView = {
@@ -49,7 +49,7 @@ export const MacrosPanel = (): ReactElement => {
 
     const commitRename = (): void => {
         if (editingId && editName.trim()) {
-            renameMacro(editingId, editName.trim());
+            void executeAppAction({ type: 'renameMacro', payload: { macroId: editingId, name: editName.trim() } });
         }
         setEditingId(null);
     };

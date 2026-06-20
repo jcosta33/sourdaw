@@ -1,8 +1,4 @@
-import {
-    type ActionHandler,
-    type AppAction,
-    type HandlerDescribeResult,
-} from '#/modules/Command/useCases/commandQueries';
+import { type ActionHandler, type AppAction, type HandlerDescribeResult } from '#/modules/Command/useCases';
 
 /**
  * Build an `ActionHandler` for one `AppAction` discriminant. Use **only** in `handlers/`.

@@ -10,15 +10,24 @@ export const useGlobalKeyboardShortcuts = (): void => {
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
             const target = event.target as HTMLElement;
-            // A canvas-based editor (PianoRoll / Elastic / Mixer) that handles
-            // its own destructive keys advertises this by carrying a
-            // `data-canvas-editor` attribute (matching the codebase's existing
-            // `[data-*]` target-routing convention). When focus is inside one,
-            // gate the global shortcut layer exactly like a text input so
-            // Delete / Backspace routes to that editor's own note/marker delete
-            // instead of also firing the arrangement clip-delete path. The
-            // arrangement timeline surface is *not* marked, so Delete there
-            // still reaches the global clip-delete shortcut.
+            // A *focusable* canvas editor that owns its destructive keys marks
+            // its focused surface with `data-canvas-editor`. When the focused
+            // element is inside one, gate the global shortcut layer exactly
+            // like a text input so Delete / Backspace routes to that editor's
+            // own delete instead of also firing the arrangement clip-delete.
+            // Today only the PianoRoll canvas qualifies: it is `tabIndex`-
+            // focusable and `handleKeyDown` deletes the selected notes, so the
+            // focused canvas *is* `event.target`. The arrangement timeline is
+            // not marked, so Delete there still reaches the clip-delete path.
+            //
+            // Not gated here, by design (this is a focus/target-based gate):
+            //   • Elastic editor — its Delete is a `window` listener and its
+            //     canvas is not focusable, so `event.target` is never inside
+            //     it; a marker would be inert. Its double-fire with the global
+            //     clip-delete needs a different mechanism — see
+            //     FINDING-inventory-decisions-backlog.md (#21 residual).
+            //   • Mixer — has no keyboard Delete of its own, so gating it would
+            //     disable delete with no replacement (same finding).
             const isCanvasEditor = target.closest('[data-canvas-editor]') !== null;
             const isInput =
                 isCanvasEditor ||
