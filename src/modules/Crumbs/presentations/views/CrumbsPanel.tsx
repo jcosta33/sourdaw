@@ -14,7 +14,7 @@ import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
 import { logger } from '#/infra/logger/appLogger';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 
-import { midiNoteToName } from '../../models/CrumbsTypes';
+import { type EnvelopeParams, midiNoteToName } from '../../models/CrumbsTypes';
 import {
     defaultCrumbsState,
     crumbsStore,
@@ -45,6 +45,11 @@ import { PadGrid } from '../components/PadGrid';
 import { SliceOverlay } from '../components/SliceOverlay';
 import { WaveformDisplay } from '../components/WaveformDisplay';
 
+// The exhaustive set of envelope param names forwarded to the engine. Typed as
+// `keyof EnvelopeParams` so a rename to the type breaks this list at compile time
+// instead of silently no-oping at the parse_crumbs_param boundary.
+const ENVELOPE_PARAM_KEYS: readonly (keyof EnvelopeParams)[] = ['attack', 'hold', 'decay', 'sustain', 'release'];
+
 const SectionCard = ({
     title,
     detail,
@@ -72,17 +77,34 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
 
     const [isDragOver, setIsDragOver] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
+    // null = still initializing, true = engine ready, false = engine unavailable.
+    // Gates the status LED so a failed init can't read 'Ready' while param writes
+    // silently no-op against a missing backend instance.
+    const [engineReady, setEngineReady] = useState<boolean | null>(null);
 
     // Create / destroy crumbs engine instance on mount/unmount.
     useEffect(() => {
+        let cancelled = false;
+        setEngineReady(null);
         ensureInstance(deviceId);
         ensurePadInstance(deviceId);
         ensureSliceInstance(deviceId);
 
-        initCrumbsEngine(deviceId, 44100).catch((error) => {
-            logger.warn('Failed to create crumbs instance:', error);
-        });
+        initCrumbsEngine(deviceId, 44100)
+            .then(() => {
+                if (!cancelled) {
+                    setEngineReady(true);
+                }
+                return undefined;
+            })
+            .catch((error) => {
+                logger.warn('Failed to create crumbs instance:', error);
+                if (!cancelled) {
+                    setEngineReady(false);
+                }
+            });
         return () => {
+            cancelled = true;
             teardownCrumbsEngine(deviceId).catch((error) => {
                 logger.warn('Failed to destroy crumbs instance:', error);
             });
@@ -110,6 +132,13 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
 
     function handleParamChange(param: string, value: number): void {
         setCrumbsParamThrottled(deviceId, param, value);
+    }
+
+    let statusLabel = 'Ready';
+    if (engineReady === false) {
+        statusLabel = 'Engine unavailable';
+    } else if (engineReady === null || isLoading) {
+        statusLabel = 'Loading...';
     }
 
     return (
@@ -240,9 +269,12 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 <Cpu className="size-3" />
                                 {activeVoices} voices
                             </DawPluginLed>
-                            <DawPluginLed tone="lavender" className="flex items-center gap-1">
+                            <DawPluginLed
+                                tone={engineReady === false ? 'danger' : 'lavender'}
+                                className="flex items-center gap-1"
+                            >
                                 <Volume2 className="size-3" />
-                                {isLoading ? 'Loading...' : 'Ready'}
+                                {statusLabel}
                             </DawPluginLed>
                         </div>
                     </SectionCard>
@@ -264,7 +296,6 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                     markers={slices.markers}
                                     totalFrames={activeSample.frameCount}
                                     activeSliceIndex={slices.activeSliceIndex}
-                                    width={600}
                                     height={140}
                                     onMarkerDrag={(id, pos) => debouncedUpdateMarkerPosition(deviceId, id, pos)}
                                     onSelectSlice={(index) => setActiveSlice(deviceId, index)}
@@ -314,8 +345,15 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                             onModeChange={(m) => switchCrumbsMode(deviceId, m)}
                             onEnvelopeChange={(updates) => {
                                 updateEnvelope(deviceId, updates);
-                                for (const [key, value] of Object.entries(updates)) {
-                                    handleParamChange(key, value);
+                                // Iterate a typed key list so each forwarded param name stays a
+                                // literal `keyof EnvelopeParams` the Rust parse_crumbs_param matches —
+                                // Object.entries would widen the key to a bare string and let a future
+                                // renamed key compile while silently failing at the IPC boundary.
+                                for (const key of ENVELOPE_PARAM_KEYS) {
+                                    const value = updates[key];
+                                    if (value !== undefined) {
+                                        handleParamChange(key, value);
+                                    }
                                 }
                             }}
                             onFilterChange={(cutoff, resonance) => {

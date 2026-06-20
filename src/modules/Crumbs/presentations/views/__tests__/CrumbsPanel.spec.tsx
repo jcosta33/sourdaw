@@ -1,35 +1,199 @@
 import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { crumbsStore, ensureInstance, setActiveSample, setMode } from '../../../stores/crumbsStore';
+import { ensurePadInstance, padStore } from '../../../stores/padStore';
+import { ensureSliceInstance, sliceStore } from '../../../stores/sliceStore';
+import { initCrumbsEngine } from '../../../useCases/crumbsLifecycle/initCrumbsEngine';
 import { CrumbsPanel } from '../CrumbsPanel';
 
-vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store, defaultValue) => defaultValue),
+import type { SampleMeta } from '../../../models/CrumbsTypes';
+
+// Engine lifecycle and position polling reach the Tauri bridge; stub them so the
+// render exercises real store-driven DOM without IPC. The panel still drives its
+// own `useStoreSelector` against the real signal stores.
+vi.mock('../../../useCases/crumbsLifecycle/initCrumbsEngine', () => ({
+    initCrumbsEngine: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('../../../useCases/crumbsLifecycle/teardownCrumbsEngine', () => ({
+    teardownCrumbsEngine: vi.fn().mockResolvedValue(undefined),
+}));
+// Silence the engine-init warning the panel logs when init rejects.
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
+const initEngineMock = vi.mocked(initCrumbsEngine);
+
+const DEVICE = 'panel-test';
+
+function seedSample(overrides: Partial<SampleMeta> = {}): SampleMeta {
+    return {
+        sampleId: 1,
+        sampleRate: 48000,
+        channels: 2,
+        frameCount: 96000,
+        durationSecs: 2,
+        detectedRoot: 60,
+        detectedBpm: 128,
+        category: 'percussive',
+        filePath: '/loops/break.wav',
+        fileName: 'break.wav',
+        ...overrides,
+    };
+}
+
+beforeEach(() => {
+    // Reset to an empty (non-null) record so `ensureInstance` actually seeds the
+    // instance — `clear()` would null the store and `ensureInstance` returns an
+    // empty record on null, dropping the subsequent state writes.
+    crumbsStore.set({});
+    padStore.set({});
+    sliceStore.set({});
+    ensureInstance(DEVICE);
+    ensurePadInstance(DEVICE);
+    ensureSliceInstance(DEVICE);
+    initEngineMock.mockReset();
+    initEngineMock.mockResolvedValue(undefined);
+});
+
+afterEach(() => {
+    vi.clearAllMocks();
+});
+
 describe('CrumbsPanel', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
+    it('renders the always-present sections', () => {
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        expect(screen.getByText('Sample')).toBeInTheDocument();
+        expect(screen.getByText('Status')).toBeInTheDocument();
+        expect(screen.getByText('Controls')).toBeInTheDocument();
+        expect(screen.getByText('Waveform')).toBeInTheDocument();
     });
 
-    it('should render without crashing', () => {
-        render(<CrumbsPanel deviceId="test-device" />);
-        expect(document.body).toBeTruthy();
+    it('prompts to drop a sample when none is loaded', () => {
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        expect(screen.getByText('Drop a sample to begin')).toBeInTheDocument();
+        // Empty-state shows no detected-metadata tiles.
+        expect(screen.queryByText('Sample rate')).not.toBeInTheDocument();
     });
 
-    it('should handle store state', () => {
-        render(<CrumbsPanel deviceId="test-device" />);
-        expect(document.body).toBeTruthy();
+    it('renders sample metadata tiles once a sample is active', () => {
+        setActiveSample(DEVICE, seedSample());
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        expect(screen.queryByText('Drop a sample to begin')).not.toBeInTheDocument();
+        expect(screen.getByText('Sample rate')).toBeInTheDocument();
+        // 48000 Hz → "48.0k".
+        expect(screen.getByText('48.0k')).toBeInTheDocument();
+        // 2s duration → "2.00s".
+        expect(screen.getByText('2.00s')).toBeInTheDocument();
+        // Category is rendered as the classification tile value.
+        expect(screen.getByText('percussive')).toBeInTheDocument();
     });
 
-    it('should render with useCase bindings', () => {
-        render(<CrumbsPanel deviceId="test-device" />);
-        expect(document.body).toBeTruthy();
+    it('shows an em dash for missing root and bpm', () => {
+        setActiveSample(DEVICE, seedSample({ detectedRoot: null, detectedBpm: null }));
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        // Both Root and BPM tiles fall back to the em dash.
+        expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
     });
 
-    it('should have interactive elements', () => {
-        render(<CrumbsPanel deviceId="test-device" />);
-        const buttons = screen.queryAllByRole('button');
-        expect(buttons.length).toBeGreaterThanOrEqual(0);
+    // The status readout sits in a LED beside an icon, so match on the LED
+    // element's own text content rather than a fragmented text node.
+    const hasOwnText =
+        (text: string) =>
+        (_content: string, el: Element | null): boolean =>
+            el?.textContent === text;
+
+    it('shows "Loading..." until engine init resolves, then "Ready"', async () => {
+        // Init is gated: engineReady starts null → "Loading...", flips to "Ready"
+        // only once initCrumbsEngine resolves. This guards against the LED reading
+        // "Ready" while param writes silently no-op against a missing backend.
+        let resolveInit: () => void = () => undefined;
+        initEngineMock.mockReturnValueOnce(
+            new Promise<void>((resolve) => {
+                resolveInit = resolve;
+            })
+        );
+
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        expect(screen.getAllByText(hasOwnText('Loading...')).length).toBeGreaterThan(0);
+        expect(screen.queryAllByText(hasOwnText('Ready'))).toHaveLength(0);
+
+        resolveInit();
+        expect(await screen.findByText(hasOwnText('Ready'))).toBeInTheDocument();
+        expect(screen.queryAllByText(hasOwnText('Loading...'))).toHaveLength(0);
+    });
+
+    it('shows "Engine unavailable" when engine init rejects', async () => {
+        initEngineMock.mockRejectedValueOnce(new Error('engine boot failed'));
+
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        expect(await screen.findByText(hasOwnText('Engine unavailable'))).toBeInTheDocument();
+        expect(screen.queryAllByText(hasOwnText('Ready'))).toHaveLength(0);
+    });
+
+    it('shows the pad bay only in drum mode', () => {
+        render(<CrumbsPanel deviceId={DEVICE} />);
+        // Default mode is 'quick' — no pad bay.
+        expect(screen.queryByText('Pad bay')).not.toBeInTheDocument();
+    });
+
+    it('renders the pad bay when mode is drum', () => {
+        setMode(DEVICE, 'drum');
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        expect(screen.getByText('Pad bay')).toBeInTheDocument();
+    });
+
+    it('renders the recorder controls when mode is record', () => {
+        setMode(DEVICE, 'record');
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        const recorder = screen.getByText('Recorder').closest('div');
+        expect(recorder).not.toBeNull();
+        expect(screen.getByRole('button', { name: 'Arm' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
+        expect(screen.getByText('Idle')).toBeInTheDocument();
+    });
+
+    it('renders the slice controls when mode is slice and a sample is loaded', () => {
+        setMode(DEVICE, 'slice');
+        setActiveSample(DEVICE, seedSample());
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        expect(screen.getByText('Slices')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Auto-detect slices' })).toBeInTheDocument();
+    });
+
+    it('offers loop-point detection only once a sample is loaded', () => {
+        const { unmount } = render(<CrumbsPanel deviceId={DEVICE} />);
+        expect(screen.queryByRole('button', { name: 'Detect loop points' })).not.toBeInTheDocument();
+        unmount();
+
+        setActiveSample(DEVICE, seedSample());
+        render(<CrumbsPanel deviceId={DEVICE} />);
+        expect(screen.getByRole('button', { name: 'Detect loop points' })).toBeInTheDocument();
+    });
+
+    it('surfaces the active-voice count from store state', () => {
+        crumbsStore.update((s) => ({
+            ...s,
+            [DEVICE]: { ...s![DEVICE]!, activeVoices: 3 },
+        }));
+        render(<CrumbsPanel deviceId={DEVICE} />);
+
+        // The count sits in a LED beside a CPU icon, so the literal text is split
+        // across nodes — match on the LED element's own normalized text content.
+        const isThreeVoices = (_content: string, el: Element | null): boolean => {
+            const text = (el?.textContent ?? '').replaceAll(/\s+/g, ' ').trim();
+            return text === '3 voices';
+        };
+        expect(screen.getAllByText(isThreeVoices).length).toBeGreaterThan(0);
     });
 });

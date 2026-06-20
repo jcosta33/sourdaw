@@ -136,6 +136,9 @@ export type VoiceStackParams = {
     stackSpread: number;
 };
 
+/** Fallback pad color used when an index falls outside {@link PAD_COLORS}. */
+export const DEFAULT_PAD_COLOR = '#E06060';
+
 export const PAD_COLORS = [
     '#E06060',
     '#E08860',
@@ -162,7 +165,7 @@ export function createDefaultPad(index: number): PadConfig {
     return {
         id: index,
         name: `Pad ${index + 1}`,
-        color: PAD_COLORS[index % PAD_COLORS.length]!,
+        color: PAD_COLORS[index % PAD_COLORS.length] ?? DEFAULT_PAD_COLOR,
         sampleId: null,
         midiNote: BASE_NOTE + index,
         chokeGroup: 0,
@@ -212,6 +215,8 @@ export function createDefaultChannelStrip(): PadChannelStrip {
 export function midiNoteToName(note: number): string {
     const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
     const octave = Math.floor(note / 12) - 1;
-    const name = names[note % 12]!;
+    // A non-finite note (e.g. NaN) yields a non-finite modulo and an out-of-range
+    // lookup; degrade visibly to '?' rather than asserting a value that isn't there.
+    const name = names[note % 12] ?? '?';
     return `${name}${octave}`;
 }

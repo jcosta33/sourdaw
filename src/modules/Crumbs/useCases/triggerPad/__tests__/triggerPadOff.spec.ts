@@ -1,11 +1,58 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import * as subject from '../triggerPadOff';
+const mocks = vi.hoisted(() => ({
+    padStoreValue: {
+        value: { inst1: { pads: [{ midiNote: 60 }, { midiNote: 62 }] } } as Record<
+            string,
+            { pads: Array<{ midiNote: number }> }
+        > | null,
+    },
+    crumbsNoteOff: vi.fn(),
+    warn: vi.fn(),
+}));
+
+vi.mock('../../../stores/padStore', () => ({
+    padStore: {
+        get value() {
+            return mocks.padStoreValue.value;
+        },
+    },
+}));
+
+vi.mock('../../../repositories/crumbsBridge', () => ({
+    crumbsNoteOff: mocks.crumbsNoteOff,
+}));
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { warn: mocks.warn },
+}));
+
+import { triggerPadOff } from '../triggerPadOff';
 
 describe('triggerPadOff', () => {
-    it('should export triggerPadOff', () => {
-        expect(subject.triggerPadOff).toBeDefined();
-        const t = typeof subject.triggerPadOff;
-        expect(t === 'function' || t === 'object').toBe(true);
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.padStoreValue.value = { inst1: { pads: [{ midiNote: 60 }, { midiNote: 62 }] } };
+    });
+
+    it('releases the pad note on the bridge using the resolved midi note', async () => {
+        await triggerPadOff('inst1', 1);
+        expect(mocks.crumbsNoteOff).toHaveBeenCalledWith('inst1', 62);
+    });
+
+    it('bails out when the instance has no pad state', async () => {
+        await triggerPadOff('missing', 0);
+        expect(mocks.crumbsNoteOff).not.toHaveBeenCalled();
+    });
+
+    it('bails out when the pad index is out of range', async () => {
+        await triggerPadOff('inst1', 99);
+        expect(mocks.crumbsNoteOff).not.toHaveBeenCalled();
+    });
+
+    it('swallows a bridge error and logs a warning instead of throwing', async () => {
+        mocks.crumbsNoteOff.mockRejectedValueOnce(new Error('engine offline'));
+        await expect(triggerPadOff('inst1', 0)).resolves.toBeUndefined();
+        expect(mocks.warn).toHaveBeenCalledWith('Note release failed:', expect.any(Error));
     });
 });

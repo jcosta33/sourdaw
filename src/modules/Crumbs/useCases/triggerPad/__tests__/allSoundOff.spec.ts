@@ -1,11 +1,31 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import * as subject from '../allSoundOff';
+const mocks = vi.hoisted(() => ({
+    crumbsAllSoundOff: vi.fn(),
+    warn: vi.fn(),
+}));
+
+vi.mock('../../../repositories/crumbsBridge', () => ({
+    crumbsAllSoundOff: mocks.crumbsAllSoundOff,
+}));
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { warn: mocks.warn },
+}));
+
+import { allSoundOff } from '../allSoundOff';
 
 describe('allSoundOff', () => {
-    it('should export allSoundOff', () => {
-        expect(subject.allSoundOff).toBeDefined();
-        const t = typeof subject.allSoundOff;
-        expect(t === 'function' || t === 'object').toBe(true);
+    beforeEach(() => vi.clearAllMocks());
+
+    it('delegates the panic to the bridge for the given instance', async () => {
+        await allSoundOff('inst1');
+        expect(mocks.crumbsAllSoundOff).toHaveBeenCalledWith('inst1');
+    });
+
+    it('swallows a bridge error and logs a warning instead of throwing', async () => {
+        mocks.crumbsAllSoundOff.mockRejectedValueOnce(new Error('engine offline'));
+        await expect(allSoundOff('inst1')).resolves.toBeUndefined();
+        expect(mocks.warn).toHaveBeenCalledWith('All sound off failed:', expect.any(Error));
     });
 });

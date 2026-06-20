@@ -63,11 +63,12 @@ export function updatePad(instanceId: string, index: number, updates: Partial<Pa
             return {};
         }
         const inst = s[instanceId];
-        if (!inst || !inst.pads[index]) {
+        const existing = inst?.pads[index];
+        if (!inst || !existing) {
             return s;
         }
         const pads = [...inst.pads];
-        pads[index] = { ...pads[index]!, ...updates };
+        pads[index] = { ...existing, ...updates };
         return {
             ...s,
             [instanceId]: { ...inst, pads },
@@ -105,11 +106,12 @@ export function updateChannelStrip(instanceId: string, index: number, updates: P
             return {};
         }
         const inst = s[instanceId];
-        if (!inst || !inst.channelStrips[index]) {
+        const existing = inst?.channelStrips[index];
+        if (!inst || !existing) {
             return s;
         }
         const channelStrips = [...inst.channelStrips];
-        channelStrips[index] = { ...channelStrips[index]!, ...updates };
+        channelStrips[index] = { ...existing, ...updates };
         return {
             ...s,
             [instanceId]: { ...inst, channelStrips },
@@ -126,6 +128,12 @@ export function reorderPad(instanceId: string, fromIndex: number, toIndex: numbe
         if (!inst) {
             return s;
         }
+        // pads and channelStrips move together — a reorder that mutated only the
+        // one array would desync the strip from its pad. Refuse to reorder unless
+        // both arrays agree on length so the splice below is index-safe on both.
+        if (inst.pads.length !== inst.channelStrips.length) {
+            return s;
+        }
         if (fromIndex < 0 || fromIndex >= inst.pads.length) {
             return s;
         }
@@ -138,10 +146,15 @@ export function reorderPad(instanceId: string, fromIndex: number, toIndex: numbe
 
         const pads = [...inst.pads];
         const channelStrips = [...inst.channelStrips];
-        const [movedPad] = pads.splice(fromIndex, 1);
-        const [movedStrip] = channelStrips.splice(fromIndex, 1);
-        pads.splice(toIndex, 0, movedPad!);
-        channelStrips.splice(toIndex, 0, movedStrip!);
+        const movedPad = pads[fromIndex];
+        const movedStrip = channelStrips[fromIndex];
+        if (!movedPad || !movedStrip) {
+            return s;
+        }
+        pads.splice(fromIndex, 1);
+        channelStrips.splice(fromIndex, 1);
+        pads.splice(toIndex, 0, movedPad);
+        channelStrips.splice(toIndex, 0, movedStrip);
 
         return {
             ...s,

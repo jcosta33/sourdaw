@@ -18,12 +18,29 @@ type PollingSession = {
     prevPolledFrame: number;
     pollTimestamp: number;
     interpolatedFrame: number;
+    pollInFlight: boolean;
     listeners: Set<PositionListener>;
 };
 
 const sessions = new Map<string, PollingSession>();
 
 const POLL_INTERVAL_MS = 33; // ~30Hz
+
+/**
+ * Linearly interpolate the playback frame between the two most recent polled
+ * positions for a normalised progress `t` in [0, 1].
+ *
+ * Guards against a backend position reset: when `lastPolledFrame` is below
+ * `prevPolledFrame` (e.g. transport stopped/looped back to 0), interpolating
+ * between them would scrub the cursor *backwards* for one poll cycle. In that
+ * case we treat the new reading as a reset and snap forward to it instead.
+ */
+export function interpolateFrame(prevPolledFrame: number, lastPolledFrame: number, t: number): number {
+    if (lastPolledFrame < prevPolledFrame) {
+        return lastPolledFrame;
+    }
+    return prevPolledFrame + (lastPolledFrame - prevPolledFrame) * t;
+}
 
 function getOrCreateSession(instanceId: string): PollingSession {
     let session = sessions.get(instanceId);
@@ -35,6 +52,7 @@ function getOrCreateSession(instanceId: string): PollingSession {
             prevPolledFrame: 0,
             pollTimestamp: 0,
             interpolatedFrame: 0,
+            pollInFlight: false,
             listeners: new Set<PositionListener>(),
         };
         sessions.set(instanceId, session);
@@ -58,13 +76,24 @@ function startPolling(instanceId: string): void {
     session.pollTimestamp = performance.now();
 
     session.pollTimer = setInterval(() => {
+        // Skip overlapping polls: setInterval keeps firing on schedule even if a
+        // previous getCrumbsPosition await is still pending. Without this guard,
+        // out-of-order await resumes could overwrite prev/last out of sequence and
+        // feed the interpolator a negative delta.
+        if (session.pollInFlight) {
+            return;
+        }
+        session.pollInFlight = true;
         void (async () => {
             try {
+                const frame = await getCrumbsPosition(instanceId);
                 session.prevPolledFrame = session.lastPolledFrame;
-                session.lastPolledFrame = await getCrumbsPosition(instanceId);
+                session.lastPolledFrame = frame;
                 session.pollTimestamp = performance.now();
             } catch (error) {
                 logger.warn(`Crumbs position poll failed for ${instanceId}:`, error);
+            } finally {
+                session.pollInFlight = false;
             }
         })();
     }, POLL_INTERVAL_MS);
@@ -75,11 +104,18 @@ function startPolling(instanceId: string): void {
         const elapsed = now - session.pollTimestamp;
         const t = Math.min(elapsed / POLL_INTERVAL_MS, 1);
 
-        // Linear interpolation between last two polled positions.
-        session.interpolatedFrame = session.prevPolledFrame + (session.lastPolledFrame - session.prevPolledFrame) * t;
+        // Linear interpolation between last two polled positions (reset-guarded).
+        session.interpolatedFrame = interpolateFrame(session.prevPolledFrame, session.lastPolledFrame, t);
 
         for (const listener of session.listeners) {
-            listener(session.interpolatedFrame);
+            // A throwing listener (e.g. a WaveformDisplay cursor mutation after
+            // unmount) must not escape the loop — otherwise the rAF below never
+            // reschedules and the cursor freezes permanently for every session.
+            try {
+                listener(session.interpolatedFrame);
+            } catch (error) {
+                logger.warn(`Crumbs position listener failed for ${instanceId}:`, error);
+            }
         }
 
         session.rafId = requestAnimationFrame(tick);

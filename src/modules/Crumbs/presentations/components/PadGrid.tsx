@@ -1,7 +1,8 @@
 /**
- * Velocity-sensitive pad grid for Drum mode.
+ * Pad grid for Drum mode.
  * 4x4 grid with drag-and-drop reordering, mini-waveform thumbnails,
- * and velocity-sensitive flash animations on trigger.
+ * and a flash animation on trigger. Triggers fire at a fixed velocity today;
+ * the flash intensity is driven by the pad color, not by velocity.
  */
 
 import { type ReactElement, useEffect, useRef, useState } from 'react';
@@ -28,34 +29,52 @@ export const PadGrid = ({
 }: PadGridProps): ReactElement => {
     const [dragFrom, setDragFrom] = useState<number | null>(null);
     const [dragOver, setDragOver] = useState<number | null>(null);
+    // Flash state is keyed by stable pad.id, not grid index: a reorder mid-flash
+    // must keep the flash on the pad that was struck, not on whatever pad now sits
+    // at that index.
     const [flashingPads, setFlashingPads] = useState<Record<number, number>>({});
     const flashTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
 
     useEffect(() => {
+        const timers = flashTimers.current;
         return () => {
-            for (const timer of Object.values(flashTimers.current)) {
+            for (const timer of Object.values(timers)) {
                 clearTimeout(timer);
             }
         };
     }, []);
 
-    function handleTrigger(index: number): void {
+    // Cancel timers for pads that no longer exist (e.g. an instance swap drops a
+    // pad.id), so a pending flash timer can never resolve against a removed pad.
+    // Any flash key left over from a removed pad is inert — rendering keys by
+    // pad.id, so a vanished pad is simply not drawn.
+    useEffect(() => {
+        const liveIds = new Set(pads.map((pad) => pad.id));
+        for (const key of Object.keys(flashTimers.current)) {
+            const id = Number(key);
+            if (!liveIds.has(id)) {
+                clearTimeout(flashTimers.current[id]);
+                delete flashTimers.current[id];
+            }
+        }
+    }, [pads]);
+
+    function handleTrigger(index: number, padId: number): void {
         onTriggerPad(index);
 
-        // Velocity-sensitive flash animation
         const flashId = Date.now();
-        setFlashingPads((prev) => ({ ...prev, [index]: flashId }));
+        setFlashingPads((prev) => ({ ...prev, [padId]: flashId }));
 
         // Clear previous timer for this pad
-        if (flashTimers.current[index]) {
-            clearTimeout(flashTimers.current[index]);
+        if (flashTimers.current[padId]) {
+            clearTimeout(flashTimers.current[padId]);
         }
 
-        flashTimers.current[index] = setTimeout(() => {
+        flashTimers.current[padId] = setTimeout(() => {
             setFlashingPads((prev) => {
-                if (prev[index] === flashId) {
+                if (prev[padId] === flashId) {
                     const next = { ...prev };
-                    delete next[index];
+                    delete next[padId];
                     return next;
                 }
                 return prev;
@@ -68,7 +87,7 @@ export const PadGrid = ({
             {pads.map((pad, index) => {
                 const isSelected = index === selectedIndex;
                 const hasSample = pad.sampleId !== null;
-                const isFlashing = flashingPads[index] !== undefined;
+                const isFlashing = flashingPads[pad.id] !== undefined;
                 const isDragTarget = dragOver === index && dragFrom !== null && dragFrom !== index;
                 const peaks = padPeaks?.[index] ?? null;
 
@@ -91,6 +110,8 @@ export const PadGrid = ({
                         key={pad.id}
                         type="button"
                         draggable={onReorderPad !== undefined}
+                        aria-pressed={isSelected}
+                        aria-label={`${pad.name}${hasSample ? '' : ' (empty)'}`}
                         className={`relative flex aspect-square flex-col items-center justify-center rounded-xl border transition-all ${padClassName}`}
                         style={{
                             boxShadow: padBoxShadow,
@@ -98,7 +119,14 @@ export const PadGrid = ({
                         onClick={() => onSelectPad(index)}
                         onMouseDown={(e) => {
                             e.preventDefault();
-                            handleTrigger(index);
+                            handleTrigger(index, pad.id);
+                        }}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                onSelectPad(index);
+                                handleTrigger(index, pad.id);
+                            }
                         }}
                         onDragStart={() => setDragFrom(index)}
                         onDragOver={(e) => {
@@ -162,8 +190,8 @@ const MiniWaveform = ({ peaks, color }: { peaks: number[]; color: string }): Rea
 
     let pathD = '';
     for (let i = 0; i < numBins; i++) {
-        const min = peaks[i * 2]!;
-        const max = peaks[i * 2 + 1]!;
+        const min = peaks[i * 2] ?? 0;
+        const max = peaks[i * 2 + 1] ?? 0;
         const x = i * binWidth + binWidth / 2;
         const yTop = mid - max * mid;
         const yBot = mid - min * mid;
