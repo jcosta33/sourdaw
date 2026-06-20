@@ -64,6 +64,14 @@ vi.mock('#/modules/Project/presentations/views/RecentProjectsMenu', () => ({
     RecentProjectsMenu: () => <div data-testid="recent-projects">Recent Projects</div>,
 }));
 
+vi.mock('#/modules/Collaboration/presentations/views', () => ({
+    CollaborationPanel: () => <div data-testid="collab-panel">Collaboration</div>,
+}));
+
+vi.mock('#/modules/CrdtDocument/presentations/views', () => ({
+    BranchManagerDialog: () => <div data-testid="branch-manager">Branch Manager</div>,
+}));
+
 describe('AppShell', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -114,5 +122,80 @@ describe('AppShell', () => {
         render(<AppShell>Content</AppShell>);
         const shell = screen.getByTestId('app-shell');
         expect(shell.classList.contains('flex')).toBe(true);
+    });
+
+    describe('bottom-dock accessibility (Fix 1)', () => {
+        beforeEach(() => {
+            vi.mocked(useWorkspaceState).mockReturnValue({
+                sidebarOpen: false,
+                inspectorOpen: false,
+                mixerOpen: true,
+                collaborationPanelOpen: false,
+                branchManagerOpen: false,
+                chatPanelOpen: false,
+                selectedClipId: null,
+                sidebarWidth: 200,
+                inspectorWidth: 200,
+                mixerHeight: 200,
+                chatPanelWidth: 200,
+                aiPanelWidth: 200,
+                virtualKeyboardOpen: false,
+            } as ReturnType<typeof useWorkspaceState>);
+        });
+
+        it('exposes the dock as a tablist with role=tab buttons', () => {
+            render(<AppShell>Content</AppShell>);
+            const tablist = screen.getByRole('tablist', { name: 'Bottom dock' });
+            expect(tablist).toBeInTheDocument();
+            // The Close-dock icon button must NOT be inside the tablist.
+            const tabs = screen.getAllByRole('tab');
+            expect(tabs.length).toBeGreaterThanOrEqual(9);
+            expect(tabs.map((t) => t.textContent)).toContain('Mixer');
+        });
+
+        it('marks the active tab aria-selected and the rest unselected', () => {
+            render(<AppShell>Content</AppShell>);
+            // default bottomTab is 'mixer'
+            const selected = screen.getAllByRole('tab').filter((t) => t.getAttribute('aria-selected') === 'true');
+            expect(selected).toHaveLength(1);
+            expect(selected[0]?.textContent).toBe('Mixer');
+        });
+
+        it('wires the active tab to the tabpanel via aria-controls/aria-labelledby', () => {
+            render(<AppShell>Content</AppShell>);
+            const panel = screen.getByRole('tabpanel');
+            const activeTab = screen.getAllByRole('tab').find((t) => t.getAttribute('aria-selected') === 'true');
+            expect(activeTab?.getAttribute('aria-controls')).toBe(panel.id);
+            expect(panel.getAttribute('aria-labelledby')).toBe(activeTab?.id);
+        });
+    });
+
+    describe('skip-link resilience (Fix 2)', () => {
+        it('renders a skip-link targeting #main-content when no dialog is open', () => {
+            render(<AppShell>Content</AppShell>);
+            const link = screen.getByText('Skip to content');
+            expect(link.getAttribute('href')).toBe('#main-content');
+        });
+
+        it('removes the skip-link from the DOM while a modal dialog is open', () => {
+            vi.mocked(useWorkspaceState).mockReturnValue({
+                sidebarOpen: false,
+                inspectorOpen: false,
+                mixerOpen: false,
+                collaborationPanelOpen: true,
+                branchManagerOpen: false,
+                chatPanelOpen: false,
+                selectedClipId: null,
+                sidebarWidth: 200,
+                inspectorWidth: 200,
+                mixerHeight: 200,
+                chatPanelWidth: 200,
+                aiPanelWidth: 200,
+                virtualKeyboardOpen: false,
+            } as ReturnType<typeof useWorkspaceState>);
+
+            render(<AppShell>Content</AppShell>);
+            expect(screen.queryByText('Skip to content')).not.toBeInTheDocument();
+        });
     });
 });

@@ -49,6 +49,7 @@ import { toggleVirtualKeyboard } from '../../useCases/togglePanel/panelToggles/t
 import { updateWorkspaceState } from '../../useCases/workspaceState';
 import { AlphaNoticeDialog } from '../components/AlphaNoticeDialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 import { LaunchScreen } from '../components/LaunchScreen';
 import { MobileGate } from '../components/MobileGate';
@@ -84,6 +85,27 @@ const BranchManagerDialogLazy = lazy(() =>
     import('#/modules/CrdtDocument/presentations/views').then((m) => ({
         default: m.BranchManagerDialog,
     }))
+);
+
+// Panel-shaped placeholder shown while a lazily-loaded panel chunk is still in
+// flight. A blank `fallback={null}` left the screen empty for 1s+ on slow
+// networks; this gives an animated, dialog-positioned skeleton so the user sees
+// that something is loading rather than nothing.
+const LazyPanelFallback = (): ReactElement => (
+    <div
+        className="fixed inset-0 z-40 flex items-center justify-center bg-black/40"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+        data-testid="lazy-panel-fallback"
+    >
+        <div className="flex flex-col gap-3 rounded-md bg-surface-raised p-4 shadow-lg">
+            <div className="h-4 w-40 animate-pulse rounded bg-surface-base" />
+            <div className="h-32 w-72 animate-pulse rounded bg-surface-base" />
+            <div className="h-4 w-24 animate-pulse rounded bg-surface-base" />
+        </div>
+        <span className="sr-only">Loading…</span>
+    </div>
 );
 
 type AppShellProps = {
@@ -148,6 +170,13 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         | 'modulation'
         | 'elastic'
     >('mixer');
+
+    // True whenever a modal dialog/overlay owned by AppShell is open. Used to
+    // neutralize the skip-link: a focused skip-link targeting #main-content
+    // while a modal is up would scroll focus behind the modal (out of the focus
+    // trap), so we drop it from the tab order and disable its target.
+    const anyDialogOpen = exportOpen || prefsOpen || showAlphaNotice || collaborationPanelOpen || branchManagerOpen;
+
     // One unified "active device panel" slot. The "only one panel open at a
     // time" invariant is enforced by the discriminated union in
     // useActiveDevicePanel; adding a new plugin is one line there instead of
@@ -355,6 +384,39 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return undefined;
     }, [project.initialized, project.loading, showLaunch, launchExiting]);
 
+    // Bottom-dock tab id helpers. `id`/`aria-controls`/`aria-labelledby` wire
+    // each tab to the single shared tabpanel so AT announces the dock as one
+    // tablist instead of N unrelated buttons.
+    type BottomTabValue = typeof bottomTab;
+    const bottomTabButtonId = (value: BottomTabValue): string => `bottom-dock-tab-${value}`;
+    const BOTTOM_TABPANEL_ID = 'bottom-dock-tabpanel';
+
+    // Renders one dock tab with the `role="tab"` / `aria-selected` semantics,
+    // preserving each tab's existing variant, accent colour and data-* hooks.
+    const renderBottomTab = (
+        value: BottomTabValue,
+        label: string,
+        activeClassName: string,
+        extraProps: Record<string, string> = {}
+    ): ReactNode => {
+        const selected = bottomTab === value;
+        return (
+            <Button
+                role="tab"
+                id={bottomTabButtonId(value)}
+                aria-selected={selected}
+                aria-controls={BOTTOM_TABPANEL_ID}
+                variant={selected ? 'secondary' : 'ghost'}
+                size="xs"
+                className={selected ? activeClassName : ''}
+                onClick={() => setBottomTab(value)}
+                {...extraProps}
+            >
+                {label}
+            </Button>
+        );
+    };
+
     // Bottom-dock tab content. `mixer`/`routing` and any unknown value fall back
     // to the RoutingMatrix exactly as the original ternary chain did.
     const renderBottomTabContent = (): ReactNode => {
@@ -385,12 +447,17 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     return (
         <MobileGate>
             <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-app" data-testid="app-shell">
-                <a
-                    href="#main-content"
-                    className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
-                >
-                    Skip to content
-                </a>
+                {/* Skip-link is removed from the DOM while a modal dialog is open:
+                    a focused skip-link targeting #main-content would otherwise
+                    scroll focus behind the modal, escaping its focus trap. */}
+                {anyDialogOpen ? null : (
+                    <a
+                        href="#main-content"
+                        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
+                    >
+                        Skip to content
+                    </a>
+                )}
                 <TransportBar />
 
                 {/* ─── Main horizontal layout ─── */}
@@ -423,7 +490,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setFermenterHeight}
                                 onClose={closeActivePanel}
                             >
-                                <FermenterPanel deviceId={fermenterDeviceId} />
+                                <ErrorBoundary>
+                                    <FermenterPanel deviceId={fermenterDeviceId} />
+                                </ErrorBoundary>
                             </InstrumentBottomPanel>
                         ) : null}
 
@@ -436,7 +505,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setToasterHeight}
                                 onClose={closeActivePanel}
                             >
-                                <ToasterPanel deviceId={toasterDeviceId} />
+                                <ErrorBoundary>
+                                    <ToasterPanel deviceId={toasterDeviceId} />
+                                </ErrorBoundary>
                             </InstrumentBottomPanel>
                         ) : null}
 
@@ -449,7 +520,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setLevainHeight}
                                 onClose={closeActivePanel}
                             >
-                                <LevainPanel deviceId={levainDeviceId} />
+                                <ErrorBoundary>
+                                    <LevainPanel deviceId={levainDeviceId} />
+                                </ErrorBoundary>
                             </InstrumentBottomPanel>
                         ) : null}
 
@@ -462,7 +535,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setProofChamberHeight}
                                 onClose={closeActivePanel}
                             >
-                                <ProofChamberPanel deviceId={proofChamberDeviceId} />
+                                <ErrorBoundary>
+                                    <ProofChamberPanel deviceId={proofChamberDeviceId} />
+                                </ErrorBoundary>
                             </InstrumentBottomPanel>
                         ) : null}
 
@@ -475,7 +550,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setGlutenHeight}
                                 onClose={closeActivePanel}
                             >
-                                <GlutenPanel deviceId={glutenDeviceId} />
+                                <ErrorBoundary>
+                                    <GlutenPanel deviceId={glutenDeviceId} />
+                                </ErrorBoundary>
                             </InstrumentBottomPanel>
                         ) : null}
 
@@ -488,7 +565,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setBacteriaHeight}
                                 onClose={closeActivePanel}
                             >
-                                <BacteriaPanel deviceId={bacteriaDeviceId} />
+                                <ErrorBoundary>
+                                    <BacteriaPanel deviceId={bacteriaDeviceId} />
+                                </ErrorBoundary>
                             </InstrumentBottomPanel>
                         ) : null}
 
@@ -501,7 +580,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setGrinderHeight}
                                 onClose={closeActivePanel}
                             >
-                                <GrinderPanel deviceId={grinderDeviceId} />
+                                <ErrorBoundary>
+                                    <GrinderPanel deviceId={grinderDeviceId} />
+                                </ErrorBoundary>
                             </InstrumentBottomPanel>
                         ) : null}
 
@@ -514,7 +595,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setProofHeight}
                                 onClose={closeActivePanel}
                             >
-                                <ProofPanel deviceId={proofDeviceId} />
+                                <ErrorBoundary>
+                                    <ProofPanel deviceId={proofDeviceId} />
+                                </ErrorBoundary>
                             </InstrumentBottomPanel>
                         ) : null}
 
@@ -527,7 +610,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setScoringHeight}
                                 onClose={closeActivePanel}
                             >
-                                <ScoringPanel deviceId={scoringDeviceId} />
+                                <ErrorBoundary>
+                                    <ScoringPanel deviceId={scoringDeviceId} />
+                                </ErrorBoundary>
                             </InstrumentBottomPanel>
                         ) : null}
 
@@ -540,7 +625,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setYeastHeight}
                                 onClose={closeActivePanel}
                             >
-                                <YeastPanel />
+                                <ErrorBoundary>
+                                    <YeastPanel />
+                                </ErrorBoundary>
                             </InstrumentBottomPanel>
                         ) : null}
 
@@ -553,7 +640,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setCrustHeight}
                                 onClose={closeActivePanel}
                             >
-                                <CrustPanel deviceId={crustDeviceId} />
+                                <ErrorBoundary>
+                                    <CrustPanel deviceId={crustDeviceId} />
+                                </ErrorBoundary>
                             </InstrumentBottomPanel>
                         ) : null}
 
@@ -566,7 +655,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setSamplerHeight}
                                 onClose={closeActivePanel}
                             >
-                                <CrumbsPanel deviceId={samplerDeviceId} />
+                                <ErrorBoundary>
+                                    <CrumbsPanel deviceId={samplerDeviceId} />
+                                </ErrorBoundary>
                             </InstrumentBottomPanel>
                         ) : null}
 
@@ -579,7 +670,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 onResize={setGrandBouleHeight}
                                 onClose={closeActivePanel}
                             >
-                                <GrandBoulePanel deviceId={grandBouleDeviceId} />
+                                <ErrorBoundary>
+                                    <GrandBoulePanel deviceId={grandBouleDeviceId} />
+                                </ErrorBoundary>
                             </InstrumentBottomPanel>
                         ) : null}
 
@@ -604,106 +697,49 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                             borderBottom: '1px solid rgba(0,0,0,0.4)',
                                         }}
                                     >
-                                        <Button
-                                            variant={bottomTab === 'mixer' ? 'secondary' : 'ghost'}
-                                            size="xs"
-                                            className={bottomTab === 'mixer' ? 'text-primary' : ''}
-                                            onClick={() => setBottomTab('mixer')}
+                                        <div
+                                            role="tablist"
+                                            aria-label="Bottom dock"
+                                            className="flex items-center gap-0.5"
                                         >
-                                            Mixer
-                                        </Button>
-                                        <Button
-                                            variant={bottomTab === 'editor' ? 'secondary' : 'ghost'}
-                                            size="xs"
-                                            className={bottomTab === 'editor' ? 'text-[var(--color-accent-cyan)]' : ''}
-                                            onClick={() => setBottomTab('editor')}
-                                        >
-                                            Editor
-                                        </Button>
-                                        <Button
-                                            variant={bottomTab === 'automation' ? 'secondary' : 'ghost'}
-                                            size="xs"
-                                            className={
-                                                bottomTab === 'automation' ? 'text-[var(--color-accent-lavender)]' : ''
-                                            }
-                                            onClick={() => setBottomTab('automation')}
-                                        >
-                                            Automation
-                                        </Button>
-                                        <Button
-                                            variant={bottomTab === 'session' ? 'secondary' : 'ghost'}
-                                            size="xs"
-                                            className={bottomTab === 'session' ? 'text-[var(--color-accent-mint)]' : ''}
-                                            onClick={() => setBottomTab('session')}
-                                        >
-                                            Session
-                                        </Button>
-                                        <Button
-                                            variant={bottomTab === 'routing' ? 'secondary' : 'ghost'}
-                                            size="xs"
-                                            className={
-                                                bottomTab === 'routing' ? 'text-[var(--color-accent-peach)]' : ''
-                                            }
-                                            onClick={() => setBottomTab('routing')}
-                                        >
-                                            Routing
-                                        </Button>
-                                        <Button
-                                            variant={bottomTab === 'analysis' ? 'secondary' : 'ghost'}
-                                            size="xs"
-                                            className={
-                                                bottomTab === 'analysis' ? 'text-[var(--color-accent-lavender)]' : ''
-                                            }
-                                            onClick={() => setBottomTab('analysis')}
-                                        >
-                                            Analysis
-                                        </Button>
-                                        <Button
-                                            variant={bottomTab === 'setlist' ? 'secondary' : 'ghost'}
-                                            size="xs"
-                                            className={
-                                                bottomTab === 'setlist' ? 'text-[var(--color-accent-amber)]' : ''
-                                            }
-                                            onClick={() => setBottomTab('setlist')}
-                                            data-onboarding="setlist-tab"
-                                        >
-                                            Setlist
-                                        </Button>
-                                        <Button
-                                            variant={bottomTab === 'loopStation' ? 'secondary' : 'ghost'}
-                                            size="xs"
-                                            className={
-                                                bottomTab === 'loopStation' ? 'text-[var(--color-accent-mint)]' : ''
-                                            }
-                                            onClick={() => setBottomTab('loopStation')}
-                                            data-onboarding="loop-station-tab"
-                                        >
-                                            Loop Station
-                                        </Button>
-                                        <Button
-                                            variant={bottomTab === 'modulation' ? 'secondary' : 'ghost'}
-                                            size="xs"
-                                            className={
-                                                bottomTab === 'modulation' ? 'text-[var(--color-accent-cyan)]' : ''
-                                            }
-                                            onClick={() => setBottomTab('modulation')}
-                                            data-onboarding="modulation-tab"
-                                        >
-                                            Modulation
-                                        </Button>
-                                        {isAudioClipSelected ? (
-                                            <Button
-                                                variant={bottomTab === 'elastic' ? 'secondary' : 'ghost'}
-                                                size="xs"
-                                                className={
-                                                    bottomTab === 'elastic' ? 'text-[var(--color-accent-peach)]' : ''
-                                                }
-                                                data-testid="elastic-tab-button"
-                                                onClick={() => setBottomTab('elastic')}
-                                            >
-                                                Elastic
-                                            </Button>
-                                        ) : null}
+                                            {renderBottomTab('mixer', 'Mixer', 'text-primary')}
+                                            {renderBottomTab('editor', 'Editor', 'text-[var(--color-accent-cyan)]')}
+                                            {renderBottomTab(
+                                                'automation',
+                                                'Automation',
+                                                'text-[var(--color-accent-lavender)]'
+                                            )}
+                                            {renderBottomTab('session', 'Session', 'text-[var(--color-accent-mint)]')}
+                                            {renderBottomTab('routing', 'Routing', 'text-[var(--color-accent-peach)]')}
+                                            {renderBottomTab(
+                                                'analysis',
+                                                'Analysis',
+                                                'text-[var(--color-accent-lavender)]'
+                                            )}
+                                            {renderBottomTab('setlist', 'Setlist', 'text-[var(--color-accent-amber)]', {
+                                                'data-onboarding': 'setlist-tab',
+                                            })}
+                                            {renderBottomTab(
+                                                'loopStation',
+                                                'Loop Station',
+                                                'text-[var(--color-accent-mint)]',
+                                                { 'data-onboarding': 'loop-station-tab' }
+                                            )}
+                                            {renderBottomTab(
+                                                'modulation',
+                                                'Modulation',
+                                                'text-[var(--color-accent-cyan)]',
+                                                { 'data-onboarding': 'modulation-tab' }
+                                            )}
+                                            {isAudioClipSelected
+                                                ? renderBottomTab(
+                                                      'elastic',
+                                                      'Elastic',
+                                                      'text-[var(--color-accent-peach)]',
+                                                      { 'data-testid': 'elastic-tab-button' }
+                                                  )
+                                                : null}
+                                        </div>
 
                                         <div className="flex-1" />
 
@@ -717,7 +753,15 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                         </Button>
                                     </div>
                                     {/* Panel content */}
-                                    <div className="flex-1 overflow-hidden">{renderBottomTabContent()}</div>
+                                    <div
+                                        role="tabpanel"
+                                        id={BOTTOM_TABPANEL_ID}
+                                        aria-labelledby={bottomTabButtonId(bottomTab)}
+                                        tabIndex={0}
+                                        className="flex-1 overflow-hidden"
+                                    >
+                                        <ErrorBoundary>{renderBottomTabContent()}</ErrorBoundary>
+                                    </div>
                                 </div>
                             </>
                         ) : null}
@@ -758,14 +802,18 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 <StatusBar />
                 <UndoHistoryPanel />
                 {collaborationPanelOpen ? (
-                    <Suspense fallback={null}>
-                        <CollaborationPanelLazy />
-                    </Suspense>
+                    <ErrorBoundary>
+                        <Suspense fallback={<LazyPanelFallback />}>
+                            <CollaborationPanelLazy />
+                        </Suspense>
+                    </ErrorBoundary>
                 ) : null}
                 {branchManagerOpen ? (
-                    <Suspense fallback={null}>
-                        <BranchManagerDialogLazy onClose={closeBranchManager} />
-                    </Suspense>
+                    <ErrorBoundary>
+                        <Suspense fallback={<LazyPanelFallback />}>
+                            <BranchManagerDialogLazy onClose={closeBranchManager} />
+                        </Suspense>
+                    </ErrorBoundary>
                 ) : null}
 
                 <CommandPalette />

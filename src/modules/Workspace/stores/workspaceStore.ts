@@ -1,59 +1,10 @@
 import { createStore } from '#/infra/store/createStore';
 
-import { type WorkspaceState } from '../models/WorkspaceState';
+import { defaultWorkspaceState, type WorkspaceState } from '../models/WorkspaceState';
 
-export const defaultWorkspaceState: WorkspaceState = {
-    mode: 'arrange',
-    sidebarOpen: true,
-    inspectorOpen: true,
-    mixerOpen: false,
-    automationPanelOpen: false,
-    automationPanelWidth: 400,
-    trackListOpen: true,
-    trackListWidth: 220,
-    activeTool: 'select',
-    commandPaletteOpen: false,
-    selectedClipId: null,
-    selectedClipIds: [],
-    marqueeSelection: null,
-    snapValue: 1,
-    sidebarWidth: 224,
-    inspectorWidth: 256,
-    mixerHeight: 208,
-    soloMode: 'sip',
-    channelStripWidth: 'normal',
-    timeDisplayMode: 'musical',
-    undoHistoryOpen: false,
-    collaborationPanelOpen: false,
-    branchManagerOpen: false,
-    chatPanelOpen: false,
-    chatPanelWidth: 320,
-    rippleEditing: false,
-    dualViewOpen: false,
-    sessionViewWidth: 320,
-    automationVisibility: 'hidden',
-    automationSubLanes: {},
-    scratchPadOpen: false,
-    scratchPadHeight: 120,
-    aiPanelWidth: 340,
-    fermenterHeight: 320,
-    toasterHeight: 420,
-    levainHeight: 340,
-    glutenHeight: 300,
-    bacteriaHeight: 400,
-    grinderHeight: 380,
-    proofChamberHeight: 380,
-    proofHeight: 340,
-    scoringHeight: 300,
-    yeastHeight: 300,
-    crustHeight: 360,
-    samplerHeight: 400,
-    grandBouleHeight: 420,
-    virtualKeyboardOpen: false,
-    virtualKeyboardOctave: 4,
-    virtualKeyboardHeight: 128,
-    virtualKeyboardVelocity: 100,
-};
+// Re-export the canonical default so existing `stores`-barrel consumers keep resolving.
+// The single source of truth lives in models/WorkspaceState.ts — do not redeclare it here.
+export { defaultWorkspaceState };
 
 export const workspaceStore = createStore<WorkspaceState>({
     initialData: defaultWorkspaceState,

@@ -57,14 +57,50 @@ export function useActiveDevicePanel(): UseActiveDevicePanelResult {
 
     useEffect(() => {
         type NeedsDeviceId = Exclude<ActiveDevicePanel, { kind: 'yeast' }>['kind'];
+        type DeviceVariant<Kind extends NeedsDeviceId> = Extract<ActiveDevicePanel, { kind: Kind }>;
         const currentTrackId = (): string | null => trackStore.value?.selectedTrackId ?? null;
-        const openForKind = (kind: NeedsDeviceId) => (param: { deviceId: string | null }) => {
-            if (param.deviceId === null) {
-                setActivePanel(null);
-                return;
-            }
-            setActivePanel({ kind, deviceId: param.deviceId, trackId: currentTrackId() } as ActiveDevicePanel);
+        // One builder per device-bearing kind. The mapped type forces an entry for
+        // every `NeedsDeviceId` (add a kind → missing-key error here), and the
+        // `satisfies` on each literal pins it to that kind's exact member shape, so
+        // a future deviceId-less variant that slips into `NeedsDeviceId` fails with
+        // an excess-property error instead of being silently widened by a cast.
+        const devicePanelBuilders: {
+            [Kind in NeedsDeviceId]: (deviceId: string) => DeviceVariant<Kind>;
+        } = {
+            fermenter: (deviceId) =>
+                ({ kind: 'fermenter', deviceId, trackId: currentTrackId() }) satisfies DeviceVariant<'fermenter'>,
+            toaster: (deviceId) =>
+                ({ kind: 'toaster', deviceId, trackId: currentTrackId() }) satisfies DeviceVariant<'toaster'>,
+            levain: (deviceId) =>
+                ({ kind: 'levain', deviceId, trackId: currentTrackId() }) satisfies DeviceVariant<'levain'>,
+            proofChamber: (deviceId) =>
+                ({ kind: 'proofChamber', deviceId, trackId: currentTrackId() }) satisfies DeviceVariant<'proofChamber'>,
+            gluten: (deviceId) =>
+                ({ kind: 'gluten', deviceId, trackId: currentTrackId() }) satisfies DeviceVariant<'gluten'>,
+            bacteria: (deviceId) =>
+                ({ kind: 'bacteria', deviceId, trackId: currentTrackId() }) satisfies DeviceVariant<'bacteria'>,
+            grinder: (deviceId) =>
+                ({ kind: 'grinder', deviceId, trackId: currentTrackId() }) satisfies DeviceVariant<'grinder'>,
+            scoring: (deviceId) =>
+                ({ kind: 'scoring', deviceId, trackId: currentTrackId() }) satisfies DeviceVariant<'scoring'>,
+            proof: (deviceId) =>
+                ({ kind: 'proof', deviceId, trackId: currentTrackId() }) satisfies DeviceVariant<'proof'>,
+            crust: (deviceId) =>
+                ({ kind: 'crust', deviceId, trackId: currentTrackId() }) satisfies DeviceVariant<'crust'>,
+            sampler: (deviceId) =>
+                ({ kind: 'sampler', deviceId, trackId: currentTrackId() }) satisfies DeviceVariant<'sampler'>,
+            grandBoule: (deviceId) =>
+                ({ kind: 'grandBoule', deviceId, trackId: currentTrackId() }) satisfies DeviceVariant<'grandBoule'>,
         };
+        const openForKind =
+            <Kind extends NeedsDeviceId>(kind: Kind) =>
+            (param: { deviceId: string | null }) => {
+                if (param.deviceId === null) {
+                    setActivePanel(null);
+                    return;
+                }
+                setActivePanel(devicePanelBuilders[kind](param.deviceId));
+            };
         const subs = [
             onPanelShowFermenter(openForKind('fermenter')),
             onPanelShowToaster(openForKind('toaster')),

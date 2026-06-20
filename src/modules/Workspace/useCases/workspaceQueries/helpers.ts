@@ -1,5 +1,6 @@
 import { type EditingTool } from '../../models/EditingTool';
 import {
+    defaultPreferences,
     type Preferences,
     type GridSnapOption,
     type BufferSizeOption,
@@ -32,33 +33,9 @@ export type {
     SoloModePreference,
 };
 
-export const defaultPreferences: Preferences = {
-    trackHeight: 'normal',
-    colorblindMode: false,
-    autoSave: true,
-    autoSaveIntervalMs: 30_000,
-    snapToGrid: true,
-    snapToZeroCrossing: true,
-    gridSubdivision: '1/4',
-    showMinimap: false,
-    voiceCommandKey: 'v',
-    theme: 'dark',
-    uiScale: 1.0,
-    panelPlacementSidebar: 'left',
-    panelPlacementInspector: 'right',
-    panelPlacementChat: 'right',
-    panelPlacementAi: 'right',
-    bufferSize: 512,
-    sampleRate: 44100,
-    metronomeEnabled: false,
-    metronomeVolume: 0.5,
-    recordCountIn: 1,
-    defaultVelocity: 100,
-    midiInputChannel: 'all',
-    soloMode: 'sip',
-    preRollEnabled: false,
-    preRollBars: 2,
-};
+// Re-export the canonical default from the model. The single source of truth lives in
+// models/Preferences.ts — preferencesStore and useCases consume it through this barrel.
+export { defaultPreferences };
 
 export const TRACK_HEIGHT_VALUES: Record<Preferences['trackHeight'], number> = {
     compact: 40,

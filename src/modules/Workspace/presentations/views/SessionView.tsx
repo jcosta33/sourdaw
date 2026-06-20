@@ -90,10 +90,10 @@ export const SessionView = (): ReactElement => {
                         ))}
                     </DawSideRail>
                     {tracks.map((track: Track) => {
-                        const trackClipIds: Array<string | null> = Array.from({ length: SCENE_COUNT }, (_, index) => {
-                            const clips = track.clips ? (Object.values(track.clips) as Array<{ id: string }>) : [];
-                            return clips[index]?.id ?? null;
-                        });
+                        const trackClipIds: Array<string | null> = Array.from(
+                            { length: SCENE_COUNT },
+                            (_, index) => track.clips[index]?.id ?? null
+                        );
 
                         return (
                             <div key={track.id} className="flex w-24 shrink-0 flex-col border-r border-border-hairline">
@@ -155,7 +155,7 @@ export const SessionView = (): ReactElement => {
 
                                     return (
                                         <div
-                                            key={sceneIndex}
+                                            key={clipId ?? `empty-${sceneIndex}`}
                                             className={cn(
                                                 'flex h-10 cursor-pointer items-center justify-center border-b border-border-hairline transition-colors',
                                                 renderIife_8()

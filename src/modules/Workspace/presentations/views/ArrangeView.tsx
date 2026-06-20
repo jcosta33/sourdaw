@@ -214,13 +214,7 @@ const TimelineHScrollbar = ({
     tracks: HScrollbarTrack[];
     viewportWidth: number;
 }): ReactElement | null => {
-    const maxEndBeat = tracks.reduce((max, time) => {
-        const trackMax = time.clips.reduce(
-            (message, context) => (context.endBeat > message ? context.endBeat : message),
-            max
-        );
-        return trackMax;
-    }, 256);
+    const maxEndBeat = Math.max(256, ...tracks.flatMap((track) => track.clips.map((clip) => clip.endBeat)));
     const totalContentWidth = maxEndBeat * pixelsPerBeat;
 
     // Only show when content actually overflows the viewport
@@ -238,15 +232,43 @@ const TimelineHScrollbar = ({
         const startClientX = event.clientX;
         const startScrollX = scrollX;
 
+        // Coalesce the high-frequency (~60Hz) mousemove writes through a
+        // single requestAnimationFrame so each frame fans out at most one
+        // setScrollX to every track row/ruler/marker/adjustment strip,
+        // instead of one store write per native mousemove event.
+        let pendingScrollX: number | null = null;
+        let rafId: number | null = null;
+
+        const flush = (): void => {
+            rafId = null;
+            if (pendingScrollX !== null) {
+                setScrollX(pendingScrollX);
+                pendingScrollX = null;
+            }
+        };
+
         const onMouseMove = (ev: MouseEvent): void => {
             const delta = ev.clientX - startClientX;
             const scrollDelta = trackWidth > 0 ? (delta / trackWidth) * maxScrollX : 0;
-            setScrollX(Math.max(0, Math.min(maxScrollX, startScrollX + scrollDelta)));
+            pendingScrollX = Math.max(0, Math.min(maxScrollX, startScrollX + scrollDelta));
+            if (rafId === null) {
+                rafId = requestAnimationFrame(flush);
+            }
         };
 
         const onMouseUp = (): void => {
             window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('mouseup', onMouseUp);
+            if (rafId !== null) {
+                cancelAnimationFrame(rafId);
+                rafId = null;
+            }
+            // Commit the final position synchronously so the thumb settles
+            // exactly where the pointer was released even if no frame ran.
+            if (pendingScrollX !== null) {
+                setScrollX(pendingScrollX);
+                pendingScrollX = null;
+            }
         };
 
         window.addEventListener('mousemove', onMouseMove);
@@ -281,41 +303,65 @@ const EmptyArrangeOverlay = (): ReactElement => {
         const files = Array.from(event.dataTransfer.files);
         const currentBeat = 0;
 
-        for (const file of files) {
-            const ext = file.name.toLowerCase().split('.').pop() ?? '';
-            if (['mid', 'midi'].includes(ext) || file.type === 'audio/midi') {
-                await importMidiFile(file);
+        // Decode/import every file in parallel, but commit state mutations
+        // (addTrack/addClip) afterward in the original drop order so clip
+        // placement order is preserved. Decoding before any addTrack also
+        // means a decode failure never leaves an orphan empty track behind.
+        const imports = await Promise.all(
+            files.map(async (file) => {
+                const ext = file.name.toLowerCase().split('.').pop() ?? '';
+
+                if (['mid', 'midi'].includes(ext) || file.type === 'audio/midi') {
+                    return { kind: 'midi' as const, file };
+                }
+
+                const isAudio =
+                    file.type.startsWith('audio/') ||
+                    ['wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a', 'webm', 'aiff', 'aif'].includes(ext);
+                if (!isAudio) {
+                    return { kind: 'skip' as const };
+                }
+
+                try {
+                    const { id: bufferId, buffer } = await decodeAudioFile(file);
+                    return { kind: 'audio' as const, file, bufferId, buffer };
+                } catch {
+                    return { kind: 'error' as const, file };
+                }
+            })
+        );
+
+        for (const result of imports) {
+            if (result.kind === 'skip') {
                 continue;
             }
 
-            const isAudio =
-                file.type.startsWith('audio/') ||
-                ['wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a', 'webm', 'aiff', 'aif'].includes(ext);
-            if (!isAudio) {
+            if (result.kind === 'error') {
+                notifyUser(`Failed to import "${result.file.name}" — unsupported format or corrupt file`, 'error');
                 continue;
             }
 
-            const newTrack = addTrack({ name: file.name.replace(/\.[^.]+$/, ''), kind: 'audio' });
+            if (result.kind === 'midi') {
+                await importMidiFile(result.file);
+                continue;
+            }
+
+            const newTrack = addTrack({ name: result.file.name.replace(/\.[^.]+$/, ''), kind: 'audio' });
             if (!newTrack) {
                 continue;
             }
 
-            try {
-                const { id: bufferId, buffer } = await decodeAudioFile(file);
-                const tempo = transportStore.value?.tempo ?? 120;
-                const durationBeats = Math.max(4, Math.ceil((buffer.duration / 60) * tempo));
+            const tempo = transportStore.value?.tempo ?? 120;
+            const durationBeats = Math.max(4, Math.ceil((result.buffer.duration / 60) * tempo));
 
-                addClip({
-                    trackId: newTrack.id,
-                    startBeat: currentBeat,
-                    endBeat: currentBeat + durationBeats,
-                    name: file.name.replace(/\.[^.]+$/, ''),
-                    type: 'audio',
-                    audioBufferId: bufferId,
-                });
-            } catch {
-                notifyUser(`Failed to import "${file.name}" — unsupported format or corrupt file`, 'error');
-            }
+            addClip({
+                trackId: newTrack.id,
+                startBeat: currentBeat,
+                endBeat: currentBeat + durationBeats,
+                name: result.file.name.replace(/\.[^.]+$/, ''),
+                type: 'audio',
+                audioBufferId: result.bufferId,
+            });
         }
     };
 
