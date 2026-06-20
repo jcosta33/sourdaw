@@ -11,14 +11,14 @@ import { type ActiveRender } from '../models/RenderProgress';
 
 export type InferenceProgressState = {
     /** Map of requestId → active render state */
-    activeRenders: Record<string, Omit<ActiveRender, 'abortController'>>;
+    activeRenders: Record<string, ActiveRender>;
 };
 
 export const inferenceProgressStore = createStore<InferenceProgressState>({
     initialData: { activeRenders: {} },
 });
 
-export function startActiveRender(render: Omit<ActiveRender, 'abortController'>): void {
+export function startActiveRender(render: ActiveRender): void {
     inferenceProgressStore.update((state) => {
         if (!state) {
             return state;

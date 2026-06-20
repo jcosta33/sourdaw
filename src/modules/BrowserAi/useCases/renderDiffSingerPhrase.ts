@@ -165,36 +165,53 @@ export const renderDiffSingerPhrase = inject({
                     );
                 }
 
-                // Load all ONNX sessions for this voicebank.
+                // Load all ONNX sessions for this voicebank (+ shared vocoder).
                 // Storage key (modelId in OPFS) must match what the download manager used when extracting
                 // the voicebank ZIP. Session key is what the ONNX worker indexes by.
-                const voicebankModels: Array<{ key: string; sessionKey: string }> = [
-                    { key: 'linguistic', sessionKey: `${voicebankId}/linguistic` },
-                    { key: 'dur', sessionKey: `${voicebankId}/dur` },
-                    { key: 'pitch', sessionKey: `${voicebankId}/pitch` },
-                    { key: 'variance', sessionKey: `${voicebankId}/variance` },
-                    { key: 'acoustic', sessionKey: `${voicebankId}/acoustic` },
+                //
+                // Each voicebank model is 15–30 MB and the vocoder ~30 MB, so an
+                // unconditional read+transfer of all six is 115–160 MB moved across
+                // the worker boundary on every phrase render. The worker already keeps
+                // these sessions in an LRU cache, so first query which session ids it
+                // LIVE-holds and skip the read + transfer for those. The query reflects
+                // eviction — a key dropped by LRU will be absent and is re-loaded below.
+                const loadedSessionKeys = new Set(await inferenceWorkerBridge.getLoadedOnnxSessions());
+
+                const onnxModels: Array<{
+                    family: string;
+                    modelId: string;
+                    sessionKey: string;
+                    missingMessage: string;
+                }> = [
+                    ...(['linguistic', 'dur', 'pitch', 'variance', 'acoustic'] as const).map((key) => ({
+                        family: `diffsinger/${voicebankId}`,
+                        modelId: key,
+                        sessionKey: `${voicebankId}/${key}`,
+                        missingMessage:
+                            `DiffSinger model "${key}" not found in OPFS for voicebank "${voicebankId}". ` +
+                            'Re-download the voicebank in AI Settings.',
+                    })),
+                    {
+                        family: VOCODER_FAMILY,
+                        modelId: VOCODER_MODEL_ID,
+                        sessionKey: 'shared/vocoder',
+                        missingMessage:
+                            'Singing vocoder not downloaded. Download it from the AI section in the clip inspector.',
+                    },
                 ];
 
-                for (const { key, sessionKey } of voicebankModels) {
-                    const modelData = await readModel({ family: `diffsinger/${voicebankId}`, modelId: key });
+                for (const { family, modelId, sessionKey, missingMessage } of onnxModels) {
+                    // Worker already holds this session live — skip the OPFS read and the
+                    // multi-MB transfer; the cached session is reused as-is.
+                    if (loadedSessionKeys.has(sessionKey)) {
+                        continue;
+                    }
+                    const modelData = await readModel({ family, modelId });
                     if (!modelData) {
-                        throw new Error(
-                            `DiffSinger model "${key}" not found in OPFS for voicebank "${voicebankId}". ` +
-                                'Re-download the voicebank in AI Settings.'
-                        );
+                        throw new Error(missingMessage);
                     }
                     await inferenceWorkerBridge.loadOnnxSession({ modelId: sessionKey, modelData });
                 }
-
-                // Load shared vocoder
-                const vocoderData = await readModel({ family: VOCODER_FAMILY, modelId: VOCODER_MODEL_ID });
-                if (!vocoderData) {
-                    throw new Error(
-                        'Singing vocoder not downloaded. Download it from the AI section in the clip inspector.'
-                    );
-                }
-                await inferenceWorkerBridge.loadOnnxSession({ modelId: 'shared/vocoder', modelData: vocoderData });
 
                 // Run full pipeline in ONNX worker
                 const result = await inferenceWorkerBridge.runDiffSingerPhrase({

@@ -113,11 +113,23 @@ export const AiRenderClipPreview = ({ audio, sampleRate, label, name }: AiRender
         event.dataTransfer.effectAllowed = 'copy';
     };
 
+    const handleDragEnd = (event: DragEvent<HTMLDivElement>): void => {
+        // A drag released off any drop target reports dropEffect 'none' — nothing
+        // took ownership of the buffer, so undo the optimistic handoff mark set in
+        // handleDragStart. Otherwise a started-but-cancelled drag would suppress
+        // unmount eviction and leak the cached buffer. On a real drop the dropEffect
+        // is the accepted effect (e.g. 'copy'), so the handoff mark stands.
+        if (event.dataTransfer.dropEffect === 'none') {
+            handedOffRef.current = false;
+        }
+    };
+
     return (
         <div
             className="flex items-center gap-1.5 px-1.5 py-1 rounded bg-surface-overlay/50 border border-border/20 cursor-grab active:cursor-grabbing"
             draggable
             onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
         >
             <button
                 type="button"

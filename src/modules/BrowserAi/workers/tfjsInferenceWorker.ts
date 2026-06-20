@@ -22,6 +22,7 @@ self.onmessage = (event: MessageEvent<WorkerRequest>): void => {
     if (req.type === 'get-status') {
         const response: WorkerResponse = {
             type: 'status',
+            requestId: req.requestId,
             loadedModels: [],
             memoryUsageBytes: 0,
         };

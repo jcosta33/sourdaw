@@ -517,8 +517,11 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>): Promise<void> => {
     }
 
     if (req.type === 'get-status') {
+        // Answer from the LIVE sessionCache — never a stale snapshot. Callers that
+        // skip re-loading a session rely on this reflecting LRU eviction.
         const response: WorkerResponse = {
             type: 'status',
+            requestId: req.requestId,
             loadedModels: Array.from(sessionCache.keys()),
             memoryUsageBytes: totalMemoryBytes,
         };

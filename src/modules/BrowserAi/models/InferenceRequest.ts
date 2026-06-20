@@ -39,6 +39,8 @@ export type WorkerRequest =
       }
     | {
           type: 'get-status';
+          /** UUID used to correlate with the status response (live session-cache query) */
+          requestId: string;
       }
     | {
           /**
@@ -131,6 +133,8 @@ export type WorkerResponse =
     | { type: 'error'; requestId: string; error: string }
     | {
           type: 'status';
+          /** Echoes the get-status requestId so the bridge can correlate the live query */
+          requestId: string;
           loadedModels: string[];
           memoryUsageBytes: number;
       };

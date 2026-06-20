@@ -136,7 +136,7 @@ function sendRequest(
         }
         // For fire-and-forget messages (no requestId), resolve immediately
         if (!requestId) {
-            resolve({ type: 'status', loadedModels: [], memoryUsageBytes: 0 });
+            resolve({ type: 'status', requestId: '', loadedModels: [], memoryUsageBytes: 0 });
         }
     });
 }
@@ -168,6 +168,20 @@ export const inferenceWorkerBridge = {
         const requestId = crypto.randomUUID();
         const request: WorkerRequest = { type: 'create-session', requestId, modelId, modelData, options: {} };
         await sendRequest(worker, workerState.onnx, request, [modelData]);
+    },
+
+    /**
+     * Query the ONNX worker for the session ids it currently holds in its LIVE
+     * session cache. Callers use this to skip re-reading + re-transferring a model
+     * the worker already has loaded. The answer reflects LRU eviction — a key that
+     * was evicted will not appear — so callers must still load anything absent here.
+     */
+    async getLoadedOnnxSessions(): Promise<string[]> {
+        const worker = await getOnnxWorker();
+        const requestId = crypto.randomUUID();
+        const request: WorkerRequest = { type: 'get-status', requestId };
+        const response = await sendRequest(worker, workerState.onnx, request);
+        return response.type === 'status' ? response.loadedModels : [];
     },
 
     async loadDdspSession({ modelId, modelUrl }: { modelId: string; modelUrl: string }): Promise<void> {
