@@ -86,6 +86,46 @@ describe('StepSequencerEditor', () => {
         expect(getByText('Step Sequencer (40 steps)')).toBeInTheDocument();
     });
 
+    // Regression: an in-progress edit must survive a parent re-render that passes a
+    // fresh-but-content-equal `steps` literal. The live mount passes `steps={[]}` —
+    // a new array identity every render — so a re-sync keyed on array identity would
+    // re-fire on the re-render and clobber the half-drawn edit. Keying the re-sync on
+    // the content signature (numSteps + values) leaves the edit intact.
+    it('does not clobber an in-progress edit when the parent re-renders with a new but content-equal steps array', () => {
+        const onStepsChange = vi.fn();
+        const view = (
+            <StepSequencerEditor width={200} height={48} steps={[]} numSteps={8} onStepsChange={onStepsChange} />
+        );
+        const { container, rerender } = render(view);
+
+        const canvas = container.querySelector('canvas')!;
+        canvas.getBoundingClientRect = () =>
+            ({
+                left: 0,
+                top: 0,
+                width: 200,
+                height: 48,
+                right: 200,
+                bottom: 48,
+                x: 0,
+                y: 0,
+                toJSON: () => ({}),
+            }) as DOMRect;
+
+        // Begin drawing and edit step 0 near the top (value ≈ +1), without committing.
+        fireEvent.pointerDown(canvas, { clientX: 1, clientY: 0, pointerId: 1 });
+
+        // Parent re-renders with a BRAND-NEW empty literal (same content as before).
+        rerender(<StepSequencerEditor width={200} height={48} steps={[]} numSteps={8} onStepsChange={onStepsChange} />);
+
+        // Commit the gesture.
+        fireEvent.pointerUp(canvas, { pointerId: 1 });
+
+        const committed = onStepsChange.mock.calls.at(-1)![0] as number[];
+        // The edited step must retain the drawn value, not be reset to the baseline 0.
+        expect(committed[0]).toBeCloseTo(1, 5);
+    });
+
     // Regression: a cancelled gesture clears the drawing flag so a later stray move
     // does not keep painting steps.
     it('clears the drawing state on pointercancel', () => {

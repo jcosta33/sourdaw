@@ -22,16 +22,29 @@ export const StepSequencerEditor = ({
     onStepsChange,
 }: StepSequencerEditorProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [steps, setSteps] = useState<number[]>(
-        initialSteps.length >= numSteps ? initialSteps : Array.from({ length: numSteps }, () => 0)
-    );
-    const drawingRef = useRef(false);
 
-    // Re-sync local state when the controlled step count or values change; the
-    // buffer is sized to numSteps so every rendered/edited step has a slot.
-    useEffect(() => {
-        setSteps(initialSteps.length >= numSteps ? initialSteps : Array.from({ length: numSteps }, () => 0));
-    }, [initialSteps, numSteps]);
+    const resolveSteps = (): number[] =>
+        initialSteps.length >= numSteps ? initialSteps : Array.from({ length: numSteps }, () => 0);
+
+    // Content signature of the controlled props. Step values are quantized
+    // numbers (never NaN/object), so a join is a faithful content key.
+    const controlledSignature = `${numSteps}:${initialSteps.join(',')}`;
+
+    const [steps, setSteps] = useState<number[]>(resolveSteps);
+    // Re-sync local edits to the controlled props only when their *content*
+    // changes. The live mount passes a fresh `steps={[]}` literal on every
+    // parent render, so a prior effect keyed on the array identity re-fired
+    // each render and clobbered in-progress edits. Tracking the last-synced
+    // content signature and adjusting state during render (React's recommended
+    // "reset state on prop change" pattern) re-syncs on real content changes
+    // only, with no dependency on the unstable array reference.
+    const lastSignatureRef = useRef(controlledSignature);
+    if (lastSignatureRef.current !== controlledSignature) {
+        lastSignatureRef.current = controlledSignature;
+        setSteps(resolveSteps());
+    }
+
+    const drawingRef = useRef(false);
 
     const draw = (): void => {
         const canvas = canvasRef.current;

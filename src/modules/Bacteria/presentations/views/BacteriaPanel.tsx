@@ -139,57 +139,114 @@ function getModuleMeta(moduleId: string) {
     return EFFECT_MODULES[0];
 }
 
-function setGlobalParam<ParamKey extends keyof BacteriaPatch>(
-    deviceId: string,
-    key: ParamKey,
-    value: BacteriaPatch[ParamKey]
-): void {
+type BacteriaBand = BacteriaPatch['bands'][number];
+
+/**
+ * Keys of `T` whose value is a `number`. Every K knob writes a numeric scalar,
+ * so the writable key set is exactly the numeric keys — this both removes the
+ * old unsound value cast (the value is provably assignable to `T[K]`) and
+ * keeps boolean/string/enum fields out of a knob's reach at compile time.
+ */
+type NumericKeys<TObj> = { [TProp in keyof TObj]: TObj[TProp] extends number ? TProp : never }[keyof TObj];
+
+type NumericGlobalKey = NumericKeys<BacteriaPatch>;
+type NumericBandKey = NumericKeys<BacteriaBand>;
+
+/**
+ * Write a numeric global param. The key is constrained to the global patch's
+ * numeric keys, so a band key cannot be passed here and the value needs no cast.
+ */
+function setGlobalParam(deviceId: string, key: NumericGlobalKey, value: number): void {
     setBacteriaParamWithAudio(deviceId, key, value);
 }
 
-const K = ({
-    deviceId,
-    v,
-    k,
-    label,
-    min,
-    max,
-    step,
-    def,
-    unit,
-    onChangeFn,
-}: {
-    deviceId: string;
+/** Boolean-typed band fields BandStrip toggles via a numeric 0/1 payload. */
+const BAND_BOOLEAN_KEYS = ['solo', 'mute'] as const;
+type BandBooleanKey = (typeof BAND_BOOLEAN_KEYS)[number];
+
+function isBandBooleanKey(key: keyof BacteriaBand): key is BandBooleanKey {
+    return (BAND_BOOLEAN_KEYS as readonly string[]).includes(key);
+}
+
+/**
+ * Route a BandStrip param change to the typed band write. BandStrip's contract
+ * is `(key: string, value: number)` — it encodes the boolean solo/mute fields
+ * as 0/1 — so this boundary decodes those back to `boolean` and forwards the
+ * rest as numeric. Each branch hands a value whose type matches the field, so
+ * no unsound value cast is needed.
+ */
+function setBandParamFromStrip(deviceId: string, bandIndex: number, key: string, value: number): void {
+    const bandKey = key as keyof BacteriaBand;
+    if (isBandBooleanKey(bandKey)) {
+        setBacteriaBandParamWithAudio(deviceId, bandIndex, bandKey, value !== 0);
+        return;
+    }
+    setBacteriaBandParamWithAudio(deviceId, bandIndex, bandKey as NumericBandKey, value);
+}
+
+type KnobChromeProps = {
     v: number;
-    k: string;
     label: string;
     min: number;
     max: number;
     step: number;
     def: number;
     unit?: string;
-    onChangeFn?: (key: string, value: number) => void;
-}): ReactElement => (
-    <Stack align="center" gap={1} className="min-w-[58px]">
-        <RotaryKnob
-            value={v}
-            onChange={(val: number) =>
-                (onChangeFn ?? ((key, value) => setGlobalParam(deviceId, key as keyof BacteriaPatch, value as never)))(
-                    k,
-                    val
-                )
-            }
-            min={min}
-            max={max}
-            step={step}
-            defaultValue={def}
-            size="sm"
-            tone="mint"
-        />
-        <span className="text-[8px] leading-none text-muted-foreground">{label}</span>
-        {unit ? <span className="font-mono text-[7px] text-muted-foreground/45">{formatValue(v, unit)}</span> : null}
-    </Stack>
-);
+};
+
+/**
+ * Knob props as a discriminated union over the write path.
+ *
+ *  - Global variant (no `onBandChange`): `k` must be a numeric *global* key and
+ *    the change is routed to `setGlobalParam`.
+ *  - Band variant (`onBandChange` present): `k` must be a numeric *band* key and
+ *    the only write path is the supplied `onBandChange`.
+ *
+ * Because each variant pins `k` to the matching numeric key set, a band key
+ * cannot be supplied to the global variant — so a band param can never reach
+ * `setGlobalParam`, and the change value needs no cast (it is provably a
+ * `number` assignable to the field). This removes the previous unsound-cast
+ * escapes and the unguarded band→global fallback at the same time.
+ */
+type KGlobalProps = KnobChromeProps & {
+    deviceId: string;
+    k: NumericGlobalKey;
+    onBandChange?: undefined;
+};
+
+type KBandProps = KnobChromeProps & {
+    k: NumericBandKey;
+    onBandChange: (key: NumericBandKey, value: number) => void;
+};
+
+type KProps = KGlobalProps | KBandProps;
+
+const K = (props: KProps): ReactElement => {
+    const { v, label, min, max, step, def, unit } = props;
+    const onChange =
+        props.onBandChange === undefined
+            ? (value: number) => setGlobalParam(props.deviceId, props.k, value)
+            : (value: number) => props.onBandChange(props.k, value);
+
+    return (
+        <Stack align="center" gap={1} className="min-w-[58px]">
+            <RotaryKnob
+                value={v}
+                onChange={onChange}
+                min={min}
+                max={max}
+                step={step}
+                defaultValue={def}
+                size="sm"
+                tone="mint"
+            />
+            <span className="text-[8px] leading-none text-muted-foreground">{label}</span>
+            {unit ? (
+                <span className="font-mono text-[7px] text-muted-foreground/45">{formatValue(v, unit)}</span>
+            ) : null}
+        </Stack>
+    );
+};
 
 const SectionHeader = ({
     eyebrow,
@@ -454,7 +511,7 @@ const PlayHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState 
                     activeBand={state.activeBand}
                     onBandSelect={(index) => setBacteriaActiveBand(deviceId, index)}
                     onCrossoverChange={(index, freq) =>
-                        setGlobalParam(deviceId, `crossoverFreq${index + 1}` as keyof BacteriaPatch, freq as never)
+                        setGlobalParam(deviceId, `crossoverFreq${index + 1}` as NumericGlobalKey, freq)
                     }
                 />
             </Stack>
@@ -604,7 +661,7 @@ const ShapeHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                     activeBand={state.activeBand}
                     onBandSelect={(index) => setBacteriaActiveBand(deviceId, index)}
                     onCrossoverChange={(index, freq) =>
-                        setGlobalParam(deviceId, `crossoverFreq${index + 1}` as keyof BacteriaPatch, freq as never)
+                        setGlobalParam(deviceId, `crossoverFreq${index + 1}` as NumericGlobalKey, freq)
                     }
                 />
             </Stack>
@@ -627,14 +684,7 @@ const ShapeHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                             band={state.patch.bands[index]!}
                             isActive={state.activeBand === index}
                             onSelect={() => setBacteriaActiveBand(deviceId, index)}
-                            onParamChange={(key, value) =>
-                                setBacteriaBandParamWithAudio(
-                                    deviceId,
-                                    index,
-                                    key as keyof BacteriaPatch['bands'][0],
-                                    value as never
-                                )
-                            }
+                            onParamChange={(key, value) => setBandParamFromStrip(deviceId, index, key, value)}
                         />
                     ))}
                 </Row>
@@ -679,7 +729,7 @@ const BuildHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                 activeBand={state.activeBand}
                 onBandSelect={(index) => setBacteriaActiveBand(deviceId, index)}
                 onCrossoverChange={(index, freq) =>
-                    setGlobalParam(deviceId, `crossoverFreq${index + 1}` as keyof BacteriaPatch, freq as never)
+                    setGlobalParam(deviceId, `crossoverFreq${index + 1}` as NumericGlobalKey, freq)
                 }
             />
         </Stack>
@@ -700,14 +750,7 @@ const BuildHero = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                         band={state.patch.bands[index]!}
                         isActive={state.activeBand === index}
                         onSelect={() => setBacteriaActiveBand(deviceId, index)}
-                        onParamChange={(key, value) =>
-                            setBacteriaBandParamWithAudio(
-                                deviceId,
-                                index,
-                                key as keyof BacteriaPatch['bands'][0],
-                                value as never
-                            )
-                        }
+                        onParamChange={(key, value) => setBandParamFromStrip(deviceId, index, key, value)}
                     />
                 ))}
             </Row>
@@ -871,8 +914,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 step={1}
                                 def={25}
                                 unit="%"
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.asymmetry}
@@ -882,12 +924,10 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 max={1}
                                 step={0.01}
                                 def={0}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             {band.distortionMode === 'foldback' ? (
                                 <K
-                                    deviceId={deviceId}
                                     v={band.foldbackThreshold}
                                     k="foldbackThreshold"
                                     label="Fold"
@@ -895,13 +935,12 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                     max={1}
                                     step={0.01}
                                     def={0.7}
-                                    onChangeFn={setBandParam as never}
+                                    onBandChange={setBandParam}
                                 />
                             ) : null}
                             {band.distortionMode === 'bitcrush' ? (
                                 <>
                                     <K
-                                        deviceId={deviceId}
                                         v={band.bitDepth}
                                         k="bitDepth"
                                         label="Bits"
@@ -909,10 +948,9 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                         max={24}
                                         step={1}
                                         def={16}
-                                        onChangeFn={setBandParam as never}
+                                        onBandChange={setBandParam}
                                     />
                                     <K
-                                        deviceId={deviceId}
                                         v={band.sampleRateReduce}
                                         k="sampleRateReduce"
                                         label="Rate div"
@@ -920,13 +958,12 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                         max={64}
                                         step={1}
                                         def={1}
-                                        onChangeFn={setBandParam as never}
+                                        onBandChange={setBandParam}
                                     />
                                 </>
                             ) : null}
                             {band.distortionMode === 'tube' ? (
                                 <K
-                                    deviceId={deviceId}
                                     v={band.tubeBias}
                                     k="tubeBias"
                                     label="Bias"
@@ -934,12 +971,11 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                     max={1}
                                     step={0.01}
                                     def={0.5}
-                                    onChangeFn={setBandParam as never}
+                                    onBandChange={setBandParam}
                                 />
                             ) : null}
                             {band.distortionMode === 'breakdown' ? (
                                 <K
-                                    deviceId={deviceId}
                                     v={band.breakdownDepth}
                                     k="breakdownDepth"
                                     label="Depth"
@@ -948,7 +984,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                     step={0.1}
                                     def={1}
                                     unit="st"
-                                    onChangeFn={setBandParam as never}
+                                    onBandChange={setBandParam}
                                 />
                             ) : null}
                         </Row>
@@ -987,8 +1023,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 step={1}
                                 def={8000}
                                 unit="Hz"
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.filterResonance}
@@ -998,8 +1033,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 max={1}
                                 step={0.01}
                                 def={0.3}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.filterEnvAmount}
@@ -1009,8 +1043,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 max={1}
                                 step={0.01}
                                 def={0}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.filterEnvAttack}
@@ -1021,8 +1054,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 step={0.1}
                                 def={5}
                                 unit="ms"
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.filterEnvRelease}
@@ -1033,8 +1065,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 step={1}
                                 def={200}
                                 unit="ms"
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                         </Row>
                     </Stack>
@@ -1058,8 +1089,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 step={0.01}
                                 def={1.5}
                                 unit="Hz"
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.chorusDepth}
@@ -1069,8 +1099,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 max={1}
                                 step={0.01}
                                 def={0.4}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.chorusFeedback}
@@ -1080,8 +1109,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 max={1}
                                 step={0.01}
                                 def={0.2}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.chorusMix}
@@ -1091,8 +1119,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 max={1}
                                 step={0.01}
                                 def={0.5}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                         </Row>
                     </Stack>
@@ -1116,8 +1143,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 step={0.01}
                                 def={0.5}
                                 unit="Hz"
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.phaserDepth}
@@ -1127,8 +1153,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 max={1}
                                 step={0.01}
                                 def={0.7}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.phaserFeedback}
@@ -1138,8 +1163,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 max={1}
                                 step={0.01}
                                 def={0.5}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.phaserMix}
@@ -1149,8 +1173,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 max={1}
                                 step={0.01}
                                 def={0.5}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                         </Row>
                     </Stack>
@@ -1182,8 +1205,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 step={1}
                                 def={80}
                                 unit="ms"
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.grainDensity}
@@ -1193,8 +1215,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 max={100}
                                 step={1}
                                 def={15}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.grainPosOffset}
@@ -1205,8 +1226,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 step={1}
                                 def={100}
                                 unit="ms"
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.grainPitch}
@@ -1217,8 +1237,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 step={0.1}
                                 def={0}
                                 unit="st"
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.grainMix}
@@ -1228,8 +1247,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 max={1}
                                 step={0.01}
                                 def={0.5}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                         </Row>
                     </Stack>
@@ -1260,8 +1278,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 max={1}
                                 step={0.01}
                                 def={0.5}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.spectralMix}
@@ -1271,8 +1288,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 max={1}
                                 step={0.01}
                                 def={0.5}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                         </Row>
                     </Stack>
@@ -1296,8 +1312,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 step={0.1}
                                 def={0}
                                 unit="Hz"
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.freqShiftMix}
@@ -1307,8 +1322,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 max={1}
                                 step={0.01}
                                 def={0.5}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                         </Row>
                     </Stack>
@@ -1332,8 +1346,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 step={1}
                                 def={0}
                                 unit="%"
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.codecArtifact}
@@ -1343,8 +1356,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 max={1}
                                 step={0.01}
                                 def={0}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                         </Row>
                     </Stack>
@@ -1367,8 +1379,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 max={1}
                                 step={0.01}
                                 def={0.3}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                             <K
                                 v={band.convolutionSeparation}
@@ -1378,8 +1389,7 @@ function renderShapeControls(deviceId: string, state: BacteriaState): ReactEleme
                                 max={1}
                                 step={0.01}
                                 def={0.5}
-                                deviceId={deviceId}
-                                onChangeFn={setBandParam as never}
+                                onBandChange={setBandParam}
                             />
                         </Row>
                     </Stack>
@@ -1481,7 +1491,7 @@ const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                     <BChip
                         key={mode}
                         active={state.patch.crossoverMode === mode}
-                        onClick={() => setGlobalParam(deviceId, 'crossoverMode', mode)}
+                        onClick={() => setBacteriaParamWithAudio(deviceId, 'crossoverMode', mode)}
                     >
                         {mode === 'lr4' ? 'LR4' : 'Linear'}
                     </BChip>
@@ -1495,12 +1505,7 @@ const BuildDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                 title="Source dock"
                 description="Still compact, still visible, and less stranded than before."
             />
-            <ModulationDock
-                patch={state.patch}
-                modValues={[]}
-                onAssignmentAdd={() => {}}
-                onAssignmentRemove={() => {}}
-            />
+            <ModulationDock patch={state.patch} modValues={[]} onAssignmentRemove={() => {}} />
         </Stack>
     </Stack>
 );
@@ -1526,7 +1531,7 @@ const RouteDeck = ({ deviceId, state }: { deviceId: string; state: BacteriaState
                         <BChip
                             key={mode}
                             active={state.patch.globalRouting === mode}
-                            onClick={() => setGlobalParam(deviceId, 'globalRouting', mode)}
+                            onClick={() => setBacteriaParamWithAudio(deviceId, 'globalRouting', mode)}
                         >
                             {modeLabel}
                         </BChip>
@@ -1848,7 +1853,7 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
                         </Stack>
                         <BChip
                             active={Boolean(state.patch.bypass)}
-                            onClick={() => setGlobalParam(deviceId, 'bypass', !state.patch.bypass)}
+                            onClick={() => setBacteriaParamWithAudio(deviceId, 'bypass', !state.patch.bypass)}
                         >
                             {state.patch.bypass ? 'Bypassed' : 'Live'}
                         </BChip>

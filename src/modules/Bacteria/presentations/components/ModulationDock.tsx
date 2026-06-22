@@ -1,36 +1,27 @@
 /**
- * ModulationDock — drag-and-drop modulation assignment panel.
+ * ModulationDock — modulation source tray and active-assignment list.
  *
- * Vital-style modulation source tray where users can drag mod sources
- * (LFO, Envelope Follower, Lorenz, Step Seq, Macros) onto any target
- * parameter knob to create modulation assignments.
+ * Displays the available mod sources (LFO, Envelope Follower, Lorenz, Step Seq,
+ * Macros) with live activity indicators, and lists the patch's existing
+ * modulation assignments with a per-row remove control.
+ *
+ * Scope note: this dock is display + remove only. A drag-to-assign ("drop a
+ * source onto a target knob to create an assignment") flow is NOT wired —
+ * `BacteriaModAssignment` is currently UI/persistence-only metadata with no
+ * frontend engine-bridge message path (see models/BacteriaPatch.ts), so the
+ * add path is gated on the same open product decision as the rest of the
+ * Lab/dock UI. It is recorded as a deferred decision in
+ * sourdaw-hq/findings/FINDING-inventory-decisions-backlog.md (### Bacteria).
+ * Until that decision lands, no inert add-path scaffolding is kept here.
  */
-import { type DragEvent, type ReactElement, useState } from 'react';
+import { type ReactElement } from 'react';
 
-import { type BacteriaPatch, type BacteriaModAssignment } from '../../models/BacteriaPatch';
-
-/**
- * Drag dataTransfer MIME the dock writes the dragged mod-source id under.
- * A target knob reads this on drop to resolve which source is being assigned;
- * exported so the drop target shares the exact key rather than a stringly-typed
- * literal that could silently drift.
- */
-export const BACTERIA_MOD_SOURCE_DRAG_TYPE = 'application/x-bacteria-mod-source';
+import { type BacteriaPatch } from '../../models/BacteriaPatch';
 
 type ModulationDockProps = {
     patch: BacteriaPatch;
     modValues: number[]; // Real-time mod source values for display
-    /**
-     * Called when a source is dropped onto a target parameter to create an
-     * assignment. Modulation assignments are UI/persistence-only metadata
-     * (see BacteriaModAssignment): the dock hands the dropped source's id to
-     * the target knob via the HTML5 drag dataTransfer, and the *knob* (the drop
-     * target) invokes this callback with the resolved `targetParam`. The host
-     * is then responsible for writing the result into `patch.modAssignments`
-     * via a use-case. The dock does not call this itself — it only originates
-     * the drag.
-     */
-    onAssignmentAdd: (assignment: BacteriaModAssignment) => void;
+    /** Remove the assignment at `index` from `patch.modAssignments`. */
     onAssignmentRemove: (index: number) => void;
 };
 
@@ -46,27 +37,7 @@ const MOD_SOURCES = [
     { id: 'macro4', label: 'Macro 4', color: 'rgb(250, 204, 21)', icon: '4' },
 ];
 
-export const ModulationDock = ({
-    patch,
-    modValues,
-    onAssignmentAdd: _onAssignmentAdd,
-    onAssignmentRemove,
-}: ModulationDockProps): ReactElement => {
-    const [dragSource, setDragSource] = useState<string | null>(null);
-
-    const handleDragStart = (event: DragEvent<HTMLButtonElement>, sourceId: string): void => {
-        // Carry the source id on the drag so a target knob can read it on drop
-        // and report the assignment through onAssignmentAdd. Without this the
-        // drag had no payload and the assignment flow was unreachable at its origin.
-        event.dataTransfer.setData(BACTERIA_MOD_SOURCE_DRAG_TYPE, sourceId);
-        event.dataTransfer.effectAllowed = 'link';
-        setDragSource(sourceId);
-    };
-
-    const handleDragEnd = (): void => {
-        setDragSource(null);
-    };
-
+export const ModulationDock = ({ patch, modValues, onAssignmentRemove }: ModulationDockProps): ReactElement => {
     return (
         <div className="flex flex-col gap-2 p-2">
             <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
@@ -80,20 +51,14 @@ export const ModulationDock = ({
                     const activeAssignments = patch.modAssignments.filter((a) => a.sourceId === source.id);
 
                     return (
-                        <button
+                        <div
                             key={source.id}
-                            type="button"
-                            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[7px] font-medium border transition-all cursor-grab active:cursor-grabbing ${
-                                dragSource === source.id ? 'ring-1 ring-white/30 scale-105' : ''
-                            }`}
+                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[7px] font-medium border"
                             style={{
                                 borderColor: `${source.color}40`,
                                 backgroundColor: `${source.color}10`,
                                 color: source.color,
                             }}
-                            draggable
-                            onDragStart={(event) => handleDragStart(event, source.id)}
-                            onDragEnd={handleDragEnd}
                         >
                             <span className="text-[8px] font-bold opacity-60">{source.icon}</span>
                             <span>{source.label}</span>
@@ -109,7 +74,7 @@ export const ModulationDock = ({
                             {activeAssignments.length > 0 ? (
                                 <span className="text-[6px] opacity-50">({activeAssignments.length})</span>
                             ) : null}
-                        </button>
+                        </div>
                     );
                 })}
             </div>
