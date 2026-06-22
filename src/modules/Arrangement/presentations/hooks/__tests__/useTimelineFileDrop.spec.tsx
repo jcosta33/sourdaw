@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     addDevice: vi.fn(),
     addTrack: vi.fn(),
     importMidiFile: vi.fn(),
+    audioBufferCacheGet: vi.fn(),
 }));
 
 vi.mock('../../../useCases/timelineInteractions/hitTestClip/hitTestTrack', () => ({
@@ -62,6 +63,13 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     decodeAudioFile: mocks.decodeAudioFile,
 }));
 
+vi.mock('#/modules/AudioEngine/stores', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
+    audioBufferCache: {
+        get: mocks.audioBufferCacheGet,
+    },
+}));
+
 vi.mock('../../../useCases/clip/addClip', () => ({
     addClip: mocks.addClip,
 }));
@@ -89,6 +97,9 @@ describe('useTimelineFileDrop', () => {
         mocks.buildTimelineRenderModel.mockReturnValue({ tempo: 120 });
         mocks.getAssetTransfer.mockReturnValue({ addLocalAsset: vi.fn().mockResolvedValue('hash') });
         mocks.trackStoreValue.value = { tracks: [], selectedTrackId: null } as any;
+        // Default: nothing in the buffer cache → drops take the file-read/decode path.
+        mocks.audioBufferCacheGet.mockReturnValue(undefined);
+        mocks.libraryStoreValue.value = { roots: [] } as any;
     });
 
     it('handles plugin drop', async () => {
@@ -158,6 +169,55 @@ describe('useTimelineFileDrop', () => {
                 })
             );
         });
+    });
+
+    // Regression (risk #4): a factory sample dragged onto the timeline carries
+    // no file handle and its root is the handle-less 'browser' shim with an empty
+    // rootRef, so neither the Tauri nor the browser decode branch fires. Its
+    // decoded AudioBuffer already lives in audioBufferCache under the sample id;
+    // the drop must resolve audioBufferId from the cache so the clip is audible in
+    // playback/export instead of silent (audioBufferId === undefined).
+    it('resolves a factory clip audioBufferId from the buffer cache (no handle, no decode)', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+
+        mocks.libraryStoreValue.value = {
+            roots: [{ id: 'factory', provider: 'browser', rootRef: '', handle: undefined }],
+        } as any;
+        // Buffer present in the cache keyed by the sample id.
+        mocks.audioBufferCacheGet.mockImplementation((id: string) =>
+            id === 'factory-kick' ? ({ duration: 2 } as AudioBuffer) : undefined
+        );
+
+        const mockEvent = {
+            preventDefault: vi.fn(),
+            dataTransfer: {
+                getData: (type: string) =>
+                    type === 'application/x-sourdaw-sample'
+                        ? JSON.stringify({
+                              name: 'Kick',
+                              id: 'factory-kick',
+                              path: 'drums/kick.factory',
+                              libraryRootId: 'factory',
+                          })
+                        : '',
+                files: [],
+            },
+        };
+
+        mocks.hitTestTrack.mockReturnValue(null);
+        mocks.addTrack.mockReturnValue({ id: 'new-track-id' });
+
+        await act(async () => {
+            await result.current.handleFileDrop(mockEvent as any);
+        });
+
+        await waitFor(() => {
+            expect(mocks.addClip).toHaveBeenCalledWith(
+                expect.objectContaining({ name: 'Kick', type: 'audio', audioBufferId: 'factory-kick' })
+            );
+        });
+        // The cache short-circuit must skip the file decode path entirely.
+        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
     });
 
     it('handles external file drop (MIDI)', async () => {

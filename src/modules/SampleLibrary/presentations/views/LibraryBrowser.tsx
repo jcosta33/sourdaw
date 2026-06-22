@@ -8,7 +8,7 @@
  * - Searchable across entire root
  * - Sample preview, favorites, drag-to-timeline
  */
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useState, useRef } from 'react';
 
 import { Folder, FolderPlus, ChevronRight, Search, Star, X } from 'lucide-react';
 
@@ -16,20 +16,22 @@ import { DawBlockedState } from '#/components/daw/DawBlockedState';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { useStore } from '#/infra/store/useStore';
 import { type PreviewHandle } from '#/modules/Workspace/presentations/hooks/usePreviewAudio';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+import { isTauri } from '#/utils/tauriBridge';
 
+import { type FolderNode, isBrowserDecodeRisky } from '../../models/LibraryTypes';
 import {
+    defaultLibraryState,
     libraryStore,
-    type LibraryState,
     setActiveRoot,
     setCurrentFolder,
     setSearchQuery,
     setFavoritesOnly,
     toggleSampleFavorite,
-    removeLibraryRoot,
 } from '../../stores/libraryStore';
 import { analyzeSample } from '../../useCases/analyzeSample';
 import { connectFolder } from '../../useCases/connectFolder/connectFolder';
-import { rescanRoot } from '../../useCases/connectFolder/rescanRoot';
+import { disconnectLibraryRoot, rescanRoot } from '../../useCases/connectFolder/rescanRoot';
 import { findSimilarSamples } from '../../useCases/findSimilarSamples';
 import { projectSpatialMap } from '../../useCases/projectSpatialMap';
 import { requestPermission } from '../../useCases/requestPermission';
@@ -43,32 +45,55 @@ type LibraryBrowserProps = {
     selectedTrackId: string | null;
 };
 
-const defaultLibraryState: LibraryState = {
-    roots: [],
-    samples: [],
-    folderTrees: {},
-    activeRootId: null,
-    currentFolder: null,
-    searchQuery: '',
-    tagFilter: null,
-    favoritesOnly: false,
-    sortField: 'name',
-    sortDirection: 'asc',
-    scanning: false,
-    scanProgress: 0,
-};
+// Numeric-aware collator so file lists order "Kick 1, Kick 2, … Kick 10" rather
+// than the lexicographic "Kick 1, Kick 10, Kick 2". Created once at module scope.
+const fileNameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+/** Recursive file count for every folder path in a tree, rolled up once. */
+function buildFileCountIndex(tree: FolderNode | undefined): Map<string, number> {
+    const index = new Map<string, number>();
+    if (!tree) {
+        return index;
+    }
+    // buildFolderTree records each node's immediate file count; sum the subtree
+    // bottom-up so a subfolder label lookup is O(1) instead of rescanning every
+    // sample (the previous countFilesIn was O(samples) per visible subfolder).
+    const rollup = (node: FolderNode): number => {
+        let total = node.fileCount;
+        for (const child of node.children) {
+            total += rollup(child);
+        }
+        index.set(node.path, total);
+        return total;
+    };
+    rollup(tree);
+    return index;
+}
 
 export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: LibraryBrowserProps): ReactElement => {
     const state = useStore(libraryStore, defaultLibraryState);
 
     const [showSearch, setShowSearch] = useState(false);
     const [showMap, setShowMap] = useState(false);
+    // Roving-tabindex cursor for the sample listbox.
+    const [activeIndex, setActiveIndex] = useState(0);
+    const listRef = useRef<HTMLDivElement>(null);
+
+    // Cache resolved directory sub-handles per root+folder so repeated previews
+    // of clips in the same folder do not re-walk the handle chain (one IPC trip
+    // per path segment) on every click.
+    const dirHandleCacheRef = useRef<Map<string, FileSystemDirectoryHandle>>(new Map());
 
     if (!state) {
         return <div />;
     }
 
-    const { roots, samples, activeRootId, currentFolder, searchQuery, favoritesOnly, scanning, scanProgress } = state;
+    const activeRootId = state.activeRootId;
+    // Roll the tree's per-folder counts into recursive totals once per render;
+    // React Compiler memoizes this, so countFilesIn is an O(1) Map lookup.
+    const fileCountIndex = buildFileCountIndex(activeRootId ? state.folderTrees[activeRootId] : undefined);
+
+    const { roots, samples, currentFolder, searchQuery, favoritesOnly, scanning, scanProgress } = state;
 
     const activeRoot = roots.find((r) => r.id === activeRootId);
 
@@ -121,18 +146,46 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
         visibleSubfolders = [...subfolderSet].sort((a, b) => {
             const aName = a.split('/').pop() ?? a;
             const bName = b.split('/').pop() ?? b;
-            return aName.localeCompare(bName);
+            return fileNameCollator.compare(aName, bName);
         });
     }
 
     if (favoritesOnly) {
         visibleFiles = visibleFiles.filter((s) => s.favorite);
     }
-    visibleFiles = [...visibleFiles].sort((a, b) => a.displayName.localeCompare(b.displayName));
+    visibleFiles = [...visibleFiles].sort((a, b) => fileNameCollator.compare(a.displayName, b.displayName));
 
-    // Recursive file count under a folder path — used for subfolder labels
-    const countFilesIn = (path: string): number =>
-        rootSamples.filter((s) => s.folder === path || s.folder.startsWith(`${path}/`)).length;
+    // ── Sample listbox: roving tabindex + arrow-key navigation ──
+    const shownFiles = visibleFiles.slice(0, 500);
+    const listCursor = Math.min(activeIndex, Math.max(0, shownFiles.length - 1));
+    const moveListFocus = (next: number): void => {
+        const clamped = Math.max(0, Math.min(shownFiles.length - 1, next));
+        setActiveIndex(clamped);
+        const options = listRef.current?.querySelectorAll<HTMLElement>('[role="option"]');
+        options?.[clamped]?.focus();
+    };
+    const onOptionKeyDown =
+        (index: number) =>
+        (e: React.KeyboardEvent): void => {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                moveListFocus(index + 1);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                moveListFocus(index - 1);
+            } else if (e.key === 'Home') {
+                e.preventDefault();
+                moveListFocus(0);
+            } else if (e.key === 'End') {
+                e.preventDefault();
+                moveListFocus(shownFiles.length - 1);
+            }
+        };
+
+    // Recursive file count under a folder path — used for subfolder labels.
+    // O(1) lookup against the precomputed rollup; falls back to 0 for a path the
+    // tree hasn't indexed yet (e.g. mid-scan before the tree is rebuilt).
+    const countFilesIn = (path: string): number => fileCountIndex.get(path) ?? 0;
 
     const handleConnectFolder = (): void => {
         void connectFolder();
@@ -140,21 +193,61 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
 
     const playSample = async (sample: (typeof rootSamples)[number]): Promise<void> => {
         const root = roots.find((r) => r.id === sample.libraryRootId);
-        if (!root?.handle) {
+        if (!root) {
             return;
         }
+
+        // Warn before attempting formats the browser commonly cannot decode, so a
+        // failed preview is explained rather than appearing to do nothing. The
+        // native (Tauri) build decodes these fine, so the warning is browser-only.
+        if (!isTauri() && isBrowserDecodeRisky(sample.ext)) {
+            notifyUser(
+                `"${sample.displayName}" is a .${sample.ext} file — your browser may not be able to preview it.`,
+                'warning'
+            );
+        }
+
         try {
-            const pathParts = sample.relativePath.split('/');
-            const fileName = pathParts.pop()!;
-            let dirHandle: FileSystemDirectoryHandle = root.handle;
-            for (const part of pathParts) {
-                dirHandle = await dirHandle.getDirectoryHandle(part);
+            let file: File;
+            if (isTauri() && root.provider === 'tauri' && root.rootRef) {
+                // Tauri root: no browser handle exists — read the absolute path
+                // through the native command and wrap the bytes as a File.
+                const { invoke } = await import('@tauri-apps/api/core');
+                const absPath = `${root.rootRef}/${sample.relativePath}`;
+                const bytes = (await invoke('read_audio_file', { path: absPath })) as number[];
+                const fileName = sample.relativePath.split('/').pop() ?? sample.displayName;
+                file = new File([new Uint8Array(bytes as ArrayLike<number>)], fileName);
+            } else if (root.handle) {
+                // Browser FileSystem Access API: walk the directory handle, but
+                // memoize each resolved sub-handle so previewing several clips in
+                // the same folder doesn't re-walk (and re-IPC) the whole chain.
+                const pathParts = sample.relativePath.split('/');
+                const fileName = pathParts.pop()!;
+                const cache = dirHandleCacheRef.current;
+                let dirHandle: FileSystemDirectoryHandle = root.handle;
+                let resolvedPath = '';
+                for (const part of pathParts) {
+                    resolvedPath = resolvedPath ? `${resolvedPath}/${part}` : part;
+                    const cacheKey = `${root.id} ${resolvedPath}`;
+                    const cached = cache.get(cacheKey);
+                    if (cached) {
+                        dirHandle = cached;
+                    } else {
+                        dirHandle = await dirHandle.getDirectoryHandle(part);
+                        cache.set(cacheKey, dirHandle);
+                    }
+                }
+                const fileHandle = await dirHandle.getFileHandle(fileName);
+                file = await fileHandle.getFile();
+            } else {
+                // No usable access path (e.g. an offline/path_missing root).
+                notifyUser(`"${sample.displayName}" can't be previewed — its folder is not accessible.`, 'warning');
+                return;
             }
-            const fileHandle = await dirHandle.getFileHandle(fileName);
-            const file = await fileHandle.getFile();
             await preview.playFile(sample.id, file);
         } catch {
-            // File inaccessible or format unsupported — silently ignore for preview
+            // File access failed (moved, permissions revoked, native read error).
+            notifyUser(`Could not open "${sample.displayName}" for preview.`, 'warning');
         }
     };
 
@@ -191,6 +284,8 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                 <div className="flex-1" />
                 <button
                     type="button"
+                    aria-label="Search library"
+                    aria-pressed={showSearch}
                     className={`size-5 rounded flex items-center justify-center transition-colors ${
                         showSearch ? 'bg-white/10 text-foreground' : 'text-muted-foreground/50 hover:text-foreground'
                     }`}
@@ -202,6 +297,8 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
 
                 <button
                     type="button"
+                    aria-label="Timbral spatial map"
+                    aria-pressed={showMap}
                     className={`size-5 rounded flex items-center justify-center transition-colors ${
                         showMap
                             ? 'bg-accent-cyan/20 text-accent-cyan'
@@ -225,6 +322,8 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                 )}
                 <button
                     type="button"
+                    aria-label="Show favorites only"
+                    aria-pressed={favoritesOnly}
                     className={`size-5 rounded flex items-center justify-center transition-colors ${
                         favoritesOnly
                             ? 'bg-amber-500/20 text-amber-400'
@@ -265,13 +364,22 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
             {/* ── Scan progress ── */}
             {scanning ? (
                 <div className="px-2 pb-1 shrink-0">
-                    <div className="h-1 bg-surface-inset rounded-full overflow-hidden">
+                    <div
+                        role="progressbar"
+                        aria-label="Scanning library folder"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={Math.round(scanProgress * 100)}
+                        className="h-1 bg-surface-inset rounded-full overflow-hidden"
+                    >
                         <div
                             className="h-full bg-amber-500 transition-all duration-300"
                             style={{ width: `${scanProgress * 100}%` }}
                         />
                     </div>
-                    <span className="text-[8px] text-muted-foreground/40">Scanning...</span>
+                    <span className="text-[8px] text-muted-foreground/40" aria-live="polite">
+                        Scanning...
+                    </span>
                 </div>
             ) : null}
 
@@ -305,7 +413,7 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                             isActive={activeRootId === root.id}
                             onSelect={() => setActiveRoot(activeRootId === root.id ? null : root.id)}
                             onRescan={() => void rescanRoot(root.id)}
-                            onRemove={() => removeLibraryRoot(root.id)}
+                            onRemove={() => void disconnectLibraryRoot(root.id)}
                             onRequestPermission={
                                 root.status === 'permission_required'
                                     ? () => void requestPermission(root.id)
@@ -396,10 +504,11 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                                 <button
                                     key={subPath}
                                     type="button"
+                                    aria-label={`Open folder ${name}, ${count} file${count !== 1 ? 's' : ''}`}
                                     className="w-full flex items-center gap-2 px-2 py-0.5 rounded hover:bg-white/[0.04] text-left group"
                                     onClick={() => setCurrentFolder(subPath)}
                                 >
-                                    <Folder className="size-3 shrink-0 text-amber-500/60" />
+                                    <Folder className="size-3 shrink-0 text-amber-500/60" aria-hidden="true" />
                                     <span className="flex-1 min-w-0 text-[10px] text-foreground truncate">{name}</span>
                                     <span className="text-[8px] text-muted-foreground/40 tabular-nums">{count}</span>
                                     <ChevronRight className="size-3 shrink-0 text-muted-foreground/20 group-hover:text-muted-foreground/60 transition-colors" />
@@ -407,40 +516,45 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                             );
                         })}
 
-                        {visibleFiles.slice(0, 500).map((sample) => (
-                            <SampleRow
-                                key={sample.id}
-                                sample={sample}
-                                isPlaying={preview.playingId === sample.id}
-                                onPlay={() => {
-                                    void playSample(sample);
-                                }}
-                                onStop={preview.stop}
-                                onToggleFavorite={() => toggleSampleFavorite(sample.id)}
-                                onFindSimilar={() => handleFindSimilar(sample.id)}
-                                onDragStart={(e) => {
-                                    e.dataTransfer.setData(
-                                        'application/x-sourdaw-sample',
-                                        JSON.stringify({
-                                            name: sample.displayName,
-                                            id: sample.id,
-                                            path: sample.relativePath,
-                                            libraryRootId: sample.libraryRootId,
-                                            bpm: sample.analysis?.bpm,
-                                            key: sample.analysis?.key,
-                                        })
-                                    );
-                                    e.dataTransfer.effectAllowed = 'copy';
-                                }}
-                                onClick={() => {
-                                    if (preview.playingId === sample.id) {
-                                        preview.stop();
-                                    } else {
+                        <div ref={listRef} role="listbox" aria-label="Samples" aria-orientation="vertical">
+                            {shownFiles.map((sample, index) => (
+                                <SampleRow
+                                    key={sample.id}
+                                    sample={sample}
+                                    isPlaying={preview.playingId === sample.id}
+                                    tabIndex={index === listCursor ? 0 : -1}
+                                    onKeyDown={onOptionKeyDown(index)}
+                                    onPlay={() => {
                                         void playSample(sample);
-                                    }
-                                }}
-                            />
-                        ))}
+                                    }}
+                                    onStop={preview.stop}
+                                    onToggleFavorite={() => toggleSampleFavorite(sample.id)}
+                                    onFindSimilar={() => handleFindSimilar(sample.id)}
+                                    onDragStart={(e) => {
+                                        e.dataTransfer.setData(
+                                            'application/x-sourdaw-sample',
+                                            JSON.stringify({
+                                                name: sample.displayName,
+                                                id: sample.id,
+                                                path: sample.relativePath,
+                                                libraryRootId: sample.libraryRootId,
+                                                bpm: sample.analysis?.bpm,
+                                                key: sample.analysis?.key,
+                                            })
+                                        );
+                                        e.dataTransfer.effectAllowed = 'copy';
+                                    }}
+                                    onClick={() => {
+                                        setActiveIndex(index);
+                                        if (preview.playingId === sample.id) {
+                                            preview.stop();
+                                        } else {
+                                            void playSample(sample);
+                                        }
+                                    }}
+                                />
+                            ))}
+                        </div>
 
                         {visibleFiles.length > 500 ? (
                             <div className="text-center py-2 text-[9px] text-muted-foreground/40">

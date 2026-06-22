@@ -35,26 +35,44 @@ export type LibraryState = {
     scanProgress: number;
 };
 
+/**
+ * Canonical default LibraryState. Exported so React views can pass an identical
+ * fallback to {@link useStore} without re-declaring the literal — keeping all
+ * consumers in lockstep when a LibraryState field is added.
+ */
+export const defaultLibraryState: LibraryState = {
+    roots: [],
+    samples: [],
+    folderTrees: {},
+    activeRootId: null,
+    currentFolder: null,
+    searchQuery: '',
+    tagFilter: null,
+    favoritesOnly: false,
+    sortField: 'name',
+    sortDirection: 'asc',
+    scanning: false,
+    scanProgress: 0,
+};
+
 export const libraryStore = createStore<LibraryState>({
-    initialData: {
-        roots: [],
-        samples: [],
-        folderTrees: {},
-        activeRootId: null,
-        currentFolder: null,
-        searchQuery: '',
-        tagFilter: null,
-        favoritesOnly: false,
-        sortField: 'name',
-        sortDirection: 'asc',
-        scanning: false,
-        scanProgress: 0,
-    },
+    // Seed a fresh copy so the exported constant stays a pristine, unaliased
+    // shape reference for view fallbacks.
+    initialData: { ...defaultLibraryState, roots: [], samples: [], folderTrees: {} },
 });
 
 // ── Root management ──────────────────────────────────────────────────────────
 
-export function addLibraryRoot(root: LibraryRoot): void {
+/**
+ * Add a connected folder root.
+ *
+ * @param options.activate When true (default), focuses the new root by setting
+ *   {@link LibraryState.activeRootId}. Bulk restore passes `false` so that
+ *   replaying every persisted root does not clobber the session's focus to
+ *   whichever root happens to be last out of IndexedDB.
+ */
+export function addLibraryRoot(root: LibraryRoot, options: { activate?: boolean } = {}): void {
+    const { activate = true } = options;
     const state = libraryStore.value;
     if (!state) {
         return;
@@ -66,7 +84,7 @@ export function addLibraryRoot(root: LibraryRoot): void {
     libraryStore.set({
         ...state,
         roots: [...state.roots, root],
-        activeRootId: root.id,
+        activeRootId: activate ? root.id : state.activeRootId,
     });
 }
 
@@ -111,6 +129,31 @@ export function addSamples(newSamples: SampleRecord[]): void {
     libraryStore.set({
         ...state,
         samples: [...state.samples, ...unique],
+    });
+}
+
+/**
+ * Remove sample records by id (in-memory only).
+ *
+ * Used by rescan reconciliation to evict samples whose backing files were
+ * deleted or moved on disk, and by changed-record replacement (remove then
+ * re-add the fresh record). Persistence of the deletion is the caller's
+ * responsibility via {@link persistSamples}, which reconciles IndexedDB against
+ * this in-memory state — a store never writes to repositories directly.
+ */
+export function removeSamples(sampleIds: string[]): void {
+    const state = libraryStore.value;
+    if (!state || sampleIds.length === 0) {
+        return;
+    }
+    const toRemove = new Set(sampleIds);
+    const remaining = state.samples.filter((s) => !toRemove.has(s.id));
+    if (remaining.length === state.samples.length) {
+        return;
+    }
+    libraryStore.set({
+        ...state,
+        samples: remaining,
     });
 }
 
@@ -207,14 +250,27 @@ export function toggleFolderExpanded(path: string): void {
         return;
     }
 
+    // The target lives in at most one child subtree, so descend into only that
+    // child and clone strictly along the path to it. Every sibling (and its whole
+    // subtree) is kept by reference rather than re-created on each click, reducing
+    // O(total nodes) clones to O(depth).
     function toggleInNode(node: FolderNode): FolderNode {
         if (node.path === path) {
             return { ...node, expanded: !node.expanded };
         }
-        if (node.children.length > 0) {
-            return { ...node, children: node.children.map(toggleInNode) };
+        const childIndex = node.children.findIndex((child) => path === child.path || path.startsWith(`${child.path}/`));
+        if (childIndex === -1) {
+            // The target is not within this subtree — leave it untouched.
+            return node;
         }
-        return node;
+        const child = node.children[childIndex]!;
+        const nextChild = toggleInNode(child);
+        if (nextChild === child) {
+            return node;
+        }
+        const children = node.children.slice();
+        children[childIndex] = nextChild;
+        return { ...node, children };
     }
 
     libraryStore.set({

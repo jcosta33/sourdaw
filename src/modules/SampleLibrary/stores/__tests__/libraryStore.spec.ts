@@ -4,6 +4,7 @@ import {
     libraryStore,
     addLibraryRoot,
     removeLibraryRoot,
+    removeSamples,
     updateLibraryRootStatus,
     addSamples,
     toggleSampleFavorite,
@@ -175,6 +176,93 @@ describe('libraryStore', () => {
         setScanProgress(true, 0.5);
         expect(libraryStore.value?.scanning).toBe(true);
         expect(libraryStore.value?.scanProgress).toBe(0.5);
+    });
+
+    it('should not auto-focus a root when activate is false (restore path)', () => {
+        const factory = {
+            id: 'factory',
+            name: 'Factory Samples',
+            provider: 'browser' as const,
+            rootRef: '',
+            connectedAt: 0,
+            status: 'ready' as const,
+            fileCount: 0,
+            settings: { recursive: true },
+        };
+        const lib = { ...factory, id: 'lib-1', name: 'My Folder' };
+
+        // Bulk restore replays every persisted root without activating, so the
+        // last root out of storage must not clobber focus.
+        addLibraryRoot(factory, { activate: false });
+        addLibraryRoot(lib, { activate: false });
+        expect(libraryStore.value?.roots).toHaveLength(2);
+        expect(libraryStore.value?.activeRootId).toBeNull();
+
+        // Default still activates (connect-folder path).
+        addLibraryRoot({ ...factory, id: 'lib-2' });
+        expect(libraryStore.value?.activeRootId).toBe('lib-2');
+    });
+
+    it('should remove samples by id without touching others', () => {
+        function mk(id: string, rootId = 'r1') {
+            return {
+                id,
+                libraryRootId: rootId,
+                relativePath: id,
+                displayName: id,
+                ext: 'wav',
+                folder: '',
+                sync: { exists: true, status: 'discovered' as const },
+                format: {},
+                tags: [],
+                favorite: false,
+            };
+        }
+        addSamples([mk('a'), mk('b'), mk('c')]);
+        expect(libraryStore.value?.samples).toHaveLength(3);
+
+        removeSamples(['b']);
+        expect(libraryStore.value?.samples.map((s) => s.id)).toEqual(['a', 'c']);
+
+        // Removing absent ids is a no-op and does not replace the array reference.
+        const before = libraryStore.value?.samples;
+        removeSamples(['nope']);
+        expect(libraryStore.value?.samples).toBe(before);
+
+        // Empty input is a no-op.
+        removeSamples([]);
+        expect(libraryStore.value?.samples).toHaveLength(2);
+    });
+
+    it('toggleFolderExpanded preserves the identity of untouched subtrees', () => {
+        const root = {
+            id: 'r1',
+            name: 'Root 1',
+            provider: 'browser' as const,
+            rootRef: '',
+            connectedAt: 0,
+            status: 'ready' as const,
+            fileCount: 0,
+            settings: { recursive: true },
+        };
+        addLibraryRoot(root);
+
+        const sibling = { name: 'b', path: 'b', fileCount: 0, expanded: false, children: [] };
+        const tree = {
+            name: 'Root',
+            path: '',
+            fileCount: 0,
+            expanded: true,
+            children: [{ name: 'a', path: 'a', fileCount: 0, expanded: false, children: [] }, sibling],
+        };
+        setFolderTree('r1', tree);
+
+        toggleFolderExpanded('a');
+        const after = libraryStore.value?.folderTrees.r1;
+        // The toggled node flipped...
+        expect(after?.children[0]?.expanded).toBe(true);
+        // ...but the sibling subtree was not re-created (identity preserved).
+        expect(after?.children[1]).toBe(sibling);
     });
 
     it('should set and expand folder trees', () => {

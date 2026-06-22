@@ -1,4 +1,11 @@
-import { type SpectralDescriptors } from '../models/LibraryTypes';
+import {
+    type Bpm,
+    type MusicalKey,
+    type SpectralDescriptors,
+    PITCH_CLASSES,
+    makeMusicalKey,
+    toBpm,
+} from '../models/LibraryTypes';
 
 /**
  * Background analysis service for audio samples.
@@ -7,8 +14,8 @@ import { type SpectralDescriptors } from '../models/LibraryTypes';
  */
 
 export type AnalysisResult = {
-    bpm: number;
-    key: string;
+    bpm: Bpm;
+    key: MusicalKey;
     descriptors: SpectralDescriptors;
 };
 
@@ -28,9 +35,18 @@ export async function performMusicalAnalysis(audioBuffer: AudioBuffer): Promise<
     }
 
     const rms = sum / 1000;
-    const bpm = 120 + (Math.floor(rms * 100) % 20);
-    const keys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-    const key = keys[Math.floor(rms * 1000) % 12]! + (rms > 0.05 ? 'm' : '');
+    // The heuristic stays in 120–139, always a sane tempo. Route it through the
+    // brand constructor anyway so the only path to a Bpm is the validated one; if
+    // a future tweak pushes it out of range, fail loud here rather than store junk.
+    const bpm = toBpm(120 + (Math.floor(rms * 100) % 20));
+    if (bpm === undefined) {
+        throw new Error('analysis produced an out-of-range BPM');
+    }
+    // Normalize to a canonical MusicalKey: pick a pitch class and a mode, then
+    // build the label through the single constructor so the suffix is consistent
+    // ('C#m' for minor, 'C#' for major) instead of the previously ad-hoc concat.
+    const pitch = PITCH_CLASSES[Math.floor(rms * 1000) % 12]!;
+    const key = makeMusicalKey(pitch, rms > 0.05 ? 'minor' : 'major');
 
     return {
         bpm,

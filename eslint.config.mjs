@@ -1125,6 +1125,14 @@ export default defineConfig(
     {
         files: ['**/*.d.ts'],
         extends: [tseslint.configs.disableTypeChecked],
+        rules: {
+            // Declaration merging into an existing global interface (e.g. augmenting
+            // DOM's `Window` or `FileSystemHandle`) is only expressible with
+            // `interface` — a `type` alias collides (TS2300). The project-wide
+            // "prefer type" rule (AGENTS.md L147) is therefore inapplicable in
+            // ambient declaration files, whose whole purpose is such merges.
+            '@typescript-eslint/consistent-type-definitions': 'off',
+        },
     },
 
     // ─── Prettier (must be last) ─────────────────────────────────────────────

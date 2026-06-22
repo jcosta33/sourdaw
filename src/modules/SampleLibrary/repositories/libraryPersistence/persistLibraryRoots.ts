@@ -1,3 +1,6 @@
+import { logger } from '#/infra/logger/appLogger';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { libraryStore } from '../../stores/libraryStore';
 
 import { HANDLES_STORE, ROOTS_STORE, openDb } from './helpers';
@@ -33,7 +36,14 @@ export async function persistLibraryRoots(): Promise<void> {
             tx.onerror = () => reject(tx.error ?? new Error('IDB transaction failed'));
         });
         db.close();
-    } catch {
-        // Silent fail — persistence is best-effort
+    } catch (error) {
+        logger.error(error instanceof Error ? error : new Error(String(error)));
+        const isQuota = error instanceof DOMException && error.name === 'QuotaExceededError';
+        notifyUser(
+            isQuota
+                ? 'Storage is full — connected folders could not be saved. Free up disk space and try again.'
+                : 'Could not save your connected folders; they may not reappear on reload.',
+            'error'
+        );
     }
 }

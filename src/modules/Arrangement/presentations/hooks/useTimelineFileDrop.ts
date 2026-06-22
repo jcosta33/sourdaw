@@ -1,5 +1,6 @@
 import { type DragEvent, useState } from 'react';
 
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { libraryStore } from '#/modules/SampleLibrary/stores';
@@ -165,10 +166,27 @@ export const useTimelineFileDrop = ({
                 let assetHash: string | undefined;
                 let durationBeats = sample.durationSeconds ? Math.max(1, Math.ceil(sample.durationSeconds * 2)) : 4;
 
+                // Factory (and any already-decoded) samples keep their AudioBuffer
+                // in the cache under the sample id — there is no file to re-read and
+                // the factory root is handle-less ('browser' shim, empty rootRef),
+                // so the handle/Tauri branches below would both miss and leave
+                // audioBufferId undefined → a silent clip in playback/export. Resolve
+                // the buffer id straight from the cache before attempting any decode.
+                const cachedBuffer = audioBufferCache.get(sample.id);
+                if (cachedBuffer) {
+                    audioBufferId = sample.id;
+                    durationBeats = Math.max(
+                        1,
+                        Math.ceil((cachedBuffer.duration / 60) * buildTimelineRenderModel().tempo)
+                    );
+                }
+
                 try {
                     const root = libraryStore.value?.roots.find((r) => r.id === sample.libraryRootId);
 
-                    if (isTauri() && root?.provider === 'tauri' && root.rootRef) {
+                    if (audioBufferId) {
+                        // Already resolved from cache — skip the file-read/decode path.
+                    } else if (isTauri() && root?.provider === 'tauri' && root.rootRef) {
                         // Tauri: resolve the absolute path and pass as a File-like object
                         const { invoke } = await import('@tauri-apps/api/core');
                         const absPath = `${root.rootRef}/${sample.path}`;

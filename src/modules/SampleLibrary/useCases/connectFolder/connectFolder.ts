@@ -11,9 +11,7 @@ async function connectFolderBrowser(): Promise<string | null> {
     }
 
     try {
-        const handle = await (
-            window as { showDirectoryPicker: (opts: { mode: string }) => Promise<FileSystemDirectoryHandle> }
-        ).showDirectoryPicker({ mode: 'read' });
+        const handle = await window.showDirectoryPicker({ mode: 'read' });
         const id = `lib-${crypto.randomUUID().slice(0, 12)}`;
 
         const root: LibraryRoot = {

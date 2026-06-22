@@ -25,7 +25,27 @@ export type FileStat = {
 
 // ── Library root ─────────────────────────────────────────────────────────────
 
-export type LibraryRootStatus = 'ready' | 'offline' | 'permission_required' | 'scanning';
+/**
+ * Connection state of a library root.
+ *
+ * - `ready`            — accessible; samples can be previewed and dragged out.
+ * - `scanning`         — an indexing pass is in progress.
+ * - `permission_required` — a browser handle exists but read permission lapsed
+ *   (re-grantable via the OS picker without re-selecting the folder).
+ * - `path_missing`     — a Tauri root whose absolute path no longer resolves on
+ *   disk (folder moved/deleted); distinct from a transient access failure.
+ * - `offline`          — the root cannot be reached right now for any other
+ *   reason (handle lost, IO error). Catch-all not-ready state.
+ *
+ * Only `ready` is the operable state; `isRootReady` is the single discriminator
+ * callers should use rather than testing for the absence of a handle.
+ */
+export type LibraryRootStatus = 'ready' | 'offline' | 'permission_required' | 'path_missing' | 'scanning';
+
+/** True only when a root is in its single operable state. */
+export function isRootReady(root: Pick<LibraryRoot, 'status'>): boolean {
+    return root.status === 'ready';
+}
 
 export type LibraryRoot = {
     id: string;
@@ -57,9 +77,74 @@ export type SpectralDescriptors = {
     inharmonicity?: number;
 };
 
+// ── Branded musical-metadata primitives ──────────────────────────────────────
+//
+// Branding closes the door on the values that the old bare `number`/`string`
+// fields silently admitted: a negative or absurd BPM, or a free-text key like
+// 'banana'. Each brand has exactly one constructor that validates its input and
+// returns `undefined` when the value is out of range, so an invalid value can
+// never reach a `SampleAnalysis`.
+
+declare const bpmBrand: unique symbol;
+/** A musical tempo in beats per minute, validated to a sane positive range. */
+export type Bpm = number & { readonly [bpmBrand]: true };
+
+/** Plausible musical tempo bounds; analysis or user input outside this is dropped. */
+const MIN_BPM = 20;
+const MAX_BPM = 400;
+
+/** Construct a {@link Bpm}, or `undefined` if the value is not a sane tempo. */
+export function toBpm(value: number): Bpm | undefined {
+    if (!Number.isFinite(value) || value < MIN_BPM || value > MAX_BPM) {
+        return undefined;
+    }
+    return value as Bpm;
+}
+
+/** The twelve pitch classes; the only valid roots for a musical key. */
+export const PITCH_CLASSES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
+export type Pitch = (typeof PITCH_CLASSES)[number];
+
+/** A key is either major or minor. */
+export type KeyMode = 'major' | 'minor';
+
+declare const keyBrand: unique symbol;
+/**
+ * A normalized musical-key label, e.g. `"C#"` (major) or `"C#m"` (minor).
+ * Minor keys always carry a trailing `m`; major keys never do. Produced only by
+ * {@link makeMusicalKey} so the `'C#m'` vs naked `'C#'` inconsistency the old
+ * free-form string allowed cannot recur.
+ */
+export type MusicalKey = string & { readonly [keyBrand]: true };
+
+function isPitch(value: string): value is Pitch {
+    return (PITCH_CLASSES as readonly string[]).includes(value);
+}
+
+/** Build a canonical {@link MusicalKey} from a validated pitch and mode. */
+export function makeMusicalKey(pitch: Pitch, mode: KeyMode): MusicalKey {
+    return `${pitch}${mode === 'minor' ? 'm' : ''}` as MusicalKey;
+}
+
+/**
+ * Parse a free-form key label (e.g. from the analyser or persisted data) into a
+ * canonical {@link MusicalKey}, or `undefined` if the root pitch is not one of
+ * the twelve pitch classes. A trailing `m` (any case) marks a minor key.
+ */
+export function parseMusicalKey(raw: string): MusicalKey | undefined {
+    const trimmed = raw.trim();
+    const minor = /m$/i.test(trimmed);
+    const pitchPart = minor ? trimmed.slice(0, -1) : trimmed;
+    const normalizedPitch = pitchPart.length > 0 ? pitchPart[0]!.toUpperCase() + pitchPart.slice(1) : '';
+    if (!isPitch(normalizedPitch)) {
+        return undefined;
+    }
+    return makeMusicalKey(normalizedPitch, minor ? 'minor' : 'major');
+}
+
 export type SampleAnalysis = {
-    bpm?: number;
-    key?: string;
+    bpm?: Bpm;
+    key?: MusicalKey;
     descriptors?: SpectralDescriptors;
 };
 
@@ -133,4 +218,20 @@ export const AUDIO_EXTENSIONS = new Set([
 export function isAudioFile(filename: string): boolean {
     const ext = filename.split('.').pop()?.toLowerCase() ?? '';
     return AUDIO_EXTENSIONS.has(ext);
+}
+
+/**
+ * Extensions that `AUDIO_EXTENSIONS` accepts for indexing but that the browser's
+ * `AudioContext.decodeAudioData` frequently cannot decode (no native codec):
+ * AIFF, FLAC, and AAC/M4A all depend on the platform's codec set and commonly
+ * throw on decode in Chromium/Firefox. We still index these files (they are real
+ * audio, and the Tauri build can decode them natively), but the preview UI uses
+ * this set to badge them as "may not preview" and to explain a failed decode
+ * rather than swallowing it silently.
+ */
+export const BROWSER_DECODE_RISKY_EXTENSIONS = new Set(['aiff', 'aif', 'flac', 'aac', 'm4a']);
+
+/** Whether the browser may be unable to decode this extension for preview. */
+export function isBrowserDecodeRisky(ext: string): boolean {
+    return BROWSER_DECODE_RISKY_EXTENSIONS.has(ext.toLowerCase());
 }

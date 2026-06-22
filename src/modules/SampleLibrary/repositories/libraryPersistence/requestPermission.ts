@@ -1,4 +1,4 @@
-import { libraryStore } from '../../stores/libraryStore';
+import { libraryStore, updateLibraryRootStatus } from '../../stores/libraryStore';
 
 /**
  * Request permission for a browser directory handle that needs re-authorization.
@@ -15,13 +15,8 @@ export async function requestPermission(rootId: string): Promise<boolean> {
     }
 
     try {
-        // eslint-disable-next-line sourdaw/no-type-assertion-escape -- FileSystemDirectoryHandle.requestPermission exists at runtime but is absent from TS DOM lib
-        const handleWithPerm = root.handle as unknown as {
-            requestPermission: (opts: { mode: string }) => Promise<string>;
-        };
-        const perm = await handleWithPerm.requestPermission({ mode: 'read' });
+        const perm = await root.handle.requestPermission({ mode: 'read' });
         if (perm === 'granted') {
-            const { updateLibraryRootStatus } = await import('../../stores/libraryStore');
             updateLibraryRootStatus(rootId, 'ready');
             return true;
         }

@@ -1,6 +1,6 @@
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 
-import { type LibraryRoot, type SampleRecord } from '../../models/LibraryTypes';
+import { type LibraryRoot, type SampleAnalysis, type SampleRecord, toBpm } from '../../models/LibraryTypes';
 import { persistLibraryRoots } from '../../repositories/libraryPersistence/persistLibraryRoots';
 import { persistSamples } from '../../repositories/libraryPersistence/persistSamples';
 import { addLibraryRoot, addSamples, libraryStore } from '../../stores/libraryStore';
@@ -16,6 +16,16 @@ function getCategoryFolder(sample: FactorySample): string {
         return `${sample.category}/${parts[1]}-${parts[2]}`.replaceAll(/[^a-zA-Z0-9/-]/g, '');
     }
     return `${sample.category}/${primary}`;
+}
+
+function toFactoryAnalysis(sample: FactorySample): SampleAnalysis | undefined {
+    if (sample.bpm === undefined) {
+        return undefined;
+    }
+    const bpm = toBpm(sample.bpm);
+    // A factory sample with an absurd declared BPM carries no analysis rather
+    // than a junk value (the brand constructor is the only gate to a Bpm).
+    return bpm === undefined ? undefined : { bpm };
 }
 
 function toSampleRecord(sample: FactorySample): SampleRecord {
@@ -40,14 +50,15 @@ function toSampleRecord(sample: FactorySample): SampleRecord {
             channels: sample.buffer.numberOfChannels,
             bitDepth: 32,
         },
-        analysis: sample.bpm !== undefined ? { bpm: sample.bpm } : undefined,
+        analysis: toFactoryAnalysis(sample),
         tags: [...sample.tags, 'factory'],
         favorite: false,
     };
 }
 
 function ensureFactoryRoot(): void {
-    const existing = libraryStore.value?.roots.find((r) => r.id === FACTORY_LIBRARY_ROOT_ID);
+    const state = libraryStore.value;
+    const existing = state?.roots.find((r) => r.id === FACTORY_LIBRARY_ROOT_ID);
     if (existing) {
         return;
     }
@@ -64,7 +75,17 @@ function ensureFactoryRoot(): void {
         fileCount: 0,
         settings: { recursive: true },
     };
-    addLibraryRoot(root);
+    // Only auto-focus the factory root when nothing else is focused. Seeding
+    // runs after restoreLibrary, so unconditionally activating here would re-wipe
+    // a restored session's focus back to 'Factory Samples'.
+    addLibraryRoot(root, { activate: !state?.activeRootId });
+}
+
+/** Yield to the event loop so the main thread can paint between seed phases. */
+function yieldToEventLoop(): Promise<void> {
+    return new Promise((resolve) => {
+        setTimeout(resolve, 0);
+    });
 }
 
 export async function seedFactoryLibrary(ctx: AudioContext): Promise<void> {
@@ -76,9 +97,21 @@ export async function seedFactoryLibrary(ctx: AudioContext): Promise<void> {
     ensureFactoryRoot();
 
     const records = samples.map(toSampleRecord);
-    for (const sample of samples) {
-        audioBufferCache.set(sample.id, sample.buffer);
+
+    // Register the synthesised buffers in chunks, yielding to the event loop
+    // between chunks so the first-launch seed does not hold the main thread in
+    // one unbroken stretch while hundreds of buffers are cached.
+    const CHUNK = 16;
+    for (let i = 0; i < samples.length; i += CHUNK) {
+        const end = Math.min(i + CHUNK, samples.length);
+        for (let j = i; j < end; j++) {
+            audioBufferCache.set(samples[j]!.id, samples[j]!.buffer);
+        }
+        if (end < samples.length) {
+            await yieldToEventLoop();
+        }
     }
+
     addSamples(records);
     buildFolderTree(FACTORY_LIBRARY_ROOT_ID);
 

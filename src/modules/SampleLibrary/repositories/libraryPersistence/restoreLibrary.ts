@@ -1,8 +1,31 @@
+import { logger } from '#/infra/logger/appLogger';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+import { isTauri } from '#/utils/tauriBridge';
+
 import { type LibraryRoot, type SampleRecord } from '../../models/LibraryTypes';
-import { addLibraryRoot, addSamples } from '../../stores/libraryStore';
+import { addLibraryRoot, addSamples, setActiveRoot, libraryStore } from '../../stores/libraryStore';
 import { buildFolderTree } from '../../useCases/buildFolderTree';
 
 import { HANDLES_STORE, ROOTS_STORE, SAMPLES_STORE, openDb } from './helpers';
+import { ACTIVE_ROOT_KEY } from './persistSamples';
+
+/**
+ * Validate that a restored Tauri root's absolute path still resolves on disk.
+ * Returns the status the root should take: `ready` when the path exists,
+ * `path_missing` when it provably does not, and `offline` when we cannot tell
+ * (not in a Tauri runtime, no path recorded, or the check itself failed).
+ */
+async function resolveTauriRootStatus(root: LibraryRoot): Promise<LibraryRoot['status']> {
+    if (!isTauri() || !root.rootRef) {
+        return 'offline';
+    }
+    try {
+        const { exists } = await import('@tauri-apps/plugin-fs');
+        return (await exists(root.rootRef)) ? 'ready' : 'path_missing';
+    } catch {
+        return 'offline';
+    }
+}
 
 /**
  * Restore library roots and samples from IndexedDB on app launch.
@@ -40,11 +63,7 @@ export async function restoreLibrary(): Promise<void> {
                 if (handle) {
                     // Check if we still have permission
                     try {
-                        // eslint-disable-next-line sourdaw/no-type-assertion-escape -- FileSystemDirectoryHandle.queryPermission exists at runtime but is absent from TS DOM lib
-                        const handleWithQuery = handle as unknown as {
-                            queryPermission: (opts: { mode: string }) => Promise<string>;
-                        };
-                        const perm = await handleWithQuery.queryPermission({ mode: 'read' });
+                        const perm = await handle.queryPermission({ mode: 'read' });
                         if (perm === 'granted') {
                             root.handle = handle;
                             root.status = 'ready';
@@ -59,11 +78,18 @@ export async function restoreLibrary(): Promise<void> {
                     root.status = 'offline';
                 }
             } else {
-                // Tauri: check if path still exists
-                root.status = 'ready'; // Assume ready; will validate on first access
+                // Tauri: cheaply confirm the absolute path still resolves before
+                // claiming the root is ready. A moved/deleted folder restores as
+                // path_missing instead of a falsely-ready root that fails on first
+                // access with no explanation.
+                root.status = await resolveTauriRootStatus(root);
             }
 
-            addLibraryRoot(root);
+            // Bulk restore must not auto-focus: passing the default {activate:true}
+            // would set activeRootId to whichever root comes last out of IDB
+            // (factory lex-sorts after lib-* roots), wiping the session's real
+            // focus. Restore the persisted activeRootId explicitly below instead.
+            addLibraryRoot(root, { activate: false });
         }
 
         // Restore samples
@@ -84,8 +110,26 @@ export async function restoreLibrary(): Promise<void> {
             buildFolderTree(root.id);
         }
 
+        // Restore the session's last focused root if it was persisted and still
+        // exists. Restoring it explicitly (rather than letting addLibraryRoot
+        // auto-focus the last-out-of-IDB root) is what stops focus resetting to
+        // 'Factory Samples' on every reload. No saved preference leaves focus as
+        // it was, so the first-launch seed can claim it.
+        if (typeof localStorage !== 'undefined') {
+            const savedActiveRoot = localStorage.getItem(ACTIVE_ROOT_KEY);
+            const state = libraryStore.value;
+            if (savedActiveRoot && state?.roots.some((r) => r.id === savedActiveRoot)) {
+                setActiveRoot(savedActiveRoot);
+            }
+        }
+
         db.close();
-    } catch {
-        // First launch or corrupted DB — start fresh
+    } catch (error) {
+        // openDb resolves (creating stores) on a clean first launch, so reaching
+        // this catch means a genuine failure — a corrupted DB or transient IO
+        // error — not an empty library. Surface it instead of silently starting
+        // fresh, which would hide the loss of a previously connected library.
+        logger.error(error instanceof Error ? error : new Error(String(error)));
+        notifyUser('Could not load your saved sample library. It may be unavailable this session.', 'error');
     }
 }
