@@ -33,7 +33,10 @@ export class GrooveModule extends BaseMidiProcessor {
     private templateIndex = 0;
     private amount = 0.5; // 0–1 blend
     private subdivision = 16; // quantize grid (16 = 16th notes)
-    private noteMap = new Map<string, number>(); // track timing offset for Note Off
+    // Track timing offset for Note Off. Numeric key (channel << 7) | note matches
+    // MidiRack/ScaleQuantizer and avoids a per-event template-literal allocation
+    // on the audio thread.
+    private noteMap = new Map<number, number>();
 
     constructor(id?: string) {
         super(id ?? `groove-${Date.now()}`);
@@ -52,7 +55,7 @@ export class GrooveModule extends BaseMidiProcessor {
                 const offset = template.offsets[templateIdx]! * this.amount * stepLen;
                 const offsetSamples = Math.round(offset);
 
-                const key = `${event.kind.channel}:${event.kind.note}`;
+                const key = (event.kind.channel << 7) | event.kind.note;
                 this.noteMap.set(key, offsetSamples);
 
                 output.push({
@@ -60,7 +63,7 @@ export class GrooveModule extends BaseMidiProcessor {
                     kind: event.kind,
                 });
             } else if (event.kind.type === 'noteOff') {
-                const key = `${event.kind.channel}:${event.kind.note}`;
+                const key = (event.kind.channel << 7) | event.kind.note;
                 const offset = this.noteMap.get(key) ?? 0;
                 this.noteMap.delete(key);
 

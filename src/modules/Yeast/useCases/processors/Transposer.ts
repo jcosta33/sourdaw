@@ -3,6 +3,7 @@
  */
 
 import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
+import { nextLcg } from '../../models/lcgRandom';
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 
 export class Transposer extends BaseMidiProcessor {
@@ -14,7 +15,9 @@ export class Transposer extends BaseMidiProcessor {
     private clampMin = 0;
     private clampMax = 127;
     private rngState = 0xface;
-    private noteMap = new Map<string, number>(); // "ch:inNote" → outNote
+    // Numeric key (channel << 7) | inNote → outNote. Matches MidiRack/ScaleQuantizer
+    // and avoids a per-event template-literal allocation on the audio thread.
+    private noteMap = new Map<number, number>();
 
     constructor(id?: string) {
         super(id ?? `transpose-${Date.now()}`);
@@ -25,19 +28,19 @@ export class Transposer extends BaseMidiProcessor {
             if (event.kind.type === 'noteOn') {
                 let offset = this.semitones + this.octaves * 12;
                 if (this.randomRange > 0) {
-                    this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
+                    this.rngState = nextLcg(this.rngState);
                     offset += (this.rngState % (this.randomRange * 2 + 1)) - this.randomRange;
                 }
 
                 const note = Math.max(this.clampMin, Math.min(this.clampMax, event.kind.note + offset));
-                this.noteMap.set(`${event.kind.channel}:${event.kind.note}`, note);
+                this.noteMap.set((event.kind.channel << 7) | event.kind.note, note);
 
                 output.push({
                     timeSamples: event.timeSamples,
                     kind: { type: 'noteOn', channel: event.kind.channel, note, velocity: event.kind.velocity },
                 });
             } else if (event.kind.type === 'noteOff') {
-                const key = `${event.kind.channel}:${event.kind.note}`;
+                const key = (event.kind.channel << 7) | event.kind.note;
                 const note = this.noteMap.get(key) ?? event.kind.note;
                 this.noteMap.delete(key);
 

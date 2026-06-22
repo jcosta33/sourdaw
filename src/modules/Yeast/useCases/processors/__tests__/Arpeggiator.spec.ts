@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { type MidiEvent, type TransportInfo } from '../../../models/MidiEvent';
+import { type MidiEvent, type MidiEventKind, type TransportInfo } from '../../../models/MidiEvent';
 import { Arpeggiator } from '../Arpeggiator';
+
+type NoteOnEvent = MidiEvent & { kind: Extract<MidiEventKind, { type: 'noteOn' }> };
+
+function isNoteOn(event: MidiEvent): event is NoteOnEvent {
+    return event.kind.type === 'noteOn';
+}
 
 describe('Arpeggiator', () => {
     let arp: Arpeggiator;
@@ -14,7 +20,13 @@ describe('Arpeggiator', () => {
             ppqPosition: 0,
             bpm: 120,
             sampleRate: 44100,
-            timeSignature: { numerator: 4, denominator: 4 },
+            barIndex: 0,
+            beatInBar: 0,
+            timeSigNum: 4,
+            timeSigDen: 4,
+            loopEnabled: false,
+            loopStartPpq: 0,
+            loopEndPpq: 0,
         };
     });
 
@@ -33,15 +45,15 @@ describe('Arpeggiator', () => {
         const input2: MidiEvent[] = [];
         arp.processMidi(input2, output, transport);
 
-        const noteOns = output.filter((event) => event.kind.type === 'noteOn');
+        const noteOns = output.filter(isNoteOn);
         expect(noteOns.length).toBeGreaterThanOrEqual(1);
-        expect(noteOns[0].kind.note).toBe(60); // Lower note first in 'up' mode
+        expect(noteOns[0]?.kind.note).toBe(60); // Lower note first in 'up' mode
 
         // Advance more to get next note
         transport.ppqPosition = 1.1;
         arp.processMidi([], output, transport);
 
-        const noteOns2 = output.filter((event) => event.kind.type === 'noteOn');
+        const noteOns2 = output.filter(isNoteOn);
         expect(noteOns2.some((event) => event.kind.note === 64)).toBe(true);
     });
 
@@ -61,7 +73,7 @@ describe('Arpeggiator', () => {
         transport.ppqPosition = 1.1;
         arp.processMidi([], output, transport);
 
-        const notes = output.filter((event) => event.kind.type === 'noteOn').map((event) => event.kind.note);
+        const notes = output.filter(isNoteOn).map((event) => event.kind.note);
         expect(notes).toContain(60);
         expect(notes).toContain(72);
     });
@@ -79,7 +91,7 @@ describe('Arpeggiator', () => {
         transport.ppqPosition = 0.6;
         arp.processMidi([], output, transport);
 
-        const noteOn = output.find((event) => event.kind.type === 'noteOn');
+        const noteOn = output.find(isNoteOn);
         expect(noteOn?.kind.velocity).toBe(127);
     });
 });

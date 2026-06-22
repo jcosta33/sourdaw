@@ -4,10 +4,19 @@
  */
 
 import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
-import { LCG_MAX, nextLcg } from '../../models/lcgRandom';
+import { gaussianLcg } from '../../models/lcgRandom';
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 
 type HumanizePreset = 'tight' | 'loose' | 'drunk' | 'rushed' | 'laidBack';
+
+/**
+ * Upper bound on tracked Note On timing offsets. The key space is
+ * (channel << 7) | note = 16 channels × 128 notes, so at most this many
+ * distinct notes can be sounding at once. Anything beyond this is a stale
+ * entry from a dropped Note Off (e.g. a transport seek before panic); we
+ * evict the oldest to keep the map from growing unbounded across a session.
+ */
+const MAX_TRACKED_NOTES = 16 * 128;
 
 const PRESETS: Record<HumanizePreset, { timingMeanMs: number; timingSigmaMs: number; velSigma: number }> = {
     tight: { timingMeanMs: 0, timingSigmaMs: 3, velSigma: 5 },
@@ -24,8 +33,9 @@ export class Humanizer extends BaseMidiProcessor {
     private timingSigmaMs = 5;
     private velSigma = 8;
     private rngState = 0xcafe;
-    // Track timing offsets for matching Note Offs
-    private noteTimingMap = new Map<number, number>(); // ch*128+note → timing offset samples
+    // Track timing offsets for matching Note Offs.
+    // Numeric key (channel << 7) | note matches MidiRack/ScaleQuantizer.
+    private noteTimingMap = new Map<number, number>();
 
     constructor(id?: string) {
         super(id ?? `humanize-${Date.now()}`);
@@ -38,7 +48,20 @@ export class Humanizer extends BaseMidiProcessor {
                 const timingOffsetSamples = Math.round(timingOffsetMs * 0.001 * transport.sampleRate);
                 const velOffset = Math.round(this.gaussian(0, this.velSigma));
 
-                const key = event.kind.channel * 128 + event.kind.note;
+                const key = (event.kind.channel << 7) | event.kind.note;
+                // Bound the map: a dropped Note Off (e.g. a transport seek before
+                // panic) would otherwise leave a stale entry forever. Evict the
+                // oldest tracked note once we exceed the live-note ceiling.
+                if (!this.noteTimingMap.has(key) && this.noteTimingMap.size >= MAX_TRACKED_NOTES) {
+                    // size >= ceiling (> 0) ⇒ the map is non-empty, so the iterator
+                    // yields a real oldest key (insertion order). Evict it. The
+                    // `!== undefined` guard narrows the IteratorResult value type;
+                    // it can never actually be undefined given the size check.
+                    const oldest = this.noteTimingMap.keys().next().value;
+                    if (oldest !== undefined) {
+                        this.noteTimingMap.delete(oldest);
+                    }
+                }
                 this.noteTimingMap.set(key, timingOffsetSamples);
 
                 output.push({
@@ -51,7 +74,7 @@ export class Humanizer extends BaseMidiProcessor {
                     },
                 });
             } else if (event.kind.type === 'noteOff') {
-                const key = event.kind.channel * 128 + event.kind.note;
+                const key = (event.kind.channel << 7) | event.kind.note;
                 const offset = this.noteTimingMap.get(key) ?? 0;
                 this.noteTimingMap.delete(key);
 
@@ -66,16 +89,9 @@ export class Humanizer extends BaseMidiProcessor {
     }
 
     private gaussian(mean: number, sigma: number): number {
-        // Box-Muller transform using LCG
-        const u1 = this.nextRandom();
-        const u2 = this.nextRandom();
-        const z = Math.sqrt(-2 * Math.log(Math.max(1e-10, u1))) * Math.cos(2 * Math.PI * u2);
-        return mean + sigma * z;
-    }
-
-    private nextRandom(): number {
-        this.rngState = nextLcg(this.rngState);
-        return this.rngState / LCG_MAX;
+        const { value, state } = gaussianLcg(this.rngState, mean, sigma);
+        this.rngState = state;
+        return value;
     }
 
     reset(): void {

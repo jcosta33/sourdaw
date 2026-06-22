@@ -123,7 +123,7 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
         return midiClips[midiClips.length - 1]!.id;
     }
 
-    return function handleNoteOff(_channel: number, note: number): void {
+    return function handleNoteOff(channel: number, note: number): void {
         deps.stepRecordNoteOff(note);
         const noteData = activeNotes.get(note);
         if (!noteData) {
@@ -134,6 +134,63 @@ export const handleNoteOff = inject(midiMessageHandlerDependencies)((deps) => {
 
         if (getMpeEnabled()) {
             channelToNote.delete(noteData.channel);
+        }
+
+        // Route the Note Off through the Yeast rack so processors (Transposer,
+        // ChordGenerator, Harmonizer, …) reverse the note mapping they applied on
+        // Note On. Without this, generated/transposed notes never receive a Note
+        // Off and hang (CRITICAL #62). The raw-key device routing below is gated on
+        // device-id fields that the Yeast Note On path never sets, so it stays a
+        // no-op for Yeast tracks; the recording path at the bottom still runs.
+        if (getTargetTrackId()) {
+            const trackState = deps.getTrackStoreState();
+            const targetTrack = trackState?.tracks.find((time) => time.id === getTargetTrackId());
+
+            let instrumentTrack = targetTrack;
+            if (targetTrack && targetTrack.parentId && trackState) {
+                const parent = trackState.tracks.find((time) => time.id === targetTrack.parentId);
+                if (parent?.devices.some((data) => data.type === 'toaster')) {
+                    instrumentTrack = parent;
+                }
+            }
+
+            if (instrumentTrack?.devices.some((data) => data.type === 'yeast')) {
+                const ctx = audioEngine.context;
+                const sampleTime = Math.round(ctx.currentTime * ctx.sampleRate);
+                const processedEvents = deps.processRealtimeMidiInput(
+                    note,
+                    0,
+                    channel,
+                    false,
+                    sampleTime,
+                    ctx.sampleRate
+                );
+                const strip = audioEngine.getTrackStrip(instrumentTrack.id);
+                for (const evt of processedEvents) {
+                    if (evt.kind.type !== 'noteOff') {
+                        continue;
+                    }
+                    const evtNote = evt.kind.note;
+                    const fDev = instrumentTrack.devices.find((data) => data.type === 'fermenter');
+                    if (fDev) {
+                        const dn = strip?.deviceNodes.find((data) => data.type === 'fermenter');
+                        dn?.fermenterControls?.noteOff(evtNote);
+                        continue;
+                    }
+                    const gbDev = instrumentTrack.devices.find((data) => data.type === 'grand-boule');
+                    if (gbDev) {
+                        const dn = strip?.deviceNodes.find((data) => data.type === 'grand-boule');
+                        dn?.grandBouleControls?.noteOff(evtNote);
+                        void deps.eventBus.emit('midi.noteOff', { deviceId: gbDev.id, midiNote: evtNote });
+                        continue;
+                    }
+                    const lDev = instrumentTrack.devices.find((data) => data.type === 'levain');
+                    if (lDev) {
+                        const dn = strip?.deviceNodes.find((data) => data.type === 'levain');
+                        dn?.levainControls?.noteOff(evtNote);
+                    }
+                }
+            }
         }
 
         if (noteData.fermenterDeviceId && getTargetTrackId()) {

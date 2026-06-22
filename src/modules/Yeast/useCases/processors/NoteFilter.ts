@@ -15,8 +15,10 @@ export class NoteFilter extends BaseMidiProcessor {
     private velMax = 127;
     private allowedPitchClasses = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]); // all by default
     private invert = false;
-    // Track filtered Note Ons to suppress matching Note Offs
-    private filteredNotes = new Set<string>();
+    // Track filtered Note Ons to suppress matching Note Offs.
+    // Numeric key (channel << 7) | note matches MidiRack/ScaleQuantizer/Humanizer
+    // and avoids a per-event template-literal allocation on the audio thread.
+    private filteredNotes = new Set<number>();
 
     constructor(id?: string) {
         super(id ?? `filter-${Date.now()}`);
@@ -25,7 +27,7 @@ export class NoteFilter extends BaseMidiProcessor {
     processMidi(input: readonly MidiEvent[], output: MidiEvent[], _transport: TransportInfo): void {
         for (const event of input) {
             if (event.kind.type === 'noteOn') {
-                const key = `${event.kind.channel}:${event.kind.note}`;
+                const key = (event.kind.channel << 7) | event.kind.note;
                 let passes = this.passesFilter(event.kind.note, event.kind.velocity);
                 if (this.invert) {
                     passes = !passes;
@@ -37,7 +39,7 @@ export class NoteFilter extends BaseMidiProcessor {
                     this.filteredNotes.add(key);
                 }
             } else if (event.kind.type === 'noteOff') {
-                const key = `${event.kind.channel}:${event.kind.note}`;
+                const key = (event.kind.channel << 7) | event.kind.note;
                 if (this.filteredNotes.has(key)) {
                     this.filteredNotes.delete(key);
                     // Suppress the Note Off for a filtered Note On
@@ -64,7 +66,12 @@ export class NoteFilter extends BaseMidiProcessor {
     }
 
     reset(): void {
-        this.filteredNotes.clear();
+        // Do NOT clear filteredNotes here: a Note On that was filtered (swallowed)
+        // before reset was never forwarded downstream, so its eventual Note Off must
+        // still be suppressed. Clearing the set would let that orphan Note Off match
+        // the pass-through branch and leak a stray Note Off for a note nobody played.
+        // The set drains naturally as those Note Offs arrive and is bounded by the
+        // number of physically held filtered keys.
     }
     setParam(name: string, value: number): void {
         switch (name) {

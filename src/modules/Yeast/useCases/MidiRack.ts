@@ -26,13 +26,40 @@ export class MidiRack {
         this.processors.push(processor);
     }
 
-    /** Remove a processor by id. */
-    removeProcessor(id: string): void {
+    /**
+     * Remove a processor by id.
+     *
+     * Removing a processor mid-playback changes the chain's output, so any note
+     * currently sounding may no longer receive its Note Off from the (now reset
+     * and detached) processor — e.g. an Arpeggiator's `reset()` drops its
+     * scheduled Note Offs and `activeGenerated` set without emitting them.
+     * `activeNotes` carries no per-processor attribution, so we conservatively
+     * emit a Note Off for every currently-active note and clear the tracking,
+     * mirroring `allNotesOff`. The offs are stamped at `nowSamples` (the offs
+     * are immediate, not at the original Note On time). Returns the emitted
+     * Note Offs so the caller can route them downstream (parity with
+     * `allNotesOff`).
+     */
+    removeProcessor(id: string, nowSamples = 0): MidiEvent[] {
+        const output: MidiEvent[] = [];
         const idx = this.processors.findIndex((param) => param.id === id);
-        if (idx !== -1) {
-            this.processors[idx]!.reset();
-            this.processors.splice(idx, 1);
+        if (idx === -1) {
+            return output;
         }
+        // Capture active notes BEFORE reset/splice — once the processor is gone
+        // these notes would hang with no source to terminate them.
+        for (const [, event] of this.activeNotes) {
+            if (event.kind.type === 'noteOn') {
+                output.push({
+                    timeSamples: nowSamples,
+                    kind: { type: 'noteOff', channel: event.kind.channel, note: event.kind.note },
+                });
+            }
+        }
+        this.activeNotes.clear();
+        this.processors[idx]!.reset();
+        this.processors.splice(idx, 1);
+        return output;
     }
 
     /** Reorder: move processor from fromIdx to toIdx. */
@@ -54,6 +81,17 @@ export class MidiRack {
         blockEndSamples: number,
         transport: TransportInfo
     ): MidiEvent[] {
+        // 0. Reject degenerate ranges. With blockEnd < blockStart the [start,end)
+        // drain window is empty (drainRangeInto drains nothing) AND the separator
+        // (`event.timeSamples < blockEndSamples`) routes every real event into the
+        // scheduled queue instead of the output — silently swallowing notes with
+        // no error. Treat a degenerate block as "no work": return an empty buffer
+        // and leave input events / the scheduled queue untouched.
+        if (blockEndSamples < blockStartSamples) {
+            this.separateOutput.length = 0;
+            return this.separateOutput;
+        }
+
         // 1. Drain scheduled events directly into scratchA — avoids the
         // intermediate `drained` + spread-merge allocation (§149.1).
         const current0 = this.scratchA;
@@ -75,7 +113,16 @@ export class MidiRack {
                 continue;
             }
             output.length = 0;
-            processor.processMidi(input, output, transport);
+            try {
+                processor.processMidi(input, output, transport);
+            } catch {
+                // A throwing processor must not abort the rest of the chain (or
+                // the block). Treat it as a transparent bypass for this block:
+                // skip the buffer swap so the upstream events flow through
+                // unchanged. The happy path takes no exception, so try/catch adds
+                // no per-block allocation on the audio thread.
+                continue;
+            }
             const tmp = input;
             input = output;
             output = tmp;
@@ -118,10 +165,15 @@ export class MidiRack {
     /** Panic: send Note Off for all active notes. */
     allNotesOff(nowSamples: number): MidiEvent[] {
         const output: MidiEvent[] = [];
+        // Track (channel<<7)|note of every off emitted so each sounding/scheduled
+        // note gets exactly one Note Off — no stray/duplicate offs from a note
+        // that is both active and re-scheduled, or scheduled more than once.
+        const emittedKeys = new Set<number>();
 
         // Kill tracked active notes
-        for (const [, event] of this.activeNotes) {
+        for (const [key, event] of this.activeNotes) {
             if (event.kind.type === 'noteOn') {
+                emittedKeys.add(key);
                 output.push({
                     timeSamples: nowSamples,
                     kind: { type: 'noteOff', channel: event.kind.channel, note: event.kind.note },
@@ -130,8 +182,8 @@ export class MidiRack {
         }
         this.activeNotes.clear();
 
-        // Flush scheduled queue
-        this.scheduled.flushAllNotesOff(output, nowSamples);
+        // Flush scheduled queue, de-duped against the active-note offs above.
+        this.scheduled.flushAllNotesOff(output, nowSamples, emittedKeys);
         this.scheduled.clear();
 
         // Reset all processors

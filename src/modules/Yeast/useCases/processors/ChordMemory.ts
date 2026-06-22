@@ -21,8 +21,10 @@ export class ChordMemory extends BaseMidiProcessor {
     private learnBuffer: number[] = [];
     private learnRoot = -1;
     private transposeMode = true; // transpose stored chord relative to trigger
-    // Track active chords for Note Off
-    private activeChords = new Map<string, number[]>(); // "ch:triggerNote" → emitted notes
+    // Track active chords for Note Off.
+    // Numeric key (channel << 7) | triggerNote matches MidiRack/ScaleQuantizer and
+    // avoids a per-event template-literal allocation on the audio thread.
+    private activeChords = new Map<number, number[]>();
 
     constructor(id?: string) {
         super(id ?? `chordmem-${Date.now()}`);
@@ -43,7 +45,7 @@ export class ChordMemory extends BaseMidiProcessor {
 
                 const stored = this.memory.get(event.kind.note);
                 if (stored) {
-                    const key = `${event.kind.channel}:${event.kind.note}`;
+                    const key = (event.kind.channel << 7) | event.kind.note;
                     const emitted: number[] = [];
                     const transpose = this.transposeMode ? event.kind.note - stored.root : 0;
 
@@ -76,7 +78,7 @@ export class ChordMemory extends BaseMidiProcessor {
                     continue;
                 }
 
-                const key = `${event.kind.channel}:${event.kind.note}`;
+                const key = (event.kind.channel << 7) | event.kind.note;
                 const emitted = this.activeChords.get(key);
                 if (emitted) {
                     for (const note of emitted) {

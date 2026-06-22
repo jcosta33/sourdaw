@@ -22,26 +22,6 @@ function bjorklund(hits: number, steps: number): boolean[] {
         return Array.from<boolean>({ length: steps }).fill(false);
     }
 
-    const pattern: boolean[][] = [];
-    for (let index = 0; index < steps; index++) {
-        pattern.push([index < hits]);
-    }
-
-    let level = 0;
-    const counts: number[] = [];
-    const remainders: number[] = [];
-
-    // Build counts/remainders
-    remainders.push(steps - hits);
-    counts.push(hits);
-    while (remainders[remainders.length - 1]! > 1) {
-        const context = counts[level]!;
-        const r = remainders[level]!;
-        counts.push(Math.min(context, r));
-        remainders.push(Math.max(context, r) - Math.min(context, r));
-        level++;
-    }
-
     // Bresenham-style even distribution
     const out: boolean[] = [];
     for (let index = 0; index < steps; index++) {

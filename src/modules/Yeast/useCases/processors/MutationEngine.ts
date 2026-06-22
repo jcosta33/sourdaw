@@ -7,6 +7,7 @@
  */
 
 import { BaseMidiProcessor } from '../../models/BaseMidiProcessor';
+import { gaussianLcg } from '../../models/lcgRandom';
 import { type MidiEvent, type TransportInfo } from '../../models/MidiEvent';
 
 type MutationTarget = {
@@ -76,12 +77,9 @@ export class MutationEngine extends BaseMidiProcessor {
     }
 
     private gaussian(mean: number, sigma: number): number {
-        this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
-        const u1 = this.rngState / 0x7fffffff;
-        this.rngState = (this.rngState * 1103515245 + 12345) & 0x7fffffff;
-        const u2 = this.rngState / 0x7fffffff;
-        const z = Math.sqrt(-2 * Math.log(Math.max(1e-10, u1))) * Math.cos(2 * Math.PI * u2);
-        return mean + sigma * z;
+        const { value, state } = gaussianLcg(this.rngState, mean, sigma);
+        this.rngState = state;
+        return value;
     }
 
     reset(): void {

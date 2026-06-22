@@ -33,8 +33,10 @@ export class Harmonizer extends BaseMidiProcessor {
         { degrees: 4, velocityOffset: -15, timeOffsetSamples: 0, enabled: false }, // 5th
         { degrees: -1, velocityOffset: -20, timeOffsetSamples: 0, enabled: false }, // below
     ];
-    // Track generated harmony notes for proper Note Off
-    private generatedMap = new Map<string, number[]>(); // "ch:note" → generated harmony notes
+    // Track generated harmony notes for proper Note Off.
+    // Numeric key (channel << 7) | note matches MidiRack/ScaleQuantizer and avoids a
+    // per-event template-literal allocation on the audio thread.
+    private generatedMap = new Map<number, number[]>();
 
     constructor(id?: string) {
         super(id ?? `harmonizer-${Date.now()}`);
@@ -48,7 +50,7 @@ export class Harmonizer extends BaseMidiProcessor {
             output.push(event);
 
             if (event.kind.type === 'noteOn') {
-                const key = `${event.kind.channel}:${event.kind.note}`;
+                const key = (event.kind.channel << 7) | event.kind.note;
                 const harmonyNotes: number[] = [];
 
                 for (const voice of this.voices) {
@@ -72,7 +74,7 @@ export class Harmonizer extends BaseMidiProcessor {
 
                 this.generatedMap.set(key, harmonyNotes);
             } else if (event.kind.type === 'noteOff') {
-                const key = `${event.kind.channel}:${event.kind.note}`;
+                const key = (event.kind.channel << 7) | event.kind.note;
                 const generated = this.generatedMap.get(key);
                 if (generated) {
                     for (const note of generated) {

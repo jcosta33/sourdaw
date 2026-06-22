@@ -82,10 +82,24 @@ export class ScheduledEventQueue {
         return out;
     }
 
-    /** Flush all scheduled events as immediate Note Offs. */
-    flushAllNotesOff(output: MidiEvent[], nowSamples: number): void {
+    /**
+     * Flush all scheduled Note Ons as immediate Note Offs.
+     *
+     * Each distinct (channel, note) yields exactly one Note Off. `emittedKeys`
+     * (numeric key `(channel << 7) | note`) carries the offs already emitted by
+     * the caller for currently-active notes, so a scheduled re-trigger of a note
+     * that is already sounding does not produce a duplicate off; it also guards
+     * against two scheduled Note Ons for the same (channel, note) double-emitting.
+     * Keys for newly emitted offs are added to the set.
+     */
+    flushAllNotesOff(output: MidiEvent[], nowSamples: number, emittedKeys: Set<number> = new Set()): void {
         for (const event of this.events) {
             if (event.kind.type === 'noteOn') {
+                const key = (event.kind.channel << 7) | event.kind.note;
+                if (emittedKeys.has(key)) {
+                    continue;
+                }
+                emittedKeys.add(key);
                 output.push({
                     timeSamples: nowSamples,
                     kind: { type: 'noteOff', channel: event.kind.channel, note: event.kind.note },

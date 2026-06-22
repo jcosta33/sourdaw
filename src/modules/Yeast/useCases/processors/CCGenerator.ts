@@ -35,7 +35,11 @@ function evalShape(shape: LfoShape, phase: number, rngState: { v: number }): num
             return rngState.v;
         }
         default:
-            throw new Error(`Unknown LFO shape: ${shape}`);
+            // Audio-thread no-op fallback. setParam clamps `shape` to a valid
+            // LfoShape, so this is unreachable in practice — but throwing here
+            // would propagate through MidiRack.processBlock's chain loop (no
+            // try/catch) and abort the rest of the block. Return a neutral 0.
+            return 0;
     }
 }
 
@@ -136,8 +140,10 @@ export class CCGenerator extends BaseMidiProcessor {
             case 'retrigger':
                 this.retriggerOnNote = value > 0.5;
                 break;
-            default:
-                throw new Error(`Unknown parameter: ${name}`);
+            // Unknown params are ignored, matching every other Yeast processor's
+            // setParam contract (Arpeggiator, ScaleQuantizer, etc.). Throwing here
+            // would make CCGenerator the lone outlier and could abort a host
+            // parameter sweep that addresses processors uniformly.
         }
     }
 }

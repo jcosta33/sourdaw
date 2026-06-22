@@ -7,6 +7,7 @@
  * Port protocol (this.port.onmessage):
  *   ← { type: 'addProcessor',  processorType: string, processorId: string }
  *   ← { type: 'removeProcessor', processorId: string }
+ *   ← { type: 'reorder',      fromIdx, toIdx }
  *   ← { type: 'setParam',     processorId, name, value }
  *   ← { type: 'setBypass',    processorId, bypassed }
  *   ← { type: 'processBlock', requestId, events, blockStart, blockEnd, transport }
@@ -23,6 +24,7 @@ import type { ProcessorType } from '../useCases/processorFactory';
 type YeastMsg =
     | { type: 'addProcessor'; processorType: ProcessorType; processorId: string }
     | { type: 'removeProcessor'; processorId: string }
+    | { type: 'reorder'; fromIdx: number; toIdx: number }
     | { type: 'setParam'; processorId: string; name: string; value: number }
     | { type: 'setBypass'; processorId: string; bypassed: boolean }
     | {
@@ -47,6 +49,9 @@ class YeastWorkletProcessor extends AudioWorkletProcessor {
                     break;
                 case 'removeProcessor':
                     this._rack.removeProcessor(data.processorId);
+                    break;
+                case 'reorder':
+                    this._rack.reorder(data.fromIdx, data.toIdx);
                     break;
                 case 'setParam':
                     this._rack.setProcessorParam(data.processorId, data.name, data.value);

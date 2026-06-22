@@ -115,17 +115,21 @@ export class ScaleQuantizer extends BaseMidiProcessor {
                 return note;
             }
             default:
-                throw new Error(`Unknown remap mode: ${this.remapMode}`);
+                // Audio-thread no-op fallback. setParam clamps `remapMode` to a
+                // valid RemapMode, so this is unreachable in practice — but
+                // throwing here would propagate through MidiRack.processBlock's
+                // chain loop (no try/catch) and abort the rest of the block.
+                // Pass the note through unchanged instead.
+                return note;
         }
     }
 
     private diatonicTranspose(note: number, degrees: number, pattern: number[]): number {
         const pc = (((note - this.root) % 12) + 12) % 12;
         const octave = Math.floor((note - this.root) / 12);
+        // `note` has already passed through quantizeToScale, so its pitch-class is
+        // guaranteed to be in `pattern`; degreeIdx is therefore always >= 0.
         const degreeIdx = pattern.indexOf(pc);
-        if (degreeIdx === -1) {
-            return note;
-        } // not in scale, pass through
 
         const newDegreeIdx = degreeIdx + degrees;
         const newOctaveOffset = Math.floor(newDegreeIdx / pattern.length);

@@ -27,3 +27,24 @@ export function nextLcg(state: number): number {
 
 /** Max value returned by `nextLcg`, exclusive upper bound is `LCG_MAX + 1`. */
 export const LCG_MAX = 0x7fffffff;
+
+/**
+ * Draw one Gaussian (normal) sample from the shared LCG via the Box-Muller
+ * transform. Advances the LCG twice (two uniforms → one normal) and returns
+ * both the sample and the new state so the caller can thread it forward
+ * (the LCG is stateless here by design).
+ *
+ * Preserves the exact bit pattern the processors carried inline: two
+ * `nextLcg` steps, each normalized by `LCG_MAX`, fed through
+ * `mean + sigma * sqrt(-2 ln u1) * cos(2π u2)` with `u1` floored at 1e-10 to
+ * avoid `log(0)`. No allocation beyond the returned tuple — safe on the
+ * audio thread.
+ */
+export function gaussianLcg(state: number, mean: number, sigma: number): { value: number; state: number } {
+    const s1 = nextLcg(state);
+    const u1 = s1 / LCG_MAX;
+    const s2 = nextLcg(s1);
+    const u2 = s2 / LCG_MAX;
+    const z = Math.sqrt(-2 * Math.log(Math.max(1e-10, u1))) * Math.cos(2 * Math.PI * u2);
+    return { value: mean + sigma * z, state: s2 };
+}

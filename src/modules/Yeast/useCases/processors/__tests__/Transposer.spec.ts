@@ -1,7 +1,18 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { type MidiEvent, type TransportInfo } from '../../../models/MidiEvent';
+import { type MidiEvent, type MidiEventKind, type TransportInfo } from '../../../models/MidiEvent';
 import { Transposer } from '../Transposer';
+
+type NoteOnEvent = MidiEvent & { kind: Extract<MidiEventKind, { type: 'noteOn' }> };
+type NoteOffEvent = MidiEvent & { kind: Extract<MidiEventKind, { type: 'noteOff' }> };
+
+function isNoteOn(event: MidiEvent): event is NoteOnEvent {
+    return event.kind.type === 'noteOn';
+}
+
+function isNoteOff(event: MidiEvent): event is NoteOffEvent {
+    return event.kind.type === 'noteOff';
+}
 
 describe('Transposer', () => {
     let trans: Transposer;
@@ -14,7 +25,13 @@ describe('Transposer', () => {
             ppqPosition: 0,
             bpm: 120,
             sampleRate: 44100,
-            timeSignature: { numerator: 4, denominator: 4 },
+            barIndex: 0,
+            beatInBar: 0,
+            timeSigNum: 4,
+            timeSigDen: 4,
+            loopEnabled: false,
+            loopStartPpq: 0,
+            loopEndPpq: 0,
         };
     });
 
@@ -27,7 +44,7 @@ describe('Transposer', () => {
 
         trans.processMidi(input, output, transport);
 
-        const noteOn = output.find((event) => event.kind.type === 'noteOn');
+        const noteOn = output.find(isNoteOn);
         expect(noteOn?.kind.note).toBe(74); // 60 + 14
     });
 
@@ -43,7 +60,7 @@ describe('Transposer', () => {
         const offInput: MidiEvent[] = [{ timeSamples: 500, kind: { type: 'noteOff', channel: 0, note: 60 } }];
         trans.processMidi(offInput, output, transport);
 
-        const noteOff = output.find((event) => event.kind.type === 'noteOff');
+        const noteOff = output.find(isNoteOff);
         expect(noteOff?.kind.note).toBe(67); // 60 + 7
     });
 
@@ -56,7 +73,7 @@ describe('Transposer', () => {
 
         trans.processMidi(input, output, transport);
 
-        const noteOn = output.find((event) => event.kind.type === 'noteOn');
+        const noteOn = output.find(isNoteOn);
         expect(noteOn?.kind.note).toBe(12);
     });
 });
